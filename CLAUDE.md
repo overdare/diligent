@@ -4,7 +4,7 @@ Diligent — transparent, debuggable coding agent. Bun + TypeScript strict, mono
 
 ## Navigate by Need
 
-Read only what your task requires. Each directory has a README.md to guide you further.
+Read only what your task requires. Directories have README.md files — follow them recursively until you reach the file you need.
 
 | Need | Start here |
 |------|-----------|
