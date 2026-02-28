@@ -145,13 +145,17 @@ function pickProviderThenSetKey(ctx: CommandContext): Promise<void> {
 export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promise<void> {
   return new Promise((resolve) => {
     const hint =
-      provider === "anthropic" ? "https://console.anthropic.com/settings/keys" : "https://platform.openai.com/api-keys";
+      provider === "anthropic"
+        ? "https://console.anthropic.com/settings/keys"
+        : provider === "openai"
+          ? "https://platform.openai.com/api-keys"
+          : "https://aistudio.google.com/apikey";
 
     const input = new TextInput(
       {
         title: `${provider} API Key`,
         message: `Enter your ${provider} API key (${hint})`,
-        placeholder: provider === "anthropic" ? "sk-ant-..." : "sk-...",
+        placeholder: provider === "anthropic" ? "sk-ant-..." : provider === "gemini" ? "AIza..." : "sk-...",
         masked: true,
       },
       (value) => {

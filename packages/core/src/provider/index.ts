@@ -1,4 +1,5 @@
 export { classifyAnthropicError, createAnthropicStream } from "./anthropic";
+export { classifyGeminiError, createGeminiStream } from "./gemini";
 export type { ModelDefinition } from "./models";
 export { KNOWN_MODELS, resolveModel } from "./models";
 export { classifyOpenAIError, createOpenAIStream } from "./openai";

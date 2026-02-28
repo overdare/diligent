@@ -39,6 +39,41 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     defaultBudgetTokens: 10_000,
     aliases: ["claude-haiku", "haiku"],
   },
+  // Gemini
+  {
+    id: "gemini-2.5-pro",
+    provider: "gemini",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64_000,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+    aliases: ["gemini-pro"],
+  },
+  {
+    id: "gemini-2.5-flash",
+    provider: "gemini",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+    aliases: ["gemini-flash", "gemini"],
+  },
+  {
+    id: "gemini-3.1-pro-preview",
+    provider: "gemini",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64_000,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+  },
+  {
+    id: "gemini-3-flash-preview",
+    provider: "gemini",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+  },
   // OpenAI
   {
     id: "gpt-5.3-codex",
@@ -96,6 +131,9 @@ export function resolveModel(modelId: string): Model {
   if (aliased) return aliased;
 
   // Infer provider from prefix
+  if (modelId.startsWith("gemini-")) {
+    return { id: modelId, provider: "gemini", contextWindow: 1_000_000, maxOutputTokens: 65_536 };
+  }
   if (modelId.startsWith("claude-")) {
     return { id: modelId, provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16_384 };
   }

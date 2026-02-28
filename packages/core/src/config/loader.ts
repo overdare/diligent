@@ -79,6 +79,18 @@ function applyEnvOverrides(config: DiligentConfig, env: Record<string, string | 
       anthropic: { ...result.provider?.anthropic, apiKey: env.ANTHROPIC_API_KEY },
     };
   }
+  if (env.OPENAI_API_KEY) {
+    result.provider = {
+      ...result.provider,
+      openai: { ...result.provider?.openai, apiKey: env.OPENAI_API_KEY },
+    };
+  }
+  if (env.GEMINI_API_KEY) {
+    result.provider = {
+      ...result.provider,
+      gemini: { ...result.provider?.gemini, apiKey: env.GEMINI_API_KEY },
+    };
+  }
   if (env.DILIGENT_MODEL) {
     result.model = env.DILIGENT_MODEL;
   }

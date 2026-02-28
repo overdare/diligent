@@ -51,7 +51,9 @@ export type {
   ToolDefinition,
 } from "./provider/index";
 export {
+  classifyGeminiError,
   createAnthropicStream,
+  createGeminiStream,
   createOpenAIStream,
   KNOWN_MODELS,
   ProviderError,

@@ -144,8 +144,8 @@ describe("ProviderManager", () => {
     }
   });
 
-  test("PROVIDER_NAMES constant contains both providers", () => {
-    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai"]);
+  test("PROVIDER_NAMES constant contains all providers", () => {
+    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai", "gemini"]);
   });
 
   test("DEFAULT_MODELS has entries for all providers", () => {

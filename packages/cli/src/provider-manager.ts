@@ -1,13 +1,14 @@
 import type { DiligentConfig, StreamFunction } from "@diligent/core";
-import { createAnthropicStream, createOpenAIStream } from "@diligent/core";
+import { createAnthropicStream, createGeminiStream, createOpenAIStream } from "@diligent/core";
 
-export type ProviderName = "anthropic" | "openai";
+export type ProviderName = "anthropic" | "openai" | "gemini";
 
-export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai"];
+export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "gemini"];
 
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-5.3-codex",
+  gemini: "gemini-2.5-flash",
 };
 
 /**
@@ -23,9 +24,11 @@ export class ProviderManager {
     // Collect keys from config and env vars
     this.keys.anthropic = config.provider?.anthropic?.apiKey ?? process.env.ANTHROPIC_API_KEY ?? undefined;
     this.keys.openai = config.provider?.openai?.apiKey ?? process.env.OPENAI_API_KEY ?? undefined;
+    this.keys.gemini = config.provider?.gemini?.apiKey ?? process.env.GEMINI_API_KEY ?? undefined;
 
     this.baseUrls.anthropic = config.provider?.anthropic?.baseUrl;
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
+    this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
   }
 
   /** Create a proxy StreamFunction that dispatches based on model.provider */
@@ -36,7 +39,7 @@ export class ProviderManager {
       if (!apiKey) {
         throw new Error(
           `No API key configured for ${provider}. ` +
-            `Use /provider set ${provider} to add one, or set ${provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"} environment variable.`,
+            `Use /provider set ${provider} to add one, or set ${provider === "anthropic" ? "ANTHROPIC_API_KEY" : provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY"} environment variable.`,
         );
       }
 
@@ -87,6 +90,8 @@ export class ProviderManager {
     let stream: StreamFunction;
     if (provider === "openai") {
       stream = createOpenAIStream(apiKey, this.baseUrls.openai);
+    } else if (provider === "gemini") {
+      stream = createGeminiStream(apiKey, this.baseUrls.gemini);
     } else {
       stream = createAnthropicStream(apiKey);
     }

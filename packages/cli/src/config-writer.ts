@@ -10,7 +10,7 @@ const GLOBAL_CONFIG_PATH = join(homedir(), ".config", "diligent", "diligent.json
  * Uses jsonc-parser to preserve existing comments and formatting.
  */
 export async function saveApiKey(
-  provider: "anthropic" | "openai",
+  provider: "anthropic" | "openai" | "gemini",
   apiKey: string,
   configPath: string = GLOBAL_CONFIG_PATH,
 ): Promise<void> {

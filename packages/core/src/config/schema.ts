@@ -22,6 +22,12 @@ export const DiligentConfigSchema = z
             baseUrl: z.string().url().optional(),
           })
           .optional(),
+        gemini: z
+          .object({
+            apiKey: z.string().optional(),
+            baseUrl: z.string().url().optional(),
+          })
+          .optional(),
       })
       .optional(),
 
