@@ -84,6 +84,10 @@ When a directory is moved (like `docs/research/references/` → `docs/references
 
 Only where a directory **branches** — where there are multiple siblings and an LLM wouldn't know which to pick without a guide. A linear chain like `a/b/c/d/e` with one item at each level needs no intermediate README.md files. The goal is minimal navigation, not exhaustive documentation.
 
+## Parallelism
+
+When multiple directories need README.md creation or updates, use the Agent tool to process them in parallel — one subagent per directory. Each subagent scans (`ls`) its assigned directory, writes or updates the README.md, and returns the result. This avoids sequential round-trips and keeps the main context clean.
+
 ## Conventions
 
 - README.md lists folders and files that matter for navigation — skip generated files, node_modules, .gitignore, etc.
