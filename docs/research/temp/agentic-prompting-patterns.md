@@ -373,5 +373,5 @@ A model-agnostic prompt will "work" but leave 5-15% performance on the table com
 - [Tau-2 Benchmark: Prompt Rewrite Results](https://quesma.com/blog/tau2-benchmark-improving-results-smaller-models/)
 - [OpenAI Community: Portability of LLM Prompts](https://community.openai.com/t/the-portability-of-a-llm-prompt/311147)
 - [SWE-bench Evaluations](https://www.vals.ai/benchmarks/swebench)
-- Codex CLI prompts: `research/references/codex-rs/codex-rs/core/prompt.md` (GPT-5 base), `gpt-5.1-codex-max_prompt.md`, `gpt_5_2_prompt.md`
-- Pi-agent system prompt: `research/references/pi-agent/packages/coding-agent/src/core/system-prompt.ts`
+- Codex CLI prompts: `references/codex/codex-rs/core/prompt.md` (GPT-5 base), `gpt-5.1-codex-max_prompt.md`, `gpt_5_2_prompt.md`
+- Pi-agent system prompt: `references/pi-mono/packages/coding-agent/src/core/system-prompt.ts`

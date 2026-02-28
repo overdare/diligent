@@ -1,9 +1,9 @@
 [submodule "research/references/codex"]
-	path = docs/research/references/codex
+	path = docs/references/codex
 	url = https://github.com/openai/codex
 [submodule "research/references/pi-mono"]
-	path = docs/research/references/pi-mono
+	path = docs/references/pi-mono
 	url = https://github.com/badlogic/pi-mono
 [submodule "research/references/opencode"]
-	path = docs/research/references/opencode
+	path = docs/references/opencode
 	url = https://github.com/opencode-ai/opencode

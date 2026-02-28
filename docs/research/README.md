@@ -2,13 +2,12 @@
 
 Research materials for project design.
 
-## Folder Structure
+```
+layers/           Architecture layer analysis (L0–L10)
+llm-tools/        LLM native tools comparative research
+openclaw/         OpenClaw reference analysis
+side-research/    Exploratory research
+temp/             Temporary notes and drafts
+```
 
-| Folder | Description |
-|---|---|
-| `layers/` | Architecture layer analysis (provider, agent-loop, tool-system, etc.) |
-| `llm-tools/` | LLM native tools comparative research (Anthropic, OpenAI, Gemini) |
-| `openclaw/` | OpenClaw reference analysis (layer mapping, memory system) |
-| `references/` | External codebases and materials cloned as-is for reference (codex, opencode, pi-mono) |
-| `side-research/` | Exploratory research indirectly related to the project |
-| `temp/` | Temporary notes and review drafts |
+Reference codebases (codex, opencode, pi-mono) have moved to `../references/`.

@@ -68,9 +68,9 @@ This list is **reviewed at every loop iteration**.
 ### Research Targets
 
 Analyze each layer's implementation across 3 projects:
-- **codex-rs** — `research/references/codex-rs/`
-- **pi-agent** — `research/references/pi-agent/`
-- **opencode** — `research/references/opencode/`
+- **codex-rs** — `references/codex/`
+- **pi-agent** — `references/pi-mono/`
+- **opencode** — `references/opencode/`
 
 ### Research Questions (common to every layer)
 
@@ -130,8 +130,8 @@ Main Agent (persistent session, thin — orchestration only)
    - Running synthesis review (Step 3)
 3. **Research Agents are Explore subagents** — spawned by the coordinator, one per (layer × project). Each gets:
    - Specific question list from Step 2
-   - Target directory path (e.g., `research/references/codex-rs/`)
-   - Reference structure guide (`research/references/README.md`)
+   - Target directory path (e.g., `references/codex/`)
+   - Reference structure guide (`references/README.md`)
 4. **All context transfer happens through files** — not through agent memory. This is what makes the hierarchy work across token limits.
 5. **Parallelism**: Research agents within a round run in parallel. Rounds run sequentially.
 
@@ -239,16 +239,16 @@ research/
 │   ├── 08-skills.md
 │   ├── 09-mcp.md
 │   └── 10-multi-agent.md
-└── references/
-    ├── README.md           # Reference project structure guide (see below)
-    ├── codex-rs/
-    ├── pi-agent/
-    └── opencode/
+references/                   # Moved to docs/references/
+├── README.md
+├── codex/
+├── opencode/
+└── pi-mono/
 ```
 
 ## Reference Project Structure Guide
 
-Maintained in `research/references/README.md`. This document helps new researchers quickly orient themselves in each reference project's codebase.
+Maintained in `references/README.md` (now at `docs/references/`). This document helps new researchers quickly orient themselves in each reference project's codebase.
 
 For each project, document:
 

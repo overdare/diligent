@@ -1,24 +1,34 @@
 # CLAUDE.md
 
-This file is a compass. Follow the paths below based on what you need.
+Diligent — transparent, debuggable coding agent. Bun + TypeScript strict, monorepo.
 
-## First Steps
+## Navigate by Need
 
-New session → read `ARCHITECTURE.md` + `STATUS.md`
+Read only what your task requires. Each directory has a README.md to guide you further.
 
-## Navigation
-
-- Project identity & principles → `README.md`
-- Architecture & structure → `ARCHITECTURE.md`
-- Current phase & progress → `STATUS.md`
-- Design decisions → `docs/plan/decisions.md`
-- Phase implementation specs → `docs/plan/impl/`
-- Layer research → `docs/research/layers/`
-- Backlog → `BACKLOG.md`
-- Past assessments → `docs/review/`
+| Need | Start here |
+|------|-----------|
+| Project identity & principles | `README.md` |
+| Architecture, layers & patterns | `ARCHITECTURE.md` |
+| Current phase & progress | `STATUS.md` |
+| Source code — core (agent loop, providers, tools, config, sessions) | `packages/core/` |
+| Source code — cli (TUI) | `packages/cli/` |
+| Source code — debug-viewer (React web viewer) | `packages/debug-viewer/` |
+| Source code — e2e (integration tests) | `packages/e2e/` |
+| Planning, decisions & phase specs | `docs/plan/` |
+| Reference codebases (codex, opencode, pi-mono) | `docs/references/` |
+| Layer research & analysis | `docs/research/` |
+| Past tech-lead assessments | `docs/review/` |
+| Pending work items | `BACKLOG.md` |
 
 ## Rules
 
 - English only in all files
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
+
+## Dev Commands
+
+```
+bun test / bun run lint / bun run lint:fix / bun run typecheck
+```

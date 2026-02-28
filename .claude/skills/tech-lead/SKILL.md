@@ -47,7 +47,7 @@ Build a complete picture before forming judgments. The project is a custom codin
 **The research (why decisions were made):**
 - `docs/research/layers/` — Layer architecture documents (L0-L10)
 - `docs/research/llm-tools/` — Tool system research
-- `docs/research/references/` — Reference implementations studied (codex-rs, pi-agent, opencode)
+- `docs/references/` — Reference implementations studied (codex, opencode, pi-mono)
 
 ## Assessment Framework
 
