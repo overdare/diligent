@@ -41,8 +41,8 @@ Deferred to a future phase (post-Phase 4):
 
 ## Backlog
 
-4 pending items. See `BACKLOG.md` for full details.
+9 pending items. See `BACKLOG.md` for full details.
 
-- **P1**: Per-tool output limits (core loop quality)
-- **P2**: Context budget for compaction, background async piggyback (future capabilities)
-- **P3**: Debug-viewer type sync (opportunistic)
+- **P1**: Fix Gemini wizard bug · Fix 10 failing tests · Add 529/overloaded to classifyGeminiError · Per-tool output limits
+- **P2**: Extract isNetworkError shared util · Provider hints registry · Context budget for compaction · Background async piggyback
+- **P3**: Debug-viewer type sync
