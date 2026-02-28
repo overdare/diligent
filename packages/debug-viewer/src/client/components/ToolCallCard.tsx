@@ -33,9 +33,7 @@ export function ToolCallCard({ toolCall, pair, onSelect }: ToolCallCardProps) {
   const isError = pair?.result?.isError ?? false;
   const icon = TOOL_ICONS[toolCall.name] ?? "T";
   const duration =
-    pair?.startTime != null && pair?.endTime != null
-      ? formatDuration(pair.startTime, pair.endTime)
-      : undefined;
+    pair?.startTime != null && pair?.endTime != null ? formatDuration(pair.startTime, pair.endTime) : undefined;
 
   const inputPreview = Object.entries(toolCall.input)
     .map(([k, v]) => `${k}: ${typeof v === "string" ? v.slice(0, 50) : JSON.stringify(v).slice(0, 50)}`)

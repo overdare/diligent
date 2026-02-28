@@ -67,16 +67,12 @@ async function runLoop(
   // D087: Filter tools for plan mode (read-only exploration)
   const activeMode = config.mode ?? "default";
   const activeTools =
-    activeMode === "plan"
-      ? config.tools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name))
-      : config.tools;
+    activeMode === "plan" ? config.tools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name)) : config.tools;
   const registry = new Map(activeTools.map((t) => [t.name, t]));
 
   // D087: Prepend mode system prompt prefix
   const effectiveSystemPrompt =
-    activeMode === "default"
-      ? config.systemPrompt
-      : `${MODE_SYSTEM_PROMPT_PREFIXES[activeMode]}${config.systemPrompt}`;
+    activeMode === "default" ? config.systemPrompt : `${MODE_SYSTEM_PROMPT_PREFIXES[activeMode]}${config.systemPrompt}`;
 
   // D010: Wrap stream function with retry
   const retryStreamFn = withRetry(config.streamFunction, {

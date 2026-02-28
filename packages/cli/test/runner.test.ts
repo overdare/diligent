@@ -2,16 +2,18 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
 import { EventStream } from "@diligent/core";
 import type { AppConfig } from "../src/config";
+import { ProviderManager } from "../src/provider-manager";
 import { NonInteractiveRunner } from "../src/tui/runner";
 
 const TEST_MODEL: Model = {
   id: "test-model",
-  provider: "test",
+  provider: "anthropic",
   contextWindow: 100_000,
   maxOutputTokens: 4096,
 };
 
 function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
+  const pm = new ProviderManager({ provider: { anthropic: { apiKey: "test-key" } } });
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
@@ -22,6 +24,9 @@ function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
     diligent: {},
     sources: [],
     agentLoopFn,
+    skills: [],
+    mode: "default",
+    providerManager: pm,
   };
 }
 

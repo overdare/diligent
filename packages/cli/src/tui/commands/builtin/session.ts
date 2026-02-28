@@ -42,27 +42,24 @@ export const resumeCommand: Command = {
     }
 
     const { ListPicker } = await import("../../components/list-picker");
-    const items = sessions.map(s => ({
+    const items = sessions.map((s) => ({
       label: s.id,
       description: s.modified.toLocaleString(),
       value: s.id,
     }));
 
-    return new Promise<void>(resolve => {
-      const picker = new ListPicker(
-        { title: "Sessions", items },
-        async (value) => {
-          handle.hide();
-          ctx.requestRender();
-          if (value) {
-            const resumed = await ctx.sessionManager?.resume({ sessionId: value });
-            if (resumed) {
-              ctx.displayLines([`  ${t.dim}Resumed session: ${value}${t.reset}`]);
-            }
+    return new Promise<void>((resolve) => {
+      const picker = new ListPicker({ title: "Sessions", items }, async (value) => {
+        handle.hide();
+        ctx.requestRender();
+        if (value) {
+          const resumed = await ctx.sessionManager?.resume({ sessionId: value });
+          if (resumed) {
+            ctx.displayLines([`  ${t.dim}Resumed session: ${value}${t.reset}`]);
           }
-          resolve();
-        },
-      );
+        }
+        resolve();
+      });
       const handle = ctx.showOverlay(picker, { anchor: "center" });
       ctx.requestRender();
     });

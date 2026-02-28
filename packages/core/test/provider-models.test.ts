@@ -15,21 +15,21 @@ describe("KNOWN_MODELS", () => {
 
 describe("resolveModel", () => {
   it("resolves exact model ID", () => {
-    const model = resolveModel("gpt-4o");
-    expect(model.id).toBe("gpt-4o");
+    const model = resolveModel("gpt-5.3-codex");
+    expect(model.id).toBe("gpt-5.3-codex");
     expect(model.provider).toBe("openai");
-    expect(model.contextWindow).toBe(128_000);
+    expect(model.contextWindow).toBe(400_000);
   });
 
   it("resolves alias", () => {
     const model = resolveModel("sonnet");
-    expect(model.id).toBe("claude-sonnet-4-20250514");
+    expect(model.id).toBe("claude-sonnet-4-6");
     expect(model.provider).toBe("anthropic");
   });
 
   it("resolves another alias", () => {
-    const model = resolveModel("4o");
-    expect(model.id).toBe("gpt-4o");
+    const model = resolveModel("codex");
+    expect(model.id).toBe("gpt-5.3-codex");
     expect(model.provider).toBe("openai");
   });
 
@@ -45,9 +45,10 @@ describe("resolveModel", () => {
     expect(model.contextWindow).toBe(128_000);
   });
 
-  it("infers openai from o1/o3 prefix", () => {
+  it("infers openai from o-series prefix", () => {
     expect(resolveModel("o1-preview").provider).toBe("openai");
     expect(resolveModel("o3-mini").provider).toBe("openai");
+    expect(resolveModel("o4-mini").provider).toBe("openai");
   });
 
   it("defaults unknown model to anthropic", () => {

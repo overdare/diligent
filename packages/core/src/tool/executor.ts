@@ -1,8 +1,8 @@
 import type { ToolCallBlock } from "../types";
 import {
-  TRUNCATION_WARNING,
   persistFullOutput,
   shouldTruncate,
+  TRUNCATION_WARNING,
   truncateHead,
   truncateHeadTail,
   truncateTail,

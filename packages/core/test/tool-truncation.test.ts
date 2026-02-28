@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import {
   MAX_OUTPUT_BYTES,
   MAX_OUTPUT_LINES,
-  TRUNCATION_WARNING,
   persistFullOutput,
   shouldTruncate,
+  TRUNCATION_WARNING,
   truncateHead,
   truncateHeadTail,
   truncateTail,

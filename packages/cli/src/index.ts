@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import type { ModeKind } from "@diligent/core";
 import { ensureDiligentDir, listSessions } from "@diligent/core";
 import { loadConfig } from "./config";
+import type { ProviderName } from "./provider-manager";
 import { App } from "./tui/app";
 import { NonInteractiveRunner } from "./tui/runner";
 
@@ -49,6 +50,20 @@ async function main() {
       }
     }
     return;
+  }
+
+  // Non-interactive modes require API key upfront (no wizard available)
+  const isNonInteractive = values.prompt !== undefined || process.stdin.isTTY === false;
+  if (isNonInteractive) {
+    const provider = (config.model.provider ?? "anthropic") as ProviderName;
+    if (!config.providerManager.hasKeyFor(provider)) {
+      const envVar = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+      console.error(
+        `Error: No API key for ${provider}.\n` +
+          `Set ${envVar} environment variable, or run diligent interactively to configure.`,
+      );
+      process.exit(1);
+    }
   }
 
   if (values.prompt !== undefined) {

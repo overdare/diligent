@@ -12,7 +12,9 @@ import { TUIRenderer } from "../framework/renderer";
 import type { Terminal } from "../framework/terminal";
 
 /** Minimal cast helper — test events don't need every field */
-function ev(e: unknown): AgentEvent { return e as AgentEvent; }
+function ev(e: unknown): AgentEvent {
+  return e as AgentEvent;
+}
 
 // ---------------------------------------------------------------------------
 // Terminal simulator (same as renderer.test.ts, minimal copy)
@@ -89,13 +91,19 @@ class TerminalSim {
     const cmd = csi[2];
     const n = parseInt(params !== "" ? params : "1", 10) || 1;
     switch (cmd) {
-      case "A": this.cursorRow = Math.max(0, this.cursorRow - n); break;
+      case "A":
+        this.cursorRow = Math.max(0, this.cursorRow - n);
+        break;
       case "B":
         this.cursorRow += n;
         while (this.screen.length <= this.cursorRow) this.screen.push("");
         break;
-      case "C": this.cursorCol += n; break;
-      case "D": this.cursorCol = Math.max(0, this.cursorCol - n); break;
+      case "C":
+        this.cursorCol += n;
+        break;
+      case "D":
+        this.cursorCol = Math.max(0, this.cursorCol - n);
+        break;
       case "H": // cursor position
         if (params === "" || params === "1;1") {
           this.cursorRow = 0;
@@ -140,14 +148,24 @@ class TerminalSim {
 
 function makeTerminal(sim: TerminalSim): Terminal {
   return {
-    get columns() { return sim.columns; },
-    get rows() { return sim.rows; },
+    get columns() {
+      return sim.columns;
+    },
+    get rows() {
+      return sim.rows;
+    },
     isKittyEnabled: false,
-    write(data: string) { sim.feed(data); },
-    writeSynchronized(data: string) { sim.feed(data); },
+    write(data: string) {
+      sim.feed(data);
+    },
+    writeSynchronized(data: string) {
+      sim.feed(data);
+    },
     hideCursor() {},
     showCursor() {},
-    moveCursorTo(row: number, col: number) { sim.feed(`\x1b[${row + 1};${col + 1}H`); },
+    moveCursorTo(row: number, col: number) {
+      sim.feed(`\x1b[${row + 1};${col + 1}H`);
+    },
     clearLine() {},
     clearFromCursor() {},
     clearScreen() {},
@@ -169,10 +187,7 @@ function buildStack() {
   const requestRender = () => renderer.forceRender();
 
   const chatView = new ChatView({ requestRender });
-  const inputEditor = new InputEditor(
-    { onSubmit: () => {}, onCancel: () => {}, onExit: () => {} },
-    requestRender,
-  );
+  const inputEditor = new InputEditor({ onSubmit: () => {}, onCancel: () => {}, onExit: () => {} }, requestRender);
   const statusBar = new StatusBar();
 
   const container = new Container();
@@ -239,14 +254,16 @@ describe("Integration: full tool execution cycle", () => {
     chatView.addUserMessage("run something");
 
     chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
-    chatView.handleEvent(ev({
-      type: "tool_end",
-      toolCallId: "t1",
-      itemId: "i1",
-      toolName: "bash",
-      output: "line1\nline2\nline3",
-      isError: false,
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "tool_end",
+        toolCallId: "t1",
+        itemId: "i1",
+        toolName: "bash",
+        output: "line1\nline2\nline3",
+        isError: false,
+      }),
+    );
 
     expect(sim.lineAt(sim.cursorRow)).toBe("› ");
   });
@@ -256,20 +273,26 @@ describe("Integration: full tool execution cycle", () => {
     chatView.addUserMessage("do stuff");
 
     chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
-    chatView.handleEvent(ev({ type: "tool_end", toolCallId: "t1", itemId: "i1", toolName: "bash", output: "done", isError: false }));
+    chatView.handleEvent(
+      ev({ type: "tool_end", toolCallId: "t1", itemId: "i1", toolName: "bash", output: "done", isError: false }),
+    );
     chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
-    chatView.handleEvent(ev({
-      type: "message_delta",
-      itemId: "m1",
-      message: {},
-      delta: { type: "text_delta", delta: "The result is done.\n" },
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "The result is done.\n" },
+      }),
+    );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
-    chatView.handleEvent(ev({
-      type: "usage",
-      usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
-      cost: 0.001,
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "usage",
+        usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        cost: 0.001,
+      }),
+    );
 
     // Only 2 "› ": one in user message history, one live input
     expect(sim.countOccurrences("› ")).toBe(2);
@@ -301,15 +324,19 @@ describe("Integration: full tool execution cycle", () => {
     chatView.addUserMessage("do lots of stuff");
 
     for (let i = 0; i < 5; i++) {
-      chatView.handleEvent(ev({ type: "tool_start", toolName: `tool${i}`, toolCallId: `tc${i}`, itemId: `i${i}`, input: {} }));
-      chatView.handleEvent(ev({
-        type: "tool_end",
-        toolCallId: `tc${i}`,
-        itemId: `i${i}`,
-        toolName: `tool${i}`,
-        output: `output of tool${i}\nwith two lines`,
-        isError: false,
-      }));
+      chatView.handleEvent(
+        ev({ type: "tool_start", toolName: `tool${i}`, toolCallId: `tc${i}`, itemId: `i${i}`, input: {} }),
+      );
+      chatView.handleEvent(
+        ev({
+          type: "tool_end",
+          toolCallId: `tc${i}`,
+          itemId: `i${i}`,
+          toolName: `tool${i}`,
+          output: `output of tool${i}\nwith two lines`,
+          isError: false,
+        }),
+      );
     }
 
     expect(sim.lineAt(sim.cursorRow)).toBe("› ");
@@ -336,7 +363,9 @@ describe("Integration: streaming markdown — rapid commits", () => {
     ];
 
     for (const delta of deltas) {
-      chatView.handleEvent(ev({ type: "message_delta", itemId: "m1", message: {}, delta: { type: "text_delta", delta } }));
+      chatView.handleEvent(
+        ev({ type: "message_delta", itemId: "m1", message: {}, delta: { type: "text_delta", delta } }),
+      );
     }
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
 
@@ -356,15 +385,23 @@ describe("Integration: streaming markdown — rapid commits", () => {
 
     chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
     // Partial bold: ** opens but no close yet
-    chatView.handleEvent(ev({
-      type: "message_delta", itemId: "m1", message: {},
-      delta: { type: "text_delta", delta: "The project is in **Phase 4b" },
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "The project is in **Phase 4b" },
+      }),
+    );
     // Newline commits while bold is still open
-    chatView.handleEvent(ev({
-      type: "message_delta", itemId: "m1", message: {},
-      delta: { type: "text_delta", delta: "** planning.\n" },
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "** planning.\n" },
+      }),
+    );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
 
     expect(sim.countOccurrences("› ")).toBe(2);
@@ -385,10 +422,14 @@ describe("Integration: streaming markdown — rapid commits", () => {
     const lines = ["First line.\n", "Second line.\n", "Third line.\n"];
 
     for (const delta of lines) {
-      chatView.handleEvent(ev({
-        type: "message_delta", itemId: "m1", message: {},
-        delta: { type: "text_delta", delta },
-      }));
+      chatView.handleEvent(
+        ev({
+          type: "message_delta",
+          itemId: "m1",
+          message: {},
+          delta: { type: "text_delta", delta },
+        }),
+      );
       // Within a single render, no line should appear more than once
       const nonEmpty = contentLines(sim.screen);
       expect(nonEmpty.length).toBe(new Set(nonEmpty).size);
@@ -412,17 +453,25 @@ describe("Integration: streaming markdown — rapid commits", () => {
     chatView.addUserMessage("go");
     chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
 
-    chatView.handleEvent(ev({
-      type: "message_delta", itemId: "m1", message: {},
-      delta: { type: "text_delta", delta: "First line.\n" },
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "First line.\n" },
+      }),
+    );
     const afterFirst = contentLines(sim.screen);
     expect(afterFirst.length).toBe(new Set(afterFirst).size);
 
-    chatView.handleEvent(ev({
-      type: "message_delta", itemId: "m1", message: {},
-      delta: { type: "text_delta", delta: "Second line.\n" },
-    }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "Second line.\n" },
+      }),
+    );
     const afterSecond = contentLines(sim.screen);
     expect(afterSecond.length).toBe(new Set(afterSecond).size);
 
@@ -436,4 +485,3 @@ describe("Integration: streaming markdown — rapid commits", () => {
     expect(sim.countOccurrences("Second line.")).toBe(1);
   });
 });
-

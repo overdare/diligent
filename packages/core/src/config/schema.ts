@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ModelId = z.string().describe("Model identifier, e.g. 'claude-sonnet-4-20250514'");
+export const ModelId = z.string().describe("Model identifier, e.g. 'claude-sonnet-4-6'");
 
 export const DiligentConfigSchema = z
   .object({
@@ -74,5 +74,5 @@ export const DiligentConfigSchema = z
 export type DiligentConfig = z.infer<typeof DiligentConfigSchema>;
 
 export const DEFAULT_CONFIG: DiligentConfig = {
-  model: "claude-sonnet-4-20250514",
+  model: "claude-sonnet-4-6",
 };

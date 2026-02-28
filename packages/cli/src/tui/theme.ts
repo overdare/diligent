@@ -31,16 +31,16 @@ export const t = {
   inverse: INVERSE,
 
   // Semantic colors
-  accent: CYAN,         // interactive elements, selected items, code, links
-  success: GREEN,       // completed tool calls, status indicators
-  error: RED,           // errors, failures
-  warn: YELLOW,         // warnings, plan mode
-  muted: DIM,           // hints, secondary text, descriptions
+  accent: CYAN, // interactive elements, selected items, code, links
+  success: GREEN, // completed tool calls, status indicators
+  error: RED, // errors, failures
+  warn: YELLOW, // warnings, plan mode
+  muted: DIM, // hints, secondary text, descriptions
 
   // Mode-specific
   modePlan: YELLOW,
   modeExecute: DARK_GREEN,
 
   // Backgrounds
-  bgUser: BG_GRAY,      // user message background
+  bgUser: BG_GRAY, // user message background
 } as const;

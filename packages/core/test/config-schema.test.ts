@@ -75,7 +75,7 @@ describe("DiligentConfigSchema", () => {
 
 describe("DEFAULT_CONFIG", () => {
   it("has a model set", () => {
-    expect(DEFAULT_CONFIG.model).toBe("claude-sonnet-4-20250514");
+    expect(DEFAULT_CONFIG.model).toBe("claude-sonnet-4-6");
   });
 
   it("validates against schema", () => {

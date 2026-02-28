@@ -5,9 +5,9 @@ export type { TruncationResult } from "./truncation";
 export {
   MAX_OUTPUT_BYTES,
   MAX_OUTPUT_LINES,
-  TRUNCATION_WARNING,
   persistFullOutput,
   shouldTruncate,
+  TRUNCATION_WARNING,
   truncateHead,
   truncateHeadTail,
   truncateTail,

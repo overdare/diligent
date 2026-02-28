@@ -138,7 +138,8 @@ export function truncateHeadTail(
     return { output, truncated: false, originalBytes, originalLines };
   }
 
-  const omittedBytes = originalBytes - new TextEncoder().encode(headPart).length - new TextEncoder().encode(tailPart).length;
+  const omittedBytes =
+    originalBytes - new TextEncoder().encode(headPart).length - new TextEncoder().encode(tailPart).length;
   const omittedLines = originalLines - countLines(headPart) - countLines(tailPart);
 
   const marker = `\n\n--- [${omittedBytes.toLocaleString()} bytes / ${omittedLines.toLocaleString()} lines omitted] ---\n\n`;

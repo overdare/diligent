@@ -7,21 +7,21 @@ export interface ModelDefinition extends Model {
 export const KNOWN_MODELS: ModelDefinition[] = [
   // Anthropic
   {
-    id: "claude-opus-4-20250514",
+    id: "claude-opus-4-6",
     provider: "anthropic",
     contextWindow: 200_000,
-    maxOutputTokens: 16_384,
-    inputCostPer1M: 15.0,
-    outputCostPer1M: 75.0,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 5.0,
+    outputCostPer1M: 25.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["claude-opus", "opus"],
   },
   {
-    id: "claude-sonnet-4-20250514",
+    id: "claude-sonnet-4-6",
     provider: "anthropic",
     contextWindow: 200_000,
-    maxOutputTokens: 16_384,
+    maxOutputTokens: 64_000,
     inputCostPer1M: 3.0,
     outputCostPer1M: 15.0,
     supportsThinking: true,
@@ -29,42 +29,56 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     aliases: ["claude-sonnet", "sonnet"],
   },
   {
-    id: "claude-haiku-3-5-20241022",
+    id: "claude-haiku-4-5-20251001",
     provider: "anthropic",
     contextWindow: 200_000,
-    maxOutputTokens: 8_192,
-    inputCostPer1M: 0.8,
-    outputCostPer1M: 4.0,
+    maxOutputTokens: 64_000,
+    inputCostPer1M: 1.0,
+    outputCostPer1M: 5.0,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
     aliases: ["claude-haiku", "haiku"],
   },
   // OpenAI
   {
-    id: "gpt-4o",
+    id: "gpt-5.3-codex",
     provider: "openai",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    inputCostPer1M: 2.5,
-    outputCostPer1M: 10.0,
-    aliases: ["4o"],
-  },
-  {
-    id: "gpt-4o-mini",
-    provider: "openai",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.6,
-    aliases: ["4o-mini"],
+    contextWindow: 400_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 1.75,
+    outputCostPer1M: 14.0,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+    aliases: ["codex"],
   },
   {
     id: "o3",
     provider: "openai",
     contextWindow: 200_000,
     maxOutputTokens: 100_000,
-    inputCostPer1M: 10.0,
-    outputCostPer1M: 40.0,
+    inputCostPer1M: 2.0,
+    outputCostPer1M: 8.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
+  },
+  {
+    id: "o4-mini",
+    provider: "openai",
+    contextWindow: 200_000,
+    maxOutputTokens: 100_000,
+    inputCostPer1M: 1.1,
+    outputCostPer1M: 4.4,
+    supportsThinking: true,
+    defaultBudgetTokens: 10_000,
+    aliases: ["o4"],
+  },
+  {
+    id: "gpt-4.1",
+    provider: "openai",
+    contextWindow: 1_047_576,
+    maxOutputTokens: 32_768,
+    inputCostPer1M: 2.0,
+    outputCostPer1M: 8.0,
   },
 ];
 
@@ -85,7 +99,7 @@ export function resolveModel(modelId: string): Model {
   if (modelId.startsWith("claude-")) {
     return { id: modelId, provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16_384 };
   }
-  if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3")) {
+  if (modelId.startsWith("gpt-") || modelId.match(/^o[1-9]/)) {
     return { id: modelId, provider: "openai", contextWindow: 128_000, maxOutputTokens: 16_384 };
   }
 

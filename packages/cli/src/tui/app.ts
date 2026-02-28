@@ -1,22 +1,26 @@
 import type { AgentEvent, DiligentPaths, Message, ModeKind, SkillMetadata, UserMessage } from "@diligent/core";
-import { agentLoop, SessionManager } from "@diligent/core";
+import { agentLoop, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
-import { ChatView } from "./components/chat-view";
-import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
-import { InputEditor } from "./components/input-editor";
-import { StatusBar } from "./components/status-bar";
+import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
 import { registerBuiltinCommands } from "./commands/builtin/index";
+import { promptSaveKey } from "./commands/builtin/provider";
 import { parseCommand } from "./commands/parser";
 import { CommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
+import { ChatView } from "./components/chat-view";
+import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
+import { InputEditor } from "./components/input-editor";
+import { ListPicker, type ListPickerItem } from "./components/list-picker";
+import { StatusBar } from "./components/status-bar";
+import { TextInput } from "./components/text-input";
 import { Container } from "./framework/container";
+import { matchesKey } from "./framework/keys";
 import { OverlayStack } from "./framework/overlay";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
-import { matchesKey } from "./framework/keys";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 
@@ -88,17 +92,25 @@ export class App {
   }
 
   async start(): Promise<void> {
-    // Start terminal
+    // Start terminal and rendering first (overlays need renderer to be active)
     this.terminal.start(
       (data) => this.handleInput(data),
       () => this.renderer.requestRender(),
     );
-
-    // Show welcome banner
-    this.chatView.addLines(this.buildWelcomeBanner());
+    this.renderer.setFocus(this.inputEditor);
+    this.renderer.start();
 
     // Update status bar with model info and cwd
     this.statusBar.update({ model: this.config.model.id, status: "idle", cwd: process.cwd(), mode: this.currentMode });
+
+    // Setup wizard: if current provider has no API key, prompt user
+    const currentProvider = (this.config.model.provider ?? "anthropic") as ProviderName;
+    if (!this.config.providerManager.hasKeyFor(currentProvider)) {
+      await this.runSetupWizard();
+    }
+
+    // Show welcome banner
+    this.chatView.addLines(this.buildWelcomeBanner());
 
     // Initialize SessionManager
     if (this.paths) {
@@ -133,9 +145,96 @@ export class App {
       }
     }
 
-    // Set focus to input and start rendering
-    this.renderer.setFocus(this.inputEditor);
-    this.renderer.start();
+    this.renderer.requestRender();
+  }
+
+  /** Setup wizard: provider selection → API key input → save confirmation */
+  private async runSetupWizard(): Promise<void> {
+    this.chatView.addLines(["", `  ${t.warn}No API key found.${t.reset} Let's set one up.`, ""]);
+    this.renderer.requestRender();
+
+    // Step 1: Pick provider
+    const provider = await this.wizardPickProvider();
+    if (!provider) {
+      this.chatView.addLines([
+        `  ${t.dim}Setup skipped. Use /provider set <anthropic|openai> to configure later.${t.reset}`,
+        "",
+      ]);
+      this.renderer.requestRender();
+      return;
+    }
+
+    // Step 2: Enter API key
+    const apiKey = await this.wizardEnterApiKey(provider);
+    if (!apiKey) {
+      this.chatView.addLines([
+        `  ${t.dim}Setup skipped. Use /provider set ${provider} to configure later.${t.reset}`,
+        "",
+      ]);
+      this.renderer.requestRender();
+      return;
+    }
+
+    // Apply key immediately
+    this.config.providerManager.setApiKey(provider, apiKey);
+
+    // Step 3: Save to global config?
+    const ctx = this.buildCommandContext();
+    await promptSaveKey(provider, apiKey, ctx);
+
+    // Switch model if the selected provider differs from current
+    const currentProvider = this.config.model.provider ?? "anthropic";
+    if (currentProvider !== provider) {
+      const defaultModelId = DEFAULT_MODELS[provider];
+      this.config.model = resolveModel(defaultModelId);
+      this.statusBar.update({ model: this.config.model.id });
+    }
+
+    this.chatView.addLines([`  ${t.success}Ready!${t.reset} Using ${t.bold}${this.config.model.id}${t.reset}`, ""]);
+    this.renderer.requestRender();
+  }
+
+  private wizardPickProvider(): Promise<ProviderName | null> {
+    return new Promise((resolve) => {
+      const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
+        label: p,
+        description: p === "anthropic" ? "Claude models" : "GPT & o-series models",
+        value: p,
+      }));
+
+      const picker = new ListPicker({ title: "Select Provider", items }, (value) => {
+        handle.hide();
+        this.renderer.requestRender();
+        resolve(value as ProviderName | null);
+      });
+      const handle = this.overlayStack.show(picker, { anchor: "center" });
+      this.renderer.requestRender();
+    });
+  }
+
+  private wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
+    return new Promise((resolve) => {
+      const hint =
+        provider === "anthropic"
+          ? "https://console.anthropic.com/settings/keys"
+          : "https://platform.openai.com/api-keys";
+
+      const input = new TextInput(
+        {
+          title: `${provider} API Key`,
+          message: `Enter your ${provider} API key (${hint})`,
+          placeholder: provider === "anthropic" ? "sk-ant-..." : "sk-...",
+          masked: true,
+        },
+        (value) => {
+          handle.hide();
+          this.renderer.requestRender();
+          resolve(value);
+        },
+      );
+      const handle = this.overlayStack.show(input, { anchor: "center" });
+      this.renderer.requestRender();
+    });
   }
 
   private handleInput(data: string): void {
@@ -241,7 +340,10 @@ export class App {
   private async handleCommand(name: string, args: string | undefined): Promise<void> {
     const command = this.commandRegistry.get(name);
     if (!command) {
-      this.chatView.addLines([`  ${t.error}Unknown command: /${name}${t.reset}`, "  Type /help for available commands."]);
+      this.chatView.addLines([
+        `  ${t.error}Unknown command: /${name}${t.reset}`,
+        "  Type /help for available commands.",
+      ]);
       this.renderer.requestRender();
       return;
     }
@@ -374,8 +476,7 @@ export class App {
     const inner = boxWidth - 4; // 2 borders + 2 spaces padding
 
     const pad = (s: string) => s + " ".repeat(Math.max(0, inner - s.length));
-    const truncate = (s: string) =>
-      s.length > inner ? `${s.slice(0, inner - 1)}\u2026` : s;
+    const truncate = (s: string) => (s.length > inner ? `${s.slice(0, inner - 1)}\u2026` : s);
 
     const title = `>_ diligent (v${pkgVersion})`;
     const modelLine = truncate(`model:     ${this.config.model.id}`);

@@ -6,6 +6,8 @@ export interface ListPickerItem {
   label: string;
   description?: string;
   value: string;
+  /** If true, rendered as a non-selectable section header */
+  header?: boolean;
 }
 
 export interface ListPickerOptions {
@@ -15,6 +17,8 @@ export interface ListPickerOptions {
   selectedIndex?: number;
   /** Max visible items before scrolling */
   maxVisible?: number;
+  /** Enable type-to-filter (default: true) */
+  filterable?: boolean;
 }
 
 const DEFAULT_MAX_VISIBLE = 10;
@@ -29,8 +33,10 @@ export class ListPicker implements Component {
     private options: ListPickerOptions,
     private onResult: (value: string | null) => void,
   ) {
-    this.selectedIndex = options.selectedIndex ?? 0;
     this.filteredItems = [...options.items];
+    const initial = options.selectedIndex ?? 0;
+    // Ensure initial selection is not on a header
+    this.selectedIndex = this.nextSelectable(initial, 1);
   }
 
   render(width: number): string[] {
@@ -86,6 +92,15 @@ export class ListPicker implements Component {
       const end = Math.min(items.length, this.scrollOffset + visibleCount);
       for (let i = this.scrollOffset; i < end; i++) {
         const item = items[i];
+
+        // Render section headers
+        if (item.header) {
+          const headerText = `── ${item.label} ──`;
+          const hPad = " ".repeat(Math.max(0, innerWidth - headerText.length));
+          lines.push(`${t.bold}│${t.reset} ${t.dim}${headerText}${hPad}${t.reset} ${t.bold}│${t.reset}`);
+          continue;
+        }
+
         const isSelected = i === this.selectedIndex;
         const marker = isSelected ? "▸" : " ";
 
@@ -106,7 +121,9 @@ export class ListPicker implements Component {
 
         const descStr = descPart ? `  ${t.dim}${descPart}${t.reset}` : "";
         if (isSelected) {
-          lines.push(`${t.bold}│${t.reset} ${t.accent}${marker} ${labelPart}${descStr}${t.reset}${padding} ${t.bold}│${t.reset}`);
+          lines.push(
+            `${t.bold}│${t.reset} ${t.accent}${marker} ${labelPart}${descStr}${t.reset}${padding} ${t.bold}│${t.reset}`,
+          );
         } else {
           lines.push(`${t.bold}│${t.reset} ${marker} ${labelPart}${descStr}${padding} ${t.bold}│${t.reset}`);
         }
@@ -129,16 +146,14 @@ export class ListPicker implements Component {
 
   handleInput(data: string): void {
     if (matchesKey(data, "up")) {
-      if (this.selectedIndex > 0) {
-        this.selectedIndex--;
-      }
+      const next = this.nextSelectable(this.selectedIndex - 1, -1);
+      if (next >= 0) this.selectedIndex = next;
       return;
     }
 
     if (matchesKey(data, "down")) {
-      if (this.selectedIndex < this.filteredItems.length - 1) {
-        this.selectedIndex++;
-      }
+      const next = this.nextSelectable(this.selectedIndex + 1, 1);
+      if (next < this.filteredItems.length) this.selectedIndex = next;
       return;
     }
 
@@ -153,18 +168,20 @@ export class ListPicker implements Component {
       return;
     }
 
-    if (matchesKey(data, "backspace")) {
-      if (this.filter.length > 0) {
-        this.filter = this.filter.slice(0, -1);
+    if (this.options.filterable !== false) {
+      if (matchesKey(data, "backspace")) {
+        if (this.filter.length > 0) {
+          this.filter = this.filter.slice(0, -1);
+          this.applyFilter();
+        }
+        return;
+      }
+
+      // Type to filter
+      if (isPrintable(data)) {
+        this.filter += data;
         this.applyFilter();
       }
-      return;
-    }
-
-    // Type to filter
-    if (isPrintable(data)) {
-      this.filter += data;
-      this.applyFilter();
     }
   }
 
@@ -172,10 +189,20 @@ export class ListPicker implements Component {
     // No cached state to clear
   }
 
+  /** Find the nearest selectable (non-header) index in the given direction */
+  private nextSelectable(from: number, direction: 1 | -1): number {
+    let idx = from;
+    while (idx >= 0 && idx < this.filteredItems.length && this.filteredItems[idx].header) {
+      idx += direction;
+    }
+    return idx;
+  }
+
   private applyFilter(): void {
     const lower = this.filter.toLowerCase();
+    // When filtering, hide headers and show only matching items
     this.filteredItems = this.options.items.filter(
-      (i) => i.label.toLowerCase().includes(lower) || (i.description?.toLowerCase().includes(lower) ?? false),
+      (i) => !i.header && (i.label.toLowerCase().includes(lower) || (i.description?.toLowerCase().includes(lower) ?? false)),
     );
     this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredItems.length - 1));
     this.scrollOffset = 0;

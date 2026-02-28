@@ -45,18 +45,18 @@ export const skillsPickerCommand: Command = {
       return;
     }
 
-    const items: ListPickerItem[] = ctx.skills.map(s => ({
+    const items: ListPickerItem[] = ctx.skills.map((s) => ({
       label: s.name,
       description: s.description,
       value: s.name,
     }));
 
-    return new Promise<void>(resolve => {
+    return new Promise<void>((resolve) => {
       const picker = new ListPicker({ title: "Skills", items }, async (value) => {
         handle.hide();
         ctx.requestRender();
         if (value) {
-          const skill = ctx.skills.find(s => s.name === value);
+          const skill = ctx.skills.find((s) => s.name === value);
           if (skill) {
             const cmd = createSkillInvokeCommand(skill.name, skill);
             await cmd.handler(undefined, ctx);

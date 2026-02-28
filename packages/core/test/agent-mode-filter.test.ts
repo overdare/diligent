@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { agentLoop } from "../src/agent/loop";
 import type { AgentLoopConfig } from "../src/agent/types";
 import { MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "../src/agent/types";
-import { agentLoop } from "../src/agent/loop";
 import { EventStream } from "../src/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../src/provider/types";
 import type { Tool } from "../src/tool/types";
@@ -98,7 +98,8 @@ describe("agentLoop mode filtering", () => {
       mode: "default",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts).toHaveLength(1);
@@ -119,7 +120,8 @@ describe("agentLoop mode filtering", () => {
       mode: "plan",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts).toHaveLength(1);
@@ -144,7 +146,8 @@ describe("agentLoop mode filtering", () => {
       mode: "execute",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts).toHaveLength(1);
@@ -163,7 +166,8 @@ describe("agentLoop mode filtering", () => {
       // mode not set
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts).toHaveLength(1);
@@ -183,7 +187,8 @@ describe("agentLoop mode prompt injection", () => {
       mode: "default",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts[0].systemPrompt).toBe("my system prompt");
@@ -199,7 +204,8 @@ describe("agentLoop mode prompt injection", () => {
       mode: "plan",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts[0].systemPrompt).toStartWith(MODE_SYSTEM_PROMPT_PREFIXES.plan);
@@ -216,7 +222,8 @@ describe("agentLoop mode prompt injection", () => {
       mode: "execute",
     };
     const stream = agentLoop([], config);
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await stream.result();
 
     expect(capturedContexts[0].systemPrompt).toStartWith(MODE_SYSTEM_PROMPT_PREFIXES.execute);

@@ -1,7 +1,14 @@
 // Types
 
 // Agent
-export type { AgentEvent, AgentLoopConfig, LoopDetectionResult, MessageDelta, ModeKind, SerializableError } from "./agent/index";
+export type {
+  AgentEvent,
+  AgentLoopConfig,
+  LoopDetectionResult,
+  MessageDelta,
+  ModeKind,
+  SerializableError,
+} from "./agent/index";
 export { agentLoop, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
 // Config
 export type { DiligentConfig, DiscoveredInstruction } from "./config/index";
@@ -56,8 +63,8 @@ export type {
   CompactionDetails,
   CompactionEntry,
   CutPointResult,
-  ModelChangeEntry,
   ModeChangeEntry,
+  ModelChangeEntry,
   ResumeSessionOptions,
   SessionContext,
   SessionEntry,

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverSkills } from "../discovery";
@@ -64,10 +63,7 @@ describe("discoverSkills", () => {
     const root = await createTmpDir();
     const hiddenDir = join(root, ".diligent", "skills", ".hidden-skill");
     await mkdir(hiddenDir, { recursive: true });
-    await writeFile(
-      join(hiddenDir, "SKILL.md"),
-      makeSkillMd("hidden-skill", "Should be skipped"),
-    );
+    await writeFile(join(hiddenDir, "SKILL.md"), makeSkillMd("hidden-skill", "Should be skipped"));
 
     const result = await discoverSkills({ cwd: root });
 
@@ -151,36 +147,24 @@ describe("discoverSkills", () => {
     // Project skill
     const projectDir = join(root, ".diligent", "skills", "project-skill");
     await mkdir(projectDir, { recursive: true });
-    await writeFile(
-      join(projectDir, "SKILL.md"),
-      makeSkillMd("project-skill", "From project"),
-    );
+    await writeFile(join(projectDir, "SKILL.md"), makeSkillMd("project-skill", "From project"));
 
     // Agents skill
     const agentsDir = join(root, ".agents", "skills", "agents-skill");
     await mkdir(agentsDir, { recursive: true });
-    await writeFile(
-      join(agentsDir, "SKILL.md"),
-      makeSkillMd("agents-skill", "From agents"),
-    );
+    await writeFile(join(agentsDir, "SKILL.md"), makeSkillMd("agents-skill", "From agents"));
 
     // Global skill
     const globalDir = join(root, "global-config");
     const globalSkillDir = join(globalDir, "skills", "global-skill");
     await mkdir(globalSkillDir, { recursive: true });
-    await writeFile(
-      join(globalSkillDir, "SKILL.md"),
-      makeSkillMd("global-skill", "From global"),
-    );
+    await writeFile(join(globalSkillDir, "SKILL.md"), makeSkillMd("global-skill", "From global"));
 
     // Config path skill
     const configPathDir = join(root, "extra-skills");
     const configSkillDir = join(configPathDir, "config-skill");
     await mkdir(configSkillDir, { recursive: true });
-    await writeFile(
-      join(configSkillDir, "SKILL.md"),
-      makeSkillMd("config-skill", "From config path"),
-    );
+    await writeFile(join(configSkillDir, "SKILL.md"), makeSkillMd("config-skill", "From config path"));
 
     const result = await discoverSkills({
       cwd: root,

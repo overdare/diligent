@@ -1,7 +1,7 @@
-import type { AppConfig } from "../../config";
 import type { ModeKind, SessionManager, SkillMetadata } from "@diligent/core";
-import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
+import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
+import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
 import type { CommandRegistry } from "./registry";
 
 export interface Command {

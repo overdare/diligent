@@ -73,12 +73,9 @@ export class StatusBar implements Component {
     }
 
     const statusHint =
-      this.info.status === "busy" ? "ctrl+c to cancel" :
-      this.info.status === "retry" ? "retrying…" : "";
+      this.info.status === "busy" ? "ctrl+c to cancel" : this.info.status === "retry" ? "retrying…" : "";
     const modeHint =
-      !statusHint && this.info.mode && this.info.mode !== "default"
-        ? formatModeHint(this.info.mode)
-        : "";
+      !statusHint && this.info.mode && this.info.mode !== "default" ? formatModeHint(this.info.mode) : "";
     const rightHint = statusHint || modeHint;
 
     if (leftParts.length === 0 && !rightHint) return [];

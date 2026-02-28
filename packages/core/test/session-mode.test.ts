@@ -1,13 +1,13 @@
-import { describe, expect, test, afterEach } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolvePaths } from "../src/infrastructure/diligent-dir";
-import { SessionManager } from "../src/session/manager";
-import { SESSION_VERSION } from "../src/session/types";
-import type { ModeChangeEntry } from "../src/session/types";
-import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
 import { EventStream } from "../src/event-stream";
+import { resolvePaths } from "../src/infrastructure/diligent-dir";
+import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
+import { SessionManager } from "../src/session/manager";
+import type { ModeChangeEntry } from "../src/session/types";
+import { SESSION_VERSION } from "../src/session/types";
 import type { AssistantMessage } from "../src/types";
 
 const TEST_ROOT = join(tmpdir(), `diligent-session-mode-test-${Date.now()}`);

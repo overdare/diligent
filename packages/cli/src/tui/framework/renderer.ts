@@ -209,8 +209,17 @@ export class TUIRenderer {
   private compositeOverlays(baseLines: string[], width: number): string[] {
     if (!this.overlayStack) return baseLines;
 
-    const result = [...baseLines];
     const visible = this.overlayStack.getVisible();
+    if (visible.length === 0) return baseLines;
+
+    const result = [...baseLines];
+
+    // Pad to terminal height only when a center-anchored overlay needs room.
+    const hasCenterOverlay = visible.some(({ options: o }) => (o.anchor ?? "center") === "center");
+    const topPad = hasCenterOverlay ? Math.max(0, this.terminal.rows - result.length) : 0;
+    for (let i = 0; i < topPad; i++) {
+      result.unshift("");
+    }
 
     for (const { component, options } of visible) {
       const overlayLines = component.render(width);
@@ -221,11 +230,10 @@ export class TUIRenderer {
         0,
       );
 
-      // Resolve position — use content height (not terminal.rows) for inline viewport
       let startRow: number;
       let startCol: number;
       const anchor = options.anchor ?? "center";
-      const totalRows = baseLines.length;
+      const totalRows = result.length;
 
       switch (anchor) {
         case "center":
@@ -237,7 +245,7 @@ export class TUIRenderer {
           startCol = Math.max(0, Math.floor((width - overlayWidth) / 2));
           break;
         case "top-left":
-          startRow = options.offsetY ?? 0;
+          startRow = (options.offsetY ?? 0) + topPad;
           startCol = options.offsetX ?? 0;
           break;
         default:

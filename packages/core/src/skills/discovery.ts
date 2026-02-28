@@ -1,9 +1,9 @@
 import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
-import { join } from "node:path";
 import { homedir } from "node:os";
-import type { SkillLoadError, SkillLoadResult, SkillMetadata } from "./types";
+import { join } from "node:path";
 import { parseFrontmatter, validateSkillName } from "./frontmatter";
+import type { SkillLoadError, SkillLoadResult, SkillMetadata } from "./types";
 
 export interface DiscoveryOptions {
   /** Project root (cwd) */
@@ -35,9 +35,7 @@ export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLo
   return { skills, errors };
 }
 
-function getDiscoveryRoots(
-  options: DiscoveryOptions,
-): Array<{ dir: string; source: SkillMetadata["source"] }> {
+function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; source: SkillMetadata["source"] }> {
   const roots: Array<{ dir: string; source: SkillMetadata["source"] }> = [];
 
   // 1. Project local
@@ -67,7 +65,7 @@ async function scanSkillDirectory(
 ): Promise<void> {
   let entries: Dirent[];
   try {
-    entries = await readdir(dir, { withFileTypes: true, encoding: "utf8" }) as Dirent[];
+    entries = (await readdir(dir, { withFileTypes: true, encoding: "utf8" })) as Dirent[];
   } catch {
     // Directory doesn't exist — not an error
     return;

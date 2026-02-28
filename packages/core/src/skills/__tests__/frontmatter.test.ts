@@ -63,9 +63,7 @@ describe("parseFrontmatter", () => {
 
   it("returns error when description is too long", () => {
     const longDesc = "a".repeat(1025);
-    const content = ["---", "name: my-skill", `description: ${longDesc}`, "---", "body"].join(
-      "\n",
-    );
+    const content = ["---", "name: my-skill", `description: ${longDesc}`, "---", "body"].join("\n");
 
     const result = parseFrontmatter(content, "/test/SKILL.md");
     expect("error" in result).toBe(true);
@@ -92,13 +90,7 @@ describe("parseFrontmatter", () => {
   });
 
   it("parses quoted values correctly (double quotes)", () => {
-    const content = [
-      "---",
-      'name: "my-skill"',
-      'description: "A useful skill with: colons"',
-      "---",
-      "body",
-    ].join("\n");
+    const content = ["---", 'name: "my-skill"', 'description: "A useful skill with: colons"', "---", "body"].join("\n");
 
     const result = parseFrontmatter(content, "/test/SKILL.md");
     expect("error" in result).toBe(false);
@@ -109,13 +101,7 @@ describe("parseFrontmatter", () => {
   });
 
   it("parses quoted values correctly (single quotes)", () => {
-    const content = [
-      "---",
-      "name: 'my-skill'",
-      "description: 'A useful skill'",
-      "---",
-      "body",
-    ].join("\n");
+    const content = ["---", "name: 'my-skill'", "description: 'A useful skill'", "---", "body"].join("\n");
 
     const result = parseFrontmatter(content, "/test/SKILL.md");
     expect("error" in result).toBe(false);
@@ -172,16 +158,7 @@ describe("parseFrontmatter", () => {
   });
 
   it("skips empty lines in frontmatter", () => {
-    const content = [
-      "---",
-      "",
-      "name: my-skill",
-      "",
-      "description: A skill",
-      "",
-      "---",
-      "body",
-    ].join("\n");
+    const content = ["---", "", "name: my-skill", "", "description: A skill", "", "---", "body"].join("\n");
 
     const result = parseFrontmatter(content, "/test/SKILL.md");
     expect("error" in result).toBe(false);
@@ -207,9 +184,7 @@ describe("validateSkillName", () => {
 
 describe("extractBody", () => {
   it("extracts body after frontmatter", () => {
-    const content = ["---", "name: my-skill", "description: A skill", "---", "# Body", "Text."].join(
-      "\n",
-    );
+    const content = ["---", "name: my-skill", "description: A skill", "---", "# Body", "Text."].join("\n");
 
     const body = extractBody(content);
     expect(body).toBe("# Body\nText.");

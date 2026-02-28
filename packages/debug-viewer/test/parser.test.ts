@@ -150,7 +150,14 @@ describe("detectEntryType", () => {
   });
 
   test("skips model_change, session_info, and mode_change with skip marker", () => {
-    const mc = detectEntryType({ type: "model_change", id: "x", parentId: null, timestamp: "t", provider: "a", modelId: "b" });
+    const mc = detectEntryType({
+      type: "model_change",
+      id: "x",
+      parentId: null,
+      timestamp: "t",
+      provider: "a",
+      modelId: "b",
+    });
     expect((mc as Record<string, unknown>).__skip).toBe(true);
     const si = detectEntryType({ type: "session_info", id: "x", parentId: null, timestamp: "t", name: "test" });
     expect((si as Record<string, unknown>).__skip).toBe(true);

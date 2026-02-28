@@ -87,13 +87,19 @@ class TerminalSim {
     const cmd = csi[2];
     const n = parseInt(params || "1", 10) || 1;
     switch (cmd) {
-      case "A": this.cursorRow = Math.max(0, this.cursorRow - n); break;
+      case "A":
+        this.cursorRow = Math.max(0, this.cursorRow - n);
+        break;
       case "B":
         this.cursorRow += n;
         while (this.screen.length <= this.cursorRow) this.screen.push("");
         break;
-      case "C": this.cursorCol += n; break;
-      case "D": this.cursorCol = Math.max(0, this.cursorCol - n); break;
+      case "C":
+        this.cursorCol += n;
+        break;
+      case "D":
+        this.cursorCol = Math.max(0, this.cursorCol - n);
+        break;
       case "H": // cursor position
         if (params === "" || params === "1;1") {
           this.cursorRow = 0;
@@ -118,9 +124,7 @@ class TerminalSim {
   }
 
   printState(label: string): void {
-    const nonEmpty = this.screen
-      .map((line, i) => ({ i, line }))
-      .filter(({ line }) => line.length > 0);
+    const nonEmpty = this.screen.map((line, i) => ({ i, line })).filter(({ line }) => line.length > 0);
 
     console.log(`\n─── ${label} ───`);
     for (const { i, line } of nonEmpty) {
@@ -168,7 +172,10 @@ let lastAgentIdx = 0;
 // Render index (1-based) for display, independent of seq
 const anomaliesOnly = process.argv.includes("--anomalies-only");
 const showFrom = parseInt(process.argv.find((a) => a.startsWith("--from="))?.split("=")[1] ?? "1", 10);
-const showTo = parseInt(process.argv.find((a) => a.startsWith("--to="))?.split("=")[1] ?? String(renderEntries.length), 10);
+const showTo = parseInt(
+  process.argv.find((a) => a.startsWith("--to="))?.split("=")[1] ?? String(renderEntries.length),
+  10,
+);
 
 let renderIdx = 0;
 const pendingEvents: string[] = [];

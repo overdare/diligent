@@ -13,14 +13,17 @@ afterEach(async () => {
 });
 
 describe("loadConfig", () => {
-  test("throws if no API key available", async () => {
+  test("loads without API key (deferred to call time)", async () => {
     const dir = join(TEST_ROOT, "no-key");
     await mkdir(dir, { recursive: true });
 
     const origKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     try {
-      await expect(loadConfig(dir)).rejects.toThrow("ANTHROPIC_API_KEY");
+      const config = await loadConfig(dir);
+      // No throw — key check is deferred to stream call time
+      expect(config.providerManager.hasKeyFor("anthropic")).toBe(false);
+      expect(config.apiKey).toBe("");
     } finally {
       if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
     }
@@ -36,7 +39,7 @@ describe("loadConfig", () => {
     delete process.env.DILIGENT_MODEL;
     try {
       const config = await loadConfig(dir);
-      expect(config.model.id).toBe("claude-sonnet-4-20250514");
+      expect(config.model.id).toBe("claude-sonnet-4-6");
       expect(config.model.provider).toBe("anthropic");
     } finally {
       if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
@@ -52,10 +55,10 @@ describe("loadConfig", () => {
     const origKey = process.env.ANTHROPIC_API_KEY;
     const origModel = process.env.DILIGENT_MODEL;
     process.env.ANTHROPIC_API_KEY = "sk-test";
-    process.env.DILIGENT_MODEL = "claude-opus-4-20250514";
+    process.env.DILIGENT_MODEL = "claude-opus-4-6";
     try {
       const config = await loadConfig(dir);
-      expect(config.model.id).toBe("claude-opus-4-20250514");
+      expect(config.model.id).toBe("claude-opus-4-6");
     } finally {
       if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
       else delete process.env.ANTHROPIC_API_KEY;

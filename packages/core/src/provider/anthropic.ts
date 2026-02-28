@@ -33,14 +33,16 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
           {
             model: model.id,
             max_tokens: useThinking
-              ? Math.max((options.maxTokens ?? model.maxOutputTokens), budgetTokens + 1000)
+              ? Math.max(options.maxTokens ?? model.maxOutputTokens, budgetTokens + 1000)
               : (options.maxTokens ?? model.maxOutputTokens),
             system: context.systemPrompt,
             messages: convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
             ...(useThinking
               ? { thinking: { type: "enabled" as const, budget_tokens: budgetTokens }, temperature: 1 }
-              : options.temperature !== undefined ? { temperature: options.temperature } : {}),
+              : options.temperature !== undefined
+                ? { temperature: options.temperature }
+                : {}),
           },
           ...(options.signal ? [{ signal: options.signal }] : []),
         );
@@ -164,7 +166,11 @@ function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
         },
       };
     case "thinking":
-      return { type: "thinking", thinking: block.thinking, signature: block.signature } as unknown as Anthropic.ContentBlockParam;
+      return {
+        type: "thinking",
+        thinking: block.thinking,
+        signature: block.signature,
+      } as unknown as Anthropic.ContentBlockParam;
     case "tool_call":
       return {
         type: "tool_use",

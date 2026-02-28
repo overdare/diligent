@@ -1,0 +1,181 @@
+import { isPrintable, matchesKey } from "../framework/keys";
+import type { Component } from "../framework/types";
+import { t } from "../theme";
+
+export interface TextInputOptions {
+  title: string;
+  message?: string;
+  placeholder?: string;
+  /** When true, input is displayed as bullet characters */
+  masked?: boolean;
+}
+
+/**
+ * Text input overlay dialog.
+ * Follows the same Component pattern as ConfirmDialog and ListPicker.
+ */
+export class TextInput implements Component {
+  private value = "";
+  private cursorPos = 0;
+
+  constructor(
+    private options: TextInputOptions,
+    private onResult: (value: string | null) => void,
+  ) {}
+
+  render(width: number): string[] {
+    const { title, message, placeholder, masked } = this.options;
+
+    // Calculate dialog width
+    const minWidth = Math.max(title.length + 4, (message?.length ?? 0) + 4, 30);
+    const dialogWidth = Math.min(minWidth + 6, Math.floor(width * 0.8));
+    const innerWidth = dialogWidth - 4; // borders + padding
+
+    const lines: string[] = [];
+
+    // Top border with title
+    const titleStr = ` ${title} `;
+    const borderLen = Math.max(0, dialogWidth - 2 - titleStr.length);
+    lines.push(`${t.bold}\u250c\u2500${titleStr}${"\u2500".repeat(borderLen)}\u2510${t.reset}`);
+
+    // Message line(s)
+    if (message) {
+      const msgLines = this.wrapText(message, innerWidth);
+      for (const ml of msgLines) {
+        const padding = " ".repeat(Math.max(0, innerWidth - ml.length));
+        lines.push(`${t.bold}\u2502${t.reset} ${ml}${padding} ${t.bold}\u2502${t.reset}`);
+      }
+      // Empty separator line
+      lines.push(`${t.bold}\u2502${t.reset} ${" ".repeat(innerWidth)} ${t.bold}\u2502${t.reset}`);
+    }
+
+    // Input field
+    const displayValue = masked ? "\u2022".repeat(this.value.length) : this.value;
+    let fieldContent: string;
+
+    if (this.value.length === 0 && placeholder) {
+      fieldContent = `${t.dim}${placeholder}${t.reset}`;
+      const fieldVisibleLen = placeholder.length;
+      const fieldPadding = " ".repeat(Math.max(0, innerWidth - fieldVisibleLen));
+      lines.push(`${t.bold}\u2502${t.reset} ${fieldContent}${fieldPadding} ${t.bold}\u2502${t.reset}`);
+    } else {
+      // Show input with cursor indicator
+      const before = displayValue.slice(0, this.cursorPos);
+      const cursorChar = displayValue[this.cursorPos] ?? " ";
+      const after = displayValue.slice(this.cursorPos + 1);
+      fieldContent = `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
+
+      const fieldVisibleLen = displayValue.length > this.cursorPos ? displayValue.length : displayValue.length + 1; // +1 for cursor space
+      const fieldPadding = " ".repeat(Math.max(0, innerWidth - fieldVisibleLen));
+      lines.push(`${t.bold}\u2502${t.reset} ${fieldContent}${fieldPadding} ${t.bold}\u2502${t.reset}`);
+    }
+
+    // Hint line
+    const hint = "Enter to submit \u00b7 Escape to cancel";
+    const hintPadding = " ".repeat(Math.max(0, innerWidth - hint.length));
+    lines.push(`${t.bold}\u2502${t.reset} ${t.dim}${hint}${t.reset}${hintPadding} ${t.bold}\u2502${t.reset}`);
+
+    // Bottom border
+    lines.push(`${t.bold}\u2514${"\u2500".repeat(dialogWidth - 2)}\u2518${t.reset}`);
+
+    return lines;
+  }
+
+  handleInput(data: string): void {
+    // Submit
+    if (matchesKey(data, "enter")) {
+      this.onResult(this.value || null);
+      return;
+    }
+
+    // Cancel
+    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+      this.onResult(null);
+      return;
+    }
+
+    // Backspace
+    if (matchesKey(data, "backspace")) {
+      if (this.cursorPos > 0) {
+        this.value = this.value.slice(0, this.cursorPos - 1) + this.value.slice(this.cursorPos);
+        this.cursorPos--;
+      }
+      return;
+    }
+
+    // Delete
+    if (matchesKey(data, "delete")) {
+      if (this.cursorPos < this.value.length) {
+        this.value = this.value.slice(0, this.cursorPos) + this.value.slice(this.cursorPos + 1);
+      }
+      return;
+    }
+
+    // Cursor movement
+    if (matchesKey(data, "left")) {
+      if (this.cursorPos > 0) this.cursorPos--;
+      return;
+    }
+    if (matchesKey(data, "right")) {
+      if (this.cursorPos < this.value.length) this.cursorPos++;
+      return;
+    }
+
+    // Ctrl+A: move to start
+    if (matchesKey(data, "ctrl+a")) {
+      this.cursorPos = 0;
+      return;
+    }
+
+    // Ctrl+E: move to end
+    if (matchesKey(data, "ctrl+e")) {
+      this.cursorPos = this.value.length;
+      return;
+    }
+
+    // Ctrl+U: clear line
+    if (matchesKey(data, "ctrl+u")) {
+      this.value = "";
+      this.cursorPos = 0;
+      return;
+    }
+
+    // Ctrl+K: delete from cursor to end
+    if (matchesKey(data, "ctrl+k")) {
+      this.value = this.value.slice(0, this.cursorPos);
+      return;
+    }
+
+    // Printable character
+    if (isPrintable(data)) {
+      this.value = this.value.slice(0, this.cursorPos) + data + this.value.slice(this.cursorPos);
+      this.cursorPos++;
+    }
+  }
+
+  invalidate(): void {
+    // No cached state
+  }
+
+  /** Get the current input value (for testing) */
+  getValue(): string {
+    return this.value;
+  }
+
+  private wrapText(text: string, maxWidth: number): string[] {
+    if (text.length <= maxWidth) return [text];
+
+    const lines: string[] = [];
+    let remaining = text;
+
+    while (remaining.length > maxWidth) {
+      let breakIdx = remaining.lastIndexOf(" ", maxWidth);
+      if (breakIdx <= 0) breakIdx = maxWidth;
+      lines.push(remaining.slice(0, breakIdx));
+      remaining = remaining.slice(breakIdx).trimStart();
+    }
+    if (remaining) lines.push(remaining);
+
+    return lines;
+  }
+}

@@ -58,8 +58,10 @@ export class ConfirmDialog implements Component {
     lines.push(`${t.bold}\u2502${t.reset} ${" ".repeat(innerWidth)} ${t.bold}\u2502${t.reset}`);
 
     // Buttons line
-    const confirmStr = this.selectedIndex === 0 ? `${t.inverse} ${this.confirmLabel} ${t.reset}` : ` ${this.confirmLabel} `;
-    const cancelStr = this.selectedIndex === 1 ? `${t.inverse} ${this.cancelLabel} ${t.reset}` : ` ${this.cancelLabel} `;
+    const confirmStr =
+      this.selectedIndex === 0 ? `${t.inverse} ${this.confirmLabel} ${t.reset}` : ` ${this.confirmLabel} `;
+    const cancelStr =
+      this.selectedIndex === 1 ? `${t.inverse} ${this.cancelLabel} ${t.reset}` : ` ${this.cancelLabel} `;
 
     const buttonsText = `  ${confirmStr}    ${cancelStr}`;
     // Approximate visible width for padding

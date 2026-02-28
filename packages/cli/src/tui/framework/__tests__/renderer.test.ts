@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { Container } from "../container";
 import { TUIRenderer } from "../renderer";
 import type { Terminal } from "../terminal";
-import { CURSOR_MARKER } from "../types";
 import type { Component } from "../types";
+import { CURSOR_MARKER } from "../types";
 
 // ---------------------------------------------------------------------------
 // Terminal simulator — parses ANSI sequences to track real cursor + screen
@@ -511,18 +511,18 @@ describe("TUIRenderer — original tests", () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // Helper: component with committed line count support
 // ---------------------------------------------------------------------------
 
-function createCommittedComponent(
-  getLines: () => string[],
-  getCommitted: () => number,
-): Component {
+function createCommittedComponent(getLines: () => string[], getCommitted: () => number): Component {
   return {
-    render(_width: number) { return getLines(); },
-    getCommittedLineCount(_width: number) { return getCommitted(); },
+    render(_width: number) {
+      return getLines();
+    },
+    getCommittedLineCount(_width: number) {
+      return getCommitted();
+    },
     invalidate() {},
   };
 }
@@ -535,7 +535,7 @@ describe("TUIRenderer — committed/active split", () => {
   test("committed lines written to scrollback only once", () => {
     const { terminal, sim } = createSim();
     let lines = ["committed1", "committed2", "active"];
-    let committed = 2;
+    const committed = 2;
 
     const root = createCommittedComponent(
       () => [...lines],
@@ -692,15 +692,19 @@ describe("Container", () => {
   test("getCommittedLineCount accumulates fully-committed children", () => {
     const container = new Container();
     // Child A: 2 lines, all committed
-    container.addChild(createCommittedComponent(
-      () => ["A1", "A2"],
-      () => 2,
-    ));
+    container.addChild(
+      createCommittedComponent(
+        () => ["A1", "A2"],
+        () => 2,
+      ),
+    );
     // Child B: 1 line, all committed
-    container.addChild(createCommittedComponent(
-      () => ["B1"],
-      () => 1,
-    ));
+    container.addChild(
+      createCommittedComponent(
+        () => ["B1"],
+        () => 1,
+      ),
+    );
     // Child C: 2 lines, 0 committed (active)
     container.addChild(createStaticComponent(["C1", "C2"]));
 
@@ -710,10 +714,12 @@ describe("Container", () => {
   test("getCommittedLineCount stops at partially committed child", () => {
     const container = new Container();
     // Child A: 3 lines, 2 committed
-    container.addChild(createCommittedComponent(
-      () => ["A1", "A2", "A3"],
-      () => 2,
-    ));
+    container.addChild(
+      createCommittedComponent(
+        () => ["A1", "A2", "A3"],
+        () => 2,
+      ),
+    );
     // Child B: should not be counted
     container.addChild(createStaticComponent(["B1"]));
 
@@ -723,10 +729,12 @@ describe("Container", () => {
   test("getCommittedLineCount returns 0 when first child has no committed", () => {
     const container = new Container();
     container.addChild(createStaticComponent(["X"]));
-    container.addChild(createCommittedComponent(
-      () => ["Y"],
-      () => 1,
-    ));
+    container.addChild(
+      createCommittedComponent(
+        () => ["Y"],
+        () => 1,
+      ),
+    );
     expect(container.getCommittedLineCount(80)).toBe(0);
   });
 

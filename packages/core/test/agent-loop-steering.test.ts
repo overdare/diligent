@@ -184,7 +184,8 @@ describe("agentLoop steering", () => {
     expect(streamFn.contexts.length).toBeGreaterThanOrEqual(2);
     const secondCallMsgs = streamFn.contexts[1].messages;
     const hasSteeringMsg = secondCallMsgs.some(
-      (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("[Steering] redirect after tools"),
+      (m) =>
+        m.role === "user" && typeof m.content === "string" && m.content.includes("[Steering] redirect after tools"),
     );
     expect(hasSteeringMsg).toBe(true);
   });

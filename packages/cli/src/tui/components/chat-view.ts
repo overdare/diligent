@@ -24,11 +24,7 @@ function truncateMiddle(lines: string[], max: number): string[] {
   const head = Math.floor((max - 1) / 2);
   const tail = max - head - 1;
   const omitted = lines.length - head - tail;
-  return [
-    ...lines.slice(0, head),
-    `… +${omitted} lines`,
-    ...lines.slice(lines.length - tail),
-  ];
+  return [...lines.slice(0, head), `… +${omitted} lines`, ...lines.slice(lines.length - tail)];
 }
 
 /** User message rendered with a subtle background color (width-aware) */
@@ -119,7 +115,8 @@ export class ChatView implements Component {
         this.activeSpinner.stop();
         const startTime = this.toolStartTimes.get(event.toolCallId);
         this.toolStartTimes.delete(event.toolCallId);
-        const elapsed = startTime !== undefined ? ` ${t.dim}· ${formatToolElapsed(Date.now() - startTime)}${t.reset}` : "";
+        const elapsed =
+          startTime !== undefined ? ` ${t.dim}· ${formatToolElapsed(Date.now() - startTime)}${t.reset}` : "";
 
         if (event.output) {
           const rawLines = event.output.split("\n");
@@ -207,8 +204,7 @@ export class ChatView implements Component {
   private commitThinkingBlock(): void {
     this.thinkingSpinner.stop();
     if (this.thinkingText.length > 0) {
-      const elapsed =
-        this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : "";
+      const elapsed = this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : "";
       const elapsedStr = elapsed ? ` ${t.dim}\xb7 ${elapsed}${t.reset}` : "";
       this.items.push([`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`]);
     }
