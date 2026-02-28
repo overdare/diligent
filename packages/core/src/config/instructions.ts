@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const INSTRUCTION_FILES = ["CLAUDE.md"];
+const INSTRUCTION_FILES = ["AGENTS.md"];
 const MAX_INSTRUCTION_BYTES = 32_768; // 32 KiB
 
 export interface DiscoveredInstruction {
@@ -10,7 +10,7 @@ export interface DiscoveredInstruction {
 }
 
 /**
- * Walk from cwd upward, collecting CLAUDE.md files.
+ * Walk from cwd upward, collecting AGENTS.md files.
  * Returns ordered from most specific (cwd) to most general.
  * Stops at filesystem root or .git boundary (project root).
  */

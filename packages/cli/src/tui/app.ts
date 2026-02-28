@@ -198,7 +198,7 @@ export class App {
     return new Promise((resolve) => {
       const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
         label: p,
-        description: p === "anthropic" ? "Claude models" : "GPT & o-series models",
+        description: this.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
         value: p,
       }));
 
