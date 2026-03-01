@@ -2,6 +2,7 @@
 // @summary Explore directory structure with @summary extraction
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative, basename, extname, resolve } from "node:path";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -73,6 +74,98 @@ function isIgnoredPath(relPath, rootDir) {
 
 function isBinary(filePath) {
   return BINARY_EXTENSIONS.has(extname(filePath).toLowerCase());
+}
+
+// ── Ripgrep integration ───────────────────────────────────────────────────
+
+function runRipgrep(pattern, searchRoot, maxDepth) {
+  const args = ["rg", "--files", "--glob", pattern];
+  for (const ip of IGNORE_PATHS) args.push("--glob", `!${ip}/**`);
+  for (const id of IGNORE_DIRS) args.push("--glob", `!${id}/**`);
+  args.push("--glob", "!.*/**");
+  if (maxDepth !== -1) args.push("--max-depth", String(maxDepth));
+  args.push(".");
+
+  try {
+    const stdout = execSync(args.join(" "), {
+      cwd: searchRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return stdout.trim().split("\n").filter(Boolean).map(p => p.replace(/^\.\//, ""));
+  } catch (err) {
+    // rg exit code 1 = no matches, exit code 2 = error
+    if (err.status === 1) return [];
+    throw err;
+  }
+}
+
+function buildTreeFromPaths(filePaths, searchRoot) {
+  // Build nested map from flat paths
+  const root = new Map();
+  for (const fp of filePaths) {
+    const parts = fp.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!node.has(part)) {
+        node.set(part, i < parts.length - 1 ? new Map() : null);
+      }
+      const child = node.get(part);
+      if (i < parts.length - 1) {
+        if (child === null) {
+          // Was a file, now also a dir parent — promote to map
+          const m = new Map();
+          node.set(part, m);
+          node = m;
+        } else {
+          node = child;
+        }
+      }
+    }
+  }
+
+  // Convert nested map → Entry[]
+  function mapToEntries(map, dirPath) {
+    /** @type {Entry[]} */
+    const entries = [];
+    const parentDescs = parseParentReadmeDescriptions(dirPath);
+
+    const dirNames = [];
+    const fileNames = [];
+    for (const [name, child] of map) {
+      if (child instanceof Map) dirNames.push(name);
+      else fileNames.push(name);
+    }
+    dirNames.sort((a, b) => a.localeCompare(b));
+    fileNames.sort((a, b) => a.localeCompare(b));
+
+    for (const name of dirNames) {
+      const fullPath = join(dirPath, name);
+      const desc = extractReadmeDescription(fullPath) || parentDescs[name + "/"] || parentDescs[name] || null;
+      const children = mapToEntries(map.get(name), fullPath);
+      entries.push({ name: name + "/", type: "dir", summary: desc, children });
+    }
+
+    for (const name of fileNames) {
+      const fullPath = join(dirPath, name);
+      const summary = extractSummary(fullPath) || parentDescs[name] || null;
+      entries.push({ name, type: "file", summary, children: [] });
+    }
+
+    return entries;
+  }
+
+  return mapToEntries(root, searchRoot);
+}
+
+function hasRipgrep() {
+  try {
+    execSync("rg --version", { stdio: ["pipe", "pipe", "pipe"] });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function extractSummary(filePath) {
@@ -336,8 +429,13 @@ Examples:
   // Handle brace expansion for paths like packages/*/src
   const searchPaths = expandBraces(searchPath);
 
+  const isDirPattern = pattern.endsWith("/");
   const isRecursive = pattern.includes("**");
-  const regex = globToRegex(pattern);
+  const useRipgrep = !isDirPattern && hasRipgrep();
+
+  if (!isDirPattern && !useRipgrep) {
+    console.error("Warning: ripgrep (rg) not found — falling back to built-in matcher (brace expansion and path patterns may not work)");
+  }
 
   for (const sp of searchPaths) {
     const resolved = resolve(sp);
@@ -353,8 +451,15 @@ Examples:
       continue;
     }
 
-    const tree = collectTree(resolved, resolved, 0, maxDepth);
-    const filtered = filterTree(tree, regex, isRecursive);
+    let filtered;
+    if (useRipgrep) {
+      const filePaths = runRipgrep(pattern, resolved, maxDepth);
+      filtered = buildTreeFromPaths(filePaths, resolved);
+    } else {
+      const regex = globToRegex(pattern);
+      const tree = collectTree(resolved, resolved, 0, maxDepth);
+      filtered = filterTree(tree, regex, isRecursive);
+    }
 
     if (filtered.length === 0) {
       console.log(`${sp}/  (no matches)`);
@@ -362,12 +467,6 @@ Examples:
     }
 
     const nameColWidth = Math.max(...filtered.map((e) => e.name.length), 1);
-    const dirCount = filtered.filter((e) => e.type === "dir").length;
-    const fileCount = filtered.filter((e) => e.type === "file").length;
-
-    const counts = [];
-    if (dirCount) counts.push(`${dirCount} dirs`);
-    if (fileCount) counts.push(`${fileCount} files`);
 
     console.log(`${sp}/`);
     const lines = formatTree(filtered, "  ", nameColWidth);

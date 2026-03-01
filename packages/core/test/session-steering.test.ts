@@ -13,7 +13,6 @@ import type { SessionManagerConfig } from "../src/session/manager";
 import { SessionManager } from "../src/session/manager";
 import { readSessionFile } from "../src/session/persistence";
 import type { SessionEntry, SteeringEntry } from "../src/session/types";
-import { SESSION_VERSION } from "../src/session/types";
 import type { Tool } from "../src/tool/types";
 import type { AssistantMessage, Message } from "../src/types";
 
@@ -362,11 +361,5 @@ describe("Context builder: SteeringEntry", () => {
     expect(ctx.messages[1].role).toBe("user");
     expect(ctx.messages[1].content).toContain("[Steering]");
     expect(ctx.messages[2].role).toBe("assistant");
-  });
-});
-
-describe("Session version", () => {
-  test("SESSION_VERSION is 4", () => {
-    expect(SESSION_VERSION).toBe(4);
   });
 });

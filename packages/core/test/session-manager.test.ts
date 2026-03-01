@@ -186,4 +186,23 @@ describe("SessionManager", () => {
     const sessions = await mgr.list();
     expect(sessions.length).toBeGreaterThanOrEqual(1);
   });
+
+  test("appendModeChange() persists mode_change entry", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendModeChange("plan", "command");
+    await mgr.waitForWrites();
+
+    expect(mgr.entryCount).toBe(1);
+  });
+
+  test("appendModeChange() defaults changedBy to 'command'", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    expect(() => mgr.appendModeChange("execute")).not.toThrow();
+  });
 });

@@ -5,9 +5,53 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, relative, dirname, extname, resolve } from "node:path";
 import { execSync } from "node:child_process";
 
+// ── .gitignore parsing ───────────────────────────────────────────────────
+
+function parseGitignore(rootPath) {
+  const dirPatterns = new Set();   // e.g. "node_modules", "dist"
+  const filePatterns = new Set();  // e.g. ".DS_Store", ".env"
+  const extPatterns = new Set();   // e.g. ".swp", ".tsbuildinfo"
+  const pathPatterns = [];         // e.g. ".claude/worktrees"
+
+  try {
+    const content = readFileSync(join(rootPath, ".gitignore"), "utf-8");
+    for (let line of content.split("\n")) {
+      line = line.trim();
+      if (!line || line.startsWith("#") || line.startsWith("!")) continue;
+
+      // Strip trailing slash
+      const isDir = line.endsWith("/");
+      if (isDir) line = line.slice(0, -1);
+
+      // Glob like *.swp → extension pattern
+      if (line.startsWith("*.")) {
+        extPatterns.add(line.slice(1)); // ".swp"
+        continue;
+      }
+
+      // Path pattern (contains /) → treat as path prefix
+      if (line.includes("/")) {
+        pathPatterns.push(line);
+        continue;
+      }
+
+      // Simple name — classify as dir or file
+      if (isDir) {
+        dirPatterns.add(line);
+      } else {
+        filePatterns.add(line);
+      }
+    }
+  } catch {
+    // no .gitignore
+  }
+
+  return { dirPatterns, filePatterns, extPatterns, pathPatterns };
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const IGNORE_DIRS = new Set([
+const HARDCODED_IGNORE_DIRS = new Set([
   "node_modules", ".git", "dist", "build", "coverage",
   ".next", ".turbo", ".cache", "__pycache__",
 ]);
@@ -33,14 +77,27 @@ const NON_SUMMARY_FILES = new Set([
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/** @type {{ dirPatterns: Set<string>, filePatterns: Set<string>, extPatterns: Set<string>, pathPatterns: string[] }} */
+let gitignore = { dirPatterns: new Set(), filePatterns: new Set(), extPatterns: new Set(), pathPatterns: [] };
+
 function isIgnoredDir(name) {
-  return IGNORE_DIRS.has(name) || name.startsWith(".");
+  return HARDCODED_IGNORE_DIRS.has(name) || gitignore.dirPatterns.has(name) || name.startsWith(".");
 }
 
 function isIgnoredPath(relPath) {
   for (const ip of IGNORE_PATHS) {
     if (relPath.startsWith(ip)) return true;
   }
+  for (const pp of gitignore.pathPatterns) {
+    if (relPath === pp || relPath.startsWith(pp + "/")) return true;
+  }
+  return false;
+}
+
+function isIgnoredFile(fileName) {
+  if (gitignore.filePatterns.has(fileName)) return true;
+  const ext = extname(fileName).toLowerCase();
+  if (gitignore.extPatterns.has(ext)) return true;
   return false;
 }
 
@@ -127,7 +184,7 @@ function getDirectChildFiles(dirPath, rootPath) {
   try {
     const entries = readdirSync(fullPath, { withFileTypes: true });
     return entries
-      .filter((e) => e.isFile() && !e.name.startsWith("."))
+      .filter((e) => e.isFile() && !e.name.startsWith(".") && !isIgnoredFile(e.name))
       .map((e) => e.name)
       .sort();
   } catch {
@@ -176,6 +233,9 @@ function parseReadmeListedDirs(readmePath) {
 function main() {
   const args = process.argv.slice(2);
   const rootPath = resolve(args[0] || ".");
+
+  // Parse .gitignore and merge into ignore sets
+  gitignore = parseGitignore(rootPath);
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`Usage: check.mjs [path]

@@ -5,6 +5,7 @@ Diligent — transparent, debuggable coding agent. Bun + TypeScript strict, mono
 ## Navigate by Need
 
 Read only what your task requires. Directories have README.md files — follow them recursively until you reach the file you need.
+Use `/glob-aug` to explore efficiently — shows directory trees with inline `@summary` descriptions in one pass, avoiding glob+read loops.
 
 | Need | Start here |
 |------|-----------|
@@ -26,7 +27,6 @@ Read only what your task requires. Directories have README.md files — follow t
 - English only in all files
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
-- Use `/glob-aug` to explore codebase structure, `/glob-indexer` to maintain README.md and @summary
 
 ## Code Navigation System
 

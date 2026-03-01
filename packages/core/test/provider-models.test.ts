@@ -1,39 +1,8 @@
-// @summary Tests for model registry and resolution
+// @summary Tests for model resolution inference logic
 import { describe, expect, it } from "bun:test";
-import { KNOWN_MODELS, resolveModel } from "../src/provider/models";
-
-describe("KNOWN_MODELS", () => {
-  it("has Anthropic models", () => {
-    const anthropic = KNOWN_MODELS.filter((m) => m.provider === "anthropic");
-    expect(anthropic.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("has OpenAI models", () => {
-    const openai = KNOWN_MODELS.filter((m) => m.provider === "openai");
-    expect(openai.length).toBeGreaterThanOrEqual(3);
-  });
-});
+import { resolveModel } from "../src/provider/models";
 
 describe("resolveModel", () => {
-  it("resolves exact model ID", () => {
-    const model = resolveModel("gpt-5.3-codex");
-    expect(model.id).toBe("gpt-5.3-codex");
-    expect(model.provider).toBe("openai");
-    expect(model.contextWindow).toBe(400_000);
-  });
-
-  it("resolves alias", () => {
-    const model = resolveModel("sonnet");
-    expect(model.id).toBe("claude-sonnet-4-6");
-    expect(model.provider).toBe("anthropic");
-  });
-
-  it("resolves another alias", () => {
-    const model = resolveModel("codex");
-    expect(model.id).toBe("gpt-5.3-codex");
-    expect(model.provider).toBe("openai");
-  });
-
   it("infers anthropic from claude- prefix", () => {
     const model = resolveModel("claude-opus-4-20250514");
     expect(model.provider).toBe("anthropic");

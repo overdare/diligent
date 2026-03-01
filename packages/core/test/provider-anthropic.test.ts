@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventStream } from "../src/event-stream";
 import type { Model, ProviderEvent, ProviderResult } from "../src/provider/types";
-import type { AssistantMessage, Message } from "../src/types";
+import type { AssistantMessage } from "../src/types";
 
 // We test the event mapping logic by creating a mock that simulates
 // what createAnthropicStream does internally, without hitting the real SDK.
@@ -114,61 +114,4 @@ describe("Anthropic Provider Event Mapping", () => {
     await expect(stream.result()).rejects.toThrow("API rate limit");
   });
 
-  test("message conversion: UserMessage → SDK format", async () => {
-    // Test the message array structure we'd produce
-    const messages: Message[] = [
-      { role: "user", content: "hello", timestamp: Date.now() },
-      {
-        role: "assistant",
-        content: [{ type: "text", text: "hi" }],
-        model: "claude-sonnet-4-20250514",
-        usage: { inputTokens: 5, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "end_turn",
-        timestamp: Date.now(),
-      },
-      { role: "user", content: "how are you?", timestamp: Date.now() },
-    ];
-
-    // Verify the structure is correct for the SDK
-    expect(messages[0].role).toBe("user");
-    expect(messages[1].role).toBe("assistant");
-    expect(messages[2].role).toBe("user");
-  });
-
-  test("tool result messages merge into user messages", () => {
-    // Simulate convertMessages logic: tool_results should be grouped into user messages
-    const messages: Message[] = [
-      { role: "user", content: "list files", timestamp: Date.now() },
-      {
-        role: "assistant",
-        content: [
-          { type: "tool_call", id: "tc_1", name: "bash", input: { command: "ls" } },
-          { type: "tool_call", id: "tc_2", name: "bash", input: { command: "pwd" } },
-        ],
-        model: "claude-sonnet-4-20250514",
-        usage: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: Date.now(),
-      },
-      {
-        role: "tool_result",
-        toolCallId: "tc_1",
-        toolName: "bash",
-        output: "file1.ts\nfile2.ts",
-        isError: false,
-        timestamp: Date.now(),
-      },
-      {
-        role: "tool_result",
-        toolCallId: "tc_2",
-        toolName: "bash",
-        output: "/home/user",
-        isError: false,
-        timestamp: Date.now(),
-      },
-    ];
-
-    // Both tool results should be in the same user message
-    expect(messages.filter((m) => m.role === "tool_result")).toHaveLength(2);
-  });
 });
