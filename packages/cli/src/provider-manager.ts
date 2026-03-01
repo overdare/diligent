@@ -23,9 +23,9 @@ export class ProviderManager {
 
   constructor(config: DiligentConfig) {
     // Collect keys from config and env vars
-    this.keys.anthropic = config.provider?.anthropic?.apiKey ?? process.env.ANTHROPIC_API_KEY ?? undefined;
-    this.keys.openai = config.provider?.openai?.apiKey ?? process.env.OPENAI_API_KEY ?? undefined;
-    this.keys.gemini = config.provider?.gemini?.apiKey ?? process.env.GEMINI_API_KEY ?? undefined;
+    this.keys.anthropic = config.provider?.anthropic?.apiKey;
+    this.keys.openai = config.provider?.openai?.apiKey;
+    this.keys.gemini = config.provider?.gemini?.apiKey;
 
     this.baseUrls.anthropic = config.provider?.anthropic?.baseUrl;
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
@@ -40,7 +40,7 @@ export class ProviderManager {
       if (!apiKey) {
         throw new Error(
           `No API key configured for ${provider}. ` +
-            `Use /provider set ${provider} to add one, or set ${provider === "anthropic" ? "ANTHROPIC_API_KEY" : provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY"} environment variable.`,
+            `Use /provider set ${provider} to add one, or set provider.${provider}.apiKey in diligent.jsonc.`,
         );
       }
 

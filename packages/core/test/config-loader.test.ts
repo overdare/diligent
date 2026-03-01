@@ -1,5 +1,5 @@
 // @summary Tests for config loading and merging behavior
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +7,16 @@ import { loadDiligentConfig, mergeConfig } from "../src/config/loader";
 import type { DiligentConfig } from "../src/config/schema";
 
 const TEST_ROOT = join(tmpdir(), `diligent-config-test-${Date.now()}`);
+let origHome: string | undefined;
+
+beforeEach(() => {
+  origHome = process.env.HOME;
+  process.env.HOME = TEST_ROOT;
+});
 
 afterEach(async () => {
+  if (origHome !== undefined) process.env.HOME = origHome;
+  else delete process.env.HOME;
   try {
     await rm(TEST_ROOT, { recursive: true, force: true });
   } catch {}
@@ -48,7 +56,7 @@ describe("mergeConfig", () => {
 describe("loadDiligentConfig", () => {
   it("returns default config when no files exist", async () => {
     await mkdir(TEST_ROOT, { recursive: true });
-    const { config, sources } = await loadDiligentConfig(TEST_ROOT, {});
+    const { config, sources } = await loadDiligentConfig(TEST_ROOT);
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(sources).toEqual([]);
   });
@@ -64,39 +72,28 @@ describe("loadDiligentConfig", () => {
       }`,
     );
 
-    const { config, sources } = await loadDiligentConfig(TEST_ROOT, {});
+    const { config, sources } = await loadDiligentConfig(TEST_ROOT);
     expect(config.model).toBe("claude-opus-4-20250514");
     expect(config.maxTurns).toBe(50);
     expect(sources).toHaveLength(1);
   });
 
-  it("env DILIGENT_MODEL overrides project config", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
-    await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "model": "from-file" }`);
-
-    const { config } = await loadDiligentConfig(TEST_ROOT, { DILIGENT_MODEL: "from-env" });
-    expect(config.model).toBe("from-env");
-  });
-
-  it("env ANTHROPIC_API_KEY sets provider.anthropic.apiKey", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
-    const { config } = await loadDiligentConfig(TEST_ROOT, { ANTHROPIC_API_KEY: "sk-test" });
-    expect(config.provider?.anthropic?.apiKey).toBe("sk-test");
-  });
-
   it("template substitution replaces {env:VAR}", async () => {
     await mkdir(TEST_ROOT, { recursive: true });
     await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "provider": { "anthropic": { "apiKey": "{env:MY_KEY}" } } }`);
+    process.env.MY_KEY = "resolved-key";
 
-    const { config } = await loadDiligentConfig(TEST_ROOT, { MY_KEY: "resolved-key" });
+    const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.provider?.anthropic?.apiKey).toBe("resolved-key");
+
+    delete process.env.MY_KEY;
   });
 
   it("template substitution with missing env var yields empty string", async () => {
     await mkdir(TEST_ROOT, { recursive: true });
     await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "systemPrompt": "prefix-{env:MISSING}-suffix" }`);
 
-    const { config } = await loadDiligentConfig(TEST_ROOT, {});
+    const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.systemPrompt).toBe("prefix--suffix");
   });
 
@@ -108,7 +105,7 @@ describe("loadDiligentConfig", () => {
     const origWarn = console.warn;
     console.warn = (msg: string) => warnSpy.push(msg);
     try {
-      const { config, sources } = await loadDiligentConfig(TEST_ROOT, {});
+      const { config, sources } = await loadDiligentConfig(TEST_ROOT);
       expect(sources).toEqual([]); // file was skipped
       expect(config.model).toBe("claude-sonnet-4-6"); // defaults
       expect(warnSpy.length).toBeGreaterThan(0);

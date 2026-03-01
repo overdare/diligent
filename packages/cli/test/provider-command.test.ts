@@ -82,40 +82,23 @@ describe("/provider command", () => {
   });
 
   test("status shows unconfigured providers", async () => {
-    const origAnthro = process.env.ANTHROPIC_API_KEY;
-    const origOpenai = process.env.OPENAI_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      const pm = new ProviderManager({});
-      const { ctx, lines } = createMockContext(pm);
+    const pm = new ProviderManager({});
+    const { ctx, lines } = createMockContext(pm);
 
-      await providerCommand.handler("status", ctx);
+    await providerCommand.handler("status", ctx);
 
-      const output = lines.join("\n");
-      expect(output).toContain("not configured");
-    } finally {
-      if (origAnthro) process.env.ANTHROPIC_API_KEY = origAnthro;
-      if (origOpenai) process.env.OPENAI_API_KEY = origOpenai;
-    }
+    const output = lines.join("\n");
+    expect(output).toContain("not configured");
   });
 
   test("set with valid provider shows text input overlay", async () => {
-    const origKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      const pm = new ProviderManager({});
-      const { ctx, overlays } = createMockContext(pm);
+    const pm = new ProviderManager({});
+    const { ctx, overlays } = createMockContext(pm);
 
-      // Fire and forget — overlay is async
-      providerCommand.handler("set openai", ctx);
-      // Give microtask a chance
-      await new Promise((r) => setTimeout(r, 10));
+    providerCommand.handler("set openai", ctx);
+    await new Promise((r) => setTimeout(r, 10));
 
-      expect(overlays.length).toBeGreaterThanOrEqual(1);
-    } finally {
-      if (origKey) process.env.OPENAI_API_KEY = origKey;
-    }
+    expect(overlays.length).toBeGreaterThanOrEqual(1);
   });
 
   test("set without provider shows list picker overlay", async () => {

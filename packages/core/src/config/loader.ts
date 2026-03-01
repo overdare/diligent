@@ -5,20 +5,18 @@ import { parse as parseJsonc } from "jsonc-parser";
 import { DEFAULT_CONFIG, type DiligentConfig, DiligentConfigSchema } from "./schema";
 
 /** Load and merge config from all sources (D033: global < project < env) */
-export async function loadDiligentConfig(
-  cwd: string,
-  env: Record<string, string | undefined> = process.env,
-): Promise<{ config: DiligentConfig; sources: string[] }> {
+export async function loadDiligentConfig(cwd: string): Promise<{ config: DiligentConfig; sources: string[] }> {
   const sources: string[] = [];
 
   // Layer 1: Global config
-  const globalPath = join(homedir(), ".config", "diligent", "diligent.jsonc");
-  const globalConfig = await loadConfigFile(globalPath, env);
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  const globalPath = join(home, ".config", "diligent", "diligent.jsonc");
+  const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
   // Layer 2: Project config
   const projectPath = join(cwd, "diligent.jsonc");
-  const projectConfig = await loadConfigFile(projectPath, env);
+  const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
 
   // Merge: global < project < env
@@ -26,20 +24,17 @@ export async function loadDiligentConfig(
   if (globalConfig) merged = mergeConfig(merged, globalConfig);
   if (projectConfig) merged = mergeConfig(merged, projectConfig);
 
-  // Layer 3: Environment variable overrides
-  merged = applyEnvOverrides(merged, env);
-
   return { config: merged, sources };
 }
 
 /** Parse JSONC file, validate with Zod */
-async function loadConfigFile(path: string, env: Record<string, string | undefined>): Promise<DiligentConfig | null> {
+async function loadConfigFile(path: string): Promise<DiligentConfig | null> {
   try {
     const file = Bun.file(path);
     if (!(await file.exists())) return null;
     const text = await file.text();
     const parsed = parseJsonc(text);
-    const substituted = substituteTemplates(parsed, env);
+    const substituted = substituteTemplates(parsed);
     const result = DiligentConfigSchema.safeParse(substituted);
     if (!result.success) {
       console.warn(`Config warning: ${path}\n${result.error.message}`);
@@ -71,43 +66,16 @@ export function mergeConfig(base: DiligentConfig, override: DiligentConfig): Dil
   return merged;
 }
 
-/** Environment variable overrides (D033 Layer 3) */
-function applyEnvOverrides(config: DiligentConfig, env: Record<string, string | undefined>): DiligentConfig {
-  const result = { ...config };
-  if (env.ANTHROPIC_API_KEY) {
-    result.provider = {
-      ...result.provider,
-      anthropic: { ...result.provider?.anthropic, apiKey: env.ANTHROPIC_API_KEY },
-    };
-  }
-  if (env.OPENAI_API_KEY) {
-    result.provider = {
-      ...result.provider,
-      openai: { ...result.provider?.openai, apiKey: env.OPENAI_API_KEY },
-    };
-  }
-  if (env.GEMINI_API_KEY) {
-    result.provider = {
-      ...result.provider,
-      gemini: { ...result.provider?.gemini, apiKey: env.GEMINI_API_KEY },
-    };
-  }
-  if (env.DILIGENT_MODEL) {
-    result.model = env.DILIGENT_MODEL;
-  }
-  return result;
-}
-
-/** Template substitution: {env:VAR_NAME} → env[VAR_NAME] */
-function substituteTemplates(obj: unknown, env: Record<string, string | undefined>): unknown {
+/** Template substitution: {env:VAR_NAME} → process.env[VAR_NAME] */
+function substituteTemplates(obj: unknown): unknown {
   if (typeof obj === "string") {
-    return obj.replace(/\{env:([^}]+)\}/g, (_, varName) => env[varName] ?? "");
+    return obj.replace(/\{env:([^}]+)\}/g, (_, varName) => process.env[varName] ?? "");
   }
-  if (Array.isArray(obj)) return obj.map((item) => substituteTemplates(item, env));
+  if (Array.isArray(obj)) return obj.map((item) => substituteTemplates(item));
   if (typeof obj === "object" && obj !== null) {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
-      result[k] = substituteTemplates(v, env);
+      result[k] = substituteTemplates(v);
     }
     return result;
   }

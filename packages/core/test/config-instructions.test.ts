@@ -17,12 +17,12 @@ describe("discoverInstructions", () => {
   it("finds CLAUDE.md in cwd", async () => {
     const projectDir = join(TEST_ROOT, "project");
     await mkdir(projectDir, { recursive: true });
-    await Bun.write(join(projectDir, "CLAUDE.md"), "# Instructions\nUse Bun.");
+    await Bun.write(join(projectDir, "AGENTS.md"), "# Instructions\nUse Bun.");
 
     const result = await discoverInstructions(projectDir);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe("# Instructions\nUse Bun.");
-    expect(result[0].path).toBe(join(projectDir, "CLAUDE.md"));
+    expect(result[0].path).toBe(join(projectDir, "AGENTS.md"));
   });
 
   it("returns empty when no CLAUDE.md found", async () => {
@@ -41,9 +41,9 @@ describe("discoverInstructions", () => {
     const sub = join(parent, "sub");
     await mkdir(sub, { recursive: true });
     await mkdir(join(parent, ".git"));
-    await Bun.write(join(parent, "CLAUDE.md"), "parent instructions");
+    await Bun.write(join(parent, "AGENTS.md"), "parent instructions");
 
-    // Starting from sub, should find parent's CLAUDE.md,
+    // Starting from sub, should find parent's AGENTS.md,
     // then stop because parent has .git
     const result = await discoverInstructions(sub);
     expect(result).toHaveLength(1);
@@ -54,7 +54,7 @@ describe("discoverInstructions", () => {
     const projectDir = join(TEST_ROOT, "git-project");
     await mkdir(projectDir, { recursive: true });
     await mkdir(join(projectDir, ".git"));
-    await Bun.write(join(projectDir, "CLAUDE.md"), "project root instructions");
+    await Bun.write(join(projectDir, "AGENTS.md"), "project root instructions");
 
     const result = await discoverInstructions(projectDir);
     expect(result).toHaveLength(1);
@@ -66,7 +66,7 @@ describe("discoverInstructions", () => {
     await mkdir(projectDir, { recursive: true });
     await mkdir(join(projectDir, ".git"));
     const large = "x".repeat(40_000); // > 32 KiB
-    await Bun.write(join(projectDir, "CLAUDE.md"), large);
+    await Bun.write(join(projectDir, "AGENTS.md"), large);
 
     const result = await discoverInstructions(projectDir);
     expect(result).toHaveLength(1);
