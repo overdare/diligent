@@ -214,6 +214,9 @@ export function classifyGeminiError(err: unknown): ProviderError {
     if (httpStatus === 429) {
       return new ProviderError(msg, "rate_limit", true, undefined, httpStatus, err);
     }
+    if (httpStatus === 529) {
+      return new ProviderError(msg, "overloaded", true, undefined, httpStatus, err);
+    }
     if (httpStatus === 401 || httpStatus === 403) {
       return new ProviderError(msg, "auth", false, undefined, httpStatus, err);
     }

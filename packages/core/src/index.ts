@@ -1,5 +1,10 @@
 // Types
 
+// Auth
+export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
+// Re-export ProviderName without alias for direct use
+export { type ProviderName } from "./auth/index";
+export { getAuthFilePath, loadAuthStore, saveAuthKey } from "./auth/index";
 // Agent
 export type {
   AgentEvent,

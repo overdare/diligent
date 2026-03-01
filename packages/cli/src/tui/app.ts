@@ -236,16 +236,18 @@ export class App {
 
   private wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
     return new Promise((resolve) => {
-      const hint =
-        provider === "anthropic"
-          ? "https://console.anthropic.com/settings/keys"
-          : "https://platform.openai.com/api-keys";
+      const hintMap: Record<string, { url: string; placeholder: string }> = {
+        anthropic: { url: "https://console.anthropic.com/settings/keys", placeholder: "sk-ant-..." },
+        openai: { url: "https://platform.openai.com/api-keys", placeholder: "sk-..." },
+        gemini: { url: "https://aistudio.google.com/apikey", placeholder: "AIza..." },
+      };
+      const { url: hint, placeholder } = hintMap[provider] ?? { url: "", placeholder: "" };
 
       const input = new TextInput(
         {
           title: `${provider} API Key`,
           message: `Enter your ${provider} API key (${hint})`,
-          placeholder: provider === "anthropic" ? "sk-ant-..." : "sk-...",
+          placeholder,
           masked: true,
         },
         (value) => {
