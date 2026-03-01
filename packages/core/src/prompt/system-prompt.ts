@@ -1,3 +1,4 @@
+// @summary Builds base system prompt with environment context and behavioral guidelines
 const SYSTEM_PROMPT_TEMPLATE = `The assistant is diligent, a transparent and debuggable coding agent.
 
 The current date is {{currentDate}}.

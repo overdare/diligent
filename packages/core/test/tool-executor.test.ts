@@ -1,3 +1,4 @@
+// @summary Tests for tool execution, validation, and output truncation
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { executeTool } from "../src/tool/executor";

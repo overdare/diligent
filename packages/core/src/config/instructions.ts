@@ -1,3 +1,4 @@
+// @summary Discovers and builds system prompts with AGENTS.md instructions and knowledge sections
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 

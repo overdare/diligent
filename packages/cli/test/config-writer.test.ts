@@ -1,3 +1,4 @@
+// @summary Tests for config file writing and API key management
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

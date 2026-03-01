@@ -1,3 +1,4 @@
+// @summary Search input with navigation through search results
 import { useCallback, useEffect, useRef } from "react";
 
 interface SearchBarProps {

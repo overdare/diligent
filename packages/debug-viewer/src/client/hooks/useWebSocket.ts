@@ -1,3 +1,4 @@
+// @summary Hook for WebSocket connection with auto-reconnect and subscription management
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WsClientMessage, WsServerMessage } from "../lib/types.js";
 

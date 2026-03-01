@@ -1,3 +1,4 @@
+// @summary Main content area displaying conversation entries in linear order
 import { useEffect, useMemo, useRef } from "react";
 import { pairToolCalls } from "../lib/toolPairing.js";
 import { buildSessionTree, getLinearPath, hasForking } from "../lib/tree.js";

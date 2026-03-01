@@ -1,3 +1,4 @@
+// @summary Provider configuration command - configure LLM provider and API keys
 import { resolveModel } from "@diligent/core";
 import { saveApiKey, saveModel } from "../../../config-writer";
 import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";

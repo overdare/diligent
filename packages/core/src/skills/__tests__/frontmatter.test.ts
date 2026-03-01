@@ -1,3 +1,4 @@
+// @summary Tests for skill metadata frontmatter parsing and validation
 import { describe, expect, it } from "bun:test";
 import { extractBody, parseFrontmatter, validateSkillName } from "../frontmatter";
 

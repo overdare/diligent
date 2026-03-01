@@ -1,3 +1,4 @@
+// @summary Builds the set of tools available to the agent in the TUI
 import type { DiligentPaths, Tool } from "@diligent/core";
 import {
   bashTool,

@@ -1,3 +1,4 @@
+// @summary Tests for key parsing and matching for keyboard input handling
 import { describe, expect, test } from "bun:test";
 import { isPrintable, matchesKey, parseKittyKey } from "../keys";
 

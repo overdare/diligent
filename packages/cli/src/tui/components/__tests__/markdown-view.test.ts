@@ -1,3 +1,4 @@
+// @summary Tests for markdown view rendering and scrolling
 import { describe, expect, test } from "bun:test";
 import { MarkdownView } from "../markdown-view";
 

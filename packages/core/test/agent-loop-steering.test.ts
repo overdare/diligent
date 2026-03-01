@@ -1,3 +1,4 @@
+// @summary Tests for agent loop with steering injection and tool execution
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";

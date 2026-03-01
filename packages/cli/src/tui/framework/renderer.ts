@@ -1,3 +1,4 @@
+// @summary Renders components to the terminal with diff-based updates
 import { debugLogger } from "./debug-logger";
 import type { OverlayStack } from "./overlay";
 import { charDisplayWidth, displayWidth } from "./string-width";

@@ -1,3 +1,4 @@
+// @summary Tests for TUI app initialization and component integration
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
 import { EventStream } from "@diligent/core";

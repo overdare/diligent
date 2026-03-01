@@ -1,3 +1,4 @@
+// @summary REST API endpoint handlers for sessions, search, and knowledge queries
 import { readdirSync } from "fs";
 import { join } from "path";
 import type {

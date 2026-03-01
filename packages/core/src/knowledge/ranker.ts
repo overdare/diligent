@@ -1,3 +1,4 @@
+// @summary Ranks knowledge entries by recency, confidence, and type with exponential decay
 import type { KnowledgeEntry, KnowledgeType } from "./types";
 
 /** D083: Type weights for ranking */

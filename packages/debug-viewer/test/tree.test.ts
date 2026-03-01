@@ -1,3 +1,4 @@
+// @summary Tests for session tree building and path navigation
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import { buildSessionTree, getLinearPath, hasForking } from "../src/client/lib/tree.js";

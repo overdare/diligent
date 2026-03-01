@@ -1,3 +1,4 @@
+// @summary Tests for session mode changes and persistence
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -1,3 +1,4 @@
+// @summary Vite build configuration for debug-viewer client
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 

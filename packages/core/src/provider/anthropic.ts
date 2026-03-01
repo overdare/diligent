@@ -1,3 +1,4 @@
+// @summary Anthropic provider implementation with thinking, streaming, and message conversion
 import Anthropic from "@anthropic-ai/sdk";
 import { EventStream } from "../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";

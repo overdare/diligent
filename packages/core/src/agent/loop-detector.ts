@@ -1,3 +1,4 @@
+// @summary Detects repeated tool call patterns using sliding window signatures
 export interface LoopDetectionResult {
   detected: boolean;
   patternLength?: number;

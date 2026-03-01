@@ -1,3 +1,4 @@
+// @summary Tests for knowledge storage, ranking, and injection
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -1,3 +1,4 @@
+// @summary Tests for tool call and result pairing logic
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import { pairToolCalls } from "../src/client/lib/toolPairing.js";

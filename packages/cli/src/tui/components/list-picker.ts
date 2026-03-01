@@ -1,3 +1,4 @@
+// @summary Interactive list selection component with keyboard navigation
 import { isPrintable, matchesKey } from "../framework/keys";
 import type { Component } from "../framework/types";
 import { t } from "../theme";

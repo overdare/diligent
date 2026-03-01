@@ -1,3 +1,4 @@
+// @summary Tests for config loading and merging behavior
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

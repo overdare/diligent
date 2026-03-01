@@ -1,3 +1,4 @@
+// @summary Tests for tool output truncation strategies
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import {

@@ -1,3 +1,4 @@
+// @summary Known models registry with resolution logic for aliases and inference
 import type { Model } from "./types";
 
 export interface ModelDefinition extends Model {

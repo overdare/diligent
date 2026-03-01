@@ -1,3 +1,4 @@
+// @summary ANSI color and style utilities for terminal output
 // --- Primitives (raw ANSI codes) ---
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";

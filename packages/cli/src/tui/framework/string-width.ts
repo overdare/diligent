@@ -1,3 +1,4 @@
+// @summary Calculates display width of characters and strings accounting for CJK
 /**
  * Get the terminal display width of a Unicode code point.
  * CJK / Hangul / fullwidth characters occupy 2 columns; most others occupy 1.

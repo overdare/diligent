@@ -1,3 +1,4 @@
+// @summary TUI render event logger for debugging terminal output
 import { appendFileSync, writeFileSync } from "node:fs";
 
 /**

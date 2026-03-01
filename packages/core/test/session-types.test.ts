@@ -1,3 +1,4 @@
+// @summary Tests for session ID and entry ID generation
 import { describe, expect, it } from "bun:test";
 import type { SessionEntry, SessionHeader, SessionMessageEntry } from "../src/session/types";
 import { generateEntryId, generateSessionId, SESSION_VERSION } from "../src/session/types";

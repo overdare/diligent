@@ -1,3 +1,4 @@
+// @summary Manages command input history for the TUI
 import { dirname } from "node:path";
 
 export class InputHistory {

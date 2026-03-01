@@ -1,3 +1,4 @@
+// @summary Tests for input editor key handling and completion
 import { describe, expect, test } from "bun:test";
 import type { CompletionItem } from "../../commands/registry";
 import { CURSOR_MARKER } from "../../framework/types";

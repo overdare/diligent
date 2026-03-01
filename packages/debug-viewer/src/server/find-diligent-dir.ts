@@ -1,3 +1,4 @@
+// @summary Utility to find .diligent directory by walking up from cwd
 import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 

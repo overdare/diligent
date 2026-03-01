@@ -1,3 +1,4 @@
+// @summary Tests for REST API endpoint handlers
 import { beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "path";
 import { createApiHandler } from "../src/server/api.js";

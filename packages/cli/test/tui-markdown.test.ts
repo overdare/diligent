@@ -1,3 +1,4 @@
+// @summary Tests for markdown rendering with ANSI formatting
 import { describe, expect, test } from "bun:test";
 import { renderMarkdown } from "../src/tui/markdown";
 

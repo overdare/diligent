@@ -1,3 +1,4 @@
+// @summary Tests for status bar mode display and rendering
 import { describe, expect, test } from "bun:test";
 import { StatusBar } from "../src/tui/components/status-bar";
 

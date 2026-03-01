@@ -1,3 +1,4 @@
+// @summary Renders skills section for system prompt with usage instructions
 import type { SkillMetadata } from "./types";
 
 /**

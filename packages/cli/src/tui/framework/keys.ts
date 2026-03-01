@@ -1,3 +1,4 @@
+// @summary Key name definitions and keyboard event parsing utilities
 /** Named key identifiers */
 export type KeyId =
   | "enter"

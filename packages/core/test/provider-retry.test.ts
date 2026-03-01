@@ -1,3 +1,4 @@
+// @summary Tests for provider stream retry wrapper behavior
 import { describe, expect, test } from "bun:test";
 import { EventStream } from "../src/event-stream";
 import { withRetry } from "../src/provider/retry";

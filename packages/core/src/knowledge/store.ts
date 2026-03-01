@@ -1,3 +1,4 @@
+// @summary Persistent JSONL-based knowledge store with append and read operations
 import { join } from "node:path";
 import type { KnowledgeEntry } from "./types";
 

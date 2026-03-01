@@ -1,3 +1,4 @@
+// @summary Manages modal overlay components displayed on top of main content
 import type { Component, OverlayHandle, OverlayOptions } from "./types";
 
 interface OverlayEntry {

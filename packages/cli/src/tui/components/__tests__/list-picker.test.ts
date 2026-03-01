@@ -1,3 +1,4 @@
+// @summary Tests for list picker component and item selection
 import { describe, expect, test } from "bun:test";
 import type { ListPickerItem } from "../list-picker";
 import { ListPicker } from "../list-picker";

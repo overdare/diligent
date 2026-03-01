@@ -1,3 +1,4 @@
+// @summary Tests for session compaction and token estimation
 import { describe, expect, it } from "bun:test";
 import {
   estimateTokens,

@@ -1,3 +1,4 @@
+// @summary Loads and validates the CLI configuration from disk
 import type {
   AgentEvent,
   AgentLoopConfig,

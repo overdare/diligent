@@ -1,3 +1,4 @@
+// @summary Root app component managing sessions, search, and detail view
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ConversationView } from "./components/ConversationView.js";

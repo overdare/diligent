@@ -1,3 +1,4 @@
+// @summary Sidebar list of available debug sessions
 import type { SessionMeta } from "../lib/types.js";
 
 interface SessionListProps {

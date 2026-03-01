@@ -1,3 +1,4 @@
+// @summary OpenAI provider implementation with streaming, tools, and error classification
 import OpenAI from "openai";
 import { EventStream } from "../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";

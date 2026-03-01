@@ -1,3 +1,4 @@
+// @summary Main agent loop that iterates turns, manages tools, and handles retries
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { EventStream } from "../event-stream";

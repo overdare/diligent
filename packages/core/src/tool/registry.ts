@@ -1,3 +1,4 @@
+// @summary Tool registry builder for registering and building tool maps
 import type { z } from "zod";
 import type { Tool, ToolRegistry } from "./types";
 

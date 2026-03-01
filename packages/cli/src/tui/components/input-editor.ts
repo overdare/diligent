@@ -1,3 +1,4 @@
+// @summary Multi-line command input editor with command completion support
 import type { CompletionItem } from "../commands/registry";
 import { isPrintable, matchesKey } from "../framework/keys";
 import { displayWidth, sliceEndToFitWidth, sliceToFitWidth } from "../framework/string-width";

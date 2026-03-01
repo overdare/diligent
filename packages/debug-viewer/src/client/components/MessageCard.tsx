@@ -1,3 +1,4 @@
+// @summary Card rendering user/assistant messages, tool calls, and compactions
 import { marked } from "marked";
 import { useState } from "react";
 import type {

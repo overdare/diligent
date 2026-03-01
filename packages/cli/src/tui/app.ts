@@ -1,3 +1,4 @@
+// @summary Main TUI application component managing the agent loop and interface
 import type { AgentEvent, DiligentPaths, Message, ModeKind, SkillMetadata, UserMessage } from "@diligent/core";
 import { agentLoop, EventStream, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";

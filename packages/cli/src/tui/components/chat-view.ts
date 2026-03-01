@@ -1,3 +1,4 @@
+// @summary Renders the agent message history and real-time streaming output
 import type { AgentEvent } from "@diligent/core";
 import { debugLogger } from "../framework/debug-logger";
 import { displayWidth } from "../framework/string-width";

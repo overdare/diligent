@@ -1,3 +1,4 @@
+// @summary Animated spinner component for processing indicators
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 

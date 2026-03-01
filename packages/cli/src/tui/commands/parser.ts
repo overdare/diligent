@@ -1,3 +1,4 @@
+// @summary Parses user command input into structured command objects
 export interface ParsedCommand {
   name: string;
   args?: string;

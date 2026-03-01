@@ -1,3 +1,4 @@
+// @summary Help command - displays available commands and usage information
 import { t } from "../../theme";
 import type { Command } from "../types";
 

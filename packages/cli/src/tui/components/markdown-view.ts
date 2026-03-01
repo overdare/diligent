@@ -1,3 +1,4 @@
+// @summary Renders Markdown content with scrolling support
 import type { Component } from "../framework/types";
 import { renderMarkdown } from "../markdown";
 

@@ -1,3 +1,4 @@
+// @summary Session manager orchestrating agent loop, persistence, compaction, and steering
 import { agentLoop } from "../agent/loop";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import { EventStream } from "../event-stream";

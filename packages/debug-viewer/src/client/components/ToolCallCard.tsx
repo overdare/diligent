@@ -1,3 +1,4 @@
+// @summary Card component displaying a tool call with input/output preview
 import { useState } from "react";
 import type { ToolCallBlock, ToolCallPair } from "../lib/types.js";
 import { JsonViewer } from "./JsonViewer.js";

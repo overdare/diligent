@@ -1,3 +1,4 @@
+// @summary Tests for command registry and command execution
 import { describe, expect, it } from "bun:test";
 import { CommandRegistry } from "../registry";
 import type { Command, CommandContext } from "../types";

@@ -1,3 +1,4 @@
+// @summary Manages LLM provider initialization and stream creation
 import type { DiligentConfig, StreamFunction } from "@diligent/core";
 import { createAnthropicStream, createGeminiStream, createOpenAIStream } from "@diligent/core";
 

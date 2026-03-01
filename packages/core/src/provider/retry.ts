@@ -1,3 +1,4 @@
+// @summary Wraps stream functions with exponential backoff retry logic
 import { EventStream } from "../event-stream";
 import type { ProviderEvent, ProviderResult, StreamFunction } from "./types";
 import { ProviderError } from "./types";

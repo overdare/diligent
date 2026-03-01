@@ -1,3 +1,4 @@
+// @summary WebSocket server connection management and message broadcasting
 import type { ServerWebSocket } from "bun";
 import type { WsClientMessage, WsServerMessage } from "../shared/protocol.js";
 import type { SessionEntry, SessionMeta } from "../shared/types.js";

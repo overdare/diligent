@@ -1,3 +1,4 @@
+// @summary Loads and merges DiligentConfig from global, project, and environment layers
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";

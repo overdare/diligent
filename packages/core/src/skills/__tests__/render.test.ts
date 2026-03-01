@@ -1,3 +1,4 @@
+// @summary Tests for skills section rendering with metadata
 import { describe, expect, it } from "bun:test";
 import { renderSkillsSection } from "../render";
 import type { SkillMetadata } from "../types";

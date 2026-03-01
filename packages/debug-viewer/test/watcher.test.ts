@@ -1,3 +1,4 @@
+// @summary Tests for file watcher detecting session file changes
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";

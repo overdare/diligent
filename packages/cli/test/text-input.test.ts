@@ -1,3 +1,4 @@
+// @summary Tests for text input component and user interactions
 import { describe, expect, mock, test } from "bun:test";
 import { TextInput, type TextInputOptions } from "../src/tui/components/text-input";
 

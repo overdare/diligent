@@ -9,5 +9,3 @@ openclaw/         OpenClaw reference analysis
 side-research/    Exploratory research
 temp/             Temporary notes and drafts
 ```
-
-Reference codebases (codex, opencode, pi-mono) have moved to `../references/`.

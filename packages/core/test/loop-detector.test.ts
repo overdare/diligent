@@ -1,3 +1,4 @@
+// @summary Tests for infinite loop detection in agent behavior
 import { describe, expect, test } from "bun:test";
 import { LoopDetector } from "../src/agent/loop-detector";
 

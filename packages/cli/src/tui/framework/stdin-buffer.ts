@@ -1,3 +1,4 @@
+// @summary Parses raw terminal input into individual key sequences
 /**
  * Splits batched raw input into individual key sequences.
  * Handles single characters, escape sequences, and Kitty protocol sequences.

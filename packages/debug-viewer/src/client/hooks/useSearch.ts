@@ -1,3 +1,4 @@
+// @summary Hook for searching session entries and navigating results
 import { useCallback, useMemo, useState } from "react";
 import type { SessionEntry } from "../lib/types.js";
 

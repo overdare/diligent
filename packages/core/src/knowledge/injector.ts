@@ -1,3 +1,4 @@
+// @summary Builds ranked knowledge section for system prompt with token budget constraints
 import { rankKnowledge } from "./ranker";
 import type { KnowledgeEntry } from "./types";
 

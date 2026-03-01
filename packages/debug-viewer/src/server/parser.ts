@@ -1,3 +1,4 @@
+// @summary JSONL parser and tree builder for session data
 import type {
   AssistantMessageEntry,
   CompactionEntry,

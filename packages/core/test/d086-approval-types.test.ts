@@ -1,3 +1,4 @@
+// @summary Tests for approval request and response types
 import { describe, expect, it } from "bun:test";
 import type { ApprovalRequest, ApprovalResponse, ToolContext } from "../src/tool/types";
 

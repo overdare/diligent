@@ -1,3 +1,4 @@
+// @summary Miscellaneous commands - clear, version, and exit
 import { version as pkgVersion } from "../../../../package.json";
 import { t } from "../../theme";
 import type { Command } from "../types";

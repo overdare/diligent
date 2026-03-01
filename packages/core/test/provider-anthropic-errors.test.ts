@@ -1,3 +1,4 @@
+// @summary Tests for Anthropic API error classification and retry logic
 import { describe, expect, test } from "bun:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { classifyAnthropicError } from "../src/provider/anthropic";

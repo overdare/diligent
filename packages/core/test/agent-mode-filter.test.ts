@@ -1,3 +1,4 @@
+// @summary Tests for agent mode filtering and tool allowlisting
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";

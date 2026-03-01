@@ -1,3 +1,4 @@
+// @summary Tests for session file persistence and entry management
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

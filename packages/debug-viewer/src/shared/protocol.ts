@@ -1,3 +1,4 @@
+// @summary REST and WebSocket protocol type definitions
 import type { KnowledgeEntry, SessionEntry, SessionMeta } from "./types.js";
 
 // REST response types

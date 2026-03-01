@@ -1,3 +1,4 @@
+// @summary Tests for async event stream iteration and completion
 import { describe, expect, test } from "bun:test";
 import { EventStream } from "../src/event-stream";
 

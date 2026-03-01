@@ -1,3 +1,4 @@
+// @summary Client-side tree structure and navigation for session entries
 import type { SessionEntry } from "./types.js";
 
 export interface ClientSessionTree {

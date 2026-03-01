@@ -1,3 +1,4 @@
+// @summary Session compaction with LLM summarization, cut-point detection, and file operation tracking
 import type { Model, StreamContext, StreamFunction } from "../provider/types";
 import type { Message, TextBlock } from "../types";
 import type { CompactionDetails, SessionEntry } from "./types";

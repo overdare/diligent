@@ -1,3 +1,4 @@
+// @summary Terminal control interface for raw mode input and ANSI output
 export interface TerminalOptions {
   stdin?: NodeJS.ReadableStream & { isTTY?: boolean; isRaw?: boolean; setRawMode?(mode: boolean): void };
   stdout?: NodeJS.WritableStream & { columns?: number; rows?: number };

@@ -1,3 +1,4 @@
+// @summary Tests for session JSONL parser and entry type detection
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import {

@@ -1,3 +1,4 @@
+// @summary Replays TUI debug logs for analyzing terminal rendering behavior
 /**
  * TUI debug log replayer.
  *

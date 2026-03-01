@@ -1,3 +1,4 @@
+// @summary Tests for agent loop retry logic and usage cost calculation
 import { describe, expect, test } from "bun:test";
 import { agentLoop } from "../src/agent/loop";
 import type { AgentEvent } from "../src/agent/types";

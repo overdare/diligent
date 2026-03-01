@@ -1,3 +1,4 @@
+// @summary Manages command registration and completion lookup
 import type { Command } from "./types";
 
 export interface CompletionItem {

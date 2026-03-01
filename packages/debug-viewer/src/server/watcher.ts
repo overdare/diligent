@@ -1,3 +1,4 @@
+// @summary File watcher for detecting new/updated session JSONL files
 import { type FSWatcher, readdirSync, watch } from "fs";
 import { join } from "path";
 import type { SessionEntry } from "../shared/types.js";

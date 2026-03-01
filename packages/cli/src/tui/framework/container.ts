@@ -1,3 +1,4 @@
+// @summary Vertical stacking container for composing multiple components
 import type { Component } from "./types";
 
 /** Vertical stacking container — concatenates children's render output */

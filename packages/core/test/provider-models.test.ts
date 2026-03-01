@@ -1,3 +1,4 @@
+// @summary Tests for model registry and resolution
 import { describe, expect, it } from "bun:test";
 import { KNOWN_MODELS, resolveModel } from "../src/provider/models";
 

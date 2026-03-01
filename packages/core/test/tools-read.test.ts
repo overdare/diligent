@@ -1,3 +1,4 @@
+// @summary Tests for read tool file content retrieval with truncation
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

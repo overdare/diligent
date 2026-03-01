@@ -1,3 +1,4 @@
+// @summary Generic async iterator stream with event queuing and result resolution
 export class EventStream<T, R> implements AsyncIterable<T> {
   private queue: T[] = [];
   private waiting: Array<(value: IteratorResult<T>) => void> = [];

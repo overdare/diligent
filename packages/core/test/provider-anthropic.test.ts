@@ -1,3 +1,4 @@
+// @summary Tests for Anthropic provider event stream mapping
 import { describe, expect, test } from "bun:test";
 import { EventStream } from "../src/event-stream";
 import type { Model, ProviderEvent, ProviderResult } from "../src/provider/types";

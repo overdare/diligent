@@ -1,3 +1,4 @@
+// @summary Tests for glob tool file pattern matching
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

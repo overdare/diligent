@@ -1,3 +1,4 @@
+// @summary Auto-truncation of tool output with head, tail, and head_tail strategies
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

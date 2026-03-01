@@ -1,3 +1,4 @@
+// @summary Footer status bar displaying mode and connection information
 import type { ModeKind } from "@diligent/core";
 import type { Component } from "../framework/types";
 import { t } from "../theme";

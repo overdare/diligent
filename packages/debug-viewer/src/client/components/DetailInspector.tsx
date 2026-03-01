@@ -1,3 +1,4 @@
+// @summary Detail panel showing full JSON and metadata for selected session entry
 import { useCallback } from "react";
 import { JsonViewer } from "./JsonViewer.js";
 

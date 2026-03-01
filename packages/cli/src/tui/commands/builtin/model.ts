@@ -1,3 +1,4 @@
+// @summary Model selection command - allows switching between available LLM models
 import { KNOWN_MODELS, resolveModel } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
 import { PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";

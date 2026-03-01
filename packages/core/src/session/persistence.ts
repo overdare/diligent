@@ -1,3 +1,4 @@
+// @summary Session file persistence with JSONL format, deferred writing, and session listing
 import { join } from "node:path";
 import type { SessionEntry, SessionHeader, SessionInfo, SessionInfoEntry, SessionMessageEntry } from "./types";
 import { generateSessionId, SESSION_VERSION } from "./types";

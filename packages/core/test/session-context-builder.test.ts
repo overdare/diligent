@@ -1,3 +1,4 @@
+// @summary Tests for building context from session entries
 import { describe, expect, it } from "bun:test";
 import { buildSessionContext } from "../src/session/context-builder";
 import type { CompactionEntry, SessionEntry } from "../src/session/types";

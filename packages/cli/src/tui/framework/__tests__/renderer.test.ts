@@ -1,3 +1,4 @@
+// @summary Tests for TUI renderer and component rendering pipeline
 import { describe, expect, test } from "bun:test";
 import { Container } from "../container";
 import { TUIRenderer } from "../renderer";

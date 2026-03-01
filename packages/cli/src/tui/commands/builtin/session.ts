@@ -1,3 +1,4 @@
+// @summary Session management commands - create new session and list sessions
 import { t } from "../../theme";
 import type { Command } from "../types";
 

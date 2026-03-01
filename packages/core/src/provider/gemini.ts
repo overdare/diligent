@@ -1,3 +1,4 @@
+// @summary Gemini provider implementation with thinking support and content conversion
 import type { FunctionDeclaration } from "@google/genai";
 import { GoogleGenAI } from "@google/genai";
 import { EventStream } from "../event-stream";

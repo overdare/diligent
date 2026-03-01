@@ -1,3 +1,4 @@
+// @summary Parses and validates SKILL.md frontmatter metadata
 import type { SkillFrontmatter } from "./types";
 
 const NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;

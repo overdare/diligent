@@ -1,3 +1,4 @@
+// @summary Utilities for pairing tool calls with their results
 import type { SessionEntry, ToolCallBlock, ToolCallPair, ToolResultEntry } from "./types.js";
 
 /**

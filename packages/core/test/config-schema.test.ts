@@ -1,3 +1,4 @@
+// @summary Tests for DiligentConfig schema validation
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_CONFIG, type DiligentConfig, DiligentConfigSchema } from "../src/config/schema";
 

@@ -1,3 +1,4 @@
+// @summary Orchestrates agent loop execution and session state management
 import type { AgentEvent, DiligentPaths, Message, UserMessage } from "@diligent/core";
 import { agentLoop, SessionManager } from "@diligent/core";
 import type { AgentLoopFn, AppConfig } from "../config";

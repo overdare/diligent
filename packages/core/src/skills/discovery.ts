@@ -1,3 +1,4 @@
+// @summary Discovers skills from project, global, and config-specified directories
 import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";

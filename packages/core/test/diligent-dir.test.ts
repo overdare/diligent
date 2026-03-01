@@ -1,3 +1,4 @@
+// @summary Tests for .diligent directory initialization and structure
 import { afterEach, describe, expect, it } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

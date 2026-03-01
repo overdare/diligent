@@ -1,3 +1,4 @@
+// @summary Hook for fetching and managing available debug sessions
 import { useCallback, useEffect, useState } from "react";
 import type { SessionMeta } from "../lib/types.js";
 

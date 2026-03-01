@@ -1,3 +1,4 @@
+// @summary Tests for write tool file creation and overwriting
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

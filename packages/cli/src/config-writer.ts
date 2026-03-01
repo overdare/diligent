@@ -1,3 +1,4 @@
+// @summary Writes configuration changes to disk with JSONC support
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";

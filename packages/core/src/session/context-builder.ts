@@ -1,3 +1,4 @@
+// @summary Builds linear message context from tree-structured session entries with compaction support
 import type { Message } from "../types";
 import { formatFileOperations } from "./compaction";
 import type { CompactionEntry, SessionEntry } from "./types";

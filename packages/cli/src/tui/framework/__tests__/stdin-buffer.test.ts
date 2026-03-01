@@ -1,3 +1,4 @@
+// @summary Tests for stdin buffer read and escape sequence parsing
 import { describe, expect, test } from "bun:test";
 import { StdinBuffer } from "../stdin-buffer";
 

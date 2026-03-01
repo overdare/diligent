@@ -1,3 +1,5 @@
+// @summary End-to-end tests for the agent loop with real Anthropic API
+
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

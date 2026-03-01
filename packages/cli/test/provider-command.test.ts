@@ -1,3 +1,4 @@
+// @summary Tests for provider command parsing and execution
 import { describe, expect, mock, test } from "bun:test";
 import type { ModeKind, SessionManager, SkillMetadata } from "@diligent/core";
 import type { AppConfig } from "../src/config";

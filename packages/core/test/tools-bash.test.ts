@@ -1,3 +1,4 @@
+// @summary Tests for bash tool execution, error handling, and env var filtering
 import { describe, expect, test } from "bun:test";
 import type { ToolContext } from "../src/tool/types";
 import { bashTool, filterSensitiveEnv } from "../src/tools/bash";

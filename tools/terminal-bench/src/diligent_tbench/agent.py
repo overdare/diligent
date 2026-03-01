@@ -1,3 +1,5 @@
+# @summary Harbor agent adapter for diligent coding agent
+
 """Harbor agent adapter for diligent coding agent."""
 
 import json

@@ -1,3 +1,4 @@
+// @summary Renders Markdown to ANSI-styled terminal text
 import { Marked, Renderer } from "marked";
 import { t } from "./theme";
 

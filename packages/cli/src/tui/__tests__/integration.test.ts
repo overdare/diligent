@@ -1,7 +1,4 @@
-/**
- * Integration tests: ChatView + InputEditor + StatusBar through a full
- * tool-execution cycle. Uses TerminalSim to track cursor and screen state.
- */
+// @summary Integration tests for ChatView, InputEditor, StatusBar with tool execution
 import { describe, expect, test } from "bun:test";
 import type { AgentEvent } from "@diligent/core";
 import { ChatView } from "../components/chat-view";

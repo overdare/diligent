@@ -1,3 +1,4 @@
+// @summary Tests for command parsing and validation
 import { describe, expect, it } from "bun:test";
 import { isCommandPrefix, parseCommand } from "../parser";
 

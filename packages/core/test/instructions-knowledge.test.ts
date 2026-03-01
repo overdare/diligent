@@ -1,3 +1,4 @@
+// @summary Tests for system prompt building with knowledge injection
 import { describe, expect, it } from "bun:test";
 import { buildSystemPromptWithKnowledge } from "../src/config/instructions";
 

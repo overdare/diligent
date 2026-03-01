@@ -1,3 +1,4 @@
+// @summary JSON tree viewer component with collapsible nodes
 import { darkStyles, JsonView } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 

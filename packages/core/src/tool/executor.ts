@@ -1,3 +1,4 @@
+// @summary Executes tool calls with parameter validation and auto-truncation
 import type { ToolCallBlock } from "../types";
 import {
   persistFullOutput,

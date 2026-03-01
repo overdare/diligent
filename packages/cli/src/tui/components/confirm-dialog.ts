@@ -1,3 +1,4 @@
+// @summary Yes/No confirmation dialog component
 import { matchesKey } from "../framework/keys";
 import type { Component } from "../framework/types";
 import { t } from "../theme";

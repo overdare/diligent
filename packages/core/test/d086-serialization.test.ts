@@ -1,3 +1,4 @@
+// @summary Tests for JSON serialization of agent events and messages
 import { describe, expect, it } from "bun:test";
 import type { AgentEvent, SerializableError } from "../src/agent/types";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "../src/types";

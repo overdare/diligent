@@ -1,3 +1,4 @@
+// @summary Compact command - compresses message history to reduce token usage
 import { t } from "../../theme";
 import type { Command } from "../types";
 

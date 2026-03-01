@@ -1,3 +1,4 @@
+// @summary Hook for fetching and loading entries from a debug session
 import { useCallback, useEffect, useState } from "react";
 import type { SessionEntry } from "../lib/types.js";
 

@@ -1,3 +1,4 @@
+// @summary Tests for overlay stack management and component rendering
 import { describe, expect, test } from "bun:test";
 import { OverlayStack } from "../overlay";
 import type { Component } from "../types";

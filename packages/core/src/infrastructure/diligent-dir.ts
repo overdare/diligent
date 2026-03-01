@@ -1,3 +1,4 @@
+// @summary Manages .diligent directory structure with paths and gitignore setup
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
