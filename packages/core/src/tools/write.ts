@@ -1,3 +1,4 @@
+// @summary Write file contents with directory auto-creation
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";

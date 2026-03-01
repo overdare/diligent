@@ -1,3 +1,4 @@
+// @summary Surgical file editing via search-and-replace
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";

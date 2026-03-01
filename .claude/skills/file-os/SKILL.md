@@ -1,97 +1,111 @@
 ---
 name: file-os
-description: "Maintain the project's breadcrumb navigation system — the chain of CLAUDE.md → directory README.md files that lets Claude find what it needs by following links recursively. Use this skill when the user says 'update navigation', 'fix README', 'add breadcrumb', 'nav 업데이트', 'README 정리', or when directories have been added, moved, or reorganized and their README.md guides need to catch up. Also trigger when the user asks to audit or review the navigation structure."
+description: "Explore codebase structure with summaries, maintain README.md navigation, and manage @summary annotations. Use when the user says 'explore', 'navigate', 'update navigation', 'fix README', 'add breadcrumb', 'add summary', 'nav 업데이트', 'README 정리', or when directories have been added, moved, or reorganized."
 ---
 
-# File OS — Breadcrumb Navigation Maintenance
+# File OS — Codebase Navigation with Summaries
 
-This project uses a recursive navigation system so Claude reads only what a task requires, instead of loading everything upfront. Your job is to keep this system accurate and connected.
+Two conventions let scripts produce structured codebase overviews that replace expensive glob→read loops.
 
-## How the System Works
+## Convention: @summary
 
-```
-CLAUDE.md (root compass — always loaded)
-  → "Navigate by Need" table points to directories and key files
-    → Each directory has a README.md listing its contents
-      → Subdirectories have their own README.md, and so on
-```
+A one-line summary embedded in the file's first line:
 
-Claude follows this chain: CLAUDE.md → directory README.md → deeper README.md → target file. If any link in the chain is missing or stale, Claude either reads too much or can't find what it needs.
-
-## The Two Layers
-
-**CLAUDE.md** — the root. A table mapping needs to starting points. Also carries a one-line project description, rules, and dev commands. This file is always in context, so keep it minimal.
-
-```
-| Need | Start here |
-|------|-----------|
-| Architecture, layers & patterns | `ARCHITECTURE.md` |
-| Planning, decisions & phase specs | `docs/plan/` |
+```typescript
+// @summary Agent loop orchestrator — runs turns, dispatches tool calls
+import { z } from "zod";
 ```
 
-**Directory README.md** — a signpost. One-line description of the directory's purpose, then a code block listing contents with brief annotations. No tables, no file-level summaries — just structure.
+- Must be the **first line** of the file
+- Format: `// @summary <description>` (or `# @summary` for py/sh, `-- @summary` for sql, `<!-- @summary -->` for html/md)
+- Optional — not every file needs one. Skip index/types/config files.
 
-```
-# Planning
+## Convention: README.md
 
-Design decisions, phase roadmap, and implementation specs.
+Directory README.md files list **subdirectories** (and key files) with brief descriptions in code blocks:
+
+```markdown
+# Core
+
+Agent loop, providers, tools, config, sessions, and knowledge.
 
 \```
-decisions.md                 Design decisions log (D001–D087+)
-implementation-phases.md     Phase roadmap and phase-layer matrix
-impl/                        Per-phase implementation specs
+src/
+  agent/           Agent loop and loop detector
+  config/          Config loading, schema, instructions
 \```
 ```
 
-## Operations
+## Scripts
 
-### Audit
+### explore — Directory structure + summaries
 
-Scan for gaps and staleness:
+```bash
+node .claude/skills/file-os/explore.mjs <pattern> [path] [--depth N]
+```
 
-1. Read CLAUDE.md — check every path in the navigation table actually exists
-2. List directories referenced in the table — check each has a README.md
-3. For each README.md, compare its listed contents against the actual directory (`ls`)
-4. Report: missing README.md files, stale entries (listed but deleted), unlisted entries (exist but not listed)
+| Arg | Description | Default |
+|-----|-------------|---------|
+| `pattern` | Glob pattern (`*/`, `*.ts`, `**/`) | Required |
+| `path` | Search root directory | cwd |
+| `--depth N` | Limit tree depth | Unlimited |
 
-### Create README.md for a New Directory
+Files are always shown with @summary when available.
 
-1. `ls` the directory to see what's in it
-2. Write a README.md following the format:
-   - `# Title` — what this directory is about (one line)
-   - Blank line, then one sentence of context if needed
-   - Code block listing contents with brief descriptions
-3. If this is a new top-level entry, add a row to CLAUDE.md's navigation table
+**Examples:**
 
-### Update After Changes
+```bash
+# Direct subdirectories of core/src with descriptions
+node .claude/skills/file-os/explore.mjs "*/" packages/core/src
 
-When files or directories have been added, moved, or deleted:
+# .ts files in a specific directory
+node .claude/skills/file-os/explore.mjs "*.ts" packages/core/src/tools
 
-1. Identify which README.md files are affected (the directory itself and its parent)
-2. Update each one to reflect the current contents
-3. If a directory was moved, grep for old paths in all .md files and update them
-4. If a top-level entry changed, update CLAUDE.md's table
+# Recursive with depth limit
+node .claude/skills/file-os/explore.mjs "**/" packages/core/src --depth 2
 
-### Path Reference Update
+# Cross-package exploration
+node .claude/skills/file-os/explore.mjs "*/" packages/*/src
+```
 
-When a directory is moved (like `docs/research/references/` → `docs/references/`):
+### check — README.md gaps and @summary coverage
 
-1. `grep -r` the old path across all .md files (including .claude/skills/)
-2. Update every reference
-3. Verify with a final grep that zero references remain
+```bash
+node .claude/skills/file-os/check.mjs [path]
+```
 
-## When to Add a README.md
+Reports:
+- **Missing README.md** — directories with 2+ subdirectories but no README
+- **Stale README.md** — listed directories don't match actual contents
+- **@summary coverage** — per-directory file coverage, sorted worst-first
 
-Only where a directory **branches** — where there are multiple siblings and an LLM wouldn't know which to pick without a guide. A linear chain like `a/b/c/d/e` with one item at each level needs no intermediate README.md files. The goal is minimal navigation, not exhaustive documentation.
+## Operations (LLM performs these)
 
-## Parallelism
+### readme — Create/update README.md files
 
-When multiple directories need README.md creation or updates, use the Agent tool to process them in parallel — one subagent per directory. Each subagent scans (`ls`) its assigned directory, writes or updates the README.md, and returns the result. This avoids sequential round-trips and keeps the main context clean.
+1. Run `node .claude/skills/file-os/check.mjs` → identify gaps
+2. For each missing/stale directory, run `node .claude/skills/file-os/explore.mjs "*/" <dir>` → understand structure
+3. Write README.md following the convention (# heading, one-line description, code block with entries)
+4. Use the Agent tool to process multiple directories in parallel
+
+### add-summary — Batch @summary insertion
+
+1. Run `node .claude/skills/file-os/check.mjs` → find low-coverage directories
+2. Read files that need summaries
+3. Use the Agent tool with `model: "haiku"` to generate summaries (cost-efficient)
+4. Insert `// @summary <text>` as the first line of each file
+5. Confirm with user before applying
+
+### audit — Full navigation check
+
+1. Run `node .claude/skills/file-os/check.mjs` for the full report
+2. Verify CLAUDE.md navigation table paths exist
+3. Report findings and suggest fixes
 
 ## Conventions
 
-- README.md lists folders and files that matter for navigation — skip generated files, node_modules, .gitignore, etc.
-- Descriptions are terse: enough to decide whether to read further, no more
-- Use code blocks (not tables) for directory listings in README.md files
-- CLAUDE.md is the only place that uses a markdown table (the navigation table)
-- When a directory moves, always update both the README.md chain and any .md files that reference the old path
+- README.md uses **code blocks** (not tables) for directory listings
+- Descriptions are terse: enough to decide whether to read further
+- Skip generated files, node_modules, .gitignore, etc. in listings
+- When a directory moves, update both the README.md chain and any .md files referencing the old path
+- Use the Agent tool to parallelize multi-directory operations

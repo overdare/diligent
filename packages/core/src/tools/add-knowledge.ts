@@ -1,3 +1,4 @@
+// @summary Record reusable insights to knowledge store
 import { z } from "zod";
 import { appendKnowledge } from "../knowledge/store";
 import type { KnowledgeEntry, KnowledgeType } from "../knowledge/types";

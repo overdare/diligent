@@ -1,3 +1,4 @@
+// @summary Content search via ripgrep with regex support
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 

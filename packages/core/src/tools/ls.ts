@@ -1,3 +1,4 @@
+// @summary List directory contents with type indicators
 import { readdir } from "node:fs/promises";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";

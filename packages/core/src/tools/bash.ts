@@ -1,3 +1,4 @@
+// @summary Shell command execution with timeout and output truncation
 import { z } from "zod";
 import { MAX_OUTPUT_BYTES } from "../tool/truncation";
 import type { Tool, ToolResult } from "../tool/types";

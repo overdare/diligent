@@ -1,3 +1,4 @@
+// @summary Read file with binary detection and line numbers
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
