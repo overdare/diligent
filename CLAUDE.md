@@ -5,7 +5,6 @@ Diligent — transparent, debuggable coding agent. Bun + TypeScript strict, mono
 ## Navigate by Need
 
 Read only what your task requires. Directories have README.md files — follow them recursively until you reach the file you need.
-Use `/glob-aug` to explore efficiently — shows directory trees with inline `@summary` descriptions in one pass, avoiding glob+read loops.
 
 | Need | Start here |
 |------|-----------|
@@ -22,11 +21,18 @@ Use `/glob-aug` to explore efficiently — shows directory trees with inline `@s
 | Past tech-lead assessments | `docs/review/` |
 | Pending work items | `BACKLOG.md` |
 
-## Rules
+TIP: Use `/glob-aug` skill to explore efficiently — shows directory trees with inline descriptions in one pass, avoiding glob+read loops.
 
-- English only in all files
-- Clarify requirements fully before implementing — no assumptions
-- Run tests after code changes
+```
+# Example output from /glob-aug
+$ /glob-aug "**/*.test.ts" packages/core/src
+packages/core/src/
+  skills/
+    __tests__/
+      discovery.test.ts    Tests for skill discovery and filesystem scanning
+      frontmatter.test.ts  Tests for skill metadata frontmatter parsing and validation
+      render.test.ts       Tests for skills section rendering with metadata
+```
 
 ## Code Navigation System
 
@@ -34,7 +40,14 @@ Every source file and directory participates in a two-layer navigation index. **
 
 - **`@summary`** — first line of every source file: `// @summary <desc>` (or `# @summary` for .py). Skip index.ts, types.ts, config files.
 - **`README.md`** — directories with 4+ subdirectories get a README: `# Heading`, one-line description, code block listing **subdirectories only** (no individual files).
-- Run `node .claude/skills/glob-indexer/check.mjs` to verify coverage.
+- Use `/glob-indexer` skill to verify coverage.
+
+
+## Rules
+
+- English only in all files
+- Clarify requirements fully before implementing — no assumptions
+- Run tests after code changes
 
 ## Dev Commands
 

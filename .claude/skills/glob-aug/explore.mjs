@@ -79,7 +79,7 @@ function isBinary(filePath) {
 // ── Ripgrep integration ───────────────────────────────────────────────────
 
 function runRipgrep(pattern, searchRoot, maxDepth) {
-  const args = ["rg", "--files", "--glob", pattern];
+  const args = ["--files", "--glob", pattern];
   for (const ip of IGNORE_PATHS) args.push("--glob", `!${ip}/**`);
   for (const id of IGNORE_DIRS) args.push("--glob", `!${id}/**`);
   args.push("--glob", "!.*/**");
@@ -87,7 +87,7 @@ function runRipgrep(pattern, searchRoot, maxDepth) {
   args.push(".");
 
   try {
-    const stdout = execSync(args.join(" "), {
+    const stdout = execFileSync("rg", args, {
       cwd: searchRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
@@ -161,7 +161,7 @@ function buildTreeFromPaths(filePaths, searchRoot) {
 
 function hasRipgrep() {
   try {
-    execSync("rg --version", { stdio: ["pipe", "pipe", "pipe"] });
+    execFileSync("rg", ["--version"], { stdio: ["pipe", "pipe", "pipe"] });
     return true;
   } catch {
     return false;

@@ -11,13 +11,36 @@ node .claude/skills/glob-aug/explore.mjs <pattern> [path] [--depth N]
 
 Shows directory structure with @summary extracted from first lines of files.
 
+## Output example
+
+```
+packages/core/src/tools/
+  bash.ts           Shell command execution with timeout and output truncation
+  edit.ts           Surgical file editing via search-and-replace
+  glob.ts           Find files by glob pattern via ripgrep
+  grep.ts           Content search via ripgrep with regex support
+  read.ts           Read file with binary detection and line numbers
+  write.ts          Write file contents with directory auto-creation
+```
+
+## Patterns
+
 ```bash
-# Subdirectories
+# Subdirectories with README descriptions
 node .claude/skills/glob-aug/explore.mjs "*/" packages/core/src
 
-# Files with summaries
+# Files with @summary
 node .claude/skills/glob-aug/explore.mjs "*.ts" packages/core/src/tools
 
-# Recursive
+# Recursive directories with depth limit
 node .claude/skills/glob-aug/explore.mjs "**/" packages/core/src --depth 2
+
+# Brace expansion — multiple extensions at once
+node .claude/skills/glob-aug/explore.mjs "*.{ts,tsx}" packages/cli/src
+
+# Path segment — find files under a specific subtree
+node .claude/skills/glob-aug/explore.mjs "src/**/*.ts" packages/core
+
+# Recursive file search
+node .claude/skills/glob-aug/explore.mjs "**/*.test.ts" packages/core
 ```
