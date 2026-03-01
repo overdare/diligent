@@ -12,6 +12,12 @@ export const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: "gemini-2.5-flash",
 };
 
+export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPlaceholder: string }> = {
+  anthropic: { apiKeyUrl: "https://console.anthropic.com/settings/keys", apiKeyPlaceholder: "sk-ant-..." },
+  openai: { apiKeyUrl: "https://platform.openai.com/api-keys", apiKeyPlaceholder: "sk-..." },
+  gemini: { apiKeyUrl: "https://aistudio.google.com/apikey", apiKeyPlaceholder: "AIza..." },
+};
+
 /**
  * Manages provider API keys and creates a proxy StreamFunction
  * that dispatches to the correct provider based on model.provider.

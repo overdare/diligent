@@ -14,13 +14,12 @@ const port = portArg
   : args.includes("--port")
     ? Number.parseInt(args[args.indexOf("--port") + 1], 10)
     : 7432;
-const sample = args.includes("--sample");
 const dev = args.includes("--dev");
 
 // Find data directory
-const dataDir = findDiligentDir({ sample });
+const dataDir = findDiligentDir();
 if (!dataDir) {
-  console.error("Could not find .diligent/ directory. Run with --sample to use sample data.");
+  console.error("Could not find .diligent/ directory.");
   process.exit(1);
 }
 
@@ -104,7 +103,7 @@ Diligent Debug Viewer
   Data: ${dataDir}
   Mode: ${dev ? "development (use Vite dev server at :5173)" : hasDistDir ? "production" : "API only"}
   WebSocket: ws://localhost:${server.port}/ws
-${sample ? "  Using sample data\n" : ""}`);
+`);
 
 // Graceful shutdown
 process.on("SIGINT", () => {

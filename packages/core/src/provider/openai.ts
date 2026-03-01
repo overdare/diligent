@@ -1,6 +1,7 @@
 // @summary OpenAI provider implementation with streaming, tools, and error classification
 import OpenAI from "openai";
 import { EventStream } from "../event-stream";
+import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 import type {
   Model,
@@ -289,14 +290,3 @@ function parseRetryAfterFromHeaders(headers: Headers | undefined): number | unde
   return undefined;
 }
 
-function isNetworkError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return (
-    msg.includes("econnrefused") ||
-    msg.includes("econnreset") ||
-    msg.includes("etimedout") ||
-    msg.includes("fetch failed") ||
-    msg.includes("network")
-  );
-}

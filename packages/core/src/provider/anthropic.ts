@@ -1,6 +1,7 @@
 // @summary Anthropic provider implementation with thinking, streaming, and message conversion
 import Anthropic from "@anthropic-ai/sdk";
 import { EventStream } from "../event-stream";
+import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 import type {
   Model,
@@ -284,14 +285,3 @@ function parseRetryAfter(headers?: Record<string, string>): number | undefined {
   return undefined;
 }
 
-function isNetworkError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return (
-    msg.includes("econnrefused") ||
-    msg.includes("econnreset") ||
-    msg.includes("etimedout") ||
-    msg.includes("fetch failed") ||
-    msg.includes("network")
-  );
-}

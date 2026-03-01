@@ -4,7 +4,7 @@ import { agentLoop, type EventStream, resolveModel, SessionManager } from "@dili
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
-import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
+import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { promptSaveKey } from "./commands/builtin/provider";
 import { parseCommand } from "./commands/parser";
@@ -236,12 +236,7 @@ export class App {
 
   private wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
     return new Promise((resolve) => {
-      const hintMap: Record<string, { url: string; placeholder: string }> = {
-        anthropic: { url: "https://console.anthropic.com/settings/keys", placeholder: "sk-ant-..." },
-        openai: { url: "https://platform.openai.com/api-keys", placeholder: "sk-..." },
-        gemini: { url: "https://aistudio.google.com/apikey", placeholder: "AIza..." },
-      };
-      const { url: hint, placeholder } = hintMap[provider] ?? { url: "", placeholder: "" };
+      const { apiKeyUrl: hint, apiKeyPlaceholder: placeholder } = PROVIDER_HINTS[provider];
 
       const input = new TextInput(
         {

@@ -5,9 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "bun run src/server/index.ts",
-    "start:sample": "bun run src/server/index.ts --sample",
-    "generate-sample": "bun run src/server/sample-data/generate.ts"
+    "start": "bun run src/server/index.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

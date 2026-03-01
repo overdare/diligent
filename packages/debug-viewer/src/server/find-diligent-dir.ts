@@ -1,16 +1,11 @@
 // @summary Utility to find .diligent directory by walking up from cwd
 import { existsSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join } from "path";
 
 /**
  * Find the .diligent/ directory by walking up from cwd.
- * With --sample flag, returns the sample data directory instead.
  */
-export function findDiligentDir(options: { sample?: boolean; cwd?: string } = {}): string | null {
-  if (options.sample) {
-    return resolve(dirname(new URL(import.meta.url).pathname), "sample-data");
-  }
-
+export function findDiligentDir(options: { cwd?: string } = {}): string | null {
   let dir = options.cwd ?? process.cwd();
   while (true) {
     const candidate = join(dir, ".diligent");

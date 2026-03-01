@@ -2,6 +2,7 @@
 import type { FunctionDeclaration } from "@google/genai";
 import { GoogleGenAI } from "@google/genai";
 import { EventStream } from "../event-stream";
+import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 import type {
   Model,
@@ -223,7 +224,7 @@ export function classifyGeminiError(err: unknown): ProviderError {
     if (isGeminiContextOverflow(msg)) {
       return new ProviderError(msg, "context_overflow", false, undefined, httpStatus, err);
     }
-    if (isNetworkError(msg)) {
+    if (isNetworkError(err)) {
       return new ProviderError(msg, "network", true, undefined, undefined, err);
     }
     return new ProviderError(msg, "unknown", false, undefined, httpStatus, err);
@@ -236,13 +237,3 @@ function isGeminiContextOverflow(message: string): boolean {
   return patterns.some((p) => p.test(message));
 }
 
-function isNetworkError(message: string): boolean {
-  const msg = message.toLowerCase();
-  return (
-    msg.includes("econnrefused") ||
-    msg.includes("econnreset") ||
-    msg.includes("etimedout") ||
-    msg.includes("fetch failed") ||
-    msg.includes("network")
-  );
-}

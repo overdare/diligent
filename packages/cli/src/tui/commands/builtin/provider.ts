@@ -1,7 +1,7 @@
 // @summary Provider configuration command - configure LLM provider and API keys
 import { resolveModel, saveAuthKey } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
-import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
+import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { TextInput } from "../../components/text-input";
@@ -147,18 +147,13 @@ function pickProviderThenSetKey(ctx: CommandContext): Promise<void> {
 
 export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promise<void> {
   return new Promise((resolve) => {
-    const hint =
-      provider === "anthropic"
-        ? "https://console.anthropic.com/settings/keys"
-        : provider === "openai"
-          ? "https://platform.openai.com/api-keys"
-          : "https://aistudio.google.com/apikey";
+    const { apiKeyUrl, apiKeyPlaceholder } = PROVIDER_HINTS[provider];
 
     const input = new TextInput(
       {
         title: `${provider} API Key`,
-        message: `Enter your ${provider} API key (${hint})`,
-        placeholder: provider === "anthropic" ? "sk-ant-..." : provider === "gemini" ? "AIza..." : "sk-...",
+        message: `Enter your ${provider} API key (${apiKeyUrl})`,
+        placeholder: apiKeyPlaceholder,
         masked: true,
       },
       (value) => {
