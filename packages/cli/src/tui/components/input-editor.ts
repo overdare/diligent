@@ -3,6 +3,7 @@ import { isPrintable, matchesKey } from "../framework/keys";
 import { displayWidth, sliceEndToFitWidth, sliceToFitWidth } from "../framework/string-width";
 import type { Component, Focusable } from "../framework/types";
 import { CURSOR_MARKER } from "../framework/types";
+import type { InputHistory } from "../input-history";
 import { t } from "../theme";
 
 const MAX_HISTORY_SIZE = 100;
@@ -17,6 +18,8 @@ export interface InputEditorOptions {
   onComplete?: (partial: string) => string[];
   /** Detailed autocomplete provider for inline popup */
   onCompleteDetailed?: (partial: string) => CompletionItem[];
+  /** Persistent history store for cross-restart recall */
+  history?: InputHistory;
 }
 
 export class InputEditor implements Component, Focusable {
@@ -26,6 +29,7 @@ export class InputEditor implements Component, Focusable {
   private history: string[] = [];
   private historyIndex = -1;
   private historyDraft = "";
+  private persistentHistory?: InputHistory;
 
   // Completion popup state
   private completionItems: CompletionItem[] = [];
@@ -36,7 +40,19 @@ export class InputEditor implements Component, Focusable {
   constructor(
     private options: InputEditorOptions,
     private requestRender: () => void,
-  ) {}
+  ) {
+    if (options.history) {
+      this.persistentHistory = options.history;
+      this.history = options.history.getEntries();
+    }
+  }
+
+  /** Re-sync in-memory history from the persistent store (call after load). */
+  reloadHistory(): void {
+    if (this.persistentHistory) {
+      this.history = this.persistentHistory.getEntries();
+    }
+  }
 
   render(width: number): string[] {
     const sep = `${t.dim}${"─".repeat(Math.max(0, width))}${t.reset}`;
@@ -323,6 +339,7 @@ export class InputEditor implements Component, Focusable {
     if (this.history.length > MAX_HISTORY_SIZE) {
       this.history.shift();
     }
+    this.persistentHistory?.add(text);
   }
 
   private commonPrefix(strings: string[]): string {

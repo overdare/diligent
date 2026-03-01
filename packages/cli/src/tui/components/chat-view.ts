@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@diligent/core";
 import { debugLogger } from "../framework/debug-logger";
+import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
@@ -32,7 +33,7 @@ class UserMessageView {
   constructor(private text: string) {}
 
   render(width: number): string[] {
-    const visibleLen = 3 + this.text.length; // " › " = 3 visible chars
+    const visibleLen = 3 + displayWidth(this.text); // " › " = 3 visible chars
     const padding = " ".repeat(Math.max(0, width - visibleLen));
     return [`${t.bgUser} ${t.bold}${t.dim}›${t.reset}${t.bgUser} ${this.text}${padding}${t.reset}`];
   }

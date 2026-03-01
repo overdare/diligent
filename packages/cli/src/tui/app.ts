@@ -12,6 +12,7 @@ import type { CommandContext } from "./commands/types";
 import { ChatView } from "./components/chat-view";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
+import { InputHistory } from "./input-history";
 import { ListPicker, type ListPickerItem } from "./components/list-picker";
 import { StatusBar } from "./components/status-bar";
 import { TextInput } from "./components/text-input";
@@ -44,6 +45,9 @@ export class App {
   private commandRegistry: CommandRegistry;
   private skills: SkillMetadata[];
 
+  // History
+  private inputHistory: InputHistory;
+
   // State
   private abortController: AbortController | null = null;
   private activeStream: EventStream<AgentEvent, Message[]> | null = null;
@@ -69,6 +73,10 @@ export class App {
 
     const requestRender = () => this.renderer.requestRender();
 
+    // Input history (loaded async in start())
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+    this.inputHistory = new InputHistory(`${home}/.config/diligent/history`);
+
     // Build component tree
     this.chatView = new ChatView({ requestRender });
     this.inputEditor = new InputEditor(
@@ -84,6 +92,7 @@ export class App {
         onExit: () => this.shutdown(),
         onComplete: (partial) => this.commandRegistry.complete(partial),
         onCompleteDetailed: (partial) => this.commandRegistry.completeDetailed(partial),
+        history: this.inputHistory,
       },
       requestRender,
     );
@@ -99,6 +108,10 @@ export class App {
   }
 
   async start(): Promise<void> {
+    // Load persistent input history
+    await this.inputHistory.load();
+    this.inputEditor.reloadHistory();
+
     // Start terminal and rendering first (overlays need renderer to be active)
     this.terminal.start(
       (data) => this.handleInput(data),
