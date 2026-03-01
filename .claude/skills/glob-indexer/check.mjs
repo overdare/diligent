@@ -26,6 +26,7 @@ const BINARY_EXTENSIONS = new Set([
 
 const NON_SUMMARY_FILES = new Set([
   "index.ts", "index.js", "index.mjs", "types.ts", "types.js",
+  "index.html", "__init__.py",
   "package.json", "tsconfig.json", ".gitignore",
   "README.md", "CLAUDE.md", "LICENSE",
 ]);
@@ -64,7 +65,7 @@ function isSummaryCandidate(fileName) {
   if (isBinary(fileName)) return false;
   // Only source files
   const ext = extname(fileName).toLowerCase();
-  return [".ts", ".js", ".mjs", ".tsx", ".jsx", ".py", ".sh", ".sql", ".css", ".html"].includes(ext);
+  return [".ts", ".js", ".mjs", ".tsx", ".jsx", ".py", ".sh", ".sql"].includes(ext);
 }
 
 // ── Git file listing ───────────────────────────────────────────────────────
@@ -197,8 +198,8 @@ Reports:
   const missing = [];
   for (const dir of allDirs) {
     const childDirs = getDirectChildDirs(dir, rootPath);
-    // Only directories with 2+ child directories need a README
-    if (childDirs.length < 2) continue;
+    // Only directories with 4+ child directories need a README
+    if (childDirs.length < 4) continue;
     const readmePath = join(rootPath, dir, "README.md");
     if (!existsSync(readmePath)) {
       missing.push(dir);

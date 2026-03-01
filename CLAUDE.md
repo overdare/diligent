@@ -26,6 +26,15 @@ Read only what your task requires. Directories have README.md files — follow t
 - English only in all files
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
+- Use `/glob-aug` to explore codebase structure, `/glob-indexer` to maintain README.md and @summary
+
+## Code Navigation System
+
+Every source file and directory participates in a two-layer navigation index. **Maintain this when creating or modifying files.**
+
+- **`@summary`** — first line of every source file: `// @summary <desc>` (or `# @summary` for .py). Skip index.ts, types.ts, config files.
+- **`README.md`** — directories with 4+ subdirectories get a README: `# Heading`, one-line description, code block listing **subdirectories only** (no individual files).
+- Run `node .claude/skills/glob-indexer/check.mjs` to verify coverage.
 
 ## Dev Commands
 
