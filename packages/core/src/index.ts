@@ -1,10 +1,5 @@
 // Types
 
-// Auth
-export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
-// Re-export ProviderName without alias for direct use
-export { type ProviderName } from "./auth/index";
-export { getAuthFilePath, loadAuthStore, saveAuthKey } from "./auth/index";
 // Agent
 export type {
   AgentEvent,
@@ -15,6 +10,9 @@ export type {
   SerializableError,
 } from "./agent/index";
 export { agentLoop, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
+// Auth
+export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
+export { getAuthFilePath, loadAuthStore, saveAuthKey } from "./auth/index";
 // Config
 export type { DiligentConfig, DiscoveredInstruction } from "./config/index";
 export {

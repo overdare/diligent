@@ -1,17 +1,18 @@
 #!/usr/bin/env node
+
 // @summary Detect README.md gaps and @summary coverage
 
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join, relative, dirname, extname, resolve } from "node:path";
 import { execSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 
 // ── .gitignore parsing ───────────────────────────────────────────────────
 
 function parseGitignore(rootPath) {
-  const dirPatterns = new Set();   // e.g. "node_modules", "dist"
-  const filePatterns = new Set();  // e.g. ".DS_Store", ".env"
-  const extPatterns = new Set();   // e.g. ".swp", ".tsbuildinfo"
-  const pathPatterns = [];         // e.g. ".claude/worktrees"
+  const dirPatterns = new Set(); // e.g. "node_modules", "dist"
+  const filePatterns = new Set(); // e.g. ".DS_Store", ".env"
+  const extPatterns = new Set(); // e.g. ".swp", ".tsbuildinfo"
+  const pathPatterns = []; // e.g. ".claude/worktrees"
 
   try {
     const content = readFileSync(join(rootPath, ".gitignore"), "utf-8");
@@ -52,27 +53,78 @@ function parseGitignore(rootPath) {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const HARDCODED_IGNORE_DIRS = new Set([
-  "node_modules", ".git", "dist", "build", "coverage",
-  ".next", ".turbo", ".cache", "__pycache__",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "coverage",
+  ".next",
+  ".turbo",
+  ".cache",
+  "__pycache__",
 ]);
 
 const IGNORE_PATHS = ["docs/references"];
 
 const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
-  ".wasm", ".zip", ".gz", ".tar", ".bz2", ".7z", ".rar",
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".exe", ".dll", ".so", ".dylib", ".o", ".a",
-  ".mp3", ".mp4", ".avi", ".mov", ".wav", ".flac",
-  ".ttf", ".otf", ".woff", ".woff2", ".eot",
-  ".class", ".pyc", ".pyo",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".ico",
+  ".webp",
+  ".svg",
+  ".wasm",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".bz2",
+  ".7z",
+  ".rar",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".o",
+  ".a",
+  ".mp3",
+  ".mp4",
+  ".avi",
+  ".mov",
+  ".wav",
+  ".flac",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+  ".eot",
+  ".class",
+  ".pyc",
+  ".pyo",
 ]);
 
 const NON_SUMMARY_FILES = new Set([
-  "index.ts", "index.js", "index.mjs", "types.ts", "types.js",
-  "index.html", "__init__.py",
-  "package.json", "tsconfig.json", ".gitignore",
-  "README.md", "CLAUDE.md", "LICENSE",
+  "index.ts",
+  "index.js",
+  "index.mjs",
+  "types.ts",
+  "types.js",
+  "index.html",
+  "__init__.py",
+  "package.json",
+  "tsconfig.json",
+  ".gitignore",
+  "README.md",
+  "CLAUDE.md",
+  "LICENSE",
 ]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -159,10 +211,12 @@ function getDirectories(rootPath) {
     }
   }
 
-  return [...dirs].filter((d) => {
-    const parts = d.split("/");
-    return !parts.some((p) => isIgnoredDir(p)) && !isIgnoredPath(d);
-  }).sort();
+  return [...dirs]
+    .filter((d) => {
+      const parts = d.split("/");
+      return !parts.some((p) => isIgnoredDir(p)) && !isIgnoredPath(d);
+    })
+    .sort();
 }
 
 function getDirectChildDirs(dirPath, rootPath) {

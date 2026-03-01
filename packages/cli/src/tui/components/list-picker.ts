@@ -203,7 +203,8 @@ export class ListPicker implements Component {
     const lower = this.filter.toLowerCase();
     // When filtering, hide headers and show only matching items
     this.filteredItems = this.options.items.filter(
-      (i) => !i.header && (i.label.toLowerCase().includes(lower) || (i.description?.toLowerCase().includes(lower) ?? false)),
+      (i) =>
+        !i.header && (i.label.toLowerCase().includes(lower) || (i.description?.toLowerCase().includes(lower) ?? false)),
     );
     this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredItems.length - 1));
     this.scrollOffset = 0;

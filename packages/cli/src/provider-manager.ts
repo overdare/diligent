@@ -22,11 +22,7 @@ export class ProviderManager {
   private cache = new Map<string, StreamFunction>();
 
   constructor(config: DiligentConfig) {
-    // Collect keys from config and env vars
-    this.keys.anthropic = config.provider?.anthropic?.apiKey;
-    this.keys.openai = config.provider?.openai?.apiKey;
-    this.keys.gemini = config.provider?.gemini?.apiKey;
-
+    // Only read baseUrls from config — API keys come exclusively from auth.json
     this.baseUrls.anthropic = config.provider?.anthropic?.baseUrl;
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
@@ -38,10 +34,7 @@ export class ProviderManager {
       const provider = (model.provider ?? "anthropic") as ProviderName;
       const apiKey = this.keys[provider];
       if (!apiKey) {
-        throw new Error(
-          `No API key configured for ${provider}. ` +
-            `Use /provider set ${provider} to add one, or set provider.${provider}.apiKey in diligent.jsonc.`,
-        );
+        throw new Error(`No API key configured for ${provider}. Use /provider set ${provider} to add one.`);
       }
 
       const stream = this.getOrCreateStream(provider, apiKey);

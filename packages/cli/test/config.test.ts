@@ -77,4 +77,43 @@ describe("loadConfig", () => {
     expect(config.systemPrompt).toContain(dir);
     expect(config.systemPrompt).toContain(process.platform);
   });
+
+  test("config apiKey is ignored — only auth.json provides keys", async () => {
+    const dir = join(TEST_ROOT, "config-ignored");
+    await mkdir(dir, { recursive: true });
+
+    // diligent.jsonc has apiKey but it should be ignored
+    await Bun.write(join(dir, "diligent.jsonc"), `{ "provider": { "anthropic": { "apiKey": "config-key" } } }`);
+
+    const config = await loadConfig(dir);
+    // Config apiKey is not read — no auth.json means no key
+    expect(config.providerManager.hasKeyFor("anthropic")).toBe(false);
+  });
+
+  test("auth.json is the sole source of API keys", async () => {
+    const dir = join(TEST_ROOT, "auth-sole");
+    await mkdir(dir, { recursive: true });
+
+    // auth.json provides the key
+    const authDir = join(TEST_ROOT, ".config", "diligent");
+    await mkdir(authDir, { recursive: true });
+    await Bun.write(join(authDir, "auth.json"), JSON.stringify({ anthropic: "auth-key" }));
+
+    const config = await loadConfig(dir);
+    expect(config.providerManager.getApiKey("anthropic")).toBe("auth-key");
+  });
+
+  test("auth.json adds keys not present in config", async () => {
+    const dir = join(TEST_ROOT, "auth-add");
+    await mkdir(dir, { recursive: true });
+
+    // No diligent.jsonc — no keys in config
+    const authDir = join(TEST_ROOT, ".config", "diligent");
+    await mkdir(authDir, { recursive: true });
+    await Bun.write(join(authDir, "auth.json"), JSON.stringify({ openai: "sk-openai-from-auth" }));
+
+    const config = await loadConfig(dir);
+    expect(config.providerManager.hasKeyFor("openai")).toBe(true);
+    expect(config.providerManager.getApiKey("openai")).toBe("sk-openai-from-auth");
+  });
 });

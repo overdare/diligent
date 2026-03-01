@@ -1,6 +1,6 @@
 // @summary Provider configuration command - configure LLM provider and API keys
-import { resolveModel } from "@diligent/core";
-import { saveApiKey, saveModel } from "../../../config-writer";
+import { resolveModel, saveAuthKey } from "@diligent/core";
+import { saveModel } from "../../../config-writer";
 import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
@@ -185,15 +185,15 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
     const dialog = new ConfirmDialog(
       {
         title: "Save API Key?",
-        message: `Save ${provider} key to ~/.config/diligent/diligent.jsonc?`,
+        message: `Save ${provider} key to ~/.config/diligent/auth.json?`,
       },
       async (confirmed) => {
         handle.hide();
         ctx.requestRender();
         if (confirmed) {
           try {
-            await saveApiKey(provider, apiKey);
-            ctx.displayLines([`  ${t.success}Key saved to global config.${t.reset}`]);
+            await saveAuthKey(provider, apiKey);
+            ctx.displayLines([`  ${t.success}Key saved to auth.json.${t.reset}`]);
           } catch (err) {
             ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
           }

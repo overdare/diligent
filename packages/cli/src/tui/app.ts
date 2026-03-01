@@ -1,6 +1,6 @@
 // @summary Main TUI application component managing the agent loop and interface
 import type { AgentEvent, DiligentPaths, Message, ModeKind, SkillMetadata, UserMessage } from "@diligent/core";
-import { agentLoop, EventStream, resolveModel, SessionManager } from "@diligent/core";
+import { agentLoop, type EventStream, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -13,7 +13,6 @@ import type { CommandContext } from "./commands/types";
 import { ChatView } from "./components/chat-view";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
-import { InputHistory } from "./input-history";
 import { ListPicker, type ListPickerItem } from "./components/list-picker";
 import { StatusBar } from "./components/status-bar";
 import { TextInput } from "./components/text-input";
@@ -23,6 +22,7 @@ import { OverlayStack } from "./framework/overlay";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
+import { InputHistory } from "./input-history";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 

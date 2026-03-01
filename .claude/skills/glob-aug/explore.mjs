@@ -1,27 +1,70 @@
 #!/usr/bin/env node
+
 // @summary Explore directory structure with @summary extraction
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, relative, basename, extname, resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, extname, join, relative, resolve } from "node:path";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const IGNORE_DIRS = new Set([
-  "node_modules", ".git", "dist", "build", "coverage",
-  ".next", ".turbo", ".cache", "__pycache__",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "coverage",
+  ".next",
+  ".turbo",
+  ".cache",
+  "__pycache__",
 ]);
 
 const IGNORE_PATHS = ["docs/references"];
 
 const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
-  ".wasm", ".zip", ".gz", ".tar", ".bz2", ".7z", ".rar",
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".exe", ".dll", ".so", ".dylib", ".o", ".a",
-  ".mp3", ".mp4", ".avi", ".mov", ".wav", ".flac",
-  ".ttf", ".otf", ".woff", ".woff2", ".eot",
-  ".class", ".pyc", ".pyo",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".ico",
+  ".webp",
+  ".svg",
+  ".wasm",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".bz2",
+  ".7z",
+  ".rar",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".o",
+  ".a",
+  ".mp3",
+  ".mp4",
+  ".avi",
+  ".mov",
+  ".wav",
+  ".flac",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+  ".eot",
+  ".class",
+  ".pyc",
+  ".pyo",
 ]);
 
 // ── Glob matcher ───────────────────────────────────────────────────────────
@@ -92,7 +135,11 @@ function runRipgrep(pattern, searchRoot, maxDepth) {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
-    return stdout.trim().split("\n").filter(Boolean).map(p => p.replace(/^\.\//, ""));
+    return stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((p) => p.replace(/^\.\//, ""));
   } catch (err) {
     // rg exit code 1 = no matches, exit code 2 = error
     if (err.status === 1) return [];
@@ -177,9 +224,7 @@ function extractSummary(filePath) {
     const firstLine = (nl === -1 ? fd : fd.slice(0, nl)).trim();
 
     // Match // @summary, # @summary, -- @summary, <!-- @summary -->
-    const m = firstLine.match(
-      /^(?:\/\/|#|--|\/\*|<!--)\s*@summary\s+(.+?)(?:\s*(?:\*\/|-->))?$/
-    );
+    const m = firstLine.match(/^(?:\/\/|#|--|\/\*|<!--)\s*@summary\s+(.+?)(?:\s*(?:\*\/|-->))?$/);
     return m ? m[1].trim() : null;
   } catch {
     return null;
@@ -328,9 +373,7 @@ function collectTree(dirPath, rootDir, currentDepth, maxDepth) {
     // Priority: own README.md description > parent README.md listing
     const desc = extractReadmeDescription(fullPath) || parentDescs[d.name + "/"] || parentDescs[d.name] || null;
     const children =
-      maxDepth === -1 || currentDepth + 1 < maxDepth
-        ? collectTree(fullPath, rootDir, currentDepth + 1, maxDepth)
-        : [];
+      maxDepth === -1 || currentDepth + 1 < maxDepth ? collectTree(fullPath, rootDir, currentDepth + 1, maxDepth) : [];
 
     entries.push({ name: d.name + "/", type: "dir", summary: desc, children });
   }
@@ -377,10 +420,7 @@ function formatTree(entries, indent, nameColWidth) {
     const desc = entry.summary ? `  ${entry.summary}` : entry.type === "file" ? "" : "";
     lines.push(`${indent}${pad}${desc}`);
     if (entry.children.length > 0) {
-      const childNameWidth = Math.max(
-        ...entry.children.map((e) => e.name.length),
-        1
-      );
+      const childNameWidth = Math.max(...entry.children.map((e) => e.name.length), 1);
       lines.push(...formatTree(entry.children, indent + "  ", childNameWidth));
     }
   }
@@ -434,7 +474,9 @@ Examples:
   const useRipgrep = !isDirPattern && hasRipgrep();
 
   if (!isDirPattern && !useRipgrep) {
-    console.error("Warning: ripgrep (rg) not found — falling back to built-in matcher (brace expansion and path patterns may not work)");
+    console.error(
+      "Warning: ripgrep (rg) not found — falling back to built-in matcher (brace expansion and path patterns may not work)",
+    );
   }
 
   for (const sp of searchPaths) {

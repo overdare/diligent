@@ -113,5 +113,4 @@ describe("Anthropic Provider Event Mapping", () => {
     expect(events.map((e) => e.type)).toEqual(["start", "error"]);
     await expect(stream.result()).rejects.toThrow("API rate limit");
   });
-
 });

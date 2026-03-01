@@ -17,12 +17,13 @@ import {
   buildSystemPromptWithKnowledge,
   discoverInstructions,
   discoverSkills,
+  loadAuthStore,
   loadDiligentConfig,
   readKnowledge,
   renderSkillsSection,
   resolveModel,
 } from "@diligent/core";
-import { ProviderManager } from "./provider-manager";
+import { ProviderManager, type ProviderName } from "./provider-manager";
 
 export type AgentLoopFn = (messages: Message[], config: AgentLoopConfig) => EventStream<AgentEvent, Message[]>;
 
@@ -49,6 +50,13 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
 
   // Create ProviderManager — no throw on missing keys, deferred to call time
   const providerManager = new ProviderManager(config);
+
+  // Overlay auth.json keys (takes priority over config)
+  const authKeys = await loadAuthStore();
+  for (const [provider, key] of Object.entries(authKeys)) {
+    if (key) providerManager.setApiKey(provider as ProviderName, key);
+  }
+
   const streamFunction = providerManager.createProxyStream();
 
   // Backward-compatible apiKey: current provider's key or empty string

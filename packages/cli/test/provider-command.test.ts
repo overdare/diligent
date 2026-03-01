@@ -56,9 +56,8 @@ function createMockContext(pm: ProviderManager): {
 
 describe("/provider command", () => {
   test("no args shows provider picker overlay", async () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "sk-ant-1234567890" } },
-    });
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "sk-ant-1234567890");
     const { ctx, overlays } = createMockContext(pm);
 
     providerCommand.handler(undefined, ctx);
@@ -68,9 +67,8 @@ describe("/provider command", () => {
   });
 
   test("status shows configured providers", async () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "sk-ant-1234567890" } },
-    });
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "sk-ant-1234567890");
     const { ctx, lines } = createMockContext(pm);
 
     await providerCommand.handler("status", ctx);

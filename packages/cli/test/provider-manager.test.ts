@@ -4,12 +4,12 @@ import type { DiligentConfig, StreamFunction } from "@diligent/core";
 import { DEFAULT_MODELS, PROVIDER_NAMES, ProviderManager } from "../src/provider-manager";
 
 describe("ProviderManager", () => {
-  test("collects API key from config", () => {
+  test("config does not provide API keys (auth-only)", () => {
     const pm = new ProviderManager({
       provider: { anthropic: { apiKey: "sk-ant-test" } },
     });
-    expect(pm.hasKeyFor("anthropic")).toBe(true);
-    expect(pm.getApiKey("anthropic")).toBe("sk-ant-test");
+    // apiKey in config is ignored — keys come from auth.json via setApiKey
+    expect(pm.hasKeyFor("anthropic")).toBe(false);
   });
 
   test("hasKeyFor returns false when no key", () => {
@@ -28,9 +28,10 @@ describe("ProviderManager", () => {
   });
 
   test("getConfiguredProviders returns only providers with keys", () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "sk-test" } },
-    });
+    const pm = new ProviderManager({});
+    expect(pm.getConfiguredProviders()).toEqual([]);
+
+    pm.setApiKey("anthropic", "sk-test");
     expect(pm.getConfiguredProviders()).toEqual(["anthropic"]);
 
     pm.setApiKey("openai", "sk-openai");
@@ -38,9 +39,8 @@ describe("ProviderManager", () => {
   });
 
   test("getMaskedKey returns first 7 chars", () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "sk-ant-1234567890" } },
-    });
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "sk-ant-1234567890");
     expect(pm.getMaskedKey("anthropic")).toBe("sk-ant-...");
   });
 
@@ -50,9 +50,8 @@ describe("ProviderManager", () => {
   });
 
   test("createProxyStream returns a function", () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "sk-test" } },
-    });
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "sk-test");
     const stream = pm.createProxyStream();
     expect(typeof stream).toBe("function");
   });
@@ -89,9 +88,8 @@ describe("ProviderManager", () => {
   });
 
   test("empty string key is treated as no key", () => {
-    const pm = new ProviderManager({
-      provider: { anthropic: { apiKey: "" } },
-    });
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "");
     expect(pm.hasKeyFor("anthropic")).toBe(false);
   });
 });

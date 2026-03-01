@@ -15,7 +15,8 @@ const TEST_MODEL: Model = {
 
 function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
   // Create a ProviderManager with a test key so wizard doesn't trigger
-  const pm = new ProviderManager({ provider: { anthropic: { apiKey: "test-key" } } });
+  const pm = new ProviderManager({});
+  pm.setApiKey("anthropic", "test-key");
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
