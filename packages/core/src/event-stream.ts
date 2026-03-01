@@ -23,6 +23,15 @@ export class EventStream<T, R> implements AsyncIterable<T> {
     this.observers.push(callback);
   }
 
+  /** Attach an AbortSignal that terminates the stream when aborted. */
+  attachSignal(signal: AbortSignal): void {
+    if (signal.aborted) {
+      this.error(new Error("Aborted"));
+      return;
+    }
+    signal.addEventListener("abort", () => this.error(new Error("Aborted")), { once: true });
+  }
+
   push(event: T): void {
     if (this.isDone) return;
     for (const observer of this.observers) observer(event);

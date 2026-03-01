@@ -46,6 +46,8 @@ export interface CommandContext {
   currentMode: ModeKind;
   /** Switch to a new collaboration mode. Persists to session if SessionManager available. */
   setMode: (mode: ModeKind) => void;
+  /** Notify status bar after changing ctx.config.model */
+  onModelChanged: (modelId: string) => void;
 }
 
 /**

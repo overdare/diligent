@@ -1,5 +1,5 @@
 import type { AgentEvent, DiligentPaths, Message, ModeKind, SkillMetadata, UserMessage } from "@diligent/core";
-import { agentLoop, resolveModel, SessionManager } from "@diligent/core";
+import { agentLoop, EventStream, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -46,6 +46,7 @@ export class App {
 
   // State
   private abortController: AbortController | null = null;
+  private activeStream: EventStream<AgentEvent, Message[]> | null = null;
   private isProcessing = false;
   private messages: Message[] = [];
   private sessionManager: SessionManager | null = null;
@@ -72,7 +73,13 @@ export class App {
     this.chatView = new ChatView({ requestRender });
     this.inputEditor = new InputEditor(
       {
-        onSubmit: (text) => this.handleSubmit(text),
+        onSubmit: (text) => {
+          if (this.isProcessing) {
+            this.handleSteering(text);
+          } else {
+            this.handleSubmit(text);
+          }
+        },
         onCancel: () => this.handleCancel(),
         onExit: () => this.shutdown(),
         onComplete: (partial) => this.commandRegistry.complete(partial),
@@ -126,6 +133,7 @@ export class App {
           tools,
           streamFunction: this.config.streamFunction,
           mode: this.currentMode,
+          signal: this.abortController?.signal,
         }),
         compaction: {
           enabled: this.config.diligent.compaction?.enabled ?? true,
@@ -255,11 +263,10 @@ export class App {
         continue;
       }
 
-      if (!this.isProcessing) {
-        this.inputEditor.handleInput(seq);
-      } else if (seq === "\x03") {
-        // During processing, only handle ctrl+c
+      if (matchesKey(seq, "ctrl+c") || matchesKey(seq, "escape")) {
         this.handleCancel();
+      } else {
+        this.inputEditor.handleInput(seq);
       }
     }
   }
@@ -296,6 +303,7 @@ export class App {
     try {
       if (this.sessionManager) {
         const stream = this.sessionManager.run(userMessage);
+        this.activeStream = stream;
         for await (const event of stream) {
           this.handleAgentEvent(event);
         }
@@ -313,6 +321,7 @@ export class App {
           signal: this.abortController.signal,
           mode: this.currentMode,
         });
+        this.activeStream = loop;
 
         for await (const event of loop) {
           this.handleAgentEvent(event);
@@ -321,19 +330,27 @@ export class App {
         this.messages = result;
       }
     } catch (err) {
-      this.chatView.handleEvent({
-        type: "error",
-        error: {
-          message: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : "Error",
-        },
-        fatal: false,
-      });
+      if (!this.abortController?.signal.aborted) {
+        this.chatView.handleEvent({
+          type: "error",
+          error: {
+            message: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : "Error",
+          },
+          fatal: false,
+        });
+      }
     }
 
+    const wasCancelled = this.abortController?.signal.aborted ?? false;
     this.isProcessing = false;
     this.abortController = null;
+    this.activeStream = null;
     this.statusBar.update({ status: "idle" });
+    if (wasCancelled) {
+      this.chatView.clearActive();
+      this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
+    }
     this.renderer.requestRender();
   }
 
@@ -386,6 +403,10 @@ export class App {
       reload: () => this.reloadConfig(),
       currentMode: this.currentMode,
       setMode: (mode) => this.setMode(mode),
+      onModelChanged: (modelId) => {
+        this.statusBar.update({ model: modelId });
+        this.renderer.requestRender();
+      },
     };
   }
 
@@ -415,6 +436,10 @@ export class App {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
+    // Suppress error events caused by user-initiated abort
+    if (event.type === "error" && this.abortController?.signal.aborted) {
+      return;
+    }
     this.chatView.handleEvent(event);
 
     // Update status bar with usage info
@@ -427,19 +452,18 @@ export class App {
 
   private handleCancel(): void {
     if (this.isProcessing && this.abortController) {
-      this.showConfirm({
-        title: "Abort?",
-        message: "Cancel the current operation?",
-        confirmLabel: "Yes",
-        cancelLabel: "No",
-      }).then((confirmed) => {
-        if (confirmed) {
-          this.abortController?.abort();
-        }
-      });
+      this.abortController.abort();
+      this.activeStream?.error(new Error("Cancelled"));
     } else if (!this.isProcessing) {
       this.shutdown();
     }
+  }
+
+  private handleSteering(text: string): void {
+    if (!this.sessionManager) return;
+    this.chatView.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
+    this.sessionManager.steer(text);
+    this.renderer.requestRender();
   }
 
   /** Show a confirmation dialog overlay */

@@ -54,6 +54,36 @@ export async function saveApiKey(
   }
 }
 
+/**
+ * Save the selected model to the global config file.
+ * Uses jsonc-parser to preserve existing comments and formatting.
+ */
+export async function saveModel(modelId: string, configPath: string = GLOBAL_CONFIG_PATH): Promise<void> {
+  await mkdir(dirname(configPath), { recursive: true });
+
+  let content = "{}";
+  try {
+    const file = Bun.file(configPath);
+    if (await file.exists()) {
+      content = await file.text();
+    }
+  } catch {
+    // File doesn't exist, use default
+  }
+
+  const edits: Edit[] = modify(content, ["model"], modelId, {
+    formattingOptions: { tabSize: 2, insertSpaces: true, eol: "\n" },
+  });
+  const updated = applyEdits(content, edits);
+
+  if (content === "{}") {
+    const formatEdits = format(updated, undefined, { tabSize: 2, insertSpaces: true, eol: "\n" });
+    await Bun.write(configPath, applyEdits(updated, formatEdits));
+  } else {
+    await Bun.write(configPath, updated);
+  }
+}
+
 /** Get the global config file path */
 export function getGlobalConfigPath(): string {
   return GLOBAL_CONFIG_PATH;

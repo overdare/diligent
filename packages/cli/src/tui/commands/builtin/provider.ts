@@ -1,5 +1,5 @@
 import { resolveModel } from "@diligent/core";
-import { saveApiKey } from "../../../config-writer";
+import { saveApiKey, saveModel } from "../../../config-writer";
 import { DEFAULT_MODELS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
@@ -97,7 +97,9 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   const defaultModelId = DEFAULT_MODELS[provider];
   const model = resolveModel(defaultModelId);
   ctx.config.model = model;
+  ctx.onModelChanged(model.id);
   ctx.displayLines([`  Provider: ${t.bold}${provider}${t.reset}  Model: ${t.bold}${model.id}${t.reset}`]);
+  saveModel(model.id).catch(() => {});
 }
 
 function showProviderStatus(ctx: CommandContext): void {

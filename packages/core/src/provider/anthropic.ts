@@ -24,6 +24,8 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
       },
     );
 
+    if (options.signal) stream.attachSignal(options.signal);
+
     (async () => {
       try {
         const useThinking = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);

@@ -72,7 +72,12 @@ export class ChatView implements Component {
   handleEvent(event: AgentEvent): void {
     debugLogger.logAgentEvent(event);
     switch (event.type) {
+      case "agent_start":
+        this.activeSpinner.start("Thinking\u2026");
+        break;
+
       case "message_start":
+        this.activeSpinner.stop();
         this.activeMarkdown = new MarkdownView(this.options.requestRender);
         break;
 
@@ -183,6 +188,12 @@ export class ChatView implements Component {
         this.options.requestRender();
         break;
 
+      case "turn_end":
+        if (event.toolResults.length > 0) {
+          this.activeSpinner.start("Thinking\u2026");
+        }
+        break;
+
       default:
         break;
     }
@@ -211,6 +222,18 @@ export class ChatView implements Component {
     this.thinkingStartTime = null;
     this.thinkingText = "";
     this.options.requestRender();
+  }
+
+  /** Stop all active spinners and discard streaming state. */
+  clearActive(): void {
+    this.activeSpinner.stop();
+    this.thinkingSpinner.stop();
+    this.thinkingStartTime = null;
+    this.thinkingText = "";
+    if (this.activeMarkdown) {
+      this.activeMarkdown.finalize();
+      this.activeMarkdown = null;
+    }
   }
 
   /** Get last usage info (for StatusBar) */

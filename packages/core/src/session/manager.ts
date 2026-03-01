@@ -122,6 +122,9 @@ export class SessionManager {
       (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
     );
 
+    const signal = this.resolveAgentConfig().signal;
+    if (signal) outerStream.attachSignal(signal);
+
     this.runWithCompaction(context.messages, compactionConfig, outerStream).catch((err) => {
       outerStream.push({
         type: "error",

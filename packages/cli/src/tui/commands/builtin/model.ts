@@ -1,4 +1,5 @@
 import { KNOWN_MODELS, resolveModel } from "@diligent/core";
+import { saveModel } from "../../../config-writer";
 import { PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
@@ -27,7 +28,9 @@ export const modelCommand: Command = {
         }
 
         ctx.config.model = model;
+        ctx.onModelChanged(model.id);
         ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
+        saveModel(model.id).catch(() => {});
       } catch {
         ctx.displayError(`Unknown model: ${args}`);
       }
@@ -84,7 +87,9 @@ export const modelCommand: Command = {
             }
 
             ctx.config.model = model;
+            ctx.onModelChanged(model.id);
             ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
+            saveModel(model.id).catch(() => {});
           }
           resolve();
         },
