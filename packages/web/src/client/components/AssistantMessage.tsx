@@ -15,11 +15,9 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
   if (!hasThinking && !hasText) return null;
 
   return (
-    <div className="py-1">
-      <div className="min-w-0 pb-2">
-        {hasThinking && <ThinkingBlock text={item.thinking} />}
-        {hasText && <MarkdownContent text={item.text} />}
-      </div>
+    <div>
+      {hasThinking && <div className="pb-4"><ThinkingBlock text={item.thinking} streaming={!item.thinkingDone} /></div>}
+      {hasText && <div className="pb-8"><MarkdownContent text={item.text} /></div>}
     </div>
   );
 }

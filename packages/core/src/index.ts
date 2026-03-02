@@ -27,7 +27,7 @@ export type { PermissionAction, PermissionEngine, PermissionRule } from "./appro
 export { createPermissionEngine } from "./approval/index";
 // Auth
 export type { AuthKeys, OpenAIOAuthTokens, ProviderName as AuthProviderName } from "./auth/index";
-export { getAuthFilePath, loadAuthStore, loadOAuthTokens, removeAuthKey, saveAuthKey, saveOAuthTokens } from "./auth/index";
+export { getAuthFilePath, loadAuthStore, loadOAuthTokens, removeAuthKey, removeOAuthTokens, saveAuthKey, saveOAuthTokens } from "./auth/index";
 export type { OAuthFlowOptions } from "./auth/oauth/index";
 export type { PKCEPair } from "./auth/oauth/index";
 export type { RawTokenResponse } from "./auth/oauth/index";

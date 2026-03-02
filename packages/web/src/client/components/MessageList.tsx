@@ -67,7 +67,7 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
               return <AssistantMessage key={item.id} item={item} />;
             })}
 
-            {threadStatus === "busy" ? (
+            {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (
               <div className="py-1">
                 <div className="flex items-center pt-1">
                   <StreamingIndicator />

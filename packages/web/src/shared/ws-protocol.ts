@@ -58,7 +58,7 @@ export type ConnectedMessage = {
   cwd: string;
   mode: Mode;
   serverVersion: string;
-  currentModel: string;
+  currentModel: string | undefined;
   availableModels: ModelInfo[];
 };
 

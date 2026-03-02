@@ -81,12 +81,12 @@ export function getToolHeaderTitle(toolName: string, inputText: string, outputTe
     try {
       const parsed = JSON.parse(inputText) as Record<string, unknown>;
       const title = parseRequestUserInputTitle(parsed);
-      if (title) return `Ask - ${clip(title, 72)}`;
+      if (title) return `Question - ${clip(title, 72)}`;
     } catch {
       // Fall through to output parser
     }
     const outputTitle = parseRequestUserInputTitleFromOutput(outputText);
-    return outputTitle ? `Ask - ${clip(outputTitle, 72)}` : "Ask";
+    return outputTitle ? `Question - ${clip(outputTitle, 72)}` : "Question";
   }
   void inputText;
   return displayName;

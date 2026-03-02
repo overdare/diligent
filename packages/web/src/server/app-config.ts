@@ -7,6 +7,7 @@ import {
   createPermissionEngine,
   discoverInstructions,
   discoverSkills,
+  KNOWN_MODELS,
   loadAuthStore,
   loadDiligentConfig,
   loadOAuthTokens,
@@ -17,7 +18,7 @@ import {
 import { ProviderManager } from "./provider-manager";
 
 export interface WebRuntimeConfig {
-  model: Model;
+  model: Model | undefined;
   mode: ModeKind;
   systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
@@ -35,9 +36,6 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
   const { config } = await loadDiligentConfig(cwd);
   const instructions = await discoverInstructions(cwd);
 
-  const modelId = config.model ?? "claude-sonnet-4-6";
-  const model = resolveModel(modelId);
-
   const providerManager = new ProviderManager(config);
 
   const authKeys = await loadAuthStore();
@@ -54,6 +52,12 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
   }
 
   const streamFunction = providerManager.createProxyStream();
+
+  // Use config.model if set, otherwise pick the first available model from configured providers (no hardcoded default)
+  const configured = providerManager.getConfiguredProviders();
+  const firstAvailable = KNOWN_MODELS.find((m) => configured.has(m.provider as "anthropic" | "openai" | "gemini"));
+  const modelId = config.model ?? firstAvailable?.id;
+  const model = modelId ? resolveModel(modelId) : undefined;
 
   let knowledgeSection = "";
   const knowledgeEnabled = config.knowledge?.enabled ?? true;

@@ -6,6 +6,7 @@ import { ExpandButton } from "./ExpandButton";
 
 interface ContentTextProps {
   text: string;
+  label?: string;
   compact?: boolean;
   maxLines?: number;
   isError?: boolean;
@@ -15,6 +16,7 @@ const DEFAULT_MAX_LINES = 12;
 
 export function ContentText({
   text,
+  label,
   compact = false,
   maxLines = DEFAULT_MAX_LINES,
   isError = false,
@@ -25,7 +27,12 @@ export function ContentText({
 
   return (
     <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/40">
-      <div className="flex items-center justify-end border-b border-text/10 px-2 py-1">
+      <div className="flex items-center justify-between border-b border-text/10 px-2 py-1">
+        {label ? (
+          <span className="font-mono text-2xs uppercase tracking-wider text-muted">{label}</span>
+        ) : (
+          <span />
+        )}
         <CopyButton text={text} />
       </div>
       <pre

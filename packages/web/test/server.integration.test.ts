@@ -79,7 +79,7 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
     fakeServer as unknown as import("@diligent/core").DiligentAppServer,
     process.cwd(),
     "default",
-    { currentModelId: "test-model", availableModels: [], onModelChange: () => {} },
+    { currentModelId: "test-model", allModels: [], getAvailableModels: () => [], onModelChange: () => {} },
   );
 
   const sent: unknown[] = [];

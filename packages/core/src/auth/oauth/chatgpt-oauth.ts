@@ -9,7 +9,7 @@ import { buildOAuthTokens, exchangeCodeForTokens } from "./token-exchange";
 const AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
-const SCOPES = "openid profile email offline_access api.model.audio.request";
+const SCOPES = "openid profile email offline_access";
 
 export interface OAuthFlowOptions {
   /** Called when the browser URL is ready (for display in TUI before opening) */

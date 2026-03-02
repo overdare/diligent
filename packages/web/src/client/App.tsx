@@ -76,9 +76,16 @@ export function App() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [providers, setProviders] = useState<ProviderAuthStatus[]>([]);
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
 
   // Keep a ref in sync so onConnected (closure) can read the latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
+
+  // Refs to read latest state inside useCallback without adding deps
+  const availableModelsRef = useRef<ModelInfo[]>([]);
+  availableModelsRef.current = availableModels;
+  const currentModelRef = useRef<string>("");
+  currentModelRef.current = currentModel;
 
   const refreshThreadList = useCallback(async (rpc = rpcRef.current): Promise<void> => {
     if (!rpc) return;
@@ -93,8 +100,17 @@ export function App() {
   const refreshProviders = useCallback(async (rpc = rpcRef.current): Promise<void> => {
     if (!rpc) return;
     try {
-      const status = await fetchProviderStatus(rpc);
-      setProviders(status);
+      const result = await fetchProviderStatus(rpc);
+      setProviders(result.providers);
+      setAvailableModels(result.availableModels);
+      const modelInvalid =
+        result.availableModels.length > 0 &&
+        !result.availableModels.some((m) => m.id === currentModelRef.current);
+      if (modelInvalid) {
+        const first = result.availableModels[0];
+        setCurrentModel(first.id);
+        await rpc.requestRaw("config/set", { model: first.id });
+      }
     } catch (error) {
       console.error(error);
     }
@@ -118,11 +134,24 @@ export function App() {
 
     rpc.onConnected(async (meta) => {
       setCwd(meta.cwd);
-      setCurrentModel(meta.currentModel);
+      setCurrentModel(meta.currentModel ?? "");
+      currentModelRef.current = meta.currentModel ?? ""; // sync ref immediately within callback
       setAvailableModels(meta.availableModels);
       try {
         await rpc.request("initialize", { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
         rpc.notify("initialized", { ready: true });
+
+        // Apply the last-used model from session history, using meta.availableModels directly
+        // (refs are stale at this point — React state hasn't re-rendered yet)
+        const applySessionModel = async (messages: { role: string; model?: string }[]) => {
+          const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+          const sessionModel = lastAssistant?.model;
+          if (sessionModel && meta.availableModels.some((m) => m.id === sessionModel)) {
+            setCurrentModel(sessionModel);
+            currentModelRef.current = sessionModel;
+            await rpc.requestRaw("config/set", { model: sessionModel });
+          }
+        };
 
         // On reconnect, resume the previous thread if one exists
         const prevThreadId = activeThreadIdRef.current;
@@ -131,10 +160,22 @@ export function App() {
           if (resumed.found && resumed.threadId) {
             const history = await rpc.request("thread/read", { threadId: resumed.threadId });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            await applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
             await refreshProviders(rpc);
             return;
           }
+        }
+
+        // Try to resume the most recent session
+        const mostRecent = await rpc.request("thread/resume", { mostRecent: true });
+        if (mostRecent.found && mostRecent.threadId) {
+          const history = await rpc.request("thread/read", { threadId: mostRecent.threadId });
+          dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
+          await applySessionModel(history.messages as { role: string; model?: string }[]);
+          await refreshThreadList(rpc);
+          await refreshProviders(rpc);
+          return;
         }
 
         const started = await rpc.request("thread/start", { cwd: meta.cwd, mode: meta.mode });
@@ -184,6 +225,16 @@ export function App() {
       const history = await rpc.request("thread/read", { threadId: resumed.threadId });
       dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
       await refreshThreadList(rpc);
+
+      // Switch to the last model used in this session if available
+      const lastAssistant = [...history.messages].reverse().find((m) => m.role === "assistant") as
+        | { role: "assistant"; model?: string }
+        | undefined;
+      const sessionModel = lastAssistant?.model;
+      if (sessionModel && sessionModel !== currentModelRef.current && availableModelsRef.current.some((m) => m.id === sessionModel)) {
+        setCurrentModel(sessionModel);
+        await rpc.requestRaw("config/set", { model: sessionModel });
+      }
     } catch (error) {
       console.error(error);
     }
@@ -312,7 +363,7 @@ export function App() {
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
           providers={providers}
-          onOpenProviders={() => setShowProviderModal(true)}
+          onOpenProviders={(p) => { setFocusedProvider(p ?? null); setShowProviderModal(true); }}
         />
 
         <Panel className="flex min-h-0 flex-col overflow-hidden">
@@ -361,6 +412,8 @@ export function App() {
             availableModels={availableModels}
             onModelChange={(m) => void changeModel(m)}
             usage={state.usage}
+            hasProvider={providers.some((p) => p.configured || p.oauthConnected)}
+            onOpenProviders={() => setShowProviderModal(true)}
           />
         </Panel>
       </div>
@@ -380,11 +433,12 @@ export function App() {
       {showProviderModal ? (
         <ProviderSettingsModal
           providers={providers}
+          focusProvider={focusedProvider ?? undefined}
           onSet={handleSetProviderKey}
           onRemove={handleRemoveProviderKey}
           onOAuthStart={handleOAuthStart}
           onOAuthStatus={handleOAuthStatus}
-          onClose={() => setShowProviderModal(false)}
+          onClose={() => { setShowProviderModal(false); setFocusedProvider(null); }}
         />
       ) : null}
 

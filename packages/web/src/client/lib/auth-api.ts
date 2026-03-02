@@ -1,10 +1,14 @@
 // @summary RPC helpers for provider authentication (list, set, remove, OAuth)
-import type { OAuthStartResult, OAuthStatusResult, ProviderAuthStatus } from "../../shared/ws-protocol";
+import type { ModelInfo, OAuthStartResult, OAuthStatusResult, ProviderAuthStatus } from "../../shared/ws-protocol";
 import type { WebRpcClient } from "./rpc-client";
 
-export async function fetchProviderStatus(rpc: WebRpcClient): Promise<ProviderAuthStatus[]> {
-  const result = (await rpc.requestRaw("auth/list", {})) as { providers: ProviderAuthStatus[] };
-  return result.providers;
+export interface AuthListResult {
+  providers: ProviderAuthStatus[];
+  availableModels: ModelInfo[];
+}
+
+export async function fetchProviderStatus(rpc: WebRpcClient): Promise<AuthListResult> {
+  return (await rpc.requestRaw("auth/list", {})) as AuthListResult;
 }
 
 export async function setProviderKey(rpc: WebRpcClient, provider: string, apiKey: string): Promise<void> {

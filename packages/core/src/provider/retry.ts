@@ -93,7 +93,13 @@ export function withRetry(streamFn: StreamFunction, config: RetryConfig): Stream
           }
         });
       }
-    })();
+    })().catch((err) => {
+      const providerErr =
+        err instanceof ProviderError
+          ? err
+          : new ProviderError(err instanceof Error ? err.message : String(err), "unknown", false);
+      stream.push({ type: "error", error: providerErr });
+    });
 
     return stream;
   };

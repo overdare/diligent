@@ -1,8 +1,8 @@
 // @summary OpenAI provider implementation with streaming, tools, and error classification
 import OpenAI from "openai";
 import { EventStream } from "../event-stream";
-import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 import { isNetworkError } from "./errors";
+import { buildTools, convertMessages, handleResponsesAPIEvents } from "./openai-shared";
 import { flattenSections } from "./system-sections";
 import type {
   Model,
@@ -11,7 +11,6 @@ import type {
   StreamContext,
   StreamFunction,
   StreamOptions,
-  ToolDefinition,
 } from "./types";
 import { ProviderError } from "./types";
 
@@ -35,13 +34,22 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
           {
             model: model.id,
             instructions: flattenSections(context.systemPrompt),
-            input: convertToOpenAIInput(context.messages),
+            input: convertMessages(context.messages),
             ...(context.tools.length > 0 && {
-              tools: convertToOpenAITools(context.tools),
+              tools: buildTools(context.tools, false) as unknown as Array<{
+                type: "function";
+                name: string;
+                description: string;
+                parameters: Record<string, unknown>;
+                strict: boolean | null;
+              }>,
             }),
             ...(options.maxTokens !== undefined && { max_output_tokens: options.maxTokens }),
             ...(options.temperature !== undefined && { temperature: options.temperature }),
-            ...(useReasoning && { reasoning: { effort: "high" } }),
+            ...(useReasoning && {
+              reasoning: { effort: "high", summary: "auto" },
+              include: ["reasoning.encrypted_content"],
+            }),
             stream: true,
           },
           ...(options.signal ? [{ signal: options.signal }] : []),
@@ -49,108 +57,12 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
 
         stream.push({ type: "start" });
 
-        const contentBlocks: ContentBlock[] = [];
-        let currentToolId = "";
-        let currentToolName = "";
-
-        for await (const event of openaiStream) {
-          if (options.signal?.aborted) break;
-
-          switch (event.type) {
-            case "response.output_text.delta":
-              stream.push({ type: "text_delta", delta: event.delta });
-              break;
-
-            case "response.output_item.done": {
-              const item = event.item;
-              if (item.type === "message") {
-                for (const part of item.content) {
-                  if (part.type === "output_text") {
-                    stream.push({ type: "text_end", text: part.text });
-                    contentBlocks.push({ type: "text", text: part.text });
-                  }
-                }
-              } else if (item.type === "function_call") {
-                try {
-                  const input = JSON.parse(item.arguments) as Record<string, unknown>;
-                  stream.push({
-                    type: "tool_call_end",
-                    id: item.call_id,
-                    name: item.name,
-                    input,
-                  });
-                  contentBlocks.push({
-                    type: "tool_call",
-                    id: item.call_id,
-                    name: item.name,
-                    input,
-                  });
-                } catch {
-                  stream.push({
-                    type: "tool_call_end",
-                    id: item.call_id,
-                    name: item.name,
-                    input: {},
-                  });
-                  contentBlocks.push({
-                    type: "tool_call",
-                    id: item.call_id,
-                    name: item.name,
-                    input: {},
-                  });
-                }
-              }
-              break;
-            }
-
-            case "response.function_call_arguments.delta":
-              stream.push({ type: "tool_call_delta", id: currentToolId, delta: event.delta });
-              break;
-
-            case "response.output_item.added":
-              if (event.item.type === "function_call") {
-                currentToolId = event.item.call_id;
-                currentToolName = event.item.name;
-                stream.push({
-                  type: "tool_call_start",
-                  id: currentToolId,
-                  name: currentToolName,
-                });
-              }
-              break;
-
-            case "response.completed": {
-              const resp = event.response;
-              const usage = mapOpenAIUsage(resp.usage);
-              const stopReason = mapOpenAIStopReason(resp.status ?? "completed");
-
-              stream.push({ type: "usage", usage });
-
-              const assistantMessage: AssistantMessage = {
-                role: "assistant",
-                content: contentBlocks,
-                model: model.id,
-                usage,
-                stopReason,
-                timestamp: Date.now(),
-              };
-
-              stream.push({ type: "done", stopReason, message: assistantMessage });
-              break;
-            }
-
-            case "response.failed": {
-              const failedResp = event.response as unknown as Record<string, unknown>;
-              const respError = failedResp?.error as Record<string, unknown> | undefined;
-              const errorMsg = (respError?.message as string) ?? "OpenAI response failed";
-              stream.push({
-                type: "error",
-                error: new ProviderError(errorMsg, "unknown", false),
-              });
-              break;
-            }
-          }
-        }
+        await handleResponsesAPIEvents(
+          openaiStream as unknown as AsyncIterable<Record<string, unknown>>,
+          stream,
+          model,
+          options.signal,
+        );
       } catch (err) {
         stream.push({ type: "error", error: classifyOpenAIError(err) });
       }
@@ -158,92 +70,6 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
 
     return stream;
   };
-}
-
-type OpenAIInputItem =
-  | { role: "user"; content: string }
-  | { role: "assistant"; content: string }
-  | { type: "function_call"; call_id: string; name: string; arguments: string }
-  | { type: "function_call_output"; call_id: string; output: string };
-
-function convertToOpenAIInput(messages: Message[]): OpenAIInputItem[] {
-  const result: OpenAIInputItem[] = [];
-
-  for (const msg of messages) {
-    if (msg.role === "user") {
-      result.push({
-        role: "user",
-        content:
-          typeof msg.content === "string"
-            ? msg.content
-            : msg.content
-                .filter((b) => b.type === "text")
-                .map((b) => (b as { type: "text"; text: string }).text)
-                .join("\n"),
-      });
-    } else if (msg.role === "assistant") {
-      for (const block of msg.content) {
-        if (block.type === "text") {
-          result.push({ role: "assistant", content: block.text });
-        } else if (block.type === "tool_call") {
-          result.push({
-            type: "function_call",
-            call_id: block.id,
-            name: block.name,
-            arguments: JSON.stringify(block.input),
-          });
-        }
-      }
-    } else if (msg.role === "tool_result") {
-      result.push({
-        type: "function_call_output",
-        call_id: msg.toolCallId,
-        output: msg.output,
-      });
-    }
-  }
-
-  return result;
-}
-
-function convertToOpenAITools(tools: ToolDefinition[]): Array<{
-  type: "function";
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-  strict: boolean;
-}> {
-  return tools.map((t) => ({
-    type: "function" as const,
-    name: t.name,
-    description: t.description,
-    parameters: { type: "object", ...t.inputSchema },
-    strict: false,
-  }));
-}
-
-function mapOpenAIUsage(usage: { input_tokens: number; output_tokens: number } | undefined): Usage {
-  return {
-    inputTokens: usage?.input_tokens ?? 0,
-    outputTokens: usage?.output_tokens ?? 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  };
-}
-
-function mapOpenAIStopReason(status: string): StopReason {
-  switch (status) {
-    case "completed":
-      return "end_turn";
-    case "incomplete":
-      return "max_tokens";
-    case "failed":
-      return "error";
-    case "cancelled":
-      return "aborted";
-    default:
-      return "end_turn";
-  }
 }
 
 export function classifyOpenAIError(err: unknown): ProviderError {

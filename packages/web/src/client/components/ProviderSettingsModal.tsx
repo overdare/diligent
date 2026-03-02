@@ -8,6 +8,7 @@ import { StatusDot } from "./StatusDot";
 
 interface ProviderSettingsModalProps {
   providers: ProviderAuthStatus[];
+  focusProvider?: string;
   onSet: (provider: string, apiKey: string) => Promise<void>;
   onRemove: (provider: string) => Promise<void>;
   onOAuthStart: () => Promise<{ authUrl: string }>;
@@ -23,6 +24,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 export function ProviderSettingsModal({
   providers,
+  focusProvider,
   onSet,
   onRemove,
   onOAuthStart,
@@ -31,7 +33,7 @@ export function ProviderSettingsModal({
 }: ProviderSettingsModalProps) {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [oauthStatus, setOAuthStatus] = useState<OAuthStatusResult["status"]>("idle");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -49,7 +51,7 @@ export function ProviderSettingsModal({
 
   const handleSave = async (provider: string) => {
     if (!keyInput.trim()) return;
-    setSaving(true);
+    setSavingProvider(provider);
     setError(null);
     try {
       await onSet(provider, keyInput.trim());
@@ -58,19 +60,19 @@ export function ProviderSettingsModal({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save key");
     } finally {
-      setSaving(false);
+      setSavingProvider(null);
     }
   };
 
   const handleDisconnect = async (provider: string) => {
-    setSaving(true);
+    setSavingProvider(provider);
     setError(null);
     try {
       await onRemove(provider);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to remove key");
     } finally {
-      setSaving(false);
+      setSavingProvider(null);
     }
   };
 
@@ -81,7 +83,7 @@ export function ProviderSettingsModal({
   };
 
   const handleOAuthStart = async () => {
-    setSaving(true);
+    setSavingProvider("openai");
     setError(null);
     setOAuthStatus("pending");
     try {
@@ -94,12 +96,12 @@ export function ProviderSettingsModal({
           if (result.status === "completed") {
             setOAuthStatus("completed");
             stopPolling();
-            setSaving(false);
+            setSavingProvider(null);
           } else if (result.status === "expired") {
             setOAuthStatus("idle");
             setError(result.error ?? "OAuth flow timed out");
             stopPolling();
-            setSaving(false);
+            setSavingProvider(null);
           }
         } catch {
           // Polling error — keep trying
@@ -108,7 +110,7 @@ export function ProviderSettingsModal({
     } catch (e) {
       setOAuthStatus("idle");
       setError(e instanceof Error ? e.message : "Failed to start OAuth");
-      setSaving(false);
+      setSavingProvider(null);
     }
   };
 
@@ -117,19 +119,22 @@ export function ProviderSettingsModal({
   return (
     <Modal title="Providers" description="Manage API keys for each provider.">
       <div className="space-y-3">
-        {providers.map((p) => (
-          <div key={p.provider} className="rounded-md border border-text/10 px-3 py-2.5">
+        {providers.map((p) => {
+          const isSaving = savingProvider === p.provider;
+          const isFocused = focusProvider === p.provider;
+          return (
+          <div key={p.provider} className={`rounded-md border px-3 py-2.5 ${isFocused ? "border-accent/40 bg-accent/5" : "border-text/10"}`}>
             <div className="flex items-center gap-2.5">
               <StatusDot color={isConnected(p) ? "success" : "danger"} size="md" />
               <span className="flex-1 text-sm font-medium text-text">{PROVIDER_LABELS[p.provider] ?? p.provider}</span>
               {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
               {p.oauthConnected ? <span className="font-mono text-xs text-muted">ChatGPT</span> : null}
               {editingProvider !== p.provider && oauthStatus !== "pending" ? (
-                isConnected(p) ? (
+                isConnected(p) || isSaving ? (
                   <Button
                     intent="ghost"
                     size="sm"
-                    disabled={saving}
+                    disabled={isSaving}
                     onClick={() => void handleDisconnect(p.provider)}
                   >
                     Disconnect
@@ -156,6 +161,7 @@ export function ProviderSettingsModal({
                   <Input
                     type="password"
                     placeholder="API key"
+                    className="h-8"
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -166,12 +172,12 @@ export function ProviderSettingsModal({
                   />
                   <Button
                     size="sm"
-                    disabled={saving || !keyInput.trim()}
+                    disabled={isSaving || !keyInput.trim()}
                     onClick={() => void handleSave(p.provider)}
                   >
                     Save
                   </Button>
-                  <Button intent="ghost" size="sm" disabled={saving} onClick={handleCancel}>
+                  <Button intent="ghost" size="sm" disabled={isSaving} onClick={handleCancel}>
                     Cancel
                   </Button>
                 </div>
@@ -181,7 +187,7 @@ export function ProviderSettingsModal({
                     <Button
                       intent="ghost"
                       size="sm"
-                      disabled={saving || oauthStatus === "pending"}
+                      disabled={isSaving || oauthStatus === "pending"}
                       onClick={() => void handleOAuthStart()}
                     >
                       {oauthStatus === "pending" ? "Waiting for login..." : "Login with ChatGPT"}
@@ -201,7 +207,8 @@ export function ProviderSettingsModal({
               <div className="mt-2 text-xs text-success">ChatGPT connected successfully!</div>
             ) : null}
           </div>
-        ))}
+          );
+        })}
 
         {error ? <p className="text-sm text-danger">{error}</p> : null}
       </div>

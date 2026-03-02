@@ -26,7 +26,7 @@ interface ConnectedPayload {
   cwd: string;
   mode: "default" | "plan" | "execute";
   serverVersion: string;
-  currentModel: string;
+  currentModel: string | undefined;
   availableModels: ModelInfo[];
 }
 

@@ -65,8 +65,9 @@ export interface AuthCallbacks {
 }
 
 interface ModelConfig {
-  currentModelId: string;
-  availableModels: ModelInfo[];
+  currentModelId: string | undefined;
+  allModels: ModelInfo[];
+  getAvailableModels: () => ModelInfo[];
   onModelChange: (modelId: string) => void;
 }
 
@@ -74,7 +75,7 @@ export class RpcBridge {
   private readonly sessions = new Map<string, RpcSession>();
   private readonly threadOwners = new Map<string, string>();
   private serverRequestSeq = 0;
-  private currentModelId: string;
+  private currentModelId: string | undefined;
 
   constructor(
     private readonly appServer: DiligentAppServer,
@@ -118,7 +119,7 @@ export class RpcBridge {
       mode: this.initialMode,
       serverVersion: "0.0.1",
       currentModel: this.currentModelId,
-      availableModels: this.modelConfig.availableModels,
+      availableModels: this.modelConfig.getAvailableModels(),
     };
     this.send(ws, connected);
   }
@@ -164,7 +165,7 @@ export class RpcBridge {
         const params = parsed.params as { model?: string } | undefined;
         const modelId = params?.model;
         if (modelId) {
-          const valid = this.modelConfig.availableModels.find((m) => m.id === modelId);
+          const valid = this.modelConfig.getAvailableModels().find((m) => m.id === modelId);
           if (valid) {
             this.currentModelId = modelId;
             this.modelConfig.onModelChange(modelId);
@@ -194,7 +195,10 @@ export class RpcBridge {
         const providers = await this.authCallbacks.list();
         this.send(ws, {
           type: "rpc_response",
-          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { providers } }),
+          response: JSONRPCResponseSchema.parse({
+            id: parsed.id,
+            result: { providers, availableModels: this.modelConfig.getAvailableModels() },
+          }),
         });
         return;
       }

@@ -35,6 +35,7 @@ export type RenderItem =
       kind: "assistant";
       text: string;
       thinking: string;
+      thinkingDone: boolean;
       timestamp: number;
     }
   | {
@@ -180,6 +181,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
               kind: "assistant",
               text: "",
               thinking: "",
+              thinkingDone: false,
               timestamp: item.message.timestamp,
             },
           ],
@@ -227,6 +229,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
             ? {
                 ...item,
                 text: item.text + delta.delta,
+                thinkingDone: true,
               }
             : item,
         );
@@ -270,6 +273,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
           current.kind === "assistant"
             ? {
                 ...current,
+                thinkingDone: true,
                 timestamp: item.message.timestamp,
               }
             : current,
@@ -391,6 +395,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         kind: "assistant",
         text,
         thinking,
+        thinkingDone: true,
         timestamp: message.timestamp,
       });
       continue;

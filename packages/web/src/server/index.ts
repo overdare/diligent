@@ -17,6 +17,7 @@ import {
   loadOAuthTokens,
   type ModeKind,
   removeAuthKey,
+  removeOAuthTokens,
   resolveModel,
   saveAuthKey,
   saveOAuthTokens,
@@ -50,6 +51,10 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   const appServerConfig: DiligentAppServerConfig = {
     resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
     buildAgentConfig: ({ cwd: requestCwd, mode, signal, approve, ask }) => {
+      if (!runtimeConfig.model) {
+        throw new Error("No AI provider configured. Please add an API key in the provider settings.");
+      }
+
       const deps = {
         model: runtimeConfig.model,
         systemPrompt: runtimeConfig.systemPrompt,
@@ -81,7 +86,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   const AUTH_URL = "https://auth.openai.com/oauth/authorize";
   const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
   const REDIRECT_URI = "http://localhost:1455/auth/callback";
-  const SCOPES = "openid profile email offline_access api.model.audio.request";
+  const SCOPES = "openid profile email offline_access";
 
   let oauthFlowStatus: OAuthStatusResult = { status: "idle" };
   let oauthPending: Promise<void> | null = null;
@@ -104,6 +109,10 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     remove: async (provider) => {
       await removeAuthKey(provider as AuthProviderName);
       runtimeConfig.providerManager.removeApiKey(provider as AuthProviderName);
+      if (provider === "openai") {
+        await removeOAuthTokens();
+        runtimeConfig.providerManager.removeOAuthTokens();
+      }
     },
     oauthStart: async (): Promise<OAuthStartResult> => {
       if (oauthPending) {
@@ -154,18 +163,24 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     },
   };
 
+  const allModels = KNOWN_MODELS.map((m) => ({
+    id: m.id,
+    provider: m.provider,
+    contextWindow: m.contextWindow,
+    maxOutputTokens: m.maxOutputTokens,
+    inputCostPer1M: m.inputCostPer1M,
+    outputCostPer1M: m.outputCostPer1M,
+    supportsThinking: m.supportsThinking,
+  }));
+
   const appServer = new DiligentAppServer(appServerConfig);
   const bridge = new RpcBridge(appServer, cwd, runtimeConfig.mode, {
-    currentModelId: runtimeConfig.model.id,
-    availableModels: KNOWN_MODELS.map((m) => ({
-      id: m.id,
-      provider: m.provider,
-      contextWindow: m.contextWindow,
-      maxOutputTokens: m.maxOutputTokens,
-      inputCostPer1M: m.inputCostPer1M,
-      outputCostPer1M: m.outputCostPer1M,
-      supportsThinking: m.supportsThinking,
-    })),
+    currentModelId: runtimeConfig.model?.id,
+    allModels,
+    getAvailableModels: () => {
+      const configured = runtimeConfig.providerManager.getConfiguredProviders();
+      return allModels.filter((m) => configured.has(m.provider as "anthropic" | "openai" | "gemini"));
+    },
     onModelChange: (modelId) => {
       runtimeConfig.model = resolveModel(modelId);
     },

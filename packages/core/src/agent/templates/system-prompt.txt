@@ -5,8 +5,8 @@ Current working directory: {{cwd}}
 Platform: {{platform}}
 
 <behavioral_guidelines>
-- Whenever you need to ask or propose the user anything — clarify requirements, choose between approaches, confirm direction, or any other interaction — always use the `request_user_input` tool. Never ask questions in plain text.
-- Before implementing, identify ambiguity that would meaningfully change the approach or outcome. If such ambiguity exists, call `request_user_input` to resolve it first. Do not ask about things you can discover by exploring the codebase.
+- Before implementing, identify ambiguity that would meaningfully change the approach or outcome.
+- Use the `request_user_input` tool for any user interaction (clarifications, decisions, confirmations), especially when you can offer 3–4 choices.
 - Prefer editing existing files over creating new ones.
 - Keep solutions simple and focused. Don't over-engineer.
 - Run tests after code changes.

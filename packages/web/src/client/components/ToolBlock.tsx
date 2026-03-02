@@ -6,7 +6,6 @@ import type { RenderItem } from "../lib/thread-store";
 import { getToolHeaderTitle, getToolInfo, summarizeInput } from "../lib/tool-info";
 import { ContentBash } from "./ContentBash";
 import { ContentText } from "./ContentText";
-import { SectionLabel } from "./SectionLabel";
 import { StatusDot } from "./StatusDot";
 
 interface ToolBlockProps {
@@ -63,7 +62,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
     : "text-muted";
 
   return (
-    <div className="py-1">
+    <div className="pb-4">
       <div className="min-w-0">
         <button
           type="button"
@@ -88,7 +87,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
         </button>
 
         {open && (
-          <div className="pb-3">
+          <div className="pt-2 pb-3">
             {isBash ? (
               <ContentBash
                 command={parseBashCommand(item.inputText)}
@@ -98,16 +97,10 @@ export function ToolBlock({ item }: ToolBlockProps) {
             ) : (
               <div className="space-y-2">
                 {item.inputText && (
-                  <div>
-                    <SectionLabel>Input</SectionLabel>
-                    <ContentText text={item.inputText} compact />
-                  </div>
+                  <ContentText text={item.inputText} label="Input" compact />
                 )}
                 {item.outputText && (
-                  <div>
-                    <SectionLabel>Output</SectionLabel>
-                    <ContentText text={item.outputText} compact isError={item.isError} />
-                  </div>
+                  <ContentText text={item.outputText} label="Output" compact isError={item.isError} />
                 )}
               </div>
             )}

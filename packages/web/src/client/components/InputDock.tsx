@@ -23,6 +23,8 @@ interface InputDockProps {
   availableModels: ModelInfo[];
   onModelChange: (modelId: string) => void;
   usage: UsageState;
+  hasProvider: boolean;
+  onOpenProviders: () => void;
 }
 
 const CONNECTION_DOT: Record<ConnectionState, { color: "success" | "accent" | "danger"; pulse: boolean }> = {
@@ -78,6 +80,8 @@ export function InputDock({
   availableModels,
   onModelChange,
   usage,
+  hasProvider,
+  onOpenProviders,
 }: InputDockProps) {
   const composingRef = useRef(false);
   const isBusy = threadStatus === "busy";
@@ -86,31 +90,43 @@ export function InputDock({
 
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
-      <div className="rounded-3xl border border-text/15 bg-bg/60 px-4 py-3 shadow-panel">
-        {/* Textarea */}
-        <TextArea
-          className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
-          aria-label="Message input"
-          placeholder="Ask anything…"
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onCompositionStart={() => {
-            composingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            composingRef.current = false;
-          }}
-          onKeyDown={(e) => {
-            // Prevent Korean/IME composition Enter from triggering submit.
-            if (composingRef.current || e.nativeEvent.isComposing) {
-              return;
-            }
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!isBusy) onSend();
-            }
-          }}
-        />
+      <div className={`rounded-3xl border px-4 py-3 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}>
+        {/* No provider banner */}
+        {!hasProvider ? (
+          <button
+            type="button"
+            onClick={onOpenProviders}
+            className="flex w-full items-center justify-center gap-2 py-2 text-sm text-muted transition hover:text-text"
+          >
+            <span className="text-danger/70">No provider connected.</span>
+            <span className="text-accent underline underline-offset-2">Connect one in the sidebar →</span>
+          </button>
+        ) : (
+          /* Textarea */
+          <TextArea
+            className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+            aria-label="Message input"
+            placeholder="Ask anything…"
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
+            onKeyDown={(e) => {
+              // Prevent Korean/IME composition Enter from triggering submit.
+              if (composingRef.current || e.nativeEvent.isComposing) {
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!isBusy) onSend();
+              }
+            }}
+          />
+        )}
 
         {/* Bottom bar (inside input panel) */}
         <div className="mt-3 flex items-center justify-between gap-3">

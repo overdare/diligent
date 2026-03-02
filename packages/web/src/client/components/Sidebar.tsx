@@ -4,7 +4,12 @@ import type { SessionSummary } from "@diligent/protocol";
 import type { ProviderAuthStatus } from "../../shared/ws-protocol";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
-import { StatusDot } from "./StatusDot";
+
+const PROVIDER_STYLE: Record<string, { label: string; className: string }> = {
+  anthropic: { label: "Anthropic", className: "border-orange-400/30 bg-orange-400/10 text-orange-400" },
+  openai:    { label: "OpenAI",    className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
+  gemini:    { label: "Gemini",    className: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
+};
 
 interface SidebarProps {
   cwd: string;
@@ -13,7 +18,7 @@ interface SidebarProps {
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
   providers?: ProviderAuthStatus[];
-  onOpenProviders?: () => void;
+  onOpenProviders?: (provider?: string) => void;
 }
 
 export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenThread, providers, onOpenProviders }: SidebarProps) {
@@ -71,18 +76,48 @@ export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenTh
 
       {/* Provider status footer */}
       {providers && onOpenProviders ? (
-        <button
-          type="button"
-          onClick={onOpenProviders}
-          className="flex items-center gap-2 border-t border-text/10 px-4 py-2.5 text-left transition hover:bg-surface/50"
-        >
-          <div className="flex items-center gap-1.5">
-            {providers.map((p) => (
-              <StatusDot key={p.provider} color={p.configured ? "success" : "danger"} size="sm" />
-            ))}
-          </div>
-          <span className="text-xs text-muted">Providers</span>
-        </button>
+        <div className="border-t border-text/10 px-3 py-2.5">
+          {(() => {
+            const connected = providers.filter((p) => p.configured || p.oauthConnected);
+            return (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {connected.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenProviders()}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-danger/40 px-3 py-1.5 text-xs text-danger/80 transition hover:border-danger hover:text-danger"
+                  >
+                    <span>+</span>
+                    <span>Connect a provider</span>
+                  </button>
+                ) : (
+                  <>
+                    {connected.map((p) => {
+                      const style = PROVIDER_STYLE[p.provider];
+                      return (
+                        <button
+                          key={p.provider}
+                          type="button"
+                          onClick={() => onOpenProviders(p.provider)}
+                          className={`rounded border px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${style?.className ?? "border-text/20 bg-surface text-muted"}`}
+                        >
+                          {style?.label ?? p.provider}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => onOpenProviders()}
+                      className="rounded border border-dashed border-text/20 px-2 py-0.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
+                    >
+                      + Connect
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </div>
       ) : null}
     </Panel>
   );

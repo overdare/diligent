@@ -59,6 +59,14 @@ export class ProviderManager {
     this.keys[provider] = apiKey;
   }
 
+  getConfiguredProviders(): Set<ProviderName> {
+    const configured = new Set<ProviderName>();
+    for (const [provider, key] of Object.entries(this.keys)) {
+      if (key) configured.add(provider as ProviderName);
+    }
+    return configured;
+  }
+
   removeApiKey(provider: ProviderName): void {
     for (const key of this.cache.keys()) {
       if (key.startsWith(`${provider}:`)) {
@@ -66,6 +74,15 @@ export class ProviderManager {
       }
     }
     delete this.keys[provider];
+  }
+
+  removeOAuthTokens(): void {
+    this.oauthTokens = undefined;
+    this.chatgptStream = undefined;
+    // Only remove the synthetic key if it was set by OAuth
+    if (this.keys.openai === "chatgpt-oauth") {
+      delete this.keys.openai;
+    }
   }
 
   createProxyStream(): StreamFunction {
