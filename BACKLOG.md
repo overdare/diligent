@@ -6,7 +6,7 @@
 
 - [ ] **Implement per-tool output limits** — Different char limits per tool (read_file: 50k, shell: 30k, grep: 20k, glob: 20k, edit: 10k, write: 1k) instead of current uniform 50KB/2000 lines for all tools. Configurable via SessionConfig. Reference: attractor spec §5.2. (added: 2026-02-27)
 - [ ] **Plan mode bash allowlist/denylist (D087a)** — Regex-based allowlist/denylist for bash tool in plan mode (git status ok, git push blocked). pi-agent's approach: concrete, testable regex patterns, not instruction-only. Stored as `planMode.bashAllowlist` / `planMode.bashDenylist` in config schema. (added: 2026-03-02)
-- [ ] **`request_user_input` tool for plan mode** — Tool only available in plan mode. Blocks execution and surfaces a question to the user via TUI overlay (ConfirmDialog or new InputDialog). Returns user's text response. Enables plan mode's 3-phase workflow (Ground → Intent → Implementation) to clarify goals interactively. (added: 2026-03-02)
+- [ ] **`request_user_input` tool (D088)** — Available in all modes (not plan-only). Blocks execution and surfaces a question to the user via TUI TextInput overlay. Returns user's text response. Supports multiple questions, options list, secret masking. See phase-5a plan. (updated: 2026-03-02)
 
 ### P2 — Medium (future capabilities)
 
@@ -18,11 +18,11 @@
 
 > Currently `ctx.approve()` auto-returns `"once"`. All decisions D027-D031 are designed but unimplemented.
 
-- [ ] **Rule-based permission matching (D027)** — Implement `{ permission, pattern, action }` rules with wildcard matching and last-match-wins semantics. Actions: `"allow"` / `"deny"` / `"ask"`. Load rules from config (`permissions` array in `diligent.jsonc`). (added: 2026-03-02)
-- [ ] **`ctx.ask()` inline approval flow (D028)** — Replace auto-approve stub with real blocking approval request. Tools call `ctx.ask({ permission, patterns, always })` mid-execution. The call blocks until user responds. `ApprovalResponse = "once" | "always" | "reject"` types already defined (D086). (added: 2026-03-02)
-- [ ] **Once/always/reject with cascading (D029)** — "always" response adds a rule that auto-resolves other pending requests matching the same pattern. "reject" cancels all session-pending approvals. Session-scoped rule cache (not persisted to disk at MVP). (added: 2026-03-02)
-- [ ] **Denied tools removed from LLM list (D070)** — Tools matching "deny" rules are removed from the LLM's tool list entirely (not left visible to fail at execution time). Saves context tokens, prevents confusing error loops. Conditionally denied tools (pattern-based) stay in list and are checked at call time. (added: 2026-03-02)
-- [ ] **TUI approval dialog overlay** — Wire `ctx.ask()` to ConfirmDialog overlay (already built in Phase 4a). Show permission request, pattern, and three choices (Once / Always / Reject). Block agent loop while overlay is active. (added: 2026-03-02)
+- [ ] **Rule-based permission matching (D027)** — `PermissionEngine` with `{ permission, pattern, action }` rules, wildcard matching, last-match-wins. Actions: `"allow"` / `"deny"` / `"prompt"`. Load from `permissions` array in config. See phase-5a plan. (updated: 2026-03-02)
+- [ ] **`ctx.approve()` inline approval flow (D028)** — Replace auto-approve stub with real blocking permission gate. `AgentLoopConfig.approve` callback; TUI provides dialog. `ApprovalResponse = "once" | "always" | "reject"`. See phase-5a plan. (updated: 2026-03-02)
+- [ ] **Once/always/reject with session cache (D029)** — `"always"` adds rule to `PermissionEngine` session cache; future matching calls auto-resolve. `"reject"` cancels current call (cascading all pending is post-MVP). See phase-5a plan. (updated: 2026-03-02)
+- [ ] **Denied tools removed from LLM list (D070)** — `filterAllowedTools()` in loop.ts removes tools with static deny rules before building LLM tool list. See phase-5a plan. (updated: 2026-03-02)
+- [ ] **TUI approval dialog overlay** — New `ApprovalDialog` component (3-button: Once / Always / Reject). Wire to `app.ts` approve callback. Block agent loop while shown. See phase-5a plan. (updated: 2026-03-02)
 
 ### L9 — MCP (designed, unimplemented)
 

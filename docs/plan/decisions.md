@@ -150,14 +150,14 @@ Decisions made during synthesis reviews, with rationale.
 ## Round 2 Decisions (L3: Approval & Sandbox + L4: Config System + L5: Session & Persistence)
 
 ### D027: Approval system — Rule-based with wildcard pattern matching
-- **Decision**: Implement a rule-based permission system with `{ permission, pattern, action }` rules, wildcard matching, and last-match-wins semantics. Actions are `"allow"`, `"deny"`, `"ask"`.
-- **Rationale**: opencode's `PermissionNext` approach is the right complexity level. codex-rs's trait-based orchestrator with OS sandboxing is too complex for MVP. pi-agent has no approval at all. Rule-based matching with wildcards is simple to implement, declarative, and extensible. D016 already placed an `approve()` hook in ToolContext — this decision fills in the implementation.
+- **Decision**: Implement a rule-based permission system with `{ permission, pattern, action }` rules, wildcard matching, and last-match-wins semantics. Actions are `"allow"`, `"deny"`, `"prompt"`.
+- **Rationale**: opencode's `PermissionNext` approach is the right complexity level. codex-rs's trait-based orchestrator with OS sandboxing is too complex for MVP. pi-agent has no approval at all. Rule-based matching with wildcards is simple to implement, declarative, and extensible. D016 already placed an `approve()` hook in ToolContext — this decision fills in the implementation. Action is named `"prompt"` (not `"ask"`) to avoid confusion with the separate `request_user_input` mechanism (D088).
 - **Alternatives considered**: Trait-based orchestrator (codex-rs, deferred), no approval (pi-agent, insufficient for safety), AskForApproval policy enum (codex-rs, simpler but less flexible)
 - **Date**: 2026-02-23
 
-### D028: Permission evaluation — ctx.ask() inline in tool execution
-- **Decision**: Tools request permission via `ctx.ask({ permission, patterns, always })` mid-execution. The call blocks until the user responds (allow once, always, reject). Builds on D016's approval hook.
-- **Rationale**: opencode's inline `ctx.ask()` pattern is the cleanest integration with tool execution. The tool knows what it needs permission for (file path, command, etc.) and requests it at the right moment. codex-rs's approach separates approval from execution (trait-level), which is harder to compose.
+### D028: Permission evaluation — ctx.approve() inline in tool execution
+- **Decision**: Tools request permission via `ctx.approve(ApprovalRequest)` mid-execution. The call blocks until resolved — either short-circuited by the rules engine (D027) or shown to the user as a dialog. Returns `ApprovalResponse = "once" | "always" | "reject"`. This is a **security boundary only** — it gates whether an action may execute. It is not a mechanism for the agent to ask questions (see D088 for that).
+- **Rationale**: The distinction between permission (`ctx.approve`) and clarification (`request_user_input`) is architecturally important. codex-rs enforces this at the protocol level with separate event types (`ExecApprovalRequest` vs `RequestUserInput`). Mixing them leads to ambiguous semantics: approval has rule-based pre-resolution and session caching; clarification always requires fresh user input. Naming the method `approve` (not `ask`) reflects its purpose.
 - **Date**: 2026-02-23
 
 ### D029: Approval responses — once, always, reject with cascading
@@ -402,7 +402,7 @@ Decisions made during synthesis reviews, with rationale.
 - **Decision**: Early-round research (L0-L2) remains valid in light of later rounds (L3-L9). No updates needed to earlier research files.
 - **Rationale**: Key cross-layer validations:
   - D014 (Map-based tool registry) confirmed as the integration point for L2 (core tools), L7 (slash commands), L8 (MCP tools), L9 (task tool)
-  - D016 (tool context with approval hook) confirmed as the L1-L3 bridge — MCP and multi-agent tools use the same `ctx.ask()` pattern
+  - D016 (tool context with approval hook) confirmed as the L1-L3 bridge — MCP and multi-agent tools use the same `ctx.approve()` pattern
   - D006/D036 (JSONL sessions) confirmed as the L0-L5-L9 bridge — sub-agent sessions use the same persistence format
   - D004 (Op/Event pattern) accommodates MCP events (tool list changed) and multi-agent events (spawn/wait/close) without changes
   - D033 (3-layer config hierarchy) accommodates MCP server config and agent type config without changes
@@ -533,7 +533,7 @@ Decisions made during synthesis reviews, with rationale.
   - Thread/session lifecycle semantics (create/resume/fork/rollback) — maps naturally to D040
   - Item grouping pattern (not the 50+ event types, just the structural `itemId` concept)
   - Transport-agnostic core design (core knows nothing about stdio/ws/http)
-  - Bidirectional approval readiness (D028 `ctx.ask()` returns rich response, not just boolean)
+  - Bidirectional approval readiness (D028 `ctx.approve()` returns rich response, not just boolean)
 - **What to intentionally diverge from**:
   - Event count: keep 15-20 AgentEvent types, not 50+ (D004 rationale still valid)
   - Concurrency model: TypeScript async iterators, not Rust mpsc channels
@@ -562,7 +562,7 @@ Decisions made during synthesis reviews, with rationale.
   | Bash safety | Allowlist/denylist patterns (D087a) | Plan: regex allowlist (git status ok, git push blocked) |
   | Approval policy | Approval layer (L4) | Execute: auto-approve most. Plan: deny mutation attempts |
   | Model/reasoning | Optional per-mode override in config | E.g., plan mode could use cheaper model |
-  | `request_user_input` tool | Mode-gated | Only available in plan mode |
+  | `request_user_input` tool | Available in all modes | Not mode-gated — agent may ask user questions in any mode (D088) |
 - **Mode switching**:
   - CLI flag: `--mode plan`, `--mode execute`
   - Slash command: `/mode plan`, `/mode` (picker)
@@ -587,8 +587,30 @@ Decisions made during synthesis reviews, with rationale.
 - **What to adapt / diverge**:
   - **Simpler ModeKind**: Start with 3 modes (`plan`, `default`, `execute`), not codex-rs's hidden aliases (`pair_programming`, `custom`)
   - **Bash safety**: Use pi-agent's regex allowlist approach (concrete, testable) instead of codex-rs's instruction-only approach
-  - **No `request_user_input` as separate tool initially**: Use existing approval mechanism to prompt user in plan mode
+  - **`request_user_input` is a separate tool** (D088), not approval-mechanism reuse — available in all modes, not plan-only
   - **Mode templates in config, not embedded**: Store as `templates/mode/{name}.md` files, loadable and customizable
 - **Phase placement**: Phase 4 (Safety & UX Polish) — modes depend on approval system (L4) and slash commands (L7), both Phase 4 scope. Core types (`ModeKind`, `CollaborationMode`) can be defined earlier as forward declarations.
-- **References**: D004, D028, D050, D086, codex-rs `collaboration_mode/` templates, pi-agent plan-mode extension, opencode agent types
+- **References**: D004, D028, D050, D086, D088, codex-rs `collaboration_mode/` templates, pi-agent plan-mode extension, opencode agent types
 - **Date**: 2026-02-25
+
+### D088: request_user_input — Separate tool for agent-initiated clarification
+- **Decision**: Implement `request_user_input` as a distinct tool, separate from the `ctx.approve()` permission system. The LLM calls it as a regular tool when it needs information from the user. Returns free-form text or option selection. Available in all modes (not mode-gated).
+- **Two-mechanism model**:
+  | | `ctx.approve()` | `request_user_input` |
+  |---|---|---|
+  | Purpose | Security boundary — "can I execute this?" | Collaboration — "what should I do?" |
+  | Caller | Tool implementations (internal) | LLM (as a tool call) |
+  | Input | `ApprovalRequest { permission, toolName, description }` | `{ questions: [{ id, question, options?, is_secret? }] }` |
+  | Output | `"once" \| "always" \| "reject"` | Free-form text / selected option |
+  | Pre-resolution | Rule engine can short-circuit (D027) | Always prompts user |
+  | Session cache | `"always"` adds rule to session cache | No caching |
+  | UX | Once / Always / Reject 3-button dialog | Text input or choice picker |
+- **Rationale**: codex-rs enforces this distinction at the protocol level (`ExecApprovalRequest` vs `RequestUserInput` are separate event types). Merging them (as previously considered in D087) leads to semantic ambiguity: approval is a security gate with rule-based pre-resolution and session memory; clarification is a fresh conversational exchange. The LLM must be able to ask the user questions in any mode — restricting `request_user_input` to plan-mode only prevents the agent from clarifying ambiguity during normal execution.
+- **Tool definition** (modeled on codex-rs `request_user_input.rs`):
+  ```typescript
+  // Supports multiple questions in one call, options list, secret masking
+  { questions: [{ id: string, question: string, options?: string[], is_secret?: boolean }] }
+  ```
+- **Alternatives considered**: Reuse approval mechanism for questions (D087 original — rejected: wrong semantics), plan-mode-only restriction (D087 original — rejected: blocks clarification in default/execute modes)
+- **References**: D027, D028, D087, codex-rs `protocol/src/request_user_input.rs`
+- **Date**: 2026-03-02
