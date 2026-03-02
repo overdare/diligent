@@ -21,6 +21,15 @@ export function getAuthFilePath(): string {
   return join(home, ".config", "diligent", "auth.json");
 }
 
+/** Substitute {env:VAR_NAME} → process.env[VAR_NAME] in string values. */
+function substituteEnv(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    result[k] = typeof v === "string" ? v.replace(/\{env:([^}]+)\}/g, (_, name) => process.env[name] ?? "") : v;
+  }
+  return result;
+}
+
 /** Load auth keys from auth.json. Returns {} if file missing or invalid. */
 export async function loadAuthStore(path?: string): Promise<AuthKeys> {
   const filePath = path ?? getAuthFilePath();
@@ -29,7 +38,8 @@ export async function loadAuthStore(path?: string): Promise<AuthKeys> {
     if (!(await file.exists())) return {};
     const text = await file.text();
     const parsed = JSON.parse(text);
-    const result = AuthKeysSchema.safeParse(parsed);
+    const substituted = substituteEnv(parsed);
+    const result = AuthKeysSchema.safeParse(substituted);
     if (!result.success) {
       console.warn(`auth.json warning: ${filePath}\n${result.error.message}`);
       return {};

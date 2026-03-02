@@ -67,32 +67,54 @@ class DiligentAgent(BaseInstalledAgent):
 
         env: dict[str, str] = {}
 
-        # Forward API keys
-        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
-            if key in os.environ:
-                env[key] = os.environ[key]
+        # Collect API keys from environment
+        key_map = {
+            "ANTHROPIC_API_KEY": "anthropic",
+            "OPENAI_API_KEY": "openai",
+            "GEMINI_API_KEY": "gemini",
+        }
+        auth_keys: dict[str, str] = {}
+        for env_key, provider in key_map.items():
+            val = os.environ.get(env_key)
+            if val:
+                env[env_key] = val
+                auth_keys[provider] = val
 
-        # Forward model selection via DILIGENT_MODEL env var
+        # Resolve model ID (Harbor uses "provider/model" format)
+        model_id = None
         if self.model_name:
-            # Harbor uses "provider/model" format, diligent wants just the model ID
             model_id = self.model_name
             if "/" in model_id:
                 model_id = model_id.split("/", 1)[1]
-            env["DILIGENT_MODEL"] = model_id
 
         # Extra env from constructor
         env.update(self._extra_env)
 
         output_dir = EnvironmentPaths.agent_dir
 
+        # Build config setup command — create auth.json + diligent.jsonc in container
+        setup_parts = ["mkdir -p ~/.config/diligent"]
+        if auth_keys:
+            auth_json = shlex.quote(json.dumps(auth_keys))
+            setup_parts.append(f"echo {auth_json} > ~/.config/diligent/auth.json")
+            setup_parts.append("chmod 600 ~/.config/diligent/auth.json")
+        if model_id:
+            config_json = shlex.quote(json.dumps({"model": model_id}))
+            setup_parts.append(f"echo {config_json} > ~/.config/diligent/diligent.jsonc")
+
         return [
+            # Write config files from host-side env vars
+            ExecInput(
+                command=" && ".join(setup_parts),
+                env=env,
+                timeout_sec=10,
+            ),
             ExecInput(
                 command=f"/installed-agent/diligent --prompt {escaped}",
                 env=env,
                 timeout_sec=600,
             ),
             # Copy session logs to mounted dir for host-side access
-            # Sessions land in {cwd}/.diligent/sessions/ — use find to catch any location
             ExecInput(
                 command=f"mkdir -p {output_dir}/sessions && find / -path '*/.diligent/sessions/*.jsonl' -exec cp {{}} {output_dir}/sessions/ \\; 2>/dev/null; true",
                 timeout_sec=30,

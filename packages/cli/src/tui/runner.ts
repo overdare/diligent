@@ -23,7 +23,11 @@ export class NonInteractiveRunner {
 
   async run(prompt: string): Promise<number> {
     const cwd = process.cwd();
-    const tools = buildTools(cwd, this.paths);
+    const tools = buildTools(cwd, this.paths, {
+      model: this.config.model,
+      systemPrompt: this.config.systemPrompt,
+      streamFunction: this.config.streamFunction,
+    });
     const isTTY = process.stderr.isTTY === true;
 
     // Initialize SessionManager if paths available

@@ -49,6 +49,25 @@ describe("loadAuthStore", () => {
     expect(result).toEqual({});
   });
 
+  test("substitutes {env:VAR} in values", async () => {
+    const path = join(TEST_ROOT, "auth.json");
+    process.env.TEST_ANTHROPIC_KEY = "sk-from-env";
+    await Bun.write(path, JSON.stringify({ anthropic: "{env:TEST_ANTHROPIC_KEY}" }));
+
+    const result = await loadAuthStore(path);
+    expect(result.anthropic).toBe("sk-from-env");
+    delete process.env.TEST_ANTHROPIC_KEY;
+  });
+
+  test("{env:VAR} resolves to empty string when var is unset", async () => {
+    const path = join(TEST_ROOT, "auth.json");
+    delete process.env.NONEXISTENT_AUTH_VAR;
+    await Bun.write(path, JSON.stringify({ anthropic: "{env:NONEXISTENT_AUTH_VAR}" }));
+
+    const result = await loadAuthStore(path);
+    expect(result.anthropic).toBe("");
+  });
+
   test("returns {} for schema-invalid content (extra fields)", async () => {
     const path = join(TEST_ROOT, "auth.json");
     await Bun.write(path, JSON.stringify({ anthropic: "key", unknown_provider: "bad" }));

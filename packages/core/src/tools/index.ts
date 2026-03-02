@@ -5,4 +5,6 @@ export { createGlobTool } from "./glob";
 export { createGrepTool } from "./grep";
 export { createLsTool } from "./ls";
 export { createReadTool } from "./read";
+export { createTaskTool } from "./task";
+export type { TaskToolDeps } from "./task";
 export { createWriteTool } from "./write";

@@ -20,6 +20,18 @@ function formatToolElapsed(ms: number): string {
   return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
 }
 
+/**
+ * Extract a one-line preview from task tool output.
+ * Handles both normal <task_result sessionId="..."> and error <task_result error="true"> forms.
+ */
+function extractTaskPreview(output: string, maxLen = 160): string {
+  if (!output) return "";
+  const contentMatch = output.match(/<task_result[^>]*>\n?([\s\S]*?)\n?<\/task_result>/);
+  const raw = contentMatch ? contentMatch[1].trim() : output.trim();
+  const firstLine = raw.split("\n")[0].trim();
+  return firstLine.length > maxLen ? `${firstLine.slice(0, maxLen - 1)}…` : firstLine;
+}
+
 /** Middle-truncate lines to at most `max`, inserting `… +N lines` in the middle */
 function truncateMiddle(lines: string[], max: number): string[] {
   if (lines.length <= max) return lines;
@@ -64,6 +76,7 @@ export class ChatView implements Component {
   private thinkingText = "";
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
+  private taskState = new Map<string, { description: string; subagentType: string }>();
 
   constructor(private options: ChatViewOptions) {
     this.activeSpinner = new SpinnerComponent(options.requestRender);
@@ -111,11 +124,27 @@ export class ChatView implements Component {
 
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());
-        this.activeSpinner.start(event.toolName);
+        if (event.toolName === "task") {
+          const inp = event.input as { description?: string; subagent_type?: string } | null;
+          const desc = inp?.description ?? "";
+          const type = inp?.subagent_type ?? "general";
+          this.taskState.set(event.toolCallId, { description: desc, subagentType: type });
+          this.activeSpinner.start(desc ? `[${type}] ${desc}` : `[${type}]`);
+        } else {
+          this.activeSpinner.start(event.toolName);
+        }
         break;
 
       case "tool_update":
-        this.activeSpinner.setMessage(`${event.toolName}…`);
+        if (event.toolName === "task") {
+          const state = this.taskState.get(event.toolCallId);
+          if (state) {
+            const base = state.description ? `[${state.subagentType}] ${state.description}` : `[${state.subagentType}]`;
+            this.activeSpinner.setMessage(`${base} — ${event.partialResult}`);
+          }
+        } else {
+          this.activeSpinner.setMessage(`${event.toolName}…`);
+        }
         break;
 
       case "tool_end": {
@@ -125,7 +154,20 @@ export class ChatView implements Component {
         const elapsed =
           startTime !== undefined ? ` ${t.dim}· ${formatToolElapsed(Date.now() - startTime)}${t.reset}` : "";
 
-        if (event.output) {
+        if (event.toolName === "task") {
+          const state = this.taskState.get(event.toolCallId);
+          this.taskState.delete(event.toolCallId);
+          const type = state?.subagentType ?? "general";
+          const desc = state?.description ?? "";
+          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+          const label = `${icon} [${type}]${desc ? ` ${desc}` : ""}${elapsed}`;
+          const preview = extractTaskPreview(event.output);
+          const lines: string[] = [label];
+          if (preview) {
+            lines.push(`${t.dim}  └ ${preview}${t.reset}`);
+          }
+          this.items.push(lines);
+        } else if (event.output) {
           const rawLines = event.output.split("\n");
           const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
           const lines: string[] = [`${t.success}⏺${t.reset} ${event.toolName}${elapsed}`];

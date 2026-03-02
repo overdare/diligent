@@ -34,14 +34,12 @@
 - [ ] **MCP tools → tool registry conversion (D059)** — Convert MCP tools to regular tool objects via `convertMcpTool()`. Namespace as `serverName_toolName`. Register in tool registry; goes through same permission system as built-in tools. (added: 2026-03-02)
 - [ ] **Dynamic tool list refresh (D061)** — Handle `ToolListChangedNotification` from MCP SDK to refresh registry without restart. (added: 2026-03-02)
 
-### L10 — Multi-Agent (designed, unimplemented)
+### L10 — Multi-Agent ✓ Done (2026-03-02)
 
-> All decisions D062-D065 are finalized. Phase 5b spec exists in `docs/plan/implementation-phases.md`.
-
-- [ ] **`task` tool implementation (D062)** — Single tool that creates a child session. Args: `description`, `prompt`, `subagent_type`, optional `task_id` (resume). Uses existing SessionManager for isolation and persistence. (added: 2026-03-02)
-- [ ] **Built-in agent types: `general` + `explore` (D063)** — Code-defined defaults. `general`: full tool access. `explore`: read-only (same as plan mode tool set). Config override via `agents` section in `diligent.jsonc`. (added: 2026-03-02)
-- [ ] **Sub-agent permission isolation (D064)** — Child sessions created with explicit deny rules: deny `task` tool by default (prevents infinite nesting), deny any mutation tools for `explore` type. (added: 2026-03-02)
-- [ ] **Sub-agent result format (D065)** — Return final text wrapped in `<task_result>` tags plus `sessionId` for resumption. Parent receives this as tool output string. (added: 2026-03-02)
+- [x] **`task` tool implementation (D062)** — `packages/core/src/tools/task.ts`. Child SessionManager, resume via `task_id`. (done: 2026-03-02)
+- [x] **Built-in agent types: `general` + `explore` (D063)** — `packages/core/src/agent/agent-types.ts`. Code-defined defaults, no config override. (done: 2026-03-02)
+- [x] **Sub-agent permission isolation (D064)** — `general` excludes `task` (no infinite nesting), `explore` uses PLAN_MODE_ALLOWED_TOOLS only. (done: 2026-03-02)
+- [x] **Sub-agent result format (D065)** — `<task_result sessionId="...">` wrapping. TUI renders `[type] desc · elapsed` with preview line. (done: 2026-03-02)
 
 ### P3 — Low (opportunistic)
 

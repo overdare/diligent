@@ -57,6 +57,7 @@ Each skill has a \`SKILL.md\` with frontmatter metadata. Skills are injected int
 - Run tests after code changes.
 - Never introduce security vulnerabilities (command injection, XSS, SQL injection, etc.).
 - English only in all generated files.
+- Output in pure Markdown only. Never use raw HTML tags (table, tr, td, div, span, etc.) in responses.
 </behavioral_guidelines>`;
 
 export interface SystemPromptVars {

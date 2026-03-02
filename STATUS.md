@@ -20,14 +20,13 @@ All implementation phases (0–4c) are done. Development continues as iterative 
 | L7 TUI & Commands | Done (component framework, overlays, 15 commands) |
 | L8 Skills | Done (SKILL.md discovery, frontmatter, system prompt injection) |
 | L9 MCP | **Not started** — design complete (D056-D061), in backlog. |
-| L10 Multi-Agent | **Not started** — design complete (D062-D065), in backlog. |
+| L10 Multi-Agent | Done (D062-D065: task tool, agent types, permission isolation, result format) |
 
-**Backlog summary (21 pending items):**
+**Backlog summary (17 pending items):**
 - **P1** (3): Per-tool output limits · Plan mode bash rules · `request_user_input` tool
 - **P2** (3): Context budget headroom · Background async piggyback · Per-mode model override
 - **L4** (5): Rule-based permissions · ctx.ask() flow · Once/always/reject · Denied tool removal · TUI approval dialog
 - **L9** (5): MCP client · Transports · Config schema · Tool conversion · Dynamic refresh
-- **L10** (4): task tool · Agent types · Permission isolation · Result format
 - **P3** (5): Debug-viewer sync · Export/import · Config editing UI · Syntax highlighting · LSP diagnostics
 
 ## Phases Complete

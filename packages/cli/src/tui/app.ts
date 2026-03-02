@@ -136,7 +136,11 @@ export class App {
     // Initialize SessionManager
     if (this.paths) {
       const cwd = process.cwd();
-      const tools = buildTools(cwd, this.paths);
+      const tools = buildTools(cwd, this.paths, {
+        model: this.config.model,
+        systemPrompt: this.config.systemPrompt,
+        streamFunction: this.config.streamFunction,
+      });
 
       this.sessionManager = new SessionManager({
         cwd,
@@ -322,7 +326,11 @@ export class App {
         this.messages = result;
       } else {
         const cwd = process.cwd();
-        const tools = buildTools(cwd, this.paths);
+        const tools = buildTools(cwd, this.paths, {
+          model: this.config.model,
+          systemPrompt: this.config.systemPrompt,
+          streamFunction: this.config.streamFunction,
+        });
         const loopFn = this.config.agentLoopFn ?? agentLoop;
         const loop = loopFn(this.messages, {
           model: this.config.model,

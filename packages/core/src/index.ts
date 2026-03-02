@@ -4,12 +4,13 @@
 export type {
   AgentEvent,
   AgentLoopConfig,
+  AgentTypeDef,
   LoopDetectionResult,
   MessageDelta,
   ModeKind,
   SerializableError,
 } from "./agent/index";
-export { agentLoop, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
+export { agentLoop, BUILTIN_AGENT_TYPES, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
 // Auth
 export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
 export { getAuthFilePath, loadAuthStore, saveAuthKey } from "./auth/index";
@@ -127,8 +128,10 @@ export {
   createGrepTool,
   createLsTool,
   createReadTool,
+  createTaskTool,
   createWriteTool,
 } from "./tools/index";
+export type { TaskToolDeps } from "./tools/index";
 export type {
   AssistantMessage,
   ContentBlock,
