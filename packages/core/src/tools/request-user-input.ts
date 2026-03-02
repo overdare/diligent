@@ -22,7 +22,11 @@ const QuestionSchema = z.object({
 });
 
 const ParamsSchema = z.object({
-  questions: z.array(QuestionSchema).min(1).max(3).describe("Questions to show the user. Prefer 1 and do not exceed 3."),
+  questions: z
+    .array(QuestionSchema)
+    .min(1)
+    .max(3)
+    .describe("Questions to show the user. Prefer 1 and do not exceed 3."),
 });
 
 export const requestUserInputTool: Tool<typeof ParamsSchema> = {

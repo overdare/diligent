@@ -16,8 +16,16 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
 
   return (
     <div>
-      {hasThinking && <div className="pb-4"><ThinkingBlock text={item.thinking} streaming={!item.thinkingDone} /></div>}
-      {hasText && <div className="pb-8"><MarkdownContent text={item.text} /></div>}
+      {hasThinking && (
+        <div className="pb-4">
+          <ThinkingBlock text={item.thinking} streaming={!item.thinkingDone} />
+        </div>
+      )}
+      {hasText && (
+        <div className="pb-8">
+          <MarkdownContent text={item.text} />
+        </div>
+      )}
     </div>
   );
 }

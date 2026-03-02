@@ -1,31 +1,20 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket and static file hosting
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
 import {
   type AgentRegistry,
-  type AuthProviderName,
-  buildOAuthTokens,
+  createAuthCallbacks,
   DiligentAppServer,
   type DiligentAppServerConfig,
   type DiligentPaths,
   ensureDiligentDir,
-  exchangeCodeForTokens,
-  generatePKCE,
   KNOWN_MODELS,
-  loadAuthStore,
-  loadOAuthTokens,
+  loadRuntimeConfig,
   type ModeKind,
-  removeAuthKey,
-  removeOAuthTokens,
+  type PROVIDER_NAMES,
   resolveModel,
-  saveAuthKey,
-  saveOAuthTokens,
-  waitForCallback,
 } from "@diligent/core";
-import { loadWebRuntimeConfig } from "./app-config";
-import type { OAuthStartResult, OAuthStatusResult, ProviderAuthStatus } from "../shared/ws-protocol";
-import { type AuthCallbacks, RpcBridge, type RpcWsData } from "./rpc-bridge";
+import { RpcBridge, type RpcWsData } from "./rpc-bridge";
 import { buildTools } from "./tools";
 
 interface CreateServerOptions {
@@ -44,7 +33,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   const dev = options.dev ?? false;
 
   const paths = await ensureDiligentDir(cwd);
-  const runtimeConfig = await loadWebRuntimeConfig(cwd, paths);
+  const runtimeConfig = await loadRuntimeConfig(cwd, paths);
 
   let registry: AgentRegistry | undefined;
 
@@ -80,88 +69,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     compaction: runtimeConfig.compaction,
   };
 
-  const PROVIDERS = ["anthropic", "openai", "gemini"] as const;
-
-  // OAuth flow state
-  const AUTH_URL = "https://auth.openai.com/oauth/authorize";
-  const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-  const REDIRECT_URI = "http://localhost:1455/auth/callback";
-  const SCOPES = "openid profile email offline_access";
-
-  let oauthFlowStatus: OAuthStatusResult = { status: "idle" };
-  let oauthPending: Promise<void> | null = null;
-
-  const authCallbacks: AuthCallbacks = {
-    list: async () => {
-      const keys = await loadAuthStore();
-      const oauthTokens = await loadOAuthTokens();
-      return PROVIDERS.map((p): ProviderAuthStatus => ({
-        provider: p,
-        configured: Boolean(keys[p]),
-        maskedKey: keys[p] ? maskKey(keys[p] as string) : undefined,
-        oauthConnected: p === "openai" ? Boolean(oauthTokens) : undefined,
-      }));
-    },
-    set: async (provider, apiKey) => {
-      await saveAuthKey(provider as AuthProviderName, apiKey);
-      runtimeConfig.providerManager.setApiKey(provider as AuthProviderName, apiKey);
-    },
-    remove: async (provider) => {
-      await removeAuthKey(provider as AuthProviderName);
-      runtimeConfig.providerManager.removeApiKey(provider as AuthProviderName);
-      if (provider === "openai") {
-        await removeOAuthTokens();
-        runtimeConfig.providerManager.removeOAuthTokens();
-      }
-    },
-    oauthStart: async (): Promise<OAuthStartResult> => {
-      if (oauthPending) {
-        throw new Error("OAuth flow already in progress");
-      }
-
-      const { codeVerifier, codeChallenge } = generatePKCE();
-      const state = randomBytes(16).toString("hex");
-
-      const params = new URLSearchParams({
-        response_type: "code",
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-        scope: SCOPES,
-        code_challenge: codeChallenge,
-        code_challenge_method: "S256",
-        id_token_add_organizations: "true",
-        codex_cli_simplified_flow: "true",
-        originator: "diligent",
-        state,
-      });
-
-      const authUrl = `${AUTH_URL}?${params}`;
-
-      oauthFlowStatus = { status: "pending" };
-      oauthPending = (async () => {
-        try {
-          const { code } = await waitForCallback(state, 5 * 60 * 1000);
-          const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
-          const tokens = buildOAuthTokens(rawTokens);
-          await saveOAuthTokens(tokens);
-          runtimeConfig.providerManager.setOAuthTokens(tokens);
-          oauthFlowStatus = { status: "completed" };
-        } catch (e) {
-          oauthFlowStatus = {
-            status: "expired",
-            error: e instanceof Error ? e.message : "OAuth flow failed",
-          };
-        } finally {
-          oauthPending = null;
-        }
-      })();
-
-      return { authUrl };
-    },
-    oauthStatus: async (): Promise<OAuthStatusResult> => {
-      return oauthFlowStatus;
-    },
-  };
+  const authCallbacks = createAuthCallbacks(runtimeConfig.providerManager);
 
   const allModels = KNOWN_MODELS.map((m) => ({
     id: m.id,
@@ -174,17 +82,23 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   }));
 
   const appServer = new DiligentAppServer(appServerConfig);
-  const bridge = new RpcBridge(appServer, cwd, runtimeConfig.mode, {
-    currentModelId: runtimeConfig.model?.id,
-    allModels,
-    getAvailableModels: () => {
-      const configured = runtimeConfig.providerManager.getConfiguredProviders();
-      return allModels.filter((m) => configured.has(m.provider as "anthropic" | "openai" | "gemini"));
+  const bridge = new RpcBridge(
+    appServer,
+    cwd,
+    runtimeConfig.mode,
+    {
+      currentModelId: runtimeConfig.model?.id,
+      allModels,
+      getAvailableModels: () => {
+        const configured = runtimeConfig.providerManager.getConfiguredProviders();
+        return allModels.filter((m) => configured.includes(m.provider as (typeof PROVIDER_NAMES)[number]));
+      },
+      onModelChange: (modelId) => {
+        runtimeConfig.model = resolveModel(modelId);
+      },
     },
-    onModelChange: (modelId) => {
-      runtimeConfig.model = resolveModel(modelId);
-    },
-  }, authCallbacks);
+    authCallbacks,
+  );
 
   const distDir = options.distDir ?? resolveDistDir();
   const hasDist = existsSync(distDir);
@@ -244,11 +158,6 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       server.stop();
     },
   };
-}
-
-function maskKey(key: string): string {
-  if (key.length <= 11) return "***";
-  return `${key.slice(0, 7)}...${key.slice(-4)}`;
 }
 
 function resolveDistDir(): string {

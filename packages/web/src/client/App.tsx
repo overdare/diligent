@@ -10,9 +10,6 @@ import { Panel } from "./components/Panel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
-import { useProviderManager } from "./lib/use-provider-manager";
-import { useRpcClient } from "./lib/use-rpc";
-import { useServerRequests } from "./lib/use-server-requests";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
@@ -21,6 +18,9 @@ import {
   reduceServerNotification,
   type ThreadState,
 } from "./lib/thread-store";
+import { useProviderManager } from "./lib/use-provider-manager";
+import { useRpcClient } from "./lib/use-rpc";
+import { useServerRequests } from "./lib/use-server-requests";
 
 type AppAction =
   | { type: "notification"; payload: Parameters<typeof reduceServerNotification>[1] }
@@ -69,15 +69,18 @@ export function App() {
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
 
-  const refreshThreadList = useCallback(async (rpc = rpcRef.current): Promise<void> => {
-    if (!rpc) return;
-    try {
-      const list = await rpc.request("thread/list", { limit: 100 });
-      dispatch({ type: "set_threads", payload: list.data });
-    } catch (error) {
-      console.error(error);
-    }
-  }, [rpcRef]);
+  const refreshThreadList = useCallback(
+    async (rpc = rpcRef.current): Promise<void> => {
+      if (!rpc) return;
+      try {
+        const list = await rpc.request("thread/list", { limit: 100 });
+        dispatch({ type: "set_threads", payload: list.data });
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [rpcRef],
+  );
 
   // Register onConnected, onNotification, onServerRequest on the rpc instance created by useRpcClient.
   // Runs once on mount (all deps are stable useCallbacks). Listeners replace each other on re-registration.
@@ -223,7 +226,10 @@ export function App() {
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
           providers={providerMgr.providers}
-          onOpenProviders={(p) => { setFocusedProvider(p ?? null); setShowProviderModal(true); }}
+          onOpenProviders={(p) => {
+            setFocusedProvider(p ?? null);
+            setShowProviderModal(true);
+          }}
         />
 
         <Panel className="flex min-h-0 flex-col overflow-hidden">
@@ -252,8 +258,7 @@ export function App() {
                 ? {
                     request: serverRequests.questionPrompt.request,
                     answers: serverRequests.answers,
-                    onAnswerChange: (id, val) =>
-                      serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
+                    onAnswerChange: (id, val) => serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
                     onSubmit: () => serverRequests.resolveQuestion(serverRequests.answers),
                     onCancel: () => serverRequests.resolveQuestion({}),
                   }
@@ -302,7 +307,10 @@ export function App() {
           onRemove={providerMgr.handleRemoveProviderKey}
           onOAuthStart={providerMgr.handleOAuthStart}
           onOAuthStatus={providerMgr.handleOAuthStatus}
-          onClose={() => { setShowProviderModal(false); setFocusedProvider(null); }}
+          onClose={() => {
+            setShowProviderModal(false);
+            setFocusedProvider(null);
+          }}
         />
       ) : null}
 

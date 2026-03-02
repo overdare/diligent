@@ -41,17 +41,18 @@ describe("shouldRefresh", () => {
 
 describe("refreshOAuthTokens", () => {
   test("returns new tokens with rotated refresh_token", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: "new-at",
-          refresh_token: "new-rt",
-          id_token: "new-it",
-          expires_in: 3600,
-          token_type: "Bearer",
-        }),
-        { status: 200 },
-      ),
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "new-at",
+            refresh_token: "new-rt",
+            id_token: "new-it",
+            expires_in: 3600,
+            token_type: "Bearer",
+          }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
 
     const tokens = makeTokens(Date.now() + 60_000);
@@ -63,9 +64,7 @@ describe("refreshOAuthTokens", () => {
   });
 
   test("throws on refresh endpoint error", async () => {
-    globalThis.fetch = mock(
-      async () => new Response("invalid_grant", { status: 400 }),
-    ) as unknown as typeof fetch;
+    globalThis.fetch = mock(async () => new Response("invalid_grant", { status: 400 })) as unknown as typeof fetch;
 
     const tokens = makeTokens(Date.now() + 60_000);
     await expect(refreshOAuthTokens(tokens)).rejects.toThrow("Token refresh failed (400)");

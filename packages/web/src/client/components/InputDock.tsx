@@ -90,7 +90,9 @@ export function InputDock({
 
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
-      <div className={`rounded-3xl border px-4 py-3 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}>
+      <div
+        className={`rounded-3xl border px-4 py-3 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}
+      >
         {/* No provider banner */}
         {!hasProvider ? (
           <button

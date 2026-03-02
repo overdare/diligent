@@ -1,43 +1,42 @@
-// @summary Web server runtime config loader for model, prompt, permissions, and stream function
-import type { DiligentConfig, DiligentPaths, ModeKind, Model, StreamFunction, SystemSection } from "@diligent/core";
-import {
-  buildBaseSystemPrompt,
-  buildKnowledgeSection,
-  buildSystemPromptWithKnowledge,
-  createPermissionEngine,
-  discoverInstructions,
-  discoverSkills,
-  KNOWN_MODELS,
-  loadAuthStore,
-  loadDiligentConfig,
-  loadOAuthTokens,
-  readKnowledge,
-  renderSkillsSection,
-  resolveModel,
-} from "@diligent/core";
-import { ProviderManager } from "./provider-manager";
+// @summary Shared runtime config loader — single init path for both CLI and Web
 
-export interface WebRuntimeConfig {
+import type { ModeKind } from "../agent/index";
+import type { PermissionEngine } from "../approval/index";
+import { createPermissionEngine } from "../approval/index";
+import { loadAuthStore, loadOAuthTokens } from "../auth/auth-store";
+import type { DiligentPaths } from "../infrastructure/index";
+import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
+import { buildBaseSystemPrompt } from "../prompt/index";
+import { KNOWN_MODELS, resolveModel } from "../provider/models";
+import { ProviderManager } from "../provider/provider-manager";
+import type { Model, StreamFunction, SystemSection } from "../provider/types";
+import type { SkillMetadata } from "../skills/index";
+import { discoverSkills, renderSkillsSection } from "../skills/index";
+import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
+import { loadDiligentConfig } from "./loader";
+import type { DiligentConfig } from "./schema";
+
+export interface RuntimeConfig {
   model: Model | undefined;
   mode: ModeKind;
   systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
   diligent: DiligentConfig;
-  compaction: {
-    enabled: boolean;
-    reserveTokens: number;
-    keepRecentTokens: number;
-  };
-  permissionEngine: ReturnType<typeof createPermissionEngine>;
+  sources: string[];
+  skills: SkillMetadata[];
+  compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number };
+  permissionEngine: PermissionEngine;
   providerManager: ProviderManager;
 }
 
-export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): Promise<WebRuntimeConfig> {
-  const { config } = await loadDiligentConfig(cwd);
+export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Promise<RuntimeConfig> {
+  const { config, sources } = await loadDiligentConfig(cwd);
   const instructions = await discoverInstructions(cwd);
 
+  // Create ProviderManager — no throw on missing keys, deferred to call time
   const providerManager = new ProviderManager(config);
 
+  // Overlay auth.json keys
   const authKeys = await loadAuthStore();
   for (const [provider, key] of Object.entries(authKeys)) {
     if (typeof key === "string" && key) {
@@ -45,6 +44,7 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
     }
   }
 
+  // Load OpenAI OAuth tokens — takes priority over plain key if present
   const oauthTokens = await loadOAuthTokens();
   if (oauthTokens) {
     providerManager.setOAuthTokens(oauthTokens);
@@ -53,12 +53,13 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
 
   const streamFunction = providerManager.createProxyStream();
 
-  // Use config.model if set, otherwise pick the first available model from configured providers (no hardcoded default)
+  // Resolve model: use config.model if set, otherwise pick first available from configured providers
   const configured = providerManager.getConfiguredProviders();
-  const firstAvailable = KNOWN_MODELS.find((m) => configured.has(m.provider as "anthropic" | "openai" | "gemini"));
+  const firstAvailable = KNOWN_MODELS.find((m) => configured.includes(m.provider as "anthropic" | "openai" | "gemini"));
   const modelId = config.model ?? firstAvailable?.id;
   const model = modelId ? resolveModel(modelId) : undefined;
 
+  // Load knowledge for system prompt injection
   let knowledgeSection = "";
   const knowledgeEnabled = config.knowledge?.enabled ?? true;
   if (knowledgeEnabled) {
@@ -67,6 +68,8 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
     knowledgeSection = buildKnowledgeSection(knowledgeEntries, injectionBudget);
   }
 
+  // Load skills
+  let skills: SkillMetadata[] = [];
   let skillsSection = "";
   const skillsEnabled = config.skills?.enabled ?? true;
   if (skillsEnabled) {
@@ -74,9 +77,11 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
       cwd,
       additionalPaths: config.skills?.paths,
     });
-    skillsSection = renderSkillsSection(result.skills);
+    skills = result.skills;
+    skillsSection = renderSkillsSection(skills);
   }
 
+  // Build system prompt with knowledge AND skills
   const basePrompt =
     config.systemPrompt ??
     buildBaseSystemPrompt({
@@ -84,7 +89,6 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
       cwd,
       platform: process.platform,
     });
-
   const systemPrompt = buildSystemPromptWithKnowledge(
     basePrompt,
     instructions,
@@ -99,6 +103,8 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
     systemPrompt,
     streamFunction,
     diligent: config,
+    sources,
+    skills,
     compaction: {
       enabled: config.compaction?.enabled ?? true,
       reserveTokens: config.compaction?.reserveTokens ?? 16384,

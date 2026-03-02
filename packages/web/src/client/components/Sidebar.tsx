@@ -7,8 +7,8 @@ import { Panel } from "./Panel";
 
 const PROVIDER_STYLE: Record<string, { label: string; className: string }> = {
   anthropic: { label: "Anthropic", className: "border-orange-400/30 bg-orange-400/10 text-orange-400" },
-  openai:    { label: "OpenAI",    className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
-  gemini:    { label: "Gemini",    className: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
+  openai: { label: "OpenAI", className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
+  gemini: { label: "Gemini", className: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
 };
 
 interface SidebarProps {
@@ -21,7 +21,15 @@ interface SidebarProps {
   onOpenProviders?: (provider?: string) => void;
 }
 
-export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenThread, providers, onOpenProviders }: SidebarProps) {
+export function Sidebar({
+  cwd,
+  threadList,
+  activeThreadId,
+  onNewThread,
+  onOpenThread,
+  providers,
+  onOpenProviders,
+}: SidebarProps) {
   const cwdShort = cwd ? cwd.split("/").slice(-2).join("/") : "-";
 
   return (

@@ -5,14 +5,7 @@ import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
 import { buildTools, convertMessages, handleResponsesAPIEvents } from "./openai-shared";
 import { flattenSections } from "./system-sections";
-import type {
-  Model,
-  ProviderEvent,
-  ProviderResult,
-  StreamContext,
-  StreamFunction,
-  StreamOptions,
-} from "./types";
+import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";

@@ -96,9 +96,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
               />
             ) : (
               <div className="space-y-2">
-                {item.inputText && (
-                  <ContentText text={item.inputText} label="Input" compact />
-                )}
+                {item.inputText && <ContentText text={item.inputText} label="Input" compact />}
                 {item.outputText && (
                   <ContentText text={item.outputText} label="Output" compact isError={item.isError} />
                 )}

@@ -1,9 +1,9 @@
-// @summary Tests for loadWebRuntimeConfig happy-path: model, mode, compaction defaults, and streamFunction
+// @summary Tests for loadRuntimeConfig happy-path: model, mode, compaction defaults, and streamFunction
 import { expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadWebRuntimeConfig } from "../src/server/app-config";
+import { loadRuntimeConfig } from "@diligent/core";
 
 function makeTmpEnv(base: string) {
   const knowledge = join(base, ".diligent", "knowledge");
@@ -29,9 +29,9 @@ test("loads model from diligent.jsonc and returns required fields", async () => 
   await Bun.write(join(base, "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
-    const config = await loadWebRuntimeConfig(base, paths);
+    const config = await loadRuntimeConfig(base, paths);
 
-    expect(config.model.id).toBe("claude-sonnet-4-6");
+    expect(config.model!.id).toBe("claude-sonnet-4-6");
     expect(typeof config.streamFunction).toBe("function");
     expect(Array.isArray(config.systemPrompt)).toBe(true);
     expect(config.systemPrompt.length).toBeGreaterThan(0);
@@ -48,7 +48,7 @@ test("compaction defaults when not configured", async () => {
   await Bun.write(join(base, "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
-    const config = await loadWebRuntimeConfig(base, paths);
+    const config = await loadRuntimeConfig(base, paths);
 
     expect(config.compaction.enabled).toBe(true);
     expect(config.compaction.reserveTokens).toBe(16384);
@@ -66,7 +66,7 @@ test("mode defaults to default when not configured", async () => {
   await Bun.write(join(base, "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
-    const config = await loadWebRuntimeConfig(base, paths);
+    const config = await loadRuntimeConfig(base, paths);
     expect(config.mode).toBe("default");
   } finally {
     rmSync(base, { recursive: true, force: true });

@@ -134,7 +134,6 @@ export async function handleResponsesAPIEvents(
 
     const type = event.type as string;
 
-
     switch (type) {
       case "response.output_text.delta": {
         const delta = event.delta as string;

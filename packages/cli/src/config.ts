@@ -12,20 +12,8 @@ import type {
   StreamFunction,
   SystemSection,
 } from "@diligent/core";
-import {
-  buildBaseSystemPrompt,
-  buildKnowledgeSection,
-  buildSystemPromptWithKnowledge,
-  discoverInstructions,
-  discoverSkills,
-  loadAuthStore,
-  loadDiligentConfig,
-  loadOAuthTokens,
-  readKnowledge,
-  renderSkillsSection,
-  resolveModel,
-} from "@diligent/core";
-import { ProviderManager, type ProviderName } from "./provider-manager";
+import { ensureDiligentDir, loadRuntimeConfig, resolveModel } from "@diligent/core";
+import type { ProviderManager, ProviderName } from "./provider-manager";
 
 export type AgentLoopFn = (messages: Message[], config: AgentLoopConfig) => EventStream<AgentEvent, Message[]>;
 
@@ -43,85 +31,22 @@ export interface AppConfig {
 }
 
 export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPaths): Promise<AppConfig> {
-  const { config, sources } = await loadDiligentConfig(cwd);
-  const instructions = await discoverInstructions(cwd);
-
-  // Resolve model from config or default
-  const modelId = config.model ?? "claude-sonnet-4-6";
-  const model = resolveModel(modelId);
-
-  // Create ProviderManager — no throw on missing keys, deferred to call time
-  const providerManager = new ProviderManager(config);
-
-  // Overlay auth.json keys (takes priority over config)
-  const authKeys = await loadAuthStore();
-  for (const [provider, key] of Object.entries(authKeys)) {
-    if (typeof key === "string" && key) providerManager.setApiKey(provider as ProviderName, key);
-  }
-
-  // Load OpenAI OAuth tokens — takes priority over plain key if present
-  const oauthTokens = await loadOAuthTokens();
-  if (oauthTokens) {
-    providerManager.setOAuthTokens(oauthTokens);
-    // Block on refresh if tokens are near expiry at startup
-    await providerManager.ensureOAuthFresh();
-  }
-
-  const streamFunction = providerManager.createProxyStream();
-
-  // Backward-compatible apiKey: current provider's key or empty string
-  const provider = (model.provider ?? "anthropic") as "anthropic" | "openai";
-  const apiKey = providerManager.getApiKey(provider) ?? "";
-
-  // Load knowledge for system prompt injection
-  let knowledgeSection = "";
-  if (paths) {
-    const knowledgeEnabled = config.knowledge?.enabled ?? true;
-    if (knowledgeEnabled) {
-      const knowledgeEntries = await readKnowledge(paths.knowledge);
-      const injectionBudget = config.knowledge?.injectionBudget ?? 8192;
-      knowledgeSection = buildKnowledgeSection(knowledgeEntries, injectionBudget);
-    }
-  }
-
-  // Load skills
-  let skills: SkillMetadata[] = [];
-  let skillsSection = "";
-  const skillsEnabled = config.skills?.enabled ?? true;
-  if (skillsEnabled) {
-    const result = await discoverSkills({
-      cwd,
-      additionalPaths: config.skills?.paths,
-    });
-    skills = result.skills;
-    skillsSection = renderSkillsSection(skills);
-  }
-
-  // Build system prompt with knowledge AND skills
-  const basePrompt =
-    config.systemPrompt ??
-    buildBaseSystemPrompt({
-      currentDate: new Date().toISOString().split("T")[0],
-      cwd,
-      platform: process.platform,
-    });
-  const systemPrompt = buildSystemPromptWithKnowledge(
-    basePrompt,
-    instructions,
-    knowledgeSection,
-    config.instructions,
-    skillsSection,
-  );
+  const resolvedPaths = paths ?? (await ensureDiligentDir(cwd));
+  const runtime = await loadRuntimeConfig(cwd, resolvedPaths);
+  // CLI default: claude-sonnet-4-6 when no provider is configured
+  const model = runtime.model ?? resolveModel("claude-sonnet-4-6");
+  const provider = (model.provider ?? "anthropic") as ProviderName;
+  const apiKey = runtime.providerManager.getApiKey(provider) ?? "";
 
   return {
     apiKey,
     model,
-    systemPrompt,
-    streamFunction,
-    diligent: config,
-    sources,
-    skills,
-    mode: (config.mode ?? "default") as ModeKind,
-    providerManager,
+    systemPrompt: runtime.systemPrompt,
+    streamFunction: runtime.streamFunction,
+    diligent: runtime.diligent,
+    sources: runtime.sources,
+    skills: runtime.skills,
+    mode: runtime.mode,
+    providerManager: runtime.providerManager,
   };
 }

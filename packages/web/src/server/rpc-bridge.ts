@@ -1,5 +1,5 @@
 // @summary WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests
-import type { DiligentAppServer } from "@diligent/core";
+import type { AuthCallbacks, DiligentAppServer } from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
@@ -13,15 +13,7 @@ import {
   JSONRPCResponseSchema,
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
-import type {
-  ConnectedMessage,
-  ModelInfo,
-  OAuthStartResult,
-  OAuthStatusResult,
-  ProviderAuthStatus,
-  WsClientMessage,
-  WsServerMessage,
-} from "../shared/ws-protocol";
+import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 
 interface RpcSession {
   id: string;
@@ -55,14 +47,6 @@ function toSafeFallback(request: DiligentServerRequest): DiligentServerRequestRe
     method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
     result: { answers: {} },
   };
-}
-
-export interface AuthCallbacks {
-  list: () => Promise<ProviderAuthStatus[]>;
-  set: (provider: string, apiKey: string) => Promise<void>;
-  remove: (provider: string) => Promise<void>;
-  oauthStart: () => Promise<OAuthStartResult>;
-  oauthStatus: () => Promise<OAuthStatusResult>;
 }
 
 interface ModelConfig {

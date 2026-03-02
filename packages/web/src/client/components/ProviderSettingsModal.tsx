@@ -123,90 +123,95 @@ export function ProviderSettingsModal({
           const isSaving = savingProvider === p.provider;
           const isFocused = focusProvider === p.provider;
           return (
-          <div key={p.provider} className={`rounded-md border px-3 py-2.5 ${isFocused ? "border-accent/40 bg-accent/5" : "border-text/10"}`}>
-            <div className="flex items-center gap-2.5">
-              <StatusDot color={isConnected(p) ? "success" : "danger"} size="md" />
-              <span className="flex-1 text-sm font-medium text-text">{PROVIDER_LABELS[p.provider] ?? p.provider}</span>
-              {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
-              {p.oauthConnected ? <span className="font-mono text-xs text-muted">ChatGPT</span> : null}
-              {editingProvider !== p.provider && oauthStatus !== "pending" ? (
-                isConnected(p) || isSaving ? (
-                  <Button
-                    intent="ghost"
-                    size="sm"
-                    disabled={isSaving}
-                    onClick={() => void handleDisconnect(p.provider)}
-                  >
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button
-                    intent="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setEditingProvider(p.provider);
-                      setKeyInput("");
-                      setError(null);
-                    }}
-                  >
-                    Connect
-                  </Button>
-                )
-              ) : null}
-            </div>
-
-            {editingProvider === p.provider ? (
-              <div className="mt-2 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="password"
-                    placeholder="API key"
-                    className="h-8"
-                    value={keyInput}
-                    onChange={(e) => setKeyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleSave(p.provider);
-                      if (e.key === "Escape") handleCancel();
-                    }}
-                    autoFocus
-                  />
-                  <Button
-                    size="sm"
-                    disabled={isSaving || !keyInput.trim()}
-                    onClick={() => void handleSave(p.provider)}
-                  >
-                    Save
-                  </Button>
-                  <Button intent="ghost" size="sm" disabled={isSaving} onClick={handleCancel}>
-                    Cancel
-                  </Button>
-                </div>
-                {p.provider === "openai" ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted">or</span>
+            <div
+              key={p.provider}
+              className={`rounded-md border px-3 py-2.5 ${isFocused ? "border-accent/40 bg-accent/5" : "border-text/10"}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <StatusDot color={isConnected(p) ? "success" : "danger"} size="md" />
+                <span className="flex-1 text-sm font-medium text-text">
+                  {PROVIDER_LABELS[p.provider] ?? p.provider}
+                </span>
+                {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
+                {p.oauthConnected ? <span className="font-mono text-xs text-muted">ChatGPT</span> : null}
+                {editingProvider !== p.provider && oauthStatus !== "pending" ? (
+                  isConnected(p) || isSaving ? (
                     <Button
                       intent="ghost"
                       size="sm"
-                      disabled={isSaving || oauthStatus === "pending"}
-                      onClick={() => void handleOAuthStart()}
+                      disabled={isSaving}
+                      onClick={() => void handleDisconnect(p.provider)}
                     >
-                      {oauthStatus === "pending" ? "Waiting for login..." : "Login with ChatGPT"}
+                      Disconnect
                     </Button>
-                  </div>
+                  ) : (
+                    <Button
+                      intent="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingProvider(p.provider);
+                        setKeyInput("");
+                        setError(null);
+                      }}
+                    >
+                      Connect
+                    </Button>
+                  )
                 ) : null}
               </div>
-            ) : null}
 
-            {p.provider === "openai" && oauthStatus === "pending" && editingProvider !== p.provider ? (
-              <div className="mt-2 flex items-center gap-2">
-                <span className="animate-pulse text-xs text-accent">Waiting for ChatGPT login...</span>
-              </div>
-            ) : null}
+              {editingProvider === p.provider ? (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="password"
+                      placeholder="API key"
+                      className="h-8"
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleSave(p.provider);
+                        if (e.key === "Escape") handleCancel();
+                      }}
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      disabled={isSaving || !keyInput.trim()}
+                      onClick={() => void handleSave(p.provider)}
+                    >
+                      Save
+                    </Button>
+                    <Button intent="ghost" size="sm" disabled={isSaving} onClick={handleCancel}>
+                      Cancel
+                    </Button>
+                  </div>
+                  {p.provider === "openai" ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted">or</span>
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        disabled={isSaving || oauthStatus === "pending"}
+                        onClick={() => void handleOAuthStart()}
+                      >
+                        {oauthStatus === "pending" ? "Waiting for login..." : "Login with ChatGPT"}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
-            {p.provider === "openai" && oauthStatus === "completed" ? (
-              <div className="mt-2 text-xs text-success">ChatGPT connected successfully!</div>
-            ) : null}
-          </div>
+              {p.provider === "openai" && oauthStatus === "pending" && editingProvider !== p.provider ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="animate-pulse text-xs text-accent">Waiting for ChatGPT login...</span>
+                </div>
+              ) : null}
+
+              {p.provider === "openai" && oauthStatus === "completed" ? (
+                <div className="mt-2 text-xs text-success">ChatGPT connected successfully!</div>
+              ) : null}
+            </div>
           );
         })}
 

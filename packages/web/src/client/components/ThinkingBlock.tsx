@@ -13,11 +13,7 @@ function summarize(text: string): string {
 
 export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {
   if (streaming) {
-    return (
-      <div className="opacity-30 font-mono text-sm leading-relaxed whitespace-pre-wrap">
-        {text}
-      </div>
-    );
+    return <div className="opacity-30 font-mono text-sm leading-relaxed whitespace-pre-wrap">{text}</div>;
   }
 
   const summary = summarize(text);
@@ -28,9 +24,7 @@ export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {
         <span className="text-muted">Thought</span>
         {summary && <span className="text-muted/70 truncate max-w-[40ch]">{summary}</span>}
       </summary>
-      <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-relaxed">
-        {text}
-      </pre>
+      <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-relaxed">{text}</pre>
     </details>
   );
 }

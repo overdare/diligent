@@ -42,9 +42,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                     >
                       <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>
                       <span className="flex-1">{opt.label}</span>
-                      {opt.description ? (
-                        <span className="shrink-0 text-xs opacity-40">{opt.description}</span>
-                      ) : null}
+                      {opt.description ? <span className="shrink-0 text-xs opacity-40">{opt.description}</span> : null}
                     </button>
                   ))
                 : null}
@@ -64,7 +62,9 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                     placeholder={hasOptions ? "or type a custom answer…" : "Type your answer…"}
                     value={selectedIsOption ? "" : selected}
                     onChange={(e) => onAnswerChange(question.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onSubmit();
+                    }}
                     className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
                   />
                   <div className="border-b border-text/10" />

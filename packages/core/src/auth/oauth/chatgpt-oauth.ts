@@ -6,10 +6,10 @@ import { waitForCallback } from "./callback-server";
 import { generatePKCE } from "./pkce";
 import { buildOAuthTokens, exchangeCodeForTokens } from "./token-exchange";
 
-const AUTH_URL = "https://auth.openai.com/oauth/authorize";
-const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-const REDIRECT_URI = "http://localhost:1455/auth/callback";
-const SCOPES = "openid profile email offline_access";
+export const CHATGPT_AUTH_URL = "https://auth.openai.com/oauth/authorize";
+export const CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+export const CHATGPT_REDIRECT_URI = "http://localhost:1455/auth/callback";
+export const CHATGPT_SCOPES = "openid profile email offline_access";
 
 export interface OAuthFlowOptions {
   /** Called when the browser URL is ready (for display in TUI before opening) */
@@ -28,9 +28,9 @@ export async function runChatGPTOAuth(options: OAuthFlowOptions = {}): Promise<O
 
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
+    client_id: CHATGPT_CLIENT_ID,
+    redirect_uri: CHATGPT_REDIRECT_URI,
+    scope: CHATGPT_SCOPES,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
     // Required for ChatGPT subscription — ensures org/account info in JWT
@@ -40,7 +40,7 @@ export async function runChatGPTOAuth(options: OAuthFlowOptions = {}): Promise<O
     state,
   });
 
-  const authUrl = `${AUTH_URL}?${params}`;
+  const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
   options.onUrl?.(authUrl);
 
   openBrowser(authUrl);

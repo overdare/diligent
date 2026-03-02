@@ -1,11 +1,10 @@
 // @summary Shared default tool assembly used by both CLI and Web server
 import type { AgentRegistry, CollabToolDeps } from "../collab";
+import { createCollabTools } from "../collab";
 import type { DiligentPaths } from "../infrastructure";
 import type { Tool } from "../tool/types";
-import type { TaskToolDeps } from "./task";
-import { createCollabTools } from "../collab";
-import { bashTool } from "./bash";
 import { createAddKnowledgeTool } from "./add-knowledge";
+import { bashTool } from "./bash";
 import { createEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
@@ -13,6 +12,7 @@ import { createLsTool } from "./ls";
 import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { requestUserInputTool } from "./request-user-input";
+import type { TaskToolDeps } from "./task";
 import { createTaskTool } from "./task";
 import { createWriteTool } from "./write";
 

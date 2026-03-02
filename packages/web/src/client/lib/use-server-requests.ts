@@ -1,7 +1,7 @@
 // @summary React hook for server-driven approval and user-input prompt state and resolution
 import type { DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
-import { useCallback, useState } from "react";
 import type { RefObject } from "react";
+import { useCallback, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
 
 export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {

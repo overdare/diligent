@@ -59,9 +59,7 @@ describe("requestUserInputTool", () => {
       },
       ctx,
     );
-    expect(result.output).toBe(
-      "[approach] Which approach?\nAnswer: Fix in place\n\n[confirm] Proceed?\nAnswer: Yes",
-    );
+    expect(result.output).toBe("[approach] Which approach?\nAnswer: Fix in place\n\n[confirm] Proceed?\nAnswer: Yes");
   });
 
   it("shows '(no answer)' for missing question ids", async () => {
@@ -75,7 +73,9 @@ describe("requestUserInputTool", () => {
 
   it("rejects call when options array has fewer than 2 items", () => {
     const parsed = requestUserInputTool.parameters.safeParse({
-      questions: [{ id: "q1", header: "bad", question: "One option only?", options: [{ label: "A", description: "only one" }] }],
+      questions: [
+        { id: "q1", header: "bad", question: "One option only?", options: [{ label: "A", description: "only one" }] },
+      ],
     });
     expect(parsed.success).toBe(false);
   });

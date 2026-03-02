@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OpenAIOAuthTokens } from "../types";
 import { getAuthFilePath, loadAuthStore, loadOAuthTokens, saveAuthKey, saveOAuthTokens } from "../auth-store";
+import type { OpenAIOAuthTokens } from "../types";
 
 const TEST_ROOT = join(tmpdir(), `diligent-auth-test-${Date.now()}`);
 
@@ -60,10 +60,7 @@ describe("loadAuthStore", () => {
 
   test("loads both plain key and openai_oauth simultaneously", async () => {
     const path = join(TEST_ROOT, "auth.json");
-    await Bun.write(
-      path,
-      JSON.stringify({ anthropic: "sk-ant-123", openai_oauth: TEST_OAUTH_TOKENS }),
-    );
+    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadAuthStore(path);
     expect(result.anthropic).toBe("sk-ant-123");

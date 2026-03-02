@@ -26,14 +26,31 @@ export type { PermissionAction, PermissionEngine, PermissionRule } from "./appro
 // Approval (Phase 5a)
 export { createPermissionEngine } from "./approval/index";
 // Auth
-export type { AuthKeys, OpenAIOAuthTokens, ProviderName as AuthProviderName } from "./auth/index";
-export { getAuthFilePath, loadAuthStore, loadOAuthTokens, removeAuthKey, removeOAuthTokens, saveAuthKey, saveOAuthTokens } from "./auth/index";
-export type { OAuthFlowOptions } from "./auth/oauth/index";
-export type { PKCEPair } from "./auth/oauth/index";
-export type { RawTokenResponse } from "./auth/oauth/index";
+export type {
+  AuthCallbacks,
+  AuthKeys,
+  OpenAIOAuthTokens,
+  ProviderAuthInfo,
+  ProviderName as AuthProviderName,
+} from "./auth/index";
+export {
+  createAuthCallbacks,
+  getAuthFilePath,
+  loadAuthStore,
+  loadOAuthTokens,
+  removeAuthKey,
+  removeOAuthTokens,
+  saveAuthKey,
+  saveOAuthTokens,
+} from "./auth/index";
+export type { OAuthFlowOptions, PKCEPair, RawTokenResponse } from "./auth/oauth/index";
 // Auth/OAuth
 export {
   buildOAuthTokens,
+  CHATGPT_AUTH_URL,
+  CHATGPT_CLIENT_ID,
+  CHATGPT_REDIRECT_URI,
+  CHATGPT_SCOPES,
   exchangeCodeForTokens,
   generatePKCE,
   refreshOAuthTokens,
@@ -45,7 +62,7 @@ export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab/index";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, COLLAB_TOOL_NAMES, createCollabTools } from "./collab/index";
 // Config
-export type { DiligentConfig, DiscoveredInstruction } from "./config/index";
+export type { DiligentConfig, DiscoveredInstruction, RuntimeConfig } from "./config/index";
 export {
   buildSystemPrompt,
   buildSystemPromptWithKnowledge,
@@ -53,6 +70,7 @@ export {
   DiligentConfigSchema,
   discoverInstructions,
   loadDiligentConfig,
+  loadRuntimeConfig,
   mergeConfig,
 } from "./config/index";
 // EventStream
@@ -77,6 +95,7 @@ export type {
   ModelDefinition,
   ProviderErrorType,
   ProviderEvent,
+  ProviderName,
   ProviderResult,
   RetryConfig,
   StreamContext,
@@ -91,9 +110,13 @@ export {
   createChatGPTStream,
   createGeminiStream,
   createOpenAIStream,
+  DEFAULT_MODELS,
   flattenSections,
   KNOWN_MODELS,
+  PROVIDER_HINTS,
+  PROVIDER_NAMES,
   ProviderError,
+  ProviderManager,
   resolveModel,
   withRetry,
 } from "./provider/index";

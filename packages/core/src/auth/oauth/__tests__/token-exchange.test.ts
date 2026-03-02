@@ -1,11 +1,6 @@
 // @summary Tests for OpenAI token exchange: code exchange, JWT parsing, account_id extraction
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import {
-  buildOAuthTokens,
-  exchangeCodeForTokens,
-  extractAccountId,
-  parseJwtClaims,
-} from "../token-exchange";
+import { buildOAuthTokens, exchangeCodeForTokens, extractAccountId, parseJwtClaims } from "../token-exchange";
 
 const originalFetch = globalThis.fetch;
 
@@ -42,13 +37,9 @@ describe("exchangeCodeForTokens", () => {
   });
 
   test("throws on HTTP error", async () => {
-    globalThis.fetch = mock(
-      async () => new Response("Unauthorized", { status: 401 }),
-    ) as unknown as typeof fetch;
+    globalThis.fetch = mock(async () => new Response("Unauthorized", { status: 401 })) as unknown as typeof fetch;
 
-    await expect(exchangeCodeForTokens("bad-code", "verifier")).rejects.toThrow(
-      "Token exchange failed (401)",
-    );
+    await expect(exchangeCodeForTokens("bad-code", "verifier")).rejects.toThrow("Token exchange failed (401)");
   });
 });
 

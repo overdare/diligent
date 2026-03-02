@@ -1,6 +1,7 @@
 // @summary Tests for PKCE verifier and challenge generation
-import { createHash } from "node:crypto";
+
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { generateCodeChallenge, generateCodeVerifier, generatePKCE } from "../pkce";
 
 describe("generateCodeVerifier", () => {

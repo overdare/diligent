@@ -4,14 +4,7 @@ import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
 import { buildTools, convertMessages, handleResponsesAPIEvents } from "./openai-shared";
 import { flattenSections } from "./system-sections";
-import type {
-  Model,
-  ProviderEvent,
-  ProviderResult,
-  StreamContext,
-  StreamFunction,
-  StreamOptions,
-} from "./types";
+import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
 export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunction {
