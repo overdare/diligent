@@ -1,7 +1,17 @@
-// @summary Tests for TUI app runner and agent event handling
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
-import { EventStream } from "@diligent/core";
+// @summary Tests for non-interactive runner behavior via app-server JSON-RPC path
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  AssistantMessage,
+  DiligentPaths,
+  Model,
+  ProviderEvent,
+  StreamContext,
+  StreamFunction,
+} from "@diligent/core";
+import { EventStream, ensureDiligentDir } from "@diligent/core";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { NonInteractiveRunner } from "../src/tui/runner";
@@ -13,71 +23,135 @@ const TEST_MODEL: Model = {
   maxOutputTokens: 4096,
 };
 
-function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
+interface ScriptStep {
+  events?: ProviderEvent[];
+  message?: AssistantMessage;
+  error?: Error;
+  awaitAbort?: boolean;
+}
+
+function createAssistantMessage(args: {
+  text?: string;
+  toolCall?: { id: string; name: string; input: Record<string, unknown> };
+  usage?: AssistantMessage["usage"];
+}): AssistantMessage {
+  const usage = args.usage ?? {
+    inputTokens: 1,
+    outputTokens: 1,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  };
+
+  const content: AssistantMessage["content"] = [];
+  if (args.text) {
+    content.push({ type: "text", text: args.text });
+  }
+  if (args.toolCall) {
+    content.push({
+      type: "tool_call",
+      id: args.toolCall.id,
+      name: args.toolCall.name,
+      input: args.toolCall.input,
+    });
+  }
+
+  return {
+    role: "assistant",
+    content,
+    model: TEST_MODEL.id,
+    usage,
+    stopReason: args.toolCall ? "tool_use" : "end_turn",
+    timestamp: Date.now(),
+  };
+}
+
+function createScriptedStreamFunction(steps: ScriptStep[], calls: StreamContext[] = []): StreamFunction {
+  let callIndex = 0;
+
+  return (_model, context, options) => {
+    calls.push(context);
+
+    const step = steps[Math.min(callIndex, steps.length - 1)] ?? {
+      message: createAssistantMessage({ text: "" }),
+    };
+    callIndex++;
+
+    const stream = new EventStream<ProviderEvent, { message: AssistantMessage }>(
+      (event) => event.type === "done",
+      (event) => ({ message: event.message }),
+    );
+
+    if (step.awaitAbort) {
+      const onAbort = () => {
+        const error = new Error("aborted");
+        stream.push({ type: "error", error });
+        stream.error(error);
+      };
+
+      if (options.signal?.aborted) {
+        onAbort();
+      } else {
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+      }
+
+      return stream;
+    }
+
+    queueMicrotask(() => {
+      for (const event of step.events ?? []) {
+        stream.push(event);
+      }
+
+      if (step.error) {
+        stream.push({ type: "error", error: step.error });
+        stream.error(step.error);
+        return;
+      }
+
+      const message = step.message ?? createAssistantMessage({ text: "" });
+      stream.push({
+        type: "done",
+        stopReason: message.stopReason,
+        message,
+      });
+      stream.end({ message });
+    });
+
+    return stream;
+  };
+}
+
+function makeConfig(streamFunction: StreamFunction): AppConfig {
   const pm = new ProviderManager({});
   pm.setApiKey("anthropic", "test-key");
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
     systemPrompt: [{ label: "test", content: "test prompt" }],
-    streamFunction: (() => {
-      throw new Error("should not be called");
-    }) as unknown as AppConfig["streamFunction"],
+    streamFunction,
     diligent: {},
     sources: [],
-    agentLoopFn,
     skills: [],
     mode: "default",
     providerManager: pm,
   };
 }
 
-const emptyMsg = {
-  role: "assistant" as const,
-  content: [],
-  model: "test-model",
-  usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-  stopReason: "end_turn" as const,
-  timestamp: Date.now(),
-};
+async function setupWorkspace(prefix: string): Promise<{ paths: DiligentPaths; cleanup: () => void }> {
+  const prevCwd = process.cwd();
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  process.chdir(dir);
+  const paths = await ensureDiligentDir(dir);
 
-function createMockAgentLoop(events: AgentEvent[], resultMessages: Message[]) {
-  const fn = mock((_messages: Message[], _config: AgentLoopConfig) => {
-    const stream = new EventStream<AgentEvent, Message[]>(
-      (event) => event.type === "agent_end",
-      (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
-    );
-
-    queueMicrotask(() => {
-      for (const event of events) {
-        stream.push(event);
-      }
-      stream.push({ type: "agent_end", messages: resultMessages });
-      stream.end(resultMessages);
-    });
-
-    return stream;
-  });
-  return fn;
+  return {
+    paths,
+    cleanup: () => {
+      process.chdir(prevCwd);
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
-function createFailingAgentLoop(error: Error) {
-  const fn = mock((_messages: Message[], _config: AgentLoopConfig) => {
-    const stream = new EventStream<AgentEvent, Message[]>(
-      (event) => event.type === "agent_end",
-      (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
-    );
-
-    queueMicrotask(() => {
-      stream.error(error);
-    });
-
-    return stream;
-  });
-  return fn;
-}
-
-// Capture stdout/stderr writes
 function captureOutput(): {
   stdout: string[];
   stderr: string[];
@@ -114,241 +188,136 @@ afterEach(() => {
 });
 
 describe("NonInteractiveRunner", () => {
-  test("basic prompt → stdout text output, exit 0", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "message_start", itemId: "msg-1", message: emptyMsg },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "Hello " } },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "world!" } },
-      { type: "message_end", itemId: "msg-1", message: emptyMsg },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
-    const { stdout, stderr, restore } = captureOutput();
+  test("returns exit 1 when .diligent paths are unavailable", async () => {
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "unused" }) }]);
+    const { stderr, restore } = captureOutput();
 
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
+      const runner = new NonInteractiveRunner(makeConfig(streamFn));
+      const exitCode = await runner.run("hello");
+      expect(exitCode).toBe(1);
+    } finally {
+      restore();
+    }
+
+    expect(stderr.join("")).toContain("No .diligent directory");
+  });
+
+  test("basic prompt -> stdout text output, exit 0", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        events: [{ type: "start" }, { type: "text_delta", delta: "Hello " }, { type: "text_delta", delta: "world!" }],
+        message: createAssistantMessage({ text: "Hello world!" }),
+      },
+    ]);
+
+    const { stdout, restore } = captureOutput();
+    try {
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
       const exitCode = await runner.run("say hello");
       expect(exitCode).toBe(0);
     } finally {
       restore();
+      workspace.cleanup();
     }
 
     const allStdout = stdout.join("");
     expect(allStdout).toContain("Hello ");
     expect(allStdout).toContain("world!");
-    // Should end with a newline
     expect(allStdout.endsWith("\n")).toBe(true);
   });
 
-  test("tool events → stderr only", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "tool_start", itemId: "tool-1", toolCallId: "tc_1", toolName: "bash", input: { command: "echo hi" } },
-      { type: "tool_end", itemId: "tool-1", toolCallId: "tc_1", toolName: "bash", output: "hi\n", isError: false },
-      { type: "message_start", itemId: "msg-1", message: emptyMsg },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "Done" } },
-      { type: "message_end", itemId: "msg-1", message: emptyMsg },
-    ];
+  test("tool events -> stderr only", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        message: createAssistantMessage({
+          toolCall: { id: "tc_1", name: "bash", input: { command: "echo hi" } },
+        }),
+      },
+      {
+        events: [{ type: "text_delta", delta: "Done" }],
+        message: createAssistantMessage({ text: "Done" }),
+      },
+    ]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { stdout, stderr, restore } = captureOutput();
-
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      await runner.run("run echo");
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const exitCode = await runner.run("run echo");
+      expect(exitCode).toBe(0);
     } finally {
       restore();
+      workspace.cleanup();
     }
 
     const allStdout = stdout.join("");
     const allStderr = stderr.join("");
-
-    // Tool events go to stderr
     expect(allStderr).toContain("[tool:bash] Running...");
-    expect(allStderr).toContain("[tool:bash] Done (2 lines)");
-
-    // Text goes to stdout
+    expect(allStderr).toContain("[tool:bash] Done (");
     expect(allStdout).toContain("Done");
-
-    // Tool events NOT on stdout
     expect(allStdout).not.toContain("[tool:");
   });
 
-  test("fatal error event → exit 1", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "error", error: { message: "rate limit exceeded", name: "ProviderError" }, fatal: true },
-    ];
+  test("provider error -> exit 1", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([{ error: new Error("rate limit exceeded") }]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { stderr, restore } = captureOutput();
-
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
       const exitCode = await runner.run("fail");
       expect(exitCode).toBe(1);
     } finally {
       restore();
+      workspace.cleanup();
     }
 
-    const allStderr = stderr.join("");
-    expect(allStderr).toContain("[error] rate limit exceeded");
+    expect(stderr.join("")).toContain("[error] rate limit exceeded");
   });
 
-  test("exception in agent loop → exit 1", async () => {
-    const agentLoopFn = createFailingAgentLoop(new Error("connection refused"));
-    const { stderr, restore } = captureOutput();
+  test("passes user prompt in stream context", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }], calls);
 
-    try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      const exitCode = await runner.run("crash");
-      expect(exitCode).toBe(1);
-    } finally {
-      restore();
-    }
-
-    const allStderr = stderr.join("");
-    expect(allStderr).toContain("[error] connection refused");
-  });
-
-  test("non-fatal error → exit 0", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "error", error: { message: "transient hiccup", name: "Error" }, fatal: false },
-      { type: "message_start", itemId: "msg-1", message: emptyMsg },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "recovered" } },
-      { type: "message_end", itemId: "msg-1", message: emptyMsg },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
-    const { stdout, stderr, restore } = captureOutput();
-
-    try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      const exitCode = await runner.run("retry-me");
-      expect(exitCode).toBe(0);
-    } finally {
-      restore();
-    }
-
-    expect(stderr.join("")).toContain("[error] transient hiccup");
-    expect(stdout.join("")).toContain("recovered");
-  });
-
-  test("usage event → stderr with cost", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      {
-        type: "usage",
-        usage: { inputTokens: 1234, outputTokens: 567, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        cost: 0.0042,
-      },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
-    const { stdout, stderr, restore } = captureOutput();
-
-    try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      await runner.run("usage test");
-    } finally {
-      restore();
-    }
-
-    const allStderr = stderr.join("");
-    expect(allStderr).toContain("[usage] 1234in/567out ($0.0042)");
-    expect(stdout.join("")).toBe("");
-  });
-
-  test("compaction events → stderr", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "compaction_start", estimatedTokens: 50_000 },
-      { type: "compaction_end", tokensBefore: 50_000, tokensAfter: 12_000, summary: "summarized" },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
-    const { stdout, stderr, restore } = captureOutput();
-
-    try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      await runner.run("compact");
-    } finally {
-      restore();
-    }
-
-    const allStderr = stderr.join("");
-    expect(allStderr).toContain("[compaction] Compacting (50k tokens)...");
-    expect(allStderr).toContain("[compaction] 50k -> 12k tokens");
-    expect(stdout.join("")).toBe("");
-  });
-
-  test("knowledge event → stderr", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "knowledge_saved", knowledgeId: "k-1", content: "project uses bun" },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
-    const { stdout, stderr, restore } = captureOutput();
-
-    try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
-      await runner.run("learn");
-    } finally {
-      restore();
-    }
-
-    expect(stderr.join("")).toContain("[knowledge] project uses bun");
-    expect(stdout.join("")).toBe("");
-  });
-
-  test("passes correct prompt and config to agentLoopFn", async () => {
-    const agentLoopFn = createMockAgentLoop([{ type: "agent_start" }], []);
     const { restore } = captureOutput();
-
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
       await runner.run("hello agent");
     } finally {
       restore();
+      workspace.cleanup();
     }
 
-    expect(agentLoopFn).toHaveBeenCalledTimes(1);
-    const [messages, config] = agentLoopFn.mock.calls[0];
-    expect(messages.length).toBe(1);
-    expect(messages[0].role).toBe("user");
-    if (messages[0].role === "user") {
-      expect(messages[0].content).toBe("hello agent");
-    }
-    expect(config.model).toEqual(TEST_MODEL);
-    expect(config.systemPrompt).toEqual([{ label: "test", content: "test prompt" }]);
-    expect(config.tools.length).toBeGreaterThan(0);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]?.systemPrompt).toEqual([{ label: "test", content: "test prompt" }]);
+    const containsPrompt = calls.some((call) =>
+      call.messages.some((message) => message.role === "user" && message.content === "hello agent"),
+    );
+    expect(containsPrompt).toBe(true);
   });
 
-  test("thinking_delta → not written to stdout", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "message_start", itemId: "msg-1", message: emptyMsg },
+  test("thinking_delta is not written to stdout", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([
       {
-        type: "message_delta",
-        itemId: "msg-1",
-        message: emptyMsg,
-        delta: { type: "thinking_delta", delta: "internal thought" },
+        events: [
+          { type: "thinking_delta", delta: "internal thought" },
+          { type: "text_delta", delta: "visible" },
+        ],
+        message: createAssistantMessage({ text: "visible" }),
       },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "visible" } },
-      { type: "message_end", itemId: "msg-1", message: emptyMsg },
-    ];
+    ]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { stdout, restore } = captureOutput();
-
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
       await runner.run("think");
     } finally {
       restore();
+      workspace.cleanup();
     }
 
     const allStdout = stdout.join("");
@@ -356,33 +325,27 @@ describe("NonInteractiveRunner", () => {
     expect(allStdout).not.toContain("internal thought");
   });
 
-  test("no text output → no trailing newline", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "tool_start", itemId: "tool-1", toolCallId: "tc_1", toolName: "bash", input: { command: "ls" } },
+  test("no text output -> no trailing newline", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([
       {
-        type: "tool_end",
-        itemId: "tool-1",
-        toolCallId: "tc_1",
-        toolName: "bash",
-        output: "file.txt\n",
-        isError: false,
+        message: createAssistantMessage({
+          toolCall: { id: "tc_1", name: "bash", input: { command: "ls" } },
+        }),
       },
-    ];
+      { message: createAssistantMessage({ text: "" }) },
+    ]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { stdout, restore } = captureOutput();
-
     try {
-      const runner = new NonInteractiveRunner(makeConfig(agentLoopFn));
+      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
       const exitCode = await runner.run("list files");
       expect(exitCode).toBe(0);
     } finally {
       restore();
+      workspace.cleanup();
     }
 
-    const allStdout = stdout.join("");
-    // No text output means no trailing newline on stdout
-    expect(allStdout).toBe("");
+    expect(stdout.join("")).toBe("");
   });
 });

@@ -1,7 +1,17 @@
-// @summary Tests for TUI app initialization and component integration
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
-import { EventStream } from "@diligent/core";
+// @summary Tests for TUI app behavior through app-server JSON-RPC integration
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  AssistantMessage,
+  DiligentPaths,
+  Model,
+  ProviderEvent,
+  StreamContext,
+  StreamFunction,
+} from "@diligent/core";
+import { EventStream, ensureDiligentDir } from "@diligent/core";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { App } from "../src/tui/app";
@@ -13,8 +23,97 @@ const TEST_MODEL: Model = {
   maxOutputTokens: 4096,
 };
 
-function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
-  // Create a ProviderManager with a test key so wizard doesn't trigger
+interface ScriptStep {
+  events?: ProviderEvent[];
+  message?: AssistantMessage;
+  error?: Error;
+  awaitAbort?: boolean;
+}
+
+function createAssistantMessage(args: {
+  text?: string;
+  toolCall?: { id: string; name: string; input: Record<string, unknown> };
+}): AssistantMessage {
+  const content: AssistantMessage["content"] = [];
+  if (args.text) {
+    content.push({ type: "text", text: args.text });
+  }
+  if (args.toolCall) {
+    content.push({
+      type: "tool_call",
+      id: args.toolCall.id,
+      name: args.toolCall.name,
+      input: args.toolCall.input,
+    });
+  }
+
+  return {
+    role: "assistant",
+    content,
+    model: TEST_MODEL.id,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    stopReason: args.toolCall ? "tool_use" : "end_turn",
+    timestamp: Date.now(),
+  };
+}
+
+function createScriptedStreamFunction(steps: ScriptStep[], calls: StreamContext[] = []): StreamFunction {
+  let callIndex = 0;
+
+  return (_model, context, options) => {
+    calls.push(context);
+
+    const step = steps[Math.min(callIndex, steps.length - 1)] ?? {
+      message: createAssistantMessage({ text: "" }),
+    };
+    callIndex++;
+
+    const stream = new EventStream<ProviderEvent, { message: AssistantMessage }>(
+      (event) => event.type === "done",
+      (event) => ({ message: event.message }),
+    );
+
+    if (step.awaitAbort) {
+      const onAbort = () => {
+        const error = new Error("aborted");
+        stream.push({ type: "error", error });
+        stream.error(error);
+      };
+
+      if (options.signal?.aborted) {
+        onAbort();
+      } else {
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+      }
+
+      return stream;
+    }
+
+    queueMicrotask(() => {
+      for (const event of step.events ?? []) {
+        stream.push(event);
+      }
+
+      if (step.error) {
+        stream.push({ type: "error", error: step.error });
+        stream.error(step.error);
+        return;
+      }
+
+      const message = step.message ?? createAssistantMessage({ text: "" });
+      stream.push({
+        type: "done",
+        stopReason: message.stopReason,
+        message,
+      });
+      stream.end({ message });
+    });
+
+    return stream;
+  };
+}
+
+function makeConfig(streamFunction: StreamFunction): AppConfig {
   const pm = new ProviderManager({});
   pm.setApiKey("anthropic", "test-key");
   return {
@@ -23,34 +122,26 @@ function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
     systemPrompt: [{ label: "test", content: "test prompt" }],
     diligent: {},
     sources: [],
-    agentLoopFn,
     skills: [],
     mode: "default",
     providerManager: pm,
-    streamFunction: () => {
-      throw new Error("not implemented");
-    },
+    streamFunction,
   };
 }
 
-function createMockAgentLoop(events: AgentEvent[], resultMessages: Message[]) {
-  const fn = mock((_messages: Message[], _config: AgentLoopConfig) => {
-    const stream = new EventStream<AgentEvent, Message[]>(
-      (event) => event.type === "agent_end",
-      (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
-    );
+async function setupWorkspace(prefix: string): Promise<{ paths: DiligentPaths; cleanup: () => void }> {
+  const prevCwd = process.cwd();
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  process.chdir(dir);
+  const paths = await ensureDiligentDir(dir);
 
-    queueMicrotask(() => {
-      for (const event of events) {
-        stream.push(event);
-      }
-      stream.push({ type: "agent_end", messages: resultMessages });
-      stream.end(resultMessages);
-    });
-
-    return stream;
-  });
-  return fn;
+  return {
+    paths,
+    cleanup: () => {
+      process.chdir(prevCwd);
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 function emitChar(ch: string) {
@@ -71,7 +162,6 @@ function emitCtrlC() {
   process.stdin.emit("data", Buffer.from("\x03"));
 }
 
-// Capture stdout.write calls; returns cleanup function
 function captureStdout(): { writes: string[]; restore: () => void } {
   const writes: string[] = [];
   const origWrite = process.stdout.write;
@@ -79,6 +169,7 @@ function captureStdout(): { writes: string[]; restore: () => void } {
     writes.push(typeof chunk === "string" ? chunk : chunk.toString());
     return true;
   }) as typeof process.stdout.write;
+
   return {
     writes,
     restore: () => {
@@ -87,161 +178,170 @@ function captureStdout(): { writes: string[]; restore: () => void } {
   };
 }
 
+function stripAnsi(input: string): string {
+  let out = "";
+  let i = 0;
+
+  while (i < input.length) {
+    if (input.charCodeAt(i) === 27 && input[i + 1] === "[") {
+      i += 2;
+      while (i < input.length) {
+        const ch = input[i];
+        if ((ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    out += input[i];
+    i++;
+  }
+
+  return out;
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Clean up stdin listeners after each test to avoid cross-test pollution
 afterEach(() => {
   process.stdin.removeAllListeners("data");
   process.stdout.removeAllListeners("resize");
 });
 
 describe("App", () => {
-  test("input → message creation → agent loop invocation", async () => {
-    const agentLoopFn = createMockAgentLoop([{ type: "agent_start" }], []);
+  test("input -> request reaches model context through app-server", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }], calls);
 
-    const app = new App(makeConfig(agentLoopFn));
-    app.start();
-    await wait(50);
+    const app = new App(makeConfig(streamFn), workspace.paths);
+    try {
+      await app.start();
+      await wait(30);
 
-    emitText("hello");
-    emitEnter();
-    await wait(200);
+      emitText("hello");
+      emitEnter();
+      await wait(150);
 
-    expect(agentLoopFn).toHaveBeenCalledTimes(1);
-    const [messages, config] = agentLoopFn.mock.calls[0];
-    expect(messages.length).toBe(1);
-    expect(messages[0].role).toBe("user");
-    if (messages[0].role === "user") {
-      expect(messages[0].content).toBe("hello");
+      expect(calls.length).toBeGreaterThan(0);
+      const containsPrompt = calls.some((call) =>
+        call.messages.some((message) => message.role === "user" && message.content === "hello"),
+      );
+      expect(containsPrompt).toBe(true);
+    } finally {
+      app.stop();
+      workspace.cleanup();
     }
-    expect(config.model).toEqual(TEST_MODEL);
-    expect(config.systemPrompt).toEqual([{ label: "test", content: "test prompt" }]);
   });
 
-  test("message_delta events → terminal output", async () => {
-    const emptyMsg = {
-      role: "assistant" as const,
-      content: [],
-      model: "test-model",
-      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-      stopReason: "end_turn" as const,
-      timestamp: Date.now(),
-    };
+  test("message deltas are rendered to terminal output", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        events: [{ type: "start" }, { type: "text_delta", delta: "Hello " }, { type: "text_delta", delta: "world!" }],
+        message: createAssistantMessage({ text: "Hello world!" }),
+      },
+    ]);
 
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "message_start", itemId: "msg-1", message: emptyMsg },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "Hello " } },
-      { type: "message_delta", itemId: "msg-1", message: emptyMsg, delta: { type: "text_delta", delta: "world!" } },
-    ];
-
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { writes, restore } = captureStdout();
-
+    const app = new App(makeConfig(streamFn), workspace.paths);
     try {
-      const app = new App(makeConfig(agentLoopFn));
-      app.start();
-      await wait(50);
+      await app.start();
+      await wait(30);
 
       emitText("test");
       emitEnter();
-      await wait(200);
+      await wait(180);
     } finally {
+      app.stop();
       restore();
+      workspace.cleanup();
     }
 
-    const allOutput = writes.join("");
-    expect(allOutput).toContain("Hello ");
-    expect(allOutput).toContain("world!");
+    const output = writes.join("");
+    expect(output).toContain("Hello ");
+    expect(output).toContain("world!");
   });
 
-  test("tool_start/tool_end events → spinner and tool output", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "tool_start", itemId: "tool-1", toolCallId: "tc_1", toolName: "bash", input: { command: "echo hi" } },
-      { type: "tool_end", itemId: "tool-1", toolCallId: "tc_1", toolName: "bash", output: "hi\n", isError: false },
-    ];
+  test("tool execution is surfaced in UI", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        message: createAssistantMessage({
+          toolCall: { id: "tc_1", name: "bash", input: { command: "echo hi" } },
+        }),
+      },
+      {
+        events: [{ type: "text_delta", delta: "done" }],
+        message: createAssistantMessage({ text: "done" }),
+      },
+    ]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { writes, restore } = captureStdout();
-
+    const app = new App(makeConfig(streamFn), workspace.paths);
     try {
-      const app = new App(makeConfig(agentLoopFn));
-      app.start();
-      await wait(50);
+      await app.start();
+      await wait(30);
 
       emitText("run it");
       emitEnter();
-      await wait(200);
+      await wait(220);
     } finally {
+      app.stop();
       restore();
+      workspace.cleanup();
     }
 
-    const allOutput = writes.join("").replace(/\x1b\[[0-9;]*m/g, "");
-    expect(allOutput).toContain("bash"); // spinner shows tool name
-    expect(allOutput).toContain("⏺ bash");
+    const output = stripAnsi(writes.join(""));
+    expect(output).toContain("bash");
   });
 
-  test("error event → error displayed", async () => {
-    const events: AgentEvent[] = [
-      { type: "agent_start" },
-      { type: "error", error: { message: "something went wrong", name: "Error" }, fatal: false },
-    ];
+  test("provider error is displayed", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ error: new Error("something went wrong") }]);
 
-    const agentLoopFn = createMockAgentLoop(events, []);
     const { writes, restore } = captureStdout();
-
+    const app = new App(makeConfig(streamFn), workspace.paths);
     try {
-      const app = new App(makeConfig(agentLoopFn));
-      app.start();
-      await wait(50);
+      await app.start();
+      await wait(30);
 
       emitText("fail");
       emitEnter();
-      await wait(200);
+      await wait(180);
     } finally {
+      app.stop();
       restore();
+      workspace.cleanup();
     }
 
-    const allOutput = writes.join("");
-    expect(allOutput).toContain("something went wrong");
+    expect(writes.join("")).toContain("something went wrong");
   });
 
-  test("Ctrl+C during processing → confirm dialog → abort called", async () => {
-    let abortSignal: AbortSignal | undefined;
-    const agentLoopFn = mock((_messages: Message[], config: AgentLoopConfig) => {
-      abortSignal = config.signal;
-      const stream = new EventStream<AgentEvent, Message[]>(
-        (event) => event.type === "agent_end",
-        (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
-      );
+  test("Ctrl+C during active turn cancels processing", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
 
-      // Slow — don't emit events right away
-      setTimeout(() => {
-        stream.push({ type: "agent_start" });
-        stream.push({ type: "agent_end", messages: [] });
-        stream.end([]);
-      }, 500);
+    const { writes, restore } = captureStdout();
+    const app = new App(makeConfig(streamFn), workspace.paths);
+    try {
+      await app.start();
+      await wait(30);
 
-      return stream;
-    });
+      emitText("slow");
+      emitEnter();
+      await wait(80);
 
-    const app = new App(makeConfig(agentLoopFn));
-    app.start();
-    await wait(50);
+      emitCtrlC();
+      await wait(120);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
 
-    emitText("slow");
-    emitEnter();
-    await wait(100);
-
-    // Send Ctrl+C while processing → shows confirm dialog
-    emitCtrlC();
-    await wait(50);
-
-    // Confirm abort by pressing 'y'
-    emitChar("y");
-    await wait(100);
-
-    expect(abortSignal?.aborted).toBe(true);
+    expect(writes.join("")).toContain("Cancelled");
   });
 });

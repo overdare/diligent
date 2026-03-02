@@ -249,10 +249,15 @@ export class DiligentAppServer {
 
     runtime.abortController = new AbortController();
     runtime.isRunning = true;
+    const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
 
     await this.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
       params: { threadId: runtime.id, status: "busy" },
+    });
+    await this.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+      params: { threadId: runtime.id, turnId },
     });
 
     const userMessage = {
@@ -262,7 +267,7 @@ export class DiligentAppServer {
     };
 
     const stream = runtime.manager.run(userMessage);
-    void this.consumeStream(runtime, stream);
+    void this.consumeStream(runtime, stream, turnId);
 
     return { accepted: true };
   }
@@ -301,15 +306,20 @@ export class DiligentAppServer {
     return { data: entries.slice(0, limit ?? entries.length) };
   }
 
-  private async consumeStream(runtime: ThreadRuntime, stream: ReturnType<SessionManager["run"]>): Promise<void> {
-    let currentTurnId = "turn-0";
-
+  private async consumeStream(
+    runtime: ThreadRuntime,
+    stream: ReturnType<SessionManager["run"]>,
+    turnId: string,
+  ): Promise<void> {
     try {
       for await (const event of stream) {
-        if (event.type === "turn_start") currentTurnId = event.turnId;
-        await this.emitFromAgentEvent(runtime.id, currentTurnId, event);
+        await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
       await stream.result();
+      await this.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
+        params: { threadId: runtime.id, turnId },
+      });
     } catch (error) {
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
@@ -335,11 +345,7 @@ export class DiligentAppServer {
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     switch (event.type) {
       case "turn_start":
-        await this.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED, params: { threadId, turnId } });
-        return;
-
       case "turn_end":
-        await this.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED, params: { threadId, turnId } });
         return;
 
       case "message_start":

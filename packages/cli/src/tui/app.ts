@@ -3,14 +3,22 @@ import type {
   AgentEvent,
   AgentRegistry,
   ApprovalRequest,
+  ApprovalResponse,
+  DiligentAppServerConfig,
   DiligentPaths,
-  Message,
+  ModeKind,
   SkillMetadata,
   UserInputRequest,
-  UserMessage,
 } from "@diligent/core";
-import { agentLoop, createPermissionEngine, type EventStream, resolveModel, SessionManager } from "@diligent/core";
-import type { Mode as ProtocolMode } from "@diligent/protocol";
+import { createPermissionEngine, DiligentAppServer, ensureDiligentDir, resolveModel } from "@diligent/core";
+import type {
+  DiligentServerNotification,
+  DiligentServerRequest,
+  DiligentServerRequestResponse,
+  Mode as ProtocolMode,
+  SessionSummary,
+  ThreadReadResponse,
+} from "@diligent/protocol";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -35,6 +43,7 @@ import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
+import { LocalAppServerRpcClient, ProtocolNotificationAdapter } from "./rpc-client";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 
@@ -62,11 +71,14 @@ export class App {
   private inputHistory: InputHistory;
 
   // State
-  private abortController: AbortController | null = null;
-  private activeStream: EventStream<AgentEvent, Message[]> | null = null;
   private isProcessing = false;
-  private messages: Message[] = [];
-  private sessionManager: SessionManager | null = null;
+  private rpcClient: LocalAppServerRpcClient | null = null;
+  private notificationAdapter = new ProtocolNotificationAdapter();
+  private currentThreadId: string | null = null;
+  private pendingTurn: {
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null = null;
   private currentMode: ProtocolMode;
   private agentRegistry: AgentRegistry | undefined;
   private permissionEngine: ReturnType<typeof createPermissionEngine> | undefined;
@@ -151,47 +163,29 @@ export class App {
     const permissionRules = this.config.diligent.permissions ?? [];
     this.permissionEngine = createPermissionEngine(permissionRules);
 
-    // Initialize SessionManager
-    if (this.paths) {
-      const cwd = process.cwd();
-      const collabDeps = {
-        model: this.config.model,
-        systemPrompt: this.config.systemPrompt,
-        streamFunction: this.config.streamFunction,
-      };
-      const { tools, registry } = buildTools(cwd, this.paths, collabDeps, collabDeps);
-      this.agentRegistry = registry;
+    if (!this.paths) {
+      throw new Error("No .diligent directory paths are available.");
+    }
 
-      this.sessionManager = new SessionManager({
-        cwd,
-        paths: this.paths,
-        agentConfig: () => ({
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          tools,
-          streamFunction: this.config.streamFunction,
-          mode: this.currentMode,
-          signal: this.abortController?.signal,
-          approve: (req) => this.handleApprove(req),
-          ask: (req) => this.handleAsk(req),
-          permissionEngine: this.permissionEngine,
-        }),
-        compaction: {
-          enabled: this.config.diligent.compaction?.enabled ?? true,
-          reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
-          keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
-        },
-        knowledgePath: this.paths.knowledge,
-      });
+    const server = this.createAppServer(this.paths);
+    this.rpcClient = new LocalAppServerRpcClient(server);
+    this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
+    this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
 
-      if (this.options?.resume) {
-        const resumed = await this.sessionManager.resume({ mostRecent: true });
-        if (resumed) {
-          this.messages = this.sessionManager.getContext();
-        }
-      } else {
-        await this.sessionManager.create();
+    await this.rpcClient.request("initialize", {
+      clientName: "diligent-tui",
+      clientVersion: pkgVersion,
+      protocolVersion: 1,
+    });
+    await this.rpcClient.notify("initialized", { ready: true });
+
+    if (this.options?.resume) {
+      const resumedId = await this.resumeThread();
+      if (!resumedId) {
+        await this.startNewThread();
       }
+    } else {
+      await this.startNewThread();
     }
 
     this.renderer.requestRender();
@@ -331,78 +325,50 @@ export class App {
       return;
     }
 
+    if (!this.rpcClient) {
+      this.chatView.addLines([`  ${t.error}App server is not initialized.${t.reset}`]);
+      this.renderer.requestRender();
+      return;
+    }
+    if (!this.currentThreadId) {
+      await this.startNewThread();
+    }
+    if (!this.currentThreadId) {
+      this.chatView.addLines([`  ${t.error}No active thread.${t.reset}`]);
+      this.renderer.requestRender();
+      return;
+    }
+
     this.isProcessing = true;
-    this.abortController = new AbortController();
 
     this.chatView.addUserMessage(text);
+    this.chatView.handleEvent({ type: "agent_start" });
     this.statusBar.update({ status: "busy" });
     this.renderer.requestRender();
 
-    const userMessage: UserMessage = {
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-    };
-    this.messages.push(userMessage);
-
     try {
-      if (this.sessionManager) {
-        const stream = this.sessionManager.run(userMessage);
-        this.activeStream = stream;
-        for await (const event of stream) {
-          this.handleAgentEvent(event);
-        }
-        const result = await stream.result();
-        this.messages = result;
-      } else {
-        const cwd = process.cwd();
-        const { tools } = buildTools(cwd, this.paths, {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          streamFunction: this.config.streamFunction,
-        });
-        const loopFn = this.config.agentLoopFn ?? agentLoop;
-        const loop = loopFn(this.messages, {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          tools,
-          streamFunction: this.config.streamFunction,
-          signal: this.abortController.signal,
-          mode: this.currentMode,
-          approve: (req) => this.handleApprove(req),
-          ask: (req) => this.handleAsk(req),
-          permissionEngine: this.permissionEngine,
-        });
-        this.activeStream = loop;
-
-        for await (const event of loop) {
-          this.handleAgentEvent(event);
-        }
-        const result = await loop.result();
-        this.messages = result;
-      }
+      const turnCompleted = new Promise<void>((resolve, reject) => {
+        this.pendingTurn = { resolve, reject };
+      });
+      await this.rpcClient.request("turn/start", {
+        threadId: this.currentThreadId,
+        message: text,
+      });
+      await turnCompleted;
     } catch (err) {
-      if (!this.abortController?.signal.aborted) {
-        this.chatView.handleEvent({
-          type: "error",
-          error: {
-            message: err instanceof Error ? err.message : String(err),
-            name: err instanceof Error ? err.name : "Error",
-          },
-          fatal: false,
-        });
-      }
+      this.chatView.handleEvent({
+        type: "error",
+        error: {
+          message: err instanceof Error ? err.message : String(err),
+          name: err instanceof Error ? err.name : "Error",
+        },
+        fatal: false,
+      });
     }
 
-    const wasCancelled = this.abortController?.signal.aborted ?? false;
+    this.pendingTurn = null;
     this.isProcessing = false;
-    this.abortController = null;
-    this.activeStream = null;
     this.statusBar.update({ status: "idle" });
-    if (wasCancelled) {
-      this.chatView.clearActive();
-      this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
-    }
     this.renderer.requestRender();
   }
 
@@ -438,7 +404,7 @@ export class App {
     return {
       app: { confirm: (o) => this.confirm(o), stop: () => this.shutdown() },
       config: this.config,
-      sessionManager: this.sessionManager,
+      threadId: this.currentThreadId,
       skills: this.skills,
       registry: this.commandRegistry,
       requestRender: () => this.renderer.requestRender(),
@@ -455,6 +421,10 @@ export class App {
       reload: () => this.reloadConfig(),
       currentMode: this.currentMode,
       setMode: (mode) => this.setMode(mode),
+      startNewThread: () => this.startNewThread(),
+      resumeThread: (threadId) => this.resumeThread(threadId),
+      listThreads: () => this.listThreads(),
+      readThread: () => this.readThread(),
       onModelChanged: (modelId) => {
         this.statusBar.update({ model: modelId });
         this.renderer.requestRender();
@@ -464,8 +434,10 @@ export class App {
 
   private setMode(mode: ProtocolMode): void {
     this.currentMode = mode;
-    this.sessionManager?.appendModeChange(mode, "command");
     this.statusBar.update({ mode });
+    if (this.rpcClient && this.currentThreadId) {
+      void this.rpcClient.request("mode/set", { threadId: this.currentThreadId, mode }).catch(() => {});
+    }
     this.renderer.requestRender();
   }
 
@@ -488,10 +460,6 @@ export class App {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
-    // Suppress error events caused by user-initiated abort
-    if (event.type === "error" && this.abortController?.signal.aborted) {
-      return;
-    }
     this.chatView.handleEvent(event);
 
     // Update status bar with usage info
@@ -499,23 +467,160 @@ export class App {
       this.statusBar.update({
         tokensUsed: event.usage.inputTokens + event.usage.outputTokens,
       });
+    } else if (event.type === "status_change") {
+      this.statusBar.update({ status: event.status });
     }
   }
 
   private handleCancel(): void {
-    if (this.isProcessing && this.abortController) {
-      this.abortController.abort();
-      this.activeStream?.error(new Error("Cancelled"));
+    if (this.isProcessing && this.rpcClient && this.currentThreadId) {
+      void this.rpcClient.request("turn/interrupt", { threadId: this.currentThreadId }).catch(() => {});
+      this.chatView.clearActive();
+      this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
+      this.pendingTurn?.resolve();
     } else if (!this.isProcessing) {
       this.shutdown();
     }
   }
 
   private handleSteering(text: string): void {
-    if (!this.sessionManager) return;
+    if (!this.rpcClient || !this.currentThreadId) return;
     this.chatView.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
-    this.sessionManager.steer(text);
+    void this.rpcClient
+      .request("turn/steer", {
+        threadId: this.currentThreadId,
+        content: text,
+        followUp: false,
+      })
+      .catch(() => {});
     this.renderer.requestRender();
+  }
+
+  private createAppServer(paths: DiligentPaths): DiligentAppServer {
+    const appServerConfig: DiligentAppServerConfig = {
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ cwd, mode, signal, approve, ask }) => {
+        const deps = {
+          model: this.config.model,
+          systemPrompt: this.config.systemPrompt,
+          streamFunction: this.config.streamFunction,
+        };
+        const { tools, registry } = buildTools(cwd, paths, deps, deps);
+        if (registry) {
+          this.agentRegistry = registry;
+        }
+        return {
+          model: this.config.model,
+          systemPrompt: this.config.systemPrompt,
+          tools,
+          streamFunction: this.config.streamFunction,
+          mode: mode as ModeKind,
+          signal,
+          approve,
+          ask,
+          permissionEngine: this.permissionEngine,
+        };
+      },
+      compaction: {
+        enabled: this.config.diligent.compaction?.enabled ?? true,
+        reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
+        keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
+      },
+    };
+
+    return new DiligentAppServer(appServerConfig);
+  }
+
+  private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
+    const threadId = "threadId" in notification.params ? notification.params.threadId : undefined;
+    if (threadId && this.currentThreadId && threadId !== this.currentThreadId) {
+      return;
+    }
+
+    const agentEvents = this.notificationAdapter.toAgentEvents(notification);
+    for (const event of agentEvents) {
+      this.handleAgentEvent(event);
+    }
+
+    if (
+      notification.method === "turn/completed" &&
+      this.currentThreadId &&
+      notification.params.threadId === this.currentThreadId
+    ) {
+      this.pendingTurn?.resolve();
+    }
+
+    if (
+      notification.method === "error" &&
+      this.pendingTurn &&
+      (!notification.params.threadId || notification.params.threadId === this.currentThreadId)
+    ) {
+      this.pendingTurn.reject(new Error(notification.params.error.message));
+    }
+
+    this.renderer.requestRender();
+  }
+
+  private async handleServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
+    if (request.method === "approval/request") {
+      const decision = await this.handleApprove(request.params.request);
+      return {
+        method: "approval/request",
+        result: { decision },
+      };
+    }
+
+    const result = await this.handleAsk(request.params.request);
+    return {
+      method: "userInput/request",
+      result,
+    };
+  }
+
+  private async startNewThread(): Promise<string> {
+    if (!this.rpcClient) {
+      throw new Error("App server is not initialized.");
+    }
+    const response = await this.rpcClient.request("thread/start", {
+      cwd: process.cwd(),
+      mode: this.currentMode,
+    });
+    this.currentThreadId = response.threadId;
+    this.statusBar.update({ sessionId: response.threadId });
+    return response.threadId;
+  }
+
+  private async resumeThread(threadId?: string): Promise<string | null> {
+    if (!this.rpcClient) {
+      throw new Error("App server is not initialized.");
+    }
+
+    const response = await this.rpcClient.request("thread/resume", {
+      threadId,
+      mostRecent: threadId ? undefined : true,
+    });
+
+    if (!response.found || !response.threadId) {
+      return null;
+    }
+    this.currentThreadId = response.threadId;
+    this.statusBar.update({ sessionId: response.threadId });
+    return response.threadId;
+  }
+
+  private async listThreads(): Promise<SessionSummary[]> {
+    if (!this.rpcClient) {
+      return [];
+    }
+    const response = await this.rpcClient.request("thread/list", {});
+    return response.data;
+  }
+
+  private async readThread(): Promise<ThreadReadResponse | null> {
+    if (!this.rpcClient || !this.currentThreadId) {
+      return null;
+    }
+    return this.rpcClient.request("thread/read", { threadId: this.currentThreadId });
   }
 
   /** Show a confirmation dialog overlay */
@@ -537,7 +642,7 @@ export class App {
   }
 
   /** approve callback — rule engine first, dialog only on "prompt" */
-  private async handleApprove(request: ApprovalRequest): Promise<import("@diligent/core").ApprovalResponse> {
+  private async handleApprove(request: ApprovalRequest): Promise<ApprovalResponse> {
     const action = this.permissionEngine?.evaluate(request) ?? "prompt";
     if (action === "allow") return "once";
     if (action === "deny") return "reject";
@@ -559,7 +664,7 @@ export class App {
   }
 
   /** Show approval dialog overlay — returns Once/Always/Reject */
-  private showApprovalDialog(request: ApprovalRequest): Promise<import("@diligent/core").ApprovalResponse> {
+  private showApprovalDialog(request: ApprovalRequest): Promise<ApprovalResponse> {
     return new Promise((resolve) => {
       const dialog = new ApprovalDialog(
         {

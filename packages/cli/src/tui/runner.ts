@@ -1,7 +1,10 @@
-// @summary Orchestrates agent loop execution and session state management
-import type { AgentEvent, DiligentPaths, Message, UserMessage } from "@diligent/core";
-import { agentLoop, SessionManager } from "@diligent/core";
-import type { AgentLoopFn, AppConfig } from "../config";
+// @summary Non-interactive runner using JSON-RPC app-server communication
+import type { AgentEvent, DiligentPaths, ModeKind } from "@diligent/core";
+import { createPermissionEngine, DiligentAppServer, ensureDiligentDir } from "@diligent/core";
+import type { DiligentServerNotification } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import type { AppConfig } from "../config";
+import { LocalAppServerRpcClient, ProtocolNotificationAdapter } from "./rpc-client";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 
@@ -10,8 +13,6 @@ export interface RunnerOptions {
 }
 
 export class NonInteractiveRunner {
-  private messages: Message[] = [];
-  private sessionManager: SessionManager | null = null;
   private exitCode = 0;
   private isThinking = false;
 
@@ -22,75 +23,105 @@ export class NonInteractiveRunner {
   ) {}
 
   async run(prompt: string): Promise<number> {
-    const cwd = process.cwd();
-    const { tools } = buildTools(cwd, this.paths, {
-      model: this.config.model,
-      systemPrompt: this.config.systemPrompt,
-      streamFunction: this.config.streamFunction,
-    });
-    const isTTY = process.stderr.isTTY === true;
-
-    // Initialize SessionManager if paths available
-    if (this.paths) {
-      this.sessionManager = new SessionManager({
-        cwd,
-        paths: this.paths,
-        agentConfig: {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          tools,
-          streamFunction: this.config.streamFunction,
-          mode: this.config.mode,
-        },
-        compaction: {
-          enabled: this.config.diligent.compaction?.enabled ?? true,
-          reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
-          keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
-        },
-        knowledgePath: this.paths.knowledge,
-      });
-
-      if (this.options?.resume) {
-        const resumed = await this.sessionManager.resume({ mostRecent: true });
-        if (resumed) {
-          this.messages = this.sessionManager.getContext();
-        }
-      } else {
-        await this.sessionManager.create();
-      }
+    if (!this.paths) {
+      this.writeStderr("[error] No .diligent directory — non-interactive mode is unavailable.", false);
+      return 1;
     }
 
-    const userMessage: UserMessage = {
-      role: "user",
-      content: prompt,
-      timestamp: Date.now(),
-    };
-    this.messages.push(userMessage);
-
+    const isTTY = process.stderr.isTTY === true;
+    const permissionEngine = createPermissionEngine(this.config.diligent.permissions ?? []);
+    const adapter = new ProtocolNotificationAdapter();
     let hasText = false;
+    let threadId: string | null = null;
 
-    try {
-      if (this.sessionManager) {
-        const stream = this.sessionManager.run(userMessage);
-        for await (const event of stream) {
-          hasText = this.handleEvent(event, isTTY, hasText);
-        }
-        await stream.result();
-      } else {
-        const loopFn: AgentLoopFn = this.config.agentLoopFn ?? agentLoop;
-        const loop = loopFn(this.messages, {
+    let pendingTurn: {
+      resolve: () => void;
+      reject: (error: Error) => void;
+    } | null = null;
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ cwd, mode, signal, approve, ask }) => {
+        const deps = {
+          model: this.config.model,
+          systemPrompt: this.config.systemPrompt,
+          streamFunction: this.config.streamFunction,
+        };
+        const { tools } = buildTools(cwd, this.paths, deps, deps);
+
+        return {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
           tools,
           streamFunction: this.config.streamFunction,
+          mode: mode as ModeKind,
+          signal,
+          approve,
+          ask,
+          permissionEngine,
+        };
+      },
+      compaction: {
+        enabled: this.config.diligent.compaction?.enabled ?? true,
+        reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
+        keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
+      },
+    });
+
+    const rpc = new LocalAppServerRpcClient(server);
+    rpc.setNotificationListener((notification: DiligentServerNotification) => {
+      for (const event of adapter.toAgentEvents(notification)) {
+        hasText = this.handleEvent(event, isTTY, hasText);
+      }
+
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
+        threadId &&
+        notification.params.threadId === threadId
+      ) {
+        pendingTurn?.resolve();
+      }
+
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR &&
+        (!notification.params.threadId || notification.params.threadId === threadId)
+      ) {
+        pendingTurn?.reject(new Error(notification.params.error.message));
+      }
+    });
+
+    try {
+      await rpc.request("initialize", {
+        clientName: "diligent-cli",
+        clientVersion: "0.0.1",
+        protocolVersion: 1,
+      });
+      await rpc.notify("initialized", { ready: true });
+
+      if (this.options?.resume) {
+        const resumed = await rpc.request("thread/resume", { mostRecent: true });
+        if (resumed.found && resumed.threadId) {
+          threadId = resumed.threadId;
+        }
+      }
+
+      if (!threadId) {
+        const started = await rpc.request("thread/start", {
+          cwd: process.cwd(),
           mode: this.config.mode,
         });
-
-        for await (const event of loop) {
-          hasText = this.handleEvent(event, isTTY, hasText);
-        }
-        await loop.result();
+        threadId = started.threadId;
       }
+
+      const turnDone = new Promise<void>((resolve, reject) => {
+        pendingTurn = { resolve, reject };
+      });
+
+      await rpc.request("turn/start", {
+        threadId,
+        message: prompt,
+      });
+      await turnDone;
     } catch (err) {
       this.writeStderr(`[error] ${err instanceof Error ? err.message : String(err)}`, isTTY);
       this.exitCode = 1;

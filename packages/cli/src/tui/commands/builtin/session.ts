@@ -6,57 +6,48 @@ export const newCommand: Command = {
   name: "new",
   description: "Start a new session",
   handler: async (_args, ctx) => {
-    if (!ctx.sessionManager) {
-      ctx.displayError("No .diligent/ directory — sessions not available.");
-      return;
-    }
-    await ctx.sessionManager.create();
-    ctx.displayLines([`  ${t.dim}New session started.${t.reset}`]);
+    const threadId = await ctx.startNewThread();
+    ctx.displayLines([`  ${t.dim}New thread started: ${threadId}${t.reset}`]);
   },
 };
 
 export const resumeCommand: Command = {
   name: "resume",
-  description: "Resume session or show picker",
+  description: "Resume thread or show picker",
   supportsArgs: true,
   handler: async (args, ctx) => {
-    if (!ctx.sessionManager) {
-      ctx.displayError("No .diligent/ directory — sessions not available.");
-      return;
-    }
-
     if (args) {
-      const resumed = await ctx.sessionManager.resume({ sessionId: args });
-      if (resumed) {
-        ctx.displayLines([`  ${t.dim}Resumed session: ${args}${t.reset}`]);
+      const resumedId = await ctx.resumeThread(args);
+      if (resumedId) {
+        ctx.displayLines([`  ${t.dim}Resumed thread: ${resumedId}${t.reset}`]);
       } else {
-        ctx.displayError(`Session not found: ${args}`);
+        ctx.displayError(`Thread not found: ${args}`);
       }
       return;
     }
 
-    // Show session picker
-    const sessions = await ctx.sessionManager.list();
-    if (sessions.length === 0) {
-      ctx.displayLines([`  ${t.dim}No sessions found.${t.reset}`]);
+    // Show thread picker
+    const threads = await ctx.listThreads();
+    if (threads.length === 0) {
+      ctx.displayLines([`  ${t.dim}No threads found.${t.reset}`]);
       return;
     }
 
     const { ListPicker } = await import("../../components/list-picker");
-    const items = sessions.map((s) => ({
-      label: s.id,
-      description: s.modified.toLocaleString(),
-      value: s.id,
+    const items = threads.map((thread) => ({
+      label: thread.id,
+      description: thread.modified,
+      value: thread.id,
     }));
 
     return new Promise<void>((resolve) => {
-      const picker = new ListPicker({ title: "Sessions", items }, async (value) => {
+      const picker = new ListPicker({ title: "Threads", items }, async (value) => {
         handle.hide();
         ctx.requestRender();
         if (value) {
-          const resumed = await ctx.sessionManager?.resume({ sessionId: value });
-          if (resumed) {
-            ctx.displayLines([`  ${t.dim}Resumed session: ${value}${t.reset}`]);
+          const resumedId = await ctx.resumeThread(value);
+          if (resumedId) {
+            ctx.displayLines([`  ${t.dim}Resumed thread: ${resumedId}${t.reset}`]);
           }
         }
         resolve();
@@ -69,18 +60,20 @@ export const resumeCommand: Command = {
 
 export const statusCommand: Command = {
   name: "status",
-  description: "Show session info and model",
+  description: "Show thread info and model",
   availableDuringTask: true,
   handler: async (_args, ctx) => {
     const lines: string[] = [""];
     lines.push(`  ${t.bold}Model:${t.reset}    ${ctx.config.model.id} (${ctx.config.model.provider})`);
 
-    if (ctx.sessionManager) {
-      lines.push(`  ${t.bold}Entries:${t.reset}  ${ctx.sessionManager.entryCount}`);
-      const path = ctx.sessionManager.sessionPath;
-      if (path) {
-        lines.push(`  ${t.bold}Session:${t.reset}  ${path}`);
+    if (ctx.threadId) {
+      lines.push(`  ${t.bold}Thread:${t.reset}   ${ctx.threadId}`);
+      const thread = await ctx.readThread();
+      if (thread) {
+        lines.push(`  ${t.bold}Entries:${t.reset}  ${thread.entryCount}`);
       }
+    } else {
+      lines.push(`  ${t.bold}Thread:${t.reset}   (none)`);
     }
 
     if (ctx.config.sources.length > 0) {

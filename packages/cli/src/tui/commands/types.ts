@@ -1,5 +1,5 @@
-import type { SessionManager, SkillMetadata } from "@diligent/core";
-import type { Mode } from "@diligent/protocol";
+import type { SkillMetadata } from "@diligent/core";
+import type { Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
 import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
@@ -25,8 +25,8 @@ export interface CommandContext {
   app: AppAccessor;
   /** Current config */
   config: AppConfig;
-  /** Session manager (null if no .diligent/) */
-  sessionManager: SessionManager | null;
+  /** Active thread ID */
+  threadId: string | null;
   /** Loaded skills */
   skills: SkillMetadata[];
   /** Command registry (for /help listing) */
@@ -45,8 +45,16 @@ export interface CommandContext {
   reload: () => Promise<void>;
   /** Current collaboration mode */
   currentMode: Mode;
-  /** Switch to a new collaboration mode. Persists to session if SessionManager available. */
+  /** Switch to a new collaboration mode */
   setMode: (mode: Mode) => void;
+  /** Start a fresh thread and make it active */
+  startNewThread: () => Promise<string>;
+  /** Resume thread (or most recent when omitted) and make it active */
+  resumeThread: (threadId?: string) => Promise<string | null>;
+  /** List known threads from the server */
+  listThreads: () => Promise<SessionSummary[]>;
+  /** Read active thread summary (messages count/follow-up) */
+  readThread: () => Promise<ThreadReadResponse | null>;
   /** Notify status bar after changing ctx.config.model */
   onModelChanged: (modelId: string) => void;
 }
