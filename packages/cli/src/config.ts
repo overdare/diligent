@@ -10,6 +10,7 @@ import type {
   Model,
   SkillMetadata,
   StreamFunction,
+  SystemSection,
 } from "@diligent/core";
 import {
   buildBaseSystemPrompt,
@@ -31,7 +32,7 @@ export type AgentLoopFn = (messages: Message[], config: AgentLoopConfig) => Even
 export interface AppConfig {
   apiKey: string;
   model: Model;
-  systemPrompt: string;
+  systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
   diligent: DiligentConfig;
   sources: string[];

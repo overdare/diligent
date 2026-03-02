@@ -1,6 +1,14 @@
 import type { EventStream } from "../event-stream";
 import type { AssistantMessage, Message, StopReason, Usage } from "../types";
 
+export interface SystemSection {
+  tag?: string; // XML wrapper: "knowledge", "user_instructions", "collaboration_mode"
+  tagAttributes?: Record<string, string>; // e.g. { path: "/p/AGENTS.md" }
+  label: string; // debug label: "base", "knowledge", "mode"
+  content: string; // raw text content
+  cacheControl?: "ephemeral"; // hint for Anthropic cache breakpoints
+}
+
 export interface Model {
   id: string;
   provider: string;
@@ -20,7 +28,7 @@ export type StreamFunction = (
 ) => EventStream<ProviderEvent, ProviderResult>;
 
 export interface StreamContext {
-  systemPrompt: string;
+  systemPrompt: SystemSection[];
   messages: Message[];
   tools: ToolDefinition[];
 }

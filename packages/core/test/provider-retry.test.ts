@@ -64,7 +64,7 @@ function createFailingStreamFn(failures: ProviderError[]): { streamFn: StreamFun
 }
 
 const testContext: StreamContext = {
-  systemPrompt: "test",
+  systemPrompt: [{ label: "test", content: "test" }],
   messages: [],
   tools: [],
 };

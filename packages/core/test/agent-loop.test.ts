@@ -86,7 +86,7 @@ describe("agentLoop", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
     };
@@ -121,7 +121,7 @@ describe("agentLoop", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [echoTool],
       streamFunction: streamFn,
     };
@@ -165,7 +165,7 @@ describe("agentLoop", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [echoTool],
       streamFunction: streamFn,
       maxTurns: 2,
@@ -205,7 +205,7 @@ describe("agentLoop", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [complexTool],
       streamFunction: streamFn,
     };
@@ -249,7 +249,7 @@ describe("agentLoop", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [echoTool],
       streamFunction: streamFn,
     };

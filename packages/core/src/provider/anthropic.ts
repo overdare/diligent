@@ -1,8 +1,9 @@
 // @summary Anthropic provider implementation with thinking, streaming, and message conversion
 import Anthropic from "@anthropic-ai/sdk";
 import { EventStream } from "../event-stream";
-import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
+import { isNetworkError } from "./errors";
+import { toAnthropicBlocks } from "./system-sections";
 import type {
   Model,
   ProviderEvent,
@@ -39,7 +40,7 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
             max_tokens: useThinking
               ? Math.max(options.maxTokens ?? model.maxOutputTokens, budgetTokens + 1000)
               : (options.maxTokens ?? model.maxOutputTokens),
-            system: context.systemPrompt,
+            system: toAnthropicBlocks(context.systemPrompt),
             messages: convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
             ...(useThinking
@@ -284,4 +285,3 @@ function parseRetryAfter(headers?: Record<string, string>): number | undefined {
   if (s) return parseInt(s, 10) * 1000;
   return undefined;
 }
-

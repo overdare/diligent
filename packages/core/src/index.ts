@@ -67,6 +67,7 @@ export type {
   StreamContext,
   StreamFunction,
   StreamOptions,
+  SystemSection,
   ToolDefinition,
 } from "./provider/index";
 export {
@@ -75,6 +76,7 @@ export {
   createChatGPTStream,
   createGeminiStream,
   createOpenAIStream,
+  flattenSections,
   KNOWN_MODELS,
   ProviderError,
   resolveModel,

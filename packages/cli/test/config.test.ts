@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { flattenSections } from "@diligent/core";
 import { loadConfig } from "../src/config";
 
 const TEST_ROOT = join(tmpdir(), `diligent-cli-config-test-${Date.now()}`);
@@ -66,7 +67,8 @@ describe("loadConfig", () => {
     await Bun.write(join(dir, "AGENTS.md"), "# Rules\nAlways use Bun.");
 
     const config = await loadConfig(dir);
-    expect(config.systemPrompt).toContain("Always use Bun.");
+    const flat = flattenSections(config.systemPrompt);
+    expect(flat).toContain("Always use Bun.");
   });
 
   test("system prompt includes cwd and platform", async () => {
@@ -74,8 +76,9 @@ describe("loadConfig", () => {
     await mkdir(dir, { recursive: true });
 
     const config = await loadConfig(dir);
-    expect(config.systemPrompt).toContain(dir);
-    expect(config.systemPrompt).toContain(process.platform);
+    const flat = flattenSections(config.systemPrompt);
+    expect(flat).toContain(dir);
+    expect(flat).toContain(process.platform);
   });
 
   test("config apiKey is ignored — only auth.json provides keys", async () => {

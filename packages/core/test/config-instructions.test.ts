@@ -4,6 +4,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSystemPrompt, discoverInstructions } from "../src/config/instructions";
+import { flattenSections } from "../src/provider/system-sections";
 
 const TEST_ROOT = join(tmpdir(), `diligent-instructions-test-${Date.now()}`);
 
@@ -76,29 +77,39 @@ describe("discoverInstructions", () => {
 });
 
 describe("buildSystemPrompt", () => {
-  it("returns base prompt when no instructions", () => {
+  it("returns base section when no instructions", () => {
     const result = buildSystemPrompt("You are helpful.", []);
-    expect(result).toBe("You are helpful.");
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe("base");
+    expect(result[0].content).toBe("You are helpful.");
   });
 
-  it("includes discovered instructions", () => {
+  it("includes discovered instructions as tagged sections", () => {
     const result = buildSystemPrompt("Base.", [{ path: "/p/CLAUDE.md", content: "Use Bun." }]);
-    expect(result).toContain("Base.");
-    expect(result).toContain('<user_instructions path="/p/CLAUDE.md">');
-    expect(result).toContain("</user_instructions>");
-    expect(result).toContain("Use Bun.");
+    expect(result[0].content).toBe("Base.");
+    const instrSection = result.find((s) => s.tag === "user_instructions");
+    expect(instrSection).toBeDefined();
+    expect(instrSection!.tagAttributes?.path).toBe("/p/CLAUDE.md");
+    expect(instrSection!.content).toBe("Use Bun.");
+    expect(instrSection!.cacheControl).toBe("ephemeral");
+    // flattenSections produces XML-wrapped output
+    const flat = flattenSections(result);
+    expect(flat).toContain('<user_instructions path="/p/CLAUDE.md">');
+    expect(flat).toContain("</user_instructions>");
   });
 
   it("includes additional instructions from config", () => {
     const result = buildSystemPrompt("Base.", [], ["Always test", "Be brief"]);
-    expect(result).toContain("Always test");
-    expect(result).toContain("Be brief");
+    const flat = flattenSections(result);
+    expect(flat).toContain("Always test");
+    expect(flat).toContain("Be brief");
   });
 
   it("combines all sources", () => {
     const result = buildSystemPrompt("Base.", [{ path: "/p/CLAUDE.md", content: "From file." }], ["From config."]);
-    expect(result).toContain("Base.");
-    expect(result).toContain("From file.");
-    expect(result).toContain("From config.");
+    const flat = flattenSections(result);
+    expect(flat).toContain("Base.");
+    expect(flat).toContain("From file.");
+    expect(flat).toContain("From config.");
   });
 });

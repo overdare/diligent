@@ -19,7 +19,7 @@ function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
-    systemPrompt: "test prompt",
+    systemPrompt: [{ label: "test", content: "test prompt" }],
     streamFunction: (() => {
       throw new Error("should not be called");
     }) as unknown as AppConfig["streamFunction"],
@@ -323,7 +323,7 @@ describe("NonInteractiveRunner", () => {
       expect(messages[0].content).toBe("hello agent");
     }
     expect(config.model).toEqual(TEST_MODEL);
-    expect(config.systemPrompt).toBe("test prompt");
+    expect(config.systemPrompt).toEqual([{ label: "test", content: "test prompt" }]);
     expect(config.tools.length).toBeGreaterThan(0);
   });
 

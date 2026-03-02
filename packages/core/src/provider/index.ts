@@ -6,6 +6,7 @@ export { createChatGPTStream } from "./chatgpt";
 export { classifyOpenAIError, createOpenAIStream } from "./openai";
 export type { RetryConfig } from "./retry";
 export { withRetry } from "./retry";
+export { flattenSections } from "./system-sections";
 export type {
   Model,
   ProviderErrorType,
@@ -14,6 +15,7 @@ export type {
   StreamContext,
   StreamFunction,
   StreamOptions,
+  SystemSection,
   ToolDefinition,
 } from "./types";
 export { ProviderError } from "./types";

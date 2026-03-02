@@ -1,6 +1,6 @@
 // @summary AgentStatus, AgentEntry, and CollabToolDeps types for non-blocking multi-agent collab
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
-import type { Model, StreamFunction } from "../provider/types";
+import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import type { SessionManager } from "../session/manager";
 import type { Tool } from "../tool/types";
 
@@ -31,7 +31,7 @@ export interface CollabToolDeps {
   cwd: string;
   paths: DiligentPaths;
   model: Model;
-  systemPrompt: string;
+  systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
   parentTools: Tool[];
   maxAgents?: number; // default 8

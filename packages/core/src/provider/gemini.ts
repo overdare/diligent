@@ -2,8 +2,9 @@
 import type { FunctionDeclaration } from "@google/genai";
 import { GoogleGenAI } from "@google/genai";
 import { EventStream } from "../event-stream";
-import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
+import { isNetworkError } from "./errors";
+import { flattenSections } from "./system-sections";
 import type {
   Model,
   ProviderEvent,
@@ -39,7 +40,7 @@ export function createGeminiStream(apiKey: string, baseUrl?: string): StreamFunc
           model: model.id,
           contents: convertToGeminiContents(context.messages),
           config: {
-            ...(context.systemPrompt ? { systemInstruction: context.systemPrompt } : {}),
+            ...(context.systemPrompt.length > 0 ? { systemInstruction: flattenSections(context.systemPrompt) } : {}),
             ...(context.tools.length > 0 ? { tools: convertToGeminiTools(context.tools) } : {}),
             ...(options.maxTokens !== undefined ? { maxOutputTokens: options.maxTokens } : {}),
             ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
@@ -236,4 +237,3 @@ function isGeminiContextOverflow(message: string): boolean {
   const patterns = [/token count.*exceeds/i, /context.*too long/i, /input.*too long/i, /exceeds.*token limit/i];
   return patterns.some((p) => p.test(message));
 }
-

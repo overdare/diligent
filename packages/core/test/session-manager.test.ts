@@ -67,7 +67,7 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManage
     paths: resolvePaths(dir),
     agentConfig: {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
     },

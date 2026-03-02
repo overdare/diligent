@@ -77,7 +77,7 @@ describe("agentLoop mode filtering", () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: ALL_TOOLS,
       streamFunction: fn,
       mode: "default",
@@ -99,7 +99,7 @@ describe("agentLoop mode filtering", () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: ALL_TOOLS,
       streamFunction: fn,
       mode: "plan",
@@ -125,7 +125,7 @@ describe("agentLoop mode filtering", () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: ALL_TOOLS,
       streamFunction: fn,
       mode: "execute",
@@ -145,7 +145,7 @@ describe("agentLoop mode filtering", () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: ALL_TOOLS,
       streamFunction: fn,
       // mode not set
@@ -166,7 +166,7 @@ describe("agentLoop mode prompt injection", () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "my system prompt",
+      systemPrompt: [{ label: "test", content: "my system prompt" }],
       tools: [],
       streamFunction: fn,
       mode: "default",
@@ -176,14 +176,16 @@ describe("agentLoop mode prompt injection", () => {
     }
     await stream.result();
 
-    expect(capturedContexts[0].systemPrompt).toBe("my system prompt");
+    const sections = capturedContexts[0].systemPrompt;
+    expect(sections).toHaveLength(1);
+    expect(sections[0].content).toBe("my system prompt");
   });
 
-  test("plan mode: systemPrompt suffixed with plan mode prompt", async () => {
+  test("plan mode: systemPrompt has collaboration_mode section appended", async () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "my system prompt",
+      systemPrompt: [{ label: "test", content: "my system prompt" }],
       tools: [],
       streamFunction: fn,
       mode: "plan",
@@ -193,17 +195,18 @@ describe("agentLoop mode prompt injection", () => {
     }
     await stream.result();
 
-    expect(capturedContexts[0].systemPrompt).toStartWith("my system prompt");
-    expect(capturedContexts[0].systemPrompt).toContain("<collaboration_mode>");
-    expect(capturedContexts[0].systemPrompt).toEndWith("</collaboration_mode>");
-    expect(capturedContexts[0].systemPrompt).toContain(MODE_SYSTEM_PROMPT_SUFFIXES.plan);
+    const sections = capturedContexts[0].systemPrompt;
+    expect(sections[0].content).toBe("my system prompt");
+    const modeSection = sections.find((s) => s.tag === "collaboration_mode");
+    expect(modeSection).toBeDefined();
+    expect(modeSection!.content).toBe(MODE_SYSTEM_PROMPT_SUFFIXES.plan);
   });
 
-  test("execute mode: systemPrompt suffixed with execute mode prompt", async () => {
+  test("execute mode: systemPrompt has collaboration_mode section appended", async () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "my system prompt",
+      systemPrompt: [{ label: "test", content: "my system prompt" }],
       tools: [],
       streamFunction: fn,
       mode: "execute",
@@ -213,9 +216,10 @@ describe("agentLoop mode prompt injection", () => {
     }
     await stream.result();
 
-    expect(capturedContexts[0].systemPrompt).toStartWith("my system prompt");
-    expect(capturedContexts[0].systemPrompt).toContain("<collaboration_mode>");
-    expect(capturedContexts[0].systemPrompt).toEndWith("</collaboration_mode>");
-    expect(capturedContexts[0].systemPrompt).toContain(MODE_SYSTEM_PROMPT_SUFFIXES.execute);
+    const sections = capturedContexts[0].systemPrompt;
+    expect(sections[0].content).toBe("my system prompt");
+    const modeSection = sections.find((s) => s.tag === "collaboration_mode");
+    expect(modeSection).toBeDefined();
+    expect(modeSection!.content).toBe(MODE_SYSTEM_PROMPT_SUFFIXES.execute);
   });
 });

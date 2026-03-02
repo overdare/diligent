@@ -99,7 +99,7 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction, tools: Tool[] 
     paths: resolvePaths(dir),
     agentConfig: {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools,
       streamFunction: streamFn,
     },

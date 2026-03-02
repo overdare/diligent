@@ -1,14 +1,16 @@
 // @summary Tests for system prompt building with knowledge injection
 import { describe, expect, it } from "bun:test";
 import { buildSystemPromptWithKnowledge } from "../src/config/instructions";
+import { flattenSections } from "../src/provider/system-sections";
 
 describe("buildSystemPromptWithKnowledge", () => {
   it("includes knowledge section in system prompt", () => {
     const result = buildSystemPromptWithKnowledge("Base prompt", [], "## Project Knowledge\n- [pattern] Use Bun\n");
-    expect(result).toContain("Base prompt");
-    expect(result).toContain("## Project Knowledge");
-    expect(result).toContain("[pattern] Use Bun");
-    expect(result).toContain("add_knowledge tool");
+    const flat = flattenSections(result);
+    expect(flat).toContain("Base prompt");
+    expect(flat).toContain("## Project Knowledge");
+    expect(flat).toContain("[pattern] Use Bun");
+    expect(flat).toContain("add_knowledge tool");
   });
 
   it("includes instructions after knowledge section", () => {
@@ -18,19 +20,22 @@ describe("buildSystemPromptWithKnowledge", () => {
       "## Project Knowledge\n- [pattern] Use Bun\n",
     );
 
-    const knowledgePos = result.indexOf("Project Knowledge");
-    const instructionsPos = result.indexOf("Project rules");
+    const flat = flattenSections(result);
+    const knowledgePos = flat.indexOf("Project Knowledge");
+    const instructionsPos = flat.indexOf("Project rules");
     expect(knowledgePos).toBeLessThan(instructionsPos);
   });
 
   it("omits knowledge section when empty", () => {
     const result = buildSystemPromptWithKnowledge("Base", [], "");
-    expect(result).not.toContain("## Project Knowledge");
-    expect(result).toContain("add_knowledge tool");
+    const flat = flattenSections(result);
+    expect(flat).not.toContain("## Project Knowledge");
+    expect(flat).toContain("add_knowledge tool");
   });
 
   it("includes additional instructions", () => {
     const result = buildSystemPromptWithKnowledge("Base", [], "", ["Custom instruction 1"]);
-    expect(result).toContain("Custom instruction 1");
+    const flat = flattenSections(result);
+    expect(flat).toContain("Custom instruction 1");
   });
 });

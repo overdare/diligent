@@ -21,7 +21,7 @@ function makeConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopConfig {
   const ac = new AbortController();
   return {
     model: TEST_MODEL,
-    systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
+    systemPrompt: [{ label: "test", content: "You are a helpful assistant. Follow instructions exactly." }],
     tools: [bashTool],
     streamFunction: createAnthropicStream(apiKey!),
     signal: ac.signal,
@@ -69,7 +69,9 @@ describe("E2E: Real Anthropic API", () => {
     const stream = agentLoop(
       messages,
       makeConfig({
-        systemPrompt: "You are a helpful assistant. Use the bash tool when asked to run commands.",
+        systemPrompt: [
+          { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
+        ],
       }),
     );
 
@@ -103,7 +105,12 @@ describe("E2E: Real Anthropic API", () => {
         messages,
         makeConfig({
           tools: [createReadTool(), createWriteTool()],
-          systemPrompt: "You are a helpful assistant. Use the read and write tools to manipulate files.",
+          systemPrompt: [
+            {
+              label: "test",
+              content: "You are a helpful assistant. Use the read and write tools to manipulate files.",
+            },
+          ],
         }),
       );
 
@@ -139,7 +146,9 @@ describe("E2E: Real Anthropic API", () => {
       messages,
       makeConfig({
         maxTurns: 5,
-        systemPrompt: "You are a helpful assistant. Use the bash tool when asked to run commands.",
+        systemPrompt: [
+          { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
+        ],
       }),
     );
 

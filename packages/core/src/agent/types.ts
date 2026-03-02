@@ -1,9 +1,9 @@
 import type { PermissionEngine } from "../approval/types";
-import type { Model, StreamFunction } from "../provider/types";
+import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import type { ApprovalRequest, ApprovalResponse, Tool, UserInputRequest, UserInputResponse } from "../tool/types";
 import type { AssistantMessage, Message, ToolResultMessage, Usage } from "../types";
-import planPrompt from "./templates/plan.md" with { type: "text" };
 import executePrompt from "./templates/execute.md" with { type: "text" };
+import planPrompt from "./templates/plan.md" with { type: "text" };
 
 // D087: Collaboration modes
 export type ModeKind = "default" | "plan" | "execute";
@@ -69,7 +69,7 @@ export type AgentEvent =
 // D008: Config for a single agent invocation
 export interface AgentLoopConfig {
   model: Model;
-  systemPrompt: string;
+  systemPrompt: SystemSection[];
   tools: Tool[];
   streamFunction: StreamFunction;
   signal?: AbortSignal;

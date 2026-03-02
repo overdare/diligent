@@ -51,8 +51,8 @@ export class AgentRegistry {
     }
 
     const childSystemPrompt = agentType.systemPromptPrefix
-      ? `${agentType.systemPromptPrefix}${this.deps.systemPrompt}`
-      : this.deps.systemPrompt;
+      ? [{ label: "agent_role", content: agentType.systemPromptPrefix }, ...this.deps.systemPrompt]
+      : [...this.deps.systemPrompt];
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
     const childManager = factory({

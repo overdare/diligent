@@ -173,7 +173,7 @@ export async function generateSummary(
     : SUMMARIZATION_PROMPT;
 
   const context: StreamContext = {
-    systemPrompt: prompt,
+    systemPrompt: [{ label: "system", content: prompt }],
     messages,
     tools: [],
   };

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { BUILTIN_AGENT_TYPES } from "../agent/agent-types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/types";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
-import type { Model, StreamFunction } from "../provider/types";
+import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import { SessionManager } from "../session/manager";
 import type { Tool, ToolContext, ToolResult } from "../tool/types";
 import type { Message, TextBlock } from "../types";
@@ -13,7 +13,7 @@ export interface TaskToolDeps {
   cwd: string;
   paths: DiligentPaths;
   model: Model;
-  systemPrompt: string;
+  systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
   parentTools: Tool[];
 }
@@ -53,8 +53,8 @@ export function createTaskTool(deps: TaskToolDeps): Tool<typeof TaskParams> {
 
       // Build child system prompt
       const childSystemPrompt = agentType.systemPromptPrefix
-        ? `${agentType.systemPromptPrefix}${deps.systemPrompt}`
-        : deps.systemPrompt;
+        ? [{ label: "agent_role", content: agentType.systemPromptPrefix }, ...deps.systemPrompt]
+        : [...deps.systemPrompt];
 
       // Create child SessionManager (shared paths — same .diligent dir)
       const childManager = new SessionManager({

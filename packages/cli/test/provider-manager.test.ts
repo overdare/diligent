@@ -62,7 +62,7 @@ describe("ProviderManager", () => {
     expect(() => {
       proxy(
         { id: "claude-sonnet-4-6", provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16384 },
-        { systemPrompt: "", messages: [], tools: [] },
+        { systemPrompt: [], messages: [], tools: [] },
         {},
       );
     }).toThrow(/No API key configured for anthropic/);

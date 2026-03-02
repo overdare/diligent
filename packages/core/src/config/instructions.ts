@@ -1,6 +1,7 @@
 // @summary Discovers and builds system prompts with AGENTS.md instructions and knowledge sections
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { SystemSection } from "../provider/types";
 
 const INSTRUCTION_FILES = ["AGENTS.md"];
 const MAX_INSTRUCTION_BYTES = 32_768; // 32 KiB
@@ -62,22 +63,26 @@ export function buildSystemPrompt(
   basePrompt: string,
   instructions: DiscoveredInstruction[],
   additionalInstructions?: string[],
-): string {
-  const parts = [basePrompt];
+): SystemSection[] {
+  const sections: SystemSection[] = [{ label: "base", content: basePrompt }];
 
-  if (instructions.length > 0) {
-    for (const inst of instructions) {
-      parts.push(`<user_instructions path="${inst.path}">\n${inst.content}\n</user_instructions>`);
-    }
+  for (const inst of instructions) {
+    sections.push({
+      tag: "user_instructions",
+      tagAttributes: { path: inst.path },
+      label: "instructions",
+      content: inst.content,
+      cacheControl: "ephemeral",
+    });
   }
 
   if (additionalInstructions?.length) {
     for (const inst of additionalInstructions) {
-      parts.push(`\n${inst}`);
+      sections.push({ label: "additional", content: inst });
     }
   }
 
-  return parts.join("\n\n");
+  return sections;
 }
 
 const KNOWLEDGE_INSTRUCTION = `
@@ -98,30 +103,34 @@ export function buildSystemPromptWithKnowledge(
   knowledgeSection: string,
   additionalInstructions?: string[],
   skillsSection?: string,
-): string {
-  const parts = [basePrompt];
+): SystemSection[] {
+  const sections: SystemSection[] = [{ label: "base", content: basePrompt }];
 
   if (knowledgeSection) {
-    parts.push(`<knowledge>\n${knowledgeSection}\n</knowledge>`);
+    sections.push({ tag: "knowledge", label: "knowledge", content: knowledgeSection, cacheControl: "ephemeral" });
   }
 
   if (skillsSection) {
-    parts.push(skillsSection);
+    sections.push({ label: "skills", content: skillsSection });
   }
 
-  if (instructions.length > 0) {
-    for (const inst of instructions) {
-      parts.push(`<user_instructions path="${inst.path}">\n${inst.content}\n</user_instructions>`);
-    }
+  for (const inst of instructions) {
+    sections.push({
+      tag: "user_instructions",
+      tagAttributes: { path: inst.path },
+      label: "instructions",
+      content: inst.content,
+      cacheControl: "ephemeral",
+    });
   }
 
   if (additionalInstructions?.length) {
     for (const inst of additionalInstructions) {
-      parts.push(`\n${inst}`);
+      sections.push({ label: "additional", content: inst });
     }
   }
 
-  parts.push(KNOWLEDGE_INSTRUCTION);
+  sections.push({ label: "knowledge_instruction", content: KNOWLEDGE_INSTRUCTION });
 
-  return parts.join("\n\n");
+  return sections;
 }

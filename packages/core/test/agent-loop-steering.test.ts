@@ -100,7 +100,7 @@ describe("agentLoop steering", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [echoTool],
       streamFunction: streamFn,
       getSteeringMessages: () => {
@@ -152,7 +152,7 @@ describe("agentLoop steering", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [echoTool],
       streamFunction: streamFn,
       getSteeringMessages: () => {
@@ -199,7 +199,7 @@ describe("agentLoop steering", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       getSteeringMessages: () => {
@@ -229,7 +229,7 @@ describe("agentLoop steering", () => {
 
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       // No getSteeringMessages

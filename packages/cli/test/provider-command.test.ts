@@ -27,7 +27,7 @@ function createMockContext(pm: ProviderManager): {
     config: {
       apiKey: "",
       model: { id: "claude-sonnet-4-6", provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16384 },
-      systemPrompt: "",
+      systemPrompt: [],
       streamFunction: (() => {}) as unknown as AppConfig["streamFunction"],
       diligent: {},
       sources: [],

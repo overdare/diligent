@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventStream } from "../src/event-stream";
 import { resolvePaths } from "../src/infrastructure/diligent-dir";
-import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
+import { flattenSections } from "../src/provider/system-sections";
+import type { Model, ProviderEvent, ProviderResult, StreamFunction, SystemSection } from "../src/provider/types";
 import type { Tool, ToolContext } from "../src/tool/types";
 import { createTaskTool } from "../src/tools/task";
 import type { AssistantMessage } from "../src/types";
@@ -92,7 +93,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "You are a helpful agent.",
+      systemPrompt: [{ label: "test", content: "You are a helpful agent." }],
       streamFunction: createMockStreamFn([response]),
       parentTools: [],
     });
@@ -114,7 +115,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "You are a helpful agent.",
+      systemPrompt: [{ label: "test", content: "You are a helpful agent." }],
       streamFunction: createMockStreamFn([makeAssistant("done")]),
       parentTools: [],
     });
@@ -158,7 +159,7 @@ describe("task tool", () => {
         cwd: dir,
         paths: resolvePaths(dir),
         model: TEST_MODEL,
-        systemPrompt: "test",
+        systemPrompt: [{ label: "test", content: "test" }],
         streamFunction: trackingStreamFn,
         parentTools: [taskTool, readTool, bashTool],
       });
@@ -195,7 +196,7 @@ describe("task tool", () => {
         cwd: dir,
         paths: resolvePaths(dir),
         model: TEST_MODEL,
-        systemPrompt: "test",
+        systemPrompt: [{ label: "test", content: "test" }],
         streamFunction: trackingStreamFn,
         parentTools: [
           makeDummyTool("read_file"),
@@ -221,10 +222,10 @@ describe("task tool", () => {
 
   it("explore agent prepends read-only system prompt prefix", async () => {
     const dir = await setupDir();
-    const capturedPrompts: string[] = [];
+    const capturedSections: SystemSection[][] = [];
 
     const trackingStreamFn: StreamFunction = (_model, context, _options) => {
-      capturedPrompts.push(context.systemPrompt);
+      capturedSections.push(context.systemPrompt);
       const msg = makeAssistant("explored");
       const stream = new EventStream<ProviderEvent, ProviderResult>(
         (event) => event.type === "done" || event.type === "error",
@@ -244,15 +245,16 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "Base prompt.",
+      systemPrompt: [{ label: "test", content: "Base prompt." }],
       streamFunction: trackingStreamFn,
       parentTools: [],
     });
 
     await tool.execute({ description: "explore", prompt: "look at code", subagent_type: "explore" }, makeCtx());
 
-    expect(capturedPrompts[0]).toContain("read-only exploration agent");
-    expect(capturedPrompts[0]).toContain("Base prompt.");
+    const flat = flattenSections(capturedSections[0]);
+    expect(flat).toContain("read-only exploration agent");
+    expect(flat).toContain("Base prompt.");
   });
 
   it("reports progress via onUpdate", async () => {
@@ -262,7 +264,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       streamFunction: createMockStreamFn([makeAssistant("done")]),
       parentTools: [],
     });
@@ -282,7 +284,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       streamFunction: streamFn,
       parentTools: [],
     });
@@ -300,7 +302,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       streamFunction: streamFn,
       parentTools: [],
     });
@@ -335,7 +337,7 @@ describe("task tool", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       model: TEST_MODEL,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       streamFunction: errorStreamFn,
       parentTools: [],
     });

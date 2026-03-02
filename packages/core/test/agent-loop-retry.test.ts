@@ -73,7 +73,7 @@ describe("agent loop retry + usage", () => {
 
     const stream = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], {
       model: testModel,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       retryBaseDelayMs: 1,
@@ -100,7 +100,7 @@ describe("agent loop retry + usage", () => {
 
     const stream = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], {
       model: testModel,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       maxRetries: 5,
@@ -126,7 +126,7 @@ describe("agent loop retry + usage", () => {
 
     const stream = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], {
       model: testModel,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       maxRetries: 5,
@@ -151,7 +151,7 @@ describe("agent loop retry + usage", () => {
 
     const stream = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], {
       model: testModel,
-      systemPrompt: "test",
+      systemPrompt: [{ label: "test", content: "test" }],
       tools: [],
       streamFunction: streamFn,
       maxRetries: 10,

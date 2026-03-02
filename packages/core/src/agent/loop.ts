@@ -3,7 +3,7 @@ import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { EventStream } from "../event-stream";
 import { withRetry } from "../provider/retry";
-import type { Model, StreamContext, ToolDefinition } from "../provider/types";
+import type { Model, StreamContext, SystemSection, ToolDefinition } from "../provider/types";
 import { executeTool } from "../tool/executor";
 import type { ToolContext } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage } from "../types";
@@ -97,11 +97,14 @@ async function runLoop(
   const activeTools = filterAllowedTools(modeFilteredTools, config.permissionEngine);
   const registry = new Map(activeTools.map((t) => [t.name, t]));
 
-  // D087: Append mode instructions wrapped in XML tag (after base prompt to preserve its prefix)
-  const effectiveSystemPrompt =
+  // D087: Append mode instructions as a section (after base prompt to preserve its prefix)
+  const effectiveSystemPrompt: SystemSection[] =
     activeMode === "default"
       ? config.systemPrompt
-      : `${config.systemPrompt}\n\n<collaboration_mode>\n${MODE_SYSTEM_PROMPT_SUFFIXES[activeMode]}\n</collaboration_mode>`;
+      : [
+          ...config.systemPrompt,
+          { tag: "collaboration_mode", label: "mode", content: MODE_SYSTEM_PROMPT_SUFFIXES[activeMode] },
+        ];
 
   // D010: Wrap stream function with retry
   const retryStreamFn = withRetry(config.streamFunction, {
@@ -256,7 +259,7 @@ async function streamAssistantResponse(
   messages: Message[],
   config: AgentLoopConfig,
   activeTools: typeof config.tools,
-  effectiveSystemPrompt: string,
+  effectiveSystemPrompt: SystemSection[],
   streamFn: typeof config.streamFunction,
   agentStream: EventStream<AgentEvent, Message[]>,
   generateItemId: () => string,

@@ -20,7 +20,7 @@ function makeConfig(agentLoopFn: AppConfig["agentLoopFn"]): AppConfig {
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
-    systemPrompt: "test prompt",
+    systemPrompt: [{ label: "test", content: "test prompt" }],
     diligent: {},
     sources: [],
     agentLoopFn,
@@ -115,7 +115,7 @@ describe("App", () => {
       expect(messages[0].content).toBe("hello");
     }
     expect(config.model).toEqual(TEST_MODEL);
-    expect(config.systemPrompt).toBe("test prompt");
+    expect(config.systemPrompt).toEqual([{ label: "test", content: "test prompt" }]);
   });
 
   test("message_delta events → terminal output", async () => {

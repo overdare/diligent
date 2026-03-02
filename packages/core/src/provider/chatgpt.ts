@@ -1,9 +1,10 @@
 // @summary ChatGPT subscription stream — raw fetch to chatgpt.com/backend-api/codex/responses (no SDK)
-import { platform, release, arch } from "node:os";
+import { arch, platform, release } from "node:os";
 import type { OpenAIOAuthTokens } from "../auth/types";
 import { EventStream } from "../event-stream";
-import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
+import { isNetworkError } from "./errors";
+import { flattenSections } from "./system-sections";
 import type {
   Model,
   ProviderEvent,
@@ -58,8 +59,8 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           stream: true,
           store: false,
         };
-        if (context.systemPrompt) {
-          body.instructions = context.systemPrompt;
+        if (context.systemPrompt.length > 0) {
+          body.instructions = flattenSections(context.systemPrompt);
         }
         body.input = buildInput(context.messages);
         if (context.tools.length > 0) {
@@ -80,7 +81,11 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           const errText = await response.text().catch(() => "");
           throw new ProviderError(
             `ChatGPT API error (${response.status}): ${errText || "no body"}`,
-            response.status === 429 ? "rate_limit" : response.status === 401 || response.status === 403 ? "auth" : "unknown",
+            response.status === 429
+              ? "rate_limit"
+              : response.status === 401 || response.status === 403
+                ? "auth"
+                : "unknown",
             response.status === 429,
             undefined,
             response.status,

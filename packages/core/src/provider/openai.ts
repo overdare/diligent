@@ -1,8 +1,9 @@
 // @summary OpenAI provider implementation with streaming, tools, and error classification
 import OpenAI from "openai";
 import { EventStream } from "../event-stream";
-import { isNetworkError } from "./errors";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
+import { isNetworkError } from "./errors";
+import { flattenSections } from "./system-sections";
 import type {
   Model,
   ProviderEvent,
@@ -33,7 +34,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
         const openaiStream = await client.responses.create(
           {
             model: model.id,
-            instructions: context.systemPrompt,
+            instructions: flattenSections(context.systemPrompt),
             input: convertToOpenAIInput(context.messages),
             ...(context.tools.length > 0 && {
               tools: convertToOpenAITools(context.tools),
@@ -289,4 +290,3 @@ function parseRetryAfterFromHeaders(headers: Headers | undefined): number | unde
   if (s) return Number.parseInt(s, 10) * 1000;
   return undefined;
 }
-
