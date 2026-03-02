@@ -1,5 +1,6 @@
 // @summary Provider configuration command - configure LLM provider and API keys
-import { resolveModel, saveAuthKey } from "@diligent/core";
+import type { OpenAIOAuthTokens } from "@diligent/core";
+import { resolveModel, runChatGPTOAuth, saveAuthKey, saveOAuthTokens } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
 import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
@@ -68,8 +69,12 @@ function pickProvider(ctx: CommandContext): Promise<void> {
         if (value) {
           const selected = value as ProviderName;
           if (selected === currentProvider && ctx.config.providerManager.hasKeyFor(selected)) {
-            // Already active with key — offer key change
-            await promptApiKey(selected, ctx);
+            // Already active with key — offer auth change
+            if (selected === "openai") {
+              await promptOpenAIAuth(ctx);
+            } else {
+              await promptApiKey(selected, ctx);
+            }
             resolve();
           } else {
             await switchProvider(selected, ctx);
@@ -85,10 +90,14 @@ function pickProvider(ctx: CommandContext): Promise<void> {
   });
 }
 
-/** Switch to a provider: prompt API key if needed, then switch model to default */
+/** Switch to a provider: prompt auth if needed, then switch model to default */
 async function switchProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
   if (!ctx.config.providerManager.hasKeyFor(provider)) {
-    await promptApiKey(provider, ctx);
+    if (provider === "openai") {
+      await promptOpenAIAuth(ctx);
+    } else {
+      await promptApiKey(provider, ctx);
+    }
     if (!ctx.config.providerManager.hasKeyFor(provider)) {
       ctx.displayError("Provider switch cancelled — no API key provided.");
       return;
@@ -103,6 +112,91 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   saveModel(model.id).catch(() => {});
 }
 
+/** OpenAI: show "Enter API key" vs "Login with ChatGPT" */
+function promptOpenAIAuth(ctx: CommandContext): Promise<void> {
+  return new Promise((resolve) => {
+    const items: ListPickerItem[] = [
+      {
+        label: "Enter API key",
+        description: "Paste sk-... key from platform.openai.com",
+        value: "apikey",
+      },
+      {
+        label: "Login with ChatGPT",
+        description: "Use Plus/Pro subscription via browser OAuth",
+        value: "oauth",
+      },
+    ];
+
+    const picker = new ListPicker({ title: "OpenAI Authentication", items }, async (value) => {
+      handle.hide();
+      ctx.requestRender();
+
+      if (value === "apikey") {
+        await promptApiKey("openai", ctx);
+      } else if (value === "oauth") {
+        await startChatGPTOAuthFlow(ctx);
+      }
+      resolve();
+    });
+
+    const handle = ctx.showOverlay(picker, { anchor: "center" });
+    ctx.requestRender();
+  });
+}
+
+async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
+  ctx.displayLines(["  Opening browser for ChatGPT authentication..."]);
+
+  try {
+    const tokens = await runChatGPTOAuth({
+      onUrl: (url) => {
+        ctx.displayLines([`  Auth URL: ${url}`]);
+      },
+    });
+
+    ctx.config.providerManager.setOAuthTokens(tokens);
+    ctx.displayLines([`  ${t.success}Authenticated via ChatGPT subscription.${t.reset}`]);
+
+    await promptSaveOAuthTokens(tokens, ctx);
+
+    // Switch to default Codex model
+    const model = resolveModel(DEFAULT_MODELS.openai);
+    ctx.config.model = model;
+    ctx.onModelChanged(model.id);
+    ctx.displayLines([`  Model: ${t.bold}${model.id}${t.reset}`]);
+    saveModel(model.id).catch(() => {});
+  } catch (err) {
+    ctx.displayError(`OAuth failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function promptSaveOAuthTokens(tokens: OpenAIOAuthTokens, ctx: CommandContext): Promise<void> {
+  return new Promise((resolve) => {
+    const dialog = new ConfirmDialog(
+      {
+        title: "Save Auth?",
+        message: "Save ChatGPT session to ~/.config/diligent/auth.json?",
+      },
+      async (confirmed) => {
+        handle.hide();
+        ctx.requestRender();
+        if (confirmed) {
+          try {
+            await saveOAuthTokens(tokens);
+            ctx.displayLines([`  ${t.success}Saved to auth.json.${t.reset}`]);
+          } catch (err) {
+            ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        resolve();
+      },
+    );
+    const handle = ctx.showOverlay(dialog, { anchor: "center" });
+    ctx.requestRender();
+  });
+}
+
 function showProviderStatus(ctx: CommandContext): void {
   const pm = ctx.config.providerManager;
   const currentProvider = ctx.config.model.provider ?? "anthropic";
@@ -111,9 +205,10 @@ function showProviderStatus(ctx: CommandContext): void {
   for (const provider of PROVIDER_NAMES) {
     const maskedKey = pm.getMaskedKey(provider);
     const active = provider === currentProvider ? ` ${t.accent}(active)${t.reset}` : "";
+    const oauthNote = provider === "openai" && pm.hasOAuthFor("openai") ? ` ${t.dim}(ChatGPT OAuth)${t.reset}` : "";
     const status = maskedKey ? `${t.success}configured${t.reset} (${maskedKey})` : `${t.dim}not configured${t.reset}`;
     const marker = pm.hasKeyFor(provider) ? "\u2713" : "\u2717";
-    lines.push(`  ${marker} ${t.bold}${provider}${t.reset}: ${status}${active}`);
+    lines.push(`  ${marker} ${t.bold}${provider}${t.reset}: ${status}${oauthNote}${active}`);
   }
 
   lines.push("");

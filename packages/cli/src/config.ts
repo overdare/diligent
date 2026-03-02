@@ -19,6 +19,7 @@ import {
   discoverSkills,
   loadAuthStore,
   loadDiligentConfig,
+  loadOAuthTokens,
   readKnowledge,
   renderSkillsSection,
   resolveModel,
@@ -54,7 +55,15 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
   // Overlay auth.json keys (takes priority over config)
   const authKeys = await loadAuthStore();
   for (const [provider, key] of Object.entries(authKeys)) {
-    if (key) providerManager.setApiKey(provider as ProviderName, key);
+    if (typeof key === "string" && key) providerManager.setApiKey(provider as ProviderName, key);
+  }
+
+  // Load OpenAI OAuth tokens — takes priority over plain key if present
+  const oauthTokens = await loadOAuthTokens();
+  if (oauthTokens) {
+    providerManager.setOAuthTokens(oauthTokens);
+    // Block on refresh if tokens are near expiry at startup
+    await providerManager.ensureOAuthFresh();
   }
 
   const streamFunction = providerManager.createProxyStream();

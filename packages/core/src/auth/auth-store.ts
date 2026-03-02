@@ -1,17 +1,33 @@
-// @summary Loads and saves API keys from auth.json
+// @summary Loads and saves API keys and OAuth tokens from auth.json
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import type { OpenAIOAuthTokens } from "./types";
 
 export type ProviderName = "anthropic" | "openai" | "gemini";
-export type AuthKeys = Partial<Record<ProviderName, string>>;
+
+export type AuthKeys = {
+  anthropic?: string;
+  openai?: string;
+  gemini?: string;
+  openai_oauth?: OpenAIOAuthTokens;
+};
+
+const OpenAIOAuthSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  id_token: z.string(),
+  expires_at: z.number(),
+  account_id: z.string().optional(),
+});
 
 const AuthKeysSchema = z
   .object({
     anthropic: z.string().optional(),
     openai: z.string().optional(),
     gemini: z.string().optional(),
+    openai_oauth: OpenAIOAuthSchema.optional(),
   })
   .strict();
 
@@ -82,4 +98,44 @@ export async function saveAuthKey(provider: ProviderName, apiKey: string, path?:
   // Set restrictive permissions (owner-only read/write)
   const { chmod } = await import("node:fs/promises");
   await chmod(filePath, 0o600);
+}
+
+/** Save OpenAI OAuth tokens to auth.json (read-modify-write + chmod 0o600). */
+export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string): Promise<void> {
+  const filePath = path ?? getAuthFilePath();
+
+  // Ensure directory exists
+  await mkdir(dirname(filePath), { recursive: true });
+
+  // Read existing
+  let existing: AuthKeys = {};
+  try {
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const result = AuthKeysSchema.safeParse(parsed);
+      if (result.success) {
+        existing = result.data;
+      }
+    }
+  } catch {
+    // Start fresh
+  }
+
+  // Modify
+  existing.openai_oauth = tokens;
+
+  // Write
+  await Bun.write(filePath, `${JSON.stringify(existing, null, 2)}\n`);
+
+  // Set restrictive permissions (owner-only read/write)
+  const { chmod } = await import("node:fs/promises");
+  await chmod(filePath, 0o600);
+}
+
+/** Load OpenAI OAuth tokens from auth.json. Returns undefined if not present. */
+export async function loadOAuthTokens(path?: string): Promise<OpenAIOAuthTokens | undefined> {
+  const keys = await loadAuthStore(path);
+  return keys.openai_oauth;
 }

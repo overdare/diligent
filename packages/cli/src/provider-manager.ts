@@ -1,6 +1,14 @@
 // @summary Manages LLM provider initialization and stream creation
-import type { DiligentConfig, StreamFunction } from "@diligent/core";
-import { createAnthropicStream, createGeminiStream, createOpenAIStream } from "@diligent/core";
+import type { DiligentConfig, OpenAIOAuthTokens, StreamFunction } from "@diligent/core";
+import {
+  createAnthropicStream,
+  createChatGPTStream,
+  createGeminiStream,
+  createOpenAIStream,
+  refreshOAuthTokens,
+  saveOAuthTokens,
+  shouldRefresh,
+} from "@diligent/core";
 
 export type ProviderName = "anthropic" | "openai" | "gemini";
 
@@ -21,11 +29,20 @@ export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPla
 /**
  * Manages provider API keys and creates a proxy StreamFunction
  * that dispatches to the correct provider based on model.provider.
+ *
+ * OpenAI supports two auth modes (both can be active):
+ *   - API Key (sk-...): uses api.openai.com — set via setApiKey("openai", ...)
+ *   - ChatGPT OAuth:    uses chatgpt.com/backend-api/codex — set via setOAuthTokens(...)
+ *
+ * OAuth takes priority when both are set.
  */
 export class ProviderManager {
   private keys: Partial<Record<ProviderName, string>> = {};
   private baseUrls: Partial<Record<ProviderName, string>> = {};
   private cache = new Map<string, StreamFunction>();
+  private oauthTokens: OpenAIOAuthTokens | undefined = undefined;
+  private chatgptStream: StreamFunction | undefined = undefined;
+  private refreshLock: Promise<void> | undefined = undefined;
 
   constructor(config: DiligentConfig) {
     // Only read baseUrls from config — API keys come exclusively from auth.json
@@ -34,17 +51,69 @@ export class ProviderManager {
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
   }
 
+  /**
+   * Store ChatGPT OAuth tokens and create the dedicated ChatGPT stream.
+   * The stream uses access_token directly (no sk-... key needed).
+   */
+  setOAuthTokens(tokens: OpenAIOAuthTokens): void {
+    this.oauthTokens = tokens;
+    // Create ChatGPT stream — getTokens() always returns latest (post-refresh) tokens
+    this.chatgptStream = createChatGPTStream(() => this.oauthTokens!);
+    // Mark openai as "configured" for hasKeyFor() checks (value is cosmetic)
+    this.keys.openai = "chatgpt-oauth";
+  }
+
+  /** Whether OpenAI is authenticated via ChatGPT OAuth */
+  hasOAuthFor(_provider: "openai"): boolean {
+    return this.oauthTokens !== undefined;
+  }
+
+  /** Return OAuth tokens (for save prompt) */
+  getOAuthTokens(): OpenAIOAuthTokens | undefined {
+    return this.oauthTokens;
+  }
+
+  /**
+   * Ensure OAuth tokens are fresh. Awaitable for blocking refresh (e.g., at startup).
+   * Safe to call concurrently — uses a lock to prevent double-refresh.
+   */
+  async ensureOAuthFresh(): Promise<void> {
+    if (!this.oauthTokens || !shouldRefresh(this.oauthTokens)) return;
+
+    if (!this.refreshLock) {
+      this.refreshLock = (async () => {
+        try {
+          const newTokens = await refreshOAuthTokens(this.oauthTokens!);
+          this.oauthTokens = newTokens;
+          // chatgptStream's getTokens() closure already reads this.oauthTokens — no rebuild needed
+          await saveOAuthTokens(newTokens).catch(() => {});
+        } finally {
+          this.refreshLock = undefined;
+        }
+      })();
+    }
+    await this.refreshLock;
+  }
+
   /** Create a proxy StreamFunction that dispatches based on model.provider */
   createProxyStream(): StreamFunction {
     return (model, context, options) => {
       const provider = (model.provider ?? "anthropic") as ProviderName;
-      const apiKey = this.keys[provider];
-      if (!apiKey) {
-        throw new Error(`No API key configured for ${provider}. Use /provider set ${provider} to add one.`);
+
+      // ChatGPT OAuth path: use dedicated stream (token refreshed via closure)
+      if (provider === "openai" && this.chatgptStream) {
+        // Trigger background refresh if tokens are near expiry (non-blocking)
+        this.ensureOAuthFresh().catch(() => {});
+        return this.chatgptStream(model, context, options);
       }
 
-      const stream = this.getOrCreateStream(provider, apiKey);
-      return stream(model, context, options);
+      // API Key path: dispatch via key
+      const apiKey = this.keys[provider];
+      if (!apiKey) {
+        throw new Error(`No API key configured for ${provider}. Use /provider ${provider} to configure.`);
+      }
+
+      return this.getOrCreateStream(provider, apiKey)(model, context, options);
     };
   }
 
@@ -61,11 +130,8 @@ export class ProviderManager {
 
   /** Set an API key for a provider, invalidating cached streams */
   setApiKey(provider: ProviderName, apiKey: string): void {
-    // Invalidate cached streams for this provider
     for (const key of this.cache.keys()) {
-      if (key.startsWith(`${provider}:`)) {
-        this.cache.delete(key);
-      }
+      if (key.startsWith(`${provider}:`)) this.cache.delete(key);
     }
     this.keys[provider] = apiKey;
   }
@@ -79,6 +145,7 @@ export class ProviderManager {
   getMaskedKey(provider: ProviderName): string | undefined {
     const key = this.keys[provider];
     if (!key) return undefined;
+    if (provider === "openai" && this.oauthTokens) return "ChatGPT OAuth";
     return key.length > 7 ? `${key.slice(0, 7)}...` : key;
   }
 

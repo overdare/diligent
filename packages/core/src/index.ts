@@ -13,7 +13,11 @@ export type {
 export { agentLoop, BUILTIN_AGENT_TYPES, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
 // Auth
 export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
-export { getAuthFilePath, loadAuthStore, saveAuthKey } from "./auth/index";
+export { getAuthFilePath, loadAuthStore, loadOAuthTokens, saveAuthKey, saveOAuthTokens } from "./auth/index";
+export type { OpenAIOAuthTokens } from "./auth/index";
+// Auth/OAuth
+export { refreshOAuthTokens, runChatGPTOAuth, shouldRefresh } from "./auth/oauth/index";
+export type { OAuthFlowOptions } from "./auth/oauth/index";
 // Config
 export type { DiligentConfig, DiscoveredInstruction } from "./config/index";
 export {
@@ -57,6 +61,7 @@ export type {
 export {
   classifyGeminiError,
   createAnthropicStream,
+  createChatGPTStream,
   createGeminiStream,
   createOpenAIStream,
   KNOWN_MODELS,
