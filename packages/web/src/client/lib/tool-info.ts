@@ -31,7 +31,7 @@ export function isContextTool(toolName: string): boolean {
 }
 
 /** Extract a short human-readable summary from tool input JSON */
-export function summarizeInput(toolName: string, inputText: string): string {
+export function summarizeInput(_toolName: string, inputText: string): string {
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
 
@@ -49,16 +49,16 @@ export function summarizeInput(toolName: string, inputText: string): string {
     if (pattern) return `"${pattern}"`;
 
     const command = parsed.command as string | undefined;
-    if (command) return command.length > 60 ? command.slice(0, 57) + "…" : command;
+    if (command) return command.length > 60 ? `${command.slice(0, 57)}…` : command;
 
     const query = parsed.query as string | undefined;
     if (query) return `"${query}"`;
 
     const description = parsed.description as string | undefined;
-    if (description) return description.length > 60 ? description.slice(0, 57) + "…" : description;
+    if (description) return description.length > 60 ? `${description.slice(0, 57)}…` : description;
 
     return "";
   } catch {
-    return inputText.length > 60 ? inputText.slice(0, 57) + "…" : inputText;
+    return inputText.length > 60 ? `${inputText.slice(0, 57)}…` : inputText;
   }
 }

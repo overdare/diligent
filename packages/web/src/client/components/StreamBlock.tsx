@@ -1,6 +1,5 @@
 // @summary Message stream renderer for user, assistant (markdown), and thinking (collapsible) blocks
 
-import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -11,17 +10,20 @@ interface StreamBlockProps {
 export function StreamBlock({ item }: StreamBlockProps) {
   const isUser = item.kind === "user";
 
-  return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[88%] rounded-lg border px-3 py-2",
-          isUser ? "border-accent/40 bg-accent/10" : "border-text/15 bg-surface/60",
-        )}
-      >
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{item.kind}</div>
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm border border-accent/30 bg-accent/20 px-4 py-2.5">
+          <p className="text-sm leading-6 text-text">{item.text}</p>
+        </div>
+      </div>
+    );
+  }
 
-        {item.kind === "assistant" && item.thinking ? (
+  return (
+    <div className="flex justify-start">
+      <div className="w-full max-w-[88%]">
+        {item.thinking ? (
           <details className="mb-2 rounded border border-text/10 bg-bg/60">
             <summary className="cursor-pointer select-none px-2 py-1 font-mono text-xs text-muted hover:text-text">
               Thinking
@@ -31,12 +33,7 @@ export function StreamBlock({ item }: StreamBlockProps) {
             </pre>
           </details>
         ) : null}
-
-        {isUser ? (
-          <p className="text-sm leading-6 text-text">{item.text}</p>
-        ) : (
-          <MarkdownContent text={item.text} />
-        )}
+        <MarkdownContent text={item.text} />
       </div>
     </div>
   );

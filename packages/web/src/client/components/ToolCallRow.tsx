@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { cn } from "../lib/cn";
-import { getToolInfo, summarizeInput } from "../lib/tool-info";
 import type { RenderItem } from "../lib/thread-store";
+import { getToolInfo, summarizeInput } from "../lib/tool-info";
 
 interface ToolCallRowProps {
   item: Extract<RenderItem, { kind: "tool" }>;
@@ -14,23 +14,17 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
   const { icon, displayName } = getToolInfo(item.toolName);
   const summary = item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
 
-  const statusEl =
-    item.isError ? (
-      <span className="ml-auto shrink-0 text-xs text-danger">error</span>
-    ) : item.status === "streaming" ? (
-      <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-accent">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-      </span>
-    ) : (
-      <span
-        className={cn(
-          "ml-auto shrink-0 text-xs text-muted transition-transform",
-          open ? "rotate-180" : "rotate-0",
-        )}
-      >
-        ▾
-      </span>
-    );
+  const statusEl = item.isError ? (
+    <span className="ml-auto shrink-0 text-xs text-danger">error</span>
+  ) : item.status === "streaming" ? (
+    <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-accent">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+    </span>
+  ) : (
+    <span className={cn("ml-auto shrink-0 text-xs text-muted transition-transform", open ? "rotate-180" : "rotate-0")}>
+      ▾
+    </span>
+  );
 
   return (
     <div className="flex justify-start">
@@ -43,9 +37,7 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
         >
           <span className="shrink-0 font-mono text-[13px] text-muted">{icon}</span>
           <span className="text-xs font-semibold text-muted">{displayName}</span>
-          {summary ? (
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-text/60">{summary}</span>
-          ) : null}
+          {summary ? <span className="min-w-0 flex-1 truncate font-mono text-xs text-text/60">{summary}</span> : null}
           {statusEl}
         </button>
 
