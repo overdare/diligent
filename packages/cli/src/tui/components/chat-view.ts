@@ -92,6 +92,7 @@ export class ChatView implements Component {
   private taskState = new Map<string, { description: string; subagentType: string }>();
   private collabState = new Map<string, { toolName: string; label: string }>();
   private planCallCount = 0;
+  private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
 
   constructor(private options: ChatViewOptions) {
     this.activeSpinner = new SpinnerComponent(options.requestRender);
@@ -431,7 +432,27 @@ export class ChatView implements Component {
       result.push(...this.activeSpinner.render(width));
     }
 
+    // Add inline question input (request_user_input)
+    if (this.activeQuestion) {
+      if (result.length > 0) result.push("");
+      result.push(...this.activeQuestion.render(width));
+    }
+
     return result;
+  }
+
+  /** Show an interactive question inline in the chat stream */
+  setActiveQuestion(q: (Component & { handleInput(data: string): void }) | null): void {
+    this.activeQuestion = q;
+    this.options.requestRender();
+  }
+
+  hasActiveQuestion(): boolean {
+    return this.activeQuestion !== null;
+  }
+
+  handleQuestionInput(data: string): void {
+    this.activeQuestion?.handleInput(data);
   }
 
   invalidate(): void {

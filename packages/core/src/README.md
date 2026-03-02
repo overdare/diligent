@@ -6,6 +6,7 @@ Agent engine internals.
 
 ```
 agent/           Agent loop and loop detector
+approval/        Permission engine — rule matching, session cache
 auth/            Authentication and API key management
 config/          Config loading, schema, and instructions
 infrastructure/  Diligent directory resolution

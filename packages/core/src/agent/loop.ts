@@ -11,6 +11,30 @@ import { LoopDetector } from "./loop-detector";
 import type { AgentEvent, AgentLoopConfig, SerializableError } from "./types";
 import { MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
 
+// D070: Map tool name to permission category for deny-filtering
+function toolPermission(toolName: string): "read" | "write" | "execute" {
+  if (toolName === "bash") return "execute";
+  if (toolName === "write" || toolName === "edit") return "write";
+  return "read";
+}
+
+// D070: Remove tools that are statically denied by config-level rules.
+// Session-scoped rules are NOT used here — they only affect ctx.approve() at call time.
+function filterAllowedTools(
+  tools: AgentLoopConfig["tools"],
+  engine: AgentLoopConfig["permissionEngine"],
+): AgentLoopConfig["tools"] {
+  if (!engine) return tools;
+  return tools.filter((tool) => {
+    const action = engine.evaluate({
+      permission: toolPermission(tool.name),
+      toolName: tool.name,
+      description: tool.description,
+    });
+    return action !== "deny";
+  });
+}
+
 // D086: Convert Error to serializable representation
 function toSerializableError(err: unknown): SerializableError {
   if (err instanceof Error) {
@@ -67,8 +91,10 @@ async function runLoop(
 
   // D087: Filter tools for plan mode (read-only exploration)
   const activeMode = config.mode ?? "default";
-  const activeTools =
+  const modeFilteredTools =
     activeMode === "plan" ? config.tools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name)) : config.tools;
+  // D070: Filter tools denied by config-level permission rules (session rules only affect prompt-time)
+  const activeTools = filterAllowedTools(modeFilteredTools, config.permissionEngine);
   const registry = new Map(activeTools.map((t) => [t.name, t]));
 
   // D087: Prepend mode system prompt prefix
@@ -153,7 +179,11 @@ async function runLoop(
       const ctx: ToolContext = {
         toolCallId: toolCall.id,
         signal: config.signal ?? new AbortController().signal,
-        approve: async () => "once" as const,
+        approve: async (request) => {
+          if (config.approve) return config.approve(request);
+          return "once"; // fallback: auto-approve when no handler provided
+        },
+        ask: config.ask ? (request) => config.ask!(request) : undefined,
         onUpdate: (partial) => {
           stream.push({
             type: "tool_update",

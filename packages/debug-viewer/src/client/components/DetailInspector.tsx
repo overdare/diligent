@@ -10,10 +10,9 @@ interface DetailInspectorProps {
 function getEntryType(entry: Record<string, unknown>): string {
   if (entry.type === "session_header") return "Session Header";
   if (entry.type === "compaction") return "Compaction";
-  if (entry.type === "user_message") return "User Message";
-  if (entry.type === "assistant_message") return "Assistant Message";
-  if (entry.type === "tool_result") return "Tool Result";
-  if (entry.type === "steering") return "Steering";
+  if (entry.role === "user") return "User Message";
+  if (entry.role === "assistant") return "Assistant Message";
+  if (entry.role === "tool_result") return "Tool Result";
   if (entry.call) return "Tool Call Pair";
   if (entry.type === "tool_call") return "Tool Call";
   return "Unknown";

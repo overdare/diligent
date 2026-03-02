@@ -10,14 +10,25 @@ export type {
   ModeKind,
   SerializableError,
 } from "./agent/index";
-export { agentLoop, BUILTIN_AGENT_TYPES, LoopDetector, MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./agent/index";
+export {
+  agentLoop,
+  BUILTIN_AGENT_TYPES,
+  LoopDetector,
+  MODE_SYSTEM_PROMPT_PREFIXES,
+  PLAN_MODE_ALLOWED_TOOLS,
+} from "./agent/index";
+export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
+// Approval (Phase 5a)
+export { createPermissionEngine } from "./approval/index";
 // Auth
-export type { AuthKeys, ProviderName as AuthProviderName } from "./auth/index";
+export type { AuthKeys, OpenAIOAuthTokens, ProviderName as AuthProviderName } from "./auth/index";
 export { getAuthFilePath, loadAuthStore, loadOAuthTokens, saveAuthKey, saveOAuthTokens } from "./auth/index";
-export type { OpenAIOAuthTokens } from "./auth/index";
+export type { OAuthFlowOptions } from "./auth/oauth/index";
 // Auth/OAuth
 export { refreshOAuthTokens, runChatGPTOAuth, shouldRefresh } from "./auth/oauth/index";
-export type { OAuthFlowOptions } from "./auth/oauth/index";
+export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab/index";
+// Collab tools (non-blocking multi-agent)
+export { AgentRegistry, COLLAB_TOOL_NAMES, createCollabTools } from "./collab/index";
 // Config
 export type { DiligentConfig, DiscoveredInstruction } from "./config/index";
 export {
@@ -122,8 +133,12 @@ export type {
   ToolContext,
   ToolRegistry,
   ToolResult,
+  UserInputQuestion,
+  UserInputRequest,
+  UserInputResponse,
 } from "./tool/index";
 export { executeTool, ToolRegistryBuilder } from "./tool/index";
+export type { TaskToolDeps } from "./tools/index";
 // Built-in tools
 export {
   bashTool,
@@ -136,11 +151,8 @@ export {
   createReadTool,
   createTaskTool,
   createWriteTool,
+  requestUserInputTool,
 } from "./tools/index";
-export type { TaskToolDeps } from "./tools/index";
-// Collab tools (non-blocking multi-agent)
-export { AgentRegistry, createCollabTools, COLLAB_TOOL_NAMES } from "./collab/index";
-export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab/index";
 export type {
   AssistantMessage,
   ContentBlock,

@@ -20,14 +20,14 @@ export function useSearch(entries: SessionEntry[]) {
     for (const entry of entries) {
       const id = entry.id;
 
-      if (entry.type === "user_message") {
+      if ("role" in entry && entry.role === "user") {
         const content = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
         if (content.toLowerCase().includes(q)) {
           results.push({ entryId: id, field: "content", snippet: content.slice(0, 80) });
         }
       }
 
-      if (entry.type === "assistant_message") {
+      if ("role" in entry && entry.role === "assistant") {
         for (const block of entry.content) {
           if (block.type === "text" && block.text.toLowerCase().includes(q)) {
             results.push({ entryId: id, field: "text", snippet: block.text.slice(0, 80) });
@@ -41,13 +41,13 @@ export function useSearch(entries: SessionEntry[]) {
         }
       }
 
-      if (entry.type === "tool_result") {
+      if ("role" in entry && entry.role === "tool_result") {
         if (entry.output.toLowerCase().includes(q)) {
           results.push({ entryId: id, field: "output", snippet: entry.output.slice(0, 80) });
         }
       }
 
-      if (entry.type === "compaction") {
+      if ("type" in entry && entry.type === "compaction") {
         if (entry.summary.toLowerCase().includes(q)) {
           results.push({ entryId: id, field: "summary", snippet: entry.summary.slice(0, 80) });
         }

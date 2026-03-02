@@ -19,4 +19,7 @@ export type {
   ToolContext,
   ToolRegistry,
   ToolResult,
+  UserInputQuestion,
+  UserInputRequest,
+  UserInputResponse,
 } from "./types";

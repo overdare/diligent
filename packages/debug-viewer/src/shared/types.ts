@@ -46,7 +46,7 @@ export interface SessionHeader {
 export interface UserMessageEntry {
   id: string;
   parentId?: string;
-  type: "user_message";
+  role: "user";
   content: string | ContentBlock[];
   timestamp: number;
 }
@@ -54,7 +54,7 @@ export interface UserMessageEntry {
 export interface AssistantMessageEntry {
   id: string;
   parentId?: string;
-  type: "assistant_message";
+  role: "assistant";
   content: ContentBlock[];
   model: string;
   usage: Usage;
@@ -65,7 +65,7 @@ export interface AssistantMessageEntry {
 export interface ToolResultEntry {
   id: string;
   parentId?: string;
-  type: "tool_result";
+  role: "tool_result";
   toolCallId: string;
   toolName: string;
   output: string;
@@ -85,22 +85,7 @@ export interface CompactionEntry {
   timestamp: number;
 }
 
-export interface SteeringEntry {
-  id: string;
-  parentId?: string;
-  type: "steering";
-  content: string;
-  source: "steer" | "follow_up";
-  timestamp: number;
-}
-
-export type SessionEntry =
-  | SessionHeader
-  | UserMessageEntry
-  | AssistantMessageEntry
-  | ToolResultEntry
-  | CompactionEntry
-  | SteeringEntry;
+export type SessionEntry = SessionHeader | UserMessageEntry | AssistantMessageEntry | ToolResultEntry | CompactionEntry;
 
 // Knowledge (D081)
 export interface KnowledgeEntry {

@@ -39,10 +39,7 @@ describe("SessionWatcher", () => {
     await new Promise((r) => setTimeout(r, 200));
 
     // Append a new entry
-    appendFileSync(
-      filePath,
-      `${JSON.stringify({ id: "msg-01", type: "user_message", content: "hello", timestamp: 2 })}\n`,
-    );
+    appendFileSync(filePath, `${JSON.stringify({ id: "msg-01", role: "user", content: "hello", timestamp: 2 })}\n`);
 
     // Wait for watcher to pick up changes (poll interval is 2s, but we're testing the mechanism)
     await new Promise((r) => setTimeout(r, 3000));
@@ -50,7 +47,7 @@ describe("SessionWatcher", () => {
     watcher.stop();
 
     expect(receivedEntries.length).toBeGreaterThanOrEqual(1);
-    const userEntry = receivedEntries.find((e) => e.type === "user_message");
+    const userEntry = receivedEntries.find((e) => "role" in e && e.role === "user");
     expect(userEntry).toBeDefined();
   });
 

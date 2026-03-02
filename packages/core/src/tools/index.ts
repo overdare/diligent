@@ -6,6 +6,7 @@ export { createGrepTool } from "./grep";
 export { createLsTool } from "./ls";
 export { createPlanTool } from "./plan";
 export { createReadTool } from "./read";
+export { requestUserInputTool } from "./request-user-input";
 export { createTaskTool } from "./task";
 export type { TaskToolDeps } from "./task";
 export { createWriteTool } from "./write";

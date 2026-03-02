@@ -2,13 +2,15 @@
 import type {
   AgentEvent,
   AgentRegistry,
+  ApprovalRequest,
   DiligentPaths,
   Message,
   ModeKind,
   SkillMetadata,
+  UserInputRequest,
   UserMessage,
 } from "@diligent/core";
-import { agentLoop, type EventStream, resolveModel, SessionManager } from "@diligent/core";
+import { agentLoop, createPermissionEngine, type EventStream, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -18,7 +20,9 @@ import { promptSaveKey } from "./commands/builtin/provider";
 import { parseCommand } from "./commands/parser";
 import { CommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
+import { ApprovalDialog } from "./components/approval-dialog";
 import { ChatView } from "./components/chat-view";
+import { QuestionInput } from "./components/question-input";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
 import { ListPicker, type ListPickerItem } from "./components/list-picker";
@@ -65,6 +69,7 @@ export class App {
   private sessionManager: SessionManager | null = null;
   private currentMode: ModeKind;
   private agentRegistry: AgentRegistry | undefined;
+  private permissionEngine: ReturnType<typeof createPermissionEngine> | undefined;
 
   constructor(
     private config: AppConfig,
@@ -142,6 +147,10 @@ export class App {
     // Show welcome banner
     this.chatView.addLines(this.buildWelcomeBanner());
 
+    // Initialize PermissionEngine from config rules
+    const permissionRules = this.config.diligent.permissions ?? [];
+    this.permissionEngine = createPermissionEngine(permissionRules);
+
     // Initialize SessionManager
     if (this.paths) {
       const cwd = process.cwd();
@@ -163,6 +172,9 @@ export class App {
           streamFunction: this.config.streamFunction,
           mode: this.currentMode,
           signal: this.abortController?.signal,
+          approve: (req) => this.handleApprove(req),
+          ask: (req) => this.handleAsk(req),
+          permissionEngine: this.permissionEngine,
         }),
         compaction: {
           enabled: this.config.diligent.compaction?.enabled ?? true,
@@ -275,6 +287,13 @@ export class App {
     const sequences = this.stdinBuffer.split(data);
 
     for (const seq of sequences) {
+      // Inline question in chat takes input priority over overlay and editor
+      if (this.chatView.hasActiveQuestion()) {
+        this.chatView.handleQuestionInput(seq);
+        this.renderer.requestRender();
+        continue;
+      }
+
       // Overlay takes all input when visible
       if (this.overlayStack.hasVisible()) {
         const topComponent = this.overlayStack.getTopComponent();
@@ -350,6 +369,9 @@ export class App {
           streamFunction: this.config.streamFunction,
           signal: this.abortController.signal,
           mode: this.currentMode,
+          approve: (req) => this.handleApprove(req),
+          ask: (req) => this.handleAsk(req),
+          permissionEngine: this.permissionEngine,
         });
         this.activeStream = loop;
 
@@ -510,6 +532,76 @@ export class App {
         resolve(confirmed);
       });
       const handle = this.overlayStack.show(dialog, { anchor: "center" });
+      this.renderer.requestRender();
+    });
+  }
+
+  /** approve callback — rule engine first, dialog only on "prompt" */
+  private async handleApprove(request: ApprovalRequest): Promise<import("@diligent/core").ApprovalResponse> {
+    const action = this.permissionEngine?.evaluate(request) ?? "prompt";
+    if (action === "allow") return "once";
+    if (action === "deny") return "reject";
+    // action === "prompt" — show dialog
+    const response = await this.showApprovalDialog(request);
+    if (response === "always") {
+      this.permissionEngine?.remember(request, "allow");
+    }
+    return response;
+  }
+
+  /** ask callback — show TextInput overlay for each question sequentially */
+  private async handleAsk(request: UserInputRequest): Promise<import("@diligent/core").UserInputResponse> {
+    const answers: Record<string, string> = {};
+    for (const question of request.questions) {
+      answers[question.id] = await this.showTextInputOverlay(question);
+    }
+    return { answers };
+  }
+
+  /** Show approval dialog overlay — returns Once/Always/Reject */
+  private showApprovalDialog(request: ApprovalRequest): Promise<import("@diligent/core").ApprovalResponse> {
+    return new Promise((resolve) => {
+      const dialog = new ApprovalDialog(
+        {
+          toolName: request.toolName,
+          permission: request.permission,
+          description: request.description,
+          details: request.details?.command
+            ? String(request.details.command)
+            : request.details?.path
+              ? String(request.details.path)
+              : undefined,
+        },
+        (response) => {
+          handle.hide();
+          this.renderer.setFocus(this.inputEditor);
+          this.renderer.requestRender();
+          resolve(response);
+        },
+      );
+      const handle = this.overlayStack.show(dialog, { anchor: "center" });
+      this.renderer.requestRender();
+    });
+  }
+
+  /** Show question input inline in the chat stream */
+  private showTextInputOverlay(question: import("@diligent/core").UserInputQuestion): Promise<string> {
+    return new Promise((resolve) => {
+      const input = new QuestionInput(
+        {
+          header: question.header,
+          question: question.question,
+          options: question.options,
+          masked: question.is_secret,
+          placeholder: question.is_secret ? "enter value\u2026" : undefined,
+        },
+        (value) => {
+          this.chatView.setActiveQuestion(null);
+          this.renderer.requestRender();
+          resolve(value ?? "");
+        },
+      );
+      this.chatView.setActiveQuestion(input);
       this.renderer.requestRender();
     });
   }

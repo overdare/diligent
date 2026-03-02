@@ -75,6 +75,17 @@ export const DiligentConfigSchema = z
 
     // Collaboration mode (Phase 4c)
     mode: z.enum(["default", "plan", "execute"]).optional(),
+
+    // Permission rules (Phase 5a — D027, D032)
+    permissions: z
+      .array(
+        z.object({
+          permission: z.enum(["read", "write", "execute"]),
+          pattern: z.string(),
+          action: z.enum(["allow", "deny", "prompt"]),
+        }),
+      )
+      .optional(),
   })
   .strict();
 

@@ -9,6 +9,8 @@ export interface TextInputOptions {
   placeholder?: string;
   /** When true, input is displayed as bullet characters */
   masked?: boolean;
+  /** When true, renders as 2-line inline prompt instead of a box dialog */
+  minimal?: boolean;
 }
 
 /**
@@ -25,6 +27,34 @@ export class TextInput implements Component {
   ) {}
 
   render(width: number): string[] {
+    return this.options.minimal ? this.renderMinimal() : this.renderBox(width);
+  }
+
+  /** Minimal 2-line inline style — matches ApprovalDialog aesthetic */
+  private renderMinimal(): string[] {
+    const { message, placeholder, masked } = this.options;
+    const label = message ?? this.options.title;
+
+    // Line 1: ◆ <question>
+    const header = `  ${t.warn}\u25c6${t.reset} ${t.dim}${label}${t.reset}`;
+
+    // Line 2: › <input with cursor>  optional dim choices hint from placeholder
+    const displayValue = masked ? "\u2022".repeat(this.value.length) : this.value;
+    const before = displayValue.slice(0, this.cursorPos);
+    const cursorChar = displayValue[this.cursorPos] ?? " ";
+    const after = displayValue.slice(this.cursorPos + 1);
+    const cursor = `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
+    // Show placeholder as dim hint beside the cursor when input is empty
+    const field = this.value.length === 0 && placeholder ? `${t.dim}${placeholder}${t.reset}` : cursor;
+    const hint = this.value.length > 0 && placeholder ? `  ${t.dim}${placeholder}${t.reset}` : "";
+
+    const inputLine = `    ${t.accent}\u203a${t.reset} ${field}${hint}`;
+
+    return [header, inputLine];
+  }
+
+  /** Original box-style dialog (used for wizard API key entry, etc.) */
+  private renderBox(width: number): string[] {
     const { title, message, placeholder, masked } = this.options;
 
     // Calculate dialog width

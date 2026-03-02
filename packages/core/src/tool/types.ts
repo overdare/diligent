@@ -12,11 +12,34 @@ export interface Tool<TParams extends z.ZodType = any> {
 // D086: Approval response — "once" (proceed once), "always" (remember), "reject" (deny)
 export type ApprovalResponse = "once" | "always" | "reject";
 
-// D016: Tool context — D086: approve returns ApprovalResponse
+// D088: User input request/response for request_user_input tool
+export interface UserInputOption {
+  label: string;
+  description: string;
+}
+
+export interface UserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: UserInputOption[];
+  is_secret?: boolean;
+}
+
+export interface UserInputRequest {
+  questions: UserInputQuestion[];
+}
+
+export interface UserInputResponse {
+  answers: Record<string, string>;
+}
+
+// D016: Tool context — D086: approve returns ApprovalResponse, D088: ask for user input
 export interface ToolContext {
   toolCallId: string;
   signal: AbortSignal;
   approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
+  ask?: (request: UserInputRequest) => Promise<UserInputResponse>;
   onUpdate?: (partialResult: string) => void;
 }
 

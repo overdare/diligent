@@ -6,7 +6,6 @@ import type {
   SessionHeader,
   SessionMeta,
   SessionTree,
-  SteeringEntry,
   ToolCallBlock,
   ToolCallPair,
   ToolResultEntry,
@@ -43,7 +42,7 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
       return {
         id,
         parentId,
-        type: "user_message",
+        role: "user",
         content: msg.content,
         timestamp: msg.timestamp as number,
       } as unknown as UserMessageEntry;
@@ -52,7 +51,7 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
       return {
         id,
         parentId,
-        type: "assistant_message",
+        role: "assistant",
         content: msg.content,
         model: msg.model,
         usage: msg.usage,
@@ -64,7 +63,7 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
       return {
         id,
         parentId,
-        type: "tool_result",
+        role: "tool_result",
         toolCallId: msg.toolCallId,
         toolName: msg.toolName,
         output: msg.output,
@@ -74,32 +73,16 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
     }
   }
 
-  // Steering envelope: { type: "steering", id, parentId, timestamp (ISO), message: { role, content, ... }, source }
-  if (raw.type === "steering" && raw.message != null) {
-    const msg = raw.message as Record<string, unknown>;
-    return {
-      id: raw.id as string,
-      parentId: (raw.parentId as string | null) ?? undefined,
-      type: "steering",
-      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-      source: raw.source as "steer" | "follow_up",
-      timestamp: msg.timestamp as number,
-    } as unknown as SessionEntry;
-  }
+  // --- Legacy flat format (sample data, backward compat) ---
 
-  // --- Flat format (sample data, backward compat) ---
-
-  if (raw.type === "user_message") {
+  if (raw.role === "user") {
     return raw as unknown as UserMessageEntry;
   }
-  if (raw.type === "assistant_message") {
+  if (raw.role === "assistant") {
     return raw as unknown as AssistantMessageEntry;
   }
-  if (raw.type === "tool_result" && "toolCallId" in raw) {
+  if (raw.role === "tool_result") {
     return raw as unknown as ToolResultEntry;
-  }
-  if (raw.type === "steering" && "source" in raw) {
-    return raw as unknown as SteeringEntry;
   }
   if (raw.type === "session_header") {
     return raw as unknown as SessionHeader;
@@ -223,14 +206,14 @@ export function pairToolCalls(entries: SessionEntry[]): ToolCallPair[] {
   // Index tool results by toolCallId
   const resultMap = new Map<string, ToolResultEntry>();
   for (const entry of entries) {
-    if (entry.type === "tool_result") {
+    if ("role" in entry && entry.role === "tool_result") {
       resultMap.set(entry.toolCallId, entry);
     }
   }
 
   // Walk assistant messages and extract tool calls
   for (const entry of entries) {
-    if (entry.type === "assistant_message") {
+    if ("role" in entry && entry.role === "assistant") {
       for (const block of entry.content) {
         if (block.type === "tool_call") {
           const toolCall = block as ToolCallBlock;
@@ -254,7 +237,7 @@ export function pairToolCalls(entries: SessionEntry[]): ToolCallPair[] {
  * Extract metadata from a session file's entries.
  */
 export function extractSessionMeta(filePath: string, entries: SessionEntry[]): SessionMeta {
-  const header = entries.find((e) => e.type === "session_header") as SessionHeader | undefined;
+  const header = entries.find((e) => "type" in e && e.type === "session_header") as SessionHeader | undefined;
 
   let messageCount = 0;
   let toolCallCount = 0;
@@ -262,12 +245,14 @@ export function extractSessionMeta(filePath: string, entries: SessionEntry[]): S
   let lastActivity = 0;
 
   for (const entry of entries) {
-    if (entry.type === "user_message" || entry.type === "assistant_message") {
-      messageCount++;
-    }
-    if (entry.type === "tool_result") {
-      toolCallCount++;
-      if (entry.isError) hasErrors = true;
+    if ("role" in entry) {
+      if (entry.role === "user" || entry.role === "assistant") {
+        messageCount++;
+      }
+      if (entry.role === "tool_result") {
+        toolCallCount++;
+        if (entry.isError) hasErrors = true;
+      }
     }
     if ("timestamp" in entry && entry.timestamp > lastActivity) {
       lastActivity = entry.timestamp;
