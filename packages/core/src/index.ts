@@ -151,7 +151,7 @@ export {
   createReadTool,
   createTaskTool,
   createWriteTool,
-  userOpinionTool,
+  requestUserInputTool,
 } from "./tools/index";
 export type {
   AssistantMessage,

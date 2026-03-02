@@ -12,7 +12,7 @@ import {
   createReadTool,
   createTaskTool,
   createWriteTool,
-  userOpinionTool,
+  requestUserInputTool,
 } from "@diligent/core";
 
 export function buildTools(
@@ -30,7 +30,7 @@ export function buildTools(
     createGlobTool(cwd),
     createGrepTool(cwd),
     createPlanTool(),
-    userOpinionTool,
+    requestUserInputTool,
   ];
 
   if (paths) {

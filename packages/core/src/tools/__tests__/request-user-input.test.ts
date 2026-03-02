@@ -1,7 +1,7 @@
-// @summary Tests for user_opinion tool — ctx.ask wiring and answer formatting
+// @summary Tests for request_user_input tool — ctx.ask wiring and answer formatting
 import { describe, expect, it } from "bun:test";
 import type { ToolContext, UserInputRequest, UserInputResponse } from "../../tool/types";
-import { userOpinionTool } from "../user-opinion";
+import { requestUserInputTool } from "../request-user-input";
 
 function makeCtx(ask?: (req: UserInputRequest) => Promise<UserInputResponse>): ToolContext {
   return {
@@ -17,9 +17,9 @@ const YES_NO_OPTIONS = [
   { label: "No", description: "Skip and do nothing" },
 ];
 
-describe("userOpinionTool", () => {
+describe("requestUserInputTool", () => {
   it("returns fallback message when ctx.ask is not available", async () => {
-    const result = await userOpinionTool.execute(
+    const result = await requestUserInputTool.execute(
       { questions: [{ id: "q1", header: "confirm", question: "Continue?", options: YES_NO_OPTIONS }] },
       makeCtx(),
     );
@@ -28,7 +28,7 @@ describe("userOpinionTool", () => {
 
   it("formats single question answer with header prefix", async () => {
     const ctx = makeCtx(async () => ({ answers: { q1: "Yes" } }));
-    const result = await userOpinionTool.execute(
+    const result = await requestUserInputTool.execute(
       { questions: [{ id: "q1", header: "confirm", question: "Continue?", options: YES_NO_OPTIONS }] },
       ctx,
     );
@@ -37,7 +37,7 @@ describe("userOpinionTool", () => {
 
   it("formats multiple questions with double newline separator", async () => {
     const ctx = makeCtx(async () => ({ answers: { q1: "Fix in place", q2: "Yes" } }));
-    const result = await userOpinionTool.execute(
+    const result = await requestUserInputTool.execute(
       {
         questions: [
           {
@@ -66,7 +66,7 @@ describe("userOpinionTool", () => {
 
   it("shows '(no answer)' for missing question ids", async () => {
     const ctx = makeCtx(async () => ({ answers: {} }));
-    const result = await userOpinionTool.execute(
+    const result = await requestUserInputTool.execute(
       { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
       ctx,
     );
@@ -74,14 +74,14 @@ describe("userOpinionTool", () => {
   });
 
   it("rejects call when options array has fewer than 2 items", () => {
-    const parsed = userOpinionTool.parameters.safeParse({
+    const parsed = requestUserInputTool.parameters.safeParse({
       questions: [{ id: "q1", header: "bad", question: "One option only?", options: [{ label: "A", description: "only one" }] }],
     });
     expect(parsed.success).toBe(false);
   });
 
   it("rejects call when options array has more than 3 items", async () => {
-    const parsed = userOpinionTool.parameters.safeParse({
+    const parsed = requestUserInputTool.parameters.safeParse({
       questions: [
         {
           id: "q1",
@@ -101,12 +101,12 @@ describe("userOpinionTool", () => {
 
   it("rejects call when more than 3 questions", async () => {
     const q = { id: "q", header: "h", question: "Q?", options: YES_NO_OPTIONS };
-    const parsed = userOpinionTool.parameters.safeParse({ questions: [q, q, q, q] });
+    const parsed = requestUserInputTool.parameters.safeParse({ questions: [q, q, q, q] });
     expect(parsed.success).toBe(false);
   });
 
   it("rejects call when header exceeds 12 characters", async () => {
-    const parsed = userOpinionTool.parameters.safeParse({
+    const parsed = requestUserInputTool.parameters.safeParse({
       questions: [{ id: "q1", header: "toolongheader", question: "Q?", options: YES_NO_OPTIONS }],
     });
     expect(parsed.success).toBe(false);
