@@ -6,6 +6,7 @@ import type {
   DiligentServerRequest,
   DiligentServerRequestResponse,
   JSONRPCResponse,
+  Mode,
 } from "@diligent/protocol";
 import type { ModelInfo, WsServerMessage } from "../../shared/ws-protocol";
 
@@ -24,7 +25,7 @@ interface PendingRequest {
 
 interface ConnectedPayload {
   cwd: string;
-  mode: "default" | "plan" | "execute";
+  mode: Mode;
   serverVersion: string;
   currentModel: string | undefined;
   availableModels: ModelInfo[];

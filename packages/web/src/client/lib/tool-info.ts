@@ -48,7 +48,7 @@ function readStringField(parsed: Record<string, unknown>, keys: string[]): strin
   return undefined;
 }
 
-function parseRequestUserInputTitle(parsed: Record<string, unknown>): string | undefined {
+export function parseRequestUserInputTitle(parsed: Record<string, unknown>): string | undefined {
   const questions = parsed.questions;
   if (!Array.isArray(questions) || questions.length === 0) return undefined;
   const first = questions[0];
@@ -61,7 +61,7 @@ function parseRequestUserInputTitle(parsed: Record<string, unknown>): string | u
   return undefined;
 }
 
-function parseRequestUserInputTitleFromOutput(outputText: string): string | undefined {
+export function parseRequestUserInputTitleFromOutput(outputText: string): string | undefined {
   const firstLine = outputText.split("\n")[0]?.trim();
   if (!firstLine) return undefined;
   const lineMatch = firstLine.match(/^\[[^\]]+\]\s*(.+)$/);

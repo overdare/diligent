@@ -1,23 +1,40 @@
 // @summary Tests for tool header and summary generation in tool-info helpers
 import { expect, test } from "bun:test";
-import { getToolHeaderTitle, summarizeInput } from "../src/client/lib/tool-info";
+import {
+  parseRequestUserInputTitle,
+  parseRequestUserInputTitleFromOutput,
+  summarizeInput,
+} from "../src/client/lib/tool-info";
 
-test("request_user_input title prefers question text", () => {
-  const input = JSON.stringify({
+test("request_user_input: question text is preferred over header", () => {
+  const parsed = {
     questions: [{ id: "scope", header: "Scope", question: "What scope should I use?", options: [] }],
-  });
-  expect(getToolHeaderTitle("request_user_input", input)).toBe("Ask - What scope should I use?");
+  };
+  expect(parseRequestUserInputTitle(parsed)).toBe("What scope should I use?");
 });
 
-test("request_user_input falls back to Ask when no parsable question title", () => {
-  expect(getToolHeaderTitle("request_user_input", "{invalid")).toBe("Ask");
+test("request_user_input: falls back to header when question is absent", () => {
+  const parsed = { questions: [{ id: "scope", header: "Scope", options: [] }] };
+  expect(parseRequestUserInputTitle(parsed)).toBe("Scope");
 });
 
-test("request_user_input header is inferred from output when input is missing", () => {
+test("request_user_input: returns undefined when questions array is empty", () => {
+  expect(parseRequestUserInputTitle({ questions: [] })).toBeUndefined();
+});
+
+test("request_user_input: extracts question text after bracket tag in output", () => {
   const output = "[Meaning] What do you want me to do with your message?\nAnswer: Help with a task";
-  expect(getToolHeaderTitle("request_user_input", "", output)).toBe(
-    "Ask - What do you want me to do with your message?",
+  expect(parseRequestUserInputTitleFromOutput(output)).toBe(
+    "What do you want me to do with your message?",
   );
+});
+
+test("request_user_input: falls back to bracket tag itself when no trailing text", () => {
+  expect(parseRequestUserInputTitleFromOutput("[Scope]")).toBe("Scope");
+});
+
+test("request_user_input: returns undefined for empty output", () => {
+  expect(parseRequestUserInputTitleFromOutput("")).toBeUndefined();
 });
 
 test("summary prefers explicit intent fields for non-request tools", () => {

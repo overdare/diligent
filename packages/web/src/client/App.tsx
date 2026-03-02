@@ -1,15 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
-import type {
-  DiligentServerRequest,
-  DiligentServerRequestResponse,
-  Mode,
-  SessionSummary,
-  ThreadReadResponse,
-  UserInputRequest,
-} from "@diligent/protocol";
+import type { Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ModelInfo, ProviderAuthStatus } from "../shared/ws-protocol";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
@@ -18,8 +10,10 @@ import { Panel } from "./components/Panel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
-import { fetchProviderStatus, getOAuthStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./lib/auth-api";
-import { type ConnectionState, getReconnectAttemptLimit, WebRpcClient } from "./lib/rpc-client";
+import { useProviderManager } from "./lib/use-provider-manager";
+import { useRpcClient } from "./lib/use-rpc";
+import { useServerRequests } from "./lib/use-server-requests";
+import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
   initialThreadState,
@@ -60,32 +54,20 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
 }
 
 export function App() {
-  const rpcRef = useRef<WebRpcClient | null>(null);
-  const activeThreadIdRef = useRef<string | null>(null);
-  const [connection, setConnection] = useState<ConnectionState>("connecting");
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [cwd, setCwd] = useState<string>("");
-  const [currentModel, setCurrentModel] = useState<string>("");
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [input, setInput] = useState("");
+  const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
+  const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
+  const providerMgr = useProviderManager(rpcRef);
+  const serverRequests = useServerRequests(rpcRef);
+
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
-  const [approvalPrompt, setApprovalPrompt] = useState<{ requestId: number; request: DiligentServerRequest } | null>(
-    null,
-  );
-  const [questionPrompt, setQuestionPrompt] = useState<{ requestId: number; request: UserInputRequest } | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [providers, setProviders] = useState<ProviderAuthStatus[]>([]);
+  const activeThreadIdRef = useRef<string | null>(null);
+  const [cwd, setCwd] = useState<string>("");
+  const [input, setInput] = useState("");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
 
-  // Keep a ref in sync so onConnected (closure) can read the latest activeThreadId
+  // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
-
-  // Refs to read latest state inside useCallback without adding deps
-  const availableModelsRef = useRef<ModelInfo[]>([]);
-  availableModelsRef.current = availableModels;
-  const currentModelRef = useRef<string>("");
-  currentModelRef.current = currentModel;
 
   const refreshThreadList = useCallback(async (rpc = rpcRef.current): Promise<void> => {
     if (!rpc) return;
@@ -95,63 +77,21 @@ export function App() {
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [rpcRef]);
 
-  const refreshProviders = useCallback(async (rpc = rpcRef.current): Promise<void> => {
-    if (!rpc) return;
-    try {
-      const result = await fetchProviderStatus(rpc);
-      setProviders(result.providers);
-      setAvailableModels(result.availableModels);
-      const modelInvalid =
-        result.availableModels.length > 0 &&
-        !result.availableModels.some((m) => m.id === currentModelRef.current);
-      if (modelInvalid) {
-        const first = result.availableModels[0];
-        setCurrentModel(first.id);
-        await rpc.requestRaw("config/set", { model: first.id });
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, []);
-
+  // Register onConnected, onNotification, onServerRequest on the rpc instance created by useRpcClient.
+  // Runs once on mount (all deps are stable useCallbacks). Listeners replace each other on re-registration.
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const rpc = new WebRpcClient(`${protocol}://${window.location.host}/rpc`);
-    rpcRef.current = rpc;
-
-    rpc.onConnectionChange((next) => {
-      setConnection(next);
-      if (next === "connected") {
-        setReconnectAttempts(0);
-        return;
-      }
-      if (next === "reconnecting") {
-        setReconnectAttempts((prev) => prev + 1);
-      }
-    });
+    const rpc = rpcRef.current;
+    if (!rpc) return;
 
     rpc.onConnected(async (meta) => {
       setCwd(meta.cwd);
-      setCurrentModel(meta.currentModel ?? "");
-      currentModelRef.current = meta.currentModel ?? ""; // sync ref immediately within callback
-      setAvailableModels(meta.availableModels);
+      // Sync model + available models into refs immediately so applySessionModel can use them
+      providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels);
       try {
         await rpc.request("initialize", { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
         rpc.notify("initialized", { ready: true });
-
-        // Apply the last-used model from session history, using meta.availableModels directly
-        // (refs are stale at this point — React state hasn't re-rendered yet)
-        const applySessionModel = async (messages: { role: string; model?: string }[]) => {
-          const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-          const sessionModel = lastAssistant?.model;
-          if (sessionModel && meta.availableModels.some((m) => m.id === sessionModel)) {
-            setCurrentModel(sessionModel);
-            currentModelRef.current = sessionModel;
-            await rpc.requestRaw("config/set", { model: sessionModel });
-          }
-        };
 
         // On reconnect, resume the previous thread if one exists
         const prevThreadId = activeThreadIdRef.current;
@@ -160,9 +100,9 @@ export function App() {
           if (resumed.found && resumed.threadId) {
             const history = await rpc.request("thread/read", { threadId: resumed.threadId });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
-            await applySessionModel(history.messages as { role: string; model?: string }[]);
+            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
-            await refreshProviders(rpc);
+            await providerMgr.refreshProviders(rpc);
             return;
           }
         }
@@ -172,9 +112,9 @@ export function App() {
         if (mostRecent.found && mostRecent.threadId) {
           const history = await rpc.request("thread/read", { threadId: mostRecent.threadId });
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
-          await applySessionModel(history.messages as { role: string; model?: string }[]);
+          await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
           await refreshThreadList(rpc);
-          await refreshProviders(rpc);
+          await providerMgr.refreshProviders(rpc);
           return;
         }
 
@@ -182,26 +122,21 @@ export function App() {
         const history = await rpc.request("thread/read", { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
         await refreshThreadList(rpc);
-        await refreshProviders(rpc);
+        await providerMgr.refreshProviders(rpc);
       } catch (error) {
         console.error(error);
       }
     });
 
     rpc.onNotification((notification) => dispatch({ type: "notification", payload: notification }));
-
-    rpc.onServerRequest((requestId, request) => {
-      if (request.method === "approval/request") {
-        setApprovalPrompt({ requestId, request });
-        return;
-      }
-      setAnswers({});
-      setQuestionPrompt({ requestId, request: request.params.request });
-    });
-
-    void rpc.connect();
-    return () => rpc.disconnect();
-  }, [refreshThreadList, refreshProviders]);
+    rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
+  }, [
+    refreshThreadList,
+    providerMgr.refreshProviders,
+    providerMgr.setInitialModel,
+    providerMgr.applySessionModel,
+    serverRequests.handleServerRequest,
+  ]);
 
   const startNewThread = async (): Promise<void> => {
     const rpc = rpcRef.current;
@@ -225,16 +160,7 @@ export function App() {
       const history = await rpc.request("thread/read", { threadId: resumed.threadId });
       dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
       await refreshThreadList(rpc);
-
-      // Switch to the last model used in this session if available
-      const lastAssistant = [...history.messages].reverse().find((m) => m.role === "assistant") as
-        | { role: "assistant"; model?: string }
-        | undefined;
-      const sessionModel = lastAssistant?.model;
-      if (sessionModel && sessionModel !== currentModelRef.current && availableModelsRef.current.some((m) => m.id === sessionModel)) {
-        setCurrentModel(sessionModel);
-        await rpc.requestRaw("config/set", { model: sessionModel });
-      }
+      await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
     } catch (error) {
       console.error(error);
     }
@@ -274,47 +200,6 @@ export function App() {
     dispatch({ type: "set_mode", payload: mode });
   };
 
-  const handleSetProviderKey = async (provider: string, apiKey: string) => {
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-    await setProviderKey(rpc, provider, apiKey);
-    await refreshProviders(rpc);
-  };
-
-  const handleRemoveProviderKey = async (provider: string) => {
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-    await removeProviderKey(rpc, provider);
-    await refreshProviders(rpc);
-  };
-
-  const handleOAuthStart = async () => {
-    const rpc = rpcRef.current;
-    if (!rpc) throw new Error("Not connected");
-    return startOAuthFlow(rpc);
-  };
-
-  const handleOAuthStatus = async () => {
-    const rpc = rpcRef.current;
-    if (!rpc) throw new Error("Not connected");
-    const result = await getOAuthStatus(rpc);
-    if (result.status === "completed") {
-      await refreshProviders(rpc);
-    }
-    return result;
-  };
-
-  const changeModel = async (modelId: string) => {
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-    setCurrentModel(modelId);
-    try {
-      await rpc.requestRaw("config/set", { model: modelId });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -325,33 +210,8 @@ export function App() {
     state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
   const statusDotPulse = state.threadStatus !== "idle";
 
-  const resolveApproval = (decision: "once" | "always" | "reject") => {
-    if (!approvalPrompt) return;
-    rpcRef.current?.respondServerRequest(approvalPrompt.requestId, {
-      method: "approval/request",
-      result: { decision },
-    });
-    setApprovalPrompt(null);
-  };
-
-  const resolveQuestion = (respondAnswers: Record<string, string>) => {
-    if (!questionPrompt) return;
-    rpcRef.current?.respondServerRequest(questionPrompt.requestId, {
-      method: "userInput/request",
-      result: { answers: respondAnswers },
-    } as DiligentServerRequestResponse);
-    setQuestionPrompt(null);
-  };
-
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();
-
-  const retryConnection = () => {
-    const rpc = rpcRef.current;
-    if (!rpc || connection === "connecting" || connection === "reconnecting") return;
-    setReconnectAttempts(0);
-    void rpc.connect();
-  };
 
   return (
     <div className="h-screen bg-bg text-text">
@@ -362,7 +222,7 @@ export function App() {
           activeThreadId={state.activeThreadId}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
-          providers={providers}
+          providers={providerMgr.providers}
           onOpenProviders={(p) => { setFocusedProvider(p ?? null); setShowProviderModal(true); }}
         />
 
@@ -380,18 +240,22 @@ export function App() {
             threadStatus={state.threadStatus}
             onSelectPrompt={(p) => setInput(p)}
             approvalPrompt={
-              approvalPrompt?.request.method === "approval/request"
-                ? { request: approvalPrompt.request.params.request, onDecide: resolveApproval }
+              serverRequests.approvalPrompt?.request.method === "approval/request"
+                ? {
+                    request: serverRequests.approvalPrompt.request.params.request,
+                    onDecide: serverRequests.resolveApproval,
+                  }
                 : null
             }
             questionPrompt={
-              questionPrompt
+              serverRequests.questionPrompt
                 ? {
-                    request: questionPrompt.request,
-                    answers,
-                    onAnswerChange: (id, val) => setAnswers((prev) => ({ ...prev, [id]: val })),
-                    onSubmit: () => resolveQuestion(answers),
-                    onCancel: () => resolveQuestion({}),
+                    request: serverRequests.questionPrompt.request,
+                    answers: serverRequests.answers,
+                    onAnswerChange: (id, val) =>
+                      serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
+                    onSubmit: () => serverRequests.resolveQuestion(serverRequests.answers),
+                    onCancel: () => serverRequests.resolveQuestion({}),
                   }
                 : null
             }
@@ -408,11 +272,11 @@ export function App() {
             cwd={cwd}
             mode={state.mode}
             onModeChange={(m) => void setMode(m)}
-            currentModel={currentModel}
-            availableModels={availableModels}
-            onModelChange={(m) => void changeModel(m)}
+            currentModel={providerMgr.currentModel}
+            availableModels={providerMgr.availableModels}
+            onModelChange={(m) => void providerMgr.changeModel(m)}
             usage={state.usage}
-            hasProvider={providers.some((p) => p.configured || p.oauthConnected)}
+            hasProvider={providerMgr.providers.some((p) => p.configured || p.oauthConnected)}
             onOpenProviders={() => setShowProviderModal(true)}
           />
         </Panel>
@@ -432,12 +296,12 @@ export function App() {
 
       {showProviderModal ? (
         <ProviderSettingsModal
-          providers={providers}
+          providers={providerMgr.providers}
           focusProvider={focusedProvider ?? undefined}
-          onSet={handleSetProviderKey}
-          onRemove={handleRemoveProviderKey}
-          onOAuthStart={handleOAuthStart}
-          onOAuthStatus={handleOAuthStatus}
+          onSet={providerMgr.handleSetProviderKey}
+          onRemove={providerMgr.handleRemoveProviderKey}
+          onOAuthStart={providerMgr.handleOAuthStart}
+          onOAuthStatus={providerMgr.handleOAuthStatus}
           onClose={() => { setShowProviderModal(false); setFocusedProvider(null); }}
         />
       ) : null}

@@ -38,6 +38,33 @@ Each layer is a functional subsystem. Layers are progressively deepened across i
 
 Deep research per layer: `docs/research/layers/NN-*.md`
 
+## Frontend Protocol Philosophy
+
+Inspired by codex-rs's architecture: **one protocol, multiple transports**.
+
+`DiligentAppServer` is the single source of truth for agent logic. All frontends — TUI, Web, Desktop — are thin protocol clients that differ only in transport and rendering.
+
+```
+TUI                           Web
+ │                             │
+ │  in-process JSON-RPC        │  WebSocket JSON-RPC
+ │  (LocalAppServerRpcClient)  │  (RpcBridge → ws://localhost)
+ └──────────────┬──────────────┘
+                │
+      DiligentAppServer  (@diligent/core)
+      SessionManager, AgentLoop, Tools
+```
+
+**Rules that follow from this:**
+
+1. **Web server = simple runner.** `packages/web/src/server` does exactly three things: start `DiligentAppServer`, open a WebSocket endpoint, serve static files. No agent logic, no custom auth flow, no provider management lives here.
+
+2. **Shared initialization.** Provider setup, auth loading, OAuth, model resolution, and system prompt construction are identical for TUI and Web. This code lives in `packages/core` and is called the same way by both.
+
+3. **Protocol is the boundary.** `@diligent/protocol` defines every message that crosses the frontend/backend boundary. TUI's `LocalAppServerRpcClient` and Web's `RpcBridge` are both implementations of the same protocol — not separate systems.
+
+4. **No frontend differentiation in the server.** If logic is only needed by Web (e.g. serving static assets), it belongs in the transport layer. If logic belongs to the agent (e.g. model selection, auth), it belongs in core.
+
 ## Key Design Patterns
 
 - **EventStream** (D007): Custom async iterable for streaming LLM responses and agent events. Producer pushes events, consumer uses `for await`, completion via `.result()` promise. ~86 lines.

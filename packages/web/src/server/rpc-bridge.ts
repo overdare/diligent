@@ -4,6 +4,7 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
+  Mode,
 } from "@diligent/protocol";
 import {
   DILIGENT_SERVER_REQUEST_METHODS,
@@ -26,7 +27,7 @@ interface RpcSession {
   id: string;
   ws: ServerWebSocket<RpcWsData>;
   cwd: string;
-  mode: "default" | "plan" | "execute";
+  mode: Mode;
   currentThreadId: string | null;
   pendingServerRequests: Map<
     number,
@@ -80,7 +81,7 @@ export class RpcBridge {
   constructor(
     private readonly appServer: DiligentAppServer,
     private readonly cwd: string,
-    private readonly initialMode: "default" | "plan" | "execute",
+    private readonly initialMode: Mode,
     private readonly modelConfig: ModelConfig,
     private readonly authCallbacks?: AuthCallbacks,
   ) {
@@ -301,7 +302,7 @@ export class RpcBridge {
       }
 
       if (parsed.method === "mode/set" && "result" in response) {
-        const mode = (response.result as { mode?: "default" | "plan" | "execute" }).mode;
+        const mode = (response.result as { mode?: Mode }).mode;
         if (mode) {
           session.mode = mode;
         }
