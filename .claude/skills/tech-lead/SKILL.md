@@ -1,6 +1,7 @@
 ---
 name: tech-lead
 description: "Evaluate the sustainable developability of the Diligent project's architecture. Acts as the project's Tech Lead — assesses whether the current codebase, layer architecture, design decisions, and development process can sustain ongoing development without accumulating friction. Use this skill when the user asks for architectural review, sustainability assessment, project health check, development velocity analysis, or says things like 'review the project', 'is this sustainable?', 'can we keep building on this?', 'tech lead review', 'what's blocking us?', or any question about whether the project's structure will hold up as development continues."
+model: opus
 ---
 
 # Tech Lead — Sustainable Developability Assessment

@@ -12,7 +12,15 @@ import {
   JSONRPCResponseSchema,
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
-import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
+import type {
+  ConnectedMessage,
+  ModelInfo,
+  OAuthStartResult,
+  OAuthStatusResult,
+  ProviderAuthStatus,
+  WsClientMessage,
+  WsServerMessage,
+} from "../shared/ws-protocol";
 
 interface RpcSession {
   id: string;
@@ -48,6 +56,14 @@ function toSafeFallback(request: DiligentServerRequest): DiligentServerRequestRe
   };
 }
 
+export interface AuthCallbacks {
+  list: () => Promise<ProviderAuthStatus[]>;
+  set: (provider: string, apiKey: string) => Promise<void>;
+  remove: (provider: string) => Promise<void>;
+  oauthStart: () => Promise<OAuthStartResult>;
+  oauthStatus: () => Promise<OAuthStatusResult>;
+}
+
 interface ModelConfig {
   currentModelId: string;
   availableModels: ModelInfo[];
@@ -65,6 +81,7 @@ export class RpcBridge {
     private readonly cwd: string,
     private readonly initialMode: "default" | "plan" | "execute",
     private readonly modelConfig: ModelConfig,
+    private readonly authCallbacks?: AuthCallbacks,
   ) {
     this.currentModelId = modelConfig.currentModelId;
     this.appServer.setNotificationListener(async (notification) => {
@@ -170,6 +187,83 @@ export class RpcBridge {
             response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { model: this.currentModelId } }),
           });
         }
+        return;
+      }
+
+      if (parsed.method === "auth/list" && this.authCallbacks) {
+        const providers = await this.authCallbacks.list();
+        this.send(ws, {
+          type: "rpc_response",
+          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { providers } }),
+        });
+        return;
+      }
+
+      if (parsed.method === "auth/set" && this.authCallbacks) {
+        const p = parsed.params as { provider?: string; apiKey?: string } | undefined;
+        if (p?.provider && p.apiKey) {
+          await this.authCallbacks.set(p.provider, p.apiKey);
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
+          });
+        } else {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: "Missing provider or apiKey" },
+            }),
+          });
+        }
+        return;
+      }
+
+      if (parsed.method === "auth/remove" && this.authCallbacks) {
+        const p = parsed.params as { provider?: string } | undefined;
+        if (p?.provider) {
+          await this.authCallbacks.remove(p.provider);
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
+          });
+        } else {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: "Missing provider" },
+            }),
+          });
+        }
+        return;
+      }
+
+      if (parsed.method === "auth/oauth/start" && this.authCallbacks) {
+        try {
+          const result = await this.authCallbacks.oauthStart();
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result }),
+          });
+        } catch (e) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32000, message: e instanceof Error ? e.message : "OAuth start failed" },
+            }),
+          });
+        }
+        return;
+      }
+
+      if (parsed.method === "auth/oauth/status" && this.authCallbacks) {
+        const result = await this.authCallbacks.oauthStatus();
+        this.send(ws, {
+          type: "rpc_response",
+          response: JSONRPCResponseSchema.parse({ id: parsed.id, result }),
+        });
         return;
       }
 

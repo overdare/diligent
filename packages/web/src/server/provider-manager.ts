@@ -59,6 +59,15 @@ export class ProviderManager {
     this.keys[provider] = apiKey;
   }
 
+  removeApiKey(provider: ProviderName): void {
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${provider}:`)) {
+        this.cache.delete(key);
+      }
+    }
+    delete this.keys[provider];
+  }
+
   createProxyStream(): StreamFunction {
     return (model, context, options) => {
       const provider = (model.provider ?? "anthropic") as ProviderName;

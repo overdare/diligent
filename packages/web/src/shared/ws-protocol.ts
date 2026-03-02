@@ -74,6 +74,22 @@ export type WsServerMessage =
       message: string;
     };
 
+export type ProviderAuthStatus = {
+  provider: "anthropic" | "openai" | "gemini";
+  configured: boolean;
+  maskedKey?: string;
+  oauthConnected?: boolean;
+};
+
+export type OAuthStartResult = {
+  authUrl: string;
+};
+
+export type OAuthStatusResult = {
+  status: "pending" | "completed" | "expired" | "idle";
+  error?: string;
+};
+
 export function toJsonRpcNotification(notification: DiligentServerNotification): JSONRPCNotification {
   return {
     method: notification.method,

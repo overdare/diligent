@@ -28,6 +28,7 @@ export interface WebRuntimeConfig {
     keepRecentTokens: number;
   };
   permissionEngine: ReturnType<typeof createPermissionEngine>;
+  providerManager: ProviderManager;
 }
 
 export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): Promise<WebRuntimeConfig> {
@@ -100,5 +101,6 @@ export async function loadWebRuntimeConfig(cwd: string, paths: DiligentPaths): P
       keepRecentTokens: config.compaction?.keepRecentTokens ?? 20000,
     },
     permissionEngine: createPermissionEngine(config.permissions ?? []),
+    providerManager,
   };
 }

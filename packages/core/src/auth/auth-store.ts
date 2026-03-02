@@ -134,6 +134,40 @@ export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string):
   await chmod(filePath, 0o600);
 }
 
+/** Remove a single provider key from auth.json (read-modify-write + chmod 0o600). */
+export async function removeAuthKey(provider: ProviderName, path?: string): Promise<void> {
+  const filePath = path ?? getAuthFilePath();
+
+  // Ensure directory exists
+  await mkdir(dirname(filePath), { recursive: true });
+
+  // Read existing
+  let existing: AuthKeys = {};
+  try {
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const result = AuthKeysSchema.safeParse(parsed);
+      if (result.success) {
+        existing = result.data;
+      }
+    }
+  } catch {
+    // Start fresh
+  }
+
+  // Modify
+  delete existing[provider];
+
+  // Write
+  await Bun.write(filePath, `${JSON.stringify(existing, null, 2)}\n`);
+
+  // Set restrictive permissions (owner-only read/write)
+  const { chmod } = await import("node:fs/promises");
+  await chmod(filePath, 0o600);
+}
+
 /** Load OpenAI OAuth tokens from auth.json. Returns undefined if not present. */
 export async function loadOAuthTokens(path?: string): Promise<OpenAIOAuthTokens | undefined> {
   const keys = await loadAuthStore(path);

@@ -9,14 +9,16 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ModelInfo } from "../shared/ws-protocol";
+import type { ModelInfo, ProviderAuthStatus } from "../shared/ws-protocol";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
+import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
+import { fetchProviderStatus, getOAuthStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./lib/auth-api";
 import { type ConnectionState, getReconnectAttemptLimit, WebRpcClient } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
@@ -72,6 +74,8 @@ export function App() {
   );
   const [questionPrompt, setQuestionPrompt] = useState<{ requestId: number; request: UserInputRequest } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [providers, setProviders] = useState<ProviderAuthStatus[]>([]);
+  const [showProviderModal, setShowProviderModal] = useState(false);
 
   // Keep a ref in sync so onConnected (closure) can read the latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
@@ -81,6 +85,16 @@ export function App() {
     try {
       const list = await rpc.request("thread/list", { limit: 100 });
       dispatch({ type: "set_threads", payload: list.data });
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
+
+  const refreshProviders = useCallback(async (rpc = rpcRef.current): Promise<void> => {
+    if (!rpc) return;
+    try {
+      const status = await fetchProviderStatus(rpc);
+      setProviders(status);
     } catch (error) {
       console.error(error);
     }
@@ -118,6 +132,7 @@ export function App() {
             const history = await rpc.request("thread/read", { threadId: resumed.threadId });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
             await refreshThreadList(rpc);
+            await refreshProviders(rpc);
             return;
           }
         }
@@ -126,6 +141,7 @@ export function App() {
         const history = await rpc.request("thread/read", { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
         await refreshThreadList(rpc);
+        await refreshProviders(rpc);
       } catch (error) {
         console.error(error);
       }
@@ -144,7 +160,7 @@ export function App() {
 
     void rpc.connect();
     return () => rpc.disconnect();
-  }, [refreshThreadList]);
+  }, [refreshThreadList, refreshProviders]);
 
   const startNewThread = async (): Promise<void> => {
     const rpc = rpcRef.current;
@@ -207,6 +223,36 @@ export function App() {
     dispatch({ type: "set_mode", payload: mode });
   };
 
+  const handleSetProviderKey = async (provider: string, apiKey: string) => {
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+    await setProviderKey(rpc, provider, apiKey);
+    await refreshProviders(rpc);
+  };
+
+  const handleRemoveProviderKey = async (provider: string) => {
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+    await removeProviderKey(rpc, provider);
+    await refreshProviders(rpc);
+  };
+
+  const handleOAuthStart = async () => {
+    const rpc = rpcRef.current;
+    if (!rpc) throw new Error("Not connected");
+    return startOAuthFlow(rpc);
+  };
+
+  const handleOAuthStatus = async () => {
+    const rpc = rpcRef.current;
+    if (!rpc) throw new Error("Not connected");
+    const result = await getOAuthStatus(rpc);
+    if (result.status === "completed") {
+      await refreshProviders(rpc);
+    }
+    return result;
+  };
+
   const changeModel = async (modelId: string) => {
     const rpc = rpcRef.current;
     if (!rpc) return;
@@ -265,6 +311,8 @@ export function App() {
           activeThreadId={state.activeThreadId}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
+          providers={providers}
+          onOpenProviders={() => setShowProviderModal(true)}
         />
 
         <Panel className="flex min-h-0 flex-col overflow-hidden">
@@ -327,6 +375,17 @@ export function App() {
         >
           {state.toast.message}
         </div>
+      ) : null}
+
+      {showProviderModal ? (
+        <ProviderSettingsModal
+          providers={providers}
+          onSet={handleSetProviderKey}
+          onRemove={handleRemoveProviderKey}
+          onOAuthStart={handleOAuthStart}
+          onOAuthStatus={handleOAuthStatus}
+          onClose={() => setShowProviderModal(false)}
+        />
       ) : null}
 
       {showConnectionModal ? (

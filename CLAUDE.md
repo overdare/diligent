@@ -50,9 +50,4 @@ Every source file and directory participates in a two-layer navigation index. **
 - English only in all files
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
-
-## Dev Commands
-
-```
-bun test / bun run lint / bun run lint:fix / bun run typecheck
-```
+- Plan before implementing when a task involves multiple files or architectural changes

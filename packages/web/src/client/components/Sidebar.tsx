@@ -1,8 +1,10 @@
 // @summary Sidebar with thread list, new thread button, and relative timestamps
 
 import type { SessionSummary } from "@diligent/protocol";
+import type { ProviderAuthStatus } from "../../shared/ws-protocol";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
+import { StatusDot } from "./StatusDot";
 
 interface SidebarProps {
   cwd: string;
@@ -10,9 +12,11 @@ interface SidebarProps {
   activeThreadId: string | null;
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
+  providers?: ProviderAuthStatus[];
+  onOpenProviders?: () => void;
 }
 
-export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenThread }: SidebarProps) {
+export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenThread, providers, onOpenProviders }: SidebarProps) {
   const cwdShort = cwd ? cwd.split("/").slice(-2).join("/") : "-";
 
   return (
@@ -64,6 +68,22 @@ export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenTh
           );
         })}
       </div>
+
+      {/* Provider status footer */}
+      {providers && onOpenProviders ? (
+        <button
+          type="button"
+          onClick={onOpenProviders}
+          className="flex items-center gap-2 border-t border-text/10 px-4 py-2.5 text-left transition hover:bg-surface/50"
+        >
+          <div className="flex items-center gap-1.5">
+            {providers.map((p) => (
+              <StatusDot key={p.provider} color={p.configured ? "success" : "danger"} size="sm" />
+            ))}
+          </div>
+          <span className="text-xs text-muted">Providers</span>
+        </button>
+      ) : null}
     </Panel>
   );
 }
