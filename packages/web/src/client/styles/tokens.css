@@ -7,6 +7,15 @@
   --danger: #f87171;
   --success: #4ade80;
 
+  /* RGB channels for Tailwind opacity modifiers (e.g. bg-accent/20) */
+  --bg-rgb: 15 20 21;
+  --surface-rgb: 27 38 41;
+  --text-rgb: 239 247 248;
+  --muted-rgb: 150 175 180;
+  --accent-rgb: 90 217 184;
+  --danger-rgb: 248 113 113;
+  --success-rgb: 74 222 128;
+
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
   --space-md: 0.75rem;

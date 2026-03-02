@@ -42,11 +42,23 @@ export type ServerRequestResponseMessage = {
   response: DiligentServerRequestResponse;
 };
 
+export type ModelInfo = {
+  id: string;
+  provider: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  inputCostPer1M?: number;
+  outputCostPer1M?: number;
+  supportsThinking?: boolean;
+};
+
 export type ConnectedMessage = {
   type: "connected";
   cwd: string;
   mode: "default" | "plan" | "execute";
   serverVersion: string;
+  currentModel: string;
+  availableModels: ModelInfo[];
 };
 
 export type WsClientMessage = RpcRequestMessage | RpcNotifyMessage | ServerRequestResponseMessage;

@@ -34,6 +34,7 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   KNOWLEDGE_SAVED: "knowledge/saved",
   LOOP_DETECTED: "loop/detected",
   ERROR: "error",
+  USAGE_UPDATED: "usage/updated",
 } as const;
 
 export type DiligentServerNotificationMethod =

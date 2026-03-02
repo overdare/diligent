@@ -6,13 +6,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "var(--bg)",
-        surface: "var(--surface)",
-        text: "var(--text)",
-        muted: "var(--muted)",
-        accent: "var(--accent)",
-        danger: "var(--danger)",
-        success: "var(--success)",
+        bg: "rgb(var(--bg-rgb) / <alpha-value>)",
+        surface: "rgb(var(--surface-rgb) / <alpha-value>)",
+        text: "rgb(var(--text-rgb) / <alpha-value>)",
+        muted: "rgb(var(--muted-rgb) / <alpha-value>)",
+        accent: "rgb(var(--accent-rgb) / <alpha-value>)",
+        danger: "rgb(var(--danger-rgb) / <alpha-value>)",
+        success: "rgb(var(--success-rgb) / <alpha-value>)",
       },
       borderRadius: {
         sm: "var(--radius-sm)",

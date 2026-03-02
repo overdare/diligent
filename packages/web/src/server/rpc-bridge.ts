@@ -12,7 +12,7 @@ import {
   JSONRPCResponseSchema,
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
-import type { ConnectedMessage, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
+import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 
 interface RpcSession {
   id: string;
@@ -47,16 +47,25 @@ function toSafeFallback(request: DiligentServerRequest): DiligentServerRequestRe
   };
 }
 
+interface ModelConfig {
+  currentModelId: string;
+  availableModels: ModelInfo[];
+  onModelChange: (modelId: string) => void;
+}
+
 export class RpcBridge {
   private readonly sessions = new Map<string, RpcSession>();
   private readonly threadOwners = new Map<string, string>();
   private serverRequestSeq = 0;
+  private currentModelId: string;
 
   constructor(
     private readonly appServer: DiligentAppServer,
     private readonly cwd: string,
     private readonly initialMode: "default" | "plan" | "execute",
+    private readonly modelConfig: ModelConfig,
   ) {
+    this.currentModelId = modelConfig.currentModelId;
     this.appServer.setNotificationListener(async (notification) => {
       this.routeNotification(notification);
     });
@@ -90,6 +99,8 @@ export class RpcBridge {
       cwd: this.cwd,
       mode: this.initialMode,
       serverVersion: "0.0.1",
+      currentModel: this.currentModelId,
+      availableModels: this.modelConfig.availableModels,
     };
     this.send(ws, connected);
   }
@@ -131,6 +142,36 @@ export class RpcBridge {
       const session = this.sessions.get(ws.data.sessionId);
       if (!session) {
         this.send(ws, { type: "error", message: "Session not found" });
+        return;
+      }
+
+      if (parsed.method === "config/set") {
+        const params = parsed.params as { model?: string } | undefined;
+        const modelId = params?.model;
+        if (modelId) {
+          const valid = this.modelConfig.availableModels.find((m) => m.id === modelId);
+          if (valid) {
+            this.currentModelId = modelId;
+            this.modelConfig.onModelChange(modelId);
+            this.send(ws, {
+              type: "rpc_response",
+              response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { model: modelId } }),
+            });
+          } else {
+            this.send(ws, {
+              type: "rpc_response",
+              response: JSONRPCErrorResponseSchema.parse({
+                id: parsed.id,
+                error: { code: -32602, message: `Unknown model: ${modelId}` },
+              }),
+            });
+          }
+        } else {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { model: this.currentModelId } }),
+          });
+        }
         return;
       }
 

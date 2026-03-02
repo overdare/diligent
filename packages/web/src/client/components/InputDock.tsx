@@ -1,8 +1,10 @@
 // @summary Input dock with auto-resize textarea, send/stop controls, and status tray
 
 import type { Mode, ThreadStatus } from "@diligent/protocol";
+import { useRef } from "react";
+import type { ModelInfo } from "../../shared/ws-protocol";
 import type { ConnectionState } from "../lib/rpc-client";
-import { Button } from "./Button";
+import type { UsageState } from "../lib/thread-store";
 import { TextArea } from "./TextArea";
 
 interface InputDockProps {
@@ -16,14 +18,49 @@ interface InputDockProps {
   cwd: string;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
+  currentModel: string;
+  availableModels: ModelInfo[];
+  onModelChange: (modelId: string) => void;
+  usage: UsageState;
 }
 
 const CONNECTION_COLORS: Record<ConnectionState, string> = {
   connected: "bg-success",
-  connecting: "bg-accent",
+  connecting: "bg-accent animate-pulse",
   reconnecting: "bg-accent animate-pulse",
   disconnected: "bg-danger",
 };
+
+const MODE_LABELS: Record<Mode, string> = {
+  default: "default",
+  plan: "plan",
+  execute: "execute",
+};
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatUsageTooltip(usage: UsageState): string {
+  return [
+    `Input: ${usage.inputTokens.toLocaleString()}`,
+    `Output: ${usage.outputTokens.toLocaleString()}`,
+    `Cache read: ${usage.cacheReadTokens.toLocaleString()}`,
+    `Cache write: ${usage.cacheWriteTokens.toLocaleString()}`,
+    `Cost: $${usage.totalCost.toFixed(4)}`,
+  ].join("\n");
+}
+
+function groupModelsByProvider(models: ModelInfo[]): Record<string, ModelInfo[]> {
+  const groups: Record<string, ModelInfo[]> = {};
+  for (const model of models) {
+    if (!groups[model.provider]) groups[model.provider] = [];
+    groups[model.provider].push(model);
+  }
+  return groups;
+}
 
 export function InputDock({
   input,
@@ -36,53 +73,126 @@ export function InputDock({
   cwd,
   mode,
   onModeChange,
+  currentModel,
+  availableModels,
+  onModelChange,
+  usage,
 }: InputDockProps) {
+  const composingRef = useRef(false);
   const isBusy = threadStatus === "busy";
+  const totalTokens = usage.inputTokens + usage.outputTokens;
+  const hasUsage = totalTokens > 0;
 
   return (
-    <div className="border-t border-text/10 bg-bg/60 px-3 py-3">
-      <div className="flex items-end gap-2">
+    <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
+      <div className="rounded-3xl border border-text/15 bg-bg/75 px-4 py-3 shadow-panel">
+        {/* Textarea */}
         <TextArea
+          className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus-visible:ring-0"
           aria-label="Message input"
           placeholder="Ask anything…"
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
           onKeyDown={(e) => {
+            // Prevent Korean/IME composition Enter from triggering submit.
+            if (composingRef.current || e.nativeEvent.isComposing) {
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onSend();
+              if (!isBusy) onSend();
             }
           }}
         />
-        {isBusy ? (
-          <Button aria-label="Interrupt turn" intent="ghost" onClick={onInterrupt}>
-            Stop
-          </Button>
-        ) : (
-          <Button aria-label="Send message" onClick={onSend} disabled={!canSend}>
-            Send
-          </Button>
-        )}
-      </div>
 
-      {/* Status tray */}
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CONNECTION_COLORS[connection]}`} />
-          <span className="shrink-0">{connection}</span>
-          {cwd ? <span className="mx-1 opacity-30">·</span> : null}
-          <span className="min-w-0 truncate opacity-70">{cwd}</span>
+        {/* Bottom bar (inside input panel) */}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {/* Left: connection + cwd + usage */}
+          <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CONNECTION_COLORS[connection]}`} />
+            <span className="shrink-0">{connection}</span>
+            {cwd ? (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="min-w-0 truncate font-mono opacity-60" title={cwd}>
+                  {cwd.split("/").slice(-2).join("/")}
+                </span>
+              </>
+            ) : null}
+            {hasUsage ? (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="shrink-0 cursor-default opacity-70" title={formatUsageTooltip(usage)}>
+                  {formatTokenCount(totalTokens)} tokens · ${usage.totalCost.toFixed(2)}
+                </span>
+              </>
+            ) : null}
+          </div>
+
+          {/* Right: model selector + mode selector + send/stop */}
+          <div className="flex items-center gap-2">
+            {availableModels.length > 0 ? (
+              <select
+                aria-label="Model selector"
+                value={currentModel}
+                onChange={(e) => onModelChange(e.target.value)}
+                className="h-7 max-w-[180px] rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                {Object.entries(groupModelsByProvider(availableModels)).map(([provider, models]) => (
+                  <optgroup key={provider} label={provider}>
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            ) : null}
+
+            <select
+              aria-label="Mode selector"
+              value={mode}
+              onChange={(e) => onModeChange(e.target.value as Mode)}
+              className="h-7 rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
+                <option key={m} value={m}>
+                  {MODE_LABELS[m]}
+                </option>
+              ))}
+            </select>
+
+            {isBusy ? (
+              <button
+                type="button"
+                aria-label="Interrupt turn"
+                onClick={onInterrupt}
+                className="rounded-md border border-danger/30 bg-danger/10 px-3 py-1 text-xs text-danger transition hover:bg-danger/20"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+              type="button"
+              aria-label="Send message"
+              onClick={() => {
+                if (!composingRef.current) onSend();
+              }}
+              disabled={!canSend}
+              className="rounded-full bg-accent/90 px-3 py-1.5 text-xs font-semibold text-bg transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
+            >
+                Send
+              </button>
+            )}
+          </div>
         </div>
-        <select
-          aria-label="Mode selector"
-          value={mode}
-          onChange={(e) => onModeChange(e.target.value as Mode)}
-          className="h-6 rounded border border-text/15 bg-bg px-1.5 text-[11px] text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          <option value="default">default</option>
-          <option value="plan">plan</option>
-          <option value="execute">execute</option>
-        </select>
       </div>
     </div>
   );

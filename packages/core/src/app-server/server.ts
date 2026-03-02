@@ -454,6 +454,13 @@ export class DiligentAppServer {
         });
         return;
 
+      case "usage":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.USAGE_UPDATED,
+          params: { threadId, usage: event.usage, cost: event.cost },
+        });
+        return;
+
       default:
         return;
     }

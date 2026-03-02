@@ -1,6 +1,6 @@
 // @summary Tests for WebRpcClient request handling and reconnect delay policy
 import { afterEach, expect, test } from "bun:test";
-import { getReconnectDelay, WebRpcClient } from "../src/client/lib/rpc-client";
+import { getReconnectAttemptLimit, getReconnectDelay, WebRpcClient } from "../src/client/lib/rpc-client";
 
 const OriginalWebSocket = globalThis.WebSocket;
 
@@ -81,4 +81,58 @@ test("returns expected reconnect delays", () => {
   expect(getReconnectDelay(1)).toBe(2000);
   expect(getReconnectDelay(2)).toBe(5000);
   expect(getReconnectDelay(10)).toBe(5000);
+  expect(getReconnectAttemptLimit()).toBe(5);
+});
+
+test("retries when initial websocket open fails", async () => {
+  class FlakyWebSocket {
+    static OPEN = 1;
+    static attempts = 0;
+
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    constructor(public readonly url: string) {
+      FlakyWebSocket.attempts += 1;
+      const attempt = FlakyWebSocket.attempts;
+      queueMicrotask(() => {
+        if (attempt === 1) {
+          this.onerror?.();
+          return;
+        }
+        this.readyState = FlakyWebSocket.OPEN;
+        this.onopen?.();
+        this.onmessage?.({
+          data: JSON.stringify({
+            type: "connected",
+            cwd: process.cwd(),
+            mode: "default",
+            serverVersion: "test",
+          }),
+        });
+      });
+    }
+
+    send(_: string) {}
+
+    close() {
+      this.readyState = 3;
+      this.onclose?.();
+    }
+  }
+
+  globalThis.WebSocket = FlakyWebSocket as unknown as typeof WebSocket;
+  const states: string[] = [];
+  const client = new WebRpcClient("ws://example.test/rpc");
+  client.onConnectionChange((state) => states.push(state));
+
+  await client.connect();
+  expect(FlakyWebSocket.attempts).toBe(2);
+  expect(states).toContain("reconnecting");
+  expect(states.at(-1)).toBe("connected");
+
+  client.disconnect();
 });

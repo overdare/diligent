@@ -6,6 +6,7 @@ import {
   ThreadItemSchema,
   ThreadStatusRetrySchema,
   ThreadStatusSchema,
+  UsageSchema,
 } from "./data-model";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "./methods";
 
@@ -115,6 +116,16 @@ export const ErrorNotificationSchema = z.object({
 });
 export type ErrorNotification = z.infer<typeof ErrorNotificationSchema>;
 
+export const UsageUpdatedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.USAGE_UPDATED),
+  params: z.object({
+    threadId: z.string(),
+    usage: UsageSchema,
+    cost: z.number(),
+  }),
+});
+export type UsageUpdatedNotification = z.infer<typeof UsageUpdatedNotificationSchema>;
+
 export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
@@ -127,5 +138,6 @@ export const DiligentServerNotificationSchema = z.union([
   KnowledgeSavedNotificationSchema,
   LoopDetectedNotificationSchema,
   ErrorNotificationSchema,
+  UsageUpdatedNotificationSchema,
 ]);
 export type DiligentServerNotification = z.infer<typeof DiligentServerNotificationSchema>;

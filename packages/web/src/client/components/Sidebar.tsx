@@ -13,38 +13,53 @@ interface SidebarProps {
 }
 
 export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenThread }: SidebarProps) {
+  const cwdShort = cwd ? cwd.split("/").slice(-2).join("/") : "-";
+
   return (
     <Panel className="flex min-h-0 flex-col overflow-hidden">
+      {/* Header */}
       <div className="border-b border-text/10 px-4 py-3">
-        <h1 className="font-mono text-sm font-semibold text-accent">Diligent</h1>
-        <p className="mt-1 truncate text-xs text-muted">{cwd || "-"}</p>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-bold text-accent">diligent</span>
+        </div>
+        <p className="mt-1 truncate font-mono text-[11px] text-muted" title={cwd}>
+          {cwdShort}
+        </p>
       </div>
 
-      <div className="flex-1 space-y-1.5 overflow-y-auto p-3">
+      {/* Thread list */}
+      <div className="flex-1 space-y-1 overflow-y-auto p-2">
         <button
           type="button"
           onClick={onNewThread}
-          className="w-full rounded-md border border-text/10 bg-bg/60 px-3 py-2 text-left text-sm text-text transition hover:border-accent/40"
+          className="flex w-full items-center gap-2 rounded-md border border-dashed border-text/15 px-3 py-2 text-left text-sm text-muted transition hover:border-accent/40 hover:text-accent"
         >
-          + New conversation
+          <span className="text-base leading-none">+</span>
+          <span>New conversation</span>
         </button>
 
         {threadList.map((thread) => {
           const isActive = activeThreadId === thread.id;
           const title = thread.firstUserMessage || thread.name || "New conversation";
-          const meta = `${formatRelativeTime(thread.modified)} · ${thread.messageCount} msg`;
+          const time = formatRelativeTime(thread.modified);
 
           return (
             <button
               key={thread.id}
               type="button"
               onClick={() => onOpenThread(thread.id)}
-              className={`w-full rounded-md border px-3 py-2 text-left transition ${
-                isActive ? "border-accent/40 bg-accent/10" : "border-text/10 bg-bg/50 hover:border-text/30"
+              className={`group w-full rounded-md border px-3 py-2 text-left transition ${
+                isActive
+                  ? "border-accent/30 bg-accent/8 text-text"
+                  : "border-transparent hover:border-text/15 hover:bg-surface/50"
               }`}
             >
-              <div className="truncate text-sm text-text">{title}</div>
-              <div className="mt-0.5 text-[11px] text-muted">{meta}</div>
+              <div className="truncate text-sm leading-snug text-text">{title}</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+                <span>{time}</span>
+                <span className="opacity-40">·</span>
+                <span>{thread.messageCount} msg</span>
+              </div>
             </button>
           );
         })}

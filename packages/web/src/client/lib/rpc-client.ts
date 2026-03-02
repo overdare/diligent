@@ -7,9 +7,10 @@ import type {
   DiligentServerRequestResponse,
   JSONRPCResponse,
 } from "@diligent/protocol";
-import type { WsServerMessage } from "../../shared/ws-protocol";
+import type { ModelInfo, WsServerMessage } from "../../shared/ws-protocol";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
+export const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 5000, 5000] as const;
 
 type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
@@ -25,13 +26,15 @@ interface ConnectedPayload {
   cwd: string;
   mode: "default" | "plan" | "execute";
   serverVersion: string;
+  currentModel: string;
+  availableModels: ModelInfo[];
 }
 
 export class WebRpcClient {
   private ws: WebSocket | null = null;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
-  private readonly reconnectDelays = [1000, 2000, 5000, 5000, 5000];
+  private readonly reconnectDelays = [...RECONNECT_DELAYS_MS];
   private reconnectAttempts = 0;
   private stopped = false;
 
@@ -61,7 +64,15 @@ export class WebRpcClient {
   async connect(): Promise<void> {
     this.stopped = false;
     this.emitConnection("connecting");
-    await this.openSocket();
+    try {
+      await this.openSocket();
+    } catch {
+      if (this.stopped) {
+        this.emitConnection("disconnected");
+        return;
+      }
+      await this.scheduleReconnect();
+    }
   }
 
   disconnect(): void {
@@ -103,6 +114,26 @@ export class WebRpcClient {
     return result as RequestResult<M>;
   }
 
+  async requestRaw(method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    const id = this.nextRequestId++;
+    const payload = { type: "rpc_request" as const, id, method, params };
+
+    return new Promise<unknown>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`RPC timeout for ${method}`));
+      }, timeoutMs);
+
+      this.pending.set(id, { resolve, reject, timeoutId });
+      ws.send(JSON.stringify(payload));
+    });
+  }
+
   notify(method: string, params?: unknown): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
@@ -132,29 +163,55 @@ export class WebRpcClient {
     this.ws = ws;
 
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+
       ws.onopen = () => {
+        if (settled) return;
+        settled = true;
         this.reconnectAttempts = 0;
         this.emitConnection("connected");
         resolve();
       };
 
       ws.onerror = () => {
+        if (settled) return;
+        settled = true;
+        this.ws = null;
+        ws.onclose = null;
         reject(new Error("WebSocket open failed"));
       };
+
+      ws.onclose = () => {
+        this.ws = null;
+        if (!settled) {
+          settled = true;
+          reject(new Error("WebSocket open failed"));
+          return;
+        }
+        if (this.stopped) {
+          this.emitConnection("disconnected");
+          return;
+        }
+        void this.scheduleReconnect();
+      };
+
+      ws.onmessage = (event) => {
+        this.handleMessage(event.data);
+      };
+    }).catch((error) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      throw error;
     });
 
-    ws.onmessage = (event) => {
-      this.handleMessage(event.data);
-    };
-
-    ws.onclose = () => {
-      this.ws = null;
+    if (this.ws !== ws) {
       if (this.stopped) {
         this.emitConnection("disconnected");
         return;
       }
       void this.scheduleReconnect();
-    };
+    }
   }
 
   private async scheduleReconnect(): Promise<void> {
@@ -193,6 +250,8 @@ export class WebRpcClient {
         cwd: message.cwd,
         mode: message.mode,
         serverVersion: message.serverVersion,
+        currentModel: message.currentModel,
+        availableModels: message.availableModels,
       });
       return;
     }
@@ -242,6 +301,9 @@ export class WebRpcClient {
 }
 
 export function getReconnectDelay(attempt: number): number {
-  const delays = [1000, 2000, 5000, 5000, 5000];
-  return delays[Math.min(Math.max(attempt, 0), delays.length - 1)];
+  return RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)];
+}
+
+export function getReconnectAttemptLimit(): number {
+  return RECONNECT_DELAYS_MS.length;
 }

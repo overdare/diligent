@@ -7,7 +7,9 @@ import {
   type DiligentAppServerConfig,
   type DiligentPaths,
   ensureDiligentDir,
+  KNOWN_MODELS,
   type ModeKind,
+  resolveModel,
 } from "@diligent/core";
 import { loadWebRuntimeConfig } from "./app-config";
 import { RpcBridge, type RpcWsData } from "./rpc-bridge";
@@ -61,7 +63,21 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   };
 
   const appServer = new DiligentAppServer(appServerConfig);
-  const bridge = new RpcBridge(appServer, cwd, runtimeConfig.mode);
+  const bridge = new RpcBridge(appServer, cwd, runtimeConfig.mode, {
+    currentModelId: runtimeConfig.model.id,
+    availableModels: KNOWN_MODELS.map((m) => ({
+      id: m.id,
+      provider: m.provider,
+      contextWindow: m.contextWindow,
+      maxOutputTokens: m.maxOutputTokens,
+      inputCostPer1M: m.inputCostPer1M,
+      outputCostPer1M: m.outputCostPer1M,
+      supportsThinking: m.supportsThinking,
+    })),
+    onModelChange: (modelId) => {
+      runtimeConfig.model = resolveModel(modelId);
+    },
+  });
 
   const distDir = resolve(import.meta.dir, "../../dist/client");
   const hasDist = existsSync(distDir);

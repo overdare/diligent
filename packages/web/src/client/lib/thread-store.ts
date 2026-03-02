@@ -15,6 +15,14 @@ export interface ToastState {
   message: string;
 }
 
+export interface UsageState {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalCost: number;
+}
+
 export type RenderItem =
   | {
       id: string;
@@ -52,7 +60,16 @@ export interface ThreadState {
   pendingApproval: { requestId: number; request: ApprovalRequest } | null;
   pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string> } | null;
   toast: ToastState | null;
+  usage: UsageState;
 }
+
+const zeroUsage: UsageState = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  totalCost: 0,
+};
 
 export const initialThreadState: ThreadState = {
   activeThreadId: null,
@@ -65,6 +82,7 @@ export const initialThreadState: ThreadState = {
   pendingApproval: null,
   pendingUserInput: null,
   toast: null,
+  usage: zeroUsage,
 };
 
 function addSeen(state: ThreadState, key: string): ThreadState {
@@ -307,6 +325,18 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         },
       };
 
+    case "usage/updated":
+      return {
+        ...state,
+        usage: {
+          inputTokens: state.usage.inputTokens + notification.params.usage.inputTokens,
+          outputTokens: state.usage.outputTokens + notification.params.usage.outputTokens,
+          cacheReadTokens: state.usage.cacheReadTokens + notification.params.usage.cacheReadTokens,
+          cacheWriteTokens: state.usage.cacheWriteTokens + notification.params.usage.cacheWriteTokens,
+          totalCost: state.usage.totalCost + notification.params.cost,
+        },
+      };
+
     default:
       return state;
   }
@@ -318,6 +348,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     items: [],
     seenKeys: {},
     itemSlots: {},
+    usage: zeroUsage,
   };
 
   let current = base;
@@ -340,6 +371,19 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       for (const block of message.content) {
         if (block.type === "text") text += block.text;
         if (block.type === "thinking") thinking += block.thinking;
+        if (block.type === "tool_call") {
+          current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
+            id: `history:tool:${block.id}`,
+            kind: "tool",
+            toolName: block.name,
+            inputText: stringifyUnknown(block.input),
+            outputText: "",
+            isError: false,
+            status: "done",
+            timestamp: message.timestamp,
+            toolCallId: block.id,
+          });
+        }
       }
 
       current = withItem(current, `history:assistant:${message.timestamp}`, {
@@ -349,6 +393,25 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         thinking,
         timestamp: message.timestamp,
       });
+      continue;
+    }
+
+    const existingToolItem = current.items.find(
+      (item) => item.kind === "tool" && item.toolCallId === message.toolCallId,
+    );
+
+    if (existingToolItem?.kind === "tool") {
+      current = updateItem(current, existingToolItem.id, (item) =>
+        item.kind === "tool"
+          ? {
+              ...item,
+              outputText: message.output,
+              isError: message.isError,
+              status: "done",
+              timestamp: message.timestamp,
+            }
+          : item,
+      );
       continue;
     }
 

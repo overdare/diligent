@@ -17,6 +17,7 @@ test("resolves server request using client response", async () => {
     new FakeAppServer() as unknown as import("@diligent/core").DiligentAppServer,
     process.cwd(),
     "default",
+    { currentModelId: "test-model", availableModels: [], onModelChange: () => {} },
   );
 
   const sent: unknown[] = [];

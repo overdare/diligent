@@ -6,34 +6,122 @@ export interface ToolInfo {
   category: "context" | "action";
 }
 
+// Keys are lowercase for case-insensitive matching
 const TOOL_MAP: Record<string, ToolInfo> = {
-  Read: { displayName: "Read", icon: "↗", category: "context" },
-  Grep: { displayName: "Search", icon: "⌕", category: "context" },
-  Glob: { displayName: "Find", icon: "⌕", category: "context" },
-  LS: { displayName: "List", icon: "≡", category: "context" },
-  Bash: { displayName: "Shell", icon: ">_", category: "action" },
-  Write: { displayName: "Write", icon: "✎", category: "action" },
-  Edit: { displayName: "Edit", icon: "✎", category: "action" },
-  MultiEdit: { displayName: "Edit", icon: "✎", category: "action" },
-  Agent: { displayName: "Agent", icon: "◈", category: "action" },
-  WebFetch: { displayName: "Fetch", icon: "↓", category: "context" },
-  WebSearch: { displayName: "Search", icon: "⌕", category: "context" },
-  TodoWrite: { displayName: "Todo", icon: "☑", category: "action" },
-  TodoRead: { displayName: "Todo", icon: "☑", category: "context" },
+  read: { displayName: "Read", icon: "↗", category: "context" },
+  grep: { displayName: "Search", icon: "⌕", category: "context" },
+  glob: { displayName: "Find", icon: "⌕", category: "context" },
+  ls: { displayName: "List", icon: "≡", category: "context" },
+  bash: { displayName: "Shell", icon: ">_", category: "action" },
+  write: { displayName: "Write", icon: "✎", category: "action" },
+  edit: { displayName: "Edit", icon: "✎", category: "action" },
+  multiedit: { displayName: "Edit", icon: "✎", category: "action" },
+  agent: { displayName: "Agent", icon: "◈", category: "action" },
+  webfetch: { displayName: "Fetch", icon: "↓", category: "context" },
+  websearch: { displayName: "Search", icon: "⌕", category: "context" },
+  todowrite: { displayName: "Todo", icon: "☑", category: "action" },
+  todoread: { displayName: "Todo", icon: "☑", category: "context" },
+  request_user_input: { displayName: "Input", icon: "?", category: "context" },
+  notebookedit: { displayName: "Notebook", icon: "✎", category: "action" },
+  notebookread: { displayName: "Notebook", icon: "↗", category: "context" },
+  plan: { displayName: "Plan", icon: "◇", category: "action" },
+  taskwrite: { displayName: "Task", icon: "☑", category: "action" },
+  taskcreate: { displayName: "Task", icon: "☑", category: "action" },
+  taskupdate: { displayName: "Task", icon: "☑", category: "action" },
+  taskget: { displayName: "Task", icon: "☑", category: "context" },
+  tasklist: { displayName: "Tasks", icon: "≡", category: "context" },
 };
 
 export function getToolInfo(toolName: string): ToolInfo {
-  return TOOL_MAP[toolName] ?? { displayName: toolName, icon: "⚙", category: "action" };
+  return TOOL_MAP[toolName.toLowerCase()] ?? { displayName: toolName, icon: "⚙", category: "action" };
+}
+
+function clip(value: string, max = 60): string {
+  return value.length > max ? `${value.slice(0, max - 3)}…` : value;
+}
+
+function readStringField(parsed: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = parsed[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function parseRequestUserInputTitle(parsed: Record<string, unknown>): string | undefined {
+  const questions = parsed.questions;
+  if (!Array.isArray(questions) || questions.length === 0) return undefined;
+  const first = questions[0];
+  if (!first || typeof first !== "object") return undefined;
+  const firstQuestion = first as Record<string, unknown>;
+  const question = firstQuestion.question;
+  if (typeof question === "string" && question.trim().length > 0) return question.trim();
+  const header = firstQuestion.header;
+  if (typeof header === "string" && header.trim().length > 0) return header.trim();
+  return undefined;
+}
+
+function parseRequestUserInputTitleFromOutput(outputText: string): string | undefined {
+  const firstLine = outputText.split("\n")[0]?.trim();
+  if (!firstLine) return undefined;
+  const lineMatch = firstLine.match(/^\[[^\]]+\]\s*(.+)$/);
+  if (lineMatch?.[1]?.trim()) return lineMatch[1].trim();
+  const headerMatch = firstLine.match(/^\[([^\]]+)\]/);
+  return headerMatch?.[1]?.trim();
+}
+
+/**
+ * Build the short header title shown in tool call rows.
+ * Example: request_user_input -> "Ask - scope"
+ */
+export function getToolHeaderTitle(toolName: string, inputText: string, outputText = ""): string {
+  const { displayName } = getToolInfo(toolName);
+  const normalizedName = toolName.toLowerCase();
+  if (normalizedName === "request_user_input") {
+    try {
+      const parsed = JSON.parse(inputText) as Record<string, unknown>;
+      const title = parseRequestUserInputTitle(parsed);
+      if (title) return `Ask - ${clip(title, 72)}`;
+    } catch {
+      // Fall through to output parser
+    }
+    const outputTitle = parseRequestUserInputTitleFromOutput(outputText);
+    return outputTitle ? `Ask - ${clip(outputTitle, 72)}` : "Ask";
+  }
+  void inputText;
+  return displayName;
 }
 
 export function isContextTool(toolName: string): boolean {
   return getToolInfo(toolName).category === "context";
 }
 
+export function isBashTool(toolName: string): boolean {
+  return toolName.toLowerCase() === "bash";
+}
+
 /** Extract a short human-readable summary from tool input JSON */
 export function summarizeInput(_toolName: string, inputText: string): string {
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
+
+    if (_toolName.toLowerCase() === "request_user_input") {
+      const title = parseRequestUserInputTitle(parsed);
+      return title ? clip(title, 60) : "";
+    }
+
+    const intent = readStringField(parsed, [
+      "description",
+      "prompt",
+      "message",
+      "query",
+      "reason",
+      "title",
+      "summary",
+      "goal",
+      "objective",
+    ]);
+    if (intent) return clip(intent);
 
     const path =
       (parsed.file_path as string | undefined) ??
@@ -52,13 +140,13 @@ export function summarizeInput(_toolName: string, inputText: string): string {
     if (command) return command.length > 60 ? `${command.slice(0, 57)}…` : command;
 
     const query = parsed.query as string | undefined;
-    if (query) return `"${query}"`;
+    if (query) return `"${clip(query)}"`;
 
     const description = parsed.description as string | undefined;
-    if (description) return description.length > 60 ? `${description.slice(0, 57)}…` : description;
+    if (description) return clip(description);
 
     return "";
   } catch {
-    return inputText.length > 60 ? `${inputText.slice(0, 57)}…` : inputText;
+    return clip(inputText);
   }
 }

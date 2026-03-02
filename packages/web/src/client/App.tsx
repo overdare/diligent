@@ -9,11 +9,14 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { ModelInfo } from "../shared/ws-protocol";
+import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
+import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
-import { type ConnectionState, WebRpcClient } from "./lib/rpc-client";
+import { type ConnectionState, getReconnectAttemptLimit, WebRpcClient } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
   initialThreadState,
@@ -56,7 +59,10 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
 export function App() {
   const rpcRef = useRef<WebRpcClient | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [cwd, setCwd] = useState<string>("");
+  const [currentModel, setCurrentModel] = useState<string>("");
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [input, setInput] = useState("");
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
   const [approvalPrompt, setApprovalPrompt] = useState<{ requestId: number; request: DiligentServerRequest } | null>(
@@ -80,10 +86,21 @@ export function App() {
     const rpc = new WebRpcClient(`${protocol}://${window.location.host}/rpc`);
     rpcRef.current = rpc;
 
-    rpc.onConnectionChange(setConnection);
+    rpc.onConnectionChange((next) => {
+      setConnection(next);
+      if (next === "connected") {
+        setReconnectAttempts(0);
+        return;
+      }
+      if (next === "reconnecting") {
+        setReconnectAttempts((prev) => prev + 1);
+      }
+    });
 
     rpc.onConnected(async (meta) => {
       setCwd(meta.cwd);
+      setCurrentModel(meta.currentModel);
+      setAvailableModels(meta.availableModels);
       try {
         await rpc.request("initialize", { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
         rpc.notify("initialized", { ready: true });
@@ -172,6 +189,17 @@ export function App() {
     dispatch({ type: "set_mode", payload: mode });
   };
 
+  const changeModel = async (modelId: string) => {
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+    setCurrentModel(modelId);
+    try {
+      await rpc.requestRaw("config/set", { model: modelId });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -203,9 +231,19 @@ export function App() {
     setQuestionPrompt(null);
   };
 
+  const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
+  const retryLimit = getReconnectAttemptLimit();
+
+  const retryConnection = () => {
+    const rpc = rpcRef.current;
+    if (!rpc || connection === "connecting" || connection === "reconnecting") return;
+    setReconnectAttempts(0);
+    void rpc.connect();
+  };
+
   return (
     <div className="h-screen bg-bg text-text">
-      <div className="mx-auto grid h-full max-w-[1400px] grid-cols-1 gap-2 p-2 lg:grid-cols-[280px_1fr]">
+      <div className="mx-auto grid h-full max-w-[1200px] grid-cols-1 gap-2 p-2 lg:grid-cols-[280px_1fr]">
         <Sidebar
           cwd={cwd}
           threadList={state.threadList}
@@ -215,10 +253,11 @@ export function App() {
         />
 
         <Panel className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-text/10 px-3 py-2">
+          {/* Thread title bar */}
+          <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
             <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass}`} />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
-              {threadTitle || "New conversation"}
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
+              {threadTitle || "new conversation"}
             </span>
           </div>
 
@@ -255,6 +294,10 @@ export function App() {
             cwd={cwd}
             mode={state.mode}
             onModeChange={(m) => void setMode(m)}
+            currentModel={currentModel}
+            availableModels={availableModels}
+            onModelChange={(m) => void changeModel(m)}
+            usage={state.usage}
           />
         </Panel>
       </div>
@@ -269,6 +312,27 @@ export function App() {
         >
           {state.toast.message}
         </div>
+      ) : null}
+
+      {showConnectionModal ? (
+        <Modal
+          title={connection === "reconnecting" ? "Connection lost" : "Reconnect failed"}
+          description={
+            connection === "reconnecting"
+              ? `WebSocket disconnected. Retrying... (${Math.min(reconnectAttempts, retryLimit)}/${retryLimit})`
+              : `Automatic retry stopped after ${retryLimit} attempts.`
+          }
+        >
+          {connection === "reconnecting" ? (
+            <div className="text-sm text-muted">Please wait while we restore the session.</div>
+          ) : (
+            <div className="flex items-center justify-end gap-2">
+              <Button intent="ghost" size="sm" onClick={retryConnection}>
+                Retry now
+              </Button>
+            </div>
+          )}
+        </Modal>
       ) : null}
     </div>
   );

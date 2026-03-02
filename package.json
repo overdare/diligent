@@ -21,6 +21,7 @@
     "typecheck": "bunx tsc --noEmit -p packages/protocol/tsconfig.json && bunx tsc --noEmit -p packages/core/tsconfig.json && bunx tsc --noEmit -p packages/cli/tsconfig.json && bunx tsc --noEmit -p packages/web/tsconfig.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.4"
+    "@biomejs/biome": "^2.4.4",
+    "@playwright/test": "^1.58.2"
   }
 }
