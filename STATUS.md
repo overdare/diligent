@@ -2,29 +2,33 @@
 
 ## Current Phase
 
-**Phase 4c DONE** — Print Mode + Collaboration Modes.
+**Continuous development** — Phase 4c complete. No further numbered phases planned.
 
-Phase 4 is split into three sub-phases:
-- **Phase 4a**: TUI Component Framework + Overlay System (DONE)
-- **Phase 4b**: Skills + Slash Commands (DONE)
-- **Phase 4c**: Print Mode + Collaboration Modes (DONE) — 575 tests passing
+All implementation phases (0–4c) are done. Development continues as iterative improvements driven by the backlog. See `BACKLOG.md` for the full work list.
 
-**Phase 4c delivered:**
-- Print mode: stdin pipe detection (`echo "..." | diligent`)
-- `--mode` CLI flag with validation
-- Collaboration modes: `ModeKind` ("default" | "plan" | "execute"), tool filtering in agent loop, mode system prompt injection
-- `/mode` command + ListPicker overlay, status bar `[plan]`/`[execute]` chip
-- `ModeChangeEntry` in session JSONL, SESSION_VERSION bumped 2 → 3
-- 62 new tests across mode-filter, status-bar-mode, mode-command, session-mode, config-schema
+**Layers implemented:**
 
-**Deferred from 4c:**
-- Bash allowlist/denylist for plan mode (D087a)
-- `request_user_input` tool in plan mode
-- Per-mode model override
-- L4 (approval system) integration
+| Layer | Status |
+|---|---|
+| L0 Provider | Done (Anthropic + OpenAI, error classification, retry) |
+| L1 Agent Loop | Done (full events, compaction, steering, loop detection, modes) |
+| L2 Tool System | Done (truncation, progress, approval hook stub) |
+| L3 Core Tools | Done (8 tools incl. add_knowledge) |
+| L4 Approval | **Stub** — auto-approve only. Real implementation in backlog. |
+| L5 Config | Done (3-layer JSONC, CLAUDE.md, env overrides) |
+| L6 Session | Done (JSONL, compaction, knowledge, steering, mode entries) |
+| L7 TUI & Commands | Done (component framework, overlays, 15 commands) |
+| L8 Skills | Done (SKILL.md discovery, frontmatter, system prompt injection) |
+| L9 MCP | **Not started** — design complete (D056-D061), in backlog. |
+| L10 Multi-Agent | **Not started** — design complete (D062-D065), in backlog. |
 
-Deferred to a future phase (post-Phase 4):
-- **Approval System** (L4 FULL, wired to TUI overlays, D027-D031)
+**Backlog summary (21 pending items):**
+- **P1** (3): Per-tool output limits · Plan mode bash rules · `request_user_input` tool
+- **P2** (3): Context budget headroom · Background async piggyback · Per-mode model override
+- **L4** (5): Rule-based permissions · ctx.ask() flow · Once/always/reject · Denied tool removal · TUI approval dialog
+- **L9** (5): MCP client · Transports · Config schema · Tool conversion · Dynamic refresh
+- **L10** (4): task tool · Agent types · Permission isolation · Result format
+- **P3** (5): Debug-viewer sync · Export/import · Config editing UI · Syntax highlighting · LSP diagnostics
 
 ## Phases Complete
 
@@ -38,11 +42,3 @@ Deferred to a future phase (post-Phase 4):
 | Phase 4a: TUI Component Framework | 2026-02-26 | Component interface (render/handleInput/invalidate), TUI renderer with line-level diffing + synchronized output, overlay stack with compositing, StdinBuffer for input splitting, Kitty keyboard protocol, InputEditor with cursor/history/Ctrl shortcuts, MarkdownView with newline-gated streaming, SpinnerComponent, StatusBar, ChatView (AgentEvent handler), ConfirmDialog overlay, Container layout, app.ts rewritten to component-based architecture, 404 tests |
 | Phase 4b: Skills + Slash Commands | 2026-02-27 | Skill system (L8): SKILL.md frontmatter parsing, multi-location discovery (.diligent/skills, .agents/skills, ~/.config/diligent/skills, config paths), first-loaded-wins dedup, progressive disclosure (metadata in system prompt, body on demand), extractBody. Command system (L7): CommandRegistry with register/lookup/alias/complete, parseCommand with /command args and /skill:name patterns, double-slash escape. 15 built-in commands (/help, /model, /new, /resume, /status, /compact, /clear, /exit, /version, /config, /cost, /bug, /reload, /skills, /skill:*). ListPicker overlay component with type-to-filter and scrolling. InputEditor Tab autocomplete for commands. App integration: command dispatch in handleSubmit, CommandContext, reloadConfig. Config schema gains skills section, system prompt gains skillsSection parameter. 513 tests |
 | Phase 4c: Print Mode + Collaboration Modes | 2026-02-27 | Print mode: stdin pipe detection (echo "..." \| diligent). --mode CLI flag. ModeKind type ("default"\|"plan"\|"execute") + PLAN_MODE_ALLOWED_TOOLS + MODE_SYSTEM_PROMPT_PREFIXES in agent/types.ts. Tool filtering for plan mode in loop.ts. Mode system prompt prefix injection. ModeChangeEntry session entry type, SESSION_VERSION 2→3, appendModeChange() on SessionManager. mode field in DiligentConfigSchema + AppConfig. /mode command (direct switch + ListPicker overlay). Status bar [plan]/[execute] chip. App factory agentConfig + setMode() wired to SessionManager. 575 tests |
-
-## Backlog
-
-9 pending items. See `BACKLOG.md` for full details.
-
-- **P1**: Fix Gemini wizard bug · Fix 10 failing tests · Add 529/overloaded to classifyGeminiError · Per-tool output limits
-- **P2**: Extract isNetworkError shared util · Provider hints registry · Context budget for compaction · Background async piggyback
-- **P3**: Debug-viewer type sync

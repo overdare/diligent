@@ -41,4 +41,15 @@ Rules:
 ## Conventions
 
 - `@summary`: first-line annotation (`// @summary <desc>`). Skip index/types/config files.
-- `README.md`: `# Heading`, one-line description, code block with **subdirectories only** (no files). Only needed for directories with 4+ subdirs.
+- `README.md`: `# Heading`, one-line description, code block with **subdirectories only** (no files).
+  - **4+ subdirs** → need README, list subdirs flat.
+  - **< 4 subdirs but any child has 4+ subdirs** → need README with **2-depth listing** (expand that child's subdirs inline, indented).
+  - 2-depth example:
+    ```
+    src/
+      agent/             Agent loop and execution
+      config/            Configuration management
+      provider/          LLM providers
+      ...
+    test/                Unit tests
+    ```

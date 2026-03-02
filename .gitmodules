@@ -4,6 +4,6 @@
 [submodule "research/references/pi-mono"]
 	path = docs/references/pi-mono
 	url = https://github.com/badlogic/pi-mono
-[submodule "research/references/opencode"]
+[submodule "docs/references/opencode"]
 	path = docs/references/opencode
-	url = https://github.com/opencode-ai/opencode
+	url = https://github.com/anomalyco/opencode

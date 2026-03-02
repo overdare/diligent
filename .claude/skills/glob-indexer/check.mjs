@@ -248,38 +248,54 @@ function getDirectChildFiles(dirPath, rootPath) {
 
 // ── README.md parsing ──────────────────────────────────────────────────────
 
-function parseReadmeListedDirs(readmePath) {
+function parseReadmeTree(readmePath) {
   /** @type {string[]} */
-  const listed = [];
+  const topLevel = [];
+  /** @type {Map<string, string[]>} */
+  const nested = new Map(); // parentDir -> childDirs[]
+
   try {
     const content = readFileSync(readmePath, "utf-8");
     const lines = content.split("\n");
     let inCodeBlock = false;
     let topIndent = -1;
+    let currentParent = null;
+    let nestedIndent = -1;
 
     for (const line of lines) {
       if (line.trim().startsWith("```")) {
         inCodeBlock = !inCodeBlock;
-        topIndent = -1; // reset per code block
+        topIndent = -1;
+        currentParent = null;
+        nestedIndent = -1;
         continue;
       }
       if (!inCodeBlock) continue;
 
-      // Match directory entries (ending with /)
       const m = line.match(/^(\s*)([\w.\-@]+\/)/);
       if (!m) continue;
 
       const indent = m[1].length;
-      // Only collect top-level entries in each code block
+      const dirName = m[2].replace(/\/$/, "");
+
       if (topIndent === -1) topIndent = indent;
+
       if (indent === topIndent) {
-        listed.push(m[2].replace(/\/$/, ""));
+        topLevel.push(dirName);
+        currentParent = dirName;
+        nestedIndent = -1;
+      } else if (indent > topIndent && currentParent) {
+        if (nestedIndent === -1) nestedIndent = indent;
+        if (indent === nestedIndent) {
+          if (!nested.has(currentParent)) nested.set(currentParent, []);
+          nested.get(currentParent).push(dirName);
+        }
       }
     }
   } catch {
     // no README.md
   }
-  return listed;
+  return { topLevel, nested };
 }
 
 // ── Analysis ───────────────────────────────────────────────────────────────
@@ -312,8 +328,16 @@ Reports:
   const missing = [];
   for (const dir of allDirs) {
     const childDirs = getDirectChildDirs(dir, rootPath);
-    // Only directories with 4+ child directories need a README
-    if (childDirs.length < 4) continue;
+    // Need README if: 4+ subdirs, OR < 4 subdirs but any child has 4+ subdirs (2-depth)
+    const needsReadme =
+      childDirs.length >= 4 ||
+      (childDirs.length > 0 &&
+        childDirs.length < 4 &&
+        childDirs.some(
+          (child) =>
+            getDirectChildDirs(join(dir, child), rootPath).length >= 4
+        ));
+    if (!needsReadme) continue;
     const readmePath = join(rootPath, dir, "README.md");
     if (!existsSync(readmePath)) {
       missing.push(dir);
@@ -334,22 +358,52 @@ Reports:
     const readmePath = join(rootPath, dir, "README.md");
     if (!existsSync(readmePath)) continue;
 
-    const listedDirs = parseReadmeListedDirs(readmePath);
+    const { topLevel: listedDirs, nested } = parseReadmeTree(readmePath);
     const actualDirs = getDirectChildDirs(dir, rootPath);
 
     if (listedDirs.length === 0 && actualDirs.length === 0) continue;
 
+    const issues = [];
+
+    // Check top-level
     const listedSet = new Set(listedDirs);
     const actualSet = new Set(actualDirs);
-
     const unlisted = actualDirs.filter((d) => !listedSet.has(d));
     const removed = listedDirs.filter((d) => !actualSet.has(d));
+    if (unlisted.length > 0) issues.push(`unlisted: ${unlisted.join(", ")}`);
+    if (removed.length > 0) issues.push(`removed: ${removed.join(", ")}`);
 
-    if (unlisted.length > 0 || removed.length > 0) {
-      const parts = [];
-      if (unlisted.length > 0) parts.push(`unlisted: ${unlisted.join(", ")}`);
-      if (removed.length > 0) parts.push(`removed: ${removed.join(", ")}`);
-      stale.push({ dir, detail: parts.join("; ") });
+    // Check nested (2-depth) entries
+    for (const [parent, nestedListed] of nested) {
+      const actualNested = getDirectChildDirs(join(dir, parent), rootPath);
+      const nestedListedSet = new Set(nestedListed);
+      const actualNestedSet = new Set(actualNested);
+      const nestedUnlisted = actualNested.filter(
+        (d) => !nestedListedSet.has(d)
+      );
+      const nestedRemoved = nestedListed.filter(
+        (d) => !actualNestedSet.has(d)
+      );
+      if (nestedUnlisted.length > 0)
+        issues.push(`${parent}/ unlisted: ${nestedUnlisted.join(", ")}`);
+      if (nestedRemoved.length > 0)
+        issues.push(`${parent}/ removed: ${nestedRemoved.join(", ")}`);
+    }
+
+    // Check if 2-depth expansion is needed but missing
+    if (listedDirs.length > 0 && listedDirs.length < 4 && nested.size === 0) {
+      const expandable = listedDirs.filter(
+        (d) =>
+          actualSet.has(d) &&
+          getDirectChildDirs(join(dir, d), rootPath).length >= 4
+      );
+      if (expandable.length > 0) {
+        issues.push(`shallow — expand 2-depth: ${expandable.join(", ")}`);
+      }
+    }
+
+    if (issues.length > 0) {
+      stale.push({ dir, detail: issues.join("; ") });
     }
   }
 
