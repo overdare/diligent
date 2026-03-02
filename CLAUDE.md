@@ -14,6 +14,7 @@ Read only what your task requires. Directories have README.md files — follow t
 | Source code — core (agent loop, providers, tools, config, sessions) | `packages/core/` |
 | Source code — cli (TUI) | `packages/cli/` |
 | Source code — web (React + Tailwind web frontend) | `packages/web/` |
+| Source code — desktop (Tauri v2 native app) | `apps/desktop/` |
 | Source code — debug-viewer (React web viewer) | `packages/debug-viewer/` |
 | Source code — e2e (integration tests) | `packages/e2e/` |
 | Planning, decisions & phase specs | `docs/plan/` |

@@ -1,0 +1,14 @@
+{
+  "name": "@diligent/desktop",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build:frontend": "bun run --cwd ../../packages/web build",
+    "build:sidecar": "bun run scripts/build-sidecar.ts",
+    "dev": "bun run build:sidecar && cargo tauri dev",
+    "build": "bun run build:frontend && bun run build:sidecar && cargo tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

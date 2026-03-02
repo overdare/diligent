@@ -1,6 +1,6 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket and static file hosting
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   type AgentRegistry,
   DiligentAppServer,
@@ -19,6 +19,7 @@ interface CreateServerOptions {
   port?: number;
   dev?: boolean;
   cwd?: string;
+  distDir?: string;
 }
 
 export async function createWebServer(options: CreateServerOptions = {}): Promise<{
@@ -79,7 +80,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     },
   });
 
-  const distDir = resolve(import.meta.dir, "../../dist/client");
+  const distDir = options.distDir ?? resolveDistDir();
   const hasDist = existsSync(distDir);
 
   const server = Bun.serve<RpcWsData>({
@@ -139,11 +140,23 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   };
 }
 
-function parseArgs(argv: string[]): { port?: number; dev: boolean } {
+function resolveDistDir(): string {
+  // Compiled binary: dist/client sits next to the binary executable
+  const candidate = resolve(dirname(process.execPath), "dist", "client");
+  if (existsSync(candidate)) return candidate;
+  // Dev fallback: relative to source file
+  return resolve(import.meta.dir, "../../dist/client");
+}
+
+function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: string; cwd?: string } {
   const portArg = argv.find((arg) => arg.startsWith("--port="));
   const port = portArg ? Number.parseInt(portArg.split("=")[1], 10) : undefined;
   const dev = argv.includes("--dev");
-  return { port: Number.isFinite(port) ? port : undefined, dev };
+  const distArg = argv.find((arg) => arg.startsWith("--dist-dir="));
+  const distDir = distArg ? distArg.split("=")[1] : undefined;
+  const cwdArg = argv.find((arg) => arg.startsWith("--cwd="));
+  const cwd = cwdArg ? cwdArg.split("=")[1] : undefined;
+  return { port: Number.isFinite(port) ? port : undefined, dev, distDir, cwd };
 }
 
 const isDirect = process.argv[1] && import.meta.path.endsWith(process.argv[1]);
@@ -155,9 +168,11 @@ if (isDirect) {
   createWebServer({
     port: args.port,
     dev: args.dev,
-    cwd,
+    cwd: args.cwd ?? cwd,
+    distDir: args.distDir,
   })
     .then(({ server }) => {
+      console.log(`DILIGENT_PORT=${server.port}`);
       console.log(`Diligent Web CLI server running at http://localhost:${server.port}`);
       console.log(`RPC endpoint: ws://localhost:${server.port}/rpc`);
     })

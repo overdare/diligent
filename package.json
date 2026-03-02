@@ -2,7 +2,8 @@
   "name": "diligent",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "bun test",
@@ -18,7 +19,9 @@
     "build:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 packages/cli/src/index.ts --outfile dist/diligent-darwin-arm64",
     "build:darwin-x64": "bun build --compile --target=bun-darwin-x64 packages/cli/src/index.ts --outfile dist/diligent-darwin-x64",
     "build:all": "bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:darwin-arm64 && bun run build:darwin-x64",
-    "typecheck": "bunx tsc --noEmit -p packages/protocol/tsconfig.json && bunx tsc --noEmit -p packages/core/tsconfig.json && bunx tsc --noEmit -p packages/cli/tsconfig.json && bunx tsc --noEmit -p packages/web/tsconfig.json"
+    "typecheck": "bunx tsc --noEmit -p packages/protocol/tsconfig.json && bunx tsc --noEmit -p packages/core/tsconfig.json && bunx tsc --noEmit -p packages/cli/tsconfig.json && bunx tsc --noEmit -p packages/web/tsconfig.json",
+    "desktop:dev": "bun run --cwd apps/desktop dev",
+    "desktop:build": "bun run --cwd apps/desktop build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
