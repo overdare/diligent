@@ -14,16 +14,16 @@ import {
 const SAMPLE_DIR = join(import.meta.dir, "../src/server/sample-data/sessions");
 
 describe("detectEntryType", () => {
-  test("detects user message by role", () => {
-    const entry = detectEntryType({ id: "m1", role: "user", content: "hi", timestamp: 1 });
+  test("detects user message by type", () => {
+    const entry = detectEntryType({ id: "m1", type: "user_message", content: "hi", timestamp: 1 });
     expect(entry).not.toBeNull();
-    expect(entry!.role).toBe("user");
+    expect(entry!.type).toBe("user_message");
   });
 
-  test("detects assistant message by role", () => {
+  test("detects assistant message by type", () => {
     const entry = detectEntryType({
       id: "m2",
-      role: "assistant",
+      type: "assistant_message",
       content: [],
       model: "test",
       usage: {},
@@ -31,13 +31,13 @@ describe("detectEntryType", () => {
       timestamp: 1,
     });
     expect(entry).not.toBeNull();
-    expect((entry as { role: string }).role).toBe("assistant");
+    expect((entry as { type: string }).type).toBe("assistant_message");
   });
 
-  test("detects tool_result by role", () => {
+  test("detects tool_result by type", () => {
     const entry = detectEntryType({
       id: "m3",
-      role: "tool_result",
+      type: "tool_result",
       toolCallId: "tc1",
       toolName: "read",
       output: "",
@@ -45,7 +45,7 @@ describe("detectEntryType", () => {
       timestamp: 1,
     });
     expect(entry).not.toBeNull();
-    expect((entry as { role: string }).role).toBe("tool_result");
+    expect((entry as { type: string }).type).toBe("tool_result");
   });
 
   test("detects session_header by type", () => {
@@ -102,7 +102,7 @@ describe("detectEntryType", () => {
       message: { role: "user", content: "hello", timestamp: 1771995505590 },
     });
     expect(entry).not.toBeNull();
-    expect((entry as { role: string }).role).toBe("user");
+    expect((entry as { type: string }).type).toBe("user_message");
     expect((entry as { id: string }).id).toBe("a54ceb01");
     expect((entry as { content: string }).content).toBe("hello");
     expect((entry as { timestamp: number }).timestamp).toBe(1771995505590);
@@ -124,7 +124,7 @@ describe("detectEntryType", () => {
       },
     });
     expect(entry).not.toBeNull();
-    expect((entry as { role: string }).role).toBe("assistant");
+    expect((entry as { type: string }).type).toBe("assistant_message");
     expect((entry as { id: string }).id).toBe("b12def02");
     expect((entry as { parentId: string }).parentId).toBe("a54ceb01");
     expect((entry as { model: string }).model).toBe("claude-sonnet-4-20250514");
@@ -146,8 +146,40 @@ describe("detectEntryType", () => {
       },
     });
     expect(entry).not.toBeNull();
-    expect((entry as { role: string }).role).toBe("tool_result");
+    expect((entry as { type: string }).type).toBe("tool_result");
     expect((entry as { toolName: string }).toolName).toBe("read");
+  });
+
+  test("detects steering entry", () => {
+    const entry = detectEntryType({
+      type: "steering",
+      id: "aaf62e49",
+      parentId: "ad190e3c",
+      timestamp: "2026-03-02T01:46:09.782Z",
+      message: { role: "user", content: "[Steering] explore BACKLOG.md", timestamp: 1772415969782 },
+      source: "steer",
+    });
+    expect(entry).not.toBeNull();
+    expect((entry as { type: string }).type).toBe("steering");
+    expect((entry as { id: string }).id).toBe("aaf62e49");
+    expect((entry as { parentId: string }).parentId).toBe("ad190e3c");
+    expect((entry as { source: string }).source).toBe("steer");
+    expect((entry as { content: string }).content).toBe("[Steering] explore BACKLOG.md");
+    expect((entry as { timestamp: number }).timestamp).toBe(1772415969782);
+  });
+
+  test("detects follow_up steering entry", () => {
+    const entry = detectEntryType({
+      type: "steering",
+      id: "bb1234",
+      parentId: null,
+      timestamp: "2026-03-02T01:46:09.782Z",
+      message: { role: "user", content: "continue", timestamp: 1772415970000 },
+      source: "follow_up",
+    });
+    expect(entry).not.toBeNull();
+    expect((entry as { type: string }).type).toBe("steering");
+    expect((entry as { source: string }).source).toBe("follow_up");
   });
 
   test("skips model_change, session_info, and mode_change with skip marker", () => {
@@ -178,15 +210,15 @@ describe("parseSessionFile", () => {
     expect("type" in header && header.type).toBe("session_header");
 
     // Should have user messages
-    const users = entries.filter((e) => "role" in e && e.role === "user");
+    const users = entries.filter((e) => e.type === "user_message");
     expect(users.length).toBe(2);
 
     // Should have assistant messages
-    const assistants = entries.filter((e) => "role" in e && e.role === "assistant");
+    const assistants = entries.filter((e) => e.type === "assistant_message");
     expect(assistants.length).toBe(4);
 
     // Should have tool results
-    const tools = entries.filter((e) => "role" in e && e.role === "tool_result");
+    const tools = entries.filter((e) => e.type === "tool_result");
     expect(tools.length).toBe(2);
   });
 
@@ -195,12 +227,12 @@ describe("parseSessionFile", () => {
     expect(entries.length).toBe(12);
 
     // Should have an error tool result
-    const errors = entries.filter((e) => "role" in e && e.role === "tool_result" && e.isError);
+    const errors = entries.filter((e) => e.type === "tool_result" && e.isError);
     expect(errors.length).toBe(1);
 
     // Should have thinking blocks in assistant messages
-    const assistants = entries.filter((e) => "role" in e && e.role === "assistant") as Array<{
-      role: "assistant";
+    const assistants = entries.filter((e) => e.type === "assistant_message") as Array<{
+      type: "assistant_message";
       content: Array<{ type: string }>;
     }>;
     const hasThinking = assistants.some((a) => a.content.some((b) => b.type === "thinking"));
@@ -219,19 +251,19 @@ describe("parseSessionFile", () => {
 
 describe("parseSessionText", () => {
   test("handles empty lines gracefully", () => {
-    const entries = parseSessionText('\n\n{"id":"m1","role":"user","content":"hi","timestamp":1}\n\n');
+    const entries = parseSessionText('\n\n{"id":"m1","type":"user_message","content":"hi","timestamp":1}\n\n');
     expect(entries.length).toBe(1);
   });
 
   test("skips malformed JSON lines", () => {
     const entries = parseSessionText(
-      '{"id":"m1","role":"user","content":"hi","timestamp":1}\nnot json\n{"id":"m2","role":"user","content":"bye","timestamp":2}\n',
+      '{"id":"m1","type":"user_message","content":"hi","timestamp":1}\nnot json\n{"id":"m2","type":"user_message","content":"bye","timestamp":2}\n',
     );
     expect(entries.length).toBe(2);
   });
 
   test("skips unknown entry types", () => {
-    const entries = parseSessionText('{"foo":"bar"}\n{"id":"m1","role":"user","content":"hi","timestamp":1}\n');
+    const entries = parseSessionText('{"foo":"bar"}\n{"id":"m1","type":"user_message","content":"hi","timestamp":1}\n');
     expect(entries.length).toBe(1);
   });
 
@@ -246,7 +278,7 @@ describe("parseSessionText", () => {
     // mode_change entries should be dropped
     expect(entries.length).toBe(2); // session_header + user message
     // user message should be reparented to null (root) since mc1→mc2 chain leads to parentId:null
-    const user = entries.find((e) => "role" in e && e.role === "user");
+    const user = entries.find((e) => e.type === "user_message");
     expect(user).toBeDefined();
     expect((user as { parentId?: string }).parentId).toBeUndefined();
   });
@@ -343,7 +375,7 @@ describe("IncrementalParser", () => {
     const tmpPath = join(import.meta.dir, "tmp-incremental.jsonl");
 
     // Write initial content
-    await Bun.write(tmpPath, '{"id":"m1","role":"user","content":"hi","timestamp":1}\n');
+    await Bun.write(tmpPath, '{"id":"m1","type":"user_message","content":"hi","timestamp":1}\n');
 
     const parser = new IncrementalParser();
     const first = await parser.readNew(tmpPath);
@@ -352,7 +384,7 @@ describe("IncrementalParser", () => {
     // Append more content
     const file = Bun.file(tmpPath);
     const existing = await file.text();
-    await Bun.write(tmpPath, `${existing}{"id":"m2","role":"user","content":"bye","timestamp":2}\n`);
+    await Bun.write(tmpPath, `${existing}{"id":"m2","type":"user_message","content":"bye","timestamp":2}\n`);
 
     const second = await parser.readNew(tmpPath);
     expect(second.length).toBe(1);
@@ -371,7 +403,7 @@ describe("IncrementalParser", () => {
     const tmpPath = join(import.meta.dir, "tmp-partial.jsonl");
 
     // Write complete line + partial line
-    await Bun.write(tmpPath, '{"id":"m1","role":"user","content":"hi","timestamp":1}\n{"id":"m2","ro');
+    await Bun.write(tmpPath, '{"id":"m1","type":"user_message","content":"hi","timestamp":1}\n{"id":"m2","ty');
 
     const parser = new IncrementalParser();
     const first = await parser.readNew(tmpPath);
@@ -380,7 +412,7 @@ describe("IncrementalParser", () => {
     // Complete the partial line
     const file = Bun.file(tmpPath);
     const existing = await file.text();
-    await Bun.write(tmpPath, `${existing}le":"user","content":"bye","timestamp":2}\n`);
+    await Bun.write(tmpPath, `${existing}pe":"user_message","content":"bye","timestamp":2}\n`);
 
     const second = await parser.readNew(tmpPath);
     expect(second.length).toBe(1);

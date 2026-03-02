@@ -93,7 +93,7 @@ export function createApiHandler(dataDir: string) {
     for (const entry of entries) {
       const id = entry.id;
 
-      if ("role" in entry && entry.role === "user") {
+      if (entry.type === "user_message") {
         const content = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
         const idx = content.toLowerCase().indexOf(q);
         if (idx >= 0) {
@@ -107,7 +107,7 @@ export function createApiHandler(dataDir: string) {
         }
       }
 
-      if ("role" in entry && entry.role === "assistant") {
+      if (entry.type === "assistant_message") {
         for (const block of entry.content) {
           if (block.type === "text") {
             const idx = block.text.toLowerCase().indexOf(q);
@@ -137,7 +137,7 @@ export function createApiHandler(dataDir: string) {
         }
       }
 
-      if ("role" in entry && entry.role === "tool_result") {
+      if (entry.type === "tool_result") {
         const idx = entry.output.toLowerCase().indexOf(q);
         if (idx >= 0) {
           results.push({

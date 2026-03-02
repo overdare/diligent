@@ -20,6 +20,7 @@ export type {
   SessionHeader,
   SessionMeta,
   SessionTree,
+  SteeringEntry,
   StopReason,
   TextBlock,
   ThinkingBlock,

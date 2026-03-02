@@ -6,6 +6,7 @@ import type {
   CompactionEntry,
   ContentBlock,
   SessionEntry,
+  SteeringEntry,
   ToolCallPair,
   UserMessageEntry,
 } from "../lib/types.js";
@@ -131,21 +132,29 @@ function CompactionCard({ entry, onSelectEntry }: { entry: CompactionEntry; onSe
   );
 }
 
+function SteeringCard({ entry, onSelectEntry }: { entry: SteeringEntry; onSelectEntry: (entry: unknown) => void }) {
+  const label = entry.source === "follow_up" ? "Follow-up" : "Steering";
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer message cards
+    <div className="message-card steering-entry" onClick={() => onSelectEntry(entry)}>
+      <div className="steering-badge">{label}</div>
+      <div className="message-content">{entry.content}</div>
+    </div>
+  );
+}
+
 export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProps) {
-  if ("role" in entry && entry.role === "user") {
-    return <UserMessageCard entry={entry as UserMessageEntry} onSelectEntry={onSelectEntry} />;
+  if (entry.type === "user_message") {
+    return <UserMessageCard entry={entry} onSelectEntry={onSelectEntry} />;
   }
-  if ("role" in entry && entry.role === "assistant") {
-    return (
-      <AssistantMessageCard
-        entry={entry as AssistantMessageEntry}
-        toolPairs={toolPairs}
-        onSelectEntry={onSelectEntry}
-      />
-    );
+  if (entry.type === "assistant_message") {
+    return <AssistantMessageCard entry={entry} toolPairs={toolPairs} onSelectEntry={onSelectEntry} />;
   }
-  if ("type" in entry && entry.type === "compaction") {
-    return <CompactionCard entry={entry as CompactionEntry} onSelectEntry={onSelectEntry} />;
+  if (entry.type === "steering") {
+    return <SteeringCard entry={entry} onSelectEntry={onSelectEntry} />;
+  }
+  if (entry.type === "compaction") {
+    return <CompactionCard entry={entry} onSelectEntry={onSelectEntry} />;
   }
   // Skip tool_result entries (they're shown inline in tool call cards) and session_header
   return null;

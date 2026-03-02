@@ -356,6 +356,11 @@ body,
   background: var(--amber-dim);
 }
 
+.conversation-view > [id^="entry-"]:has(.steering-entry)::after {
+  border-color: var(--purple);
+  background: var(--purple-dim);
+}
+
 /* Staggered entrance — first 10 entries */
 .conversation-view > [id^="entry-"]:nth-child(1) {
   animation-delay: 0.02s;
@@ -404,6 +409,29 @@ body,
 .message-card:hover {
   background: var(--bg-raised);
   border-color: var(--border-default);
+}
+
+/* Steering entry */
+.steering-entry {
+  border-left: 2px solid var(--purple);
+  background: var(--purple-dim);
+}
+
+.steering-entry:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.steering-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 2px;
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--purple);
+  display: inline-block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* User message */

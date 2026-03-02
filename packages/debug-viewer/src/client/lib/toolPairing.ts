@@ -11,14 +11,14 @@ export function pairToolCalls(entries: SessionEntry[]): Map<string, ToolCallPair
   // Index tool results by toolCallId
   const resultMap = new Map<string, ToolResultEntry>();
   for (const entry of entries) {
-    if ("role" in entry && entry.role === "tool_result") {
+    if (entry.type === "tool_result") {
       resultMap.set(entry.toolCallId, entry);
     }
   }
 
   // Walk assistant messages
   for (const entry of entries) {
-    if ("role" in entry && entry.role === "assistant") {
+    if (entry.type === "assistant_message") {
       for (const block of entry.content) {
         if (block.type === "tool_call") {
           const toolCall = block as ToolCallBlock;
