@@ -65,8 +65,10 @@ export function buildSystemPrompt(
 ): string {
   const parts = [basePrompt];
 
-  for (const inst of instructions) {
-    parts.push(`\nInstructions from: ${inst.path}\n${inst.content}`);
+  if (instructions.length > 0) {
+    for (const inst of instructions) {
+      parts.push(`<user_instructions path="${inst.path}">\n${inst.content}\n</user_instructions>`);
+    }
   }
 
   if (additionalInstructions?.length) {
@@ -75,7 +77,7 @@ export function buildSystemPrompt(
     }
   }
 
-  return parts.join("\n");
+  return parts.join("\n\n");
 }
 
 const KNOWLEDGE_INSTRUCTION = `
@@ -100,15 +102,17 @@ export function buildSystemPromptWithKnowledge(
   const parts = [basePrompt];
 
   if (knowledgeSection) {
-    parts.push(knowledgeSection);
+    parts.push(`<knowledge>\n${knowledgeSection}\n</knowledge>`);
   }
 
   if (skillsSection) {
     parts.push(skillsSection);
   }
 
-  for (const inst of instructions) {
-    parts.push(`\nInstructions from: ${inst.path}\n${inst.content}`);
+  if (instructions.length > 0) {
+    for (const inst of instructions) {
+      parts.push(`<user_instructions path="${inst.path}">\n${inst.content}\n</user_instructions>`);
+    }
   }
 
   if (additionalInstructions?.length) {
@@ -119,5 +123,5 @@ export function buildSystemPromptWithKnowledge(
 
   parts.push(KNOWLEDGE_INSTRUCTION);
 
-  return parts.join("\n");
+  return parts.join("\n\n");
 }

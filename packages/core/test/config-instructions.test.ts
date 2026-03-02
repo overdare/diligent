@@ -84,7 +84,8 @@ describe("buildSystemPrompt", () => {
   it("includes discovered instructions", () => {
     const result = buildSystemPrompt("Base.", [{ path: "/p/CLAUDE.md", content: "Use Bun." }]);
     expect(result).toContain("Base.");
-    expect(result).toContain("Instructions from: /p/CLAUDE.md");
+    expect(result).toContain('<user_instructions path="/p/CLAUDE.md">');
+    expect(result).toContain("</user_instructions>");
     expect(result).toContain("Use Bun.");
   });
 

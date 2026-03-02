@@ -13,6 +13,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "allowArbitraryExtensions": true,
     "isolatedModules": true,
     "types": ["bun"]
   },

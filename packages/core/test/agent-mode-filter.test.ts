@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";
 import type { AgentLoopConfig } from "../src/agent/types";
-import { MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "../src/agent/types";
+import { MODE_SYSTEM_PROMPT_SUFFIXES, PLAN_MODE_ALLOWED_TOOLS } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../src/provider/types";
 import type { Tool } from "../src/tool/types";
@@ -179,7 +179,7 @@ describe("agentLoop mode prompt injection", () => {
     expect(capturedContexts[0].systemPrompt).toBe("my system prompt");
   });
 
-  test("plan mode: systemPrompt prefixed with plan mode prompt", async () => {
+  test("plan mode: systemPrompt suffixed with plan mode prompt", async () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
@@ -193,11 +193,13 @@ describe("agentLoop mode prompt injection", () => {
     }
     await stream.result();
 
-    expect(capturedContexts[0].systemPrompt).toStartWith(MODE_SYSTEM_PROMPT_PREFIXES.plan);
-    expect(capturedContexts[0].systemPrompt).toContain("my system prompt");
+    expect(capturedContexts[0].systemPrompt).toStartWith("my system prompt");
+    expect(capturedContexts[0].systemPrompt).toContain("<collaboration_mode>");
+    expect(capturedContexts[0].systemPrompt).toEndWith("</collaboration_mode>");
+    expect(capturedContexts[0].systemPrompt).toContain(MODE_SYSTEM_PROMPT_SUFFIXES.plan);
   });
 
-  test("execute mode: systemPrompt prefixed with execute mode prompt", async () => {
+  test("execute mode: systemPrompt suffixed with execute mode prompt", async () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
     const config: AgentLoopConfig = {
       model: TEST_MODEL,
@@ -211,7 +213,9 @@ describe("agentLoop mode prompt injection", () => {
     }
     await stream.result();
 
-    expect(capturedContexts[0].systemPrompt).toStartWith(MODE_SYSTEM_PROMPT_PREFIXES.execute);
-    expect(capturedContexts[0].systemPrompt).toContain("my system prompt");
+    expect(capturedContexts[0].systemPrompt).toStartWith("my system prompt");
+    expect(capturedContexts[0].systemPrompt).toContain("<collaboration_mode>");
+    expect(capturedContexts[0].systemPrompt).toEndWith("</collaboration_mode>");
+    expect(capturedContexts[0].systemPrompt).toContain(MODE_SYSTEM_PROMPT_SUFFIXES.execute);
   });
 });

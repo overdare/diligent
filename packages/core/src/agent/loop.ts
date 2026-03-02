@@ -9,7 +9,7 @@ import type { ToolContext } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage } from "../types";
 import { LoopDetector } from "./loop-detector";
 import type { AgentEvent, AgentLoopConfig, SerializableError } from "./types";
-import { MODE_SYSTEM_PROMPT_PREFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
+import { MODE_SYSTEM_PROMPT_SUFFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
 
 // D070: Map tool name to permission category for deny-filtering
 function toolPermission(toolName: string): "read" | "write" | "execute" {
@@ -97,9 +97,11 @@ async function runLoop(
   const activeTools = filterAllowedTools(modeFilteredTools, config.permissionEngine);
   const registry = new Map(activeTools.map((t) => [t.name, t]));
 
-  // D087: Prepend mode system prompt prefix
+  // D087: Append mode instructions wrapped in XML tag (after base prompt to preserve its prefix)
   const effectiveSystemPrompt =
-    activeMode === "default" ? config.systemPrompt : `${MODE_SYSTEM_PROMPT_PREFIXES[activeMode]}${config.systemPrompt}`;
+    activeMode === "default"
+      ? config.systemPrompt
+      : `${config.systemPrompt}\n\n<collaboration_mode>\n${MODE_SYSTEM_PROMPT_SUFFIXES[activeMode]}\n</collaboration_mode>`;
 
   // D010: Wrap stream function with retry
   const retryStreamFn = withRetry(config.streamFunction, {

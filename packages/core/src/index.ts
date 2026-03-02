@@ -14,7 +14,7 @@ export {
   agentLoop,
   BUILTIN_AGENT_TYPES,
   LoopDetector,
-  MODE_SYSTEM_PROMPT_PREFIXES,
+  MODE_SYSTEM_PROMPT_SUFFIXES,
   PLAN_MODE_ALLOWED_TOOLS,
 } from "./agent/index";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
