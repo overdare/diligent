@@ -2,10 +2,12 @@
 
 Interactive terminal UI built on Ink.
 
+## Navigation
+
 ```
-framework/       Ink-based component framework
-components/      UI components (chat, input, status bar, overlays)
-commands/        Slash commands
-tools/           TUI tool adapters
 __tests__/       Unit tests
+commands/        Slash commands
+components/      UI components
+framework/       Ink-based component framework
+tools/           TUI tool adapters
 ```

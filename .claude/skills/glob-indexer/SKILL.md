@@ -42,14 +42,16 @@ Rules:
 
 - `@summary`: first-line annotation (`// @summary <desc>`). Skip index/types/config files.
 - `README.md`: `# Heading`, one-line description, code block with **subdirectories only** (no files).
-  - **4+ subdirs** → need README, list subdirs flat.
-  - **< 4 subdirs but any child has 4+ subdirs** → need README with **2-depth listing** (expand that child's subdirs inline, indented).
-  - 2-depth example:
+  - **Recursive expansion rule**: build tree by recursing until a directory has 4+ children (fan-out stop) or 0 children (leaf). Directories with 1–3 children are expanded inline.
+  - **Need README** if tree has 4+ total nodes.
+  - 3-depth example (`packages/cli/`):
     ```
     src/
-      agent/             Agent loop and execution
-      config/            Configuration management
-      provider/          LLM providers
-      ...
-    test/                Unit tests
+      tui/
+        __tests__/       Unit tests
+        commands/        CLI commands
+        components/      UI components
+        framework/       TUI framework core
+        tools/           Tool integrations
+    test/                Integration tests
     ```

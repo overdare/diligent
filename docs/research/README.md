@@ -2,6 +2,8 @@
 
 Research materials for project design.
 
+## Navigation
+
 ```
 layers/           Architecture layer analysis (L0–L10)
 llm-tools/        LLM native tools comparative research

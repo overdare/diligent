@@ -2,6 +2,8 @@
 
 Periodic sustainability assessments of the project's architecture.
 
+## Navigation
+
 ```
-tech-lead/                   Assessments named {date}-{commit-hash}.md
+tech-lead/       Assessments named {date}-{commit-hash}.md
 ```

@@ -39,7 +39,7 @@ packages/core/src/
 Every source file and directory participates in a two-layer navigation index. **Maintain this when creating or modifying files.**
 
 - **`@summary`** — first line of every source file: `// @summary <desc>` (or `# @summary` for .py). Skip index.ts, types.ts, config files.
-- **`README.md`** — directories with 4+ subdirectories get a README: `# Heading`, one-line description, code block listing **subdirectories only** (no individual files). Directories with < 4 subdirs also get a README if any child has 4+ subdirs — use **2-depth listing** (expand children inline).
+- **`README.md`** — directories get a README when their recursive tree has 4+ nodes. Tree is built by expanding directories with 1–3 children inline and stopping at directories with 4+ children (flat list) or 0 children (leaf). Code block lists **subdirectories only** (no individual files).
 - Use `/glob-indexer` skill to verify coverage.
 
 
