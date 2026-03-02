@@ -13,5 +13,5 @@ const customStyles = {
 };
 
 export function JsonViewer({ data, collapsed = 2 }: JsonViewerProps) {
-  return <JsonView data={data} style={customStyles} shouldExpandNode={(level) => level < collapsed} />;
+  return <JsonView data={data as object} style={customStyles} shouldExpandNode={(level) => level < collapsed} />;
 }

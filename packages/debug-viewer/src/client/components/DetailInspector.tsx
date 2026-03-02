@@ -66,13 +66,13 @@ export function DetailInspector({ entry, onClose }: DetailInspectorProps) {
             <span className="detail-meta-value">{new Date(timestamp).toLocaleString()}</span>
           </div>
         )}
-        {obj.model && (
+        {typeof obj.model === "string" && (
           <div className="detail-meta-row">
             <span className="detail-meta-label">Model</span>
-            <span className="detail-meta-value mono">{obj.model as string}</span>
+            <span className="detail-meta-value mono">{obj.model}</span>
           </div>
         )}
-        {obj.usage && (
+        {typeof obj.usage === "object" && obj.usage !== null && (
           <div className="detail-meta-row">
             <span className="detail-meta-label">Usage</span>
             <span className="detail-meta-value">
@@ -81,10 +81,10 @@ export function DetailInspector({ entry, onClose }: DetailInspectorProps) {
             </span>
           </div>
         )}
-        {obj.stopReason && (
+        {typeof obj.stopReason === "string" && (
           <div className="detail-meta-row">
             <span className="detail-meta-label">Stop</span>
-            <span className="detail-meta-value mono">{obj.stopReason as string}</span>
+            <span className="detail-meta-value mono">{obj.stopReason}</span>
           </div>
         )}
       </div>
