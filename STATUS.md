@@ -22,12 +22,12 @@ All implementation phases (0–4c) are done. Development continues as iterative 
 | L9 MCP | **Not started** — design complete (D056-D061), in backlog. |
 | L10 Multi-Agent | Done (D062-D065: task tool, agent types, permission isolation, result format) |
 
-**Backlog summary (17 pending items):**
+**Backlog summary (18 pending items):**
 - **P1** (3): Per-tool output limits · Plan mode bash rules · `request_user_input` tool
 - **P2** (3): Context budget headroom · Background async piggyback · Per-mode model override
 - **L4** (5): Rule-based permissions · ctx.ask() flow · Once/always/reject · Denied tool removal · TUI approval dialog
 - **L9** (5): MCP client · Transports · Config schema · Tool conversion · Dynamic refresh
-- **P3** (5): Debug-viewer sync · Export/import · Config editing UI · Syntax highlighting · LSP diagnostics
+- **P3** (6): Debug-viewer sync · Export/import · Config editing UI · Syntax highlighting · LSP diagnostics · Plan document management system
 
 ## Phases Complete
 

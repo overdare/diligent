@@ -1,6 +1,6 @@
 ---
 name: land
-description: "Land worktree work onto local main — commit, rebase, fast-forward merge, and clean up the worktree. Use after finishing work in a worktree to merge everything back to main."
+description: "Land worktree work onto local main — commit, rebase, and fast-forward merge. Use after finishing work in a worktree to merge everything back to main."
 allowed-tools: Bash(git *), Skill(commit)
 ---
 
@@ -53,43 +53,9 @@ git merge-base --is-ancestor main HEAD && git update-ref refs/heads/main HEAD
 
 If `merge-base --is-ancestor` returns non-zero, report the error and stop.
 
-### Step 4 — Clean up worktree
-
-Remove the worktree. Run all git commands from `MAIN_PATH` via `-C` since the worktree directory will be deleted.
-
-**Try in order — stop at first success:**
-
-1. Normal remove:
-   ```bash
-   git -C "$MAIN_PATH" worktree remove "$WORKTREE_PATH"
-   ```
-
-2. If that fails, force remove:
-   ```bash
-   git -C "$MAIN_PATH" worktree remove --force "$WORKTREE_PATH"
-   ```
-
-3. If that also fails, manual cleanup:
-   ```bash
-   rm -rf "$WORKTREE_PATH"
-   git -C "$MAIN_PATH" worktree prune
-   ```
-
-### Step 5 — Clean up branch
-
-`git worktree remove` does **not** delete the branch. Delete it explicitly with safe delete:
-
-```bash
-git -C "$MAIN_PATH" branch -d "$BRANCH"
-```
-
-If `-d` fails, **ask the user** whether to force-delete with `-D`. This should not happen after a successful fast-forward — failure here means something unexpected occurred, so the user should decide.
-
-### Step 6 — Report
+### Step 4 — Report
 
 Summarize:
 - Branch landed: `BRANCH`
 - Commits landed (count)
-- Worktree removed: `WORKTREE_PATH`
-- Branch deleted: `BRANCH`
-- Note: "Session directory no longer exists. Start a new session or cd to the repo root."
+- Note: "Worktree cleanup will happen on session exit."
