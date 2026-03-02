@@ -6,6 +6,7 @@ Agent loop, providers, tools, config, sessions, and knowledge — the engine of 
 
 ```
 src/
+  app-server/     JSON-RPC app server built on core runtime
   agent/           Agent loop and loop detector
   auth/            Authentication and API key management
   config/          Config loading, schema, and instructions

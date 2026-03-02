@@ -5,12 +5,12 @@ import type {
   ApprovalRequest,
   DiligentPaths,
   Message,
-  ModeKind,
   SkillMetadata,
   UserInputRequest,
   UserMessage,
 } from "@diligent/core";
 import { agentLoop, createPermissionEngine, type EventStream, resolveModel, SessionManager } from "@diligent/core";
+import type { Mode as ProtocolMode } from "@diligent/protocol";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -22,10 +22,10 @@ import { CommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
 import { ApprovalDialog } from "./components/approval-dialog";
 import { ChatView } from "./components/chat-view";
-import { QuestionInput } from "./components/question-input";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
 import { ListPicker, type ListPickerItem } from "./components/list-picker";
+import { QuestionInput } from "./components/question-input";
 import { StatusBar } from "./components/status-bar";
 import { TextInput } from "./components/text-input";
 import { Container } from "./framework/container";
@@ -67,7 +67,7 @@ export class App {
   private isProcessing = false;
   private messages: Message[] = [];
   private sessionManager: SessionManager | null = null;
-  private currentMode: ModeKind;
+  private currentMode: ProtocolMode;
   private agentRegistry: AgentRegistry | undefined;
   private permissionEngine: ReturnType<typeof createPermissionEngine> | undefined;
 
@@ -317,7 +317,7 @@ export class App {
   }
 
   private cycleMode(): void {
-    const modes: ModeKind[] = ["default", "plan", "execute"];
+    const modes: ProtocolMode[] = ["default", "plan", "execute"];
     const idx = modes.indexOf(this.currentMode);
     const next = modes[(idx + 1) % modes.length];
     this.setMode(next);
@@ -462,7 +462,7 @@ export class App {
     };
   }
 
-  private setMode(mode: ModeKind): void {
+  private setMode(mode: ProtocolMode): void {
     this.currentMode = mode;
     this.sessionManager?.appendModeChange(mode, "command");
     this.statusBar.update({ mode });

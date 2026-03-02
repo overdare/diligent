@@ -1,4 +1,5 @@
-import type { ModeKind, SessionManager, SkillMetadata } from "@diligent/core";
+import type { SessionManager, SkillMetadata } from "@diligent/core";
+import type { Mode } from "@diligent/protocol";
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
 import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
@@ -43,9 +44,9 @@ export interface CommandContext {
   /** Reload config and skills */
   reload: () => Promise<void>;
   /** Current collaboration mode */
-  currentMode: ModeKind;
+  currentMode: Mode;
   /** Switch to a new collaboration mode. Persists to session if SessionManager available. */
-  setMode: (mode: ModeKind) => void;
+  setMode: (mode: Mode) => void;
   /** Notify status bar after changing ctx.config.model */
   onModelChanged: (modelId: string) => void;
 }

@@ -1,5 +1,7 @@
 // Types
 
+// Protocol (shared TUI/Web API contract)
+export * as protocol from "@diligent/protocol";
 // Agent
 export type {
   AgentEvent,
@@ -17,6 +19,9 @@ export {
   MODE_SYSTEM_PROMPT_SUFFIXES,
   PLAN_MODE_ALLOWED_TOOLS,
 } from "./agent/index";
+// App server (JSON-RPC)
+export type { DiligentAppServerConfig, NotificationListener, ServerRequestHandler } from "./app-server";
+export { DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)
 export { createPermissionEngine } from "./approval/index";

@@ -1,0 +1,131 @@
+// @summary Diligent server->client notification schemas aligned to codex-like thread/turn/item flow
+import { z } from "zod";
+import {
+  SerializableErrorSchema,
+  ThreadItemDeltaSchema,
+  ThreadItemSchema,
+  ThreadStatusRetrySchema,
+  ThreadStatusSchema,
+} from "./data-model";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "./methods";
+
+export const ThreadStartedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED),
+  params: z.object({
+    threadId: z.string(),
+  }),
+});
+export type ThreadStartedNotification = z.infer<typeof ThreadStartedNotificationSchema>;
+
+export const ThreadResumedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED),
+  params: z.object({
+    threadId: z.string(),
+    restoredMessages: z.number().int().nonnegative(),
+  }),
+});
+export type ThreadResumedNotification = z.infer<typeof ThreadResumedNotificationSchema>;
+
+export const ThreadStatusChangedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED),
+  params: z.object({
+    threadId: z.string(),
+    status: ThreadStatusSchema,
+    retry: ThreadStatusRetrySchema.optional(),
+  }),
+});
+export type ThreadStatusChangedNotification = z.infer<typeof ThreadStatusChangedNotificationSchema>;
+
+export const TurnStartedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+  }),
+});
+export type TurnStartedNotification = z.infer<typeof TurnStartedNotificationSchema>;
+
+export const ItemStartedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+    item: ThreadItemSchema,
+  }),
+});
+export type ItemStartedNotification = z.infer<typeof ItemStartedNotificationSchema>;
+
+export const ItemDeltaNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+    itemId: z.string(),
+    delta: ThreadItemDeltaSchema,
+  }),
+});
+export type ItemDeltaNotification = z.infer<typeof ItemDeltaNotificationSchema>;
+
+export const ItemCompletedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+    item: ThreadItemSchema,
+  }),
+});
+export type ItemCompletedNotification = z.infer<typeof ItemCompletedNotificationSchema>;
+
+export const TurnCompletedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+  }),
+});
+export type TurnCompletedNotification = z.infer<typeof TurnCompletedNotificationSchema>;
+
+export const KnowledgeSavedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED),
+  params: z.object({
+    threadId: z.string(),
+    knowledgeId: z.string(),
+    content: z.string(),
+  }),
+});
+export type KnowledgeSavedNotification = z.infer<typeof KnowledgeSavedNotificationSchema>;
+
+export const LoopDetectedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.LOOP_DETECTED),
+  params: z.object({
+    threadId: z.string(),
+    patternLength: z.number().int().positive(),
+    toolName: z.string(),
+  }),
+});
+export type LoopDetectedNotification = z.infer<typeof LoopDetectedNotificationSchema>;
+
+export const ErrorNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR),
+  params: z.object({
+    threadId: z.string().optional(),
+    error: SerializableErrorSchema,
+    fatal: z.boolean().default(false),
+  }),
+});
+export type ErrorNotification = z.infer<typeof ErrorNotificationSchema>;
+
+export const DiligentServerNotificationSchema = z.union([
+  ThreadStartedNotificationSchema,
+  ThreadResumedNotificationSchema,
+  ThreadStatusChangedNotificationSchema,
+  TurnStartedNotificationSchema,
+  ItemStartedNotificationSchema,
+  ItemDeltaNotificationSchema,
+  ItemCompletedNotificationSchema,
+  TurnCompletedNotificationSchema,
+  KnowledgeSavedNotificationSchema,
+  LoopDetectedNotificationSchema,
+  ErrorNotificationSchema,
+]);
+export type DiligentServerNotification = z.infer<typeof DiligentServerNotificationSchema>;

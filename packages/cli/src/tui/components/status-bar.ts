@@ -1,5 +1,5 @@
 // @summary Footer status bar displaying mode and connection information
-import type { ModeKind } from "@diligent/core";
+import type { Mode } from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 
@@ -10,7 +10,7 @@ export interface StatusBarInfo {
   sessionId?: string;
   status?: "idle" | "busy" | "retry";
   cwd?: string;
-  mode?: ModeKind;
+  mode?: Mode;
 }
 
 function formatTokensCompact(n: number): string {
@@ -34,7 +34,7 @@ const MODE_COLORS: Record<string, string> = {
   execute: t.modeExecute,
 };
 
-function formatModeHint(mode: ModeKind): string {
+function formatModeHint(mode: Mode): string {
   const color = MODE_COLORS[mode] ?? "";
   return `${t.boldOff}${color}${mode} mode${t.reset}${t.dim}  (shift+tab to cycle)`;
 }
@@ -94,7 +94,7 @@ export class StatusBar implements Component {
 
     let line = leftStr;
     if (line.length > width) {
-      line = line.slice(0, width - 1) + "\u2026";
+      line = `${line.slice(0, width - 1)}\u2026`;
     }
 
     return [`${t.dim}${line}${t.reset}`];

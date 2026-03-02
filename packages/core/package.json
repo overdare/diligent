@@ -4,6 +4,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@diligent/protocol": "workspace:*",
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/genai": "^1.0.0",
     "jsonc-parser": "^3.3.1",
