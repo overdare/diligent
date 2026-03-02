@@ -1,0 +1,23 @@
+// @summary close_agent tool — abort a sub-agent and return its final status
+import { z } from "zod";
+import type { Tool, ToolContext, ToolResult } from "../tool/types";
+import type { AgentRegistry } from "./registry";
+
+const CloseAgentParams = z.object({
+  id: z.string().describe("Agent ID to close"),
+});
+
+export function createCloseAgentTool(registry: AgentRegistry): Tool<typeof CloseAgentParams> {
+  return {
+    name: "close_agent",
+    description: "Abort a sub-agent and clean up its resources. Returns the agent's final status.",
+    parameters: CloseAgentParams,
+    execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
+      const nickname = registry.getNickname(args.id) ?? args.id;
+      const finalStatus = await registry.close(args.id);
+      return {
+        output: JSON.stringify({ nickname, final_status: finalStatus }),
+      };
+    },
+  };
+}

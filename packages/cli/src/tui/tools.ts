@@ -1,12 +1,14 @@
 // @summary Builds the set of tools available to the agent in the TUI
-import type { DiligentPaths, TaskToolDeps, Tool } from "@diligent/core";
+import type { AgentRegistry, CollabToolDeps, DiligentPaths, TaskToolDeps, Tool } from "@diligent/core";
 import {
   bashTool,
   createAddKnowledgeTool,
+  createCollabTools,
   createEditTool,
   createGlobTool,
   createGrepTool,
   createLsTool,
+  createPlanTool,
   createReadTool,
   createTaskTool,
   createWriteTool,
@@ -16,7 +18,8 @@ export function buildTools(
   cwd: string,
   paths?: DiligentPaths,
   taskDeps?: Omit<TaskToolDeps, "cwd" | "paths" | "parentTools">,
-): Tool[] {
+  collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
+): { tools: Tool[]; registry?: AgentRegistry } {
   const tools: Tool[] = [
     bashTool,
     createReadTool(),
@@ -25,6 +28,7 @@ export function buildTools(
     createLsTool(),
     createGlobTool(cwd),
     createGrepTool(cwd),
+    createPlanTool(),
   ];
 
   if (paths) {
@@ -42,5 +46,16 @@ export function buildTools(
     );
   }
 
-  return tools;
+  if (paths && collabDeps) {
+    const { tools: collabTools, registry } = createCollabTools({
+      ...collabDeps,
+      cwd,
+      paths,
+      parentTools: tools,
+    });
+    tools.push(...collabTools);
+    return { tools, registry };
+  }
+
+  return { tools };
 }

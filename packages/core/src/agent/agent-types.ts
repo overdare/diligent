@@ -1,4 +1,4 @@
-// @summary Agent type definitions and builtin registry for multi-agent task tool
+// @summary Agent type definitions, builtin registry, and collab tool name set
 
 /** Definition of an agent type — controls system prompt, tool access, and turn limits. */
 export interface AgentTypeDef {
@@ -14,6 +14,12 @@ export interface AgentTypeDef {
  * "general" — full tool access, task tool excluded to prevent infinite nesting (D064).
  * "explore" — read-only tools only (PLAN_MODE_ALLOWED_TOOLS).
  */
+/**
+ * Tool names belonging to the collab layer.
+ * Used to filter collab tools out of child agents to prevent nesting.
+ */
+export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
+
 export const BUILTIN_AGENT_TYPES: Record<string, AgentTypeDef> = {
   general: {
     name: "general",

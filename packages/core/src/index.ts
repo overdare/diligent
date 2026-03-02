@@ -127,11 +127,15 @@ export {
   createGlobTool,
   createGrepTool,
   createLsTool,
+  createPlanTool,
   createReadTool,
   createTaskTool,
   createWriteTool,
 } from "./tools/index";
 export type { TaskToolDeps } from "./tools/index";
+// Collab tools (non-blocking multi-agent)
+export { AgentRegistry, createCollabTools, COLLAB_TOOL_NAMES } from "./collab/index";
+export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab/index";
 export type {
   AssistantMessage,
   ContentBlock,

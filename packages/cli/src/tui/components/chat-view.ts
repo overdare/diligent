@@ -32,6 +32,19 @@ function extractTaskPreview(output: string, maxLen = 160): string {
   return firstLine.length > maxLen ? `${firstLine.slice(0, maxLen - 1)}…` : firstLine;
 }
 
+/** Parse JSON output from collab tools, returning null on failure. */
+function parseCollabOutput(output: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(output);
+    if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
+
 /** Middle-truncate lines to at most `max`, inserting `… +N lines` in the middle */
 function truncateMiddle(lines: string[], max: number): string[] {
   if (lines.length <= max) return lines;
@@ -77,6 +90,8 @@ export class ChatView implements Component {
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
   private taskState = new Map<string, { description: string; subagentType: string }>();
+  private collabState = new Map<string, { toolName: string; label: string }>();
+  private planCallCount = 0;
 
   constructor(private options: ChatViewOptions) {
     this.activeSpinner = new SpinnerComponent(options.requestRender);
@@ -124,12 +139,32 @@ export class ChatView implements Component {
 
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());
-        if (event.toolName === "task") {
+        if (event.toolName === "plan") {
+          const label = this.planCallCount === 0 ? "Planning\u2026" : "Updating plan\u2026";
+          this.activeSpinner.start(label);
+        } else if (event.toolName === "task") {
           const inp = event.input as { description?: string; subagent_type?: string } | null;
           const desc = inp?.description ?? "";
           const type = inp?.subagent_type ?? "general";
           this.taskState.set(event.toolCallId, { description: desc, subagentType: type });
           this.activeSpinner.start(desc ? `[${type}] ${desc}` : `[${type}]`);
+        } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+          const inp = event.input as Record<string, unknown> | null;
+          let spinnerLabel = event.toolName;
+          if (event.toolName === "spawn_agent") {
+            const agentType = (inp?.agent_type as string | undefined) ?? "general";
+            const desc = (inp?.description as string | undefined) ?? "";
+            spinnerLabel = desc ? `Spawning [${agentType}] ${desc}…` : `Spawning [${agentType}]…`;
+          } else if (event.toolName === "wait") {
+            const ids = inp?.ids;
+            spinnerLabel = `Waiting for ${Array.isArray(ids) ? ids.join(", ") : "agents"}…`;
+          } else if (event.toolName === "send_input") {
+            spinnerLabel = `Sending to ${(inp?.id as string | undefined) ?? "agent"}…`;
+          } else if (event.toolName === "close_agent") {
+            spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
+          }
+          this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel });
+          this.activeSpinner.start(spinnerLabel);
         } else {
           this.activeSpinner.start(event.toolName);
         }
@@ -141,6 +176,11 @@ export class ChatView implements Component {
           if (state) {
             const base = state.description ? `[${state.subagentType}] ${state.description}` : `[${state.subagentType}]`;
             this.activeSpinner.setMessage(`${base} — ${event.partialResult}`);
+          }
+        } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+          const state = this.collabState.get(event.toolCallId);
+          if (state) {
+            this.activeSpinner.setMessage(`${state.label} — ${event.partialResult}`);
           }
         } else {
           this.activeSpinner.setMessage(`${event.toolName}…`);
@@ -154,7 +194,24 @@ export class ChatView implements Component {
         const elapsed =
           startTime !== undefined ? ` ${t.dim}· ${formatToolElapsed(Date.now() - startTime)}${t.reset}` : "";
 
-        if (event.toolName === "task") {
+        if (event.toolName === "plan") {
+          this.planCallCount++;
+          const parsed = parseCollabOutput(event.output);
+          const isUpdate = this.planCallCount > 1;
+          const header = isUpdate ? "Updated Plan" : ((parsed?.title as string | undefined) ?? "Plan");
+          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+          const lines: string[] = [`${icon} ${t.bold}${header}${t.reset}${elapsed}`];
+
+          if (parsed?.steps && Array.isArray(parsed.steps)) {
+            for (const step of parsed.steps as Array<{ text: string; done: boolean }>) {
+              const check = step.done ? `${t.success}☑${t.reset}` : `${t.dim}☐${t.reset}`;
+              const text = step.done ? `${t.dim}${step.text}${t.reset}` : step.text;
+              lines.push(`  ${check} ${text}`);
+            }
+          }
+
+          this.items.push(lines);
+        } else if (event.toolName === "task") {
           const state = this.taskState.get(event.toolCallId);
           this.taskState.delete(event.toolCallId);
           const type = state?.subagentType ?? "general";
@@ -166,6 +223,40 @@ export class ChatView implements Component {
           if (preview) {
             lines.push(`${t.dim}  └ ${preview}${t.reset}`);
           }
+          this.items.push(lines);
+        } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+          const state = this.collabState.get(event.toolCallId);
+          this.collabState.delete(event.toolCallId);
+          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+          const parsed = parseCollabOutput(event.output);
+          const lines: string[] = [];
+
+          if (event.toolName === "spawn_agent") {
+            const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+            const inp = state?.label ?? "";
+            const typeMatch = inp.match(/\[(\w+)\]/);
+            const agentType = typeMatch ? typeMatch[1] : "general";
+            lines.push(`${icon} Spawned ${t.bold}${nickname}${t.reset} [${agentType}]${elapsed}`);
+          } else if (event.toolName === "wait") {
+            lines.push(`${icon} Finished waiting${elapsed}`);
+            if (parsed?.summary && Array.isArray(parsed.summary)) {
+              for (const entry of parsed.summary as string[]) {
+                lines.push(`${t.dim}  └ ${entry}${t.reset}`);
+              }
+            }
+            if (parsed?.timed_out) {
+              lines.push(`${t.warn}  └ Timed out${t.reset}`);
+            }
+          } else if (event.toolName === "send_input") {
+            const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+            lines.push(`${icon} Sent input → ${t.bold}${nickname}${t.reset}${elapsed}`);
+          } else if (event.toolName === "close_agent") {
+            const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+            lines.push(`${icon} Closed ${t.bold}${nickname}${t.reset}${elapsed}`);
+          } else {
+            lines.push(`${icon} ${event.toolName}${elapsed}`);
+          }
+
           this.items.push(lines);
         } else if (event.output) {
           const rawLines = event.output.split("\n");
@@ -274,6 +365,7 @@ export class ChatView implements Component {
     this.thinkingSpinner.stop();
     this.thinkingStartTime = null;
     this.thinkingText = "";
+    this.planCallCount = 0;
     if (this.activeMarkdown) {
       this.activeMarkdown.finalize();
       this.activeMarkdown = null;

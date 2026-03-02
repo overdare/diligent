@@ -1,5 +1,13 @@
 // @summary Main TUI application component managing the agent loop and interface
-import type { AgentEvent, DiligentPaths, Message, ModeKind, SkillMetadata, UserMessage } from "@diligent/core";
+import type {
+  AgentEvent,
+  AgentRegistry,
+  DiligentPaths,
+  Message,
+  ModeKind,
+  SkillMetadata,
+  UserMessage,
+} from "@diligent/core";
 import { agentLoop, type EventStream, resolveModel, SessionManager } from "@diligent/core";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
@@ -56,6 +64,7 @@ export class App {
   private messages: Message[] = [];
   private sessionManager: SessionManager | null = null;
   private currentMode: ModeKind;
+  private agentRegistry: AgentRegistry | undefined;
 
   constructor(
     private config: AppConfig,
@@ -136,11 +145,13 @@ export class App {
     // Initialize SessionManager
     if (this.paths) {
       const cwd = process.cwd();
-      const tools = buildTools(cwd, this.paths, {
+      const collabDeps = {
         model: this.config.model,
         systemPrompt: this.config.systemPrompt,
         streamFunction: this.config.streamFunction,
-      });
+      };
+      const { tools, registry } = buildTools(cwd, this.paths, collabDeps, collabDeps);
+      this.agentRegistry = registry;
 
       this.sessionManager = new SessionManager({
         cwd,
@@ -326,7 +337,7 @@ export class App {
         this.messages = result;
       } else {
         const cwd = process.cwd();
-        const tools = buildTools(cwd, this.paths, {
+        const { tools } = buildTools(cwd, this.paths, {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
           streamFunction: this.config.streamFunction,
@@ -508,6 +519,8 @@ export class App {
     this.overlayStack.clear();
     this.renderer.stop();
     this.terminal.stop();
+    // Shut down any active sub-agents in the background (fire-and-forget)
+    this.agentRegistry?.shutdownAll().catch(() => {});
   }
 
   private buildWelcomeBanner(): string[] {
