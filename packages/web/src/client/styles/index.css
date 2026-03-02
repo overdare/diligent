@@ -1,0 +1,27 @@
+@import url("./tokens.css");
+
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind directives are processed by PostCSS */
+@tailwind base;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind directives are processed by PostCSS */
+@tailwind components;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind directives are processed by PostCSS */
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(90, 217, 184, 0.1), transparent 35%),
+    radial-gradient(circle at 85% 90%, rgba(248, 113, 113, 0.08), transparent 35%), var(--bg);
+  color: var(--text);
+}
