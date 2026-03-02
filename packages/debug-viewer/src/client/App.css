@@ -824,6 +824,57 @@ body,
 }
 
 /* ═══════════════════════════════════════════════
+   System Event Cards (model_change, session_info, mode_change, steering)
+   ═══════════════════════════════════════════════ */
+
+.system-event-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--purple-dim);
+  border: 1px solid rgba(167, 139, 250, 0.12);
+  border-left: 2px solid var(--purple);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.system-event-card:hover {
+  background: rgba(167, 139, 250, 0.15);
+  border-color: rgba(167, 139, 250, 0.25);
+}
+
+.system-event-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--purple);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.system-event-description {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Timeline dot for system events */
+.conversation-view > [id^="entry-"]:has(.system-event-card)::after {
+  border-color: var(--purple);
+  background: var(--purple-dim);
+}
+
+/* ═══════════════════════════════════════════════
    Search Bar
    ═══════════════════════════════════════════════ */
 

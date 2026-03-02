@@ -85,7 +85,51 @@ export interface CompactionEntry {
   timestamp: number;
 }
 
-export type SessionEntry = SessionHeader | UserMessageEntry | AssistantMessageEntry | ToolResultEntry | CompactionEntry;
+export interface ModelChangeEntry {
+  id: string;
+  parentId?: string;
+  type: "model_change";
+  provider: string;
+  modelId: string;
+  timestamp: number;
+}
+
+export interface SessionInfoEntry {
+  id: string;
+  parentId?: string;
+  type: "session_info";
+  name?: string;
+  timestamp: number;
+}
+
+export interface ModeChangeEntry {
+  id: string;
+  parentId?: string;
+  type: "mode_change";
+  mode: string;
+  changedBy: string;
+  timestamp: number;
+}
+
+export interface SteeringEntry {
+  id: string;
+  parentId?: string;
+  type: "steering";
+  message: { role: string; content: string | ContentBlock[]; timestamp?: number };
+  source: string;
+  timestamp: number;
+}
+
+export type SessionEntry =
+  | SessionHeader
+  | UserMessageEntry
+  | AssistantMessageEntry
+  | ToolResultEntry
+  | CompactionEntry
+  | ModelChangeEntry
+  | SessionInfoEntry
+  | ModeChangeEntry
+  | SteeringEntry;
 
 // Knowledge (D081)
 export interface KnowledgeEntry {

@@ -1,4 +1,4 @@
-// @summary Tool that pauses the agent loop to ask the user clarifying questions — D088
+// @summary Tool that pauses the agent loop to collect user opinion via structured choices — D088
 import { z } from "zod";
 import type { Tool } from "../tool/types";
 
@@ -25,8 +25,8 @@ const ParamsSchema = z.object({
   questions: z.array(QuestionSchema).min(1).max(3).describe("Questions to show the user. Prefer 1 and do not exceed 3."),
 });
 
-export const requestUserInputTool: Tool<typeof ParamsSchema> = {
-  name: "request_user_input",
+export const userOpinionTool: Tool<typeof ParamsSchema> = {
+  name: "user_opinion",
   description: "Ask the user 1–3 questions and wait for their answers before proceeding.",
   parameters: ParamsSchema,
   async execute(args, ctx) {

@@ -12,7 +12,7 @@ export interface Tool<TParams extends z.ZodType = any> {
 // D086: Approval response — "once" (proceed once), "always" (remember), "reject" (deny)
 export type ApprovalResponse = "once" | "always" | "reject";
 
-// D088: User input request/response for request_user_input tool
+// D088: User input request/response for user_opinion tool
 export interface UserInputOption {
   label: string;
   description: string;

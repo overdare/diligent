@@ -2,10 +2,14 @@
 import type {
   AssistantMessageEntry,
   CompactionEntry,
+  ModeChangeEntry,
+  ModelChangeEntry,
   SessionEntry,
   SessionHeader,
+  SessionInfoEntry,
   SessionMeta,
   SessionTree,
+  SteeringEntry,
   ToolCallBlock,
   ToolCallPair,
   ToolResultEntry,
@@ -91,10 +95,45 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
     return raw as unknown as CompactionEntry;
   }
 
-  // Known core types that the viewer doesn't render — return skip marker
-  // so the caller can preserve their parentId chain for reparenting
-  if (raw.type === "model_change" || raw.type === "session_info" || raw.type === "mode_change" || raw.type === "steering") {
-    return { __skip: true, id: raw.id as string, parentId: raw.parentId as string | null } as never;
+  // System event entry types — parse with ISO timestamp conversion
+  if (raw.type === "model_change") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      type: "model_change",
+      provider: raw.provider as string,
+      modelId: raw.modelId as string,
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as ModelChangeEntry;
+  }
+  if (raw.type === "session_info") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      type: "session_info",
+      name: raw.name as string | undefined,
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as SessionInfoEntry;
+  }
+  if (raw.type === "mode_change") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      type: "mode_change",
+      mode: raw.mode as string,
+      changedBy: raw.changedBy as string,
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as ModeChangeEntry;
+  }
+  if (raw.type === "steering") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      type: "steering",
+      message: raw.message as SteeringEntry["message"],
+      source: raw.source as string,
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as SteeringEntry;
   }
 
   // Unknown entry type — skip with warning
@@ -113,13 +152,9 @@ export async function parseSessionFile(filePath: string): Promise<SessionEntry[]
 
 /**
  * Parse JSONL text into typed entries.
- * Skipped entry types (mode_change, etc.) have their parentId chains preserved
- * so that child entries are reparented to the nearest non-skipped ancestor.
  */
 export function parseSessionText(text: string): SessionEntry[] {
   const entries: SessionEntry[] = [];
-  // Map skipped entry id → its parentId, for reparenting children
-  const skippedParents = new Map<string, string | undefined>();
 
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
@@ -128,27 +163,11 @@ export function parseSessionText(text: string): SessionEntry[] {
     try {
       const raw = JSON.parse(trimmed);
       const result = detectEntryType(raw);
-      if (result && (result as Record<string, unknown>).__skip) {
-        const skip = result as unknown as { id: string; parentId: string | null };
-        skippedParents.set(skip.id, skip.parentId ?? undefined);
-      } else if (result) {
+      if (result) {
         entries.push(result);
       }
     } catch {
       console.warn("Failed to parse JSONL line:", trimmed.slice(0, 80));
-    }
-  }
-
-  // Reparent entries whose parentId points to a skipped entry
-  if (skippedParents.size > 0) {
-    for (const entry of entries) {
-      if ("parentId" in entry && entry.parentId) {
-        let pid: string | undefined = entry.parentId;
-        while (pid && skippedParents.has(pid)) {
-          pid = skippedParents.get(pid);
-        }
-        (entry as { parentId?: string }).parentId = pid;
-      }
     }
   }
 

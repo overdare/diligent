@@ -432,7 +432,7 @@ export class ChatView implements Component {
       result.push(...this.activeSpinner.render(width));
     }
 
-    // Add inline question input (request_user_input)
+    // Add inline question input (user_opinion)
     if (this.activeQuestion) {
       if (result.length > 0) result.push("");
       result.push(...this.activeQuestion.render(width));

@@ -5,7 +5,11 @@ import type {
   AssistantMessageEntry,
   CompactionEntry,
   ContentBlock,
+  ModeChangeEntry,
+  ModelChangeEntry,
   SessionEntry,
+  SessionInfoEntry,
+  SteeringEntry,
   ToolCallPair,
   UserMessageEntry,
 } from "../lib/types.js";
@@ -131,6 +135,45 @@ function CompactionCard({ entry, onSelectEntry }: { entry: CompactionEntry; onSe
   );
 }
 
+function getSystemEventInfo(entry: SessionEntry): { badge: string; description: string } | null {
+  if (!("type" in entry)) return null;
+  switch (entry.type) {
+    case "model_change": {
+      const e = entry as ModelChangeEntry;
+      return { badge: "Model Change", description: `${e.provider}/${e.modelId}` };
+    }
+    case "session_info": {
+      const e = entry as SessionInfoEntry;
+      return { badge: "Session Info", description: e.name ?? "(unnamed)" };
+    }
+    case "mode_change": {
+      const e = entry as ModeChangeEntry;
+      return { badge: "Mode Change", description: `${e.mode} (${e.changedBy})` };
+    }
+    case "steering": {
+      const e = entry as SteeringEntry;
+      const content = typeof e.message.content === "string" ? e.message.content : JSON.stringify(e.message.content);
+      const truncated = content.length > 120 ? `${content.slice(0, 120)}…` : content;
+      return { badge: "Steering", description: `[${e.source}] ${truncated}` };
+    }
+    default:
+      return null;
+  }
+}
+
+function SystemEventCard({ entry, onSelectEntry }: { entry: SessionEntry; onSelectEntry: (entry: unknown) => void }) {
+  const info = getSystemEventInfo(entry);
+  if (!info) return null;
+
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer system event cards
+    <div className="system-event-card" onClick={() => onSelectEntry(entry)}>
+      <span className="system-event-badge">{info.badge}</span>
+      <span className="system-event-description">{info.description}</span>
+    </div>
+  );
+}
+
 export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProps) {
   if ("role" in entry && entry.role === "user") {
     return <UserMessageCard entry={entry as UserMessageEntry} onSelectEntry={onSelectEntry} />;
@@ -146,6 +189,15 @@ export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProp
   }
   if ("type" in entry && entry.type === "compaction") {
     return <CompactionCard entry={entry as CompactionEntry} onSelectEntry={onSelectEntry} />;
+  }
+  if (
+    "type" in entry &&
+    (entry.type === "model_change" ||
+      entry.type === "session_info" ||
+      entry.type === "mode_change" ||
+      entry.type === "steering")
+  ) {
+    return <SystemEventCard entry={entry} onSelectEntry={onSelectEntry} />;
   }
   // Skip tool_result entries (they're shown inline in tool call cards) and session_header
   return null;

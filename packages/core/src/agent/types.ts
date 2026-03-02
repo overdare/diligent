@@ -9,9 +9,9 @@ export type ModeKind = "default" | "plan" | "execute";
 /**
  * Tools available in plan mode (read-only exploration only).
  * Bash, write, edit, add_knowledge are excluded.
- * D088: request_user_input is allowed in all modes.
+ * D088: user_opinion is allowed in all modes.
  */
-export const PLAN_MODE_ALLOWED_TOOLS = new Set(["read_file", "glob", "grep", "ls", "request_user_input"]);
+export const PLAN_MODE_ALLOWED_TOOLS = new Set(["read_file", "glob", "grep", "ls", "user_opinion"]);
 
 /**
  * System prompt prefixes injected per mode.
@@ -41,7 +41,7 @@ Once intent is stable, keep asking until the spec is decision complete: approach
 
 Critical rules:
 
-* Strongly prefer using the \`request_user_input\` tool to ask any questions.
+* Strongly prefer using the \`user_opinion\` tool to ask any questions.
 * Offer only meaningful multiple-choice options; don't include filler choices that are obviously wrong or irrelevant.
 * In rare cases where an unavoidable, important question can't be expressed with reasonable multiple-choice options (due to extreme ambiguity), you may ask it directly without the tool.
 
@@ -73,7 +73,7 @@ Do not ask "should I proceed?" in the final output. Only produce at most one \`<
   execute: [
     "You are operating in EXECUTE MODE.",
     "Work autonomously toward the goal. Make reasonable assumptions for minor decisions.",
-    "Only use request_user_input for critical ambiguity where a wrong assumption would cause irreversible damage or wasted effort.",
+    "Only use user_opinion for critical ambiguity where a wrong assumption would cause irreversible damage or wasted effort.",
     "Report significant progress milestones as you work.",
     "Complete the full task before stopping.",
     "",
@@ -136,7 +136,7 @@ export interface AgentLoopConfig {
   getSteeringMessages?: () => Message[];
   /** D028: Called for each ctx.approve() — rule engine + optional UI callback */
   approve?: (request: ApprovalRequest) => Promise<ApprovalResponse>;
-  /** D088: Called for each request_user_input tool execution */
+  /** D088: Called for each user_opinion tool execution */
   ask?: (request: UserInputRequest) => Promise<UserInputResponse>;
   /** D070: Engine used to filter denied tools before LLM call (config rules only) */
   permissionEngine?: PermissionEngine;
