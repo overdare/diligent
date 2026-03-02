@@ -13,6 +13,7 @@ Read only what your task requires. Directories have README.md files — follow t
 | Current phase & progress | `STATUS.md` |
 | Source code — core (agent loop, providers, tools, config, sessions) | `packages/core/` |
 | Source code — cli (TUI) | `packages/cli/` |
+| Source code — web (React + Tailwind web frontend) | `packages/web/` |
 | Source code — debug-viewer (React web viewer) | `packages/debug-viewer/` |
 | Source code — e2e (integration tests) | `packages/e2e/` |
 | Planning, decisions & phase specs | `docs/plan/` |

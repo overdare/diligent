@@ -9,6 +9,7 @@ agent/           Agent loop and loop detector
 app-server/      JSON-RPC app server over core session manager
 approval/        Permission engine — rule matching, session cache
 auth/            Authentication and API key management
+collab/          Multi-agent collaboration tools (spawn, wait, send_input, close_agent)
 config/          Config loading, schema, and instructions
 infrastructure/  Diligent directory resolution
 knowledge/       Knowledge store, injection, and ranking

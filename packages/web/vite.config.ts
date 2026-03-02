@@ -1,3 +1,4 @@
+// @summary Vite config for React client build with dev proxy to backend RPC
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 

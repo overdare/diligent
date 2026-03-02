@@ -1,3 +1,4 @@
+// @summary Tailwind config with design tokens, fonts, and custom color/spacing scales
 import type { Config } from "tailwindcss";
 
 const config: Config = {

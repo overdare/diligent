@@ -1,7 +1,8 @@
-// @summary Message stream renderer for user, assistant, and system timeline blocks
+// @summary Message stream renderer for user, assistant (markdown), and thinking (collapsible) blocks
 
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface StreamBlockProps {
   item: Extract<RenderItem, { kind: "user" | "assistant" }>;
@@ -19,12 +20,23 @@ export function StreamBlock({ item }: StreamBlockProps) {
         )}
       >
         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{item.kind}</div>
+
         {item.kind === "assistant" && item.thinking ? (
-          <pre className="mb-2 overflow-x-auto whitespace-pre-wrap rounded border border-text/10 bg-bg/60 p-2 font-mono text-xs text-muted">
-            {item.thinking}
-          </pre>
+          <details className="mb-2 rounded border border-text/10 bg-bg/60">
+            <summary className="cursor-pointer select-none px-2 py-1 font-mono text-xs text-muted hover:text-text">
+              Thinking
+            </summary>
+            <pre className="overflow-x-auto whitespace-pre-wrap px-2 pb-2 font-mono text-xs text-muted">
+              {item.thinking}
+            </pre>
+          </details>
         ) : null}
-        <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text">{item.text}</pre>
+
+        {isUser ? (
+          <p className="text-sm leading-6 text-text">{item.text}</p>
+        ) : (
+          <MarkdownContent text={item.text} />
+        )}
       </div>
     </div>
   );
