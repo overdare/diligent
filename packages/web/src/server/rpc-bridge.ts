@@ -25,6 +25,7 @@ interface RpcSession {
     {
       resolve: (response: DiligentServerRequestResponse) => void;
       timeoutId: ReturnType<typeof setTimeout>;
+      request: DiligentServerRequest;
     }
   >;
 }
@@ -111,10 +112,7 @@ export class RpcBridge {
 
     for (const pending of session.pendingServerRequests.values()) {
       clearTimeout(pending.timeoutId);
-      pending.resolve({
-        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
-        result: { decision: "reject" },
-      });
+      pending.resolve(toSafeFallback(pending.request));
     }
 
     if (session.currentThreadId) {
@@ -185,6 +183,9 @@ export class RpcBridge {
       if (parsed.method === "thread/start" && "result" in response) {
         const maybeThreadId = (response.result as { threadId?: string }).threadId;
         if (maybeThreadId) {
+          if (session.currentThreadId) {
+            this.threadOwners.delete(session.currentThreadId);
+          }
           session.currentThreadId = maybeThreadId;
           this.threadOwners.set(maybeThreadId, session.id);
         }
@@ -193,6 +194,9 @@ export class RpcBridge {
       if (parsed.method === "thread/resume" && "result" in response) {
         const resumed = response.result as { found: boolean; threadId?: string };
         if (resumed.found && resumed.threadId) {
+          if (session.currentThreadId && session.currentThreadId !== resumed.threadId) {
+            this.threadOwners.delete(session.currentThreadId);
+          }
           session.currentThreadId = resumed.threadId;
           this.threadOwners.set(resumed.threadId, session.id);
         }
@@ -263,6 +267,7 @@ export class RpcBridge {
       session.pendingServerRequests.set(requestId, {
         resolve,
         timeoutId,
+        request,
       });
     });
   }

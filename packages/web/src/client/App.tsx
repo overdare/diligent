@@ -58,6 +58,7 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
 
 export function App() {
   const rpcRef = useRef<WebRpcClient | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [cwd, setCwd] = useState<string>("");
@@ -70,6 +71,9 @@ export function App() {
   );
   const [questionPrompt, setQuestionPrompt] = useState<{ requestId: number; request: UserInputRequest } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Keep a ref in sync so onConnected (closure) can read the latest activeThreadId
+  activeThreadIdRef.current = state.activeThreadId;
 
   const refreshThreadList = useCallback(async (rpc = rpcRef.current): Promise<void> => {
     if (!rpc) return;
@@ -104,6 +108,19 @@ export function App() {
       try {
         await rpc.request("initialize", { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
         rpc.notify("initialized", { ready: true });
+
+        // On reconnect, resume the previous thread if one exists
+        const prevThreadId = activeThreadIdRef.current;
+        if (prevThreadId) {
+          const resumed = await rpc.request("thread/resume", { threadId: prevThreadId });
+          if (resumed.found && resumed.threadId) {
+            const history = await rpc.request("thread/read", { threadId: resumed.threadId });
+            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            await refreshThreadList(rpc);
+            return;
+          }
+        }
+
         const started = await rpc.request("thread/start", { cwd: meta.cwd, mode: meta.mode });
         const history = await rpc.request("thread/read", { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });

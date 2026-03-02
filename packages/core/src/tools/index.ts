@@ -1,4 +1,5 @@
 export { createAddKnowledgeTool } from "./add-knowledge";
+export { buildDefaultTools } from "./defaults";
 export { bashTool } from "./bash";
 export { createEditTool } from "./edit";
 export { createGlobTool } from "./glob";

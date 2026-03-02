@@ -5,6 +5,7 @@ import type {
   DiligentServerRequestResponse,
   JSONRPCNotification,
   JSONRPCResponse,
+  Mode,
 } from "@diligent/protocol";
 
 export type RpcRequestMessage = {
@@ -55,7 +56,7 @@ export type ModelInfo = {
 export type ConnectedMessage = {
   type: "connected";
   cwd: string;
-  mode: "default" | "plan" | "execute";
+  mode: Mode;
   serverVersion: string;
   currentModel: string;
   availableModels: ModelInfo[];

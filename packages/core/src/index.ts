@@ -149,6 +149,7 @@ export type { TaskToolDeps } from "./tools/index";
 // Built-in tools
 export {
   bashTool,
+  buildDefaultTools,
   createAddKnowledgeTool,
   createEditTool,
   createGlobTool,
