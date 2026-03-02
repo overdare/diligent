@@ -34,7 +34,7 @@ export function EmptyState({ onSelectPrompt }: EmptyStateProps) {
             key={p.label}
             type="button"
             onClick={() => onSelectPrompt(p.prompt)}
-            className="rounded-lg border border-text/15 bg-surface/50 px-4 py-3 text-left text-sm text-text transition hover:border-accent/40 hover:bg-accent/5"
+            className="rounded-lg border border-text/15 bg-surface/60 px-4 py-3 text-left text-sm text-text transition hover:border-accent/40 hover:bg-accent/5"
           >
             {p.label}
           </button>

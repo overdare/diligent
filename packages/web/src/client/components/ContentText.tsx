@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "./CopyButton";
+import { ExpandButton } from "./ExpandButton";
 
 interface ContentTextProps {
   text: string;
@@ -28,19 +29,13 @@ export function ContentText({
         <CopyButton text={text} />
       </div>
       <pre
-        className={`overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono leading-relaxed ${isError ? "text-danger/80" : "text-text/80"} ${compact ? "text-[11px]" : "text-xs"}`}
+        className={`overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono leading-relaxed ${isError ? "text-danger/80" : "text-text/80"} ${compact ? "text-xs-" : "text-xs"}`}
         style={!expanded && isLong ? { maxHeight: `${maxLines * 1.5}em`, overflow: "hidden" } : undefined}
       >
         {text}
       </pre>
       {isLong && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="w-full border-t border-text/10 py-1.5 text-center font-mono text-[10px] text-muted transition hover:text-text"
-        >
-          {expanded ? "Show less ▴" : `Show more ▾ (${lineCount} lines)`}
-        </button>
+        <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} detail={`${lineCount} lines`} />
       )}
     </div>
   );

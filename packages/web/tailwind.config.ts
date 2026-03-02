@@ -26,6 +26,16 @@ const config: Config = {
         lg: "var(--space-lg)",
         xl: "var(--space-xl)",
       },
+      fontSize: {
+        "2xs": "0.625rem",
+        "xs-": "0.6875rem",
+      },
+      maxWidth: {
+        message: "80%",
+        assistant: "88%",
+        "tool-row": "94%",
+        app: "1200px",
+      },
       boxShadow: {
         panel: "var(--shadow-panel)",
       },

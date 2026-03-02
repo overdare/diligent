@@ -11,7 +11,7 @@ export function ThinkingBlock({ text }: ThinkingBlockProps) {
         <span className="opacity-60">◈</span>
         <span>Thinking</span>
       </summary>
-      <pre className="overflow-x-auto whitespace-pre-wrap border-t border-text/10 px-3 pb-2 pt-2 font-mono text-xs leading-relaxed text-muted/80">
+      <pre className="overflow-x-auto whitespace-pre-wrap border-t border-text/10 px-3 pb-2 pt-2 font-mono text-xs leading-relaxed text-muted">
         {text}
       </pre>
     </details>

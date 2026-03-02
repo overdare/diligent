@@ -5,6 +5,7 @@ import { useRef } from "react";
 import type { ModelInfo } from "../../shared/ws-protocol";
 import type { ConnectionState } from "../lib/rpc-client";
 import type { UsageState } from "../lib/thread-store";
+import { StatusDot } from "./StatusDot";
 import { TextArea } from "./TextArea";
 
 interface InputDockProps {
@@ -24,11 +25,11 @@ interface InputDockProps {
   usage: UsageState;
 }
 
-const CONNECTION_COLORS: Record<ConnectionState, string> = {
-  connected: "bg-success",
-  connecting: "bg-accent animate-pulse",
-  reconnecting: "bg-accent animate-pulse",
-  disconnected: "bg-danger",
+const CONNECTION_DOT: Record<ConnectionState, { color: "success" | "accent" | "danger"; pulse: boolean }> = {
+  connected: { color: "success", pulse: false },
+  connecting: { color: "accent", pulse: true },
+  reconnecting: { color: "accent", pulse: true },
+  disconnected: { color: "danger", pulse: false },
 };
 
 const MODE_LABELS: Record<Mode, string> = {
@@ -85,10 +86,10 @@ export function InputDock({
 
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
-      <div className="rounded-3xl border border-text/15 bg-bg/75 px-4 py-3 shadow-panel">
+      <div className="rounded-3xl border border-text/15 bg-bg/60 px-4 py-3 shadow-panel">
         {/* Textarea */}
         <TextArea
-          className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus-visible:ring-0"
+          className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
           aria-label="Message input"
           placeholder="Ask anything…"
           value={input}
@@ -114,8 +115,8 @@ export function InputDock({
         {/* Bottom bar (inside input panel) */}
         <div className="mt-3 flex items-center justify-between gap-3">
           {/* Left: connection + cwd + usage */}
-          <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CONNECTION_COLORS[connection]}`} />
+          <div className="flex min-w-0 items-center gap-1.5 text-xs- text-muted">
+            <StatusDot color={CONNECTION_DOT[connection].color} pulse={CONNECTION_DOT[connection].pulse} />
             <span className="shrink-0">{connection}</span>
             {cwd ? (
               <>
@@ -180,14 +181,14 @@ export function InputDock({
               </button>
             ) : (
               <button
-              type="button"
-              aria-label="Send message"
-              onClick={() => {
-                if (!composingRef.current) onSend();
-              }}
-              disabled={!canSend}
-              className="rounded-full bg-accent/90 px-3 py-1.5 text-xs font-semibold text-bg transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
-            >
+                type="button"
+                aria-label="Send message"
+                onClick={() => {
+                  if (!composingRef.current) onSend();
+                }}
+                disabled={!canSend}
+                className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-bg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              >
                 Send
               </button>
             )}

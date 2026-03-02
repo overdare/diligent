@@ -6,6 +6,8 @@ import type { RenderItem } from "../lib/thread-store";
 import { getToolHeaderTitle, getToolInfo, summarizeInput } from "../lib/tool-info";
 import { ContentBash } from "./ContentBash";
 import { ContentText } from "./ContentText";
+import { SectionLabel } from "./SectionLabel";
+import { StatusDot } from "./StatusDot";
 
 interface ToolBlockProps {
   item: Extract<RenderItem, { kind: "tool" }>;
@@ -22,7 +24,7 @@ function parseBashCommand(inputText: string): string | undefined {
 
 export function ToolBlock({ item }: ToolBlockProps) {
   const [open, setOpen] = useState(false);
-  const { icon, displayName, category } = getToolInfo(item.toolName);
+  const { icon, category } = getToolInfo(item.toolName);
   const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText);
   const summary = item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
   const summaryText = item.toolName.toLowerCase() === "request_user_input" ? "" : summary;
@@ -33,7 +35,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
 
   const statusEl = isStreaming ? (
     <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+      <StatusDot color="accent" pulse />
       <span>running</span>
     </span>
   ) : item.isError ? (
@@ -57,7 +59,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
       ? "text-accent"
       : item.isError
         ? "text-danger"
-        : "text-text/50"
+        : "text-text/60"
     : "text-muted";
 
   return (
@@ -80,7 +82,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
           <span className="text-sm font-medium leading-none text-muted">{headerTitle}</span>
           {chevronEl}
           {summaryText ? (
-            <span className="max-w-[56ch] truncate font-mono text-sm leading-none text-text/50">{summaryText}</span>
+            <span className="max-w-[56ch] truncate font-mono text-sm leading-none text-text/60">{summaryText}</span>
           ) : null}
           {statusEl}
         </button>
@@ -97,13 +99,13 @@ export function ToolBlock({ item }: ToolBlockProps) {
               <div className="space-y-2">
                 {item.inputText && (
                   <div>
-                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted/60">Input</div>
+                    <SectionLabel>Input</SectionLabel>
                     <ContentText text={item.inputText} compact />
                   </div>
                 )}
                 {item.outputText && (
                   <div>
-                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted/60">Output</div>
+                    <SectionLabel>Output</SectionLabel>
                     <ContentText text={item.outputText} compact isError={item.isError} />
                   </div>
                 )}

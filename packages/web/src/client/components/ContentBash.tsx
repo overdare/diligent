@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "./CopyButton";
+import { ExpandButton } from "./ExpandButton";
 
 interface ContentBashProps {
   command?: string;
@@ -19,7 +20,7 @@ export function ContentBash({ command, output, isError = false }: ContentBashPro
   const visibleOutput = !expanded && isLong ? outputLines.slice(0, OUTPUT_MAX_LINES).join("\n") : output;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/70 font-mono text-xs">
+    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
       {command && (
         <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
           <span className="shrink-0 text-muted">$</span>
@@ -31,19 +32,17 @@ export function ContentBash({ command, output, isError = false }: ContentBashPro
         <div>
           <pre
             className={`overflow-x-auto whitespace-pre-wrap px-3 py-2 leading-relaxed ${
-              isError ? "text-danger/90" : "text-text/70"
+              isError ? "text-danger/90" : "text-text/80"
             }`}
           >
             {visibleOutput}
           </pre>
           {isLong && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="w-full border-t border-text/10 py-1.5 text-center text-[10px] text-muted transition hover:text-text"
-            >
-              {expanded ? "Show less ▴" : `Show more ▾ (${outputLines.length} lines)`}
-            </button>
+            <ExpandButton
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              detail={`${outputLines.length} lines`}
+            />
           )}
         </div>
       )}

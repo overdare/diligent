@@ -1,3 +1,27 @@
+/*
+ * DEV NOTE: After editing tailwind.config.ts, restart the Vite dev server
+ * (Ctrl+C then `bun run dev`). Tailwind's JIT does NOT hot-reload new custom
+ * tokens (fontSize, maxWidth, etc.) via HMR — new CSS classes only appear after
+ * a full server restart. Otherwise tokens like max-w-message or text-2xs will
+ * be missing from the dev-mode stylesheet, causing max-widths to vanish and
+ * text to fall back to inherited sizes.
+ */
+
+/*
+ * Opacity tiers — use consistently across components
+ *
+ * border-text/10   structural border   (divider, separator)
+ * border-text/15   interactive border  (card, button outline)
+ * border-text/20   input field border  (input, modal)
+ *
+ * bg-bg/40         sunken background   (code block, ContentText)
+ * bg-bg/60         elevated background (card, InputDock inner)
+ * bg-surface/60    card surface        (ApprovalCard, QuestionCard)
+ *
+ * text-text/60     weak text           (secondary info)
+ * text-text/80     normal text         (code output)
+ */
+
 :root {
   --bg: #0f1415;
   --surface: #1b2629;

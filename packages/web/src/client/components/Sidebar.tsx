@@ -22,7 +22,7 @@ export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenTh
         <div className="flex items-center gap-2">
           <span className="font-mono text-sm font-bold text-accent">diligent</span>
         </div>
-        <p className="mt-1 truncate font-mono text-[11px] text-muted" title={cwd}>
+        <p className="mt-1 truncate font-mono text-xs- text-muted" title={cwd}>
           {cwdShort}
         </p>
       </div>
@@ -50,12 +50,12 @@ export function Sidebar({ cwd, threadList, activeThreadId, onNewThread, onOpenTh
               onClick={() => onOpenThread(thread.id)}
               className={`group w-full rounded-md border px-3 py-2 text-left transition ${
                 isActive
-                  ? "border-accent/30 bg-accent/8 text-text"
+                  ? "border-accent/30 bg-accent/5 text-text"
                   : "border-transparent hover:border-text/15 hover:bg-surface/50"
               }`}
             >
               <div className="truncate text-sm leading-snug text-text">{title}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+              <div className="mt-0.5 flex items-center gap-1.5 text-xs- text-muted">
                 <span>{time}</span>
                 <span className="opacity-40">·</span>
                 <span>{thread.messageCount} msg</span>

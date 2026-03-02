@@ -16,6 +16,7 @@ import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
+import { StatusDot } from "./components/StatusDot";
 import { type ConnectionState, getReconnectAttemptLimit, WebRpcClient } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
@@ -223,12 +224,9 @@ export function App() {
     return raw.length > 40 ? `${raw.slice(0, 40)}…` : raw;
   }, [state.activeThreadId, state.threadList, state.items]);
 
-  const statusDotClass =
-    state.threadStatus === "idle"
-      ? "bg-success"
-      : state.threadStatus === "busy"
-        ? "bg-accent animate-pulse"
-        : "bg-danger animate-pulse";
+  const statusDotColor: "success" | "accent" | "danger" =
+    state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
+  const statusDotPulse = state.threadStatus !== "idle";
 
   const resolveApproval = (decision: "once" | "always" | "reject") => {
     if (!approvalPrompt) return;
@@ -260,7 +258,7 @@ export function App() {
 
   return (
     <div className="h-screen bg-bg text-text">
-      <div className="mx-auto grid h-full max-w-[1200px] grid-cols-1 gap-2 p-2 lg:grid-cols-[280px_1fr]">
+      <div className="mx-auto grid h-full max-w-app grid-cols-1 gap-2 p-2 lg:grid-cols-[280px_1fr]">
         <Sidebar
           cwd={cwd}
           threadList={state.threadList}
@@ -272,7 +270,7 @@ export function App() {
         <Panel className="flex min-h-0 flex-col overflow-hidden">
           {/* Thread title bar */}
           <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass}`} />
+            <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
               {threadTitle || "new conversation"}
             </span>
