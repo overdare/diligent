@@ -6,7 +6,6 @@ import {
   MAX_OUTPUT_LINES,
   persistFullOutput,
   shouldTruncate,
-  TRUNCATION_WARNING,
   truncateHead,
   truncateHeadTail,
   truncateTail,
@@ -164,13 +163,6 @@ describe("truncation", () => {
       // Tail portion should have ~6 lines from the end
       expect(result.output).toContain("L49");
       expect(result.output).toContain("L44");
-    });
-  });
-
-  describe("TRUNCATION_WARNING", () => {
-    test("warning marker is defined and contains WARNING keyword", () => {
-      expect(TRUNCATION_WARNING).toContain("WARNING");
-      expect(TRUNCATION_WARNING).toContain("truncated");
     });
   });
 

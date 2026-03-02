@@ -93,7 +93,7 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
 
   // Known core types that the viewer doesn't render — return skip marker
   // so the caller can preserve their parentId chain for reparenting
-  if (raw.type === "model_change" || raw.type === "session_info" || raw.type === "mode_change") {
+  if (raw.type === "model_change" || raw.type === "session_info" || raw.type === "mode_change" || raw.type === "steering") {
     return { __skip: true, id: raw.id as string, parentId: raw.parentId as string | null } as never;
   }
 

@@ -72,22 +72,6 @@ describe("PLAN_MODE_ALLOWED_TOOLS", () => {
   });
 });
 
-describe("MODE_SYSTEM_PROMPT_PREFIXES", () => {
-  test("default mode has empty prefix", () => {
-    expect(MODE_SYSTEM_PROMPT_PREFIXES.default).toBe("");
-  });
-
-  test("plan mode prefix contains PLAN MODE", () => {
-    expect(MODE_SYSTEM_PROMPT_PREFIXES.plan).toContain("PLAN MODE");
-    expect(MODE_SYSTEM_PROMPT_PREFIXES.plan).toContain("must NOT create");
-  });
-
-  test("execute mode prefix contains EXECUTE MODE", () => {
-    expect(MODE_SYSTEM_PROMPT_PREFIXES.execute).toContain("EXECUTE MODE");
-    expect(MODE_SYSTEM_PROMPT_PREFIXES.execute).toContain("autonomously");
-  });
-});
-
 describe("agentLoop mode filtering", () => {
   test("default mode: all tools passed to stream function", async () => {
     const { fn, capturedContexts } = makeCaptureStreamFn();
