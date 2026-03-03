@@ -2,9 +2,10 @@
 import { resolve } from "path";
 
 const root = resolve(import.meta.dir, "..");
+const extraArgs = process.argv.slice(2);
 
 const server = Bun.spawn(
-  ["bun", "src/server/index.ts", "--dev"],
+  ["bun", "src/server/index.ts", "--dev", ...extraArgs],
   { cwd: root, stdout: "inherit", stderr: "inherit" },
 );
 
