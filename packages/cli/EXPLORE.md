@@ -1,9 +1,3 @@
-# CLI
-
-Terminal UI — the interactive TUI frontend for Diligent.
-
-## Navigation
-
 ```
 src/
   tui/

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// @summary Detect README.md gaps and @summary coverage
+// @summary Detect EXPLORE.md gaps and @summary coverage
 
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -62,6 +62,7 @@ const HARDCODED_IGNORE_DIRS = new Set([
   ".turbo",
   ".cache",
   "__pycache__",
+  "target",
 ]);
 
 const IGNORE_PATHS = ["docs/references"];
@@ -122,7 +123,7 @@ const NON_SUMMARY_FILES = new Set([
   "package.json",
   "tsconfig.json",
   ".gitignore",
-  "README.md",
+  "EXPLORE.md",
   "CLAUDE.md",
   "LICENSE",
 ]);
@@ -289,10 +290,10 @@ function countTreeNodes(tree) {
   return count;
 }
 
-// ── README.md parsing ──────────────────────────────────────────────────────
+// ── EXPLORE.md parsing ──────────────────────────────────────────────────────
 
 /**
- * Parse README code block tree into TreeNode[] (arbitrary depth).
+ * Parse EXPLORE code block tree into TreeNode[] (arbitrary depth).
  * Uses indent-based stack parsing.
  * @param {string} readmePath
  * @returns {TreeNode[]}
@@ -319,7 +320,7 @@ function parseReadmeTree(readmePath) {
       entries.push({ indent: m[1].length, name: m[2].replace(/\/$/, "") });
     }
   } catch {
-    // no README.md
+    // no EXPLORE.md
   }
 
   if (entries.length === 0) return [];
@@ -375,7 +376,7 @@ function maxTreeDepth(tree) {
 }
 
 /**
- * Render tree as indented string (same format as README code blocks).
+ * Render tree as indented string (same format as EXPLORE code blocks).
  * @param {TreeNode[]} tree
  * @param {number} indent
  * @returns {string}
@@ -394,9 +395,9 @@ function renderTree(tree, indent = 0) {
 // ── Tree validation ─────────────────────────────────────────────────────────
 
 /**
- * Compare parsed README tree vs expected tree.
+ * Compare parsed EXPLORE tree vs expected tree.
  * Reports: unlisted, removed, shallow — should expand.
- * Entries listed in README but excluded by IGNORE_PATHS are tolerated if they exist on disk.
+ * Entries listed in EXPLORE but excluded by IGNORE_PATHS are tolerated if they exist on disk.
  * @param {TreeNode[]} readmeTree
  * @param {TreeNode[]} expectedTree
  * @param {string} dirPath - relative path of the directory being checked
@@ -428,7 +429,7 @@ function validateTree(readmeTree, expectedTree, dirPath, rootPath, parentPath = 
   if (removed.length > 0)
     issues.push(`${prefix}removed: ${removed.join(", ")}`);
 
-  // For each expected node with children, check README matches
+  // For each expected node with children, check EXPLORE matches
   for (const expectedNode of expectedTree) {
     const readmeNode = readmeTree.find((n) => n.name === expectedNode.name);
     if (!readmeNode) continue;
@@ -469,32 +470,35 @@ function main() {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`Usage: check.mjs [path] [--plan]
 
-Detect README.md gaps and @summary coverage.
+Detect EXPLORE.md gaps and @summary coverage.
 
 Arguments:
   path    Root directory to check (default: cwd)
 
 Flags:
-  --plan  Show full README blueprint with expected trees
+  --plan  Show full EXPLORE blueprint with expected trees
 
 Reports:
-  - README.md blueprint (all locations, depth, nodes, status)
-  - Missing README.md files
-  - Stale README.md (listed dirs don't match actual dirs)
+  - EXPLORE.md blueprint (all locations, depth, nodes, status)
+  - Missing EXPLORE.md files
+  - Stale EXPLORE.md (listed dirs don't match actual dirs)
   - @summary coverage per directory`);
     process.exit(0);
   }
 
   const allDirs = getDirectories(rootPath);
 
-  // ── Build blueprint for all dirs needing README ──
+  // ── Build blueprint for all dirs needing EXPLORE ──
   /** @type {{ dir: string, tree: TreeNode[], nodes: number, depth: number, exists: boolean, issues: string[] }[]} */
   const blueprint = [];
   for (const dir of allDirs) {
     const tree = buildExpectedTree(dir, rootPath);
     const nodes = countTreeNodes(tree);
     if (nodes < 4) continue;
-    const readmePath = join(rootPath, dir, "README.md");
+    // Skip if parent has 1–3 child dirs: parent's EXPLORE.md already expands this dir inline
+    const parentDir = dirname(dir);
+    if (parentDir !== "." && getDirectChildDirs(parentDir, rootPath).length < 4) continue;
+    const readmePath = join(rootPath, dir, "EXPLORE.md");
     const exists = existsSync(readmePath);
     let issues = [];
     if (exists) {
@@ -511,8 +515,8 @@ Reports:
     });
   }
 
-  // ── README.md blueprint ──
-  console.log("README.md blueprint:");
+  // ── EXPLORE.md blueprint ──
+  console.log("EXPLORE.md blueprint:");
   for (const { dir, nodes, depth, exists, issues, tree } of blueprint) {
     const status = !exists
       ? "MISSING"
@@ -531,10 +535,10 @@ Reports:
   }
   console.log();
 
-  // ── Missing README.md ──
+  // ── Missing EXPLORE.md ──
   const missing = blueprint.filter((b) => !b.exists);
   if (missing.length > 0) {
-    console.log("Missing README.md:");
+    console.log("Missing EXPLORE.md:");
     for (const { dir, tree } of missing) {
       console.log(`  ${dir}/`);
       if (verbose) {
@@ -546,10 +550,10 @@ Reports:
     console.log();
   }
 
-  // ── Stale README.md ──
+  // ── Stale EXPLORE.md ──
   const stale = blueprint.filter((b) => b.exists && b.issues.length > 0);
   if (stale.length > 0) {
-    console.log("Stale README.md (directory contents changed):");
+    console.log("Stale EXPLORE.md (directory contents changed):");
     for (const { dir, issues, tree } of stale) {
       console.log(
         `  ${dir}/`.padEnd(40) + issues.join("; ")

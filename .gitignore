@@ -26,3 +26,6 @@ dist/
 
 # Terminal Bench job outputs
 jobs/
+
+# Test temp directories
+**/tmp-watcher-test/

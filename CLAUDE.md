@@ -4,7 +4,7 @@ Diligent — transparent, debuggable coding agent. Bun + TypeScript strict, mono
 
 ## Navigate by Need
 
-Read only what your task requires. Directories have README.md files — follow them recursively until you reach the file you need.
+Read only what your task requires. Directories have README.md files — follow them recursively until you reach the file you need. If a directory has an EXPLORE.md, read it for the directory tree.
 
 | Need | Start here |
 |------|-----------|
@@ -40,7 +40,7 @@ packages/core/src/
 Every source file and directory participates in a two-layer navigation index. **Maintain this when creating or modifying files.**
 
 - **`@summary`** — first line of every source file: `// @summary <desc>` (or `# @summary` for .py). Skip index.ts, types.ts, config files.
-- **`README.md`** — directories get a README when their recursive tree has 4+ nodes. Tree is built by expanding directories with 1–3 children inline and stopping at directories with 4+ children (flat list) or 0 children (leaf). Code block lists **subdirectories only** (no individual files).
+- **`EXPLORE.md`** — directories with 4+ nodes get an EXPLORE.md containing only the directory tree code block (subdirectories only, no individual files). Tree is built by expanding directories with 1–3 children inline and stopping at directories with 4+ children (flat list) or 0 children (leaf). README.md links to it with `For directory structure, see [EXPLORE.md](EXPLORE.md).`
 - Use `/glob-indexer` skill to verify coverage.
 
 

@@ -1,9 +1,3 @@
-# Tools
-
-External tooling and benchmarks.
-
-## Navigation
-
 ```
 terminal-bench/
   src/

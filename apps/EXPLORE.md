@@ -1,7 +1,3 @@
-# Apps
-
-Production applications and deployment configurations.
-
 ```
 desktop/
   loading/    Splash screen shown while sidecar boots

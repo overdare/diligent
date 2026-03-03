@@ -1,9 +1,3 @@
-# Core
-
-Agent loop, providers, tools, config, sessions, and knowledge — the engine of Diligent.
-
-## Navigation
-
 ```
 src/
   app-server/     JSON-RPC app server built on core runtime

@@ -1,7 +1,3 @@
-# Documentation
-
-Project planning, research, and reviews.
-
 ```
 plan/
   feature/       Feature development plans

@@ -1,9 +1,3 @@
-# Debug Viewer
-
-React web viewer for inspecting Diligent session logs.
-
-## Navigation
-
 ```
 scripts/           Build and dev scripts
 src/
@@ -16,5 +10,5 @@ src/
       knowledge/   Knowledge sample data
       sessions/    Session sample data
   shared/          Shared types and utilities
-test/              Unit tests
+test/
 ```

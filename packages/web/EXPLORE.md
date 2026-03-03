@@ -1,9 +1,3 @@
-# Web CLI
-
-Standalone Web CLI package for Diligent.
-
-## Navigation
-
 ```
 src/
   client/

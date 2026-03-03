@@ -1,9 +1,3 @@
-# Packages
-
-Monorepo workspaces.
-
-## Navigation
-
 ```
 cli/            Terminal UI frontend
 core/           Agent engine (loop, providers, tools, config, sessions)
