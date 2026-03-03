@@ -1,0 +1,14 @@
+# Tech Lead Assessments
+
+Periodic sustainability reviews of the Diligent codebase. Each file is named `<date>-<commit>[-scope].md`.
+
+## Assessment Log
+
+| File | Verdict | Scope | Phase / Notes |
+|------|---------|-------|---------------|
+| [2026-02-27-10f036c.md](2026-02-27-10f036c.md) | GREEN | Full project | Phase 4b complete (Skills + Slash Commands). First recorded assessment. |
+| [2026-02-27-8bae17a.md](2026-02-27-8bae17a.md) | GREEN | Core only | Phase 4c complete (Print Mode + Collaboration Modes) + P0/P1 backlog items. Incremental improvement review. |
+| [2026-02-28-aac82c7.md](2026-02-28-aac82c7.md) | YELLOW | Full project | Phase 4c + Gemini provider addition. Three type-sync points flagged as compounding risk. |
+| [2026-03-02-8494f69-web.md](2026-03-02-8494f69-web.md) | YELLOW | packages/web | packages/web initial review (4 commits old). WebSocket reconnect loses thread context; type literals need deduplication. |
+| [2026-03-02-594ac2a-web-frontend.md](2026-03-02-594ac2a-web-frontend.md) | GREEN-YELLOW | packages/web frontend | Same-day follow-up after remediation. tools.ts DRY + toSafeFallback bug fixed. App.tsx god-component risk flagged for Phase 5. |
+| [2026-03-03-d0cf5e0.md](2026-03-03-d0cf5e0.md) | GREEN | Full project | All YELLOW items from aac82c7 resolved. Protocol package now single source of truth. Remaining risks: type duplication and hardcoded CLI fallback strings. |

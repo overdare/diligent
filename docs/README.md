@@ -14,5 +14,5 @@ research/
   side-research/   Exploratory research
   temp/            Temporary notes and drafts
 review/
-  tech-lead/       Sustainability assessments
+  tech-lead/       Sustainability assessments — files named <date>-<commit>[-scope].md
 ```
