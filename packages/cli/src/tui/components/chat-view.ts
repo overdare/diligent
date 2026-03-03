@@ -13,7 +13,8 @@ function formatTokensCompact(n: number): string {
   return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
 }
 
-function formatToolElapsed(ms: number): string {
+function formatToolElapsed(ms: number): string | null {
+  if (ms < 500) return null;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -192,8 +193,8 @@ export class ChatView implements Component {
         this.activeSpinner.stop();
         const startTime = this.toolStartTimes.get(event.toolCallId);
         this.toolStartTimes.delete(event.toolCallId);
-        const elapsed =
-          startTime !== undefined ? ` ${t.dim}· ${formatToolElapsed(Date.now() - startTime)}${t.reset}` : "";
+        const elapsedVal = startTime !== undefined ? formatToolElapsed(Date.now() - startTime) : null;
+        const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
 
         if (event.toolName === "plan") {
           this.planCallCount++;
@@ -351,8 +352,8 @@ export class ChatView implements Component {
   private commitThinkingBlock(): void {
     this.thinkingSpinner.stop();
     if (this.thinkingText.length > 0) {
-      const elapsed = this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : "";
-      const elapsedStr = elapsed ? ` ${t.dim}\xb7 ${elapsed}${t.reset}` : "";
+      const elapsedVal = this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : null;
+      const elapsedStr = elapsedVal ? ` ${t.dim}\xb7 ${elapsedVal}${t.reset}` : "";
       this.items.push([`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`]);
     }
     this.thinkingStartTime = null;
