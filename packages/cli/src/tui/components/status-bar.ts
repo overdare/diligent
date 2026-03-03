@@ -62,9 +62,7 @@ export class StatusBar implements Component {
     if (this.info.contextWindow) {
       const used = this.info.tokensUsed ?? 0;
       const pct = Math.round((used / this.info.contextWindow) * 100);
-      leftParts.push(
-        `${formatTokensCompact(used)} / ${formatTokensCompact(this.info.contextWindow)} (${pct}%)`,
-      );
+      leftParts.push(`${formatTokensCompact(used)} / ${formatTokensCompact(this.info.contextWindow)} (${pct}%)`);
     } else if (this.info.tokensUsed !== undefined) {
       leftParts.push(`${formatTokensCompact(this.info.tokensUsed)} used`);
     }

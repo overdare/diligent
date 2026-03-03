@@ -388,7 +388,9 @@ export function App() {
             onModelChange={(m) => void providerMgr.changeModel(m)}
             usage={state.usage}
             currentContextTokens={state.currentContextTokens}
-            contextWindow={providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0}
+            contextWindow={
+              providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0
+            }
             hasProvider={providerMgr.providers.some((p) => p.configured || p.oauthConnected)}
             onOpenProviders={() => setShowProviderModal(true)}
           />

@@ -75,7 +75,7 @@ describe("collab integration", () => {
   });
 
   it("collab tools excluded from child general agent tools", () => {
-    const { tools, registry } = createCollabTools(
+    const { registry } = createCollabTools(
       makeCollabDeps({ sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")) }),
     );
     // The registry should exclude collab tools from child agents

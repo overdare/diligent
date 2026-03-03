@@ -6,6 +6,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "lefthook install --force",
     "test": "bun test",
     "test:e2e": "bun test packages/e2e/",
     "web:dev": "bun run packages/web/src/server/index.ts --dev",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "lefthook": "^2.1.2"
   }
 }

@@ -14,8 +14,11 @@ export function PlanPanel({ planState }: { planState: PlanState }) {
         </span>
       </div>
       <ul className="max-h-36 overflow-y-auto text-sm leading-relaxed">
-        {planState.steps.map((step, i) => (
-          <li key={i} className={`flex items-start gap-2 ${step.done ? "text-muted line-through" : "text-text"}`}>
+        {planState.steps.map((step) => (
+          <li
+            key={step.text}
+            className={`flex items-start gap-2 ${step.done ? "text-muted line-through" : "text-text"}`}
+          >
             <span className="shrink-0">{step.done ? "\u2713" : "\u25CB"}</span>
             <span>{step.text}</span>
           </li>

@@ -1,6 +1,12 @@
 // @summary Tests for OpenAI token exchange: code exchange, JWT parsing, account_id extraction
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { buildOAuthTokens, exchangeCodeForTokens, extractAccountId, parseJwtClaims } from "../token-exchange";
+import {
+  buildOAuthTokens,
+  exchangeCodeForTokens,
+  extractAccountId,
+  parseJwtClaims,
+  type RawTokenResponse,
+} from "../token-exchange";
 
 const originalFetch = globalThis.fetch;
 
@@ -147,7 +153,7 @@ describe("buildOAuthTokens", () => {
       refresh_token: "rt",
       id_token: "it.e30.sig", // minimal valid-ish jwt with empty payload
       token_type: "Bearer",
-    } as any;
+    } as RawTokenResponse;
 
     const tokens = buildOAuthTokens(raw);
     expect(tokens.expires_at).toBeGreaterThanOrEqual(before + 3600 * 1000);
