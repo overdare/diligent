@@ -94,7 +94,7 @@ describe("agentLoop steering", () => {
     // Queue a steering message that will be drained before the first LLM call
     steeringMessages.push({
       role: "user",
-      content: "[Steering] change direction",
+      content: "change direction",
       timestamp: Date.now(),
     });
 
@@ -130,7 +130,7 @@ describe("agentLoop steering", () => {
     expect(streamFn.contexts[0].messages.length).toBeGreaterThanOrEqual(2); // user + steering
     const secondCallMsgs = streamFn.contexts[0].messages;
     const hasSteeringMsg = secondCallMsgs.some(
-      (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("[Steering]"),
+      (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("change direction"),
     );
     expect(hasSteeringMsg).toBe(true);
   });
@@ -162,7 +162,7 @@ describe("agentLoop steering", () => {
           return [
             {
               role: "user" as const,
-              content: "[Steering] redirect after tools",
+              content: "redirect after tools",
               timestamp: Date.now(),
             },
           ];
@@ -186,7 +186,7 @@ describe("agentLoop steering", () => {
     const secondCallMsgs = streamFn.contexts[1].messages;
     const hasSteeringMsg = secondCallMsgs.some(
       (m) =>
-        m.role === "user" && typeof m.content === "string" && m.content.includes("[Steering] redirect after tools"),
+        m.role === "user" && typeof m.content === "string" && m.content.includes("redirect after tools"),
     );
     expect(hasSteeringMsg).toBe(true);
   });

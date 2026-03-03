@@ -113,7 +113,7 @@ afterEach(async () => {
 });
 
 describe("SessionManager.steer()", () => {
-  test("steer() queues a steering message and persists SteeringEntry", async () => {
+  test("steer() is memory-only — not persisted to disk", async () => {
     const dir = await setupDir();
     const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
     await mgr.create();
@@ -131,18 +131,13 @@ describe("SessionManager.steer()", () => {
     }
     await mgr.waitForWrites();
 
-    // Entry count: user msg + steering + assistant response = 3+
-    expect(mgr.entryCount).toBeGreaterThanOrEqual(3);
+    // Entry count: user msg + assistant response only (steering is memory-only)
+    expect(mgr.entryCount).toBeGreaterThanOrEqual(2);
 
-    // Persisted to disk
+    // No steering entries persisted to disk
     const { entries } = await readSessionFile(mgr.sessionPath!);
     const steeringEntries = entries.filter((e) => e.type === "steering");
-    expect(steeringEntries.length).toBeGreaterThanOrEqual(1);
-    const se = steeringEntries[0] as SteeringEntry;
-    expect(se.source).toBe("steer");
-    expect(se.message.role).toBe("user");
-    expect(typeof se.message.content === "string" && se.message.content).toContain("[Steering]");
-    expect(typeof se.message.content === "string" && se.message.content).toContain("focus on tests instead");
+    expect(steeringEntries).toHaveLength(0);
   });
 
   test("steer() message is drained into agent loop", async () => {
@@ -269,7 +264,7 @@ describe("Context builder: SteeringEntry", () => {
         id: "s1",
         parentId: "a2",
         timestamp: "2026-02-27T10:00:02.000Z",
-        message: { role: "user", content: "[Steering] change focus", timestamp: 1708900000000 },
+        message: { role: "user", content: "change focus", timestamp: 1708900000000 },
         source: "steer",
       },
       {
@@ -293,7 +288,7 @@ describe("Context builder: SteeringEntry", () => {
     expect(ctx.messages[0].role).toBe("user");
     expect(ctx.messages[1].role).toBe("assistant");
     expect(ctx.messages[2].role).toBe("user");
-    expect(ctx.messages[2].content).toContain("[Steering]");
+    expect(ctx.messages[2].content).toContain("change focus");
     expect(ctx.messages[3].role).toBe("assistant");
   });
 
@@ -335,7 +330,7 @@ describe("Context builder: SteeringEntry", () => {
         id: "s1",
         parentId: "c1",
         timestamp: "2026-02-27T10:01:01.000Z",
-        message: { role: "user", content: "[Steering] new direction", timestamp: 1708900000000 },
+        message: { role: "user", content: "new direction", timestamp: 1708900000000 },
         source: "steer",
       },
       {
@@ -359,7 +354,7 @@ describe("Context builder: SteeringEntry", () => {
     expect(ctx.messages).toHaveLength(3);
     expect(ctx.messages[0].content as string).toContain("[Session Summary]");
     expect(ctx.messages[1].role).toBe("user");
-    expect(ctx.messages[1].content).toContain("[Steering]");
+    expect(ctx.messages[1].content).toContain("new direction");
     expect(ctx.messages[2].role).toBe("assistant");
   });
 });

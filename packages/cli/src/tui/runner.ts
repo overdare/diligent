@@ -1,6 +1,6 @@
 // @summary Non-interactive runner using JSON-RPC app-server communication
 import type { AgentEvent, DiligentPaths, ModeKind } from "@diligent/core";
-import { createPermissionEngine, DiligentAppServer, ensureDiligentDir } from "@diligent/core";
+import { createPermissionEngine, createYoloPermissionEngine, DiligentAppServer, ensureDiligentDir } from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
@@ -29,7 +29,9 @@ export class NonInteractiveRunner {
     }
 
     const isTTY = process.stderr.isTTY === true;
-    const permissionEngine = createPermissionEngine(this.config.diligent.permissions ?? []);
+    const permissionEngine = this.config.diligent.yolo
+      ? createYoloPermissionEngine()
+      : createPermissionEngine(this.config.diligent.permissions ?? []);
     const adapter = new ProtocolNotificationAdapter();
     let hasText = false;
     let threadId: string | null = null;

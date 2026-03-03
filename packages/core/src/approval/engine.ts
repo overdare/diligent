@@ -31,6 +31,17 @@ export function generatePattern(request: ApprovalRequest): string {
   return request.toolName;
 }
 
+/**
+ * YOLO permission engine — auto-approves everything, ignores all rules.
+ * `remember()` is a no-op since nothing ever reaches "prompt".
+ */
+export function createYoloPermissionEngine(): PermissionEngine {
+  return {
+    evaluate: () => "allow",
+    remember: () => {},
+  };
+}
+
 export function createPermissionEngine(configRules: PermissionRule[]): PermissionEngine {
   // Session-scoped rules added by "always" responses (D029)
   const sessionRules: PermissionRule[] = [];

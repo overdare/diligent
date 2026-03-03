@@ -15,6 +15,7 @@ async function main() {
       list: { type: "boolean", short: "l" },
       prompt: { type: "string", short: "p" },
       mode: { type: "string", short: "m" }, // D087: collaboration mode
+      yolo: { type: "boolean" }, // auto-approve all permissions
       version: { type: "boolean", short: "v" },
     },
   });
@@ -36,6 +37,11 @@ async function main() {
       process.exit(1);
     }
     config.mode = values.mode as ModeKind;
+  }
+
+  // Apply --yolo: override config to auto-approve all permissions
+  if (values.yolo) {
+    config.diligent = { ...config.diligent, yolo: true };
   }
 
   if (values.list) {

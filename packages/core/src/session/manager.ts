@@ -361,15 +361,15 @@ export class SessionManager {
     }
   }
 
-  /** Inject a mid-task steering message into the current agent loop. */
+  /** Inject a mid-task steering message into the current agent loop.
+   * Memory-only — not persisted to disk. Injected at a safe position
+   * (never between tool_use and tool_result) by the agent loop's drainSteering(). */
   steer(content: string): void {
-    const message: Message = {
+    this.steeringQueue.push({
       role: "user",
-      content: `[Steering] ${content}`,
+      content,
       timestamp: Date.now(),
-    };
-    this.steeringQueue.push(message);
-    this.appendSteeringEntry(message, "steer");
+    });
   }
 
   /** Queue a follow-up message to run after the current agent loop completes. */

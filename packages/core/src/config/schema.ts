@@ -86,6 +86,9 @@ export const DiligentConfigSchema = z
         }),
       )
       .optional(),
+
+    // YOLO mode — auto-approve all permission prompts without asking
+    yolo: z.boolean().optional(),
   })
   .strict();
 

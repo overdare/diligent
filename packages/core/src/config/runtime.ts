@@ -2,7 +2,7 @@
 
 import type { ModeKind } from "../agent/index";
 import type { PermissionEngine } from "../approval/index";
-import { createPermissionEngine } from "../approval/index";
+import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
 import { loadAuthStore, loadOAuthTokens } from "../auth/auth-store";
 import type { DiligentPaths } from "../infrastructure/index";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
@@ -110,7 +110,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
       reserveTokens: config.compaction?.reserveTokens ?? 16384,
       keepRecentTokens: config.compaction?.keepRecentTokens ?? 20000,
     },
-    permissionEngine: createPermissionEngine(config.permissions ?? []),
+    permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
     providerManager,
   };
 }

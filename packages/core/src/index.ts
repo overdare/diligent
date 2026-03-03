@@ -24,7 +24,7 @@ export type { DiligentAppServerConfig, NotificationListener, ServerRequestHandle
 export { DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)
-export { createPermissionEngine } from "./approval/index";
+export { createPermissionEngine, createYoloPermissionEngine } from "./approval/index";
 // Auth
 export type {
   AuthKeys,

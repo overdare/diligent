@@ -10,7 +10,13 @@ import type {
   SkillMetadata,
   UserInputRequest,
 } from "@diligent/core";
-import { createPermissionEngine, DiligentAppServer, ensureDiligentDir, resolveModel } from "@diligent/core";
+import {
+  createPermissionEngine,
+  createYoloPermissionEngine,
+  DiligentAppServer,
+  ensureDiligentDir,
+  resolveModel,
+} from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
@@ -159,9 +165,10 @@ export class App {
     // Show welcome banner
     this.chatView.addLines(this.buildWelcomeBanner());
 
-    // Initialize PermissionEngine from config rules
-    const permissionRules = this.config.diligent.permissions ?? [];
-    this.permissionEngine = createPermissionEngine(permissionRules);
+    // Initialize PermissionEngine — yolo mode auto-approves everything
+    this.permissionEngine = this.config.diligent.yolo
+      ? createYoloPermissionEngine()
+      : createPermissionEngine(this.config.diligent.permissions ?? []);
 
     if (!this.paths) {
       throw new Error("No .diligent directory paths are available.");
@@ -741,6 +748,7 @@ export class App {
     const title = `>_ diligent (v${pkgVersion})`;
     const modelLine = truncate(`model:     ${this.config.model.id}`);
     const dirLine = truncate(`directory: ${dir}`);
+    const yoloLine = this.config.diligent.yolo ? truncate("yolo:      ON ⚡ all permissions auto-approved") : "";
 
     const row = (s: string) => `${t.dim}\u2502 ${pad(s)} \u2502${t.reset}`;
 
@@ -750,6 +758,7 @@ export class App {
       row(""),
       row(modelLine),
       row(dirLine),
+      ...(yoloLine ? [`${t.dim}\u2502${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}\u2502${t.reset}`] : []),
       `${t.dim}\u2570${"─".repeat(boxWidth - 2)}\u256f${t.reset}`,
       "",
       `${t.dim}  Tip: /help for commands \u00b7 ctrl+c to cancel \u00b7 ctrl+d to exit${t.reset}`,

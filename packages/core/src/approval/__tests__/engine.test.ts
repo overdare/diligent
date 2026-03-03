@@ -1,6 +1,6 @@
-// @summary Tests for PermissionEngine — rule matching, last-match-wins, session cache, wildcards
+// @summary Tests for PermissionEngine — rule matching, last-match-wins, session cache, wildcards, yolo
 import { describe, expect, it } from "bun:test";
-import { createPermissionEngine, extractSubject, generatePattern, wildcardMatch } from "../engine";
+import { createPermissionEngine, createYoloPermissionEngine, extractSubject, generatePattern, wildcardMatch } from "../engine";
 import type { PermissionRule } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -338,5 +338,36 @@ describe("PermissionEngine.remember", () => {
     engine.remember(req1, "allow");
     expect(engine.evaluate(req1)).toBe("allow");
     expect(engine.evaluate(req2)).toBe("prompt"); // different prefix
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createYoloPermissionEngine — YOLO mode
+// ---------------------------------------------------------------------------
+describe("createYoloPermissionEngine", () => {
+  it("always returns 'allow' for any permission type", () => {
+    const engine = createYoloPermissionEngine();
+
+    expect(
+      engine.evaluate({ permission: "execute", toolName: "bash", description: "run", details: { command: "rm -rf /" } }),
+    ).toBe("allow");
+
+    expect(
+      engine.evaluate({ permission: "write", toolName: "write", description: "write", details: { file_path: "/etc/passwd" } }),
+    ).toBe("allow");
+
+    expect(
+      engine.evaluate({ permission: "read", toolName: "read", description: "read" }),
+    ).toBe("allow");
+  });
+
+  it("remember is a no-op (does not throw)", () => {
+    const engine = createYoloPermissionEngine();
+    expect(() => {
+      engine.remember(
+        { permission: "execute", toolName: "bash", description: "run", details: { command: "ls" } },
+        "allow",
+      );
+    }).not.toThrow();
   });
 });

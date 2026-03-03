@@ -106,58 +106,79 @@ export function buildSessionContext(
     }
   }
 
-  return { messages: options?.skipRepair ? messages : repairOrphanedToolUse(messages), currentModel };
+  return { messages: options?.skipRepair ? messages : normalizeToolMessages(messages), currentModel };
 }
 
 /**
- * Ensure every tool_use in assistant messages has a matching tool_result.
- * When a session is interrupted mid-tool-execution, the assistant message
- * with tool_call blocks is persisted but the tool_result never arrives.
- * The Anthropic API rejects such histories. We inject synthetic "interrupted"
- * tool_result messages so the conversation can resume cleanly.
+ * Normalize tool message ordering for API compatibility.
+ *
+ * Handles two problems:
+ * 1. **Interleaved messages**: Steering messages persisted between tool_use and
+ *    tool_result (user steered while approval was pending). These get moved
+ *    AFTER the tool_results so the API sees: assistant(tool_use) → tool_results → steering.
+ * 2. **Orphaned tool_calls**: Session interrupted before tool_result arrived.
+ *    Synthetic "interrupted" tool_results are injected.
  */
-function repairOrphanedToolUse(messages: Message[]): Message[] {
+function normalizeToolMessages(messages: Message[]): Message[] {
   if (messages.length === 0) return messages;
 
   const result: Message[] = [];
+  let i = 0;
 
-  for (let i = 0; i < messages.length; i++) {
+  while (i < messages.length) {
     const msg = messages[i];
     result.push(msg);
+    i++;
 
     if (msg.role !== "assistant") continue;
 
     // Collect tool_call ids from this assistant message
-    const toolCallIds = msg.content
-      .filter((b) => b.type === "tool_call")
-      .map((b) => (b as { type: "tool_call"; id: string }).id);
+    const pendingIds = new Set(
+      msg.content
+        .filter((b) => b.type === "tool_call")
+        .map((b) => (b as { type: "tool_call"; id: string }).id),
+    );
 
-    if (toolCallIds.length === 0) continue;
+    if (pendingIds.size === 0) continue;
 
-    // Collect tool_result ids that follow before the next non-tool_result message
-    const followingResultIds = new Set<string>();
-    for (let j = i + 1; j < messages.length; j++) {
-      if (messages[j].role === "tool_result") {
-        followingResultIds.add((messages[j] as ToolResultMessage).toolCallId);
-      } else {
+    // Scan ahead: separate tool_results from interleaved messages
+    const toolResults: ToolResultMessage[] = [];
+    const deferred: Message[] = [];
+
+    while (i < messages.length && pendingIds.size > 0) {
+      const next = messages[i];
+      if (next.role === "tool_result" && pendingIds.has((next as ToolResultMessage).toolCallId)) {
+        toolResults.push(next as ToolResultMessage);
+        pendingIds.delete((next as ToolResultMessage).toolCallId);
+        i++;
+      } else if (next.role === "assistant") {
+        // Next assistant turn — stop scanning
         break;
+      } else {
+        // Non-tool_result (e.g., steering user message) — defer it
+        deferred.push(next);
+        i++;
       }
     }
 
-    // Inject synthetic results for any orphaned tool_calls
-    for (const id of toolCallIds) {
-      if (!followingResultIds.has(id)) {
-        const toolCallBlock = msg.content.find((b) => b.type === "tool_call" && (b as { id: string }).id === id);
-        result.push({
-          role: "tool_result",
-          toolCallId: id,
-          toolName: (toolCallBlock as { name: string })?.name ?? "unknown",
-          output: "Session interrupted before tool execution completed.",
-          isError: true,
-          timestamp: msg.timestamp,
-        });
-      }
+    // Push tool_results first (API requires them adjacent to tool_use)
+    for (const tr of toolResults) result.push(tr);
+
+    // Inject synthetic results for any truly orphaned tool_calls
+    for (const id of pendingIds) {
+      const toolCallBlock = msg.content.find((b) => b.type === "tool_call" && (b as { id: string }).id === id);
+      result.push({
+        role: "tool_result",
+        toolCallId: id,
+        toolName: (toolCallBlock as { name: string })?.name ?? "unknown",
+        output: "Session interrupted before tool execution completed.",
+        isError: true,
+        timestamp: msg.timestamp,
+      });
     }
+
+    // Push deferred messages after tool_results
+    for (const d of deferred) result.push(d);
   }
 
   return result;
