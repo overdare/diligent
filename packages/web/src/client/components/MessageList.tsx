@@ -61,10 +61,14 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
           <EmptyState onSelectPrompt={onSelectPrompt} />
         ) : (
           <div className="space-y-1">
-            {items.map((item) => {
+            {items.map((item, idx) => {
               if (item.kind === "tool") return <ToolBlock key={item.id} item={item} />;
               if (item.kind === "user") return <UserMessage key={item.id} text={item.text} />;
-              return <AssistantMessage key={item.id} item={item} />;
+              const nextItem = items[idx + 1];
+              const isFollowedByUserInputTool =
+                nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
+              const displayItem = isFollowedByUserInputTool ? { ...item, text: "" } : item;
+              return <AssistantMessage key={item.id} item={displayItem} />;
             })}
 
             {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (

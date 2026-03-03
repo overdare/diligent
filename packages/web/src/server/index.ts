@@ -37,6 +37,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   let registry: AgentRegistry | undefined;
 
   const appServerConfig: DiligentAppServerConfig = {
+    cwd,
     resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
     buildAgentConfig: ({ cwd: requestCwd, mode, signal, approve, ask }) => {
       if (!runtimeConfig.model) {

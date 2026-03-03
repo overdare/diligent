@@ -11,7 +11,9 @@
   "dependencies": {
     "@diligent/core": "workspace:*",
     "@diligent/protocol": "workspace:*",
+    "highlight.js": "^11.11.1",
     "marked": "^15.0.0",
+    "marked-highlight": "^2.2.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

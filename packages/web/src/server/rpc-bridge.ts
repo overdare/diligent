@@ -11,6 +11,7 @@ import {
   waitForCallback,
   exchangeCodeForTokens,
   buildOAuthTokens,
+  openBrowser,
   CHATGPT_AUTH_URL,
   CHATGPT_CLIENT_ID,
   CHATGPT_REDIRECT_URI,
@@ -297,11 +298,13 @@ export class RpcBridge {
           const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
           const loginId = state;
 
-          // Respond immediately with the auth URL
+          // Respond immediately with the auth URL and open the browser server-side
+          // (client-side window.open() fails in Tauri WebView)
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { authUrl } }),
           });
+          openBrowser(authUrl);
 
           // Run OAuth flow asynchronously, notify on completion
           this.oauthPending = (async () => {

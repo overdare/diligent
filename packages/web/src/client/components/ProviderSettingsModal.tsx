@@ -75,9 +75,8 @@ export function ProviderSettingsModal({
     setSavingProvider("openai");
     setError(null);
     try {
-      const { authUrl } = await onOAuthStart();
-      window.open(authUrl, "_blank", "noopener");
-      // account/login/completed notification will signal completion
+      await onOAuthStart();
+      // Server opens the browser; account/login/completed notification will signal completion
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start OAuth");
       setSavingProvider(null);

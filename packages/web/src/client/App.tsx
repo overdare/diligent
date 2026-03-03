@@ -7,6 +7,7 @@ import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
+import { PlanPanel } from "./components/PlanPanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
@@ -108,7 +109,6 @@ export function App() {
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
             await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
-            await providerMgr.refreshProviders(rpc);
             return;
           }
         }
@@ -120,7 +120,6 @@ export function App() {
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
           await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
           await refreshThreadList(rpc);
-          await providerMgr.refreshProviders(rpc);
           return;
         }
 
@@ -128,9 +127,11 @@ export function App() {
         const history = await rpc.request("thread/read", { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
         await refreshThreadList(rpc);
-        await providerMgr.refreshProviders(rpc);
       } catch (error) {
         console.error(error);
+      } finally {
+        // Always refresh providers regardless of thread setup outcome
+        await providerMgr.refreshProviders(rpc);
       }
     });
 
@@ -262,6 +263,8 @@ export function App() {
     state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
   const statusDotPulse = state.threadStatus !== "idle";
 
+  const showPlan = state.planState && state.planState.steps.some((s) => !s.done);
+
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();
 
@@ -315,6 +318,8 @@ export function App() {
                 : null
             }
           />
+
+          {showPlan && <PlanPanel planState={state.planState!} />}
 
           <InputDock
             input={input}

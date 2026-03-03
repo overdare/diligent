@@ -28,6 +28,7 @@ import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResp
 export interface DiligentAppServerConfig {
   serverName?: string;
   serverVersion?: string;
+  cwd?: string;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   buildAgentConfig: (args: {
     cwd: string;
@@ -63,7 +64,7 @@ export class DiligentAppServer {
   constructor(private readonly config: DiligentAppServerConfig) {
     this.serverName = config.serverName ?? "diligent-app-server";
     this.serverVersion = config.serverVersion ?? "0.0.1";
-    this.knownCwds.add(process.cwd());
+    this.knownCwds.add(config.cwd ?? process.cwd());
   }
 
   setNotificationListener(listener: NotificationListener | null): void {

@@ -196,11 +196,14 @@ export class AgentRegistry {
     await Promise.race([Promise.all(racers), timeoutPromise]);
     resolved = true;
 
-    // Collect final statuses for all known agents
+    // Collect final statuses for all known agents and auto-cleanup completed ones
     for (const id of validIds) {
       if (!(id in result)) {
         const entry = this.agents.get(id)!;
         result[id] = entry.status;
+      }
+      if (isFinal(result[id])) {
+        this.agents.delete(id);
       }
     }
 

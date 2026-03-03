@@ -9,6 +9,11 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 
+export interface PlanState {
+  title: string;
+  steps: Array<{ text: string; done: boolean }>;
+}
+
 export interface ToastState {
   id: string;
   kind: "error" | "info";
@@ -62,6 +67,7 @@ export interface ThreadState {
   pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string> } | null;
   toast: ToastState | null;
   usage: UsageState;
+  planState: PlanState | null;
 }
 
 const zeroUsage: UsageState = {
@@ -84,6 +90,7 @@ export const initialThreadState: ThreadState = {
   pendingUserInput: null,
   toast: null,
   usage: zeroUsage,
+  planState: null,
 };
 
 function addSeen(state: ThreadState, key: string): ThreadState {
@@ -131,6 +138,18 @@ function updateItem(state: ThreadState, itemId: string, updater: (item: RenderIt
     ...state,
     items: nextItems,
   };
+}
+
+function parsePlanOutput(output: string): PlanState | null {
+  try {
+    const parsed = JSON.parse(output) as { title?: string; steps?: Array<{ text: string; done: boolean }> };
+    if (parsed && Array.isArray(parsed.steps)) {
+      return { title: parsed.title ?? "Plan", steps: parsed.steps };
+    }
+  } catch {
+    // not valid plan JSON
+  }
+  return null;
 }
 
 export function reduceServerNotification(state: ThreadState, notification: DiligentServerNotification): ThreadState {
@@ -281,7 +300,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
       }
 
       if (item.type === "toolCall") {
-        return updateItem(state, renderId, (current) =>
+        let next = updateItem(state, renderId, (current) =>
           current.kind === "tool"
             ? {
                 ...current,
@@ -291,6 +310,15 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
               }
             : current,
         );
+
+        if (item.toolName === "plan" && item.output) {
+          const plan = parsePlanOutput(item.output);
+          if (plan) {
+            next = { ...next, planState: plan };
+          }
+        }
+
+        return next;
       }
 
       return state;
@@ -353,6 +381,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     seenKeys: {},
     itemSlots: {},
     usage: zeroUsage,
+    planState: null,
   };
 
   let current = base;
@@ -432,6 +461,16 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       toolCallId: message.toolCallId,
     });
   }
+
+  // Extract planState from the last plan tool result
+  let lastPlan: PlanState | null = null;
+  for (const message of payload.messages) {
+    if (message.role === "tool" && message.toolName === "plan") {
+      const plan = parsePlanOutput(message.output);
+      if (plan) lastPlan = plan;
+    }
+  }
+  current = { ...current, planState: lastPlan };
 
   return current;
 }

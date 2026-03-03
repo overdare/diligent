@@ -50,6 +50,7 @@ export {
   CHATGPT_SCOPES,
   exchangeCodeForTokens,
   generatePKCE,
+  openBrowser,
   refreshOAuthTokens,
   runChatGPTOAuth,
   shouldRefresh,
