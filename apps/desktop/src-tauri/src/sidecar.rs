@@ -10,7 +10,7 @@ use tauri_plugin_shell::ShellExt;
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 
 /// Spawn the Bun web server sidecar and return the port it is listening on.
-pub async fn start_sidecar(app: &AppHandle) -> Result<u16, String> {
+pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
     // Resolve dist/client path from bundle resources
     let resource_dir = app
         .path()
@@ -18,10 +18,6 @@ pub async fn start_sidecar(app: &AppHandle) -> Result<u16, String> {
         .map_err(|e| format!("Cannot resolve resource dir: {e}"))?;
     let dist_dir = resource_dir.join("dist").join("client");
     let dist_dir_str = dist_dir.to_string_lossy().to_string();
-
-    // Use HOME as the working directory so ensureDiligentDir() can create .diligent/
-    let home_dir = std::env::var("HOME")
-        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
 
     // Spawn the sidecar with port=0 so the OS picks a free port
     let sidecar_cmd = app
@@ -31,7 +27,7 @@ pub async fn start_sidecar(app: &AppHandle) -> Result<u16, String> {
         .args([
             "--port=0",
             &format!("--dist-dir={}", dist_dir_str),
-            &format!("--cwd={}", home_dir),
+            &format!("--cwd={}", cwd),
         ]);
 
     let _ = std::fs::write("/tmp/diligent-debug.log", format!("spawning sidecar with dist-dir: {}\n", dist_dir_str));

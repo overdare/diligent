@@ -10,6 +10,8 @@
         --text: #eff7f8;
         --muted: #96afb4;
         --accent: #5ad9b8;
+        --accent-dim: rgba(90, 217, 184, 0.12);
+        --accent-border: rgba(90, 217, 184, 0.3);
       }
 
       * {
@@ -44,6 +46,49 @@
         color: var(--accent);
       }
 
+      /* Picker state */
+      .hint {
+        font-size: 0.8rem;
+        color: var(--muted);
+        letter-spacing: 0.03em;
+      }
+
+      .pick-btn {
+        margin-top: 0.25rem;
+        padding: 0.55rem 1.5rem;
+        background: var(--accent-dim);
+        border: 1px solid var(--accent-border);
+        border-radius: 4px;
+        color: var(--accent);
+        font-family: inherit;
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .pick-btn:hover {
+        background: rgba(90, 217, 184, 0.2);
+        border-color: var(--accent);
+      }
+
+      .pick-btn:active {
+        background: rgba(90, 217, 184, 0.28);
+      }
+
+      .pick-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .error {
+        font-size: 0.7rem;
+        color: #f87171;
+        letter-spacing: 0.03em;
+        max-width: 280px;
+      }
+
+      /* Loading state */
       .spinner {
         width: 24px;
         height: 24px;
@@ -62,13 +107,55 @@
         color: var(--muted);
         letter-spacing: 0.05em;
       }
+
+      [hidden] { display: none !important; }
     </style>
   </head>
   <body>
-    <div class="container">
+    <!-- State 1: folder picker -->
+    <div id="picker" class="container">
+      <div class="logo">Diligent</div>
+      <p class="hint">Open a project folder to get started.</p>
+      <button id="pick-btn" class="pick-btn" onclick="pickFolder()">Open Folder</button>
+      <p id="error" class="error" hidden></p>
+    </div>
+
+    <!-- State 2: loading spinner (shown after folder is chosen) -->
+    <div id="loading" class="container" hidden>
       <div class="logo">Diligent</div>
       <div class="spinner"></div>
       <div class="status">Starting server...</div>
     </div>
+
+    <script>
+      async function pickFolder() {
+        const btn = document.getElementById('pick-btn');
+        const errorEl = document.getElementById('error');
+
+        btn.disabled = true;
+        errorEl.hidden = true;
+
+        try {
+          const { invoke } = window.__TAURI__.core;
+          const cwd = await invoke('pick_directory');
+          if (!cwd) {
+            // User cancelled the dialog — stay on picker.
+            btn.disabled = false;
+            return;
+          }
+
+          document.getElementById('picker').hidden = true;
+          document.getElementById('loading').hidden = false;
+
+          await invoke('launch_server', { cwd });
+        } catch (err) {
+          document.getElementById('picker').hidden = false;
+          document.getElementById('loading').hidden = true;
+          errorEl.textContent = String(err);
+          errorEl.hidden = false;
+          btn.disabled = false;
+        }
+      }
+    </script>
   </body>
 </html>

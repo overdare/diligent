@@ -1,9 +1,54 @@
-// @summary Tauri app builder: registers plugins, starts sidecar, creates main window at server URL
+// @summary Tauri app builder: registers plugins, exposes pick_directory/launch_server commands
 mod sidecar;
 
 use sidecar::{start_sidecar, stop_sidecar, SidecarState};
 use std::sync::Mutex;
 use tauri::Manager;
+
+/// Open a native folder picker and return the selected path (or null if cancelled).
+#[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Open project folder")
+        .pick_folder(move |result| {
+            let _ = tx.send(result);
+        });
+
+    let path = rx.await.map_err(|_| "Channel error".to_string())?;
+    Ok(path.map(|p| match p {
+        FilePath::Path(pb) => pb.to_string_lossy().to_string(),
+        _ => String::new(),
+    }))
+}
+
+/// Start the sidecar with the given cwd, then open the main app window.
+#[tauri::command]
+async fn launch_server(app: tauri::AppHandle, cwd: String) -> Result<(), String> {
+    let port = start_sidecar(&app, &cwd).await?;
+
+    let url_str = format!("http://127.0.0.1:{}", port);
+    let parsed: tauri::Url = url_str.parse().map_err(|e| format!("URL parse error: {e}"))?;
+
+    // Create the app window BEFORE closing the splash so there is
+    // never a zero-window gap that would trigger Tauri's auto-quit.
+    tauri::WebviewWindowBuilder::new(&app, "app", tauri::WebviewUrl::External(parsed))
+        .title("Diligent")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(1200.0, 800.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| format!("Failed to open app window: {e}"))?;
+
+    if let Some(splash) = app.get_webview_window("main") {
+        let _ = splash.close();
+    }
+
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,52 +61,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState(Mutex::new(None)))
-        .setup(|app| {
-            // Loading splash is shown immediately via frontendDist = loading/index.html.
-            // After the sidecar is ready we open the real app window and close the splash.
-            let handle = app.handle().clone();
-
-            tauri::async_runtime::spawn(async move {
-                match start_sidecar(&handle).await {
-                    Ok(port) => {
-                        let url_str = format!("http://127.0.0.1:{}", port);
-                        let parsed: tauri::Url = match url_str.parse() {
-                            Ok(u) => u,
-                            Err(e) => {
-                                eprintln!("URL parse error: {e}");
-                                return;
-                            }
-                        };
-
-                        // Create the app window BEFORE closing the splash so there is
-                        // never a zero-window gap that would trigger Tauri's auto-quit.
-                        let result = tauri::WebviewWindowBuilder::new(
-                            &handle,
-                            "app",
-                            tauri::WebviewUrl::External(parsed),
-                        )
-                        .title("Diligent")
-                        .inner_size(1200.0, 800.0)
-                        .min_inner_size(1200.0, 800.0)
-                        .resizable(true)
-                        .build();
-
-                        match result {
-                            Ok(_) => {
-                                if let Some(splash) = handle.get_webview_window("main") {
-                                    let _ = splash.close();
-                                }
-                            }
-                            Err(e) => eprintln!("Failed to open app window: {e}"),
-                        }
-                    }
-                    Err(e) => eprintln!("Sidecar failed to start: {e}"),
-                }
-            });
-
-            Ok(())
-        })
+        .invoke_handler(tauri::generate_handler![pick_directory, launch_server])
         .on_window_event(|window, event| {
             // Kill sidecar only when the main app window closes, not the loading splash.
             if let tauri::WindowEvent::Destroyed = event {
