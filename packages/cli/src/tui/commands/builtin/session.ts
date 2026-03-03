@@ -58,6 +58,64 @@ export const resumeCommand: Command = {
   },
 };
 
+export const deleteCommand: Command = {
+  name: "delete",
+  description: "Delete a session",
+  supportsArgs: true,
+  handler: async (args, ctx) => {
+    const threadId = args?.trim();
+
+    const doDelete = async (id: string): Promise<void> => {
+      const confirmed = await ctx.app.confirm({
+        title: "Delete session",
+        message: `Delete ${id}? This cannot be undone.`,
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+      });
+      if (!confirmed) return;
+
+      const deleted = await ctx.deleteThread(id);
+      if (deleted) {
+        ctx.displayLines([`  ${t.dim}Session deleted: ${id}${t.reset}`]);
+      } else {
+        ctx.displayError(`Session not found: ${id}`);
+      }
+    };
+
+    if (threadId) {
+      await doDelete(threadId);
+      return;
+    }
+
+    // Show picker
+    const threads = await ctx.listThreads();
+    if (threads.length === 0) {
+      ctx.displayLines([`  ${t.dim}No sessions found.${t.reset}`]);
+      return;
+    }
+
+    const { ListPicker } = await import("../../components/list-picker");
+    const items = threads.map((thread) => ({
+      label: thread.firstUserMessage ?? thread.id,
+      description: thread.modified,
+      value: thread.id,
+    }));
+
+    return new Promise<void>((resolve) => {
+      const picker = new ListPicker({ title: "Delete Session", items }, async (value) => {
+        handle.hide();
+        ctx.requestRender();
+        if (value) {
+          await doDelete(value);
+        }
+        resolve();
+      });
+      const handle = ctx.showOverlay(picker, { anchor: "center" });
+      ctx.requestRender();
+    });
+  },
+};
+
 export const statusCommand: Command = {
   name: "status",
   description: "Show thread info and model",

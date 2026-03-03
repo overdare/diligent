@@ -131,6 +131,16 @@ export const KnowledgeListResponseSchema = z.object({
 });
 export type KnowledgeListResponse = z.infer<typeof KnowledgeListResponseSchema>;
 
+export const ThreadDeleteParamsSchema = z.object({
+  threadId: z.string(),
+});
+export type ThreadDeleteParams = z.infer<typeof ThreadDeleteParamsSchema>;
+
+export const ThreadDeleteResponseSchema = z.object({
+  deleted: z.boolean(),
+});
+export type ThreadDeleteResponse = z.infer<typeof ThreadDeleteResponseSchema>;
+
 export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE), params: InitializeParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START), params: ThreadStartParamsSchema }),
@@ -142,6 +152,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), params: TurnSteerParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
 ]);
 export type DiligentClientRequest = z.infer<typeof DiligentClientRequestSchema>;
 
@@ -156,5 +167,6 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), result: TurnSteerResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
 ]);
 export type DiligentClientResponse = z.infer<typeof DiligentClientResponseSchema>;

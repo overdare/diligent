@@ -423,6 +423,7 @@ export class App {
       setMode: (mode) => this.setMode(mode),
       startNewThread: () => this.startNewThread(),
       resumeThread: (threadId) => this.resumeThread(threadId),
+      deleteThread: (threadId) => this.deleteThread(threadId),
       listThreads: () => this.listThreads(),
       readThread: () => this.readThread(),
       onModelChanged: (modelId) => {
@@ -621,6 +622,19 @@ export class App {
       return null;
     }
     return this.rpcClient.request("thread/read", { threadId: this.currentThreadId });
+  }
+
+  private async deleteThread(threadId: string): Promise<boolean> {
+    if (!this.rpcClient) return false;
+    const response = await this.rpcClient.request("thread/delete", { threadId });
+    if (response.deleted && this.currentThreadId === threadId) {
+      // Switch away: try most recent, else start new
+      const resumed = await this.resumeThread();
+      if (!resumed) {
+        await this.startNewThread();
+      }
+    }
+    return response.deleted;
   }
 
   /** Show a confirmation dialog overlay */

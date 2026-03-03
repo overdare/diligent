@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type AgentRegistry,
-  createAuthCallbacks,
   DiligentAppServer,
   type DiligentAppServerConfig,
   type DiligentPaths,
@@ -69,8 +68,6 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     compaction: runtimeConfig.compaction,
   };
 
-  const authCallbacks = createAuthCallbacks(runtimeConfig.providerManager);
-
   const allModels = KNOWN_MODELS.map((m) => ({
     id: m.id,
     provider: m.provider,
@@ -97,7 +94,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         runtimeConfig.model = resolveModel(modelId);
       },
     },
-    authCallbacks,
+    runtimeConfig.providerManager,
   );
 
   const distDir = options.distDir ?? resolveDistDir();

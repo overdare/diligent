@@ -6,7 +6,7 @@ import { bugCommand, clearCommand, configCommand, costCommand, exitCommand, vers
 import { modelCommand } from "./model";
 import { providerCommand } from "./provider";
 import { reloadCommand } from "./reload";
-import { newCommand, resumeCommand, statusCommand } from "./session";
+import { deleteCommand, newCommand, resumeCommand, statusCommand } from "./session";
 import { createSkillInvokeCommand, skillsPickerCommand } from "./skills";
 
 export function registerBuiltinCommands(registry: CommandRegistry, skills: SkillMetadata[]): void {
@@ -15,6 +15,7 @@ export function registerBuiltinCommands(registry: CommandRegistry, skills: Skill
   registry.register(providerCommand);
   registry.register(newCommand);
   registry.register(resumeCommand);
+  registry.register(deleteCommand);
   registry.register(statusCommand);
   registry.register(compactCommand);
   registry.register(clearCommand);

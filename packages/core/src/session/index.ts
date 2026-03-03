@@ -14,6 +14,7 @@ export { SessionManager } from "./manager";
 export {
   appendEntry,
   createSessionFile,
+  deleteSession,
   DeferredWriter,
   listSessions,
   readSessionFile,

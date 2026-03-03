@@ -1,5 +1,3 @@
-export type { AuthCallbacks, ProviderAuthInfo } from "./auth-callbacks";
-export { createAuthCallbacks } from "./auth-callbacks";
 export type { AuthKeys, ProviderName } from "./auth-store";
 export {
   getAuthFilePath,

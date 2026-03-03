@@ -10,6 +10,7 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   TURN_STEER: "turn/steer",
   MODE_SET: "mode/set",
   KNOWLEDGE_LIST: "knowledge/list",
+  THREAD_DELETE: "thread/delete",
 } as const;
 
 export type DiligentClientRequestMethod =
@@ -35,6 +36,8 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   LOOP_DETECTED: "loop/detected",
   ERROR: "error",
   USAGE_UPDATED: "usage/updated",
+  ACCOUNT_LOGIN_COMPLETED: "account/login/completed",
+  ACCOUNT_UPDATED: "account/updated",
 } as const;
 
 export type DiligentServerNotificationMethod =

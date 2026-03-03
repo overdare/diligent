@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   appendEntry,
   createSessionFile,
+  deleteSession,
   DeferredWriter,
   listSessions,
   readSessionFile,
@@ -163,6 +164,25 @@ describe("listSessions", () => {
     const dir = await setupDir();
     const sessions = await listSessions(dir);
     expect(sessions).toEqual([]);
+  });
+});
+
+describe("deleteSession", () => {
+  it("returns true and removes the file for an existing session", async () => {
+    const dir = await setupDir();
+    const { header } = await createSessionFile(dir, "/project");
+
+    const result = await deleteSession(dir, header.id);
+    expect(result).toBe(true);
+
+    const sessions = await listSessions(dir);
+    expect(sessions).toEqual([]);
+  });
+
+  it("returns false for a non-existent session", async () => {
+    const dir = await setupDir();
+    const result = await deleteSession(dir, "nonexistent-id");
+    expect(result).toBe(false);
   });
 });
 

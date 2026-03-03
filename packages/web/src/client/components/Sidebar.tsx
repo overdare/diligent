@@ -1,7 +1,7 @@
 // @summary Sidebar with thread list, new thread button, and relative timestamps
 
 import type { SessionSummary } from "@diligent/protocol";
-import type { ProviderAuthStatus } from "../../shared/ws-protocol";
+import type { ProviderAuthStatus } from "@diligent/protocol";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 
@@ -17,6 +17,7 @@ interface SidebarProps {
   activeThreadId: string | null;
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
+  onDeleteThread?: (threadId: string) => void;
   providers?: ProviderAuthStatus[];
   onOpenProviders?: (provider?: string) => void;
 }
@@ -27,6 +28,7 @@ export function Sidebar({
   activeThreadId,
   onNewThread,
   onOpenThread,
+  onDeleteThread,
   providers,
   onOpenProviders,
 }: SidebarProps) {
@@ -61,23 +63,37 @@ export function Sidebar({
           const time = formatRelativeTime(thread.modified);
 
           return (
-            <button
-              key={thread.id}
-              type="button"
-              onClick={() => onOpenThread(thread.id)}
-              className={`group w-full rounded-md border px-3 py-2 text-left transition ${
-                isActive
-                  ? "border-accent/30 bg-accent/5 text-text"
-                  : "border-transparent hover:border-text/15 hover:bg-surface/50"
-              }`}
-            >
-              <div className="truncate text-sm leading-snug text-text">{title}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 text-xs- text-muted">
-                <span>{time}</span>
-                <span className="opacity-40">·</span>
-                <span>{thread.messageCount} msg</span>
-              </div>
-            </button>
+            <div key={thread.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => onOpenThread(thread.id)}
+                className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                  isActive
+                    ? "border-accent/30 bg-accent/5 text-text"
+                    : "border-transparent hover:border-text/15 hover:bg-surface/50"
+                }`}
+              >
+                <div className="truncate pr-5 text-sm leading-snug text-text">{title}</div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-xs- text-muted">
+                  <span>{time}</span>
+                  <span className="opacity-40">·</span>
+                  <span>{thread.messageCount} msg</span>
+                </div>
+              </button>
+              {onDeleteThread ? (
+                <button
+                  type="button"
+                  aria-label="Delete conversation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteThread(thread.id);
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted opacity-0 transition hover:text-danger group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
           );
         })}
       </div>

@@ -1,6 +1,7 @@
 // @summary Diligent server->client notification schemas aligned to codex-like thread/turn/item flow
 import { z } from "zod";
 import {
+  ProviderAuthStatusSchema,
   SerializableErrorSchema,
   ThreadItemDeltaSchema,
   ThreadItemSchema,
@@ -126,6 +127,24 @@ export const UsageUpdatedNotificationSchema = z.object({
 });
 export type UsageUpdatedNotification = z.infer<typeof UsageUpdatedNotificationSchema>;
 
+export const AccountLoginCompletedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED),
+  params: z.object({
+    loginId: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+export type AccountLoginCompletedNotification = z.infer<typeof AccountLoginCompletedNotificationSchema>;
+
+export const AccountUpdatedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED),
+  params: z.object({
+    providers: z.array(ProviderAuthStatusSchema),
+  }),
+});
+export type AccountUpdatedNotification = z.infer<typeof AccountUpdatedNotificationSchema>;
+
 export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
@@ -139,5 +158,7 @@ export const DiligentServerNotificationSchema = z.union([
   LoopDetectedNotificationSchema,
   ErrorNotificationSchema,
   UsageUpdatedNotificationSchema,
+  AccountLoginCompletedNotificationSchema,
+  AccountUpdatedNotificationSchema,
 ]);
 export type DiligentServerNotification = z.infer<typeof DiligentServerNotificationSchema>;

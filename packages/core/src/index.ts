@@ -27,14 +27,11 @@ export type { PermissionAction, PermissionEngine, PermissionRule } from "./appro
 export { createPermissionEngine } from "./approval/index";
 // Auth
 export type {
-  AuthCallbacks,
   AuthKeys,
   OpenAIOAuthTokens,
-  ProviderAuthInfo,
   ProviderName as AuthProviderName,
 } from "./auth/index";
 export {
-  createAuthCallbacks,
   getAuthFilePath,
   loadAuthStore,
   loadOAuthTokens,

@@ -1,6 +1,6 @@
 // @summary Modal for managing provider API keys and ChatGPT OAuth (connect/disconnect per provider)
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { OAuthStatusResult, ProviderAuthStatus } from "../../shared/ws-protocol";
+import { useCallback, useState } from "react";
+import type { ProviderAuthStatus } from "@diligent/protocol";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { Modal } from "./Modal";
@@ -9,10 +9,11 @@ import { StatusDot } from "./StatusDot";
 interface ProviderSettingsModalProps {
   providers: ProviderAuthStatus[];
   focusProvider?: string;
+  oauthPending: boolean;
+  oauthError: string | null;
   onSet: (provider: string, apiKey: string) => Promise<void>;
   onRemove: (provider: string) => Promise<void>;
   onOAuthStart: () => Promise<{ authUrl: string }>;
-  onOAuthStatus: () => Promise<OAuthStatusResult>;
   onClose: () => void;
 }
 
@@ -25,29 +26,17 @@ const PROVIDER_LABELS: Record<string, string> = {
 export function ProviderSettingsModal({
   providers,
   focusProvider,
+  oauthPending,
+  oauthError,
   onSet,
   onRemove,
   onOAuthStart,
-  onOAuthStatus,
   onClose,
 }: ProviderSettingsModalProps) {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [oauthStatus, setOAuthStatus] = useState<OAuthStatusResult["status"]>("idle");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return stopPolling;
-  }, [stopPolling]);
 
   const handleSave = async (provider: string) => {
     if (!keyInput.trim()) return;
@@ -82,39 +71,23 @@ export function ProviderSettingsModal({
     setError(null);
   };
 
-  const handleOAuthStart = async () => {
+  const handleOAuthStart = useCallback(async () => {
     setSavingProvider("openai");
     setError(null);
-    setOAuthStatus("pending");
     try {
       const { authUrl } = await onOAuthStart();
       window.open(authUrl, "_blank", "noopener");
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const result = await onOAuthStatus();
-          if (result.status === "completed") {
-            setOAuthStatus("completed");
-            stopPolling();
-            setSavingProvider(null);
-          } else if (result.status === "expired") {
-            setOAuthStatus("idle");
-            setError(result.error ?? "OAuth flow timed out");
-            stopPolling();
-            setSavingProvider(null);
-          }
-        } catch {
-          // Polling error — keep trying
-        }
-      }, 2000);
+      // account/login/completed notification will signal completion
     } catch (e) {
-      setOAuthStatus("idle");
       setError(e instanceof Error ? e.message : "Failed to start OAuth");
       setSavingProvider(null);
     }
-  };
+  }, [onOAuthStart]);
 
   const isConnected = (p: ProviderAuthStatus) => p.configured || p.oauthConnected;
+
+  // Display combined error from local state or OAuth notification
+  const displayError = error || oauthError;
 
   return (
     <Modal title="Providers" description="Manage API keys for each provider.">
@@ -134,7 +107,7 @@ export function ProviderSettingsModal({
                 </span>
                 {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
                 {p.oauthConnected ? <span className="font-mono text-xs text-muted">ChatGPT</span> : null}
-                {editingProvider !== p.provider && oauthStatus !== "pending" ? (
+                {editingProvider !== p.provider && !oauthPending ? (
                   isConnected(p) || isSaving ? (
                     <Button
                       intent="ghost"
@@ -192,30 +165,26 @@ export function ProviderSettingsModal({
                       <Button
                         intent="ghost"
                         size="sm"
-                        disabled={isSaving || oauthStatus === "pending"}
+                        disabled={isSaving || oauthPending}
                         onClick={() => void handleOAuthStart()}
                       >
-                        {oauthStatus === "pending" ? "Waiting for login..." : "Login with ChatGPT"}
+                        {oauthPending ? "Waiting for login..." : "Login with ChatGPT"}
                       </Button>
                     </div>
                   ) : null}
                 </div>
               ) : null}
 
-              {p.provider === "openai" && oauthStatus === "pending" && editingProvider !== p.provider ? (
+              {p.provider === "openai" && oauthPending && editingProvider !== p.provider ? (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="animate-pulse text-xs text-accent">Waiting for ChatGPT login...</span>
                 </div>
-              ) : null}
-
-              {p.provider === "openai" && oauthStatus === "completed" ? (
-                <div className="mt-2 text-xs text-success">ChatGPT connected successfully!</div>
               ) : null}
             </div>
           );
         })}
 
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {displayError ? <p className="text-sm text-danger">{displayError}</p> : null}
       </div>
 
       <div className="mt-4 flex justify-end">

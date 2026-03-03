@@ -22,7 +22,7 @@ import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import { listSessions } from "../session/persistence";
+import { deleteSession, listSessions } from "../session/persistence";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
 
 export interface DiligentAppServerConfig {
@@ -149,6 +149,9 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
         return this.handleKnowledgeList(request.params.threadId, request.params.limit);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
+        return this.handleThreadDelete(request.params.threadId);
     }
   }
 
@@ -304,6 +307,32 @@ export class DiligentAppServer {
     const paths = await this.config.resolvePaths(runtime.cwd);
     const entries = await readKnowledge(paths.knowledge);
     return { data: entries.slice(0, limit ?? entries.length) };
+  }
+
+  private async handleThreadDelete(threadId: string): Promise<{ deleted: boolean }> {
+    const existing = this.threads.get(threadId);
+    if (existing?.isRunning) {
+      throw new Error("Cannot delete a thread that is currently running");
+    }
+
+    let deleted = false;
+    for (const cwd of this.knownCwds) {
+      const paths = await this.config.resolvePaths(cwd);
+      const result = await deleteSession(paths.sessions, threadId);
+      if (result) {
+        deleted = true;
+        break;
+      }
+    }
+
+    if (deleted) {
+      this.threads.delete(threadId);
+      if (this.activeThreadId === threadId) {
+        this.activeThreadId = null;
+      }
+    }
+
+    return { deleted };
   }
 
   private async consumeStream(

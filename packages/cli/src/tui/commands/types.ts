@@ -51,6 +51,8 @@ export interface CommandContext {
   startNewThread: () => Promise<string>;
   /** Resume thread (or most recent when omitted) and make it active */
   resumeThread: (threadId?: string) => Promise<string | null>;
+  /** Delete a thread by ID; switches away if it was active */
+  deleteThread: (threadId: string) => Promise<boolean>;
   /** List known threads from the server */
   listThreads: () => Promise<SessionSummary[]>;
   /** Read active thread summary (messages count/follow-up) */

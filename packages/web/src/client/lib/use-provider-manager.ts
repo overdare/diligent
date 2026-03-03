@@ -2,8 +2,9 @@
 
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
-import type { ModelInfo, OAuthStartResult, OAuthStatusResult, ProviderAuthStatus } from "../../shared/ws-protocol";
-import { fetchProviderStatus, getOAuthStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
+import type { ProviderAuthStatus } from "@diligent/protocol";
+import type { ModelInfo, OAuthStartResult } from "../../shared/ws-protocol";
+import { fetchProviderStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
 import type { WebRpcClient } from "./rpc-client";
 
 export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
@@ -89,9 +90,9 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       const rpc = rpcRef.current;
       if (!rpc) return;
       await setProviderKey(rpc, provider, apiKey);
-      await refreshProviders(rpc);
+      // account/updated notification will update providers state
     },
-    [rpcRef, refreshProviders],
+    [rpcRef],
   );
 
   const handleRemoveProviderKey = useCallback(
@@ -99,9 +100,9 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       const rpc = rpcRef.current;
       if (!rpc) return;
       await removeProviderKey(rpc, provider);
-      await refreshProviders(rpc);
+      // account/updated notification will update providers state
     },
-    [rpcRef, refreshProviders],
+    [rpcRef],
   );
 
   const handleOAuthStart = useCallback(async (): Promise<OAuthStartResult> => {
@@ -110,15 +111,39 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
     return startOAuthFlow(rpc);
   }, [rpcRef]);
 
-  const handleOAuthStatus = useCallback(async (): Promise<OAuthStatusResult> => {
-    const rpc = rpcRef.current;
-    if (!rpc) throw new Error("Not connected");
-    const result = await getOAuthStatus(rpc);
-    if (result.status === "completed") {
-      await refreshProviders(rpc);
-    }
-    return result;
-  }, [rpcRef, refreshProviders]);
+  // Notification handlers: called from App.tsx when server pushes account notifications
+  const onAccountLoginCompleted = useCallback(
+    (params: { loginId: string | null; success: boolean; error: string | null }): void => {
+      if (!params.success && params.error) {
+        console.error("OAuth login failed:", params.error);
+      }
+      // Provider list update comes via onAccountUpdated
+    },
+    [],
+  );
+
+  const onAccountUpdated = useCallback(
+    async (params: { providers: ProviderAuthStatus[] }): Promise<void> => {
+      setProviders(params.providers);
+      // Also refresh available models since provider configuration changed
+      const rpc = rpcRef.current;
+      if (!rpc) return;
+      try {
+        const result = await fetchProviderStatus(rpc);
+        setAvailableModels(result.availableModels);
+        const modelInvalid =
+          result.availableModels.length > 0 && !result.availableModels.some((m) => m.id === currentModelRef.current);
+        if (modelInvalid) {
+          const first = result.availableModels[0];
+          setCurrentModel(first.id);
+          await rpc.requestRaw("config/set", { model: first.id });
+        }
+      } catch {
+        // Non-critical: providers already updated via notification
+      }
+    },
+    [rpcRef],
+  );
 
   return {
     providers,
@@ -133,6 +158,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
     handleSetProviderKey,
     handleRemoveProviderKey,
     handleOAuthStart,
-    handleOAuthStatus,
+    onAccountLoginCompleted,
+    onAccountUpdated,
   };
 }

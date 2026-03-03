@@ -1,4 +1,5 @@
 // @summary Session file persistence with JSONL format, deferred writing, and session listing
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { SessionEntry, SessionHeader, SessionInfo, SessionInfoEntry, SessionMessageEntry } from "./types";
 import { generateSessionId, SESSION_VERSION } from "./types";
@@ -104,6 +105,18 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
   }
 
   return sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+}
+
+/**
+ * Delete a session file by session ID.
+ * Returns true if deleted, false if the file did not exist.
+ */
+export async function deleteSession(sessionsDir: string, sessionId: string): Promise<boolean> {
+  const path = join(sessionsDir, `${sessionId}.jsonl`);
+  const exists = await Bun.file(path).exists();
+  if (!exists) return false;
+  await unlink(path);
+  return true;
 }
 
 /**

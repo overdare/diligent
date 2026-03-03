@@ -1,10 +1,30 @@
 // @summary WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests
-import type { AuthCallbacks, DiligentAppServer } from "@diligent/core";
+import {
+  type DiligentAppServer,
+  loadAuthStore,
+  loadOAuthTokens,
+  removeAuthKey,
+  removeOAuthTokens,
+  saveAuthKey,
+  saveOAuthTokens,
+  generatePKCE,
+  waitForCallback,
+  exchangeCodeForTokens,
+  buildOAuthTokens,
+  CHATGPT_AUTH_URL,
+  CHATGPT_CLIENT_ID,
+  CHATGPT_REDIRECT_URI,
+  CHATGPT_SCOPES,
+  PROVIDER_NAMES,
+  type ProviderName,
+  type ProviderManager,
+} from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
   Mode,
+  ProviderAuthStatus,
 } from "@diligent/protocol";
 import {
   DILIGENT_SERVER_REQUEST_METHODS,
@@ -12,6 +32,7 @@ import {
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
 } from "@diligent/protocol";
+import { randomBytes } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 
@@ -49,6 +70,11 @@ function toSafeFallback(request: DiligentServerRequest): DiligentServerRequestRe
   };
 }
 
+function maskKey(key: string): string {
+  if (key.length <= 11) return "***";
+  return `${key.slice(0, 7)}...${key.slice(-4)}`;
+}
+
 interface ModelConfig {
   currentModelId: string | undefined;
   allModels: ModelInfo[];
@@ -61,13 +87,14 @@ export class RpcBridge {
   private readonly threadOwners = new Map<string, string>();
   private serverRequestSeq = 0;
   private currentModelId: string | undefined;
+  private oauthPending: Promise<void> | null = null;
 
   constructor(
     private readonly appServer: DiligentAppServer,
     private readonly cwd: string,
     private readonly initialMode: Mode,
     private readonly modelConfig: ModelConfig,
-    private readonly authCallbacks?: AuthCallbacks,
+    private readonly providerManager?: ProviderManager,
   ) {
     this.currentModelId = modelConfig.currentModelId;
     this.appServer.setNotificationListener(async (notification) => {
@@ -176,8 +203,8 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/list" && this.authCallbacks) {
-        const providers = await this.authCallbacks.list();
+      if (parsed.method === "auth/list" && this.providerManager) {
+        const providers = await this.buildProviderList();
         this.send(ws, {
           type: "rpc_response",
           response: JSONRPCResponseSchema.parse({
@@ -188,14 +215,17 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/set" && this.authCallbacks) {
+      if (parsed.method === "auth/set" && this.providerManager) {
         const p = parsed.params as { provider?: string; apiKey?: string } | undefined;
         if (p?.provider && p.apiKey) {
-          await this.authCallbacks.set(p.provider, p.apiKey);
+          await saveAuthKey(p.provider as ProviderName, p.apiKey);
+          this.providerManager.setApiKey(p.provider as ProviderName, p.apiKey);
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
           });
+          const providers = await this.buildProviderList();
+          this.emitAccountUpdated(providers);
         } else {
           this.send(ws, {
             type: "rpc_response",
@@ -208,14 +238,21 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/remove" && this.authCallbacks) {
+      if (parsed.method === "auth/remove" && this.providerManager) {
         const p = parsed.params as { provider?: string } | undefined;
         if (p?.provider) {
-          await this.authCallbacks.remove(p.provider);
+          await removeAuthKey(p.provider as ProviderName);
+          this.providerManager.removeApiKey(p.provider as ProviderName);
+          if (p.provider === "openai") {
+            await removeOAuthTokens();
+            this.providerManager.removeOAuthTokens();
+          }
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
           });
+          const providers = await this.buildProviderList();
+          this.emitAccountUpdated(providers);
         } else {
           this.send(ws, {
             type: "rpc_response",
@@ -228,13 +265,63 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/oauth/start" && this.authCallbacks) {
-        try {
-          const result = await this.authCallbacks.oauthStart();
+      if (parsed.method === "auth/oauth/start" && this.providerManager) {
+        if (this.oauthPending) {
           this.send(ws, {
             type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result }),
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32000, message: "OAuth flow already in progress" },
+            }),
           });
+          return;
+        }
+
+        try {
+          const { codeVerifier, codeChallenge } = generatePKCE();
+          const state = randomBytes(16).toString("hex");
+
+          const params = new URLSearchParams({
+            response_type: "code",
+            client_id: CHATGPT_CLIENT_ID,
+            redirect_uri: CHATGPT_REDIRECT_URI,
+            scope: CHATGPT_SCOPES,
+            code_challenge: codeChallenge,
+            code_challenge_method: "S256",
+            id_token_add_organizations: "true",
+            codex_cli_simplified_flow: "true",
+            originator: "diligent",
+            state,
+          });
+
+          const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
+          const loginId = state;
+
+          // Respond immediately with the auth URL
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { authUrl } }),
+          });
+
+          // Run OAuth flow asynchronously, notify on completion
+          this.oauthPending = (async () => {
+            try {
+              const { code } = await waitForCallback(state, 5 * 60 * 1000);
+              const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
+              const tokens = buildOAuthTokens(rawTokens);
+              await saveOAuthTokens(tokens);
+              this.providerManager!.setOAuthTokens(tokens);
+
+              this.emitAccountLoginCompleted(loginId, true, null);
+              const providers = await this.buildProviderList();
+              this.emitAccountUpdated(providers);
+            } catch (e) {
+              const error = e instanceof Error ? e.message : "OAuth flow failed";
+              this.emitAccountLoginCompleted(loginId, false, error);
+            } finally {
+              this.oauthPending = null;
+            }
+          })();
         } catch (e) {
           this.send(ws, {
             type: "rpc_response",
@@ -244,15 +331,6 @@ export class RpcBridge {
             }),
           });
         }
-        return;
-      }
-
-      if (parsed.method === "auth/oauth/status" && this.authCallbacks) {
-        const result = await this.authCallbacks.oauthStatus();
-        this.send(ws, {
-          type: "rpc_response",
-          response: JSONRPCResponseSchema.parse({ id: parsed.id, result }),
-        });
         return;
       }
 
@@ -289,6 +367,17 @@ export class RpcBridge {
         const mode = (response.result as { mode?: Mode }).mode;
         if (mode) {
           session.mode = mode;
+        }
+      }
+
+      if (parsed.method === "thread/delete" && "result" in response) {
+        const r = response.result as { deleted?: boolean };
+        const deletedId = (parsed.params as { threadId?: string }).threadId;
+        if (r.deleted && deletedId) {
+          this.threadOwners.delete(deletedId);
+          if (session.currentThreadId === deletedId) {
+            session.currentThreadId = null;
+          }
         }
       }
 
@@ -352,6 +441,37 @@ export class RpcBridge {
         timeoutId,
         request,
       });
+    });
+  }
+
+  private async buildProviderList(): Promise<ProviderAuthStatus[]> {
+    const keys = await loadAuthStore();
+    const oauthTokens = await loadOAuthTokens();
+    return PROVIDER_NAMES.map((p) => ({
+      provider: p,
+      configured: Boolean(keys[p]),
+      maskedKey: keys[p] ? maskKey(keys[p] as string) : undefined,
+      oauthConnected: p === "openai" ? Boolean(oauthTokens) : undefined,
+    }));
+  }
+
+  private emitAccountUpdated(providers: ProviderAuthStatus[]): void {
+    this.broadcast({
+      type: "server_notification",
+      notification: {
+        method: "account/updated",
+        params: { providers },
+      },
+    });
+  }
+
+  private emitAccountLoginCompleted(loginId: string, success: boolean, error: string | null): void {
+    this.broadcast({
+      type: "server_notification",
+      notification: {
+        method: "account/login/completed",
+        params: { loginId, success, error },
+      },
     });
   }
 

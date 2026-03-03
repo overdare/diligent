@@ -301,6 +301,17 @@ export const SessionSummarySchema = z.object({
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
+export const ProviderNameSchema = z.enum(["anthropic", "openai", "gemini"]);
+export type ProviderName = z.infer<typeof ProviderNameSchema>;
+
+export const ProviderAuthStatusSchema = z.object({
+  provider: ProviderNameSchema,
+  configured: z.boolean(),
+  maskedKey: z.string().optional(),
+  oauthConnected: z.boolean().optional(),
+});
+export type ProviderAuthStatus = z.infer<typeof ProviderAuthStatusSchema>;
+
 export const ProtocolCapabilitiesSchema = z.object({
   supportsFollowUp: z.boolean(),
   supportsApprovals: z.boolean(),

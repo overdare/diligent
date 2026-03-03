@@ -1,6 +1,6 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
-import type { Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
+import type { DiligentServerNotification, Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
@@ -65,6 +65,9 @@ export function App() {
   const [input, setInput] = useState("");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
+  const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
+  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
@@ -131,13 +134,33 @@ export function App() {
       }
     });
 
-    rpc.onNotification((notification) => dispatch({ type: "notification", payload: notification }));
+    rpc.onNotification((notification: DiligentServerNotification) => {
+      if (notification.method === "account/login/completed") {
+        const params = notification.params;
+        if (params.success) {
+          setOauthPending(false);
+          setOauthError(null);
+        } else {
+          setOauthPending(false);
+          setOauthError(params.error ?? "OAuth flow failed");
+        }
+        providerMgr.onAccountLoginCompleted(params);
+        return;
+      }
+      if (notification.method === "account/updated") {
+        void providerMgr.onAccountUpdated(notification.params);
+        return;
+      }
+      dispatch({ type: "notification", payload: notification });
+    });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
   }, [
     refreshThreadList,
     providerMgr.refreshProviders,
     providerMgr.setInitialModel,
     providerMgr.applySessionModel,
+    providerMgr.onAccountLoginCompleted,
+    providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
   ]);
 
@@ -190,6 +213,32 @@ export function App() {
     }
   };
 
+  const confirmDeleteThread = async (): Promise<void> => {
+    const threadId = pendingDeleteThreadId;
+    setPendingDeleteThreadId(null);
+    if (!threadId) return;
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+    try {
+      await rpc.request("thread/delete", { threadId });
+      // If the deleted thread was active, switch to most recent or start new
+      if (state.activeThreadId === threadId) {
+        const resumed = await rpc.request("thread/resume", { mostRecent: true });
+        if (resumed.found && resumed.threadId) {
+          const history = await rpc.request("thread/read", { threadId: resumed.threadId });
+          dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
+        } else {
+          const started = await rpc.request("thread/start", { cwd: cwd || "/", mode: state.mode });
+          const history = await rpc.request("thread/read", { threadId: started.threadId });
+          dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
+        }
+      }
+      await refreshThreadList(rpc);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId) return;
@@ -225,6 +274,7 @@ export function App() {
           activeThreadId={state.activeThreadId}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
+          onDeleteThread={(id) => setPendingDeleteThreadId(id)}
           providers={providerMgr.providers}
           onOpenProviders={(p) => {
             setFocusedProvider(p ?? null);
@@ -303,15 +353,34 @@ export function App() {
         <ProviderSettingsModal
           providers={providerMgr.providers}
           focusProvider={focusedProvider ?? undefined}
+          oauthPending={oauthPending}
+          oauthError={oauthError}
           onSet={providerMgr.handleSetProviderKey}
           onRemove={providerMgr.handleRemoveProviderKey}
-          onOAuthStart={providerMgr.handleOAuthStart}
-          onOAuthStatus={providerMgr.handleOAuthStatus}
+          onOAuthStart={async () => {
+            setOauthPending(true);
+            setOauthError(null);
+            return providerMgr.handleOAuthStart();
+          }}
           onClose={() => {
             setShowProviderModal(false);
             setFocusedProvider(null);
+            setOauthError(null);
           }}
         />
+      ) : null}
+
+      {pendingDeleteThreadId ? (
+        <Modal title="Delete conversation?" description="This will permanently delete the conversation file. This action cannot be undone.">
+          <div className="flex items-center justify-end gap-2">
+            <Button intent="ghost" size="sm" onClick={() => setPendingDeleteThreadId(null)}>
+              Cancel
+            </Button>
+            <Button intent="danger" size="sm" onClick={() => void confirmDeleteThread()}>
+              Delete
+            </Button>
+          </div>
+        </Modal>
       ) : null}
 
       {showConnectionModal ? (
