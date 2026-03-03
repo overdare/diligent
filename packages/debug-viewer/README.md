@@ -5,6 +5,7 @@ React web viewer for inspecting Diligent session logs.
 ## Navigation
 
 ```
+scripts/           Build and dev scripts
 src/
   client/
     components/    UI components

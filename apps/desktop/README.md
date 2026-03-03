@@ -18,10 +18,17 @@ The sidecar starts on port 0 (OS-assigned), prints `DILIGENT_PORT=<n>` to stdout
 ## Structure
 
 ```
-apps/desktop/
-  scripts/       Build tooling
-  loading/       Splash screen shown while sidecar boots
-  src-tauri/     Rust + Tauri config
+loading/       Splash screen shown while sidecar boots
+scripts/       Build tooling
+src-tauri/
+  binaries/    Compiled sidecar binaries per platform
+  capabilities/  Tauri permission capabilities
+  docs/        Desktop-specific documentation
+  gen/         Tauri-generated schemas
+  icons/       Application icons
+  resources/   Bundled runtime resources
+  src/         Rust source code
+  target/      Rust build output
 ```
 
 ## Dev Commands
