@@ -89,7 +89,7 @@ export function ProviderSettingsModal({
   const displayError = error || oauthError;
 
   return (
-    <Modal title="Providers" description="Manage API keys for each provider.">
+    <Modal title="Providers" description="Manage API keys for each provider." onCancel={onClose}>
       <div className="space-y-3">
         {providers.map((p) => {
           const isSaving = savingProvider === p.provider;

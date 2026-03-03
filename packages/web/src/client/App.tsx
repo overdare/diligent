@@ -417,7 +417,12 @@ export function App() {
       ) : null}
 
       {pendingDeleteThreadId ? (
-        <Modal title="Delete conversation?" description="This will permanently delete the conversation file. This action cannot be undone.">
+        <Modal
+          title="Delete conversation?"
+          description="This will permanently delete the conversation file. This action cannot be undone."
+          onCancel={() => setPendingDeleteThreadId(null)}
+          onConfirm={() => void confirmDeleteThread()}
+        >
           <div className="flex items-center justify-end gap-2">
             <Button intent="ghost" size="sm" onClick={() => setPendingDeleteThreadId(null)}>
               Cancel
@@ -437,6 +442,7 @@ export function App() {
               ? `WebSocket disconnected. Retrying... (${Math.min(reconnectAttempts, retryLimit)}/${retryLimit})`
               : `Automatic retry stopped after ${retryLimit} attempts.`
           }
+          onConfirm={connection === "disconnected" ? retryConnection : undefined}
         >
           {connection === "reconnecting" ? (
             <div className="text-sm text-muted">Please wait while we restore the session.</div>
