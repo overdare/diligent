@@ -1,7 +1,6 @@
 ---
 name: land
 description: "Land worktree work onto local main — commit, rebase, and fast-forward merge. Use after finishing work in a worktree to merge everything back to main."
-allowed-tools: Bash(git *), Skill(commit)
 ---
 
 ## Context

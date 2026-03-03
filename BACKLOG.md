@@ -26,7 +26,7 @@
 
 ### L9 — MCP (designed, unimplemented)
 
-> All decisions D056-D061 are finalized. Phase 5a spec exists in `docs/plan/implementation-phases.md`.
+> All decisions D056-D061 are finalized. Phase 5a spec exists in `docs/plan/layer/implementation-phases.md`.
 
 - [ ] **MCP client integration (`@modelcontextprotocol/sdk`)** — Add official SDK, implement `McpManager` that connects configured servers at startup in parallel. Fire-and-forget connection with timeout per server. (added: 2026-03-02)
 - [ ] **Stdio + StreamableHTTP transport (D057)** — Local servers via stdio, remote servers via StreamableHTTP with SSE fallback (try HTTP first). (added: 2026-03-02)

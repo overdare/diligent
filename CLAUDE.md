@@ -10,7 +10,6 @@ Read only what your task requires. Directories have README.md files — follow t
 |------|-----------|
 | Project identity & principles | `README.md` |
 | Architecture, layers & patterns | `ARCHITECTURE.md` |
-| Current phase & progress | `STATUS.md` |
 | Source code — core (agent loop, providers, tools, config, sessions) | `packages/core/` |
 | Source code — cli (TUI) | `packages/cli/` |
 | Source code — web (React + Tailwind web frontend) | `packages/web/` |
@@ -51,3 +50,4 @@ Every source file and directory participates in a two-layer navigation index. **
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
 - Plan before implementing when a task involves multiple files or architectural changes
+- When adding user-facing features, implement for both Web and TUI — they are thin clients of the same protocol (see `ARCHITECTURE.md` "Frontend Protocol Philosophy")

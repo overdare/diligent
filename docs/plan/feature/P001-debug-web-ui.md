@@ -1,3 +1,12 @@
+---
+id: P001
+status: done
+created: 2026-02-25
+---
+
+status: done
+---
+
 # Debug Web UI — Implementation Plan (Phase A MVP)
 
 ## Context

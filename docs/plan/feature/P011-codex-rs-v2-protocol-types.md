@@ -1,4 +1,13 @@
-# Codex-RS V2 100% Wire Format 호환 프로토콜 타입 정의
+---
+id: P011
+status: done
+created: 2026-03-02
+---
+
+status: done
+---
+
+# Codex-RS V2 Wire Format Compatible Protocol Types
 
 ## Context
 

@@ -2,5 +2,6 @@
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true
-  }
+  },
+  "plansDirectory": "./docs/plans/uncategorized"
 }
