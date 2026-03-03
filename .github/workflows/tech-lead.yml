@@ -1,0 +1,73 @@
+name: tech-lead review
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # Every day at 06:00 KST (= 21:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip if last commit was a tech-lead review
+        id: guard
+        run: |
+          LAST_MSG=$(git log -1 --format="%s" origin/main)
+          echo "Last commit: $LAST_MSG"
+          if echo "$LAST_MSG" | grep -q "^chore: tech-lead review"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          bun-version: latest
+
+      - run: bun install
+        if: steps.guard.outputs.skip == 'false'
+
+      - name: Install Claude Code CLI
+        if: steps.guard.outputs.skip == 'false'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run tech-lead skill
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: claude -p "/tech-lead" --model opus --dangerously-skip-permissions
+
+      - name: Commit and open PR
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes — skipping PR"
+            exit 0
+          fi
+
+          BRANCH="tech-lead-$(date +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore: tech-lead review $(date +%Y-%m-%d)"
+          git push origin "$BRANCH"
+
+          PR_URL=$(gh pr create \
+            --title "chore: tech-lead review $(date +%Y-%m-%d)" \
+            --body "Automated sustainability assessment via tech-lead skill. Review \`docs/review/tech-lead/\` for the new report." \
+            --base main \
+            --head "$BRANCH")
+
+          gh pr merge "$PR_URL" --squash --auto --delete-branch

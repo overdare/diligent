@@ -1,0 +1,57 @@
+name: glob-indexer
+
+on:
+  schedule:
+    - cron: '0 20 * * *'  # Every day at 05:00 KST (= 20:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run glob-indexer skill
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: claude -p "/glob-indexer" --model haiku --dangerously-skip-permissions
+
+      - name: Commit and open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes — skipping PR"
+            exit 0
+          fi
+
+          BRANCH="glob-indexer-$(date +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore: glob-indexer $(date +%Y-%m-%d)"
+          git push origin "$BRANCH"
+
+          PR_URL=$(gh pr create \
+            --title "chore: glob-indexer $(date +%Y-%m-%d)" \
+            --body "Automated @summary annotation and README.md index maintenance via glob-indexer skill." \
+            --base main \
+            --head "$BRANCH")
+
+          gh pr merge "$PR_URL" --squash --auto --delete-branch
