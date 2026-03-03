@@ -113,14 +113,14 @@ function createScriptedStreamFunction(steps: ScriptStep[], calls: StreamContext[
   };
 }
 
-function makeConfig(streamFunction: StreamFunction): AppConfig {
+function makeConfig(streamFunction: StreamFunction, opts?: { diligent?: AppConfig["diligent"] }): AppConfig {
   const pm = new ProviderManager({});
   pm.setApiKey("anthropic", "test-key");
   return {
     apiKey: "test-key",
     model: TEST_MODEL,
     systemPrompt: [{ label: "test", content: "test prompt" }],
-    diligent: {},
+    diligent: opts?.diligent ?? {},
     sources: [],
     skills: [],
     mode: "default",
@@ -280,7 +280,7 @@ describe("App", () => {
     ]);
 
     const { writes, restore } = captureStdout();
-    const app = new App(makeConfig(streamFn), workspace.paths);
+    const app = new App(makeConfig(streamFn, { diligent: { yolo: true } }), workspace.paths);
     try {
       await app.start();
       await wait(30);
