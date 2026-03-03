@@ -2,17 +2,23 @@
 
 Project planning, research, and reviews.
 
-## Navigation
-
 ```
-plan/              Implementation plans organized by type
-plans/             Legacy plans
+plan/
+  feature/       Feature development plans
+  fix/           Bug fix plans
+  layer/         Architectural layer plans
+  refactor/      Refactoring plans
+  uncategorized/ Unsorted plans
+references/
+  codex/         Codex reference codebase
+  opencode/      OpenCode reference codebase
+  pi-mono/       Pi-Mono reference codebase
 research/
-  layers/          Architecture layer analysis (L0–L10)
-  llm-tools/       LLM native tools comparative research
-  openclaw/        OpenClaw reference analysis
-  side-research/   Exploratory research
-  temp/            Temporary notes and drafts
+  layers/        Layer architecture research
+  llm-tools/     LLM tooling research
+  openclaw/      OpenClaw research
+  side-research/ Side research topics
+  temp/          Temporary research files
 review/
-  tech-lead/       Sustainability assessments — files named <date>-<commit>[-scope].md
+  tech-lead/     Tech lead sustainability assessments
 ```
