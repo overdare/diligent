@@ -30,6 +30,8 @@ import type {
   ProviderAuthStatus,
 } from "@diligent/protocol";
 import {
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
   JSONRPCErrorResponseSchema,
@@ -341,7 +343,7 @@ export class RpcBridge {
         params,
       });
 
-      if (parsed.method === "thread/start" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START && "result" in response) {
         const maybeThreadId = (response.result as { threadId?: string }).threadId;
         if (maybeThreadId) {
           if (session.currentThreadId) {
@@ -352,7 +354,7 @@ export class RpcBridge {
         }
       }
 
-      if (parsed.method === "thread/resume" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME && "result" in response) {
         const resumed = response.result as { found: boolean; threadId?: string };
         if (resumed.found && resumed.threadId) {
           if (session.currentThreadId && session.currentThreadId !== resumed.threadId) {
@@ -363,14 +365,14 @@ export class RpcBridge {
         }
       }
 
-      if (parsed.method === "mode/set" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET && "result" in response) {
         const mode = (response.result as { mode?: Mode }).mode;
         if (mode) {
           session.mode = mode;
         }
       }
 
-      if (parsed.method === "thread/delete" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
         const r = response.result as { deleted?: boolean };
         const deletedId = (parsed.params as { threadId?: string }).threadId;
         if (r.deleted && deletedId) {
@@ -459,7 +461,7 @@ export class RpcBridge {
     this.broadcast({
       type: "server_notification",
       notification: {
-        method: "account/updated",
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
         params: { providers },
       },
     });
@@ -469,7 +471,7 @@ export class RpcBridge {
     this.broadcast({
       type: "server_notification",
       notification: {
-        method: "account/login/completed",
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
         params: { loginId, success, error },
       },
     });
@@ -482,7 +484,7 @@ export class RpcBridge {
 
     const objectParams = params as Record<string, unknown>;
 
-    if (method === "thread/start") {
+    if (method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START) {
       return {
         ...objectParams,
         cwd: typeof objectParams.cwd === "string" ? objectParams.cwd : session.cwd,
@@ -491,12 +493,12 @@ export class RpcBridge {
     }
 
     if (
-      method === "turn/start" ||
-      method === "turn/interrupt" ||
-      method === "turn/steer" ||
-      method === "mode/set" ||
-      method === "thread/read" ||
-      method === "knowledge/list"
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST
     ) {
       return {
         ...objectParams,

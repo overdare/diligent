@@ -1,9 +1,6 @@
 // @summary OpenAI OAuth token exchange — authorization code → tokens + JWT account_id extraction
 import type { OpenAIOAuthTokens } from "../types";
-
-const OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
-const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-const REDIRECT_URI = "http://localhost:1455/auth/callback";
+import { CHATGPT_CLIENT_ID as CLIENT_ID, CHATGPT_REDIRECT_URI as REDIRECT_URI, OAUTH_TOKEN_URL } from "./constants";
 
 export interface RawTokenResponse {
   access_token: string;

@@ -1,6 +1,11 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type { DiligentServerNotification, Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
+import {
+  DILIGENT_CLIENT_NOTIFICATION_METHODS,
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+} from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
@@ -84,7 +89,7 @@ export function App() {
     async (rpc = rpcRef.current): Promise<void> => {
       if (!rpc) return;
       try {
-        const list = await rpc.request("thread/list", { limit: 100 });
+        const list = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, { limit: 100 });
         dispatch({ type: "set_threads", payload: list.data });
       } catch (error) {
         console.error(error);
@@ -104,15 +109,15 @@ export function App() {
       // Sync model + available models into refs immediately so applySessionModel can use them
       providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels);
       try {
-        await rpc.request("initialize", { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
-        rpc.notify("initialized", { ready: true });
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, { clientName: "diligent-web", clientVersion: "0.0.1", protocolVersion: 1 });
+        rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
         // On reconnect, resume the previous thread if one exists
         const prevThreadId = activeThreadIdRef.current;
         if (prevThreadId) {
-          const resumed = await rpc.request("thread/resume", { threadId: prevThreadId });
+          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: prevThreadId });
           if (resumed.found && resumed.threadId) {
-            const history = await rpc.request("thread/read", { threadId: resumed.threadId });
+            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
             await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
@@ -121,17 +126,17 @@ export function App() {
         }
 
         // Try to resume the most recent session
-        const mostRecent = await rpc.request("thread/resume", { mostRecent: true });
+        const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
         if (mostRecent.found && mostRecent.threadId) {
-          const history = await rpc.request("thread/read", { threadId: mostRecent.threadId });
+          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: mostRecent.threadId });
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
           await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
           await refreshThreadList(rpc);
           return;
         }
 
-        const started = await rpc.request("thread/start", { cwd: meta.cwd, mode: meta.mode });
-        const history = await rpc.request("thread/read", { threadId: started.threadId });
+        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: meta.cwd, mode: meta.mode });
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
         await refreshThreadList(rpc);
       } catch (error) {
@@ -143,7 +148,7 @@ export function App() {
     });
 
     rpc.onNotification((notification: DiligentServerNotification) => {
-      if (notification.method === "account/login/completed") {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED) {
         const params = notification.params;
         if (params.success) {
           setOauthPending(false);
@@ -155,12 +160,12 @@ export function App() {
         providerMgr.onAccountLoginCompleted(params);
         return;
       }
-      if (notification.method === "account/updated") {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED) {
         void providerMgr.onAccountUpdated(notification.params);
         return;
       }
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
-      if (notification.method === "thread/status/changed") {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
         void refreshThreadList(rpc);
         // Re-hydrate if any tools are still showing as streaming (notifications missed during disconnect)
         const hasStreamingItems = stateRef.current.items.some((i) => i.kind === "tool" && i.status === "streaming");
@@ -168,7 +173,7 @@ export function App() {
           const threadId = activeThreadIdRef.current;
           if (threadId) {
             void rpc
-              .request("thread/read", { threadId })
+              .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId })
               .then((history) => {
                 dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
               })
@@ -194,8 +199,8 @@ export function App() {
     const rpc = rpcRef.current;
     if (!rpc) return;
     try {
-      const started = await rpc.request("thread/start", { cwd: cwd || "/", mode: state.mode });
-      const history = await rpc.request("thread/read", { threadId: started.threadId });
+      const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: cwd || "/", mode: state.mode });
+      const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
       await refreshThreadList(rpc);
     } catch (error) {
@@ -207,9 +212,9 @@ export function App() {
     const rpc = rpcRef.current;
     if (!rpc) return;
     try {
-      const resumed = await rpc.request("thread/resume", { threadId });
+      const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
       if (!resumed.found || !resumed.threadId) return;
-      const history = await rpc.request("thread/read", { threadId: resumed.threadId });
+      const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
       dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
       await refreshThreadList(rpc);
       await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
@@ -235,7 +240,7 @@ export function App() {
     setInput("");
     dispatch({ type: "local_user", payload: message });
     try {
-      await rpc.request("turn/start", { threadId: state.activeThreadId, message });
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId: state.activeThreadId, message });
     } catch (error) {
       console.error(error);
     }
@@ -248,7 +253,7 @@ export function App() {
     setInput("");
     dispatch({ type: "local_steer", payload: content });
     try {
-      await rpc.request("turn/steer", { threadId: state.activeThreadId, content, followUp: false });
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, { threadId: state.activeThreadId, content, followUp: false });
     } catch (error) {
       console.error(error);
     }
@@ -261,16 +266,16 @@ export function App() {
     const rpc = rpcRef.current;
     if (!rpc) return;
     try {
-      await rpc.request("thread/delete", { threadId });
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE, { threadId });
       // If the deleted thread was active, switch to most recent or start new
       if (state.activeThreadId === threadId) {
-        const resumed = await rpc.request("thread/resume", { mostRecent: true });
+        const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
         if (resumed.found && resumed.threadId) {
-          const history = await rpc.request("thread/read", { threadId: resumed.threadId });
+          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
           dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
         } else {
-          const started = await rpc.request("thread/start", { cwd: cwd || "/", mode: state.mode });
-          const history = await rpc.request("thread/read", { threadId: started.threadId });
+          const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: cwd || "/", mode: state.mode });
+          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
           dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
         }
       }
@@ -283,13 +288,13 @@ export function App() {
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId) return;
-    await rpc.request("turn/interrupt", { threadId: state.activeThreadId });
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: state.activeThreadId });
   };
 
   const setMode = async (mode: Mode) => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId) return;
-    await rpc.request("mode/set", { threadId: state.activeThreadId, mode });
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId: state.activeThreadId, mode });
     dispatch({ type: "set_mode", payload: mode });
   };
 

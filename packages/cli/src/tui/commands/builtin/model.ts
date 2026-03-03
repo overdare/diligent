@@ -1,7 +1,7 @@
 // @summary Model selection command - allows switching between available LLM models
 import { KNOWN_MODELS, resolveModel } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
-import { PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
+import { DEFAULT_PROVIDER, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
@@ -15,7 +15,7 @@ export const modelCommand: Command = {
     if (args) {
       try {
         const model = resolveModel(args);
-        const provider = (model.provider ?? "anthropic") as ProviderName;
+        const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
         // Check if provider has API key
         if (!ctx.config.providerManager.hasKeyFor(provider)) {
@@ -40,7 +40,7 @@ export const modelCommand: Command = {
 
     // Show picker with known models, grouped by provider
     const currentModelId = ctx.config.model.id;
-    const currentProvider = (ctx.config.model.provider ?? "anthropic") as ProviderName;
+    const currentProvider = (ctx.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     const pm = ctx.config.providerManager;
 
     // Sort providers: current → configured → unconfigured
@@ -53,7 +53,7 @@ export const modelCommand: Command = {
     // Build grouped items with section headers
     const items: ListPickerItem[] = [];
     for (const prov of sortedProviders) {
-      const models = KNOWN_MODELS.filter((m) => (m.provider ?? "anthropic") === prov);
+      const models = KNOWN_MODELS.filter((m) => (m.provider ?? DEFAULT_PROVIDER) === prov);
       if (models.length === 0) continue;
       const hasKey = pm.hasKeyFor(prov);
       const headerLabel = hasKey ? prov : `${prov} (no key)`;
@@ -74,7 +74,7 @@ export const modelCommand: Command = {
           ctx.requestRender();
           if (value) {
             const model = resolveModel(value);
-            const provider = (model.provider ?? "anthropic") as ProviderName;
+            const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
             // Check if provider has API key
             if (!ctx.config.providerManager.hasKeyFor(provider)) {

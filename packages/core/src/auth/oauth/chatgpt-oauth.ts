@@ -3,12 +3,10 @@ import { randomBytes } from "node:crypto";
 import type { OpenAIOAuthTokens } from "../types";
 import { openBrowser } from "./browser";
 import { waitForCallback } from "./callback-server";
+import { CHATGPT_AUTH_URL, CHATGPT_CLIENT_ID, CHATGPT_REDIRECT_URI } from "./constants";
 import { generatePKCE } from "./pkce";
 import { buildOAuthTokens, exchangeCodeForTokens } from "./token-exchange";
 
-export const CHATGPT_AUTH_URL = "https://auth.openai.com/oauth/authorize";
-export const CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-export const CHATGPT_REDIRECT_URI = "http://localhost:1455/auth/callback";
 export const CHATGPT_SCOPES = "openid profile email offline_access";
 
 export interface OAuthFlowOptions {

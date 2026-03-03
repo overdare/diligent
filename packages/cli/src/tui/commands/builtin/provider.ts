@@ -2,7 +2,7 @@
 import type { OpenAIOAuthTokens } from "@diligent/core";
 import { resolveModel, runChatGPTOAuth, saveAuthKey, saveOAuthTokens } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
-import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { TextInput } from "../../components/text-input";
@@ -53,7 +53,7 @@ export const providerCommand: Command = {
 /** ListPicker to select active provider */
 function pickProvider(ctx: CommandContext): Promise<void> {
   return new Promise((resolve) => {
-    const currentProvider = (ctx.config.model.provider ?? "anthropic") as ProviderName;
+    const currentProvider = (ctx.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
       label: p,
       description: p === currentProvider ? "active" : ctx.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
@@ -199,7 +199,7 @@ function promptSaveOAuthTokens(tokens: OpenAIOAuthTokens, ctx: CommandContext): 
 
 function showProviderStatus(ctx: CommandContext): void {
   const pm = ctx.config.providerManager;
-  const currentProvider = ctx.config.model.provider ?? "anthropic";
+  const currentProvider = ctx.config.model.provider ?? DEFAULT_PROVIDER;
   const lines = ["", `  ${t.bold}Provider Status${t.reset}`, ""];
 
   for (const provider of PROVIDER_NAMES) {

@@ -8,6 +8,7 @@ import type {
   ThreadStatus,
   UserInputRequest,
 } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 
 export interface PlanState {
   title: string;
@@ -161,8 +162,8 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
   // Ignore notifications that belong to a different thread than the one currently displayed.
   // thread/started and thread/resumed are exempt — they establish the active thread.
   if (
-    notification.method !== "thread/started" &&
-    notification.method !== "thread/resumed" &&
+    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED &&
+    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED &&
     "threadId" in notification.params &&
     state.activeThreadId !== null &&
     notification.params.threadId !== state.activeThreadId
@@ -171,28 +172,28 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
   }
 
   switch (notification.method) {
-    case "thread/started":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED:
       return {
         ...state,
         activeThreadId: notification.params.threadId,
       };
 
-    case "thread/resumed":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED:
       return {
         ...state,
         activeThreadId: notification.params.threadId,
       };
 
-    case "thread/status/changed":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED:
       return {
         ...state,
         threadStatus: notification.params.status,
       };
 
-    case "turn/started":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED:
       return state;
 
-    case "item/started": {
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED: {
       const { item, turnId } = notification.params;
       const key = `${turnId}:${item.itemId}:started`;
       const protocolKey = toProtocolItemKey(turnId, item.itemId);
@@ -251,7 +252,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
       return seenState;
     }
 
-    case "item/delta": {
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA: {
       const { itemId, delta, turnId } = notification.params;
       const protocolKey = toProtocolItemKey(turnId, itemId);
       const renderId = state.itemSlots[protocolKey];
@@ -296,7 +297,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
       return state;
     }
 
-    case "item/completed": {
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED: {
       const { item, turnId } = notification.params;
       const protocolKey = toProtocolItemKey(turnId, item.itemId);
       const slotRenderId = state.itemSlots[protocolKey];
@@ -347,10 +348,10 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
       return state;
     }
 
-    case "turn/completed":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED:
       return state;
 
-    case "knowledge/saved":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED:
       return {
         ...state,
         toast: {
@@ -360,7 +361,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         },
       };
 
-    case "loop/detected":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.LOOP_DETECTED:
       return {
         ...state,
         toast: {
@@ -370,7 +371,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         },
       };
 
-    case "error":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR:
       return {
         ...state,
         toast: {
@@ -381,7 +382,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         },
       };
 
-    case "usage/updated":
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.USAGE_UPDATED:
       return {
         ...state,
         usage: {
@@ -394,7 +395,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         currentContextTokens: notification.params.usage.inputTokens,
       };
 
-    case "steering/injected": {
+    case DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED: {
       const count = notification.params.messageCount;
       const drained = state.pendingSteers.slice(0, count);
       const remaining = state.pendingSteers.slice(count);
