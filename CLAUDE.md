@@ -50,4 +50,5 @@ Every source file and directory participates in a two-layer navigation index. **
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
 - Plan before implementing when a task involves multiple files or architectural changes
+- After exiting plan mode, run `/tidy-plan` first before starting implementation
 - When adding user-facing features, implement for both Web and TUI — they are thin clients of the same protocol (see `ARCHITECTURE.md` "Frontend Protocol Philosophy")
