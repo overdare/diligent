@@ -147,11 +147,11 @@ export class DeferredWriter {
     }
   }
 
-  /** Queue an entry. Triggers flush on first message (user or assistant). */
+  /** Queue an entry. Triggers flush on first assistant message. */
   async write(entry: SessionEntry): Promise<void> {
     this.pendingEntries.push(entry);
 
-    if (!this.flushed && entry.type === "message") {
+    if (!this.flushed && entry.type === "message" && entry.message.role === "assistant") {
       await this.flush();
     } else if (this.flushed && this.sessionPath) {
       await appendEntry(this.sessionPath, entry);
