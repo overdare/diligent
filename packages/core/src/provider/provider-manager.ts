@@ -1,5 +1,6 @@
 // @summary Unified provider manager — API key/OAuth token lifecycle, proxy stream dispatch
 
+import type { ProviderName } from "@diligent/protocol";
 import { saveOAuthTokens } from "../auth/auth-store";
 import { refreshOAuthTokens, shouldRefresh } from "../auth/oauth/refresh";
 import type { OpenAIOAuthTokens } from "../auth/types";
@@ -10,7 +11,9 @@ import { createGeminiStream } from "./gemini";
 import { createOpenAIStream } from "./openai";
 import type { StreamFunction } from "./types";
 
-export type ProviderName = "anthropic" | "openai" | "gemini";
+export type { ProviderName };
+
+export const DEFAULT_PROVIDER: ProviderName = "anthropic";
 
 export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "gemini"];
 
@@ -98,7 +101,7 @@ export class ProviderManager {
   /** Create a proxy StreamFunction that dispatches based on model.provider */
   createProxyStream(): StreamFunction {
     return (model, context, options) => {
-      const provider = (model.provider ?? "anthropic") as ProviderName;
+      const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
       // ChatGPT OAuth path: use dedicated stream (token refreshed via closure)
       if (provider === "openai" && this.chatgptStream) {

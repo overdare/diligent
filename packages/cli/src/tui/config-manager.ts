@@ -1,6 +1,7 @@
 // @summary Factory for config reload and collaboration mode switching
 import type { DiligentPaths, SkillMetadata } from "@diligent/core";
 import type { Mode as ProtocolMode } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
 import { registerBuiltinCommands } from "./commands/builtin/index";
@@ -34,7 +35,7 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
       const rpc = deps.getRpcClient();
       const threadId = deps.getCurrentThreadId();
       if (rpc && threadId) {
-        void rpc.request("mode/set", { threadId, mode }).catch(() => {});
+        void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId, mode }).catch(() => {});
       }
       deps.requestRender();
     },

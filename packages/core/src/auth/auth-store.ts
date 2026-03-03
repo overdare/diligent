@@ -2,10 +2,11 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { ProviderName } from "@diligent/protocol";
 import { z } from "zod";
 import type { OpenAIOAuthTokens } from "./types";
 
-export type ProviderName = "anthropic" | "openai" | "gemini";
+export type { ProviderName };
 
 export type AuthKeys = {
   anthropic?: string;

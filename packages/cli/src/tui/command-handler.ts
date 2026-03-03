@@ -1,6 +1,7 @@
 // @summary Factory for command dispatch, user submit, steering, and CommandContext assembly
 import type { SkillMetadata } from "@diligent/core";
 import type { Mode as ProtocolMode } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
 import { parseCommand } from "./commands/parser";
 import type { CommandRegistry } from "./commands/registry";
@@ -84,7 +85,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         const turnCompleted = new Promise<void>((resolve, reject) => {
           deps.setPendingTurn({ resolve, reject });
         });
-        await rpc.request("turn/start", {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
           threadId,
           message: text,
         });
@@ -159,7 +160,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
       if (!rpc || !threadId) return;
       deps.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
       void rpc
-        .request("turn/steer", {
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
           threadId,
           content: text,
           followUp: false,

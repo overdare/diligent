@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import type { ModeKind } from "@diligent/core";
 import { ensureDiligentDir, listSessions } from "@diligent/core";
 import { loadConfig } from "./config";
-import type { ProviderName } from "./provider-manager";
+import { DEFAULT_PROVIDER, type ProviderName } from "./provider-manager";
 import { App } from "./tui/app";
 import { NonInteractiveRunner } from "./tui/runner";
 
@@ -61,7 +61,7 @@ async function main() {
   // Non-interactive modes require API key upfront (no wizard available)
   const isNonInteractive = values.prompt !== undefined || process.stdin.isTTY === false;
   if (isNonInteractive) {
-    const provider = (config.model.provider ?? "anthropic") as ProviderName;
+    const provider = (config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     if (!config.providerManager.hasKeyFor(provider)) {
       console.error(
         `Error: No API key for ${provider}.\n` +

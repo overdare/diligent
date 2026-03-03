@@ -9,6 +9,7 @@ import type {
   ThreadStatus,
   UserInputRequest,
 } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 
 export interface PlanState {
   title: string;
@@ -353,8 +354,8 @@ export function reduceServerNotification(
   // Ignore notifications that belong to a different thread than the one currently displayed.
   // thread/started and thread/resumed are exempt — they establish the active thread.
   if (
-    notification.method !== "thread/started" &&
-    notification.method !== "thread/resumed" &&
+    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED &&
+    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED &&
     "threadId" in notification.params &&
     state.activeThreadId !== null &&
     notification.params.threadId !== state.activeThreadId
@@ -363,10 +364,10 @@ export function reduceServerNotification(
   }
 
   // Thread-level notifications handled directly
-  if (notification.method === "thread/started") {
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
     return { ...state, activeThreadId: notification.params.threadId };
   }
-  if (notification.method === "thread/resumed") {
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
     return { ...state, activeThreadId: notification.params.threadId };
   }
 

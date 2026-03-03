@@ -23,9 +23,15 @@ import type {
   DiligentServerRequestResponse,
   Mode as ProtocolMode,
 } from "@diligent/protocol";
+import {
+  DILIGENT_CLIENT_NOTIFICATION_METHODS,
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  DILIGENT_SERVER_REQUEST_METHODS,
+} from "@diligent/protocol";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
-import type { ProviderName } from "../provider-manager";
+import { DEFAULT_PROVIDER, type ProviderName } from "../provider-manager";
 import { type CommandHandler, createCommandHandler } from "./command-handler";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { CommandRegistry } from "./commands/registry";
@@ -249,7 +255,7 @@ export class App {
     });
 
     // Setup wizard: if current provider has no API key, prompt user
-    const currentProvider = (this.config.model.provider ?? "anthropic") as ProviderName;
+    const currentProvider = (this.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     if (!this.config.providerManager.hasKeyFor(currentProvider)) {
       await this.setupWizard.runSetupWizard();
     }
@@ -271,12 +277,12 @@ export class App {
     this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
     this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
 
-    await this.rpcClient.request("initialize", {
+    await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
       clientName: "diligent-tui",
       clientVersion: pkgVersion,
       protocolVersion: 1,
     });
-    await this.rpcClient.notify("initialized", { ready: true });
+    await this.rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
     if (this.options?.resume) {
       const resumedId = await this.threadManager.resumeThread();
@@ -345,7 +351,7 @@ export class App {
 
   private handleCancel(): void {
     if (this.isProcessing && this.rpcClient && this.currentThreadId) {
-      void this.rpcClient.request("turn/interrupt", { threadId: this.currentThreadId }).catch(() => {});
+      void this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.currentThreadId }).catch(() => {});
       this.chatView.clearActive();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
       this.pendingTurn?.resolve();
@@ -398,7 +404,7 @@ export class App {
     }
 
     if (
-      notification.method === "turn/completed" &&
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
       this.currentThreadId &&
       notification.params.threadId === this.currentThreadId
     ) {
@@ -406,7 +412,7 @@ export class App {
     }
 
     if (
-      notification.method === "error" &&
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR &&
       this.pendingTurn &&
       (!notification.params.threadId || notification.params.threadId === this.currentThreadId)
     ) {
@@ -417,17 +423,17 @@ export class App {
   }
 
   private async handleServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
-    if (request.method === "approval/request") {
+    if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
       const decision = await this.handleApprove(request.params.request);
       return {
-        method: "approval/request",
+        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
         result: { decision },
       };
     }
 
     const result = await this.handleAsk(request.params.request);
     return {
-      method: "userInput/request",
+      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
       result,
     };
   }

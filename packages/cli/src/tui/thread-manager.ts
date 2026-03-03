@@ -1,5 +1,6 @@
 // @summary Factory for thread lifecycle operations (start, resume, list, read, delete)
 import type { Mode as ProtocolMode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { LocalAppServerRpcClient } from "./rpc-client";
 
 export interface ThreadManagerDeps {
@@ -33,7 +34,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       if (!rpc) {
         throw new Error("App server is not initialized.");
       }
-      const response = await rpc.request("thread/start", {
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
         cwd: process.cwd(),
         mode: deps.getCurrentMode(),
       });
@@ -47,7 +48,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       if (!rpc) {
         throw new Error("App server is not initialized.");
       }
-      const response = await rpc.request("thread/resume", {
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, {
         threadId,
         mostRecent: threadId ? undefined : true,
       });
@@ -64,7 +65,7 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       if (!rpc) {
         return [];
       }
-      const response = await rpc.request("thread/list", {});
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, {});
       return response.data;
     },
 
@@ -73,13 +74,13 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       if (!rpc || !currentThreadId) {
         return null;
       }
-      return rpc.request("thread/read", { threadId: currentThreadId });
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: currentThreadId });
     },
 
     async deleteThread(threadId: string): Promise<boolean> {
       const rpc = deps.getRpcClient();
       if (!rpc) return false;
-      const response = await rpc.request("thread/delete", { threadId });
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE, { threadId });
       if (response.deleted && currentThreadId === threadId) {
         const resumed = await manager.resumeThread();
         if (!resumed) {

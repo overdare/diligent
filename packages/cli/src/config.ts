@@ -13,7 +13,7 @@ import type {
   SystemSection,
 } from "@diligent/core";
 import { ensureDiligentDir, loadRuntimeConfig, resolveModel } from "@diligent/core";
-import type { ProviderManager, ProviderName } from "./provider-manager";
+import { DEFAULT_PROVIDER, type ProviderManager, type ProviderName } from "./provider-manager";
 
 export type AgentLoopFn = (messages: Message[], config: AgentLoopConfig) => EventStream<AgentEvent, Message[]>;
 
@@ -36,7 +36,7 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
   const runtime = await loadRuntimeConfig(cwd, resolvedPaths);
   // CLI default: claude-sonnet-4-6 when no provider is configured
   const model = runtime.model ?? resolveModel("claude-sonnet-4-6");
-  const provider = (model.provider ?? "anthropic") as ProviderName;
+  const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
   const apiKey = runtime.providerManager.getApiKey(provider) ?? "";
 
   return {
