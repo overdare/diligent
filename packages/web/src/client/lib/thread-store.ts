@@ -517,7 +517,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   // Extract planState from the last plan tool result
   let lastPlan: PlanState | null = null;
   for (const message of payload.messages) {
-    if (message.role === "tool" && message.toolName === "plan") {
+    if (message.role === "tool_result" && message.toolName === "plan") {
       const plan = parsePlanOutput(message.output);
       if (plan) lastPlan = plan;
     }
