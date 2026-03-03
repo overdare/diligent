@@ -54,6 +54,7 @@ async fn launch_server(app: tauri::AppHandle, cwd: String) -> Result<(), String>
 pub fn run() {
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("PANIC: {info}");
+        #[cfg(debug_assertions)]
         let _ = std::fs::write("/tmp/diligent-panic.log", &msg);
         eprintln!("{msg}");
     }));
