@@ -30,15 +30,10 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
             &format!("--cwd={}", cwd),
         ]);
 
-    #[cfg(debug_assertions)]
     let _ = std::fs::write("/tmp/diligent-debug.log", format!("spawning sidecar with dist-dir: {}\n", dist_dir_str));
     let (mut rx, child) = sidecar_cmd
         .spawn()
-        .map_err(|e| {
-            #[cfg(debug_assertions)]
-            let _ = std::fs::write("/tmp/diligent-debug.log", format!("spawn failed: {}\n", e));
-            format!("Failed to spawn sidecar: {e}")
-        })?;
+        .map_err(|e| { let _ = std::fs::write("/tmp/diligent-debug.log", format!("spawn failed: {}\n", e)); format!("Failed to spawn sidecar: {e}") })?;
 
     // Store child for later cleanup
     let state = app.state::<SidecarState>();

@@ -7,11 +7,7 @@ import {
   ensureDiligentDir,
 } from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
-import {
-  DILIGENT_CLIENT_NOTIFICATION_METHODS,
-  DILIGENT_CLIENT_REQUEST_METHODS,
-  DILIGENT_SERVER_NOTIFICATION_METHODS,
-} from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
 import { LocalAppServerRpcClient, ProtocolNotificationAdapter } from "./rpc-client";
 import { t } from "./theme";
@@ -99,22 +95,22 @@ export class NonInteractiveRunner {
     });
 
     try {
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
+      await rpc.request("initialize", {
         clientName: "diligent-cli",
         clientVersion: "0.0.1",
         protocolVersion: 1,
       });
-      await rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
+      await rpc.notify("initialized", { ready: true });
 
       if (this.options?.resume) {
-        const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
+        const resumed = await rpc.request("thread/resume", { mostRecent: true });
         if (resumed.found && resumed.threadId) {
           threadId = resumed.threadId;
         }
       }
 
       if (!threadId) {
-        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
+        const started = await rpc.request("thread/start", {
           cwd: process.cwd(),
           mode: this.config.mode,
         });
@@ -125,7 +121,7 @@ export class NonInteractiveRunner {
         pendingTurn = { resolve, reject };
       });
 
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+      await rpc.request("turn/start", {
         threadId,
         message: prompt,
       });

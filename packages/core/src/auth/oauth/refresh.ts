@@ -1,7 +1,9 @@
 // @summary Refresh OpenAI OAuth tokens using refresh_token (single-use with rotation)
 import type { OpenAIOAuthTokens } from "../types";
-import { CHATGPT_CLIENT_ID as CLIENT_ID, OAUTH_TOKEN_URL } from "./constants";
 import { buildOAuthTokens } from "./token-exchange";
+
+const OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 
 /** Check if tokens need refresh (expire within 5 minutes) */
 export function shouldRefresh(tokens: OpenAIOAuthTokens): boolean {

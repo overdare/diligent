@@ -1,4 +1,4 @@
-export type { AuthKeys } from "./auth-store";
+export type { AuthKeys, ProviderName } from "./auth-store";
 export {
   getAuthFilePath,
   loadAuthStore,

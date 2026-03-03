@@ -29,6 +29,7 @@ export { createPermissionEngine, createYoloPermissionEngine } from "./approval/i
 export type {
   AuthKeys,
   OpenAIOAuthTokens,
+  ProviderName as AuthProviderName,
 } from "./auth/index";
 export {
   getAuthFilePath,
@@ -108,7 +109,6 @@ export {
   createGeminiStream,
   createOpenAIStream,
   DEFAULT_MODELS,
-  DEFAULT_PROVIDER,
   flattenSections,
   KNOWN_MODELS,
   PROVIDER_HINTS,

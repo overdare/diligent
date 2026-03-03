@@ -25,16 +25,10 @@ import type {
   SessionSummary,
   ThreadReadResponse,
 } from "@diligent/protocol";
-import {
-  DILIGENT_CLIENT_NOTIFICATION_METHODS,
-  DILIGENT_CLIENT_REQUEST_METHODS,
-  DILIGENT_SERVER_NOTIFICATION_METHODS,
-  DILIGENT_SERVER_REQUEST_METHODS,
-} from "@diligent/protocol";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
+import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { promptSaveKey } from "./commands/builtin/provider";
 import { parseCommand } from "./commands/parser";
@@ -169,7 +163,7 @@ export class App {
     });
 
     // Setup wizard: if current provider has no API key, prompt user
-    const currentProvider = (this.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
+    const currentProvider = (this.config.model.provider ?? "anthropic") as ProviderName;
     if (!this.config.providerManager.hasKeyFor(currentProvider)) {
       await this.runSetupWizard();
     }
@@ -191,12 +185,12 @@ export class App {
     this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
     this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
 
-    await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
+    await this.rpcClient.request("initialize", {
       clientName: "diligent-tui",
       clientVersion: pkgVersion,
       protocolVersion: 1,
     });
-    await this.rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
+    await this.rpcClient.notify("initialized", { ready: true });
 
     if (this.options?.resume) {
       const resumedId = await this.resumeThread();
@@ -245,7 +239,7 @@ export class App {
     await promptSaveKey(provider, apiKey, ctx);
 
     // Switch model if the selected provider differs from current
-    const currentProvider = this.config.model.provider ?? DEFAULT_PROVIDER;
+    const currentProvider = this.config.model.provider ?? "anthropic";
     if (currentProvider !== provider) {
       const defaultModelId = DEFAULT_MODELS[provider];
       this.config.model = resolveModel(defaultModelId);
@@ -369,7 +363,7 @@ export class App {
       const turnCompleted = new Promise<void>((resolve, reject) => {
         this.pendingTurn = { resolve, reject };
       });
-      await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+      await this.rpcClient.request("turn/start", {
         threadId: this.currentThreadId,
         message: text,
       });
@@ -456,7 +450,7 @@ export class App {
     this.currentMode = mode;
     this.statusBar.update({ mode });
     if (this.rpcClient && this.currentThreadId) {
-      void this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId: this.currentThreadId, mode }).catch(() => {});
+      void this.rpcClient.request("mode/set", { threadId: this.currentThreadId, mode }).catch(() => {});
     }
     this.renderer.requestRender();
   }
@@ -494,7 +488,7 @@ export class App {
 
   private handleCancel(): void {
     if (this.isProcessing && this.rpcClient && this.currentThreadId) {
-      void this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.currentThreadId }).catch(() => {});
+      void this.rpcClient.request("turn/interrupt", { threadId: this.currentThreadId }).catch(() => {});
       this.chatView.clearActive();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
       this.pendingTurn?.resolve();
@@ -507,7 +501,7 @@ export class App {
     if (!this.rpcClient || !this.currentThreadId) return;
     this.chatView.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
     void this.rpcClient
-      .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
+      .request("turn/steer", {
         threadId: this.currentThreadId,
         content: text,
         followUp: false,
@@ -560,7 +554,7 @@ export class App {
     }
 
     if (
-      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
+      notification.method === "turn/completed" &&
       this.currentThreadId &&
       notification.params.threadId === this.currentThreadId
     ) {
@@ -568,7 +562,7 @@ export class App {
     }
 
     if (
-      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR &&
+      notification.method === "error" &&
       this.pendingTurn &&
       (!notification.params.threadId || notification.params.threadId === this.currentThreadId)
     ) {
@@ -579,17 +573,17 @@ export class App {
   }
 
   private async handleServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
-    if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+    if (request.method === "approval/request") {
       const decision = await this.handleApprove(request.params.request);
       return {
-        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+        method: "approval/request",
         result: { decision },
       };
     }
 
     const result = await this.handleAsk(request.params.request);
     return {
-      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+      method: "userInput/request",
       result,
     };
   }
@@ -598,7 +592,7 @@ export class App {
     if (!this.rpcClient) {
       throw new Error("App server is not initialized.");
     }
-    const response = await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
+    const response = await this.rpcClient.request("thread/start", {
       cwd: process.cwd(),
       mode: this.currentMode,
     });
@@ -612,7 +606,7 @@ export class App {
       throw new Error("App server is not initialized.");
     }
 
-    const response = await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, {
+    const response = await this.rpcClient.request("thread/resume", {
       threadId,
       mostRecent: threadId ? undefined : true,
     });
@@ -629,7 +623,7 @@ export class App {
     if (!this.rpcClient) {
       return [];
     }
-    const response = await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, {});
+    const response = await this.rpcClient.request("thread/list", {});
     return response.data;
   }
 
@@ -637,12 +631,12 @@ export class App {
     if (!this.rpcClient || !this.currentThreadId) {
       return null;
     }
-    return this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: this.currentThreadId });
+    return this.rpcClient.request("thread/read", { threadId: this.currentThreadId });
   }
 
   private async deleteThread(threadId: string): Promise<boolean> {
     if (!this.rpcClient) return false;
-    const response = await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE, { threadId });
+    const response = await this.rpcClient.request("thread/delete", { threadId });
     if (response.deleted && this.currentThreadId === threadId) {
       // Switch away: try most recent, else start new
       const resumed = await this.resumeThread();

@@ -1,6 +1,5 @@
 // @summary React hook for server-driven approval and user-input prompt state and resolution
 import type { DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
-import { DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
@@ -18,7 +17,7 @@ export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
 
   // Registered in App.tsx's main useEffect via rpc.onServerRequest(serverRequests.handleServerRequest)
   const handleServerRequest = useCallback((requestId: number, request: DiligentServerRequest): void => {
-    if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+    if (request.method === "approval/request") {
       setApprovalPrompt({ requestId, request });
       return;
     }
@@ -30,7 +29,7 @@ export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
     (decision: "once" | "always" | "reject"): void => {
       if (!approvalPrompt) return;
       rpcRef.current?.respondServerRequest(approvalPrompt.requestId, {
-        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+        method: "approval/request",
         result: { decision },
       });
       setApprovalPrompt(null);
@@ -42,7 +41,7 @@ export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
     (respondAnswers: Record<string, string>): void => {
       if (!questionPrompt) return;
       rpcRef.current?.respondServerRequest(questionPrompt.requestId, {
-        method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+        method: "userInput/request",
         result: { answers: respondAnswers },
       } as DiligentServerRequestResponse);
       setQuestionPrompt(null);

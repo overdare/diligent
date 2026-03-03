@@ -302,17 +302,6 @@ export const SessionSummarySchema = z.object({
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
-export const ModelInfoSchema = z.object({
-  id: z.string(),
-  provider: z.string(),
-  contextWindow: z.number().int().nonnegative(),
-  maxOutputTokens: z.number().int().nonnegative(),
-  inputCostPer1M: z.number().optional(),
-  outputCostPer1M: z.number().optional(),
-  supportsThinking: z.boolean().optional(),
-});
-export type ModelInfo = z.infer<typeof ModelInfoSchema>;
-
 export const ProviderNameSchema = z.enum(["anthropic", "openai", "gemini"]);
 export type ProviderName = z.infer<typeof ProviderNameSchema>;
 
