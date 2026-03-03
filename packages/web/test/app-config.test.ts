@@ -51,7 +51,7 @@ test("compaction defaults when not configured", async () => {
     const config = await loadRuntimeConfig(base, paths);
 
     expect(config.compaction.enabled).toBe(true);
-    expect(config.compaction.reserveTokens).toBe(16384);
+    expect(config.compaction.reserveTokens).toBe(Math.floor(200_000 * 0.16)); // 32000 for claude-sonnet-4-6
     expect(config.compaction.keepRecentTokens).toBe(20000);
   } finally {
     rmSync(base, { recursive: true, force: true });

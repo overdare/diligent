@@ -59,13 +59,14 @@ export class StatusBar implements Component {
       leftParts.push(this.info.model);
     }
 
-    if (this.info.tokensUsed !== undefined) {
-      if (this.info.contextWindow) {
-        const pct = Math.round((this.info.tokensUsed / this.info.contextWindow) * 100);
-        leftParts.push(`${pct}% context left`);
-      } else {
-        leftParts.push(`${formatTokensCompact(this.info.tokensUsed)} used`);
-      }
+    if (this.info.contextWindow) {
+      const used = this.info.tokensUsed ?? 0;
+      const pct = Math.round((used / this.info.contextWindow) * 100);
+      leftParts.push(
+        `${formatTokensCompact(used)} / ${formatTokensCompact(this.info.contextWindow)} (${pct}%)`,
+      );
+    } else if (this.info.tokensUsed !== undefined) {
+      leftParts.push(`${formatTokensCompact(this.info.tokensUsed)} used`);
     }
 
     if (this.info.cwd) {

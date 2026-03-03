@@ -6,6 +6,29 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+describe("StatusBar context window display", () => {
+  test("shows Xk / Yk (X%) format when contextWindow is set", () => {
+    const bar = new StatusBar();
+    bar.update({ model: "test", tokensUsed: 15000, contextWindow: 200000 });
+    const text = stripAnsi(bar.render(120).join(""));
+    expect(text).toContain("15K / 200K (8%)");
+  });
+
+  test("shows 'X used' fallback when no contextWindow", () => {
+    const bar = new StatusBar();
+    bar.update({ model: "test", tokensUsed: 5000 });
+    const text = stripAnsi(bar.render(120).join(""));
+    expect(text).toContain("5K used");
+  });
+
+  test("shows 0 / Yk (0%) before first usage when contextWindow is known", () => {
+    const bar = new StatusBar();
+    bar.update({ model: "test", contextWindow: 200000 });
+    const text = stripAnsi(bar.render(120).join(""));
+    expect(text).toContain("0 / 200K (0%)");
+  });
+});
+
 describe("StatusBar mode hint (right side)", () => {
   test("mode 'default' shows no mode hint", () => {
     const bar = new StatusBar();

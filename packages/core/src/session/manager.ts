@@ -168,7 +168,7 @@ export class SessionManager {
     } catch (err) {
       // Reactive compaction on context overflow
       if (err instanceof ProviderError && err.errorType === "context_overflow" && compactionConfig.enabled) {
-        const tokens = estimateTokens(currentMessages);
+        const tokens = Math.max(estimateTokens(currentMessages), this.lastApiInputTokens);
         currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
         await this.proxyAgentLoop(currentMessages, outerStream);
         return;

@@ -25,6 +25,8 @@ interface InputDockProps {
   availableModels: ModelInfo[];
   onModelChange: (modelId: string) => void;
   usage: UsageState;
+  currentContextTokens: number;
+  contextWindow: number;
   hasProvider: boolean;
   onOpenProviders: () => void;
 }
@@ -84,6 +86,8 @@ export function InputDock({
   availableModels,
   onModelChange,
   usage,
+  currentContextTokens,
+  contextWindow,
   hasProvider,
   onOpenProviders,
 }: InputDockProps) {
@@ -91,6 +95,8 @@ export function InputDock({
   const isBusy = threadStatus === "busy";
   const totalTokens = usage.inputTokens + usage.outputTokens;
   const hasUsage = totalTokens > 0;
+  const hasContext = currentContextTokens > 0;
+  const contextPct = contextWindow > 0 ? Math.round((currentContextTokens / contextWindow) * 100) : 0;
 
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
@@ -149,7 +155,15 @@ export function InputDock({
                 </span>
               </>
             ) : null}
-            {hasUsage ? (
+            {hasContext ? (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="shrink-0 cursor-default opacity-70" title={formatUsageTooltip(usage)}>
+                  {formatTokenCount(currentContextTokens)} / {formatTokenCount(contextWindow)} ({contextPct}%) · $
+                  {usage.totalCost.toFixed(2)}
+                </span>
+              </>
+            ) : hasUsage ? (
               <>
                 <span className="opacity-30">·</span>
                 <span className="shrink-0 cursor-default opacity-70" title={formatUsageTooltip(usage)}>

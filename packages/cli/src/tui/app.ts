@@ -154,7 +154,13 @@ export class App {
     this.renderer.start();
 
     // Update status bar with model info and cwd
-    this.statusBar.update({ model: this.config.model.id, status: "idle", cwd: process.cwd(), mode: this.currentMode });
+    this.statusBar.update({
+      model: this.config.model.id,
+      contextWindow: this.config.model.contextWindow,
+      status: "idle",
+      cwd: process.cwd(),
+      mode: this.currentMode,
+    });
 
     // Setup wizard: if current provider has no API key, prompt user
     const currentProvider = (this.config.model.provider ?? "anthropic") as ProviderName;
@@ -459,7 +465,7 @@ export class App {
       this.commandRegistry = new CommandRegistry();
       registerBuiltinCommands(this.commandRegistry, this.skills);
 
-      this.statusBar.update({ model: newConfig.model.id });
+      this.statusBar.update({ model: newConfig.model.id, contextWindow: newConfig.model.contextWindow });
     } catch (err) {
       this.chatView.addLines([
         `  ${t.error}Reload error: ${err instanceof Error ? err.message : String(err)}${t.reset}`,
@@ -473,7 +479,7 @@ export class App {
     // Update status bar with usage info
     if (event.type === "usage") {
       this.statusBar.update({
-        tokensUsed: event.usage.inputTokens + event.usage.outputTokens,
+        tokensUsed: event.usage.inputTokens,
       });
     } else if (event.type === "status_change") {
       this.statusBar.update({ status: event.status });
@@ -530,11 +536,7 @@ export class App {
           permissionEngine: this.permissionEngine,
         };
       },
-      compaction: {
-        enabled: this.config.diligent.compaction?.enabled ?? true,
-        reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
-        keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
-      },
+      compaction: this.config.compaction,
     };
 
     return new DiligentAppServer(appServerConfig);

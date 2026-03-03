@@ -27,6 +27,7 @@ export interface AppConfig {
   agentLoopFn?: AgentLoopFn;
   skills: SkillMetadata[];
   mode: ModeKind; // D087: always set, defaults to "default"
+  compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number };
   providerManager: ProviderManager;
 }
 
@@ -47,6 +48,7 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
     sources: runtime.sources,
     skills: runtime.skills,
     mode: runtime.mode,
+    compaction: runtime.compaction,
     providerManager: runtime.providerManager,
   };
 }

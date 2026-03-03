@@ -146,6 +146,15 @@ export class ProtocolNotificationAdapter {
           },
         ];
 
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.USAGE_UPDATED:
+        return [
+          {
+            type: "usage",
+            usage: notification.params.usage,
+            cost: notification.params.cost,
+          },
+        ];
+
       default:
         return [];
     }

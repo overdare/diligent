@@ -69,11 +69,7 @@ export class NonInteractiveRunner {
           permissionEngine,
         };
       },
-      compaction: {
-        enabled: this.config.diligent.compaction?.enabled ?? true,
-        reserveTokens: this.config.diligent.compaction?.reserveTokens ?? 16384,
-        keepRecentTokens: this.config.diligent.compaction?.keepRecentTokens ?? 20000,
-      },
+      compaction: this.config.compaction,
     });
 
     const rpc = new LocalAppServerRpcClient(server);

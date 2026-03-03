@@ -119,20 +119,22 @@ describe("estimateTokens", () => {
 });
 
 describe("shouldCompact", () => {
+  const RESERVE = Math.floor(200_000 * 0.16); // 32000
+
   it("returns true when tokens exceed threshold", () => {
-    expect(shouldCompact(100_000, 200_000, 16_384)).toBe(false);
-    expect(shouldCompact(190_000, 200_000, 16_384)).toBe(true);
-    expect(shouldCompact(183_617, 200_000, 16_384)).toBe(true); // exactly at boundary
+    expect(shouldCompact(100_000, 200_000, RESERVE)).toBe(false);
+    expect(shouldCompact(190_000, 200_000, RESERVE)).toBe(true);
+    expect(shouldCompact(168_001, 200_000, RESERVE)).toBe(true); // just above boundary
   });
 
   it("returns false when tokens are below threshold", () => {
-    expect(shouldCompact(50_000, 200_000, 16_384)).toBe(false);
+    expect(shouldCompact(50_000, 200_000, RESERVE)).toBe(false);
   });
 
   it("handles edge case: exactly at threshold", () => {
-    // threshold = 200000 - 16384 = 183616
-    expect(shouldCompact(183_616, 200_000, 16_384)).toBe(false);
-    expect(shouldCompact(183_617, 200_000, 16_384)).toBe(true);
+    // threshold = 200000 - 32000 = 168000
+    expect(shouldCompact(168_000, 200_000, RESERVE)).toBe(false);
+    expect(shouldCompact(168_001, 200_000, RESERVE)).toBe(true);
   });
 });
 

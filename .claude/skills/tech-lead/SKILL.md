@@ -5,27 +5,31 @@ description: "Evaluate the sustainable developability of the Diligent project's 
 
 # Tech Lead — Sustainable Developability Assessment
 
-Your job is to answer one question: **Can we keep building on this?**
+Your job is to answer one question: **Can this sustain a high development velocity without structural degradation?**
 
-Not "is the code clean" or "are the types correct" — those are means, not ends. The real question is whether this architecture, this codebase, and this development process can sustain continuous development across 11 layers and a growing monorepo without collapsing under its own weight.
+As features pile up fast, do boundaries hold, interfaces stay stable, and each new addition land in the right place — or does the codebase accumulate drift and friction with every commit?
+
+Not "is the code clean" or "are the types correct" — those are means, not ends.
 
 Sustainable developability breaks when:
-- Adding a new feature requires changing 8 files because abstractions are wrong
-- A new package or transport exposes that existing interfaces need breaking changes
-- The developer spends more time on reorganization and cleanup than on features
-- Design decisions on paper don't match reality in code, and nobody notices until it's too late
-- Test coverage is so thin that refactoring feels dangerous, so debt accumulates instead
-- Types are duplicated across packages instead of flowing from a single source
+- Adding a feature requires changing N files across packages because abstractions are at the wrong level
+- Each new provider or transport requires manual sync at multiple locations instead of a single registry
+- Types drift between packages because they're duplicated instead of shared — caught late, fixed expensively
+- Layer boundaries erode gradually — core logic starts leaking into UI, UI assumptions creep into core
+- A contributor has to ask "where does this go?" because ownership is ambiguous
+- Test coverage is too thin to validate changes quickly, so developers slow down instead of speeding up
 
-Your assessment should catch these problems early — before they compound across packages.
+Your assessment should catch these problems early — before they compound as the commit rate stays high.
 
 ## Before You Start
 
 Check `docs/review/tech-lead/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the most recent one to understand the trend — what was YELLOW last time, what was flagged as compounding. Your job is to assess *change*, not just current state.
 
+Note: you are operating as a new hire with no prior context. Any friction you encounter while navigating the codebase during this review — a directory whose purpose is unclear, a file that's hard to locate, a decision that exists nowhere in the repo — is itself a finding worth reporting.
+
 ## Context Gathering
 
-Build a complete picture before forming judgments. The project is a custom coding agent (Bun + TypeScript monorepo) with an 11-layer architecture (L0-L10). Core layers are implemented and working — development now focuses on extending features, adding providers/transports, and hardening existing systems.
+Build a complete picture before forming judgments. The project is a custom coding agent (Bun + TypeScript monorepo). The 11-layer architecture (L0-L10) is fully implemented — development now focuses on features, providers/transports, and hardening.
 
 ### Review Scope
 
@@ -35,7 +39,6 @@ The user may request a **full review** (default) or a **scoped review** targetin
 
 **The plan (what should exist):**
 - `docs/plan/decisions.md` — Numbered design decisions (the constitutional document). Count the actual number.
-- `docs/plan/layer/` — Layer development plans (includes historical phase-based docs).
 - `docs/plan/feature/`, `refactor/`, `fix/`, `infra/` — Current implementation plans by type.
 
 **The code (what actually exists):**
@@ -57,10 +60,6 @@ The user may request a **full review** (default) or a **scoped review** targetin
 - `git diff --stat` — Uncommitted work in progress
 - `git log --diff-filter=D --name-only --pretty=format:"%h %s"` — Deleted files reveal rework
 
-**The research (why decisions were made):**
-- `docs/research/layers/` — Layer architecture documents (L0-L10)
-- `docs/research/llm-tools/` — Tool system research
-- `docs/references/` — Reference implementations studied (codex, opencode, pi-mono)
 
 ## Assessment Framework
 
@@ -68,13 +67,17 @@ Evaluate along three axes. Each maps directly to whether development can be sust
 
 ### Axis 1: Structural Integrity
 
-*"Does what we built match what we designed, and will it hold the next floor?"*
+*"As features pile up fast, do the boundaries hold?"*
 
-This is about the gap between plan and reality. A small gap is natural. A large gap means either the plan is wrong, the implementation drifted, or both — and either way, building more on top is risky.
+This is about whether the architecture stays coherent under velocity. A small gap between intent and reality is natural. A large gap means every new feature lands slightly wrong — and in a monorepo with multiple packages and transports, that drift compounds fast.
 
 **Check for:**
 
-- **Decision-code alignment**: Pick 5-10 key decisions from `docs/plan/decisions.md` and verify they're reflected in the code. Misalignment here is a leading indicator of future breakage.
+- **Stale decisions**: Find decisions in `docs/plan/decisions.md` where the code has evolved past what the decision describes — the decision is now a historical artifact, not active guidance. These need updating to reflect current reality before they mislead future work.
+
+- **Decision gaps**: Scan recent commits (`git log --stat -20`) for significant architectural choices that lack a corresponding decision entry. Undocumented choices create invisible technical debt — the next person (or AI session) won't know why the code is structured that way.
+
+- **Deferred decision blockers**: Decisions marked as "deferred" in `decisions.md` — check whether any now block upcoming work. If so, they need resolution now, not later.
 
 - **Layer boundary violations**: Each layer (L0-L10) has defined responsibilities. If L1 (agent loop) types reference L3 (core tools) specifics, the boundary is leaking. Trace import chains to verify.
 
@@ -123,13 +126,13 @@ As the monorepo grows, the biggest sustainability risk shifts from within-packag
 
 ### Axis 4: Forward Compatibility
 
-*"Will today's code survive the next major feature or layer addition?"*
+*"Will today's code survive the next major feature or capability addition?"*
 
 This axis is the hardest to see. Today's code works for today's requirements. The question is whether it encodes assumptions that become false as development continues.
 
 **Evaluate:**
 
-- **Extension points**: Identify interfaces or hooks that are defined now but will be fully implemented in a later phase. Are they actually sufficient for what the later phase will need? Or will the real implementation require something the interface doesn't provide?
+- **Extension points**: Identify interfaces or hooks that are defined now but will be extended by future features. Are they actually sufficient for what those features will need? Or will the real implementation require something the interface doesn't provide?
 
 - **State scope assumptions**: Does current code assume a scope (in-memory, single-process, single-session) that a future layer will invalidate? Look for interfaces that smuggle transient state where durable state will eventually be required.
 
@@ -137,14 +140,12 @@ This axis is the hardest to see. Today's code works for today's requirements. Th
 
 - **Test foundation**: Can the current tests survive refactoring? Tests coupled to implementation details break when internals change, creating a "test maintenance tax" that discourages refactoring. Tests coupled to behavior survive and enable refactoring.
 
-- **Deferred decisions**: `docs/plan/decisions.md` marks some decisions as "deferred." Check whether any deferred decisions block upcoming work. If so, they need resolution now, not later.
-
 ## Output Format
 
 ```markdown
 ## Sustainability Verdict
 
-[One sentence: can we keep building on this? GREEN / YELLOW / RED]
+[One sentence: can this sustain high development velocity without structural degradation? GREEN / YELLOW / RED]
 [2-3 sentences explaining the verdict]
 
 ## Structural Integrity
@@ -188,7 +189,7 @@ Each action should reference specific decision IDs and file paths.
 
 - **Sustainability over correctness.** A slightly imperfect solution that can evolve is better than a "perfect" solution that's brittle. Don't recommend rewrites when evolution works.
 
-- **Evidence, always.** Every finding needs a specific file, line, commit, or decision ID. "This might be a problem" is not actionable. "D007's EventStream interface lacks error event support, which L0's error classification (D010) will need" is.
+- **Evidence, always.** Every finding needs a specific file, line, commit, or decision ID. "This might be a problem" is not actionable. "D036-REV session path convention is implemented in `core/src/session/`, but `cli/src/config.ts:42` still hardcodes the old path" is.
 
 - **Respect accumulated decisions.** `docs/plan/decisions.md` contains numbered decisions representing significant thought. Before suggesting a change to the architecture, verify you've read the decision and its rationale. Propose revisions to decisions, not silent contradictions.
 

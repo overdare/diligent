@@ -68,6 +68,7 @@ export interface ThreadState {
   pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string> } | null;
   toast: ToastState | null;
   usage: UsageState;
+  currentContextTokens: number; // latest turn's inputTokens (not cumulative)
   planState: PlanState | null;
   pendingSteers: string[];
 }
@@ -92,6 +93,7 @@ export const initialThreadState: ThreadState = {
   pendingUserInput: null,
   toast: null,
   usage: zeroUsage,
+  currentContextTokens: 0,
   planState: null,
   pendingSteers: [],
 };
@@ -389,6 +391,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
           cacheWriteTokens: state.usage.cacheWriteTokens + notification.params.usage.cacheWriteTokens,
           totalCost: state.usage.totalCost + notification.params.cost,
         },
+        currentContextTokens: notification.params.usage.inputTokens,
       };
 
     case "steering/injected": {

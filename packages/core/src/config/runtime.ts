@@ -107,7 +107,8 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     skills,
     compaction: {
       enabled: config.compaction?.enabled ?? true,
-      reserveTokens: config.compaction?.reserveTokens ?? 16384,
+      reserveTokens: config.compaction?.reserveTokens
+        ?? Math.floor((model?.contextWindow ?? 200_000) * 0.16),
       keepRecentTokens: config.compaction?.keepRecentTokens ?? 20000,
     },
     permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
