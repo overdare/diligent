@@ -207,6 +207,7 @@ function mapGeminiStopReason(finishReason: string): StopReason {
   }
 }
 
+// TODO: Track actual inputTokens for proactive compaction (D-compact)
 export function classifyGeminiError(err: unknown): ProviderError {
   if (err instanceof Error) {
     const msg = err.message;

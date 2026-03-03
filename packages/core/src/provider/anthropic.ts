@@ -246,6 +246,7 @@ function mapStopReason(reason: string | null): StopReason {
   }
 }
 
+// TODO: Track actual inputTokens for proactive compaction (D-compact)
 export function classifyAnthropicError(err: unknown): ProviderError {
   if (err instanceof Anthropic.APIError) {
     const status = err.status;

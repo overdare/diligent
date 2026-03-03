@@ -2,7 +2,7 @@
 import OpenAI from "openai";
 import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
-import { buildTools, convertMessages, handleResponsesAPIEvents } from "./openai-shared";
+import { buildTools, convertMessages, handleResponsesAPIEvents, isContextOverflow } from "./openai-shared";
 import { flattenSections } from "./system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
@@ -94,11 +94,6 @@ export function classifyOpenAIError(err: unknown): ProviderError {
     undefined,
     err instanceof Error ? err : undefined,
   );
-}
-
-function isContextOverflow(message: string): boolean {
-  const patterns = [/maximum context length/i, /context_length_exceeded/i, /too many tokens/i, /exceeds the model/i];
-  return patterns.some((p) => p.test(message));
 }
 
 function parseRetryAfterFromHeaders(headers: Headers | undefined): number | undefined {

@@ -18,6 +18,7 @@ export interface ToastState {
   id: string;
   kind: "error" | "info";
   message: string;
+  fatal?: boolean;
 }
 
 export interface UsageState {
@@ -372,6 +373,7 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
           id: `err-${Date.now()}`,
           kind: "error",
           message: notification.params.error.message,
+          fatal: notification.params.fatal,
         },
       };
 

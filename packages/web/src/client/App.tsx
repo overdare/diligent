@@ -213,7 +213,7 @@ export function App() {
   };
 
   useEffect(() => {
-    if (!state.toast) return;
+    if (!state.toast || state.toast.fatal) return;
     const id = setTimeout(() => dispatch({ type: "clear_toast" }), 4000);
     return () => clearTimeout(id);
   }, [state.toast]);
@@ -389,9 +389,11 @@ export function App() {
             state.toast.kind === "error"
               ? "border-danger/40 bg-surface text-danger"
               : "border-accent/40 bg-surface text-accent"
-          }`}
+          } ${state.toast.fatal ? "cursor-pointer" : ""}`}
+          onClick={state.toast.fatal ? () => dispatch({ type: "clear_toast" }) : undefined}
         >
           {state.toast.message}
+          {state.toast.fatal && <span className="ml-2 opacity-50">×</span>}
         </div>
       ) : null}
 

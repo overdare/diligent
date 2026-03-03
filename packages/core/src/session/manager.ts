@@ -46,6 +46,7 @@ export class SessionManager {
   private writeQueue: Promise<void> = Promise.resolve();
   private steeringQueue: Message[] = [];
   private followUpQueue: Message[] = [];
+  private lastApiInputTokens = 0;
 
   constructor(private config: SessionManagerConfig) {
     this.writer = new DeferredWriter(config.paths.sessions, config.cwd, undefined, config.parentSession);
@@ -152,9 +153,10 @@ export class SessionManager {
   ): Promise<void> {
     let currentMessages = messages;
 
-    // Proactive compaction check
+    // Proactive compaction check — use max of heuristic and last API-reported tokens
     if (compactionConfig.enabled) {
-      const tokens = estimateTokens(currentMessages);
+      const heuristicTokens = estimateTokens(currentMessages);
+      const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
       if (shouldCompact(tokens, this.resolveAgentConfig().model.contextWindow, compactionConfig.reserveTokens)) {
         currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
       }
@@ -349,6 +351,9 @@ export class SessionManager {
   private handleEvent(event: AgentEvent): void {
     if (event.type === "message_end") {
       this.appendMessageEntry(event.message);
+      if (event.message.usage.inputTokens > 0) {
+        this.lastApiInputTokens = event.message.usage.inputTokens;
+      }
     } else if (event.type === "turn_end") {
       for (const toolResult of event.toolResults) {
         this.appendMessageEntry(toolResult);

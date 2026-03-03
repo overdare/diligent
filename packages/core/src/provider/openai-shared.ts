@@ -102,6 +102,11 @@ export function buildTools(
   }));
 }
 
+export function isContextOverflow(message: string): boolean {
+  const patterns = [/maximum context length/i, /context_length_exceeded/i, /too many tokens/i, /exceeds the model/i];
+  return patterns.some((p) => p.test(message));
+}
+
 export function mapUsage(usage: { input_tokens: number; output_tokens: number } | undefined): Usage {
   return {
     inputTokens: usage?.input_tokens ?? 0,
@@ -233,7 +238,8 @@ export async function handleResponsesAPIEvents(
         const resp = event.response as Record<string, unknown>;
         const respError = resp?.error as Record<string, unknown> | undefined;
         const msg = (respError?.message as string) ?? "Response failed";
-        stream.push({ type: "error", error: new ProviderError(msg, "unknown", false) });
+        const errorType = isContextOverflow(msg) ? "context_overflow" : "unknown";
+        stream.push({ type: "error", error: new ProviderError(msg, errorType, false) });
         return;
       }
     }
