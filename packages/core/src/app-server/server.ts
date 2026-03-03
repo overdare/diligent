@@ -36,7 +36,7 @@ export interface DiligentAppServerConfig {
     signal: AbortSignal;
     approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
-    sessionId?: string;
+    getSessionId?: () => string | undefined;
   }) => AgentLoopConfig;
   compaction?: SessionManagerConfig["compaction"];
 }
@@ -174,6 +174,21 @@ export class DiligentAppServer {
     threadId?: string;
     mostRecent?: boolean;
   }): Promise<{ found: boolean; threadId?: string; context?: unknown[] }> {
+    // If the thread is already loaded in memory (possibly running), return it directly.
+    // Creating a new runtime would overwrite isRunning=true with isRunning=false.
+    if (params.threadId) {
+      const existing = this.threads.get(params.threadId);
+      if (existing) {
+        const context = existing.manager.getContext(existing.isRunning);
+        this.activeThreadId = params.threadId;
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
+          params: { threadId: params.threadId, restoredMessages: context.length },
+        });
+        return { found: true, threadId: params.threadId, context };
+      }
+    }
+
     const candidateCwds = Array.from(this.knownCwds);
 
     for (const cwd of candidateCwds) {
@@ -190,8 +205,24 @@ export class DiligentAppServer {
       });
       if (!resumed) continue;
 
+      // this.threads is keyed by the server-assigned threadId (e.g. "thread-abc12345"),
+      // while manager.sessionId uses DeferredWriter's preAssignedId (generateSessionId format).
+      // These are different, so a direct key lookup would fail. Scan for a running runtime
+      // whose session file matches the one we just resumed.
+      for (const [tid, t] of this.threads) {
+        if (t.isRunning && t.manager.sessionId === runtime.manager.sessionId) {
+          this.activeThreadId = tid;
+          const existingContext = t.manager.getContext(true);
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
+            params: { threadId: tid, restoredMessages: existingContext.length },
+          });
+          return { found: true, threadId: tid, context: existingContext };
+        }
+      }
+
+      const actualThreadId = params.threadId ?? runtime.manager.sessionId;
       const context = runtime.manager.getContext();
-      const actualThreadId = params.threadId ?? (await this.mostRecentSessionId(cwd)) ?? runtime.id;
 
       runtime.id = actualThreadId;
       this.threads.set(actualThreadId, runtime);
@@ -247,12 +278,13 @@ export class DiligentAppServer {
 
   private async handleThreadRead(
     threadId?: string,
-  ): Promise<{ messages: unknown[]; hasFollowUp: boolean; entryCount: number }> {
+  ): Promise<{ messages: unknown[]; hasFollowUp: boolean; entryCount: number; isRunning: boolean }> {
     const runtime = await this.resolveThreadRuntime(threadId);
     return {
-      messages: runtime.manager.getContext(),
+      messages: runtime.manager.getContext(runtime.isRunning),
       hasFollowUp: runtime.manager.hasFollowUp(),
       entryCount: runtime.manager.entryCount,
+      isRunning: runtime.isRunning,
     };
   }
 
@@ -532,7 +564,7 @@ export class DiligentAppServer {
           signal,
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),
-          sessionId: runtime.manager.sessionId ?? undefined,
+          getSessionId: () => runtime.manager.sessionId,
         });
       },
       compaction: this.config.compaction,
@@ -609,12 +641,6 @@ export class DiligentAppServer {
       return;
     }
     await this.notificationListener(notification);
-  }
-
-  private async mostRecentSessionId(cwd: string): Promise<string | null> {
-    const paths = await this.config.resolvePaths(cwd);
-    const sessions = await listSessions(paths.sessions);
-    return sessions[0]?.id ?? null;
   }
 
   private errorResponse(

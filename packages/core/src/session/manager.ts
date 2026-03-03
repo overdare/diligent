@@ -70,7 +70,7 @@ export class SessionManager {
       sessionPath = session?.path;
     } else if (options.mostRecent) {
       const sessions = await listSessions(this.config.paths.sessions);
-      sessionPath = sessions[0]?.path;
+      sessionPath = sessions.find((s) => !s.parentSession)?.path;
     }
 
     if (!sessionPath) return false;
@@ -94,8 +94,8 @@ export class SessionManager {
   }
 
   /** Get the current message context for display (e.g., after resume) */
-  getContext(): Message[] {
-    const context = buildSessionContext(this.entries, this.leafId);
+  getContext(skipRepair?: boolean): Message[] {
+    const context = buildSessionContext(this.entries, this.leafId, { skipRepair });
     return context.messages;
   }
 
@@ -446,11 +446,8 @@ export class SessionManager {
     return this.writer.path;
   }
 
-  get sessionId(): string | null {
-    const p = this.writer.path;
-    if (!p) return null;
-    const filename = p.split("/").pop();
-    return filename ? filename.replace(".jsonl", "") : null;
+  get sessionId(): string {
+    return this.writer.id;
   }
 
   get entryCount(): number {

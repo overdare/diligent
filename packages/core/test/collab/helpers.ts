@@ -118,7 +118,7 @@ export function makeMockSessionManagerFactory(
       hasFollowUp: () => false,
       appendModeChange: () => {},
       get sessionPath(): string | null { return null; },
-      get sessionId(): string | null { return null; },
+      get sessionId(): string { return "mock-session-id"; },
       get entryCount(): number { return 0; },
     } as unknown as import("../../src/session/manager").SessionManager;
   };

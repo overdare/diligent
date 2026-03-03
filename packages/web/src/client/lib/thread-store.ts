@@ -282,7 +282,13 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
     case "item/completed": {
       const { item, turnId } = notification.params;
       const protocolKey = toProtocolItemKey(turnId, item.itemId);
-      const renderId = state.itemSlots[protocolKey];
+      const slotRenderId = state.itemSlots[protocolKey];
+      // Fallback: for in-progress tools hydrated during reconnect, find by toolCallId
+      const renderId =
+        slotRenderId ??
+        (item.type === "toolCall"
+          ? state.items.find((i) => i.kind === "tool" && i.toolCallId === item.toolCallId)?.id
+          : undefined);
       if (!renderId) {
         return state;
       }
@@ -375,6 +381,16 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
 }
 
 export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadResponse): ThreadState {
+  // Pre-compute which toolCallIds already have results, to detect in-progress tools
+  const resolvedToolCallIds = new Set<string>();
+  if (payload.isRunning) {
+    for (const message of payload.messages) {
+      if (message.role === "tool_result") {
+        resolvedToolCallIds.add((message as { toolCallId: string }).toolCallId);
+      }
+    }
+  }
+
   const base: ThreadState = {
     ...state,
     items: [],
@@ -382,6 +398,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     itemSlots: {},
     usage: zeroUsage,
     planState: null,
+    threadStatus: payload.isRunning ? "busy" : "idle",
   };
 
   let current = base;
@@ -405,6 +422,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         if (block.type === "text") text += block.text;
         if (block.type === "thinking") thinking += block.thinking;
         if (block.type === "tool_call") {
+          const inProgress = payload.isRunning && !resolvedToolCallIds.has(block.id);
           current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
             id: `history:tool:${block.id}`,
             kind: "tool",
@@ -412,7 +430,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
             inputText: stringifyUnknown(block.input),
             outputText: "",
             isError: false,
-            status: "done",
+            status: inProgress ? "streaming" : "done",
             timestamp: message.timestamp,
             toolCallId: block.id,
           });

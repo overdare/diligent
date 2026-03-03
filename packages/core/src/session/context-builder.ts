@@ -18,7 +18,11 @@ export interface SessionContext {
  * 4. If a CompactionEntry exists, inject summary and skip older entries
  * 5. Extract messages + track latest model setting
  */
-export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
+export function buildSessionContext(
+  entries: SessionEntry[],
+  leafId?: string | null,
+  options?: { skipRepair?: boolean },
+): SessionContext {
   if (entries.length === 0) {
     return { messages: [] };
   }
@@ -102,7 +106,7 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     }
   }
 
-  return { messages: repairOrphanedToolUse(messages), currentModel };
+  return { messages: options?.skipRepair ? messages : repairOrphanedToolUse(messages), currentModel };
 }
 
 /**

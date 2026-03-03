@@ -129,6 +129,8 @@ export class DeferredWriter {
   private pendingEntries: SessionEntry[] = [];
   private flushed = false;
   private sessionPath: string | null = null;
+  /** Pre-assigned ID — available immediately, before flush. */
+  private readonly preAssignedId: string;
 
   constructor(
     private sessionsDir: string,
@@ -139,14 +141,17 @@ export class DeferredWriter {
     if (existingPath) {
       this.sessionPath = existingPath;
       this.flushed = true;
+      this.preAssignedId = existingPath.split("/").pop()!.replace(".jsonl", "");
+    } else {
+      this.preAssignedId = generateSessionId();
     }
   }
 
-  /** Queue an entry. Triggers flush if first assistant message. */
+  /** Queue an entry. Triggers flush on first message (user or assistant). */
   async write(entry: SessionEntry): Promise<void> {
     this.pendingEntries.push(entry);
 
-    if (!this.flushed && entry.type === "message" && entry.message.role === "assistant") {
+    if (!this.flushed && entry.type === "message") {
       await this.flush();
     } else if (this.flushed && this.sessionPath) {
       await appendEntry(this.sessionPath, entry);
@@ -157,7 +162,16 @@ export class DeferredWriter {
   async flush(): Promise<string> {
     if (this.flushed && this.sessionPath) return this.sessionPath;
 
-    const { path } = await createSessionFile(this.sessionsDir, this.cwd, this.parentSession);
+    const path = join(this.sessionsDir, `${this.preAssignedId}.jsonl`);
+    const header: SessionHeader = {
+      type: "session",
+      version: SESSION_VERSION,
+      id: this.preAssignedId,
+      timestamp: new Date().toISOString(),
+      cwd: this.cwd,
+      parentSession: this.parentSession,
+    };
+    await Bun.write(path, `${JSON.stringify(header)}\n`);
     this.sessionPath = path;
 
     for (const entry of this.pendingEntries) {
@@ -167,6 +181,11 @@ export class DeferredWriter {
     this.flushed = true;
     this.pendingEntries = [];
     return path;
+  }
+
+  /** Session ID — always available, even before flush. */
+  get id(): string {
+    return this.preAssignedId;
   }
 
   get path(): string | null {

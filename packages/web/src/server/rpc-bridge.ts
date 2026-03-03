@@ -146,10 +146,6 @@ export class RpcBridge {
       pending.resolve(toSafeFallback(pending.request));
     }
 
-    if (session.currentThreadId) {
-      this.threadOwners.delete(session.currentThreadId);
-    }
-
     this.sessions.delete(session.id);
   }
 
@@ -530,6 +526,7 @@ export class RpcBridge {
 
     const session = this.sessions.get(ownerSessionId);
     if (!session) {
+      this.broadcast({ type: "server_notification", notification });
       return;
     }
 

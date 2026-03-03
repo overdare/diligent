@@ -62,6 +62,8 @@ export function App() {
 
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
   const activeThreadIdRef = useRef<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
   const [input, setInput] = useState("");
   const [showProviderModal, setShowProviderModal] = useState(false);
@@ -151,6 +153,23 @@ export function App() {
       if (notification.method === "account/updated") {
         void providerMgr.onAccountUpdated(notification.params);
         return;
+      }
+      // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
+      if (notification.method === "thread/status/changed") {
+        void refreshThreadList(rpc);
+        // Re-hydrate if any tools are still showing as streaming (notifications missed during disconnect)
+        const hasStreamingItems = stateRef.current.items.some((i) => i.kind === "tool" && i.status === "streaming");
+        if (hasStreamingItems) {
+          const threadId = activeThreadIdRef.current;
+          if (threadId) {
+            void rpc
+              .request("thread/read", { threadId })
+              .then((history) => {
+                dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
+              })
+              .catch(console.error);
+          }
+        }
       }
       dispatch({ type: "notification", payload: notification });
     });
@@ -304,6 +323,11 @@ export function App() {
           {/* Thread title bar */}
           <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
             <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
+            {state.threadStatus !== "idle" && (
+              <span className={`shrink-0 font-mono text-xs ${state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}>
+                {state.threadStatus === "busy" ? "Running..." : state.threadStatus}
+              </span>
+            )}
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
               {threadTitle || "new conversation"}
             </span>

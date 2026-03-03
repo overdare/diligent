@@ -136,7 +136,7 @@ describe("AgentRegistry", () => {
     let capturedConfig: SessionManagerConfig | undefined;
     const registry = new AgentRegistry(
       makeCollabDeps({
-        parentSessionId: "parent-xyz",
+        getParentSessionId: () => "parent-xyz",
         sessionManagerFactory: (config) => {
           capturedConfig = config;
           return makeMockSessionManagerFactory(makeAssistant("ok"))(config);
