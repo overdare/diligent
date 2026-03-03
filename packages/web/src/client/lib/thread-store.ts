@@ -1,5 +1,5 @@
 // @summary Protocol event reducer and view-state normalization for Web CLI thread rendering
-import type { AgentEvent } from "@diligent/core";
+import type { AgentEvent } from "@diligent/core/client";
 import type {
   ApprovalRequest,
   DiligentServerNotification,

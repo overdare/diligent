@@ -1,7 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
-import type { AgentEvent } from "@diligent/core";
-import { ProtocolNotificationAdapter } from "@diligent/core";
+import type { AgentEvent } from "@diligent/core/client";
+import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type { DiligentServerNotification, Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";

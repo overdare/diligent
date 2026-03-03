@@ -1,6 +1,6 @@
 // @summary Tests for thread-state reducer behavior over item lifecycle notifications
 import { expect, test } from "bun:test";
-import { ProtocolNotificationAdapter } from "@diligent/core";
+import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { hydrateFromThreadRead, initialThreadState, reduceServerNotification } from "../src/client/lib/thread-store";
 
