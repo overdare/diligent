@@ -41,7 +41,8 @@ export const bashTool: Tool<typeof BashParams> = {
 
     const timeout = args.timeout ?? DEFAULT_TIMEOUT;
 
-    const proc = Bun.spawn(["bash", "-c", args.command], {
+    const shell = process.env.SHELL || "bash";
+    const proc = Bun.spawn([shell, "-l", "-c", args.command], {
       cwd: process.cwd(),
       stdout: "pipe",
       stderr: "pipe",
