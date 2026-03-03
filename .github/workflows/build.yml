@@ -1,7 +1,7 @@
 name: Build
 on:
   push:
-    branches: [main]
+    branches: [main, worktree-make]
     tags: ["v*"]
   workflow_dispatch:
 
