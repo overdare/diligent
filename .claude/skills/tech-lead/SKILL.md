@@ -17,7 +17,8 @@ Sustainable developability breaks when:
 - Types drift between packages because they're duplicated instead of shared — caught late, fixed expensively
 - Layer boundaries erode gradually — core logic starts leaking into UI, UI assumptions creep into core
 - A contributor has to ask "where does this go?" because ownership is ambiguous
-- Test coverage is too thin to validate changes quickly, so developers slow down instead of speeding up
+
+**Do not run:** `bun test`, `bun lint`, `bun typecheck`, or any build/check commands. Assess test coverage, type design, and code quality through code reading only — these are run continuously in the normal dev workflow.
 
 Your assessment should catch these problems early — before they compound as the commit rate stays high.
 
@@ -51,7 +52,7 @@ The user may request a **full review** (default) or a **scoped review** targetin
 | `packages/web/` | **Web frontend** — React + Tailwind, Express server, WebSocket RPC | Protocol compliance, type import paths |
 | `apps/desktop/` | **Native app** — Tauri v2 + Bun sidecar wrapping web | Sidecar lifecycle, same-behavior guarantee |
 | `packages/debug-viewer/` | **Debug tool** — Session inspection UI | Standalone, lower priority |
-| `packages/e2e/` | **Integration tests** — Cross-package test coverage | Test health, coverage of critical paths |
+| `packages/e2e/` | **Integration tests** — Cross-package test coverage | Coverage of critical cross-package paths |
 | Root config | `package.json`, `tsconfig.json`, `bunfig.toml`, `biome.json` | Workspace coherence |
 
 **The history (how we got here):**

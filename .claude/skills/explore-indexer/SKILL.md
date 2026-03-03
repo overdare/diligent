@@ -1,14 +1,14 @@
 ---
-name: glob-indexer
-description: "Maintain @summary annotations and EXPLORE.md navigation. Use when user says 'update navigation', 'check EXPLORE', 'add summary', 'fix index', 'coverage', or after directories are added/moved/reorganized."
+name: explore-indexer
+description: "Maintain @summary annotations and EXPLORE.md navigation indexes. Use when after directories are added/moved/reorganized."
 ---
 
-# glob-indexer — Codebase Index Maintenance
+# explore-indexer — Codebase Index Maintenance
 
 ## Check
 
 ```bash
-node .claude/skills/glob-indexer/check.mjs [path]
+node .claude/skills/explore-indexer/check.mjs [path]
 ```
 
 Reports missing/stale EXPLORE.md and per-directory @summary coverage.

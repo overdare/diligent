@@ -1,12 +1,12 @@
 ---
-name: glob-aug
-description: "Faster than glob+read loops — one command shows directory trees with inline @summary descriptions. Use before diving into unfamiliar directories or when you need a structural overview."
+name: explore-aug
+description: "Explore directories faster than glob+read loops — one command shows directory trees with inline @summary descriptions. Use when exploring the codebase, navigating unfamiliar directories, or needing a structural overview before diving in."
 ---
 
-# glob-aug — Augmented Glob
+# explore-aug — Augmented Explore
 
 ```bash
-node .claude/skills/glob-aug/explore.mjs <pattern> [path] [--depth N]
+node .claude/skills/explore-aug/explore.mjs <pattern> [path] [--depth N]
 ```
 
 Shows directory structure with @summary extracted from first lines of files.
@@ -27,20 +27,20 @@ packages/core/src/tools/
 
 ```bash
 # Subdirectories with README descriptions
-node .claude/skills/glob-aug/explore.mjs "*/" packages/core/src
+node .claude/skills/explore-aug/explore.mjs "*/" packages/core/src
 
 # Files with @summary
-node .claude/skills/glob-aug/explore.mjs "*.ts" packages/core/src/tools
+node .claude/skills/explore-aug/explore.mjs "*.ts" packages/core/src/tools
 
 # Recursive directories with depth limit
-node .claude/skills/glob-aug/explore.mjs "**/" packages/core/src --depth 2
+node .claude/skills/explore-aug/explore.mjs "**/" packages/core/src --depth 2
 
 # Brace expansion — multiple extensions at once
-node .claude/skills/glob-aug/explore.mjs "*.{ts,tsx}" packages/cli/src
+node .claude/skills/explore-aug/explore.mjs "*.{ts,tsx}" packages/cli/src
 
 # Path segment — find files under a specific subtree
-node .claude/skills/glob-aug/explore.mjs "src/**/*.ts" packages/core
+node .claude/skills/explore-aug/explore.mjs "src/**/*.ts" packages/core
 
 # Recursive file search
-node .claude/skills/glob-aug/explore.mjs "**/*.test.ts" packages/core
+node .claude/skills/explore-aug/explore.mjs "**/*.test.ts" packages/core
 ```

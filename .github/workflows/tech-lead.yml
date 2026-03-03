@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   run:
@@ -46,28 +45,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: claude -p "/tech-lead" --model opus --dangerously-skip-permissions
 
-      - name: Commit and open PR
+      - name: Commit and push
         if: steps.guard.outputs.skip == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if git diff --quiet && git diff --staged --quiet; then
-            echo "No changes — skipping PR"
+            echo "No changes — skipping commit"
             exit 0
           fi
 
-          BRANCH="tech-lead-$(date +%Y-%m-%d)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
           git add -A
           git commit -m "chore: tech-lead review $(date +%Y-%m-%d)"
-          git push origin "$BRANCH"
-
-          PR_URL=$(gh pr create \
-            --title "chore: tech-lead review $(date +%Y-%m-%d)" \
-            --body "Automated sustainability assessment via tech-lead skill. Review \`docs/review/tech-lead/\` for the new report." \
-            --base main \
-            --head "$BRANCH")
-
-          gh pr merge "$PR_URL" --squash --auto --delete-branch
+          LEFTHOOK=0 git push origin main

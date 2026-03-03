@@ -26,7 +26,7 @@ Before generating any plan, read these project files to build context:
 | `BACKLOG.md` | Pending work items — check if the task is already tracked |
 | `docs/plan/decisions.md` | Design decisions (D001-D078+) with rationale |
 
-Then read source code relevant to the task. Use `/glob-aug` to explore unfamiliar areas efficiently.
+Then read source code relevant to the task. Use `/explore-aug` to explore unfamiliar areas efficiently.
 
 ## Workflow
 
