@@ -2,6 +2,35 @@
 import type { ApprovalRequest } from "../tool/types";
 import type { PermissionAction, PermissionEngine, PermissionRule } from "./types";
 
+/** Extract the matching subject from an approval request (fixes file_path priority bug). */
+export function extractSubject(request: ApprovalRequest): string {
+  const d = request.details;
+  const raw = d?.file_path ?? d?.path ?? d?.command ?? request.toolName;
+  return String(raw);
+}
+
+/**
+ * Generate a wildcard pattern from an approval request for "always" rules.
+ * - Commands (details.command): first word + ` **` → `npm test` becomes `npm **`
+ * - File paths (details.file_path or details.path): parent dir + `/**` → `/a/b/c.ts` becomes `/a/b/**`
+ * - Fallback: exact toolName
+ */
+export function generatePattern(request: ApprovalRequest): string {
+  const d = request.details;
+  const filePath = d?.file_path ?? d?.path;
+  if (filePath) {
+    const s = String(filePath);
+    const lastSlash = s.lastIndexOf("/");
+    return lastSlash > 0 ? `${s.slice(0, lastSlash)}/**` : s;
+  }
+  if (d?.command) {
+    const cmd = String(d.command);
+    const firstSpace = cmd.indexOf(" ");
+    return firstSpace > 0 ? `${cmd.slice(0, firstSpace)} **` : cmd;
+  }
+  return request.toolName;
+}
+
 export function createPermissionEngine(configRules: PermissionRule[]): PermissionEngine {
   // Session-scoped rules added by "always" responses (D029)
   const sessionRules: PermissionRule[] = [];
@@ -10,17 +39,17 @@ export function createPermissionEngine(configRules: PermissionRule[]): Permissio
     // Config rules first, then session rules — last-match-wins (D027)
     const allRules = [...configRules, ...sessionRules];
     let result: PermissionAction = "prompt"; // default when no rule matches
-    const subject = request.details?.path ?? request.details?.command ?? request.toolName;
+    const subject = extractSubject(request);
     for (const rule of allRules) {
       if (rule.permission !== request.permission) continue;
-      if (wildcardMatch(rule.pattern, String(subject))) result = rule.action;
+      if (wildcardMatch(rule.pattern, subject)) result = rule.action;
     }
     return result;
   }
 
   function remember(request: ApprovalRequest, action: "allow" | "deny"): void {
-    const subject = request.details?.path ?? request.details?.command ?? request.toolName;
-    sessionRules.push({ permission: request.permission, pattern: String(subject), action });
+    const pattern = generatePattern(request);
+    sessionRules.push({ permission: request.permission, pattern, action });
   }
 
   return { evaluate, remember };

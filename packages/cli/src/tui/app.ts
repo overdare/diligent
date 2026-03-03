@@ -656,17 +656,9 @@ export class App {
     });
   }
 
-  /** approve callback — rule engine first, dialog only on "prompt" */
+  /** approve callback — evaluate/remember now lives in the agent loop */
   private async handleApprove(request: ApprovalRequest): Promise<ApprovalResponse> {
-    const action = this.permissionEngine?.evaluate(request) ?? "prompt";
-    if (action === "allow") return "once";
-    if (action === "deny") return "reject";
-    // action === "prompt" — show dialog
-    const response = await this.showApprovalDialog(request);
-    if (response === "always") {
-      this.permissionEngine?.remember(request, "allow");
-    }
-    return response;
+    return this.showApprovalDialog(request);
   }
 
   /** ask callback — show TextInput overlay for each question sequentially */
@@ -688,8 +680,8 @@ export class App {
           description: request.description,
           details: request.details?.command
             ? String(request.details.command)
-            : request.details?.path
-              ? String(request.details.path)
+            : (request.details?.file_path ?? request.details?.path)
+              ? String(request.details.file_path ?? request.details.path)
               : undefined,
         },
         (response) => {

@@ -185,8 +185,20 @@ async function runLoop(
         toolCallId: toolCall.id,
         signal: config.signal ?? new AbortController().signal,
         approve: async (request) => {
-          if (config.approve) return config.approve(request);
-          return "once"; // fallback: auto-approve when no handler provided
+          // Consult permission engine first
+          if (config.permissionEngine) {
+            const action = config.permissionEngine.evaluate(request);
+            if (action === "allow") return "once";
+            if (action === "deny") return "reject";
+          }
+          // Fall through to UI prompt
+          if (!config.approve) return "once";
+          const response = await config.approve(request);
+          // "always" → store session rule
+          if (response === "always" && config.permissionEngine) {
+            config.permissionEngine.remember(request, "allow");
+          }
+          return response;
         },
         ask: config.ask ? (request) => config.ask!(request) : undefined,
         onUpdate: (partial) => {
