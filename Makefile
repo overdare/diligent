@@ -5,7 +5,7 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Development:"
-	@echo "  dev           Run CLI in dev mode"
+	@echo "  dev           Install deps and run CLI"
 	@echo "  test          Run all tests"
 	@echo "  test-e2e      Run end-to-end tests only"
 	@echo "  lint          Lint (Biome)"
@@ -24,22 +24,26 @@ help:
 
 # --- Development ---
 
-test:
+node_modules: package.json bun.lock
+	bun install
+	@touch node_modules
+
+test: node_modules
 	bun test
 
-test-e2e:
+test-e2e: node_modules
 	bun test packages/e2e/
 
-lint:
+lint: node_modules
 	bun run lint
 
-lint-fix:
+lint-fix: node_modules
 	bun run lint:fix
 
-typecheck:
+typecheck: node_modules
 	bun run typecheck
 
-dev:
+dev: node_modules
 	bun run packages/cli/src/index.ts
 
 # --- Build ---
