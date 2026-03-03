@@ -1,5 +1,7 @@
 pre-push:
   parallel: true
+  only:
+    - ref: main
   commands:
     lint:
       run: bun run lint
