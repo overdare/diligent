@@ -153,6 +153,18 @@ function parsePlanOutput(output: string): PlanState | null {
 }
 
 export function reduceServerNotification(state: ThreadState, notification: DiligentServerNotification): ThreadState {
+  // Ignore notifications that belong to a different thread than the one currently displayed.
+  // thread/started and thread/resumed are exempt — they establish the active thread.
+  if (
+    notification.method !== "thread/started" &&
+    notification.method !== "thread/resumed" &&
+    "threadId" in notification.params &&
+    state.activeThreadId !== null &&
+    notification.params.threadId !== state.activeThreadId
+  ) {
+    return state;
+  }
+
   switch (notification.method) {
     case "thread/started":
       return {
