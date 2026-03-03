@@ -7,6 +7,12 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("PANIC: {info}");
+        let _ = std::fs::write("/tmp/diligent-panic.log", &msg);
+        eprintln!("{msg}");
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -36,8 +42,8 @@ pub fn run() {
                             tauri::WebviewUrl::External(parsed),
                         )
                         .title("Diligent")
-                        .inner_size(960.0, 800.0)
-                        .min_inner_size(800.0, 600.0)
+                        .inner_size(1200.0, 800.0)
+                        .min_inner_size(1200.0, 800.0)
                         .resizable(true)
                         .build();
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/desktop/src-tauri/icons/icon.svg" width="120" height="120" />
+</p>
+
 # diligent
 
 yet the most diligent coding agent
