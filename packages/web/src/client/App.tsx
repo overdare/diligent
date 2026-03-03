@@ -199,7 +199,9 @@ export function App() {
     return () => clearTimeout(id);
   }, [state.toast]);
 
-  const canSend = input.trim().length > 0 && state.threadStatus !== "busy";
+  const isBusy = state.threadStatus === "busy";
+  const canSend = input.trim().length > 0 && !isBusy;
+  const canSteer = input.trim().length > 0 && isBusy;
 
   const sendMessage = async () => {
     const rpc = rpcRef.current;
@@ -209,6 +211,19 @@ export function App() {
     dispatch({ type: "local_user", payload: message });
     try {
       await rpc.request("turn/start", { threadId: state.activeThreadId, message });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const steerMessage = async () => {
+    const rpc = rpcRef.current;
+    if (!rpc || !state.activeThreadId || !canSteer) return;
+    const content = input.trim();
+    setInput("");
+    dispatch({ type: "local_user", payload: `[steering] ${content}` });
+    try {
+      await rpc.request("turn/steer", { threadId: state.activeThreadId, content, followUp: false });
     } catch (error) {
       console.error(error);
     }
@@ -325,8 +340,10 @@ export function App() {
             input={input}
             onInputChange={setInput}
             onSend={() => void sendMessage()}
+            onSteer={() => void steerMessage()}
             onInterrupt={() => void interruptTurn()}
             canSend={canSend}
+            canSteer={canSteer}
             threadStatus={state.threadStatus}
             connection={connection}
             cwd={cwd}

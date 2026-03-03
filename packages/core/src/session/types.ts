@@ -112,4 +112,5 @@ export interface SessionInfo {
   modified: Date;
   messageCount: number;
   firstUserMessage?: string;
+  parentSession?: string;
 }

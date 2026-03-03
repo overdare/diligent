@@ -298,6 +298,7 @@ export const SessionSummarySchema = z.object({
   modified: z.string(),
   messageCount: z.number().int().nonnegative(),
   firstUserMessage: z.string().optional(),
+  parentSession: z.string().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 

@@ -41,11 +41,12 @@ export class NonInteractiveRunner {
 
     const server = new DiligentAppServer({
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: ({ cwd, mode, signal, approve, ask }) => {
+      buildAgentConfig: ({ cwd, mode, signal, approve, ask, sessionId }) => {
         const deps = {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
           streamFunction: this.config.streamFunction,
+          parentSessionId: sessionId,
         };
         const { tools } = buildTools(cwd, this.paths, deps, deps);
 

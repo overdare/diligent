@@ -30,6 +30,7 @@ export interface SessionManagerConfig {
   };
   knowledgePath?: string;
   sessionId?: string;
+  parentSession?: string;
 }
 
 export interface ResumeSessionOptions {
@@ -47,7 +48,7 @@ export class SessionManager {
   private followUpQueue: Message[] = [];
 
   constructor(private config: SessionManagerConfig) {
-    this.writer = new DeferredWriter(config.paths.sessions, config.cwd);
+    this.writer = new DeferredWriter(config.paths.sessions, config.cwd, undefined, config.parentSession);
   }
 
   /** Create a new session */
@@ -56,7 +57,7 @@ export class SessionManager {
     this.leafId = null;
     this.byId.clear();
     this.writeQueue = Promise.resolve();
-    this.writer = new DeferredWriter(this.config.paths.sessions, this.config.cwd);
+    this.writer = new DeferredWriter(this.config.paths.sessions, this.config.cwd, undefined, this.config.parentSession);
   }
 
   /** Resume an existing session */
@@ -443,6 +444,13 @@ export class SessionManager {
 
   get sessionPath(): string | null {
     return this.writer.path;
+  }
+
+  get sessionId(): string | null {
+    const p = this.writer.path;
+    if (!p) return null;
+    const filename = p.split("/").pop();
+    return filename ? filename.replace(".jsonl", "") : null;
   }
 
   get entryCount(): number {

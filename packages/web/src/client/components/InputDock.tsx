@@ -12,8 +12,10 @@ interface InputDockProps {
   input: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
+  onSteer: () => void;
   onInterrupt: () => void;
   canSend: boolean;
+  canSteer: boolean;
   threadStatus: ThreadStatus;
   connection: ConnectionState;
   cwd: string;
@@ -69,8 +71,10 @@ export function InputDock({
   input,
   onInputChange,
   onSend,
+  onSteer,
   onInterrupt,
   canSend,
+  canSteer,
   threadStatus,
   connection,
   cwd,
@@ -107,8 +111,8 @@ export function InputDock({
           /* Textarea */
           <TextArea
             className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
-            aria-label="Message input"
-            placeholder="Ask anything…"
+            aria-label={isBusy ? "Steering input" : "Message input"}
+            placeholder={isBusy ? "Steer the agent…" : "Ask anything…"}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onCompositionStart={() => {
@@ -124,7 +128,8 @@ export function InputDock({
               }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!isBusy) onSend();
+                if (isBusy) onSteer();
+                else onSend();
               }
             }}
           />
@@ -189,14 +194,27 @@ export function InputDock({
             </select>
 
             {isBusy ? (
-              <button
-                type="button"
-                aria-label="Interrupt turn"
-                onClick={onInterrupt}
-                className="rounded-md border border-danger/30 bg-danger/10 px-3 py-1 text-xs text-danger transition hover:bg-danger/20"
-              >
-                Stop
-              </button>
+              <>
+                <button
+                  type="button"
+                  aria-label="Steer agent"
+                  onClick={() => {
+                    if (!composingRef.current) onSteer();
+                  }}
+                  disabled={!canSteer}
+                  className="rounded-full bg-accent/80 px-3 py-1.5 text-xs font-semibold text-bg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  Steer
+                </button>
+                <button
+                  type="button"
+                  aria-label="Interrupt turn"
+                  onClick={onInterrupt}
+                  className="rounded-md border border-danger/30 bg-danger/10 px-3 py-1 text-xs text-danger transition hover:bg-danger/20"
+                >
+                  Stop
+                </button>
+              </>
             ) : (
               <button
                 type="button"

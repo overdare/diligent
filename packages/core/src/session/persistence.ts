@@ -98,6 +98,7 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
         modified: lastEntry ? new Date(lastEntry.timestamp) : new Date(header.timestamp),
         messageCount: messageEntries.length,
         firstUserMessage,
+        parentSession: header.parentSession,
       });
     } catch {
       // Skip corrupted session files
@@ -133,6 +134,7 @@ export class DeferredWriter {
     private sessionsDir: string,
     private cwd: string,
     existingPath?: string,
+    private parentSession?: string,
   ) {
     if (existingPath) {
       this.sessionPath = existingPath;
@@ -155,7 +157,7 @@ export class DeferredWriter {
   async flush(): Promise<string> {
     if (this.flushed && this.sessionPath) return this.sessionPath;
 
-    const { path } = await createSessionFile(this.sessionsDir, this.cwd);
+    const { path } = await createSessionFile(this.sessionsDir, this.cwd, this.parentSession);
     this.sessionPath = path;
 
     for (const entry of this.pendingEntries) {

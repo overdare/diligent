@@ -36,6 +36,7 @@ export interface DiligentAppServerConfig {
     signal: AbortSignal;
     approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
+    sessionId?: string;
   }) => AgentLoopConfig;
   compaction?: SessionManagerConfig["compaction"];
 }
@@ -131,7 +132,7 @@ export class DiligentAppServer {
         return this.handleThreadResume(request.params);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST:
-        return this.handleThreadList(request.params.limit);
+        return this.handleThreadList(request.params.limit, request.params.includeChildren);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
         return this.handleThreadRead(request.params.threadId);
@@ -210,7 +211,7 @@ export class DiligentAppServer {
     return { found: false };
   }
 
-  private async handleThreadList(limit?: number): Promise<{ data: SessionSummary[] }> {
+  private async handleThreadList(limit?: number, includeChildren?: boolean): Promise<{ data: SessionSummary[] }> {
     const all = [] as SessionSummary[];
 
     for (const cwd of this.knownCwds) {
@@ -226,6 +227,7 @@ export class DiligentAppServer {
           modified: session.modified.toISOString(),
           messageCount: session.messageCount,
           firstUserMessage: session.firstUserMessage,
+          parentSession: session.parentSession,
         })),
       );
     }
@@ -233,7 +235,14 @@ export class DiligentAppServer {
     const deduped = new Map<string, SessionSummary>();
     for (const entry of all) deduped.set(entry.id, entry);
 
-    return { data: Array.from(deduped.values()).slice(0, limit ?? 100) };
+    let result = Array.from(deduped.values());
+
+    // Filter out sub-agent sessions by default
+    if (!includeChildren) {
+      result = result.filter((s) => !s.parentSession);
+    }
+
+    return { data: result.slice(0, limit ?? 100) };
   }
 
   private async handleThreadRead(
@@ -523,6 +532,7 @@ export class DiligentAppServer {
           signal,
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),
+          sessionId: runtime.manager.sessionId ?? undefined,
         });
       },
       compaction: this.config.compaction,

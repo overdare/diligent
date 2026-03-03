@@ -35,5 +35,6 @@ export interface CollabToolDeps {
   streamFunction: StreamFunction;
   parentTools: Tool[];
   maxAgents?: number; // default 8
+  parentSessionId?: string;
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
 }

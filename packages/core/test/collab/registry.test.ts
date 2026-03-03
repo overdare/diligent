@@ -2,6 +2,7 @@
 import { describe, expect, it } from "bun:test";
 import { AgentRegistry } from "../../src/collab/registry";
 import { isFinal } from "../../src/collab/types";
+import type { SessionManagerConfig } from "../../src/session/manager";
 import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "./helpers";
 
 describe("AgentRegistry", () => {
@@ -129,5 +130,20 @@ describe("AgentRegistry", () => {
     const r1 = registry.spawn({ prompt: "task1", description: "", agentType: "general" });
     const r2 = registry.spawn({ prompt: "task2", description: "", agentType: "general" });
     expect(r1.nickname).not.toBe(r2.nickname);
+  });
+
+  it("spawn passes parentSessionId to child SessionManager config", () => {
+    let capturedConfig: SessionManagerConfig | undefined;
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        parentSessionId: "parent-xyz",
+        sessionManagerFactory: (config) => {
+          capturedConfig = config;
+          return makeMockSessionManagerFactory(makeAssistant("ok"))(config);
+        },
+      }),
+    );
+    registry.spawn({ prompt: "test", description: "", agentType: "general" });
+    expect(capturedConfig?.parentSession).toBe("parent-xyz");
   });
 });

@@ -1,5 +1,5 @@
 // @summary Builds linear message context from tree-structured session entries with compaction support
-import type { Message } from "../types";
+import type { Message, ToolResultMessage } from "../types";
 import { formatFileOperations } from "./compaction";
 import type { CompactionEntry, SessionEntry } from "./types";
 
@@ -102,5 +102,59 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     }
   }
 
-  return { messages, currentModel };
+  return { messages: repairOrphanedToolUse(messages), currentModel };
+}
+
+/**
+ * Ensure every tool_use in assistant messages has a matching tool_result.
+ * When a session is interrupted mid-tool-execution, the assistant message
+ * with tool_call blocks is persisted but the tool_result never arrives.
+ * The Anthropic API rejects such histories. We inject synthetic "interrupted"
+ * tool_result messages so the conversation can resume cleanly.
+ */
+function repairOrphanedToolUse(messages: Message[]): Message[] {
+  if (messages.length === 0) return messages;
+
+  const result: Message[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    result.push(msg);
+
+    if (msg.role !== "assistant") continue;
+
+    // Collect tool_call ids from this assistant message
+    const toolCallIds = msg.content
+      .filter((b) => b.type === "tool_call")
+      .map((b) => (b as { type: "tool_call"; id: string }).id);
+
+    if (toolCallIds.length === 0) continue;
+
+    // Collect tool_result ids that follow before the next non-tool_result message
+    const followingResultIds = new Set<string>();
+    for (let j = i + 1; j < messages.length; j++) {
+      if (messages[j].role === "tool_result") {
+        followingResultIds.add((messages[j] as ToolResultMessage).toolCallId);
+      } else {
+        break;
+      }
+    }
+
+    // Inject synthetic results for any orphaned tool_calls
+    for (const id of toolCallIds) {
+      if (!followingResultIds.has(id)) {
+        const toolCallBlock = msg.content.find((b) => b.type === "tool_call" && (b as { id: string }).id === id);
+        result.push({
+          role: "tool_result",
+          toolCallId: id,
+          toolName: (toolCallBlock as { name: string })?.name ?? "unknown",
+          output: "Session interrupted before tool execution completed.",
+          isError: true,
+          timestamp: msg.timestamp,
+        });
+      }
+    }
+  }
+
+  return result;
 }

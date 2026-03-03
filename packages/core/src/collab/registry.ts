@@ -67,6 +67,7 @@ export class AgentRegistry {
         signal: abortController.signal,
       },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+      parentSession: this.deps.parentSessionId,
     });
 
     const entry: AgentEntry = {

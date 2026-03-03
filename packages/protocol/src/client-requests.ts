@@ -56,6 +56,7 @@ export type ThreadResumeResponse = z.infer<typeof ThreadResumeResponseSchema>;
 
 export const ThreadListParamsSchema = z.object({
   limit: z.number().int().positive().max(500).optional(),
+  includeChildren: z.boolean().optional(),
 });
 export type ThreadListParams = z.infer<typeof ThreadListParamsSchema>;
 

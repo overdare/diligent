@@ -186,6 +186,24 @@ describe("deleteSession", () => {
   });
 });
 
+describe("listSessions parentSession", () => {
+  it("includes parentSession when set in header", async () => {
+    const dir = await setupDir();
+    const { path } = await createSessionFile(dir, "/project", "parent-123");
+    await appendEntry(path, makeUserEntry());
+    const sessions = await listSessions(dir);
+    expect(sessions[0].parentSession).toBe("parent-123");
+  });
+
+  it("parentSession is undefined for top-level sessions", async () => {
+    const dir = await setupDir();
+    const { path } = await createSessionFile(dir, "/project");
+    await appendEntry(path, makeUserEntry());
+    const sessions = await listSessions(dir);
+    expect(sessions[0].parentSession).toBeUndefined();
+  });
+});
+
 describe("DeferredWriter", () => {
   it("does not write to disk on user messages only", async () => {
     const dir = await setupDir();
@@ -242,5 +260,17 @@ describe("DeferredWriter", () => {
 
     const { entries } = await readSessionFile(path);
     expect(entries).toHaveLength(1);
+  });
+
+  it("passes parentSession to session header on flush", async () => {
+    const dir = await setupDir();
+    const writer = new DeferredWriter(dir, "/project", undefined, "parent-abc");
+
+    const userEntry = makeUserEntry();
+    await writer.write(userEntry);
+    await writer.write(makeAssistantEntry(userEntry.id));
+
+    const { header } = await readSessionFile(writer.path!);
+    expect(header.parentSession).toBe("parent-abc");
   });
 });
