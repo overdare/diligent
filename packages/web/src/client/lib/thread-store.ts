@@ -69,6 +69,7 @@ export interface ThreadState {
   toast: ToastState | null;
   usage: UsageState;
   planState: PlanState | null;
+  pendingSteers: string[];
 }
 
 const zeroUsage: UsageState = {
@@ -92,6 +93,7 @@ export const initialThreadState: ThreadState = {
   toast: null,
   usage: zeroUsage,
   planState: null,
+  pendingSteers: [],
 };
 
 function addSeen(state: ThreadState, key: string): ThreadState {
@@ -389,6 +391,23 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         },
       };
 
+    case "steering/injected": {
+      const count = notification.params.messageCount;
+      const drained = state.pendingSteers.slice(0, count);
+      const remaining = state.pendingSteers.slice(count);
+      const newItems: RenderItem[] = drained.map((text, i) => ({
+        id: `steer-injected-${Date.now()}-${i}`,
+        kind: "user" as const,
+        text,
+        timestamp: Date.now(),
+      }));
+      return {
+        ...state,
+        pendingSteers: remaining,
+        items: [...state.items, ...newItems],
+      };
+    }
+
     default:
       return state;
   }
@@ -412,6 +431,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     itemSlots: {},
     usage: zeroUsage,
     planState: null,
+    pendingSteers: [],
     threadStatus: payload.isRunning ? "busy" : "idle",
   };
 

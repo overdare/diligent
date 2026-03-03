@@ -8,6 +8,7 @@ import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { PlanPanel } from "./components/PlanPanel";
+import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
@@ -29,6 +30,7 @@ type AppAction =
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
   | { type: "local_user"; payload: string }
+  | { type: "local_steer"; payload: string }
   | { type: "clear_toast" };
 
 function appReducer(state: ThreadState, action: AppAction): ThreadState {
@@ -49,6 +51,9 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
       timestamp: Date.now(),
     };
     return { ...state, items: [...state.items, userItem] };
+  }
+  if (action.type === "local_steer") {
+    return { ...state, pendingSteers: [...state.pendingSteers, action.payload] };
   }
   if (action.type === "clear_toast") return { ...state, toast: null };
   return state;
@@ -240,7 +245,7 @@ export function App() {
     if (!rpc || !state.activeThreadId || !canSteer) return;
     const content = input.trim();
     setInput("");
-    dispatch({ type: "local_user", payload: `[steering] ${content}` });
+    dispatch({ type: "local_steer", payload: content });
     try {
       await rpc.request("turn/steer", { threadId: state.activeThreadId, content, followUp: false });
     } catch (error) {
@@ -359,6 +364,8 @@ export function App() {
           />
 
           {showPlan && <PlanPanel planState={state.planState!} />}
+
+          <SteeringQueuePanel pendingSteers={state.pendingSteers} />
 
           <InputDock
             input={input}

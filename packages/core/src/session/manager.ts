@@ -390,6 +390,10 @@ export class SessionManager {
 
   private drainSteeringQueue(): Message[] {
     const msgs = this.steeringQueue.splice(0);
+    // Persist as regular message entries at drain time (safe position)
+    for (const msg of msgs) {
+      this.appendMessageEntry(msg);
+    }
     return msgs;
   }
 

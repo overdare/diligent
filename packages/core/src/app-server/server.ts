@@ -532,6 +532,13 @@ export class DiligentAppServer {
         });
         return;
 
+      case "steering_injected":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED,
+          params: { threadId, messageCount: event.messageCount },
+        });
+        return;
+
       default:
         return;
     }

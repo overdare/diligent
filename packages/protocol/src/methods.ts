@@ -38,6 +38,7 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   USAGE_UPDATED: "usage/updated",
   ACCOUNT_LOGIN_COMPLETED: "account/login/completed",
   ACCOUNT_UPDATED: "account/updated",
+  STEERING_INJECTED: "steering/injected",
 } as const;
 
 export type DiligentServerNotificationMethod =

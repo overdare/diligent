@@ -223,6 +223,147 @@ describe("agentLoop steering", () => {
     expect(drainCount).toBeGreaterThanOrEqual(1);
   });
 
+  test("steering during thinking with no tool calls continues loop (codex-rs pattern)", async () => {
+    // Scenario: tool start → steer → tool end → inject → thinking → steer → steer → thinking end
+    // The LLM response after thinking has NO tool calls.
+    // Without the fix, the 2 steers queued during thinking would be lost.
+    const toolCallMsg = makeAssistant(
+      [{ type: "tool_call", id: "tc_1", name: "echo", input: { message: "working" } }],
+      "tool_use",
+    );
+    // Second response: no tool calls (text-only), steers arrive during this call
+    const textOnlyMsg = makeAssistant([{ type: "text", text: "thinking done" }]);
+    // Third response: LLM addresses the steers
+    const finalMsg = makeAssistant([{ type: "text", text: "addressed steers" }]);
+    const streamFn = createMockStreamFunction([toolCallMsg, textOnlyMsg, finalMsg]);
+
+    let drainCount = 0;
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [echoTool],
+      streamFunction: streamFn,
+      getSteeringMessages: () => {
+        drainCount++;
+        // drain #1: before first LLM call → empty
+        // drain #2: after tool execution → empty
+        // drain #3: before second LLM call → empty
+        // drain #4: no-tool-call path after second response → 2 steers arrived during thinking
+        if (drainCount === 4) {
+          return [
+            { role: "user" as const, content: "steer A", timestamp: Date.now() },
+            { role: "user" as const, content: "steer B", timestamp: Date.now() },
+          ];
+        }
+        return [];
+      },
+    };
+
+    const messages: Message[] = [{ role: "user", content: "start", timestamp: Date.now() }];
+    const loop = agentLoop(messages, config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    // steering_injected should have been emitted for the 2 steers
+    const steeringEvents = events.filter((e) => e.type === "steering_injected");
+    expect(steeringEvents.length).toBeGreaterThanOrEqual(1);
+    const injectedCount = steeringEvents.reduce(
+      (sum, e) => sum + (e as { type: "steering_injected"; messageCount: number }).messageCount,
+      0,
+    );
+    expect(injectedCount).toBe(2);
+
+    // The loop should have continued — 3 LLM calls total
+    expect(streamFn.contexts.length).toBe(3);
+
+    // Third LLM call should see both steer messages
+    const thirdCallMsgs = streamFn.contexts[2].messages;
+    const steerA = thirdCallMsgs.some(
+      (m) => m.role === "user" && typeof m.content === "string" && m.content === "steer A",
+    );
+    const steerB = thirdCallMsgs.some(
+      (m) => m.role === "user" && typeof m.content === "string" && m.content === "steer B",
+    );
+    expect(steerA).toBe(true);
+    expect(steerB).toBe(true);
+  });
+
+  test("steer during first text-only response injects and continues loop", async () => {
+    // Exact scenario: User Msg → Thinking Start → Steering → Thinking End (no tools)
+    // First response: text-only, steer arrives during streamAssistantResponse
+    // Second response: LLM addresses the steer
+    const firstMsg = makeAssistant([{ type: "text", text: "initial thoughts" }]);
+    const secondMsg = makeAssistant([{ type: "text", text: "addressed steer" }]);
+    const streamFn = createMockStreamFunction([firstMsg, secondMsg]);
+
+    let drainCount = 0;
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [echoTool],
+      streamFunction: streamFn,
+      getSteeringMessages: () => {
+        drainCount++;
+        // drain #1: before first LLM call → empty
+        // drain #2: no-tool-call path after first response → steer arrived during thinking
+        if (drainCount === 2) {
+          return [{ role: "user" as const, content: "please focus on X", timestamp: Date.now() }];
+        }
+        return [];
+      },
+    };
+
+    const messages: Message[] = [{ role: "user", content: "hello", timestamp: Date.now() }];
+    const loop = agentLoop(messages, config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    // steering_injected should fire
+    const steeringEvents = events.filter((e) => e.type === "steering_injected");
+    expect(steeringEvents.length).toBe(1);
+    expect((steeringEvents[0] as { type: "steering_injected"; messageCount: number }).messageCount).toBe(1);
+
+    // Loop continued — 2 LLM calls
+    expect(streamFn.contexts.length).toBe(2);
+
+    // Second LLM call should see the steer message
+    const secondCallMsgs = streamFn.contexts[1].messages;
+    const hasSteer = secondCallMsgs.some(
+      (m) => m.role === "user" && typeof m.content === "string" && m.content === "please focus on X",
+    );
+    expect(hasSteer).toBe(true);
+  });
+
+  test("no tool calls and no pending steers ends loop normally", async () => {
+    const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
+    const streamFn = createMockStreamFunction([responseMsg]);
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [],
+      streamFunction: streamFn,
+      getSteeringMessages: () => [],
+    };
+
+    const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
+    const loop = agentLoop(messages, config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    // Only 1 LLM call — loop broke normally
+    expect(streamFn.contexts.length).toBe(1);
+    expect(events.some((e) => e.type === "steering_injected")).toBe(false);
+  });
+
   test("no getSteeringMessages callback is a no-op", async () => {
     const responseMsg = makeAssistant([{ type: "text", text: "hello" }]);
     const streamFn = createMockStreamFunction([responseMsg]);

@@ -145,6 +145,12 @@ export const AccountUpdatedNotificationSchema = z.object({
 });
 export type AccountUpdatedNotification = z.infer<typeof AccountUpdatedNotificationSchema>;
 
+export const SteeringInjectedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED),
+  params: z.object({ threadId: z.string(), messageCount: z.number().int() }),
+});
+export type SteeringInjectedNotification = z.infer<typeof SteeringInjectedNotificationSchema>;
+
 export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
@@ -160,5 +166,6 @@ export const DiligentServerNotificationSchema = z.union([
   UsageUpdatedNotificationSchema,
   AccountLoginCompletedNotificationSchema,
   AccountUpdatedNotificationSchema,
+  SteeringInjectedNotificationSchema,
 ]);
 export type DiligentServerNotification = z.infer<typeof DiligentServerNotificationSchema>;
