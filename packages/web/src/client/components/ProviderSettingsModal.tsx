@@ -1,6 +1,7 @@
 // @summary Modal for managing provider API keys and ChatGPT OAuth (connect/disconnect per provider)
-import { useCallback, useState } from "react";
+
 import type { ProviderAuthStatus } from "@diligent/protocol";
+import { useCallback, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { Modal } from "./Modal";

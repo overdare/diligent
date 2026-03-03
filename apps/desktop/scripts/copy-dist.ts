@@ -1,7 +1,8 @@
 // @summary Post-build script: copies Tauri bundle output into the repo-root dist/ folder
-import { cp, mkdir, rm } from "node:fs/promises";
+
 import { existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { cp, mkdir, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 const DESKTOP = resolve(import.meta.dir, "..");
 const DIST = resolve(DESKTOP, "../../dist");
@@ -18,7 +19,8 @@ function getEntries(): CopyEntry[] {
 
   // Raw binary
   const binaryName = process.platform === "win32" ? "diligent-desktop.exe" : "diligent-desktop";
-  const binarySuffix = process.platform === "darwin" ? "-darwin-arm64" : process.platform === "win32" ? "-windows-x64" : "-linux-x64";
+  const binarySuffix =
+    process.platform === "darwin" ? "-darwin-arm64" : process.platform === "win32" ? "-windows-x64" : "-linux-x64";
   entries.push({
     src: join(releaseDir, binaryName),
     dest: join(DIST, `diligent-desktop${binarySuffix}${process.platform === "win32" ? ".exe" : ""}`),
@@ -32,7 +34,9 @@ function getEntries(): CopyEntry[] {
     case "win32": {
       const msiDir = join(bundleDir, "msi");
       const msiFi = existsSync(msiDir)
-        ? require("node:fs").readdirSync(msiDir).find((f: string) => f.endsWith(".msi"))
+        ? require("node:fs")
+            .readdirSync(msiDir)
+            .find((f: string) => f.endsWith(".msi"))
         : undefined;
       if (msiFi) entries.push({ src: join(msiDir, msiFi), dest: join(DIST, msiFi) });
       break;
@@ -40,10 +44,18 @@ function getEntries(): CopyEntry[] {
     default: {
       const appimageDir = join(bundleDir, "appimage");
       const debDir = join(bundleDir, "deb");
-      for (const [dir, ext] of [[appimageDir, ".AppImage"], [debDir, ".deb"]] as const) {
+      for (const [dir, ext] of [
+        [appimageDir, ".AppImage"],
+        [debDir, ".deb"],
+      ] as const) {
         if (!existsSync(dir)) continue;
-        const fi = require("node:fs").readdirSync(dir).find((f: string) => f.endsWith(ext));
-        if (fi) { entries.push({ src: join(dir, fi), dest: join(DIST, fi) }); break; }
+        const fi = require("node:fs")
+          .readdirSync(dir)
+          .find((f: string) => f.endsWith(ext));
+        if (fi) {
+          entries.push({ src: join(dir, fi), dest: join(DIST, fi) });
+          break;
+        }
       }
     }
   }

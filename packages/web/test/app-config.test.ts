@@ -1,8 +1,8 @@
 // @summary Tests for loadRuntimeConfig happy-path: model, mode, compaction defaults, and streamFunction
 import { expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadRuntimeConfig } from "@diligent/core";
 
 function makeTmpEnv(base: string) {

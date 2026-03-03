@@ -24,9 +24,7 @@ test("request_user_input: returns undefined when questions array is empty", () =
 
 test("request_user_input: extracts question text after bracket tag in output", () => {
   const output = "[Meaning] What do you want me to do with your message?\nAnswer: Help with a task";
-  expect(parseRequestUserInputTitleFromOutput(output)).toBe(
-    "What do you want me to do with your message?",
-  );
+  expect(parseRequestUserInputTitleFromOutput(output)).toBe("What do you want me to do with your message?");
 });
 
 test("request_user_input: falls back to bracket tag itself when no trailing text", () => {

@@ -1,7 +1,7 @@
 // @summary Tests for plan tool: output format, step rendering, empty title default
 import { describe, expect, it } from "bun:test";
-import { createPlanTool } from "../src/tools/plan";
 import type { ToolContext } from "../src/tool/types";
+import { createPlanTool } from "../src/tools/plan";
 
 function makeCtx(): ToolContext {
   return {
@@ -35,29 +35,21 @@ describe("plan tool", () => {
 
   it("uses custom title when provided", async () => {
     const tool = createPlanTool();
-    const result = await tool.execute(
-      { title: "Refactor Plan", steps: [{ text: "Step 1", done: false }] },
-      makeCtx(),
-    );
+    const result = await tool.execute({ title: "Refactor Plan", steps: [{ text: "Step 1", done: false }] }, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(parsed.title).toBe("Refactor Plan");
   });
 
   it("defaults done to false when omitted", async () => {
     const tool = createPlanTool();
-    const result = await tool.execute(
-      { steps: [{ text: "Do something" }] },
-      makeCtx(),
-    );
+    const result = await tool.execute({ steps: [{ text: "Do something" }] }, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(parsed.steps[0].done).toBe(false);
   });
 
   it("rejects empty steps array", async () => {
     const tool = createPlanTool();
-    await expect(
-      tool.execute({ steps: [] }, makeCtx()),
-    ).rejects.toThrow();
+    await expect(tool.execute({ steps: [] }, makeCtx())).rejects.toThrow();
   });
 
   it("preserves step order", async () => {

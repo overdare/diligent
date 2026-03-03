@@ -164,12 +164,25 @@ describe("detectEntryType", () => {
     expect((mc as Record<string, unknown>).provider).toBe("anthropic");
     expect((mc as Record<string, unknown>).modelId).toBe("claude-opus-4-20250514");
 
-    const si = detectEntryType({ type: "session_info", id: "x", parentId: null, timestamp: "2026-01-01T00:00:00Z", name: "test" });
+    const si = detectEntryType({
+      type: "session_info",
+      id: "x",
+      parentId: null,
+      timestamp: "2026-01-01T00:00:00Z",
+      name: "test",
+    });
     expect(si).not.toBeNull();
     expect((si as Record<string, unknown>).type).toBe("session_info");
     expect((si as Record<string, unknown>).name).toBe("test");
 
-    const mch = detectEntryType({ type: "mode_change", id: "y", parentId: "x", timestamp: "2026-01-01T00:00:00Z", mode: "plan", changedBy: "cli" });
+    const mch = detectEntryType({
+      type: "mode_change",
+      id: "y",
+      parentId: "x",
+      timestamp: "2026-01-01T00:00:00Z",
+      mode: "plan",
+      changedBy: "cli",
+    });
     expect(mch).not.toBeNull();
     expect((mch as Record<string, unknown>).type).toBe("mode_change");
     expect((mch as Record<string, unknown>).mode).toBe("plan");

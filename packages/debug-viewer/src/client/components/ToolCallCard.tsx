@@ -41,7 +41,6 @@ export function ToolCallCard({ toolCall, pair, onSelect }: ToolCallCardProps) {
     .join(", ");
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: wrapper div delegates to inner button
     <div
       className={`tool-call-card ${isError ? "tool-error" : ""} ${expanded ? "expanded" : ""}`}
       onClick={(e) => {

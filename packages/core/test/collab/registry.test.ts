@@ -80,9 +80,7 @@ describe("AgentRegistry", () => {
     );
     registry.spawn({ prompt: "task1", description: "", agentType: "general" });
     registry.spawn({ prompt: "task2", description: "", agentType: "general" });
-    expect(() =>
-      registry.spawn({ prompt: "task3", description: "", agentType: "general" }),
-    ).toThrow(/Max agents/);
+    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(/Max agents/);
   });
 
   it("throws for unknown agent ID in wait", async () => {

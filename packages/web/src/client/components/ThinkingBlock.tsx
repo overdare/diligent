@@ -8,7 +8,7 @@ interface ThinkingBlockProps {
 function summarize(text: string): string {
   const first = text.split(/[.\n]/)[0].trim();
   if (!first) return "";
-  return first.length > 60 ? first.slice(0, 60) + "…" : first;
+  return first.length > 60 ? `${first.slice(0, 60)}…` : first;
 }
 
 export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {

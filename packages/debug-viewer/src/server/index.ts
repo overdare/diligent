@@ -15,13 +15,12 @@ const port = portArg
     ? Number.parseInt(args[args.indexOf("--port") + 1], 10)
     : 7432;
 const dev = args.includes("--dev");
-const dataDirArg = args.find((a) => a.startsWith("--data-dir="))?.split("=")[1]
-  ?? (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null);
+const dataDirArg =
+  args.find((a) => a.startsWith("--data-dir="))?.split("=")[1] ??
+  (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null);
 
 // Find data directory
-const dataDir = dataDirArg
-  ? resolve(import.meta.dir, "../../", dataDirArg)
-  : findDiligentDir();
+const dataDir = dataDirArg ? resolve(import.meta.dir, "../../", dataDirArg) : findDiligentDir();
 if (!dataDir) {
   console.error("Could not find .diligent/ directory. Run from a diligent project, or pass --data-dir <path>.");
   process.exit(1);

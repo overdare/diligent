@@ -21,10 +21,7 @@ describe("spawn_agent tool", () => {
       }),
     );
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
-    const result = await spawnTool.execute(
-      { message: "do something", agent_type: "general" },
-      makeCtx(),
-    );
+    const result = await spawnTool.execute({ message: "do something", agent_type: "general" }, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(typeof parsed.agent_id).toBe("string");
     expect(typeof parsed.nickname).toBe("string");
@@ -122,20 +119,18 @@ describe("send_input tool", () => {
   });
 
   it("returns ok=true for running agent (steer called)", async () => {
-    let steerCalled = false;
+    let _steerCalled = false;
     const factory = makeMockSessionManagerFactory(makeAssistant("done"));
     const wrappedFactory: typeof factory = (cfg) => {
       const mgr = factory!(cfg);
       const origSteer = mgr.steer.bind(mgr);
       mgr.steer = (content: string) => {
-        steerCalled = true;
+        _steerCalled = true;
         origSteer(content);
       };
       return mgr;
     };
-    const { tools } = createCollabTools(
-      makeCollabDeps({ sessionManagerFactory: wrappedFactory }),
-    );
+    const { tools } = createCollabTools(makeCollabDeps({ sessionManagerFactory: wrappedFactory }));
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const sendTool = tools.find((t) => t.name === "send_input")!;
 

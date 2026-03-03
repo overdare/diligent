@@ -1,24 +1,26 @@
 // @summary WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests
+
+import { randomBytes } from "node:crypto";
 import {
-  type DiligentAppServer,
-  loadAuthStore,
-  loadOAuthTokens,
-  removeAuthKey,
-  removeOAuthTokens,
-  saveAuthKey,
-  saveOAuthTokens,
-  generatePKCE,
-  waitForCallback,
-  exchangeCodeForTokens,
   buildOAuthTokens,
-  openBrowser,
   CHATGPT_AUTH_URL,
   CHATGPT_CLIENT_ID,
   CHATGPT_REDIRECT_URI,
   CHATGPT_SCOPES,
+  type DiligentAppServer,
+  exchangeCodeForTokens,
+  generatePKCE,
+  loadAuthStore,
+  loadOAuthTokens,
+  openBrowser,
   PROVIDER_NAMES,
-  type ProviderName,
   type ProviderManager,
+  type ProviderName,
+  removeAuthKey,
+  removeOAuthTokens,
+  saveAuthKey,
+  saveOAuthTokens,
+  waitForCallback,
 } from "@diligent/core";
 import type {
   DiligentServerNotification,
@@ -33,7 +35,6 @@ import {
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
 } from "@diligent/protocol";
-import { randomBytes } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 

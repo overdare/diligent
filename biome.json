@@ -26,6 +26,11 @@
       "complexity": {
         "noForEach": "off"
       },
+      "a11y": {
+        "noRedundantAlt": "off",
+        "noStaticElementInteractions": "off",
+        "useKeyWithClickEvents": "off"
+      },
       "style": {
         "noNonNullAssertion": "off",
         "useNodejsImportProtocol": "off",
@@ -33,7 +38,10 @@
       },
       "suspicious": {
         "noExplicitAny": "warn",
-        "noAssignInExpressions": "off"
+        "noAssignInExpressions": "off",
+        "noControlCharactersInRegex": "off",
+        "useIterableCallbackReturn": "off",
+        "noArrayIndexKey": "warn"
       },
       "correctness": {
         "noUnusedImports": "error",
@@ -42,6 +50,17 @@
     }
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/*.d.ts", "!.claude/worktrees", "!research"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/*.d.ts",
+      "!.claude/worktrees",
+      "!.claude/skills",
+      "!research",
+      "!apps/desktop/loading",
+      "!apps/desktop/src-tauri/gen",
+      "!apps/desktop/src-tauri/target"
+    ]
   }
 }

@@ -352,7 +352,8 @@ export class ChatView implements Component {
   private commitThinkingBlock(): void {
     this.thinkingSpinner.stop();
     if (this.thinkingText.length > 0) {
-      const elapsedVal = this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : null;
+      const elapsedVal =
+        this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : null;
       const elapsedStr = elapsedVal ? ` ${t.dim}\xb7 ${elapsedVal}${t.reset}` : "";
       this.items.push([`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`]);
     }

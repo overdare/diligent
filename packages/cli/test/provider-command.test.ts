@@ -1,13 +1,13 @@
 // @summary Tests for provider command parsing and execution
-import { describe, expect, mock, test } from "bun:test";
-import type { ModeKind, SessionManager, SkillMetadata } from "@diligent/core";
+import { describe, expect, test } from "bun:test";
+import type { ModeKind } from "@diligent/core";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { providerCommand } from "../src/tui/commands/builtin/provider";
 import type { CommandRegistry } from "../src/tui/commands/registry";
 import type { CommandContext } from "../src/tui/commands/types";
 import type { ConfirmDialogOptions } from "../src/tui/components/confirm-dialog";
-import type { Component, OverlayHandle, OverlayOptions } from "../src/tui/framework/types";
+import type { Component, OverlayOptions } from "../src/tui/framework/types";
 
 function createMockContext(pm: ProviderManager): {
   ctx: CommandContext;

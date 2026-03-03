@@ -14,8 +14,8 @@ export { SessionManager } from "./manager";
 export {
   appendEntry,
   createSessionFile,
-  deleteSession,
   DeferredWriter,
+  deleteSession,
   listSessions,
   readSessionFile,
 } from "./persistence";

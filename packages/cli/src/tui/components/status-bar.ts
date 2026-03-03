@@ -41,7 +41,6 @@ function formatModeHint(mode: Mode): string {
 
 /** Visible length excluding ANSI escape codes */
 function visibleLength(s: string): number {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 

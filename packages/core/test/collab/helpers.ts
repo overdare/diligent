@@ -1,12 +1,12 @@
 // @summary Test helpers for collab tests: mock SessionManager and stream factories
+
+import type { AgentEvent } from "../../src/agent/types";
+import type { CollabToolDeps } from "../../src/collab/types";
 import { EventStream } from "../../src/event-stream";
 import type { DiligentPaths } from "../../src/infrastructure/diligent-dir";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../../src/provider/types";
 import type { SessionManagerConfig } from "../../src/session/manager";
-import type { CollabToolDeps } from "../../src/collab/types";
-import type { AgentEvent } from "../../src/agent/types";
-import type { AssistantMessage } from "../../src/types";
-import type { Message } from "../../src/types";
+import type { AssistantMessage, Message } from "../../src/types";
 
 export const TEST_MODEL: Model = {
   id: "test-model",
@@ -117,16 +117,20 @@ export function makeMockSessionManagerFactory(
       followUp: (_content: string) => {},
       hasFollowUp: () => false,
       appendModeChange: () => {},
-      get sessionPath(): string | null { return null; },
-      get sessionId(): string { return "mock-session-id"; },
-      get entryCount(): number { return 0; },
+      get sessionPath(): string | null {
+        return null;
+      },
+      get sessionId(): string {
+        return "mock-session-id";
+      },
+      get entryCount(): number {
+        return 0;
+      },
     } as unknown as import("../../src/session/manager").SessionManager;
   };
 }
 
-export function makeCollabDeps(
-  overrides: Partial<CollabToolDeps> = {},
-): CollabToolDeps {
+export function makeCollabDeps(overrides: Partial<CollabToolDeps> = {}): CollabToolDeps {
   return {
     cwd: "/tmp/collab-test",
     paths: TEST_PATHS,

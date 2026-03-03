@@ -65,8 +65,7 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
               if (item.kind === "tool") return <ToolBlock key={item.id} item={item} />;
               if (item.kind === "user") return <UserMessage key={item.id} text={item.text} />;
               const nextItem = items[idx + 1];
-              const isFollowedByUserInputTool =
-                nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
+              const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
               const displayItem = isFollowedByUserInputTool ? { ...item, text: "" } : item;
               return <AssistantMessage key={item.id} item={displayItem} />;
             })}

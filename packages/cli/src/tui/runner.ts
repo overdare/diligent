@@ -1,6 +1,11 @@
 // @summary Non-interactive runner using JSON-RPC app-server communication
 import type { AgentEvent, DiligentPaths, ModeKind } from "@diligent/core";
-import { createPermissionEngine, createYoloPermissionEngine, DiligentAppServer, ensureDiligentDir } from "@diligent/core";
+import {
+  createPermissionEngine,
+  createYoloPermissionEngine,
+  DiligentAppServer,
+  ensureDiligentDir,
+} from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";

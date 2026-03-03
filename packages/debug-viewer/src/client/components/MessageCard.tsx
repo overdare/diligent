@@ -40,7 +40,6 @@ function UserMessageCard({
   const content = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer message cards
     <div className="message-card user-message" onClick={() => onSelectEntry(entry)}>
       <div className="message-role-badge user">User</div>
       <div className="message-content">{content}</div>
@@ -60,7 +59,6 @@ function AssistantMessageCard({
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer message cards
     <div className="message-card assistant-message" onClick={() => onSelectEntry(entry)}>
       <div className="message-header">
         <span className="message-role-badge assistant">Assistant</span>
@@ -117,7 +115,6 @@ function AssistantMessageCard({
 
 function CompactionCard({ entry, onSelectEntry }: { entry: CompactionEntry; onSelectEntry: (entry: unknown) => void }) {
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer message cards
     <div className="message-card compaction-entry" onClick={() => onSelectEntry(entry)}>
       <div className="compaction-badge">Compaction</div>
       <div className="compaction-summary">{entry.summary}</div>
@@ -166,7 +163,6 @@ function SystemEventCard({ entry, onSelectEntry }: { entry: SessionEntry; onSele
   if (!info) return null;
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: debug viewer system event cards
     <div className="system-event-card" onClick={() => onSelectEntry(entry)}>
       <span className="system-event-badge">{info.badge}</span>
       <span className="system-event-description">{info.description}</span>

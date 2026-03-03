@@ -166,7 +166,7 @@ export class TUIRenderer {
     // Write newly committed lines to scrollback (permanent)
     if (newCommittedCount > 0) {
       const newLines = committedLines.slice(this.flushedCommittedCount);
-      this.terminal.write(newLines.join("\r\n") + "\r\n");
+      this.terminal.write(`${newLines.join("\r\n")}\r\n`);
       this.flushedCommittedCount = committedCount;
     }
 
@@ -277,7 +277,7 @@ export class TUIRenderer {
             composited = this.sliceWithAnsi(baseLine, 0, startCol);
           }
 
-          composited += "\x1b[0m" + overlayLines[i] + "\x1b[0m";
+          composited += `\x1b[0m${overlayLines[i]}\x1b[0m`;
 
           // Add rest of base line after overlay
           const overlayVisibleWidth = displayWidth(stripAnsi(overlayLines[i]));

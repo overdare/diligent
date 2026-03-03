@@ -1,8 +1,8 @@
 // @summary React hook for provider authentication state, available models, and OAuth
 
+import type { ProviderAuthStatus } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
-import type { ProviderAuthStatus } from "@diligent/protocol";
 import type { ModelInfo, OAuthStartResult } from "../../shared/ws-protocol";
 import { fetchProviderStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
 import type { WebRpcClient } from "./rpc-client";

@@ -26,9 +26,7 @@ describe("collab integration", () => {
       return makeMockSessionManagerFactory(resp)!(cfg);
     };
 
-    const { tools } = createCollabTools(
-      makeCollabDeps({ sessionManagerFactory: multiFactory }),
-    );
+    const { tools } = createCollabTools(makeCollabDeps({ sessionManagerFactory: multiFactory }));
 
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const waitTool = tools.find((t) => t.name === "wait")!;
@@ -57,9 +55,7 @@ describe("collab integration", () => {
     const waitTool = tools.find((t) => t.name === "wait")!;
 
     const spawned = JSON.parse((await spawnTool.execute({ message: "analyze code" }, makeCtx())).output);
-    const { status } = JSON.parse(
-      (await waitTool.execute({ ids: [spawned.agent_id] }, makeCtx())).output,
-    );
+    const { status } = JSON.parse((await waitTool.execute({ ids: [spawned.agent_id] }, makeCtx())).output);
 
     const s = status[spawned.agent_id];
     expect(s.kind).toBe("completed");

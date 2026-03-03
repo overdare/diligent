@@ -1,7 +1,7 @@
 // @summary Build script: compiles Bun web server sidecar and copies dist/client for Tauri packaging
 import { existsSync } from "node:fs";
-import { cp, mkdir, rename } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { cp, mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 const WEB = resolve(ROOT, "packages/web");
@@ -23,7 +23,7 @@ const PLATFORMS: TargetPlatform[] = [
 ];
 
 async function run(): Promise<void> {
-  const singleTarget = process.env["TAURI_TARGET_TRIPLE"];
+  const singleTarget = process.env.TAURI_TARGET_TRIPLE;
 
   // Step 1: Build React SPA if not already built
   const clientDist = resolve(WEB, "dist/client");
@@ -37,9 +37,7 @@ async function run(): Promise<void> {
 
   // Step 2: Compile sidecar binary for each target
   const serverEntry = resolve(WEB, "src/server/index.ts");
-  const targets = singleTarget
-    ? PLATFORMS.filter((p) => p.tauriTriple === singleTarget)
-    : PLATFORMS;
+  const targets = singleTarget ? PLATFORMS.filter((p) => p.tauriTriple === singleTarget) : PLATFORMS;
 
   if (targets.length === 0) {
     throw new Error(`No platform config found for TAURI_TARGET_TRIPLE=${singleTarget}`);

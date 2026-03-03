@@ -1,6 +1,12 @@
 // @summary Tests for PermissionEngine — rule matching, last-match-wins, session cache, wildcards, yolo
 import { describe, expect, it } from "bun:test";
-import { createPermissionEngine, createYoloPermissionEngine, extractSubject, generatePattern, wildcardMatch } from "../engine";
+import {
+  createPermissionEngine,
+  createYoloPermissionEngine,
+  extractSubject,
+  generatePattern,
+  wildcardMatch,
+} from "../engine";
 import type { PermissionRule } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -73,9 +79,7 @@ describe("extractSubject", () => {
   });
 
   it("falls back to toolName when details is empty", () => {
-    expect(
-      extractSubject({ permission: "read", toolName: "glob", description: "glob" }),
-    ).toBe("glob");
+    expect(extractSubject({ permission: "read", toolName: "glob", description: "glob" })).toBe("glob");
   });
 });
 
@@ -150,9 +154,7 @@ describe("generatePattern", () => {
   });
 
   it("falls back to toolName when no details", () => {
-    expect(
-      generatePattern({ permission: "read", toolName: "glob", description: "glob" }),
-    ).toBe("glob");
+    expect(generatePattern({ permission: "read", toolName: "glob", description: "glob" })).toBe("glob");
   });
 });
 
@@ -349,16 +351,24 @@ describe("createYoloPermissionEngine", () => {
     const engine = createYoloPermissionEngine();
 
     expect(
-      engine.evaluate({ permission: "execute", toolName: "bash", description: "run", details: { command: "rm -rf /" } }),
+      engine.evaluate({
+        permission: "execute",
+        toolName: "bash",
+        description: "run",
+        details: { command: "rm -rf /" },
+      }),
     ).toBe("allow");
 
     expect(
-      engine.evaluate({ permission: "write", toolName: "write", description: "write", details: { file_path: "/etc/passwd" } }),
+      engine.evaluate({
+        permission: "write",
+        toolName: "write",
+        description: "write",
+        details: { file_path: "/etc/passwd" },
+      }),
     ).toBe("allow");
 
-    expect(
-      engine.evaluate({ permission: "read", toolName: "read", description: "read" }),
-    ).toBe("allow");
+    expect(engine.evaluate({ permission: "read", toolName: "read", description: "read" })).toBe("allow");
   });
 
   it("remember is a no-op (does not throw)", () => {

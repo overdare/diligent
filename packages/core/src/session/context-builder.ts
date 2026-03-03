@@ -134,9 +134,7 @@ function normalizeToolMessages(messages: Message[]): Message[] {
 
     // Collect tool_call ids from this assistant message
     const pendingIds = new Set(
-      msg.content
-        .filter((b) => b.type === "tool_call")
-        .map((b) => (b as { type: "tool_call"; id: string }).id),
+      msg.content.filter((b) => b.type === "tool_call").map((b) => (b as { type: "tool_call"; id: string }).id),
     );
 
     if (pendingIds.size === 0) continue;

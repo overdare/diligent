@@ -1,6 +1,5 @@
 // @summary Tests for provider manager configuration and model handling
 import { describe, expect, test } from "bun:test";
-import type { DiligentConfig, StreamFunction } from "@diligent/core";
 import { DEFAULT_MODELS, PROVIDER_NAMES, ProviderManager } from "../src/provider-manager";
 
 describe("ProviderManager", () => {

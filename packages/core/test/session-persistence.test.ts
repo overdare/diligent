@@ -6,8 +6,8 @@ import { join } from "node:path";
 import {
   appendEntry,
   createSessionFile,
-  deleteSession,
   DeferredWriter,
+  deleteSession,
   listSessions,
   readSessionFile,
 } from "../src/session/persistence";

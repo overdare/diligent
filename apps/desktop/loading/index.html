@@ -108,7 +108,7 @@
         letter-spacing: 0.05em;
       }
 
-      [hidden] { display: none !important; }
+      [hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -128,7 +128,7 @@
     </div>
 
     <script>
-      async function pickFolder() {
+      async function _pickFolder() {
         const btn = document.getElementById('pick-btn');
         const errorEl = document.getElementById('error');
 

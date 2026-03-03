@@ -47,6 +47,6 @@ export class InputHistory {
     const dir = dirname(this.filePath);
     const { mkdir } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });
-    await Bun.write(this.filePath, this.entries.join("\n") + "\n");
+    await Bun.write(this.filePath, `${this.entries.join("\n")}\n`);
   }
 }

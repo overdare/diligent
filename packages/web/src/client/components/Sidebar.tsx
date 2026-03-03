@@ -1,7 +1,6 @@
 // @summary Sidebar with thread list, new thread button, and relative timestamps
 
-import type { SessionSummary } from "@diligent/protocol";
-import type { ProviderAuthStatus } from "@diligent/protocol";
+import type { ProviderAuthStatus, SessionSummary } from "@diligent/protocol";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 

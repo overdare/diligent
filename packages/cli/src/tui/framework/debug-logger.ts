@@ -79,7 +79,7 @@ export class TUIDebugLogger {
 
   private _write(entry: DebugEntry): void {
     try {
-      appendFileSync(this.path, JSON.stringify(entry) + "\n");
+      appendFileSync(this.path, `${JSON.stringify(entry)}\n`);
     } catch {
       // Silently ignore write errors
     }

@@ -17,7 +17,6 @@ class TerminalSim {
   screen: string[];
   cursorRow = 0;
   cursorCol = 0;
-  private _output: string[] = [];
 
   constructor(rows = 24, columns = 80) {
     this.rows = rows;

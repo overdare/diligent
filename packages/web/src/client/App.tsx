@@ -8,10 +8,10 @@ import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { PlanPanel } from "./components/PlanPanel";
-import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
+import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
@@ -187,6 +187,7 @@ export function App() {
     providerMgr.onAccountLoginCompleted,
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
+    rpcRef.current,
   ]);
 
   const startNewThread = async (): Promise<void> => {
@@ -302,7 +303,7 @@ export function App() {
     state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
   const statusDotPulse = state.threadStatus !== "idle";
 
-  const showPlan = state.planState && state.planState.steps.some((s) => !s.done);
+  const showPlan = state.planState?.steps.some((s) => !s.done);
 
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();
@@ -329,7 +330,9 @@ export function App() {
           <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
             <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
             {state.threadStatus !== "idle" && (
-              <span className={`shrink-0 font-mono text-xs ${state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}>
+              <span
+                className={`shrink-0 font-mono text-xs ${state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}
+              >
                 {state.threadStatus === "busy" ? "Running..." : state.threadStatus}
               </span>
             )}

@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import { StatusBar } from "../src/tui/components/status-bar";
 
 function stripAnsi(s: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: needed to strip ANSI
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
