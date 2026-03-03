@@ -1,0 +1,60 @@
+name: Build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS (arm64)
+            tui-script: build:darwin-arm64
+            tui-artifact: diligent-darwin-arm64
+            tauri-target: aarch64-apple-darwin
+            desktop-artifact: desktop-macos-arm64
+
+          - os: windows-latest
+            name: Windows (x64)
+            tui-script: build:windows-x64
+            tui-artifact: diligent-windows-x64.exe
+            tauri-target: x86_64-pc-windows-msvc
+            desktop-artifact: desktop-windows-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: bun install
+
+      # ── TUI ──────────────────────────────────────────────────────────────
+      - name: Build TUI
+        run: bun run ${{ matrix.tui-script }}
+
+      - name: Upload TUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.tui-artifact }}
+          path: dist/${{ matrix.tui-artifact }}
+
+      # ── Desktop ──────────────────────────────────────────────────────────
+      - name: Build Desktop
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.tauri-target }}
+        run: bun run --cwd apps/desktop build
+
+      - name: Upload Desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.desktop-artifact }}
+          path: dist/

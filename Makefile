@@ -1,26 +1,39 @@
 .PHONY: help test test-e2e lint lint-fix typecheck build build-all dev clean \
-       setup check-env config
+       setup check-env config \
+       web-dev web-build web-start \
+       debug-dev debug-build \
+       desktop-dev desktop-build check-desktop
 
 help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Development:"
-	@echo "  dev           Install deps and run CLI"
-	@echo "  test          Run all tests"
-	@echo "  test-e2e      Run end-to-end tests only"
-	@echo "  lint          Lint (Biome)"
-	@echo "  lint-fix      Lint + auto-fix"
-	@echo "  typecheck     TypeScript type check"
+	@echo "  dev             Install deps and run CLI"
+	@echo "  web-dev         Run web frontend dev server (Vite)"
+	@echo "  web-start       Run web backend server"
+	@echo "  debug-dev       Run debug-viewer dev server"
+	@echo "  desktop-dev     Run desktop app (Tauri dev mode)"
+	@echo ""
+	@echo "Test / Lint:"
+	@echo "  test            Run all tests"
+	@echo "  test-e2e        Run end-to-end tests only"
+	@echo "  lint            Lint (Biome)"
+	@echo "  lint-fix        Lint + auto-fix"
+	@echo "  typecheck       TypeScript type check"
 	@echo ""
 	@echo "Build:"
-	@echo "  build         Build native binary (current platform)"
-	@echo "  build-all     Build for all platforms (linux/darwin x64/arm64)"
-	@echo "  clean         Remove dist/"
+	@echo "  build           Build native binary (current platform)"
+	@echo "  build-all       Build for all platforms (linux/darwin/windows)"
+	@echo "  web-build       Build web frontend (Vite)"
+	@echo "  debug-build     Build debug-viewer (Vite)"
+	@echo "  desktop-build   Build desktop app (Tauri)"
+	@echo "  clean           Remove dist/"
 	@echo ""
 	@echo "Setup:"
-	@echo "  setup         Create .env from .env.example (won't overwrite)"
-	@echo "  check-env     Verify API keys are configured"
-	@echo "  config        Show current provider configuration"
+	@echo "  setup           Create .env from .env.example (won't overwrite)"
+	@echo "  check-env       Verify API keys are configured"
+	@echo "  check-desktop   Verify Rust/Cargo are installed (required for desktop)"
+	@echo "  config          Show current provider configuration"
 
 # --- Development ---
 
@@ -45,6 +58,51 @@ typecheck: node_modules
 
 dev: node_modules
 	bun run packages/cli/src/index.ts
+
+# --- Web ---
+
+web-dev: node_modules
+	bun run --cwd packages/web dev
+
+web-build: node_modules
+	bun run --cwd packages/web build
+
+web-start: node_modules
+	bun run --cwd packages/web start
+
+# --- Debug Viewer ---
+
+debug-dev: node_modules
+	bun run --cwd packages/debug-viewer dev
+
+debug-build: node_modules
+	bun run --cwd packages/debug-viewer build
+
+# --- Desktop ---
+
+check-desktop:
+	@echo "Checking desktop build prerequisites..."
+	@if command -v rustc >/dev/null 2>&1; then \
+		echo "  rustc:  OK ($(shell rustc --version 2>/dev/null))"; \
+	else \
+		echo "  rustc:  NOT FOUND — install via: curl https://sh.rustup.rs -sSf | sh"; \
+		exit 1; \
+	fi
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "  cargo:  OK ($(shell cargo --version 2>/dev/null))"; \
+	else \
+		echo "  cargo:  NOT FOUND — install via: curl https://sh.rustup.rs -sSf | sh"; \
+		exit 1; \
+	fi
+	@echo "  @tauri-apps/cli: installed via bun install (node_modules)"
+	@echo ""
+	@echo "All desktop prerequisites met. Run: make desktop-dev"
+
+desktop-dev: node_modules
+	bun run --cwd apps/desktop dev
+
+desktop-build: node_modules
+	bun run --cwd apps/desktop build
 
 # --- Build ---
 
