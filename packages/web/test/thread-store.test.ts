@@ -1,9 +1,27 @@
 // @summary Tests for thread-state reducer behavior over item lifecycle notifications
 import { expect, test } from "bun:test";
+import { ProtocolNotificationAdapter } from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { hydrateFromThreadRead, initialThreadState, reduceServerNotification } from "../src/client/lib/thread-store";
 
+function reduce(state: typeof initialThreadState, notification: DiligentServerNotification) {
+  const adapter = adapterInstance;
+  const events = adapter.toAgentEvents(notification);
+  return reduceServerNotification(state, notification, events);
+}
+
+// Shared adapter instance for tests that need stateful item tracking
+let adapterInstance: ProtocolNotificationAdapter;
+
+function resetAdapter() {
+  adapterInstance = new ProtocolNotificationAdapter();
+}
+
+// Reset before each test sequence
+resetAdapter();
+
 test("merges item started/delta/completed into single assistant item", () => {
+  resetAdapter();
   const started: DiligentServerNotification = {
     method: "item/started",
     params: {
@@ -58,9 +76,9 @@ test("merges item started/delta/completed into single assistant item", () => {
     },
   };
 
-  const a = reduceServerNotification(initialThreadState, started);
-  const b = reduceServerNotification(a, delta);
-  const c = reduceServerNotification(b, completed);
+  const a = reduce(initialThreadState, started);
+  const b = reduce(a, delta);
+  const c = reduce(b, completed);
 
   const assistant = c.items.find((item) => item.kind === "assistant");
   expect(assistant).toBeDefined();
@@ -68,6 +86,7 @@ test("merges item started/delta/completed into single assistant item", () => {
 });
 
 test("ignores duplicate started item events", () => {
+  resetAdapter();
   const started: DiligentServerNotification = {
     method: "item/started",
     params: {
@@ -83,14 +102,15 @@ test("ignores duplicate started item events", () => {
     },
   };
 
-  const a = reduceServerNotification(initialThreadState, started);
-  const b = reduceServerNotification(a, started);
+  const a = reduce(initialThreadState, started);
+  const b = reduce(a, started);
 
   expect(a.items.length).toBe(1);
   expect(b.items.length).toBe(1);
 });
 
 test("creates a new assistant item when same itemId appears in a new turn", () => {
+  resetAdapter();
   const startedTurn1: DiligentServerNotification = {
     method: "item/started",
     params: {
@@ -121,6 +141,26 @@ test("creates a new assistant item when same itemId appears in a new turn", () =
         type: "messageText",
         itemId: "item1",
         delta: "first",
+      },
+    },
+  };
+
+  const completedTurn1: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
       },
     },
   };
@@ -159,12 +199,13 @@ test("creates a new assistant item when same itemId appears in a new turn", () =
     },
   };
 
-  const s1 = reduceServerNotification(initialThreadState, startedTurn1);
-  const s2 = reduceServerNotification(s1, deltaTurn1);
-  const s3 = reduceServerNotification(s2, startedTurn2);
-  const s4 = reduceServerNotification(s3, deltaTurn2);
+  const s1 = reduce(initialThreadState, startedTurn1);
+  const s2 = reduce(s1, deltaTurn1);
+  const s3 = reduce(s2, completedTurn1);
+  const s4 = reduce(s3, startedTurn2);
+  const s5 = reduce(s4, deltaTurn2);
 
-  const assistants = s4.items.filter((item) => item.kind === "assistant");
+  const assistants = s5.items.filter((item) => item.kind === "assistant");
   expect(assistants.length).toBe(2);
   expect(assistants[0] && assistants[0].kind === "assistant" ? assistants[0].text : "").toBe("first");
   expect(assistants[1] && assistants[1].kind === "assistant" ? assistants[1].text : "").toBe("second");

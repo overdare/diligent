@@ -1,5 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
+import type { AgentEvent } from "@diligent/core";
+import { ProtocolNotificationAdapter } from "@diligent/core";
 import type { DiligentServerNotification, Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
@@ -25,7 +27,7 @@ import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
 
 type AppAction =
-  | { type: "notification"; payload: Parameters<typeof reduceServerNotification>[1] }
+  | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
@@ -34,7 +36,8 @@ type AppAction =
   | { type: "clear_toast" };
 
 function appReducer(state: ThreadState, action: AppAction): ThreadState {
-  if (action.type === "notification") return reduceServerNotification(state, action.payload);
+  if (action.type === "notification")
+    return reduceServerNotification(state, action.payload.notification, action.payload.events);
   if (action.type === "hydrate") {
     return hydrateFromThreadRead(
       { ...state, activeThreadId: action.payload.threadId, mode: action.payload.mode },
@@ -66,6 +69,7 @@ export function App() {
   const serverRequests = useServerRequests(rpcRef);
 
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
+  const adapterRef = useRef(new ProtocolNotificationAdapter());
   const activeThreadIdRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -101,6 +105,7 @@ export function App() {
 
     rpc.onConnected(async (meta) => {
       setCwd(meta.cwd);
+      adapterRef.current.reset();
       // Sync model + available models into refs immediately so applySessionModel can use them
       providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels);
       try {
@@ -170,13 +175,15 @@ export function App() {
             void rpc
               .request("thread/read", { threadId })
               .then((history) => {
+                adapterRef.current.reset();
                 dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
               })
               .catch(console.error);
           }
         }
       }
-      dispatch({ type: "notification", payload: notification });
+      const events = adapterRef.current.toAgentEvents(notification);
+      dispatch({ type: "notification", payload: { notification, events } });
     });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
   }, [
@@ -193,6 +200,7 @@ export function App() {
   const startNewThread = async (): Promise<void> => {
     const rpc = rpcRef.current;
     if (!rpc) return;
+    adapterRef.current.reset();
     try {
       const started = await rpc.request("thread/start", { cwd: cwd || "/", mode: state.mode });
       const history = await rpc.request("thread/read", { threadId: started.threadId });
@@ -206,6 +214,7 @@ export function App() {
   const openThread = async (threadId: string): Promise<void> => {
     const rpc = rpcRef.current;
     if (!rpc) return;
+    adapterRef.current.reset();
     try {
       const resumed = await rpc.request("thread/resume", { threadId });
       if (!resumed.found || !resumed.threadId) return;
@@ -260,6 +269,7 @@ export function App() {
     if (!threadId) return;
     const rpc = rpcRef.current;
     if (!rpc) return;
+    adapterRef.current.reset();
     try {
       await rpc.request("thread/delete", { threadId });
       // If the deleted thread was active, switch to most recent or start new

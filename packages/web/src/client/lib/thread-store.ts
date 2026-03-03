@@ -1,4 +1,5 @@
 // @summary Protocol event reducer and view-state normalization for Web CLI thread rendering
+import type { AgentEvent } from "@diligent/core";
 import type {
   ApprovalRequest,
   DiligentServerNotification,
@@ -121,10 +122,6 @@ function withItem(state: ThreadState, key: string, item: RenderItem): ThreadStat
   };
 }
 
-function toProtocolItemKey(turnId: string, itemId: string): string {
-  return `${turnId}:${itemId}`;
-}
-
 function stringifyUnknown(value: unknown): string {
   try {
     return typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -157,217 +154,140 @@ function parsePlanOutput(output: string): PlanState | null {
   return null;
 }
 
-export function reduceServerNotification(state: ThreadState, notification: DiligentServerNotification): ThreadState {
-  // Ignore notifications that belong to a different thread than the one currently displayed.
-  // thread/started and thread/resumed are exempt — they establish the active thread.
-  if (
-    notification.method !== "thread/started" &&
-    notification.method !== "thread/resumed" &&
-    "threadId" in notification.params &&
-    state.activeThreadId !== null &&
-    notification.params.threadId !== state.activeThreadId
-  ) {
-    return state;
-  }
+let renderSeq = 0;
 
-  switch (notification.method) {
-    case "thread/started":
+function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
+  switch (event.type) {
+    case "message_start": {
+      const renderId = `item:${event.itemId}:${++renderSeq}`;
+      if (state.itemSlots[event.itemId]) return state;
       return {
         ...state,
-        activeThreadId: notification.params.threadId,
-      };
-
-    case "thread/resumed":
-      return {
-        ...state,
-        activeThreadId: notification.params.threadId,
-      };
-
-    case "thread/status/changed":
-      return {
-        ...state,
-        threadStatus: notification.params.status,
-      };
-
-    case "turn/started":
-      return state;
-
-    case "item/started": {
-      const { item, turnId } = notification.params;
-      const key = `${turnId}:${item.itemId}:started`;
-      const protocolKey = toProtocolItemKey(turnId, item.itemId);
-      const renderId = `item:${protocolKey}`;
-
-      const seenState = addSeen(state, key);
-      if (seenState === state) {
-        return state;
-      }
-
-      if (item.type === "agentMessage") {
-        return {
-          ...seenState,
-          itemSlots: {
-            ...seenState.itemSlots,
-            [protocolKey]: renderId,
+        itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
+        items: [
+          ...state.items,
+          {
+            id: renderId,
+            kind: "assistant",
+            text: "",
+            thinking: "",
+            thinkingDone: false,
+            timestamp: event.message.timestamp,
           },
-          items: [
-            ...seenState.items,
-            {
-              id: renderId,
-              kind: "assistant",
-              text: "",
-              thinking: "",
-              thinkingDone: false,
-              timestamp: item.message.timestamp,
-            },
-          ],
-        };
-      }
-
-      if (item.type === "toolCall") {
-        return {
-          ...seenState,
-          itemSlots: {
-            ...seenState.itemSlots,
-            [protocolKey]: renderId,
-          },
-          items: [
-            ...seenState.items,
-            {
-              id: renderId,
-              kind: "tool",
-              toolName: item.toolName,
-              inputText: stringifyUnknown(item.input),
-              outputText: "",
-              isError: false,
-              status: "streaming",
-              timestamp: Date.now(),
-              toolCallId: item.toolCallId,
-            },
-          ],
-        };
-      }
-
-      return seenState;
+        ],
+      };
     }
 
-    case "item/delta": {
-      const { itemId, delta, turnId } = notification.params;
-      const protocolKey = toProtocolItemKey(turnId, itemId);
-      const renderId = state.itemSlots[protocolKey];
-      if (!renderId) {
-        return state;
-      }
+    case "message_delta": {
+      const renderId = state.itemSlots[event.itemId];
+      if (!renderId) return state;
 
-      if (delta.type === "messageText") {
+      if (event.delta.type === "text_delta") {
         return updateItem(state, renderId, (item) =>
-          item.kind === "assistant"
-            ? {
-                ...item,
-                text: item.text + delta.delta,
-                thinkingDone: true,
-              }
-            : item,
+          item.kind === "assistant" ? { ...item, text: item.text + event.delta.delta, thinkingDone: true } : item,
         );
       }
 
-      if (delta.type === "messageThinking") {
+      if (event.delta.type === "thinking_delta") {
         return updateItem(state, renderId, (item) =>
-          item.kind === "assistant"
-            ? {
-                ...item,
-                thinking: item.thinking + delta.delta,
-              }
-            : item,
-        );
-      }
-
-      if (delta.type === "toolOutput") {
-        return updateItem(state, renderId, (item) =>
-          item.kind === "tool"
-            ? {
-                ...item,
-                outputText: item.outputText + delta.delta,
-              }
-            : item,
+          item.kind === "assistant" ? { ...item, thinking: item.thinking + event.delta.delta } : item,
         );
       }
 
       return state;
     }
 
-    case "item/completed": {
-      const { item, turnId } = notification.params;
-      const protocolKey = toProtocolItemKey(turnId, item.itemId);
-      const slotRenderId = state.itemSlots[protocolKey];
+    case "message_end": {
+      const renderId = state.itemSlots[event.itemId];
+      if (!renderId) return state;
+      const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
+      return {
+        ...updateItem(state, renderId, (current) =>
+          current.kind === "assistant"
+            ? { ...current, thinkingDone: true, timestamp: event.message.timestamp }
+            : current,
+        ),
+        itemSlots: remainingSlots,
+      };
+    }
+
+    case "tool_start": {
+      const renderId = `item:${event.itemId}:${++renderSeq}`;
+      if (state.itemSlots[event.itemId]) return state;
+      return {
+        ...state,
+        itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
+        items: [
+          ...state.items,
+          {
+            id: renderId,
+            kind: "tool",
+            toolName: event.toolName,
+            inputText: stringifyUnknown(event.input),
+            outputText: "",
+            isError: false,
+            status: "streaming",
+            timestamp: Date.now(),
+            toolCallId: event.toolCallId,
+          },
+        ],
+      };
+    }
+
+    case "tool_update": {
+      const renderId = state.itemSlots[event.itemId];
+      if (!renderId) return state;
+      return updateItem(state, renderId, (item) =>
+        item.kind === "tool" ? { ...item, outputText: item.outputText + event.partialResult } : item,
+      );
+    }
+
+    case "tool_end": {
+      const slotRenderId = state.itemSlots[event.itemId];
       // Fallback: for in-progress tools hydrated during reconnect, find by toolCallId
       const renderId =
-        slotRenderId ??
-        (item.type === "toolCall"
-          ? state.items.find((i) => i.kind === "tool" && i.toolCallId === item.toolCallId)?.id
-          : undefined);
-      if (!renderId) {
-        return state;
-      }
+        slotRenderId ?? state.items.find((i) => i.kind === "tool" && i.toolCallId === event.toolCallId)?.id;
+      if (!renderId) return state;
 
-      if (item.type === "agentMessage") {
-        return updateItem(state, renderId, (current) =>
-          current.kind === "assistant"
-            ? {
-                ...current,
-                thinkingDone: true,
-                timestamp: item.message.timestamp,
-              }
-            : current,
-        );
-      }
-
-      if (item.type === "toolCall") {
-        let next = updateItem(state, renderId, (current) =>
+      const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
+      let next = {
+        ...updateItem(state, renderId, (current) =>
           current.kind === "tool"
             ? {
                 ...current,
-                outputText: item.output ?? current.outputText,
-                isError: item.isError ?? false,
-                status: "done",
+                outputText: event.output || current.outputText,
+                isError: event.isError,
+                status: "done" as const,
               }
             : current,
-        );
-
-        if (item.toolName === "plan" && item.output) {
-          const plan = parsePlanOutput(item.output);
-          if (plan) {
-            next = { ...next, planState: plan };
-          }
-        }
-
-        return next;
-      }
-
-      return state;
-    }
-
-    case "turn/completed":
-      return state;
-
-    case "knowledge/saved":
-      return {
-        ...state,
-        toast: {
-          id: `info-${notification.params.knowledgeId}`,
-          kind: "info",
-          message: "Knowledge updated",
-        },
+        ),
+        itemSlots: remainingSlots,
       };
 
-    case "loop/detected":
+      if (event.toolName === "plan" && event.output) {
+        const plan = parsePlanOutput(event.output);
+        if (plan) {
+          next = { ...next, planState: plan };
+        }
+      }
+
+      return next;
+    }
+
+    case "status_change":
+      return { ...state, threadStatus: event.status };
+
+    case "usage":
       return {
         ...state,
-        toast: {
-          id: `loop-${notification.params.threadId}-${notification.params.patternLength}`,
-          kind: "info",
-          message: `Loop detected in ${notification.params.toolName}`,
+        usage: {
+          inputTokens: state.usage.inputTokens + event.usage.inputTokens,
+          outputTokens: state.usage.outputTokens + event.usage.outputTokens,
+          cacheReadTokens: state.usage.cacheReadTokens + event.usage.cacheReadTokens,
+          cacheWriteTokens: state.usage.cacheWriteTokens + event.usage.cacheWriteTokens,
+          totalCost: state.usage.totalCost + event.cost,
         },
+        currentContextTokens: event.usage.inputTokens,
       };
 
     case "error":
@@ -376,28 +296,34 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
         toast: {
           id: `err-${Date.now()}`,
           kind: "error",
-          message: notification.params.error.message,
-          fatal: notification.params.fatal,
+          message: event.error.message,
+          fatal: event.fatal,
         },
       };
 
-    case "usage/updated":
+    case "knowledge_saved":
       return {
         ...state,
-        usage: {
-          inputTokens: state.usage.inputTokens + notification.params.usage.inputTokens,
-          outputTokens: state.usage.outputTokens + notification.params.usage.outputTokens,
-          cacheReadTokens: state.usage.cacheReadTokens + notification.params.usage.cacheReadTokens,
-          cacheWriteTokens: state.usage.cacheWriteTokens + notification.params.usage.cacheWriteTokens,
-          totalCost: state.usage.totalCost + notification.params.cost,
+        toast: {
+          id: `info-${event.knowledgeId}`,
+          kind: "info",
+          message: "Knowledge updated",
         },
-        currentContextTokens: notification.params.usage.inputTokens,
       };
 
-    case "steering/injected": {
-      const count = notification.params.messageCount;
-      const drained = state.pendingSteers.slice(0, count);
-      const remaining = state.pendingSteers.slice(count);
+    case "loop_detected":
+      return {
+        ...state,
+        toast: {
+          id: `loop-${event.patternLength}`,
+          kind: "info",
+          message: `Loop detected in ${event.toolName}`,
+        },
+      };
+
+    case "steering_injected": {
+      const drained = state.pendingSteers.slice(0, event.messageCount);
+      const remaining = state.pendingSteers.slice(event.messageCount);
       const newItems: RenderItem[] = drained.map((text, i) => ({
         id: `steer-injected-${Date.now()}-${i}`,
         kind: "user" as const,
@@ -411,9 +337,45 @@ export function reduceServerNotification(state: ThreadState, notification: Dilig
       };
     }
 
+    case "turn_start":
+      return state;
+
     default:
       return state;
   }
+}
+
+export function reduceServerNotification(
+  state: ThreadState,
+  notification: DiligentServerNotification,
+  events: AgentEvent[],
+): ThreadState {
+  // Ignore notifications that belong to a different thread than the one currently displayed.
+  // thread/started and thread/resumed are exempt — they establish the active thread.
+  if (
+    notification.method !== "thread/started" &&
+    notification.method !== "thread/resumed" &&
+    "threadId" in notification.params &&
+    state.activeThreadId !== null &&
+    notification.params.threadId !== state.activeThreadId
+  ) {
+    return state;
+  }
+
+  // Thread-level notifications handled directly
+  if (notification.method === "thread/started") {
+    return { ...state, activeThreadId: notification.params.threadId };
+  }
+  if (notification.method === "thread/resumed") {
+    return { ...state, activeThreadId: notification.params.threadId };
+  }
+
+  // Delegate all item lifecycle, status, usage, error, knowledge, loop, steering to AgentEvent reducer
+  let current = state;
+  for (const event of events) {
+    current = reduceAgentEvent(current, event);
+  }
+  return current;
 }
 
 export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadResponse): ThreadState {

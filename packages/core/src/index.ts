@@ -84,6 +84,8 @@ export {
   rankKnowledge,
   readKnowledge,
 } from "./knowledge/index";
+// Notification Adapter (shared TUI/Web)
+export { ProtocolNotificationAdapter } from "./notification-adapter";
 // Prompt
 export type { SystemPromptVars } from "./prompt/index";
 export { buildBaseSystemPrompt } from "./prompt/index";

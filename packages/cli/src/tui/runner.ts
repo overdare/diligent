@@ -5,11 +5,12 @@ import {
   createYoloPermissionEngine,
   DiligentAppServer,
   ensureDiligentDir,
+  ProtocolNotificationAdapter,
 } from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
-import { LocalAppServerRpcClient, ProtocolNotificationAdapter } from "./rpc-client";
+import { LocalAppServerRpcClient } from "./rpc-client";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 

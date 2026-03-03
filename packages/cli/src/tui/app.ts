@@ -15,6 +15,7 @@ import {
   createYoloPermissionEngine,
   DiligentAppServer,
   ensureDiligentDir,
+  ProtocolNotificationAdapter,
   resolveModel,
 } from "@diligent/core";
 import type {
@@ -49,7 +50,7 @@ import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
-import { LocalAppServerRpcClient, ProtocolNotificationAdapter } from "./rpc-client";
+import { LocalAppServerRpcClient } from "./rpc-client";
 import { t } from "./theme";
 import { buildTools } from "./tools";
 

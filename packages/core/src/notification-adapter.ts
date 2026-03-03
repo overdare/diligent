@@ -1,0 +1,205 @@
+// @summary Shared protocol notification → AgentEvent adapter for TUI and Web frontends
+
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "@diligent/protocol";
+import type { AgentEvent } from "./agent/types";
+import type { AssistantMessage } from "./types";
+
+function createEmptyAssistantMessage(model = "unknown"): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    model,
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    stopReason: "end_turn",
+    timestamp: Date.now(),
+  };
+}
+
+export class ProtocolNotificationAdapter {
+  private agentMessageByItemId = new Map<string, AssistantMessage>();
+  private toolCallByItemId = new Map<string, { toolCallId: string; toolName: string; input: unknown }>();
+
+  toAgentEvents(notification: DiligentServerNotification): AgentEvent[] {
+    switch (notification.method) {
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED:
+        return [
+          {
+            type: "status_change",
+            status: notification.params.status,
+            retry: notification.params.retry,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED:
+        return [{ type: "turn_start", turnId: notification.params.turnId }];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED:
+        return this.handleItemStarted(notification);
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA:
+        return this.handleItemDelta(notification);
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED:
+        return this.handleItemCompleted(notification);
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED:
+        return [
+          {
+            type: "knowledge_saved",
+            knowledgeId: notification.params.knowledgeId,
+            content: notification.params.content,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.LOOP_DETECTED:
+        return [
+          {
+            type: "loop_detected",
+            patternLength: notification.params.patternLength,
+            toolName: notification.params.toolName,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR:
+        return [
+          {
+            type: "error",
+            error: notification.params.error,
+            fatal: notification.params.fatal,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.USAGE_UPDATED:
+        return [
+          {
+            type: "usage",
+            usage: notification.params.usage,
+            cost: notification.params.cost,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED:
+        return [
+          {
+            type: "steering_injected",
+            messageCount: notification.params.messageCount,
+          },
+        ];
+
+      default:
+        return [];
+    }
+  }
+
+  reset(): void {
+    this.agentMessageByItemId.clear();
+    this.toolCallByItemId.clear();
+  }
+
+  private handleItemStarted(
+    notification: Extract<
+      DiligentServerNotification,
+      { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED }
+    >,
+  ): AgentEvent[] {
+    const { item } = notification.params;
+
+    if (item.type === "agentMessage") {
+      this.agentMessageByItemId.set(item.itemId, item.message);
+      return [{ type: "message_start", itemId: item.itemId, message: item.message }];
+    }
+
+    if (item.type === "toolCall") {
+      this.toolCallByItemId.set(item.itemId, {
+        toolCallId: item.toolCallId,
+        toolName: item.toolName,
+        input: item.input,
+      });
+      return [
+        {
+          type: "tool_start",
+          itemId: item.itemId,
+          toolCallId: item.toolCallId,
+          toolName: item.toolName,
+          input: item.input,
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  private handleItemDelta(
+    notification: Extract<
+      DiligentServerNotification,
+      { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA }
+    >,
+  ): AgentEvent[] {
+    const { itemId, delta } = notification.params;
+
+    if (delta.type === "messageText" || delta.type === "messageThinking") {
+      const message = this.agentMessageByItemId.get(itemId) ?? createEmptyAssistantMessage();
+      return [
+        {
+          type: "message_delta",
+          itemId,
+          message,
+          delta: {
+            type: delta.type === "messageText" ? "text_delta" : "thinking_delta",
+            delta: delta.delta,
+          },
+        },
+      ];
+    }
+
+    if (delta.type === "toolOutput") {
+      const tool = this.toolCallByItemId.get(itemId);
+      if (!tool) return [];
+
+      return [
+        {
+          type: "tool_update",
+          itemId,
+          toolCallId: tool.toolCallId,
+          toolName: tool.toolName,
+          partialResult: delta.delta,
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  private handleItemCompleted(
+    notification: Extract<
+      DiligentServerNotification,
+      { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED }
+    >,
+  ): AgentEvent[] {
+    const { item } = notification.params;
+
+    if (item.type === "agentMessage") {
+      const message = this.agentMessageByItemId.get(item.itemId) ?? item.message;
+      this.agentMessageByItemId.delete(item.itemId);
+      return [{ type: "message_end", itemId: item.itemId, message }];
+    }
+
+    if (item.type === "toolCall") {
+      const started = this.toolCallByItemId.get(item.itemId);
+      this.toolCallByItemId.delete(item.itemId);
+
+      return [
+        {
+          type: "tool_end",
+          itemId: item.itemId,
+          toolCallId: started?.toolCallId ?? item.toolCallId,
+          toolName: started?.toolName ?? item.toolName,
+          output: item.output ?? "",
+          isError: item.isError ?? false,
+        },
+      ];
+    }
+
+    return [];
+  }
+}
