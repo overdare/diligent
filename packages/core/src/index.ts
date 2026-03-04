@@ -91,6 +91,7 @@ export { buildBaseSystemPrompt } from "./prompt/index";
 // Provider
 export type {
   Model,
+  ModelClass,
   ModelDefinition,
   ProviderErrorType,
   ProviderEvent,
@@ -104,6 +105,7 @@ export type {
   ToolDefinition,
 } from "./provider/index";
 export {
+  agentTypeToModelClass,
   classifyGeminiError,
   createAnthropicStream,
   createChatGPTStream,
@@ -112,12 +114,14 @@ export {
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
   flattenSections,
+  getModelClass,
   KNOWN_MODELS,
   PROVIDER_HINTS,
   PROVIDER_NAMES,
   ProviderError,
   ProviderManager,
   resolveModel,
+  resolveModelForClass,
   withRetry,
 } from "./provider/index";
 // Session

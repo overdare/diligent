@@ -4,6 +4,8 @@ import { z } from "zod";
 import { BUILTIN_AGENT_TYPES } from "../agent/agent-types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/types";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import type { ModelClass } from "../provider/models";
+import { agentTypeToModelClass, resolveModelForClass } from "../provider/models";
 import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import { SessionManager } from "../session/manager";
 import type { Tool, ToolContext, ToolResult } from "../tool/types";
@@ -23,6 +25,14 @@ const TaskParams = z.object({
   prompt: z.string().describe("The full prompt/instruction to send to the sub-agent"),
   subagent_type: z.enum(["general", "explore"]).default("general"),
   task_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
+  model_class: z
+    .enum(["pro", "general", "lite"])
+    .optional()
+    .describe(
+      "Override the model class for this sub-agent. " +
+        "'pro' for complex reasoning, 'general' for balanced tasks, 'lite' for simple/read-only. " +
+        "Defaults based on subagent_type: explore→lite, general→same as parent.",
+    ),
 });
 
 /**
@@ -56,12 +66,16 @@ export function createTaskTool(deps: TaskToolDeps): Tool<typeof TaskParams> {
         ? [{ label: "agent_role", content: agentType.systemPromptPrefix }, ...deps.systemPrompt]
         : [...deps.systemPrompt];
 
+      // Resolve model class: explicit override > agent_type-based default
+      const targetClass: ModelClass = args.model_class ?? agentTypeToModelClass(args.subagent_type, deps.model);
+      const childModel = resolveModelForClass(deps.model, targetClass);
+
       // Create child SessionManager (shared paths — same .diligent dir)
       const childManager = new SessionManager({
         cwd: deps.cwd,
         paths: deps.paths,
         agentConfig: {
-          model: deps.model,
+          model: childModel,
           systemPrompt: childSystemPrompt,
           tools: childTools,
           streamFunction: deps.streamFunction,

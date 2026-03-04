@@ -11,6 +11,14 @@ const SpawnAgentParams = z.object({
     .default("general")
     .describe("Agent type: 'general' has full tool access, 'explore' is read-only"),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
+  model_class: z
+    .enum(["pro", "general", "lite"])
+    .optional()
+    .describe(
+      "Override the model class for this sub-agent. " +
+        "'pro' for complex reasoning, 'general' for balanced tasks, 'lite' for simple/read-only. " +
+        "Defaults based on agent_type: explore→lite, general→same as parent.",
+    ),
 });
 
 export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof SpawnAgentParams> {
@@ -27,6 +35,7 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
         description: args.description ?? "",
         agentType: args.agent_type,
         resumeId: args.resume_id,
+        modelClass: args.model_class,
       });
       return {
         output: JSON.stringify({ agent_id: agentId, nickname }),

@@ -1,8 +1,17 @@
-// @summary Known models registry with resolution logic for aliases and inference
+// @summary Known models registry with resolution logic for aliases, inference, and model classes
 import type { Model } from "./types";
+
+/**
+ * Model class tiers — abstract capability levels independent of provider.
+ * - pro:     Highest capability, most expensive. For complex reasoning tasks.
+ * - general: Balanced cost/capability. Default for most work.
+ * - lite:    Cheapest/fastest. Good for read-only exploration and simple tasks.
+ */
+export type ModelClass = "pro" | "general" | "lite";
 
 export interface ModelDefinition extends Model {
   aliases?: string[];
+  modelClass?: ModelClass;
 }
 
 export const KNOWN_MODELS: ModelDefinition[] = [
@@ -17,6 +26,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["claude-opus", "opus"],
+    modelClass: "pro",
   },
   {
     id: "claude-sonnet-4-6",
@@ -28,6 +38,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["claude-sonnet", "sonnet"],
+    modelClass: "general",
   },
   {
     id: "claude-haiku-4-5-20251001",
@@ -39,6 +50,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["claude-haiku", "haiku"],
+    modelClass: "lite",
   },
   // Gemini
   {
@@ -51,6 +63,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["gemini-pro"],
+    modelClass: "pro",
   },
   {
     id: "gemini-2.5-flash",
@@ -62,6 +75,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["gemini-flash", "gemini"],
+    modelClass: "general",
   },
   {
     id: "gemini-2.5-flash-lite",
@@ -73,6 +87,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["gemini-flash-lite"],
+    modelClass: "lite",
   },
   {
     id: "gemini-3.1-pro-preview",
@@ -84,6 +99,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["gemini-3.1-pro"],
+    modelClass: "pro",
   },
   {
     id: "gemini-3-flash-preview",
@@ -95,6 +111,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["gemini-3-flash"],
+    modelClass: "general",
   },
   // OpenAI
   {
@@ -107,6 +124,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["codex"],
+    modelClass: "pro",
   },
   {
     id: "gpt-5.2",
@@ -117,6 +135,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     outputCostPer1M: 14.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
+    modelClass: "general",
   },
   {
     id: "gpt-5.2-codex",
@@ -127,6 +146,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     outputCostPer1M: 14.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
+    modelClass: "general",
   },
   {
     id: "gpt-5.1-codex",
@@ -137,6 +157,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     outputCostPer1M: 10.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
+    modelClass: "general",
   },
   {
     id: "codex-mini-latest",
@@ -148,6 +169,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: false,
     defaultBudgetTokens: 10_000,
     aliases: ["codex-mini"],
+    modelClass: "lite",
   },
   {
     id: "o3",
@@ -158,6 +180,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     outputCostPer1M: 8.0,
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
+    modelClass: "pro",
   },
   {
     id: "o4-mini",
@@ -169,6 +192,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     supportsThinking: true,
     defaultBudgetTokens: 10_000,
     aliases: ["o4"],
+    modelClass: "lite",
   },
   {
     id: "gpt-4.1",
@@ -177,8 +201,46 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     maxOutputTokens: 32_768,
     inputCostPer1M: 2.0,
     outputCostPer1M: 8.0,
+    modelClass: "general",
   },
 ];
+
+/**
+ * Resolve a model for a given provider and model class.
+ * Returns the first KNOWN_MODELS entry matching both provider and modelClass.
+ * Falls back to the current model if no match is found.
+ */
+export function resolveModelForClass(currentModel: Model, targetClass: ModelClass): Model {
+  const provider = currentModel.provider;
+
+  // If the current model already has this class, return as-is
+  const currentDef = KNOWN_MODELS.find((m) => m.id === currentModel.id);
+  if (currentDef?.modelClass === targetClass) return currentModel;
+
+  // Find the first known model matching both provider and class
+  const match = KNOWN_MODELS.find((m) => m.provider === provider && m.modelClass === targetClass);
+  return match ?? currentModel;
+}
+
+/**
+ * Determine the model class of a given model.
+ * Returns the modelClass from KNOWN_MODELS if found, otherwise infers "general".
+ */
+export function getModelClass(model: Model): ModelClass {
+  const def = KNOWN_MODELS.find((m) => m.id === model.id);
+  return def?.modelClass ?? "general";
+}
+
+/**
+ * Map agent type to a default model class.
+ * - "explore" agents do read-only work → lite
+ * - "general" agents need full capability → same class as parent
+ */
+export function agentTypeToModelClass(agentType: string, parentModel: Model): ModelClass {
+  if (agentType === "explore") return "lite";
+  // general: keep the same class as parent
+  return getModelClass(parentModel);
+}
 
 /**
  * Resolve a model ID or alias to a full Model.

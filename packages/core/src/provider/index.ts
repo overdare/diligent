@@ -1,8 +1,8 @@
 export { classifyAnthropicError, createAnthropicStream } from "./anthropic";
 export { createChatGPTStream } from "./chatgpt";
 export { classifyGeminiError, createGeminiStream } from "./gemini";
-export type { ModelDefinition } from "./models";
-export { KNOWN_MODELS, resolveModel } from "./models";
+export type { ModelClass, ModelDefinition } from "./models";
+export { agentTypeToModelClass, getModelClass, KNOWN_MODELS, resolveModel, resolveModelForClass } from "./models";
 export { classifyOpenAIError, createOpenAIStream } from "./openai";
 export type { ProviderName } from "./provider-manager";
 export { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, ProviderManager } from "./provider-manager";

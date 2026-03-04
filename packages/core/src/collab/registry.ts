@@ -1,6 +1,8 @@
 // @summary AgentRegistry — spawn/wait/send_input/close lifecycle for non-blocking multi-agent collab
 import { BUILTIN_AGENT_TYPES } from "../agent/agent-types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/types";
+import type { ModelClass } from "../provider/models";
+import { agentTypeToModelClass, resolveModelForClass } from "../provider/models";
 import { SessionManager } from "../session/manager";
 import type { TextBlock } from "../types";
 import { NicknamePool } from "./nicknames";
@@ -28,7 +30,13 @@ export class AgentRegistry {
    * Spawn a new sub-agent in the background.
    * Synchronous — returns immediately with {agentId, nickname}.
    */
-  spawn(params: { prompt: string; description: string; agentType: string; resumeId?: string }): {
+  spawn(params: {
+    prompt: string;
+    description: string;
+    agentType: string;
+    resumeId?: string;
+    modelClass?: ModelClass;
+  }): {
     agentId: string;
     nickname: string;
   } {
@@ -54,12 +62,16 @@ export class AgentRegistry {
       ? [{ label: "agent_role", content: agentType.systemPromptPrefix }, ...this.deps.systemPrompt]
       : [...this.deps.systemPrompt];
 
+    // Resolve model class: explicit override > agent_type-based default
+    const targetClass: ModelClass = params.modelClass ?? agentTypeToModelClass(params.agentType, this.deps.model);
+    const childModel = resolveModelForClass(this.deps.model, targetClass);
+
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
     const childManager = factory({
       cwd: this.deps.cwd,
       paths: this.deps.paths,
       agentConfig: {
-        model: this.deps.model,
+        model: childModel,
         systemPrompt: childSystemPrompt,
         tools: childTools,
         streamFunction: this.deps.streamFunction,
