@@ -1,6 +1,6 @@
 // @summary Builds linear message context from tree-structured session entries with compaction support
 import type { Message, ToolResultMessage } from "../types";
-import { formatFileOperations } from "./compaction";
+import { formatFileOperations, SUMMARY_PREFIX } from "./compaction";
 import type { CompactionEntry, SessionEntry } from "./types";
 
 export interface SessionContext {
@@ -63,20 +63,27 @@ export function buildSessionContext(
   let currentModel: { provider: string; modelId: string } | undefined;
 
   if (lastCompaction) {
-    // Inject summary as first user message
+    // 1. Inject recent user messages (chronological, stored on CompactionEntry)
+    // Guard: v4 sessions may lack recentUserMessages
+    for (const msg of lastCompaction.recentUserMessages ?? []) {
+      messages.push(msg);
+    }
+
+    // 2. Inject summary with SUMMARY_PREFIX (last in prefix = stable for cache)
     const summaryWithFiles = lastCompaction.details
       ? lastCompaction.summary + formatFileOperations(lastCompaction.details)
       : lastCompaction.summary;
 
     messages.push({
       role: "user",
-      content: `[Session Summary]\n${summaryWithFiles}`,
+      content: `${SUMMARY_PREFIX}\n\n${summaryWithFiles}`,
       timestamp: Date.parse(lastCompaction.timestamp),
     });
 
-    // Only process entries AFTER the compaction entry
+    // 3. Process entries AFTER compactionIndex only (new turns)
     for (let i = compactionIndex + 1; i < path.length; i++) {
       const entry = path[i];
+      if (entry.type === "compaction") continue;
       switch (entry.type) {
         case "message":
           messages.push(entry.message);
@@ -106,7 +113,37 @@ export function buildSessionContext(
     }
   }
 
-  return { messages: options?.skipRepair ? messages : normalizeToolMessages(messages), currentModel };
+  return {
+    messages: options?.skipRepair ? messages : deduplicateUserMessages(normalizeToolMessages(messages)),
+    currentModel,
+  };
+}
+
+/**
+ * Remove consecutive duplicate user messages.
+ * Keeps the LAST occurrence so the most recent timestamp is preserved.
+ * JSONL retains all entries for UI history; this only affects API-bound messages.
+ */
+function deduplicateUserMessages(messages: Message[]): Message[] {
+  if (messages.length <= 1) return messages;
+
+  const result: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const next = messages[i + 1];
+    // Skip if next message is same role=user with identical content
+    if (
+      msg.role === "user" &&
+      next?.role === "user" &&
+      typeof msg.content === "string" &&
+      typeof next.content === "string" &&
+      msg.content === next.content
+    ) {
+      continue;
+    }
+    result.push(msg);
+  }
+  return result;
 }
 
 /**

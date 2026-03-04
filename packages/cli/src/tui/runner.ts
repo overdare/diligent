@@ -184,12 +184,14 @@ export class NonInteractiveRunner {
         this.writeStderr(`[compaction] Compacting (${Math.round(event.estimatedTokens / 1000)}k tokens)...`, isTTY);
         return hasText;
 
-      case "compaction_end":
+      case "compaction_end": {
+        const tailInfo = event.tailMessages?.length ? ` [${event.tailMessages.map((m) => m.role).join(" → ")}]` : "";
         this.writeStderr(
-          `[compaction] ${Math.round(event.tokensBefore / 1000)}k -> ${Math.round(event.tokensAfter / 1000)}k tokens`,
+          `[compaction] ${Math.round(event.tokensBefore / 1000)}k -> ${Math.round(event.tokensAfter / 1000)}k tokens${tailInfo}`,
           isTTY,
         );
         return hasText;
+      }
 
       case "knowledge_saved":
         this.writeStderr(`[knowledge] ${event.content}`, isTTY);

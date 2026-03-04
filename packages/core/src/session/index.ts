@@ -1,10 +1,12 @@
-export type { CutPointResult } from "./compaction";
+export type { RecentUserMessagesResult } from "./compaction";
 export {
   estimateTokens,
   extractFileOperations,
-  findCutPoint,
+  findRecentUserMessages,
   formatFileOperations,
   generateSummary,
+  isSummaryMessage,
+  SUMMARY_PREFIX,
   shouldCompact,
 } from "./compaction";
 export type { SessionContext } from "./context-builder";

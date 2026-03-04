@@ -321,7 +321,7 @@ describe("Context builder: SteeringEntry", () => {
         parentId: "a2",
         timestamp: "2026-02-27T10:01:00.000Z",
         summary: "Previous conversation summary",
-        firstKeptEntryId: "s1",
+        recentUserMessages: [],
         tokensBefore: 50000,
         tokensAfter: 5000,
       },
@@ -352,7 +352,7 @@ describe("Context builder: SteeringEntry", () => {
     const ctx = buildSessionContext(entries);
     // summary + steering + assistant response
     expect(ctx.messages).toHaveLength(3);
-    expect(ctx.messages[0].content as string).toContain("[Session Summary]");
+    expect(ctx.messages[0].content as string).toContain("Another language model started");
     expect(ctx.messages[1].role).toBe("user");
     expect(ctx.messages[1].content).toContain("new direction");
     expect(ctx.messages[2].role).toBe("assistant");

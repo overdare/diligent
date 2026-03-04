@@ -303,13 +303,15 @@ export class ChatView implements Component {
         this.activeSpinner.start(`Compacting context (${formatTokensCompact(event.estimatedTokens)} tokens)…`);
         break;
 
-      case "compaction_end":
+      case "compaction_end": {
         this.activeSpinner.stop();
+        const tailInfo = event.tailMessages?.length ? ` [${event.tailMessages.map((m) => m.role).join(" → ")}]` : "";
         this.items.push([
-          `${t.success}⏺${t.reset} ${t.dim}compacted: ${formatTokensCompact(event.tokensBefore)} → ${formatTokensCompact(event.tokensAfter)}${t.reset}`,
+          `${t.success}⏺${t.reset} ${t.dim}compacted: ${formatTokensCompact(event.tokensBefore)} → ${formatTokensCompact(event.tokensAfter)}${tailInfo}${t.reset}`,
         ]);
         this.options.requestRender();
         break;
+      }
 
       case "knowledge_saved":
         this.items.push([`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`]);

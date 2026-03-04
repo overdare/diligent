@@ -1,4 +1,4 @@
-// @summary Session compaction with LLM summarization, cut-point detection, and file operation tracking
+// @summary Session compaction with LLM summarization, recent user message selection, and file operation tracking
 import type { Model, StreamContext, StreamFunction } from "../provider/types";
 import type { Message, TextBlock } from "../types";
 import type { CompactionDetails, SessionEntry } from "./types";
@@ -33,27 +33,42 @@ export function shouldCompact(estimatedTokens: number, contextWindow: number, re
   return estimatedTokens > contextWindow - reserveTokens;
 }
 
-export interface CutPointResult {
-  /** Index into path entries — first entry to keep in context */
-  firstKeptIndex: number;
-  /** Entries to summarize (0..firstKeptIndex-1) */
+/**
+ * Codex-rs SUMMARY_PREFIX — distinguishes summary injections from real user messages.
+ * Prevents summary accumulation when collecting recent user messages in iterative compactions.
+ */
+export const SUMMARY_PREFIX =
+  "Another language model started to solve this problem and produced a summary " +
+  "of its thinking process. You also have access to the state of the tools that " +
+  "were used by that language model. Use this to build on the work that has " +
+  "already been done and avoid duplicating work. Here is the summary produced " +
+  "by the other language model, use the information in this summary to assist " +
+  "with your own analysis:";
+
+/** Check if a message is a summary injection (to filter during user message collection). */
+export function isSummaryMessage(msg: Message): boolean {
+  if (msg.role !== "user" || typeof msg.content !== "string") return false;
+  return msg.content.startsWith(`${SUMMARY_PREFIX}\n`);
+}
+
+export interface RecentUserMessagesResult {
+  recentUserMessages: Message[];
   entriesToSummarize: SessionEntry[];
-  /** Entries to keep (firstKeptIndex..end) */
-  entriesToKeep: SessionEntry[];
 }
 
 /**
- * Find where to cut the conversation for compaction.
- * Simple cut points: always cut at user message boundaries (turn boundaries).
- * Walk backwards from the end, accumulating estimated tokens,
- * until we've reached keepRecentTokens worth of messages.
+ * Collect recent user messages within a token budget, and identify all entries to summarize.
+ * Codex-rs approach: summarize ALL entries; independently select recent user messages.
  */
-export function findCutPoint(pathEntries: SessionEntry[], keepRecentTokens: number): CutPointResult {
+export function findRecentUserMessages(
+  pathEntries: SessionEntry[],
+  keepRecentTokens: number,
+): RecentUserMessagesResult {
   if (pathEntries.length === 0) {
-    return { firstKeptIndex: 0, entriesToSummarize: [], entriesToKeep: [] };
+    return { recentUserMessages: [], entriesToSummarize: [] };
   }
 
-  // Find the last compaction entry — only summarize entries AFTER it
+  // Find startIndex after last compaction
   let startIndex = 0;
   for (let i = pathEntries.length - 1; i >= 0; i--) {
     if (pathEntries[i].type === "compaction") {
@@ -62,62 +77,53 @@ export function findCutPoint(pathEntries: SessionEntry[], keepRecentTokens: numb
     }
   }
 
-  // Walk backwards from the end, accumulating token estimates
+  // All entries after last compaction are summarized
+  const entriesToSummarize = pathEntries.slice(startIndex);
+
+  // Collect user messages (excluding summary injections), include steering
+  const userMessages: Message[] = [];
+  for (const entry of entriesToSummarize) {
+    if (entry.type === "message" && entry.message.role === "user" && !isSummaryMessage(entry.message)) {
+      userMessages.push(entry.message);
+    } else if (entry.type === "steering") {
+      userMessages.push(entry.message);
+    }
+  }
+
+  // Walk backwards within token budget, truncate overlong messages
+  const selected: Message[] = [];
   let accumulatedTokens = 0;
-  let cutIndex = startIndex; // default: nothing to summarize (keep everything)
-  let found = false;
 
-  for (let i = pathEntries.length - 1; i >= startIndex; i--) {
-    const entry = pathEntries[i];
-    if (entry.type === "message") {
-      const tokens = estimateTokens([entry.message]);
-      accumulatedTokens += tokens;
-    }
-    if (accumulatedTokens >= keepRecentTokens) {
-      cutIndex = i;
-      found = true;
+  for (let i = userMessages.length - 1; i >= 0; i--) {
+    const msg = userMessages[i];
+    const tokens = estimateTokens([msg]);
+    if (accumulatedTokens + tokens > keepRecentTokens && selected.length > 0) {
       break;
     }
+    // Truncate overlong individual messages
+    const truncated = truncateUserMessage(msg, keepRecentTokens);
+    selected.push(truncated);
+    accumulatedTokens += Math.min(tokens, keepRecentTokens);
   }
 
-  // If everything fits in the budget, nothing to summarize
-  if (!found) {
-    return {
-      firstKeptIndex: startIndex,
-      entriesToSummarize: [],
-      entriesToKeep: pathEntries.slice(startIndex),
-    };
-  }
+  // Reverse to chronological order
+  selected.reverse();
 
-  // Snap to the nearest user message boundary at or after cutIndex
-  // A turn starts with a user message — never cut mid-turn
-  for (let i = cutIndex; i < pathEntries.length; i++) {
-    const entry = pathEntries[i];
-    if (entry.type === "message" && entry.message.role === "user") {
-      cutIndex = i;
-      break;
-    }
-  }
+  return { recentUserMessages: selected, entriesToSummarize };
+}
 
-  // If cutIndex hasn't moved past startIndex, nothing to summarize
-  if (cutIndex <= startIndex) {
-    return {
-      firstKeptIndex: startIndex,
-      entriesToSummarize: [],
-      entriesToKeep: pathEntries.slice(startIndex),
-    };
-  }
-
-  return {
-    firstKeptIndex: cutIndex,
-    entriesToSummarize: pathEntries.slice(startIndex, cutIndex),
-    entriesToKeep: pathEntries.slice(cutIndex),
-  };
+function truncateUserMessage(msg: Message, maxTokens: number): Message {
+  if (msg.role !== "user" || typeof msg.content !== "string") return msg;
+  const maxChars = maxTokens * 4;
+  if (msg.content.length <= maxChars) return msg;
+  return { ...msg, content: `${msg.content.slice(0, maxChars)}\n[... truncated]` };
 }
 
 // --- Summarization ---
 
-const SUMMARIZATION_PROMPT = `Summarize the following coding session conversation.
+const SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION.
+Create a handoff summary for another LLM that will resume this coding task.
+
 Use this exact structure:
 
 ## Goal
@@ -140,15 +146,20 @@ What the user is trying to accomplish.
 ## Critical Context
 - Important details that must not be lost (variable names, API endpoints, error messages, etc.).
 
-Be concise but preserve all actionable information. File paths and code identifiers are critical.`;
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
+File paths and code identifiers are critical.`;
 
-const UPDATE_SUMMARIZATION_PROMPT = `Update the existing session summary with new information.
+const UPDATE_SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION.
+Update the existing handoff summary with new information for another LLM that will resume this coding task.
+
 Rules:
 - PRESERVE all information from the previous summary
 - ADD new progress, decisions, and context
 - MOVE "In Progress" items to "Done" when completed
 - UPDATE "Next Steps" based on new accomplishments
 - Keep the same structure
+
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
 
 Previous summary:
 {previousSummary}
@@ -172,9 +183,16 @@ export async function generateSummary(
     ? UPDATE_SUMMARIZATION_PROMPT.replace("{previousSummary}", options.previousSummary)
     : SUMMARIZATION_PROMPT;
 
+  // Ensure messages end with a user message — required when extended thinking is enabled
+  // (the API rejects assistant-last conversations as "prefill" with thinking mode).
+  const summaryMessages =
+    messages.length > 0 && messages[messages.length - 1].role !== "user"
+      ? [...messages, { role: "user" as const, content: "Please provide the summary now.", timestamp: Date.now() }]
+      : messages;
+
   const context: StreamContext = {
     systemPrompt: [{ label: "system", content: prompt }],
-    messages,
+    messages: summaryMessages,
     tools: [],
   };
 

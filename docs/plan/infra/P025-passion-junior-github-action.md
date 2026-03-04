@@ -1,8 +1,7 @@
 ---
-id: dreamy-zooming-muffin
-title: passion-junior GitHub Action workflow
-status: draft
-type: infra
+id: P025
+status: backlog
+created: 2026-03-04
 ---
 
 # passion-junior GitHub Action

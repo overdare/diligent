@@ -3,8 +3,10 @@ import { describe, expect, it } from "bun:test";
 import {
   estimateTokens,
   extractFileOperations,
-  findCutPoint,
+  findRecentUserMessages,
   formatFileOperations,
+  isSummaryMessage,
+  SUMMARY_PREFIX,
   shouldCompact,
 } from "../src/session/compaction";
 import type { SessionEntry } from "../src/session/types";
@@ -138,44 +140,69 @@ describe("shouldCompact", () => {
   });
 });
 
-describe("findCutPoint", () => {
-  it("returns empty split for empty entries", () => {
-    const result = findCutPoint([], 1000);
+describe("isSummaryMessage", () => {
+  it("returns true for summary-prefixed user message", () => {
+    const msg = userMsg(`${SUMMARY_PREFIX}\n\nSome summary content`);
+    expect(isSummaryMessage(msg)).toBe(true);
+  });
+
+  it("returns false for regular user message", () => {
+    expect(isSummaryMessage(userMsg("hello world"))).toBe(false);
+  });
+
+  it("returns false for non-user message", () => {
+    expect(isSummaryMessage(assistantMsg("some text"))).toBe(false);
+  });
+
+  it("returns false for user message with non-string content", () => {
+    const msg: Message = {
+      role: "user",
+      content: [{ type: "text", text: SUMMARY_PREFIX }],
+      timestamp: Date.now(),
+    };
+    expect(isSummaryMessage(msg)).toBe(false);
+  });
+});
+
+describe("findRecentUserMessages", () => {
+  it("returns empty for empty entries", () => {
+    const result = findRecentUserMessages([], 1000);
+    expect(result.recentUserMessages).toEqual([]);
     expect(result.entriesToSummarize).toEqual([]);
-    expect(result.entriesToKeep).toEqual([]);
   });
 
-  it("keeps all entries when within budget", () => {
-    const entries: SessionEntry[] = [msgEntry("a1", null, userMsg("hello")), msgEntry("a2", "a1", assistantMsg("hi"))];
-    const result = findCutPoint(entries, 100_000);
-    expect(result.entriesToSummarize).toHaveLength(0);
-    expect(result.entriesToKeep).toHaveLength(2);
+  it("collects all user messages when within budget", () => {
+    const entries: SessionEntry[] = [
+      msgEntry("a1", null, userMsg("hello")),
+      msgEntry("a2", "a1", assistantMsg("hi")),
+      msgEntry("a3", "a2", userMsg("how are you?")),
+      msgEntry("a4", "a3", assistantMsg("fine")),
+    ];
+    const result = findRecentUserMessages(entries, 100_000);
+    expect(result.recentUserMessages).toHaveLength(2);
+    expect(result.recentUserMessages[0].content as string).toBe("hello");
+    expect(result.recentUserMessages[1].content as string).toBe("how are you?");
+    expect(result.entriesToSummarize).toHaveLength(4);
   });
 
-  it("splits at user message boundary", () => {
-    // Build a conversation with enough tokens to trigger splitting
+  it("selects most recent messages when budget exceeded", () => {
     const longText = "x".repeat(400); // 100 tokens each
     const entries: SessionEntry[] = [
-      msgEntry("a1", null, userMsg(longText)),
-      msgEntry("a2", "a1", assistantMsg(longText)),
-      msgEntry("a3", "a2", userMsg(longText)),
-      msgEntry("a4", "a3", assistantMsg(longText)),
-      msgEntry("a5", "a4", userMsg(longText)),
-      msgEntry("a6", "a5", assistantMsg(longText)),
+      msgEntry("a1", null, userMsg(`${longText}1`)),
+      msgEntry("a2", "a1", assistantMsg("resp1")),
+      msgEntry("a3", "a2", userMsg(`${longText}2`)),
+      msgEntry("a4", "a3", assistantMsg("resp2")),
+      msgEntry("a5", "a4", userMsg("short")),
     ];
-
-    // Keep 250 tokens → should keep last ~2.5 messages worth → snap to user boundary
-    const result = findCutPoint(entries, 250);
-    expect(result.entriesToSummarize.length).toBeGreaterThan(0);
-    expect(result.entriesToKeep.length).toBeGreaterThan(0);
-    // First kept entry should be a user message (turn boundary)
-    const firstKept = result.entriesToKeep[0];
-    if (firstKept.type === "message") {
-      expect(firstKept.message.role).toBe("user");
-    }
+    // Budget of 150 tokens → can fit ~1.5 messages → most recent first
+    const result = findRecentUserMessages(entries, 150);
+    expect(result.recentUserMessages.length).toBeGreaterThanOrEqual(1);
+    // Most recent should be included
+    const lastMsg = result.recentUserMessages[result.recentUserMessages.length - 1];
+    expect(lastMsg.content as string).toBe("short");
   });
 
-  it("respects existing compaction entry", () => {
+  it("starts after last compaction", () => {
     const entries: SessionEntry[] = [
       msgEntry("a1", null, userMsg("old message")),
       msgEntry("a2", "a1", assistantMsg("old response")),
@@ -185,30 +212,55 @@ describe("findCutPoint", () => {
         parentId: "a2",
         timestamp: new Date().toISOString(),
         summary: "Previous summary",
-        firstKeptEntryId: "a3",
+        recentUserMessages: [],
         tokensBefore: 5000,
         tokensAfter: 1000,
       },
       msgEntry("a3", "c1", userMsg("new message")),
       msgEntry("a4", "a3", assistantMsg("new response")),
     ];
-
-    // With a large budget, nothing to summarize (entries before compaction are excluded)
-    const result = findCutPoint(entries, 100_000);
-    expect(result.entriesToSummarize).toHaveLength(0);
-    // Entries to keep should only include entries after compaction
-    expect(result.entriesToKeep).toHaveLength(2);
+    const result = findRecentUserMessages(entries, 100_000);
+    // Should only summarize entries after compaction
+    expect(result.entriesToSummarize).toHaveLength(2);
+    expect(result.recentUserMessages).toHaveLength(1);
+    expect(result.recentUserMessages[0].content as string).toBe("new message");
   });
 
-  it("handles single turn conversation", () => {
+  it("filters summary messages to prevent accumulation", () => {
     const entries: SessionEntry[] = [
-      msgEntry("a1", null, userMsg("hello")),
-      msgEntry("a2", "a1", assistantMsg("hi there")),
+      msgEntry("a1", null, userMsg(`${SUMMARY_PREFIX}\nOld summary content`)),
+      msgEntry("a2", "a1", assistantMsg("response")),
+      msgEntry("a3", "a2", userMsg("real question")),
     ];
-    // Even with a small budget, we need at least the user message
-    const result = findCutPoint(entries, 1);
-    // Should still work without errors
-    expect(result.entriesToSummarize.length + result.entriesToKeep.length).toBe(2);
+    const result = findRecentUserMessages(entries, 100_000);
+    // Should NOT include the summary message
+    expect(result.recentUserMessages).toHaveLength(1);
+    expect(result.recentUserMessages[0].content as string).toBe("real question");
+  });
+
+  it("truncates overlong individual messages", () => {
+    const longText = "x".repeat(500); // 125 tokens
+    const entries: SessionEntry[] = [msgEntry("a1", null, userMsg(longText))];
+    // Budget of 50 tokens = 200 chars max
+    const result = findRecentUserMessages(entries, 50);
+    expect(result.recentUserMessages).toHaveLength(1);
+    expect(result.recentUserMessages[0].content as string).toContain("[... truncated]");
+    expect((result.recentUserMessages[0].content as string).length).toBeLessThan(longText.length);
+  });
+
+  it("returns messages in chronological order", () => {
+    const entries: SessionEntry[] = [
+      msgEntry("a1", null, userMsg("first")),
+      msgEntry("a2", "a1", assistantMsg("resp")),
+      msgEntry("a3", "a2", userMsg("second")),
+      msgEntry("a4", "a3", assistantMsg("resp")),
+      msgEntry("a5", "a4", userMsg("third")),
+    ];
+    const result = findRecentUserMessages(entries, 100_000);
+    expect(result.recentUserMessages).toHaveLength(3);
+    expect(result.recentUserMessages[0].content as string).toBe("first");
+    expect(result.recentUserMessages[1].content as string).toBe("second");
+    expect(result.recentUserMessages[2].content as string).toBe("third");
   });
 });
 

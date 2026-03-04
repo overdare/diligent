@@ -281,10 +281,10 @@ async function streamAssistantResponse(
   agentStream: EventStream<AgentEvent, Message[]>,
   generateItemId: () => string,
 ): Promise<AssistantMessage> {
-  // Debug: log last 3 messages before every LLM call
-  const tail = messages.slice(-3);
+  // Debug: log last 5 messages before every LLM call
+  const tail = messages.slice(-5);
   console.log(
-    "[AgentLoop] Sending %d messages to %s, last 3: %s",
+    "[AgentLoop] Sending %d messages to %s, last 5: %s",
     messages.length,
     config.model.id,
     JSON.stringify(

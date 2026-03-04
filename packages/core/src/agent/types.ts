@@ -58,7 +58,13 @@ export type AgentEvent =
   | { type: "error"; error: SerializableError; fatal: boolean }
   // Compaction (2) — Phase 3b
   | { type: "compaction_start"; estimatedTokens: number }
-  | { type: "compaction_end"; tokensBefore: number; tokensAfter: number; summary: string }
+  | {
+      type: "compaction_end";
+      tokensBefore: number;
+      tokensAfter: number;
+      summary: string;
+      tailMessages?: Array<{ role: string; preview: string }>;
+    }
   // Knowledge (1) — Phase 3b
   | { type: "knowledge_saved"; knowledgeId: string; content: string }
   // Loop detection (1) — P0

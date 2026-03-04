@@ -322,6 +322,31 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         },
       };
 
+    case "compaction_start":
+      return {
+        ...state,
+        threadStatus: "busy",
+        toast: {
+          id: `compaction-start-${Date.now()}`,
+          kind: "info",
+          message: `Compacting context (${Math.round(event.estimatedTokens / 1000)}k tokens)…`,
+        },
+      };
+
+    case "compaction_end": {
+      const tailInfo = event.tailMessages?.length
+        ? ` [${event.tailMessages.map((m: { role: string }) => m.role).join(" → ")}]`
+        : "";
+      return {
+        ...state,
+        toast: {
+          id: `compaction-end-${Date.now()}`,
+          kind: "info",
+          message: `Compacted: ${Math.round(event.tokensBefore / 1000)}k → ${Math.round(event.tokensAfter / 1000)}k tokens${tailInfo}`,
+        },
+      };
+    }
+
     case "steering_injected": {
       const drained = state.pendingSteers.slice(0, event.messageCount);
       const remaining = state.pendingSteers.slice(event.messageCount);

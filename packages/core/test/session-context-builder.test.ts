@@ -1,5 +1,6 @@
 // @summary Tests for building context from session entries
 import { describe, expect, it } from "bun:test";
+import { SUMMARY_PREFIX } from "../src/session/compaction";
 import { buildSessionContext } from "../src/session/context-builder";
 import type { CompactionEntry, SessionEntry } from "../src/session/types";
 
@@ -101,14 +102,15 @@ describe("buildSessionContext", () => {
     expect(ctx.messages).toEqual([]);
   });
 
-  it("handles CompactionEntry — summary replaces older messages", () => {
+  it("handles CompactionEntry — recent user msgs + summary + new turns", () => {
+    const recentUserMsg = { role: "user" as const, content: "kept user msg", timestamp: 1708900000000 };
     const compaction: CompactionEntry = {
       type: "compaction",
       id: "c1",
       parentId: "a2",
       timestamp: "2026-02-25T10:01:00.000Z",
       summary: "## Goal\nRefactor config module",
-      firstKeptEntryId: "a3",
+      recentUserMessages: [recentUserMsg],
       tokensBefore: 50000,
       tokensAfter: 5000,
     };
@@ -122,13 +124,18 @@ describe("buildSessionContext", () => {
     ];
 
     const ctx = buildSessionContext(entries);
-    // First message should be the summary injection
-    expect(ctx.messages).toHaveLength(3); // summary + new user + new assistant
+    // recent user msg + summary + new user + new assistant
+    expect(ctx.messages).toHaveLength(4);
+    // First: recent user message
     expect(ctx.messages[0].role).toBe("user");
-    expect(ctx.messages[0].content as string).toContain("[Session Summary]");
-    expect(ctx.messages[0].content as string).toContain("Refactor config module");
+    expect(ctx.messages[0].content as string).toBe("kept user msg");
+    // Second: summary with SUMMARY_PREFIX
     expect(ctx.messages[1].role).toBe("user");
-    expect(ctx.messages[2].role).toBe("assistant");
+    expect(ctx.messages[1].content as string).toContain(SUMMARY_PREFIX);
+    expect(ctx.messages[1].content as string).toContain("Refactor config module");
+    // Third + Fourth: new turns
+    expect(ctx.messages[2].role).toBe("user");
+    expect(ctx.messages[3].role).toBe("assistant");
   });
 
   it("handles CompactionEntry with file operation details", () => {
@@ -138,7 +145,7 @@ describe("buildSessionContext", () => {
       parentId: "a2",
       timestamp: "2026-02-25T10:01:00.000Z",
       summary: "Summary text",
-      firstKeptEntryId: "a3",
+      recentUserMessages: [],
       tokensBefore: 50000,
       tokensAfter: 5000,
       details: {
@@ -155,6 +162,7 @@ describe("buildSessionContext", () => {
     ];
 
     const ctx = buildSessionContext(entries);
+    // First message is the summary (no recent user messages)
     const summaryContent = ctx.messages[0].content as string;
     expect(summaryContent).toContain("Files Read");
     expect(summaryContent).toContain("/src/a.ts");
@@ -169,17 +177,18 @@ describe("buildSessionContext", () => {
       parentId: "a2",
       timestamp: "2026-02-25T10:01:00.000Z",
       summary: "First summary",
-      firstKeptEntryId: "a3",
+      recentUserMessages: [],
       tokensBefore: 50000,
       tokensAfter: 5000,
     };
+    const middleUserMsg = { role: "user" as const, content: "middle message", timestamp: 1708900000000 };
     const compaction2: CompactionEntry = {
       type: "compaction",
       id: "c2",
       parentId: "a4",
       timestamp: "2026-02-25T10:02:00.000Z",
       summary: "Second summary",
-      firstKeptEntryId: "a5",
+      recentUserMessages: [middleUserMsg],
       tokensBefore: 30000,
       tokensAfter: 3000,
     };
@@ -195,10 +204,13 @@ describe("buildSessionContext", () => {
     ];
 
     const ctx = buildSessionContext(entries);
-    const summaryContent = ctx.messages[0].content as string;
+    // recent user msg from c2 + summary + latest user msg
+    expect(ctx.messages).toHaveLength(3);
+    expect(ctx.messages[0].content as string).toBe("middle message");
+    const summaryContent = ctx.messages[1].content as string;
     expect(summaryContent).toContain("Second summary");
     expect(summaryContent).not.toContain("First summary");
-    expect(ctx.messages).toHaveLength(2); // summary + latest user msg
+    expect(ctx.messages[2].role).toBe("user");
   });
 
   it("no compaction — existing behavior unchanged", () => {

@@ -2,7 +2,7 @@ import type { ModeKind } from "../agent/types";
 import type { Message } from "../types";
 
 /** Session file format version. Increment when entry schema changes. */
-export const SESSION_VERSION = 4;
+export const SESSION_VERSION = 5;
 
 /** Unique entry ID — 8-char hex */
 export function generateEntryId(): string {
@@ -60,7 +60,7 @@ export interface CompactionEntry {
   parentId: string | null;
   timestamp: string;
   summary: string;
-  firstKeptEntryId: string;
+  recentUserMessages: Message[];
   tokensBefore: number;
   tokensAfter: number;
   details?: CompactionDetails;

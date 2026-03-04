@@ -5,17 +5,16 @@ import { EventStream } from "../event-stream";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { ProviderError } from "../provider/types";
 import type { Message } from "../types";
-import { estimateTokens, extractFileOperations, findCutPoint, generateSummary, shouldCompact } from "./compaction";
+import {
+  estimateTokens,
+  extractFileOperations,
+  findRecentUserMessages,
+  generateSummary,
+  shouldCompact,
+} from "./compaction";
 import { buildSessionContext } from "./context-builder";
 import { DeferredWriter, listSessions, readSessionFile } from "./persistence";
-import type {
-  CompactionEntry,
-  ModeChangeEntry,
-  SessionEntry,
-  SessionInfo,
-  SessionMessageEntry,
-  SteeringEntry,
-} from "./types";
+import type { CompactionEntry, ModeChangeEntry, SessionEntry, SessionInfo, SteeringEntry } from "./types";
 import { generateEntryId } from "./types";
 
 export interface SessionManagerConfig {
@@ -252,12 +251,12 @@ export class SessionManager {
   ): Promise<Message[]> {
     stream.push({ type: "compaction_start", estimatedTokens: tokensBefore });
 
-    // Find cut point from path entries
+    // Find recent user messages and entries to summarize
     const pathEntries = this.getPathEntries();
-    const cutResult = findCutPoint(pathEntries, compactionConfig.keepRecentTokens);
+    const result = findRecentUserMessages(pathEntries, compactionConfig.keepRecentTokens);
 
-    if (cutResult.entriesToSummarize.length === 0) {
-      // Nothing to compact — all entries fit in the keep budget
+    if (result.entriesToSummarize.length === 0) {
+      // Nothing to compact — no entries after last compaction
       const context = buildSessionContext(this.entries, this.leafId);
       stream.push({
         type: "compaction_end",
@@ -271,10 +270,12 @@ export class SessionManager {
     // Find previous compaction for iterative updating
     const previousCompaction = this.findPreviousCompaction();
 
-    // Extract messages to summarize
-    const messagesToSummarize = cutResult.entriesToSummarize
-      .filter((e): e is SessionMessageEntry => e.type === "message")
-      .map((e) => e.message);
+    // Summarize ALL entries (not a subset)
+    const messagesToSummarize: Message[] = [];
+    for (const entry of result.entriesToSummarize) {
+      if (entry.type === "message") messagesToSummarize.push(entry.message);
+      else if (entry.type === "steering") messagesToSummarize.push(entry.message);
+    }
 
     // Extract file operations (D039)
     const details = extractFileOperations(messagesToSummarize, previousCompaction?.details);
@@ -288,14 +289,13 @@ export class SessionManager {
     );
 
     // Save CompactionEntry
-    const firstKept = cutResult.entriesToKeep[0];
     const compactionEntry: CompactionEntry = {
       type: "compaction",
       id: generateEntryId(),
       parentId: this.leafId,
       timestamp: new Date().toISOString(),
       summary,
-      firstKeptEntryId: firstKept.id,
+      recentUserMessages: result.recentUserMessages,
       tokensBefore,
       tokensAfter: 0, // will be calculated after rebuild
       details,
@@ -313,11 +313,33 @@ export class SessionManager {
     // Update tokensAfter in the entry
     compactionEntry.tokensAfter = tokensAfter;
 
+    // Build tail preview for debugging and UI display
+    const tail = newContext.messages.slice(-5);
+    const tailMessages = tail.map((m) => {
+      if (m.role === "user")
+        return { role: "user", preview: typeof m.content === "string" ? m.content.slice(0, 80) : "(blocks)" };
+      if (m.role === "assistant") {
+        const types = m.content.map((b) => b.type).join(", ");
+        return { role: "assistant", preview: `[${types}] stop=${m.stopReason}` };
+      }
+      if (m.role === "tool_result") return { role: "tool_result", preview: `${m.toolName} err=${m.isError}` };
+      return { role: (m as { role: string }).role, preview: "" };
+    });
+
+    console.log(
+      "[Compaction] Rebuilt %d messages (%dk → %dk), last 5: %s",
+      newContext.messages.length,
+      Math.round(tokensBefore / 1000),
+      Math.round(tokensAfter / 1000),
+      JSON.stringify(tailMessages),
+    );
+
     stream.push({
       type: "compaction_end",
       tokensBefore,
       tokensAfter,
       summary: summary.length > 200 ? `${summary.slice(0, 200)}...` : summary,
+      tailMessages,
     });
 
     return newContext.messages;
