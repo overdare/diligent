@@ -15,7 +15,6 @@ import {
   openBrowser,
   PROVIDER_NAMES,
   type ProviderManager,
-  type ProviderName,
   removeAuthKey,
   removeOAuthTokens,
   saveAuthKey,
@@ -30,7 +29,11 @@ import type {
   ProviderAuthStatus,
 } from "@diligent/protocol";
 import {
+  AuthRemoveParamsSchema,
+  AuthSetParamsSchema,
+  ConfigSetParamsSchema,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
@@ -171,9 +174,19 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "config/set") {
-        const params = parsed.params as { model?: string } | undefined;
-        const modelId = params?.model;
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET) {
+        const validated = ConfigSetParamsSchema.safeParse(parsed.params ?? {});
+        if (!validated.success) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: validated.error.message },
+            }),
+          });
+          return;
+        }
+        const modelId = validated.data.model;
         if (modelId) {
           const valid = this.modelConfig.getAvailableModels().find((m) => m.id === modelId);
           if (valid) {
@@ -201,7 +214,7 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/list" && this.providerManager) {
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST && this.providerManager) {
         const providers = await this.buildProviderList();
         this.send(ws, {
           type: "rpc_response",
@@ -213,11 +226,12 @@ export class RpcBridge {
         return;
       }
 
-      if (parsed.method === "auth/set" && this.providerManager) {
-        const p = parsed.params as { provider?: string; apiKey?: string } | undefined;
-        if (p?.provider && p.apiKey) {
-          await saveAuthKey(p.provider as ProviderName, p.apiKey);
-          this.providerManager.setApiKey(p.provider as ProviderName, p.apiKey);
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_SET && this.providerManager) {
+        const validated = AuthSetParamsSchema.safeParse(parsed.params);
+        if (validated.success) {
+          const { provider, apiKey } = validated.data;
+          await saveAuthKey(provider, apiKey);
+          this.providerManager.setApiKey(provider, apiKey);
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
@@ -229,19 +243,20 @@ export class RpcBridge {
             type: "rpc_response",
             response: JSONRPCErrorResponseSchema.parse({
               id: parsed.id,
-              error: { code: -32602, message: "Missing provider or apiKey" },
+              error: { code: -32602, message: validated.error.message },
             }),
           });
         }
         return;
       }
 
-      if (parsed.method === "auth/remove" && this.providerManager) {
-        const p = parsed.params as { provider?: string } | undefined;
-        if (p?.provider) {
-          await removeAuthKey(p.provider as ProviderName);
-          this.providerManager.removeApiKey(p.provider as ProviderName);
-          if (p.provider === "openai") {
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE && this.providerManager) {
+        const validated = AuthRemoveParamsSchema.safeParse(parsed.params);
+        if (validated.success) {
+          const { provider } = validated.data;
+          await removeAuthKey(provider);
+          this.providerManager.removeApiKey(provider);
+          if (provider === "openai") {
             await removeOAuthTokens();
             this.providerManager.removeOAuthTokens();
           }
@@ -256,14 +271,14 @@ export class RpcBridge {
             type: "rpc_response",
             response: JSONRPCErrorResponseSchema.parse({
               id: parsed.id,
-              error: { code: -32602, message: "Missing provider" },
+              error: { code: -32602, message: validated.error.message },
             }),
           });
         }
         return;
       }
 
-      if (parsed.method === "auth/oauth/start" && this.providerManager) {
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START && this.providerManager) {
         if (this.oauthPending) {
           this.send(ws, {
             type: "rpc_response",

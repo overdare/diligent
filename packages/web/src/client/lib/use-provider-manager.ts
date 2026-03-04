@@ -1,9 +1,8 @@
 // @summary React hook for provider authentication state, available models, and OAuth
 
-import type { ProviderAuthStatus } from "@diligent/protocol";
+import type { AuthOAuthStartResponse, ModelInfo, ProviderAuthStatus } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
-import type { ModelInfo, OAuthStartResult } from "../../shared/ws-protocol";
 import { fetchProviderStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
 import type { WebRpcClient } from "./rpc-client";
 
@@ -41,7 +40,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.requestRaw("config/set", { model: first.id });
+          await rpc.webRequest("config/set", { model: first.id });
         }
       } catch (error) {
         console.error(error);
@@ -65,7 +64,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       ) {
         setCurrentModel(sessionModel);
         currentModelRef.current = sessionModel;
-        await rpc.requestRaw("config/set", { model: sessionModel });
+        await rpc.webRequest("config/set", { model: sessionModel });
       }
     },
     [rpcRef],
@@ -77,7 +76,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       if (!rpc) return;
       setCurrentModel(modelId);
       try {
-        await rpc.requestRaw("config/set", { model: modelId });
+        await rpc.webRequest("config/set", { model: modelId });
       } catch (error) {
         console.error(error);
       }
@@ -105,7 +104,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
     [rpcRef],
   );
 
-  const handleOAuthStart = useCallback(async (): Promise<OAuthStartResult> => {
+  const handleOAuthStart = useCallback(async (): Promise<AuthOAuthStartResponse> => {
     const rpc = rpcRef.current;
     if (!rpc) throw new Error("Not connected");
     return startOAuthFlow(rpc);
@@ -136,7 +135,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.requestRaw("config/set", { model: first.id });
+          await rpc.webRequest("config/set", { model: first.id });
         }
       } catch {
         // Non-critical: providers already updated via notification

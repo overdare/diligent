@@ -51,3 +51,13 @@ export const DILIGENT_SERVER_REQUEST_METHODS = {
 
 export type DiligentServerRequestMethod =
   (typeof DILIGENT_SERVER_REQUEST_METHODS)[keyof typeof DILIGENT_SERVER_REQUEST_METHODS];
+
+export const DILIGENT_WEB_REQUEST_METHODS = {
+  CONFIG_SET: "config/set",
+  AUTH_LIST: "auth/list",
+  AUTH_SET: "auth/set",
+  AUTH_REMOVE: "auth/remove",
+  AUTH_OAUTH_START: "auth/oauth/start",
+} as const;
+
+export type DiligentWebRequestMethod = (typeof DILIGENT_WEB_REQUEST_METHODS)[keyof typeof DILIGENT_WEB_REQUEST_METHODS];

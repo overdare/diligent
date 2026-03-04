@@ -5,10 +5,13 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
+  DiligentWebRequest,
+  DiligentWebResponse,
   JSONRPCResponse,
   Mode,
+  ModelInfo,
 } from "@diligent/protocol";
-import type { ModelInfo, WsServerMessage } from "../../shared/ws-protocol";
+import type { WsServerMessage } from "../../shared/ws-protocol";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
 export const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 5000, 5000] as const;
@@ -16,6 +19,10 @@ export const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 5000, 5000] as const;
 type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type RequestResult<M extends RequestMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
+
+type WebMethod = DiligentWebRequest["method"];
+type WebParams<M extends WebMethod> = Extract<DiligentWebRequest, { method: M }>["params"];
+type WebResult<M extends WebMethod> = Extract<DiligentWebResponse, { method: M }>["result"];
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -113,6 +120,10 @@ export class WebRpcClient {
     });
 
     return result as RequestResult<M>;
+  }
+
+  async webRequest<M extends WebMethod>(method: M, params: WebParams<M>, timeoutMs = 30_000): Promise<WebResult<M>> {
+    return this.requestRaw(method, params, timeoutMs) as Promise<WebResult<M>>;
   }
 
   async requestRaw(method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {

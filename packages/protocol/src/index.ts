@@ -5,3 +5,4 @@ export * from "./jsonrpc";
 export * from "./methods";
 export * from "./server-notifications";
 export * from "./server-requests";
+export * from "./web-requests";
