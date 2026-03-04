@@ -1,7 +1,13 @@
 // @summary Factory for first-run provider selection and API key setup wizard
 import { resolveModel } from "@diligent/core";
 import type { AppConfig } from "../config";
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
+import {
+  DEFAULT_MODELS,
+  DEFAULT_PROVIDER,
+  PROVIDER_HINTS,
+  PROVIDER_NAMES,
+  type ProviderName,
+} from "../provider-manager";
 import { promptSaveKey } from "./commands/builtin/provider";
 import type { CommandContext } from "./commands/types";
 import type { ListPickerItem } from "./components/list-picker";

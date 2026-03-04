@@ -1,11 +1,15 @@
-pre-push:
+pre-commit:
   parallel: true
-  only:
-    - ref: main
   commands:
     lint:
       run: bun run lint
     typecheck:
       run: bun run typecheck
+
+pre-push:
+  parallel: true
+  only:
+    - ref: main
+  commands:
     test:
       run: bun test

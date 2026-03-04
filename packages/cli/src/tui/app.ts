@@ -351,7 +351,9 @@ export class App {
 
   private handleCancel(): void {
     if (this.isProcessing && this.rpcClient && this.currentThreadId) {
-      void this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.currentThreadId }).catch(() => {});
+      void this.rpcClient
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.currentThreadId })
+        .catch(() => {});
       this.chatView.clearActive();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
       this.pendingTurn?.resolve();

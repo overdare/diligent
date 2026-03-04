@@ -2,7 +2,13 @@
 import type { OpenAIOAuthTokens } from "@diligent/core";
 import { resolveModel, runChatGPTOAuth, saveAuthKey, saveOAuthTokens } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
+import {
+  DEFAULT_MODELS,
+  DEFAULT_PROVIDER,
+  PROVIDER_HINTS,
+  PROVIDER_NAMES,
+  type ProviderName,
+} from "../../../provider-manager";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { TextInput } from "../../components/text-input";
