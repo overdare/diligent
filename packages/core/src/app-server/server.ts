@@ -24,6 +24,7 @@ import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { deleteSession, listSessions } from "../session/persistence";
+import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
 
 export interface DiligentAppServerConfig {
@@ -162,8 +163,11 @@ export class DiligentAppServer {
 
   private async handleThreadStart(params: { cwd: string; mode?: Mode }): Promise<{ threadId: string }> {
     const mode = params.mode ?? "default";
-    const threadId = `thread-${crypto.randomUUID().slice(0, 8)}`;
-    const runtime = await this.createThreadRuntime(threadId, params.cwd, mode, true);
+    const tempId = generateSessionId();
+    const runtime = await this.createThreadRuntime(tempId, params.cwd, mode, true);
+    // Use manager's sessionId as canonical threadId so it matches on resume
+    const threadId = runtime.manager.sessionId;
+    runtime.id = threadId;
 
     this.threads.set(threadId, runtime);
     this.activeThreadId = threadId;
@@ -195,12 +199,8 @@ export class DiligentAppServer {
     const candidateCwds = Array.from(this.knownCwds);
 
     for (const cwd of candidateCwds) {
-      const runtime = await this.createThreadRuntime(
-        params.threadId ?? `thread-${crypto.randomUUID().slice(0, 8)}`,
-        cwd,
-        "default",
-        false,
-      );
+      const placeholderId = params.threadId ?? generateSessionId();
+      const runtime = await this.createThreadRuntime(placeholderId, cwd, "default", false);
 
       const resumed = await runtime.manager.resume({
         sessionId: params.threadId,
@@ -208,38 +208,21 @@ export class DiligentAppServer {
       });
       if (!resumed) continue;
 
-      // this.threads is keyed by the server-assigned threadId (e.g. "thread-abc12345"),
-      // while manager.sessionId uses DeferredWriter's preAssignedId (generateSessionId format).
-      // These are different, so a direct key lookup would fail. Scan for a running runtime
-      // whose session file matches the one we just resumed.
-      for (const [tid, t] of this.threads) {
-        if (t.isRunning && t.manager.sessionId === runtime.manager.sessionId) {
-          this.activeThreadId = tid;
-          const existingContext = t.manager.getContext(true);
-          await this.emit({
-            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
-            params: { threadId: tid, restoredMessages: existingContext.length },
-          });
-          return { found: true, threadId: tid, context: existingContext };
-        }
-      }
+      // After resume, the manager's sessionId reflects the actual session file.
+      // Use that as the canonical thread ID (= session ID).
+      const threadId = runtime.manager.sessionId;
+      runtime.id = threadId;
 
-      const actualThreadId = params.threadId ?? runtime.manager.sessionId;
       const context = runtime.manager.getContext();
-
-      runtime.id = actualThreadId;
-      this.threads.set(actualThreadId, runtime);
-      this.activeThreadId = actualThreadId;
+      this.threads.set(threadId, runtime);
+      this.activeThreadId = threadId;
 
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
-        params: {
-          threadId: actualThreadId,
-          restoredMessages: context.length,
-        },
+        params: { threadId, restoredMessages: context.length },
       });
 
-      return { found: true, threadId: actualThreadId, context };
+      return { found: true, threadId, context };
     }
 
     return { found: false };
