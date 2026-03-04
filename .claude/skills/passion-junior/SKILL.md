@@ -1,0 +1,79 @@
+---
+name: passion-junior
+description: >
+  Auto-fix simple, independent tasks from the latest tech-lead review and open individual PRs for each.
+  Reads the most recent review in docs/review/tech-lead/, parses "Group 1" (parallel quick fixes) from
+  the Priority Actions section, then executes each fix on a separate branch and opens a PR.
+  Use this skill when: the user says "passion-junior", "auto-fix review items", "fix quick wins from review",
+  "run the junior fixes", or asks to automatically resolve simple tech-lead review findings.
+  Do NOT use for Group 2/3 tasks or any task requiring design decisions.
+---
+
+# Passion Junior
+
+Execute Group 1 quick fixes from the latest tech-lead review, each as an individual PR.
+
+## Workflow
+
+### 1. Find the latest review
+
+Read the most recent file in `docs/review/tech-lead/` (sort by date prefix).
+See [references/review-format.md](references/review-format.md) for format details.
+
+### 2. Extract Group 1 tasks
+
+Parse the `## Priority Actions` section. Extract only `### Group 1` items (or flat-list items explicitly marked as quick fixes). Each task has:
+- **Title**: bold text after the number
+- **Files**: file paths with optional line numbers
+- **Instruction**: what to change
+
+Skip any task that:
+- Requires creating new types or schemas
+- Involves more than 3 files
+- Is described as needing "design decisions"
+
+### 3. Check for existing PRs
+
+Before executing any tasks, fetch the list of open passion-junior PRs:
+
+```
+gh pr list --label passion-junior --state open --json headRefName,title
+```
+
+Build a set of existing branch names from the result. In step 4, skip any task whose branch already exists in this set.
+
+Also check if the review file being processed is the same one that existing PRs reference (by date in the review filename). If all Group 1 tasks from that review already have open PRs, stop early and report "Nothing to do — all tasks already have open PRs."
+
+### 4. Execute each task as a separate PR
+
+For each Group 1 task, sequentially:
+
+1. Determine the branch name: `fix/passion-junior/<slug>` where slug is a kebab-case summary (e.g., `fix-pickfolder-rename`, `fix-p013-frontmatter`, `extract-oauth-token-url`)
+2. **Skip if branch already exists** in the set from step 3 — log "Skipped (PR already open)" and continue to next task
+3. Create branch from main
+4. Read the target file(s) and apply the fix
+5. Run `bun run typecheck` to verify no type errors introduced
+6. Commit with message: `fix: <task title>` and body referencing the review
+7. Push and open PR with:
+   - Title: `fix: <task title>`
+   - Body: reference to the review finding and what was changed
+   - Label: `passion-junior` (create if missing)
+
+### 5. Report results
+
+After all tasks, output a summary table:
+
+```
+| # | Task | Branch | PR | Status |
+|---|------|--------|----|--------|
+| 1 | ... | fix/passion-junior/... | #N | created |
+| 2 | ... | fix/passion-junior/... | — | skipped (PR already open) |
+```
+
+## Constraints
+
+- Never modify code beyond what the review explicitly specifies
+- If `bun run typecheck` fails after a fix, skip that task and report it as failed
+- Do not combine multiple fixes into one PR
+- Each branch must be based on the latest main
+- If a task's target file has changed since the review (line numbers shifted), read the file and find the correct location by content matching
