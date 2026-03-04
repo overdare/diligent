@@ -13,6 +13,9 @@ import type {
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 
+/** Tools that produce collab RenderItems — suppress duplicate ToolBlock rendering. */
+const COLLAB_RENDERED_TOOLS = new Set(["spawn_agent", "wait", "close_agent"]);
+
 export interface PlanState {
   title: string;
   steps: Array<{ text: string; done: boolean }>;
@@ -247,6 +250,8 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "tool_start": {
+      // Collab tools already rendered by CollabEventBlock — skip duplicate ToolBlock
+      if (COLLAB_RENDERED_TOOLS.has(event.toolName)) return state;
       const renderId = `item:${event.itemId}:${++renderSeq}`;
       if (state.itemSlots[event.itemId]) return state;
       return {
@@ -608,6 +613,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         if (block.type === "text") text += block.text;
         if (block.type === "thinking") thinking += block.thinking;
         if (block.type === "tool_call") {
+          // Collab tools rendered by CollabEventBlock — skip duplicate ToolBlock in history
+          if (COLLAB_RENDERED_TOOLS.has(block.name)) continue;
           const inProgress = payload.isRunning && !resolvedToolCallIds.has(block.id);
           current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
             id: `history:tool:${block.id}`,

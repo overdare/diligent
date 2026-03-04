@@ -14,6 +14,8 @@ interface SidebarProps {
   cwd: string;
   threadList: SessionSummary[];
   activeThreadId: string | null;
+  pendingApprovalThreadIds?: Set<string>;
+  unreadThreadIds?: Set<string>;
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
   onDeleteThread?: (threadId: string) => void;
@@ -25,6 +27,8 @@ export function Sidebar({
   cwd,
   threadList,
   activeThreadId,
+  pendingApprovalThreadIds,
+  unreadThreadIds,
   onNewThread,
   onOpenThread,
   onDeleteThread,
@@ -58,6 +62,8 @@ export function Sidebar({
 
         {threadList.map((thread) => {
           const isActive = activeThreadId === thread.id;
+          const hasPendingApproval = pendingApprovalThreadIds?.has(thread.id) ?? false;
+          const hasUnread = !isActive && (unreadThreadIds?.has(thread.id) ?? false);
           const title = thread.firstUserMessage || thread.name || "New conversation";
           const time = formatRelativeTime(thread.modified);
 
@@ -69,10 +75,24 @@ export function Sidebar({
                 className={`w-full rounded-md border px-3 py-2 text-left transition ${
                   isActive
                     ? "border-accent/30 bg-accent/5 text-text"
-                    : "border-transparent hover:border-text/15 hover:bg-surface/50"
+                    : hasPendingApproval
+                      ? "border-orange-400/30 bg-orange-400/5 hover:bg-orange-400/10"
+                      : hasUnread
+                        ? "border-orange-400/30 bg-orange-400/5 hover:bg-orange-400/10"
+                        : "border-transparent hover:border-text/15 hover:bg-surface/50"
                 }`}
               >
-                <div className="truncate pr-5 text-sm leading-snug text-text">{title}</div>
+                <div className="flex items-center gap-2 pr-5">
+                  {hasPendingApproval ? (
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-400"
+                      title="Approval required"
+                    />
+                  ) : hasUnread ? (
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-orange-400" title="Turn completed" />
+                  ) : null}
+                  <span className="truncate text-sm leading-snug text-text">{title}</span>
+                </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-xs- text-muted">
                   <span>{time}</span>
                   <span className="opacity-40">·</span>

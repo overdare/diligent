@@ -68,6 +68,30 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
   return state;
 }
 
+// ---------------------------------------------------------------------------
+// URL ↔ threadId helpers
+// ---------------------------------------------------------------------------
+
+/** Extract threadId from the current URL path (e.g. "/abc123" → "abc123"). Returns null if at root. */
+function getThreadIdFromUrl(): string | null {
+  const path = window.location.pathname.replace(/^\/+/, "");
+  return path || null;
+}
+
+/** Push `/{threadId}` into the browser address bar (no reload). */
+function pushThreadUrl(threadId: string): void {
+  if (getThreadIdFromUrl() !== threadId) {
+    window.history.pushState(null, "", `/${threadId}`);
+  }
+}
+
+/** Replace current URL with `/{threadId}` (used for initial load so back doesn't double-stack). */
+function replaceThreadUrl(threadId: string): void {
+  if (getThreadIdFromUrl() !== threadId) {
+    window.history.replaceState(null, "", `/${threadId}`);
+  }
+}
+
 export function App() {
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
@@ -86,6 +110,8 @@ export function App() {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  // Track threads where a turn completed while the user was viewing a different thread
+  const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(new Set());
 
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
@@ -122,7 +148,7 @@ export function App() {
         });
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
-        // On reconnect, resume the previous thread if one exists
+        // 1. On reconnect, resume the previous active thread
         const prevThreadId = activeThreadIdRef.current;
         if (prevThreadId) {
           const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: prevThreadId });
@@ -131,30 +157,51 @@ export function App() {
               threadId: resumed.threadId,
             });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            replaceThreadUrl(resumed.threadId);
             await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
             return;
           }
         }
 
-        // Try to resume the most recent session
+        // 2. On fresh load, honour the threadId in the URL (e.g. /abc123)
+        const urlThreadId = getThreadIdFromUrl();
+        if (urlThreadId) {
+          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: urlThreadId });
+          if (resumed.found && resumed.threadId) {
+            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+              threadId: resumed.threadId,
+            });
+            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            replaceThreadUrl(resumed.threadId);
+            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+            await refreshThreadList(rpc);
+            return;
+          }
+          // URL threadId was invalid — fall through to most recent
+        }
+
+        // 3. Fall back to the most recent session
         const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
         if (mostRecent.found && mostRecent.threadId) {
           const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
             threadId: mostRecent.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
+          replaceThreadUrl(mostRecent.threadId);
           await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
           await refreshThreadList(rpc);
           return;
         }
 
+        // 4. No sessions at all — start a new thread
         const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
           cwd: meta.cwd,
           mode: meta.mode,
         });
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
+        replaceThreadUrl(started.threadId);
         await refreshThreadList(rpc);
       } catch (error) {
         console.error(error);
@@ -181,6 +228,20 @@ export function App() {
         void providerMgr.onAccountUpdated(notification.params);
         return;
       }
+      // Mark non-active threads as unread when their turn completes
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
+        "threadId" in notification.params &&
+        activeThreadIdRef.current &&
+        notification.params.threadId !== activeThreadIdRef.current
+      ) {
+        setUnreadThreadIds((prev) => {
+          const next = new Set(prev);
+          next.add(notification.params.threadId);
+          return next;
+        });
+      }
+
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
         void refreshThreadList(rpc);
@@ -227,30 +288,64 @@ export function App() {
       });
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
+      pushThreadUrl(started.threadId);
       await refreshThreadList(rpc);
     } catch (error) {
       console.error(error);
     }
   };
 
-  const openThread = async (threadId: string): Promise<void> => {
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-    adapterRef.current.reset();
-    try {
-      const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
-      if (!resumed.found || !resumed.threadId) return;
-      const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumed.threadId });
-      dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
-      await refreshThreadList(rpc);
-      await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
-    } catch (error) {
-      console.error(error);
-    }
-  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs and mutable state are accessed intentionally
+  const openThread = useCallback(
+    async (threadId: string): Promise<void> => {
+      const rpc = rpcRef.current;
+      if (!rpc) return;
+      adapterRef.current.reset();
+      try {
+        const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
+        if (!resumed.found || !resumed.threadId) return;
+        const resumedId = resumed.threadId;
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
+        dispatch({ type: "hydrate", payload: { threadId: resumedId, mode: state.mode, history } });
+        pushThreadUrl(resumedId);
+        await refreshThreadList(rpc);
+        await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+
+        // Clear unread marker for this thread
+        setUnreadThreadIds((prev) => {
+          if (!prev.has(resumedId)) return prev;
+          const next = new Set(prev);
+          next.delete(resumedId);
+          return next;
+        });
+
+        // Promote any buffered approval for this thread → shows the approval dialog.
+        serverRequests.activateThread(resumedId);
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [dispatch, state.mode, setUnreadThreadIds, providerMgr, serverRequests, refreshThreadList],
+  );
+
+  // Handle browser back/forward navigation between threads
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlThreadId = getThreadIdFromUrl();
+      if (urlThreadId && urlThreadId !== activeThreadIdRef.current) {
+        void openThread(urlThreadId);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [openThread]);
 
   useEffect(() => {
-    if (!state.toast || state.toast.fatal) return;
+    if (!state.toast) return;
+    if (state.toast.kind === "error") {
+      console.error("[diligent]", state.toast.message);
+    }
+    if (state.toast.fatal) return;
     const id = setTimeout(() => dispatch({ type: "clear_toast" }), 4000);
     return () => clearTimeout(id);
   }, [state.toast]);
@@ -306,6 +401,7 @@ export function App() {
             threadId: resumed.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
+          replaceThreadUrl(resumed.threadId);
         } else {
           const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
             cwd: cwd || "/",
@@ -315,6 +411,7 @@ export function App() {
             threadId: started.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
+          replaceThreadUrl(started.threadId);
         }
       }
       await refreshThreadList(rpc);
@@ -358,6 +455,8 @@ export function App() {
           cwd={cwd}
           threadList={state.threadList}
           activeThreadId={state.activeThreadId}
+          pendingApprovalThreadIds={serverRequests.pendingApprovalThreadIds}
+          unreadThreadIds={unreadThreadIds}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
           onDeleteThread={(id) => setPendingDeleteThreadId(id)}

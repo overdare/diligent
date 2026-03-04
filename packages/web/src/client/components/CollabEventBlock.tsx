@@ -1,5 +1,6 @@
 // @summary Collab event block showing sub-agent orchestration and internal tool activity
 
+import { useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
 import { getToolInfo } from "../lib/tool-info";
@@ -7,6 +8,7 @@ import { StatusDot } from "./StatusDot";
 
 interface CollabEventBlockProps {
   item: Extract<RenderItem, { kind: "collab" }>;
+  defaultCollapsed?: boolean;
 }
 
 function agentLabel(nickname?: string, agentId?: string): string {
@@ -28,8 +30,21 @@ function statusBadge(status?: string): { text: string; className: string } | nul
   }
 }
 
-export function CollabEventBlock({ item }: CollabEventBlockProps) {
+export function CollabEventBlock({ item, defaultCollapsed = false }: CollabEventBlockProps) {
   const icon = item.eventType === "spawn" ? "◈" : item.eventType === "wait" ? "⏳" : "✕";
+
+  const hasRunningTool = item.childTools.some((t) => t.status === "running");
+
+  const [toolsCollapsed, setToolsCollapsed] = useState(defaultCollapsed);
+
+  // Auto-expand when a tool is running; re-collapse when it stops if defaultCollapsed
+  useEffect(() => {
+    if (hasRunningTool) {
+      setToolsCollapsed(false);
+    } else if (defaultCollapsed) {
+      setToolsCollapsed(true);
+    }
+  }, [hasRunningTool, defaultCollapsed]);
 
   let title: string;
   let details: string | null = null;
@@ -54,7 +69,6 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
   }
 
   const badge = statusBadge(item.status);
-  const hasRunningTool = item.childTools.some((t) => t.status === "running");
 
   // For wait events, show per-agent status
   const agentStatuses = item.eventType === "wait" && item.agents && item.agents.length > 0;
@@ -111,28 +125,53 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
           {/* Child tool activity list */}
           {item.childTools.length > 0 && (
             <div className="mt-1.5 space-y-0.5">
-              {item.childTools.map((tool) => {
-                const info = getToolInfo(tool.toolName);
-                const isRunning = tool.status === "running";
-                return (
-                  <div key={tool.toolCallId} className="flex items-center gap-1.5 text-xs">
-                    <span className="w-3 text-right text-text/25">├</span>
-                    <span
-                      className={cn(
-                        "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[10px] leading-none",
-                        isRunning ? "text-accent" : tool.isError ? "text-danger" : "text-text/40",
-                      )}
+              {toolsCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => setToolsCollapsed(false)}
+                  className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
+                >
+                  <span className="w-3 text-right text-text/25">├</span>
+                  <span className="text-text/40">▸</span>
+                  <span>{item.childTools.length} tools</span>
+                </button>
+              ) : (
+                <>
+                  {defaultCollapsed && (
+                    <button
+                      type="button"
+                      onClick={() => setToolsCollapsed(true)}
+                      className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
                     >
-                      {info.icon}
-                    </span>
-                    <span className={cn("leading-none", isRunning ? "text-text/70" : "text-text/40")}>
-                      {info.displayName}
-                    </span>
-                    {isRunning && <StatusDot color="accent" pulse />}
-                    {tool.isError && <span className="text-danger">✗</span>}
-                  </div>
-                );
-              })}
+                      <span className="w-3 text-right text-text/25">├</span>
+                      <span className="text-text/40">▾</span>
+                      <span>{item.childTools.length} tools</span>
+                    </button>
+                  )}
+                  {item.childTools.map((tool) => {
+                    const info = getToolInfo(tool.toolName);
+                    const isRunning = tool.status === "running";
+                    return (
+                      <div key={tool.toolCallId} className="flex items-center gap-1.5 text-xs">
+                        <span className="w-3 text-right text-text/25">├</span>
+                        <span
+                          className={cn(
+                            "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[10px] leading-none",
+                            isRunning ? "text-accent" : tool.isError ? "text-danger" : "text-text/40",
+                          )}
+                        >
+                          {info.icon}
+                        </span>
+                        <span className={cn("leading-none", isRunning ? "text-text/70" : "text-text/40")}>
+                          {info.displayName}
+                        </span>
+                        {isRunning && <StatusDot color="accent" pulse />}
+                        {tool.isError && <span className="text-danger">✗</span>}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
         </div>

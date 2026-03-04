@@ -148,14 +148,11 @@ export class RpcBridge {
 
     this.removeAllSubscriptionsForSession(session.id);
 
-    // Resolve pending server requests if this was the last remaining subscriber
-    for (const [requestId, pending] of this.pendingServerRequests.entries()) {
+    // Remove session from pending-request tracking but keep them alive — the
+    // client may reconnect and re-subscribe, at which point addSubscription()
+    // re-delivers outstanding requests. The 5-min timeout is the safety net.
+    for (const pending of this.pendingServerRequests.values()) {
       pending.sentTo.delete(session.id);
-      if (pending.sentTo.size === 0) {
-        clearTimeout(pending.timeoutId);
-        this.pendingServerRequests.delete(requestId);
-        pending.resolve(toSafeFallback(pending.request));
-      }
     }
 
     this.sessions.delete(session.id);
@@ -664,6 +661,20 @@ export class RpcBridge {
     subs.add(sessionId);
     const subId = randomBytes(16).toString("hex");
     this.subscriptions.set(subId, { threadId, sessionId });
+
+    // Re-deliver pending server requests for this thread that lost all
+    // recipients (e.g. previous WebSocket disconnected while user was in
+    // another window and the client has now reconnected).
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      for (const [reqId, pending] of this.pendingServerRequests) {
+        const reqThread = pending.request.params?.threadId;
+        if (reqThread === threadId && !pending.sentTo.has(sessionId)) {
+          this.send(session.ws, { type: "server_request", id: reqId, request: pending.request });
+          pending.sentTo.add(sessionId);
+        }
+      }
+    }
     return subId;
   }
 

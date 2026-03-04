@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
 import { ApprovalCard } from "./ApprovalCard";
 import { AssistantMessage } from "./AssistantMessage";
-import { CollabEventBlock } from "./CollabEventBlock";
+import { CollabGroup } from "./CollabGroup";
 import { ContextMessage } from "./ContextMessage";
 import { EmptyState } from "./EmptyState";
 import { QuestionCard } from "./QuestionCard";
@@ -26,6 +26,45 @@ interface MessageListProps {
     onSubmit: () => void;
     onCancel: () => void;
   } | null;
+}
+
+type CollabItem = Extract<RenderItem, { kind: "collab" }>;
+
+/** Group consecutive collab items, render everything else individually. */
+function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
+  const result: React.ReactNode[] = [];
+  let collabBuf: CollabItem[] = [];
+
+  const flushCollab = () => {
+    if (collabBuf.length === 0) return;
+    const groupKey = collabBuf.map((c) => c.id).join("+");
+    result.push(<CollabGroup key={groupKey} items={[...collabBuf]} />);
+    collabBuf = [];
+  };
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    if (item.kind === "collab") {
+      collabBuf.push(item);
+      continue;
+    }
+    flushCollab();
+    if (item.kind === "context") {
+      result.push(<ContextMessage key={item.id} summary={item.summary} />);
+    } else if (item.kind === "tool") {
+      result.push(<ToolBlock key={item.id} item={item} />);
+    } else if (item.kind === "user") {
+      result.push(<UserMessage key={item.id} text={item.text} />);
+    } else {
+      const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
+      const nextItem = items[idx + 1];
+      const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
+      const displayItem = isFollowedByUserInputTool ? { ...assistantItem, text: "" } : assistantItem;
+      result.push(<AssistantMessage key={item.id} item={displayItem} />);
+    }
+  }
+  flushCollab();
+  return result;
 }
 
 export function MessageList({ items, threadStatus, onSelectPrompt, approvalPrompt, questionPrompt }: MessageListProps) {
@@ -63,17 +102,7 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
           <EmptyState onSelectPrompt={onSelectPrompt} />
         ) : (
           <div className="space-y-1">
-            {items.map((item, idx) => {
-              if (item.kind === "context") return <ContextMessage key={item.id} summary={item.summary} />;
-              if (item.kind === "collab") return <CollabEventBlock key={item.id} item={item} />;
-              if (item.kind === "tool") return <ToolBlock key={item.id} item={item} />;
-              if (item.kind === "user") return <UserMessage key={item.id} text={item.text} />;
-              const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
-              const nextItem = items[idx + 1];
-              const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
-              const displayItem = isFollowedByUserInputTool ? { ...assistantItem, text: "" } : assistantItem;
-              return <AssistantMessage key={item.id} item={displayItem} />;
-            })}
+            {renderGroupedItems(items)}
 
             {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (
               <div className="py-1">

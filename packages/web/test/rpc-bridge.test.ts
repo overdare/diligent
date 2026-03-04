@@ -256,10 +256,10 @@ describe("RpcBridge multi-subscriber", () => {
     expect(notif2).toBeTruthy();
   });
 
-  test("disconnect resolves pending request when last subscriber leaves", async () => {
+  test("disconnect keeps pending request alive and re-delivers on resubscribe", async () => {
     const { bridge } = createBridge();
-    const { ws } = createFakeWs("s1");
-    bridge.open(ws);
+    const { ws: ws1 } = createFakeWs("s1");
+    bridge.open(ws1);
 
     const request: DiligentServerRequest = {
       method: "approval/request",
@@ -272,13 +272,44 @@ describe("RpcBridge multi-subscriber", () => {
     const subscribers = new Set(["s1"]);
     const responsePromise = bridge.requestFromSubscribers(subscribers, request);
 
-    // Disconnect before responding
-    bridge.close(ws);
+    // Disconnect — pending request should NOT resolve yet
+    bridge.close(ws1);
+    let resolved = false;
+    void responsePromise.then(() => {
+      resolved = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(resolved).toBe(false);
+
+    // A new client connects and subscribes to the same thread
+    const { ws: ws2, sent: sent2 } = createFakeWs("s2");
+    bridge.open(ws2);
+    await bridge.message(
+      ws2,
+      JSON.stringify({ type: "rpc_request", id: 1, method: "thread/subscribe", params: { threadId: "thread1" } }),
+    );
+
+    // The pending request should be re-delivered to the new session
+    const redelivered = sent2.find((msg) => (msg as { type?: string }).type === "server_request") as
+      | { type: string; id: number; request: DiligentServerRequest }
+      | undefined;
+    expect(redelivered).toBeTruthy();
+    expect(redelivered!.request.method).toBe("approval/request");
+
+    // Respond from the new session — original promise should resolve
+    await bridge.message(
+      ws2,
+      JSON.stringify({
+        type: "server_request_response",
+        id: redelivered!.id,
+        response: { method: "approval/request", result: { decision: "once" } },
+      }),
+    );
 
     const response = await responsePromise;
     expect(response.method).toBe("approval/request");
     if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("reject"); // safe fallback
+      expect(response.result.decision).toBe("once");
     }
   });
 
