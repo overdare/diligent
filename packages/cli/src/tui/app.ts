@@ -372,7 +372,7 @@ export class App {
           streamFunction: this.config.streamFunction,
           getParentSessionId: getSessionId,
         };
-        const { tools, registry } = buildTools(cwd, paths, deps, deps);
+        const { tools, registry } = buildTools(cwd, paths, deps);
         if (registry) {
           this.agentRegistry = registry;
         }

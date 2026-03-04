@@ -70,8 +70,19 @@ export const ThreadReadParamsSchema = z.object({
 });
 export type ThreadReadParams = z.infer<typeof ThreadReadParamsSchema>;
 
+export const ChildSessionSchema = z.object({
+  sessionId: z.string(),
+  agentId: z.string().optional(),
+  nickname: z.string().optional(),
+  description: z.string().optional(),
+  messages: z.array(MessageSchema),
+  created: z.string(),
+});
+export type ChildSession = z.infer<typeof ChildSessionSchema>;
+
 export const ThreadReadResponseSchema = z.object({
   messages: z.array(MessageSchema),
+  childSessions: z.array(ChildSessionSchema).optional(),
   hasFollowUp: z.boolean(),
   entryCount: z.number().int().nonnegative(),
   isRunning: z.boolean(),

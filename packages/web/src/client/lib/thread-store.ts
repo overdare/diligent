@@ -4,6 +4,7 @@ import type { AgentEvent } from "@diligent/core/client";
 import { isSummaryMessage, SUMMARY_PREFIX } from "@diligent/core/client";
 import type {
   ApprovalRequest,
+  ChildSession,
   DiligentServerNotification,
   Mode,
   SessionSummary,
@@ -81,6 +82,7 @@ export type RenderItem =
       timedOut?: boolean;
       turnNumber?: number;
       childTools: Array<{ toolCallId: string; toolName: string; status: "running" | "done"; isError: boolean }>;
+      childMessages?: string[];
       timestamp: number;
     };
 
@@ -560,6 +562,81 @@ export function reduceServerNotification(
   return current;
 }
 
+/** Build childTools from a child session's messages for collab RenderItem */
+function extractChildTools(
+  child: ChildSession,
+): Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean }> {
+  const tools: Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean }> = [];
+  for (const msg of child.messages) {
+    if (msg.role === "tool_result") {
+      tools.push({
+        toolCallId: (msg as { toolCallId: string }).toolCallId,
+        toolName: (msg as { toolName: string }).toolName,
+        status: "done",
+        isError: (msg as { isError: boolean }).isError,
+      });
+    }
+  }
+  return tools;
+}
+
+/** Extract assistant text messages from a child session */
+function extractChildMessages(child: ChildSession): string[] {
+  const messages: string[] = [];
+  for (const msg of child.messages) {
+    if (msg.role === "assistant") {
+      const blocks = (msg as { content: Array<{ type: string; text?: string }> }).content;
+      const text = blocks
+        .filter((b) => b.type === "text" && b.text)
+        .map((b) => b.text!)
+        .join("");
+      if (text.trim()) messages.push(text.trim());
+    }
+  }
+  return messages;
+}
+
+/** Parse spawn_agent tool_result output to extract agentId */
+function parseSpawnOutput(output: string): { agentId?: string; nickname?: string } {
+  try {
+    const parsed = JSON.parse(output) as { agent_id?: string; nickname?: string };
+    return { agentId: parsed.agent_id, nickname: parsed.nickname };
+  } catch {
+    return {};
+  }
+}
+
+/** Parse wait tool_result output */
+function parseWaitOutput(
+  output: string,
+): { agents: Array<{ agentId: string; status?: string; message?: string }>; timedOut: boolean } | null {
+  try {
+    const parsed = JSON.parse(output) as {
+      status?: Record<string, { kind?: string; output?: string; error?: string }>;
+      timed_out?: boolean;
+    };
+    if (!parsed.status) return null;
+    const agents = Object.entries(parsed.status).map(([agentId, s]) => ({
+      agentId,
+      status: s.kind,
+      message: s.output ?? s.error,
+    }));
+    return { agents, timedOut: parsed.timed_out ?? false };
+  } catch {
+    return null;
+  }
+}
+
+/** Parse close_agent tool_result output */
+function parseCloseOutput(output: string): { nickname?: string; status?: string } {
+  try {
+    const parsed = JSON.parse(output) as { nickname?: string; final_status?: { kind?: string } };
+    return { nickname: parsed.nickname, status: parsed.final_status?.kind };
+  } catch {
+    return {};
+  }
+}
+
 export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadResponse): ThreadState {
   // Pre-compute which toolCallIds already have results, to detect in-progress tools
   const resolvedToolCallIds = new Set<string>();
@@ -567,6 +644,44 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     for (const message of payload.messages) {
       if (message.role === "tool_result") {
         resolvedToolCallIds.add((message as { toolCallId: string }).toolCallId);
+      }
+    }
+  }
+
+  // Index child sessions by agentId for matching with spawn_agent tool_call results
+  const childByAgentId = new Map<string, ChildSession>();
+  const childByNickname = new Map<string, ChildSession>();
+  for (const child of payload.childSessions ?? []) {
+    if (child.agentId) childByAgentId.set(child.agentId, child);
+    if (child.nickname) childByNickname.set(child.nickname, child);
+  }
+
+  // Build a map from spawn_agent tool_call results: agentId → ChildSession
+  // (scan tool_results to link agentIds from output to child sessions)
+  const spawnResultByToolCallId = new Map<string, { agentId: string; nickname?: string; child?: ChildSession }>();
+  // Track which agentIds have been settled (appeared in wait/close_agent results)
+  const settledAgentIds = new Set<string>();
+  for (const message of payload.messages) {
+    if (message.role === "tool_result" && message.toolName === "spawn_agent") {
+      const { agentId, nickname } = parseSpawnOutput(message.output);
+      if (agentId) {
+        const child = childByAgentId.get(agentId) ?? (nickname ? childByNickname.get(nickname) : undefined);
+        spawnResultByToolCallId.set(message.toolCallId, { agentId, nickname, child });
+      }
+    }
+    if (message.role === "tool_result" && message.toolName === "wait") {
+      const waitData = parseWaitOutput(message.output);
+      if (waitData) {
+        for (const a of waitData.agents) settledAgentIds.add(a.agentId);
+      }
+    }
+    if (message.role === "tool_result" && message.toolName === "close_agent") {
+      // close_agent output contains agentId in the parsed result
+      try {
+        const parsed = JSON.parse(message.output) as { agent_id?: string };
+        if (parsed.agent_id) settledAgentIds.add(parsed.agent_id);
+      } catch {
+        /* ignore */
       }
     }
   }
@@ -613,8 +728,31 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         if (block.type === "text") text += block.text;
         if (block.type === "thinking") thinking += block.thinking;
         if (block.type === "tool_call") {
-          // Collab tools rendered by CollabEventBlock — skip duplicate ToolBlock in history
+          // spawn_agent: create collab spawn item from child session data
+          if (block.name === "spawn_agent") {
+            const spawnInfo = spawnResultByToolCallId.get(block.id);
+            const child = spawnInfo?.child;
+            const agentId = spawnInfo?.agentId ?? child?.agentId;
+            // Determine status: if parent is running and this agent hasn't been waited/closed, it's still running
+            const isSettled = agentId ? settledAgentIds.has(agentId) : true;
+            const spawnStatus = !payload.isRunning || isSettled ? "completed" : "running";
+            current = withItem(current, `history:collab:spawn:${block.id}`, {
+              id: `history:collab:spawn:${block.id}`,
+              kind: "collab",
+              eventType: "spawn",
+              agentId,
+              nickname: spawnInfo?.nickname ?? child?.nickname,
+              description: child?.description ?? (block.input as { description?: string })?.description,
+              status: spawnStatus,
+              childTools: child ? extractChildTools(child) : [],
+              childMessages: child ? extractChildMessages(child) : undefined,
+              timestamp: message.timestamp,
+            });
+            continue;
+          }
+          // Other collab tools (wait, close_agent) — skip, handled in tool_result below
           if (COLLAB_RENDERED_TOOLS.has(block.name)) continue;
+
           const inProgress = payload.isRunning && !resolvedToolCallIds.has(block.id);
           current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
             id: `history:tool:${block.id}`,
@@ -638,6 +776,50 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         thinkingDone: true,
         timestamp: message.timestamp,
       });
+      continue;
+    }
+
+    // tool_result messages
+    // Handle collab tool results: wait and close_agent
+    if (message.toolName === "wait") {
+      const waitData = parseWaitOutput(message.output);
+      const agents = waitData?.agents.map((a) => {
+        const child = childByAgentId.get(a.agentId);
+        return {
+          agentId: a.agentId,
+          nickname: child?.nickname,
+          status: a.status,
+          message: a.message ? a.message.split("\n")[0].slice(0, 160) : undefined,
+        };
+      });
+      current = withItem(current, `history:collab:wait:${message.toolCallId}`, {
+        id: `history:collab:wait:${message.toolCallId}`,
+        kind: "collab",
+        eventType: "wait",
+        agents,
+        timedOut: waitData?.timedOut,
+        childTools: [],
+        timestamp: message.timestamp,
+      });
+      continue;
+    }
+
+    if (message.toolName === "close_agent") {
+      const closeData = parseCloseOutput(message.output);
+      current = withItem(current, `history:collab:close:${message.toolCallId}`, {
+        id: `history:collab:close:${message.toolCallId}`,
+        kind: "collab",
+        eventType: "close",
+        nickname: closeData.nickname,
+        status: closeData.status,
+        childTools: [],
+        timestamp: message.timestamp,
+      });
+      continue;
+    }
+
+    if (message.toolName === "spawn_agent") {
+      // spawn_agent tool_result — already handled as collab item in tool_call block above
       continue;
     }
 

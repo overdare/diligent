@@ -60,7 +60,7 @@ export class NonInteractiveRunner {
           streamFunction: this.config.streamFunction,
           getParentSessionId: getSessionId,
         };
-        const { tools } = buildTools(cwd, this.paths, deps, deps);
+        const { tools } = buildTools(cwd, this.paths, deps);
 
         return {
           model: this.config.model,

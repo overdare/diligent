@@ -21,18 +21,6 @@ function formatToolElapsed(ms: number): string | null {
   return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
 }
 
-/**
- * Extract a one-line preview from task tool output.
- * Handles both normal <task_result sessionId="..."> and error <task_result error="true"> forms.
- */
-function extractTaskPreview(output: string, maxLen = 160): string {
-  if (!output) return "";
-  const contentMatch = output.match(/<task_result[^>]*>\n?([\s\S]*?)\n?<\/task_result>/);
-  const raw = contentMatch ? contentMatch[1].trim() : output.trim();
-  const firstLine = raw.split("\n")[0].trim();
-  return firstLine.length > maxLen ? `${firstLine.slice(0, maxLen - 1)}…` : firstLine;
-}
-
 /** Parse JSON output from collab tools, returning null on failure. */
 function parseCollabOutput(output: string): Record<string, unknown> | null {
   try {
@@ -90,7 +78,6 @@ export class ChatView implements Component {
   private thinkingText = "";
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
-  private taskState = new Map<string, { description: string; subagentType: string }>();
   private collabState = new Map<string, { toolName: string; label: string }>();
   private planCallCount = 0;
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
@@ -144,12 +131,6 @@ export class ChatView implements Component {
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning\u2026" : "Updating plan\u2026";
           this.activeSpinner.start(label);
-        } else if (event.toolName === "task") {
-          const inp = event.input as { description?: string; subagent_type?: string } | null;
-          const desc = inp?.description ?? "";
-          const type = inp?.subagent_type ?? "general";
-          this.taskState.set(event.toolCallId, { description: desc, subagentType: type });
-          this.activeSpinner.start(desc ? `[${type}] ${desc}` : `[${type}]`);
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const inp = event.input as Record<string, unknown> | null;
           let spinnerLabel = event.toolName;
@@ -173,13 +154,7 @@ export class ChatView implements Component {
         break;
 
       case "tool_update":
-        if (event.toolName === "task") {
-          const state = this.taskState.get(event.toolCallId);
-          if (state) {
-            const base = state.description ? `[${state.subagentType}] ${state.description}` : `[${state.subagentType}]`;
-            this.activeSpinner.setMessage(`${base} — ${event.partialResult}`);
-          }
-        } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+        if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           if (state) {
             this.activeSpinner.setMessage(`${state.label} — ${event.partialResult}`);
@@ -212,19 +187,6 @@ export class ChatView implements Component {
             }
           }
 
-          this.items.push(lines);
-        } else if (event.toolName === "task") {
-          const state = this.taskState.get(event.toolCallId);
-          this.taskState.delete(event.toolCallId);
-          const type = state?.subagentType ?? "general";
-          const desc = state?.description ?? "";
-          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
-          const label = `${icon} [${type}]${desc ? ` ${desc}` : ""}${elapsed}`;
-          const preview = extractTaskPreview(event.output);
-          const lines: string[] = [label];
-          if (preview) {
-            lines.push(`${t.dim}  └ ${preview}${t.reset}`);
-          }
           this.items.push(lines);
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);

@@ -1,9 +1,7 @@
-// @summary Groups consecutive collab events, collapsing child tools when there are many items
+// @summary Groups consecutive collab events, always collapsed by default
 
 import type { RenderItem } from "../lib/thread-store";
 import { CollabEventBlock } from "./CollabEventBlock";
-
-const MAX_VISIBLE = 4;
 
 type CollabItem = Extract<RenderItem, { kind: "collab" }>;
 
@@ -12,12 +10,10 @@ interface CollabGroupProps {
 }
 
 export function CollabGroup({ items }: CollabGroupProps) {
-  const shouldCollapse = items.length > MAX_VISIBLE;
-
   return (
     <>
       {items.map((item) => (
-        <CollabEventBlock key={item.id} item={item} defaultCollapsed={shouldCollapse} />
+        <CollabEventBlock key={item.id} item={item} />
       ))}
     </>
   );

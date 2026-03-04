@@ -40,5 +40,5 @@ test("summary prefers explicit intent fields for non-request tools", () => {
     prompt: "Refactor the sidebar list interaction to preserve keyboard focus.",
     path: "/tmp/ignored.txt",
   });
-  expect(summarizeInput("task", input)).toContain("Refactor the sidebar");
+  expect(summarizeInput("spawn_agent", input)).toContain("Refactor the sidebar");
 });

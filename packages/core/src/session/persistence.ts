@@ -1,7 +1,15 @@
 // @summary Session file persistence with JSONL format, deferred writing, and session listing
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { SessionEntry, SessionHeader, SessionInfo, SessionInfoEntry, SessionMessageEntry } from "./types";
+import { buildSessionContext } from "./context-builder";
+import type {
+  CollabSessionMeta,
+  SessionEntry,
+  SessionHeader,
+  SessionInfo,
+  SessionInfoEntry,
+  SessionMessageEntry,
+} from "./types";
 import { generateSessionId, SESSION_VERSION } from "./types";
 
 /**
@@ -108,6 +116,50 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
   return sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 }
 
+/** Hydrated child session for ThreadReadResponse */
+export interface ChildSessionData {
+  sessionId: string;
+  agentId?: string;
+  nickname?: string;
+  description?: string;
+  messages: import("../types").Message[];
+  created: string; // ISO 8601
+}
+
+/**
+ * Find and read all child sessions belonging to a parent session.
+ * Returns child session data sorted by creation time (oldest first).
+ */
+export async function readChildSessions(sessionsDir: string, parentSessionId: string): Promise<ChildSessionData[]> {
+  const glob = new Bun.Glob("*.jsonl");
+  const children: ChildSessionData[] = [];
+
+  for await (const file of glob.scan(sessionsDir)) {
+    try {
+      const path = join(sessionsDir, file);
+      const { header, entries } = await readSessionFile(path);
+
+      if (header.parentSession !== parentSessionId) continue;
+
+      const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+      const context = buildSessionContext(entries, leafId);
+
+      children.push({
+        sessionId: header.id,
+        agentId: header.agentId,
+        nickname: header.nickname,
+        description: header.description,
+        messages: context.messages,
+        created: header.timestamp,
+      });
+    } catch {
+      // Skip corrupted child sessions
+    }
+  }
+
+  return children.sort((a, b) => a.created.localeCompare(b.created));
+}
+
 /**
  * Delete a session file by session ID.
  * Returns true if deleted, false if the file did not exist.
@@ -137,6 +189,7 @@ export class DeferredWriter {
     private cwd: string,
     existingPath?: string,
     private parentSession?: string,
+    private collabMeta?: CollabSessionMeta,
   ) {
     if (existingPath) {
       this.sessionPath = existingPath;
@@ -170,6 +223,9 @@ export class DeferredWriter {
       timestamp: new Date().toISOString(),
       cwd: this.cwd,
       parentSession: this.parentSession,
+      agentId: this.collabMeta?.agentId,
+      nickname: this.collabMeta?.nickname,
+      description: this.collabMeta?.description,
     };
     await Bun.write(path, `${JSON.stringify(header)}\n`);
     this.sessionPath = path;

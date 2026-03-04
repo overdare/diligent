@@ -25,6 +25,10 @@ export interface SessionHeader {
   timestamp: string; // ISO 8601
   cwd: string;
   parentSession?: string;
+  /** Sub-agent metadata — present only on child sessions spawned via collab */
+  agentId?: string;
+  nickname?: string;
+  description?: string;
 }
 
 // --- Session Entries (subsequent lines) ---
@@ -100,6 +104,13 @@ export type SessionEntry =
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;
+
+/** Sub-agent identity metadata stored in child session headers */
+export interface CollabSessionMeta {
+  agentId: string;
+  nickname: string;
+  description?: string;
+}
 
 // --- Session Metadata (for listing) ---
 

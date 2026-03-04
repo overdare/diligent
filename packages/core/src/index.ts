@@ -184,7 +184,6 @@ export type {
   UserInputResponse,
 } from "./tool/index";
 export { executeTool, ToolRegistryBuilder } from "./tool/index";
-export type { TaskToolDeps } from "./tools/index";
 // Built-in tools
 export {
   bashTool,
@@ -196,7 +195,6 @@ export {
   createLsTool,
   createPlanTool,
   createReadTool,
-  createTaskTool,
   createWriteTool,
   requestUserInputTool,
 } from "./tools/index";

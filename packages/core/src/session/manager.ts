@@ -14,7 +14,14 @@ import {
 } from "./compaction";
 import { buildSessionContext } from "./context-builder";
 import { DeferredWriter, listSessions, readSessionFile } from "./persistence";
-import type { CompactionEntry, ModeChangeEntry, SessionEntry, SessionInfo, SteeringEntry } from "./types";
+import type {
+  CollabSessionMeta,
+  CompactionEntry,
+  ModeChangeEntry,
+  SessionEntry,
+  SessionInfo,
+  SteeringEntry,
+} from "./types";
 import { generateEntryId } from "./types";
 
 export interface SessionManagerConfig {
@@ -30,6 +37,8 @@ export interface SessionManagerConfig {
   knowledgePath?: string;
   sessionId?: string;
   parentSession?: string;
+  /** When spawned as a sub-agent, identity info persisted in session header */
+  collabMeta?: CollabSessionMeta;
 }
 
 export interface ResumeSessionOptions {
@@ -48,7 +57,13 @@ export class SessionManager {
   private lastApiInputTokens = 0;
 
   constructor(private config: SessionManagerConfig) {
-    this.writer = new DeferredWriter(config.paths.sessions, config.cwd, undefined, config.parentSession);
+    this.writer = new DeferredWriter(
+      config.paths.sessions,
+      config.cwd,
+      undefined,
+      config.parentSession,
+      config.collabMeta,
+    );
   }
 
   /** Create a new session */
@@ -57,7 +72,13 @@ export class SessionManager {
     this.leafId = null;
     this.byId.clear();
     this.writeQueue = Promise.resolve();
-    this.writer = new DeferredWriter(this.config.paths.sessions, this.config.cwd, undefined, this.config.parentSession);
+    this.writer = new DeferredWriter(
+      this.config.paths.sessions,
+      this.config.cwd,
+      undefined,
+      this.config.parentSession,
+      this.config.collabMeta,
+    );
   }
 
   /** Resume an existing session */

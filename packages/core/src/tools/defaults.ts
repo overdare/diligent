@@ -12,14 +12,11 @@ import { createLsTool } from "./ls";
 import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { requestUserInputTool } from "./request-user-input";
-import type { TaskToolDeps } from "./task";
-import { createTaskTool } from "./task";
 import { createWriteTool } from "./write";
 
 export function buildDefaultTools(
   cwd: string,
   paths?: DiligentPaths,
-  taskDeps?: Omit<TaskToolDeps, "cwd" | "paths" | "parentTools">,
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
 ): { tools: Tool[]; registry?: AgentRegistry } {
   const tools: Tool[] = [
@@ -36,17 +33,6 @@ export function buildDefaultTools(
 
   if (paths) {
     tools.push(createAddKnowledgeTool(paths.knowledge));
-  }
-
-  if (paths && taskDeps) {
-    tools.push(
-      createTaskTool({
-        ...taskDeps,
-        cwd,
-        paths,
-        parentTools: tools,
-      }),
-    );
   }
 
   if (paths && collabDeps) {

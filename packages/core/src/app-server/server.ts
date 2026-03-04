@@ -23,7 +23,7 @@ import type { AgentRegistry } from "../collab/registry";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import { deleteSession, listSessions } from "../session/persistence";
+import { deleteSession, listSessions, readChildSessions } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
 
@@ -262,12 +262,23 @@ export class DiligentAppServer {
     return { data: result.slice(0, limit ?? 100) };
   }
 
-  private async handleThreadRead(
-    threadId?: string,
-  ): Promise<{ messages: unknown[]; hasFollowUp: boolean; entryCount: number; isRunning: boolean }> {
+  private async handleThreadRead(threadId?: string): Promise<{
+    messages: unknown[];
+    childSessions?: unknown[];
+    hasFollowUp: boolean;
+    entryCount: number;
+    isRunning: boolean;
+  }> {
     const runtime = await this.resolveThreadRuntime(threadId);
+    const paths = await this.config.resolvePaths(runtime.cwd);
+    const sessionId = runtime.manager.sessionId;
+
+    // Read child sessions (sub-agents spawned by this thread)
+    const children = await readChildSessions(paths.sessions, sessionId);
+
     return {
       messages: runtime.manager.getContext(runtime.isRunning),
+      childSessions: children.length > 0 ? children : undefined,
       hasFollowUp: runtime.manager.hasFollowUp(),
       entryCount: runtime.manager.entryCount,
       isRunning: runtime.isRunning,

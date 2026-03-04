@@ -50,7 +50,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         streamFunction: runtimeConfig.streamFunction,
         getParentSessionId: getSessionId,
       };
-      const result = buildTools(requestCwd, paths, deps, deps);
+      const result = buildTools(requestCwd, paths, deps);
       if (result.registry) {
         registry = result.registry;
       }

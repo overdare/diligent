@@ -1,6 +1,6 @@
-// @summary Collab event block showing sub-agent orchestration and internal tool activity
+// @summary Collab event block showing sub-agent orchestration, always collapsed by default
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
 import { getToolInfo } from "../lib/tool-info";
@@ -8,7 +8,6 @@ import { StatusDot } from "./StatusDot";
 
 interface CollabEventBlockProps {
   item: Extract<RenderItem, { kind: "collab" }>;
-  defaultCollapsed?: boolean;
 }
 
 function agentLabel(nickname?: string, agentId?: string): string {
@@ -30,21 +29,12 @@ function statusBadge(status?: string): { text: string; className: string } | nul
   }
 }
 
-export function CollabEventBlock({ item, defaultCollapsed = false }: CollabEventBlockProps) {
+export function CollabEventBlock({ item }: CollabEventBlockProps) {
   const icon = item.eventType === "spawn" ? "◈" : item.eventType === "wait" ? "⏳" : "✕";
 
   const hasRunningTool = item.childTools.some((t) => t.status === "running");
 
-  const [toolsCollapsed, setToolsCollapsed] = useState(defaultCollapsed);
-
-  // Auto-expand when a tool is running; re-collapse when it stops if defaultCollapsed
-  useEffect(() => {
-    if (hasRunningTool) {
-      setToolsCollapsed(false);
-    } else if (defaultCollapsed) {
-      setToolsCollapsed(true);
-    }
-  }, [hasRunningTool, defaultCollapsed]);
+  const [expanded, setExpanded] = useState(false);
 
   let title: string;
   let details: string | null = null;
@@ -75,6 +65,9 @@ export function CollabEventBlock({ item, defaultCollapsed = false }: CollabEvent
 
   // Turn info for spawn items
   const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
+
+  // Count expandable detail items
+  const detailCount = item.childTools.length + (item.childMessages?.length ?? 0);
 
   return (
     <div className="pb-4">
@@ -122,32 +115,39 @@ export function CollabEventBlock({ item, defaultCollapsed = false }: CollabEvent
             </div>
           )}
 
-          {/* Child tool activity list */}
-          {item.childTools.length > 0 && (
+          {/* Expandable detail section: tools + messages */}
+          {detailCount > 0 && (
             <div className="mt-1.5 space-y-0.5">
-              {toolsCollapsed ? (
+              {!expanded ? (
                 <button
                   type="button"
-                  onClick={() => setToolsCollapsed(false)}
+                  onClick={() => setExpanded(true)}
                   className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
                 >
                   <span className="w-3 text-right text-text/25">├</span>
                   <span className="text-text/40">▸</span>
-                  <span>{item.childTools.length} tools</span>
+                  <span>{detailCount} items</span>
                 </button>
               ) : (
                 <>
-                  {defaultCollapsed && (
-                    <button
-                      type="button"
-                      onClick={() => setToolsCollapsed(true)}
-                      className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
-                    >
-                      <span className="w-3 text-right text-text/25">├</span>
-                      <span className="text-text/40">▾</span>
-                      <span>{item.childTools.length} tools</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(false)}
+                    className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
+                  >
+                    <span className="w-3 text-right text-text/25">├</span>
+                    <span className="text-text/40">▾</span>
+                    <span>{detailCount} items</span>
+                  </button>
+                  {/* Child messages (assistant text from sub-agent) */}
+                  {item.childMessages?.map((msg) => (
+                    <div key={msg} className="flex items-start gap-1.5 text-xs">
+                      <span className="w-3 shrink-0 text-right text-text/25">├</span>
+                      <span className="shrink-0 text-text/40">💬</span>
+                      <span className="max-w-[80ch] whitespace-pre-wrap text-text/50">{msg}</span>
+                    </div>
+                  ))}
+                  {/* Child tool activity */}
                   {item.childTools.map((tool) => {
                     const info = getToolInfo(tool.toolName);
                     const isRunning = tool.status === "running";

@@ -84,8 +84,8 @@ export class AgentRegistry {
     if (agentType.toolFilter === "readonly") {
       childTools = this.deps.parentTools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name));
     } else {
-      // general: exclude collab tools (prevent nesting) + task tool (deprecated, also nested)
-      childTools = this.deps.parentTools.filter((t) => !COLLAB_TOOL_NAMES.has(t.name) && t.name !== "task");
+      // general: exclude collab tools (prevent nesting)
+      childTools = this.deps.parentTools.filter((t) => !COLLAB_TOOL_NAMES.has(t.name));
     }
 
     const childSystemPrompt = agentType.systemPromptPrefix
@@ -110,6 +110,11 @@ export class AgentRegistry {
       },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
       parentSession: this.deps.getParentSessionId?.(),
+      collabMeta: {
+        agentId,
+        nickname,
+        description: params.description || undefined,
+      },
     });
 
     const entry: AgentEntry = {

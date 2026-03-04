@@ -25,7 +25,6 @@ const TOOL_MAP: Record<string, ToolInfo> = {
   notebookedit: { displayName: "Notebook", icon: "✎", category: "action" },
   notebookread: { displayName: "Notebook", icon: "↗", category: "context" },
   plan: { displayName: "Plan", icon: "◇", category: "action" },
-  task: { displayName: "Task", icon: "◈", category: "action" },
   spawn_agent: { displayName: "Spawn", icon: "◈", category: "action" },
   wait: { displayName: "Wait", icon: "⏳", category: "action" },
   close_agent: { displayName: "Close", icon: "✕", category: "action" },
