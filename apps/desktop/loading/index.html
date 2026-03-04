@@ -116,7 +116,7 @@
     <div id="picker" class="container">
       <div class="logo">Diligent</div>
       <p class="hint">Open a project folder to get started.</p>
-      <button id="pick-btn" class="pick-btn" onclick="pickFolder()">Open Folder</button>
+      <button id="pick-btn" class="pick-btn">Open Folder</button>
       <p id="error" class="error" hidden></p>
     </div>
 
@@ -128,7 +128,7 @@
     </div>
 
     <script>
-      async function _pickFolder() {
+      document.getElementById('pick-btn').addEventListener('click', async () => {
         const btn = document.getElementById('pick-btn');
         const errorEl = document.getElementById('error');
 
@@ -155,7 +155,7 @@
           errorEl.hidden = false;
           btn.disabled = false;
         }
-      }
+      });
     </script>
   </body>
 </html>
