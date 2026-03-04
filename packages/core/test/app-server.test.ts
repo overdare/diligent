@@ -90,7 +90,8 @@ describe("DiligentAppServer", () => {
       params: { cwd: projectRoot },
     });
     const startResult = readResult(start) as { threadId: string };
-    expect(startResult.threadId.startsWith("thread-")).toBe(true);
+    // sessionId format: YYYYMMDDHHMMSS-xxxxxx (timestamp + 6-char random)
+    expect(startResult.threadId).toMatch(/^\d{14}-[0-9a-f]{6}$/);
 
     const turnStart = await server.handleRequest({
       id: 3,
