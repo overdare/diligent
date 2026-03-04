@@ -2,6 +2,7 @@
 plan/
   feature/       Feature development plans
   fix/           Bug fix plans
+  infra/         Infrastructure plans
   layer/         Architectural layer plans
   refactor/      Refactoring plans
   uncategorized/ Unsorted plans
