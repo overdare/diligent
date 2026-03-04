@@ -143,7 +143,17 @@ This axis is the hardest to see. Today's code works for today's requirements. Th
 
 - **Test foundation**: Can the current tests survive refactoring? Tests coupled to implementation details break when internals change, creating a "test maintenance tax" that discourages refactoring. Tests coupled to behavior survive and enable refactoring.
 
-## Output Format
+## Output
+
+**Write the assessment to a file.** Determine the current HEAD commit hash (`git rev-parse --short HEAD`) and write the review to:
+
+```
+docs/review/tech-lead/{YYYY-MM-DD}-{short-hash}.md
+```
+
+If a file with today's date already exists, overwrite it. Do NOT just print the assessment to stdout — it must be written to disk so the "Commit and push" CI step can detect changes.
+
+### Format
 
 ```markdown
 ## Sustainability Verdict

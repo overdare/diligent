@@ -14,7 +14,7 @@ The tech-lead skill runs daily at 06:00 KST, producing a review with prioritized
 
 ### Create `.github/workflows/passion-junior.yml`
 
-Pattern follows existing `tech-lead.yml` and `glob-indexer.yml` but with two key differences:
+Pattern follows existing `tech-lead.yml` and `explore-indexer.yml` but with two key differences:
 - **Creates PRs** instead of pushing directly to main
 - **Claude handles git/gh operations** inside the skill (not in the workflow YAML)
 
@@ -64,7 +64,7 @@ Key design decisions:
 - **Model: Sonnet** — Group 1 tasks are simple mechanical fixes; Opus is overkill, Haiku may lack reliability
 - **Schedule: 22:00 UTC** — 1 hour after tech-lead to allow the review to be committed first
 - **GITHUB_TOKEN** — Needed for `gh pr create` inside the skill; `secrets.GITHUB_TOKEN` is auto-provided
-- **No post-step commit** — Unlike tech-lead/glob-indexer, passion-junior creates branches and PRs inside the skill itself, so no "Commit and push" step needed
+- **No post-step commit** — Unlike tech-lead/explore-indexer, passion-junior creates branches and PRs inside the skill itself, so no "Commit and push" step needed
 - **`bun install`** — Needed for `bun run typecheck` which the skill runs to verify fixes
 
 ## Verification
