@@ -35,6 +35,60 @@ function filterAllowedTools(
   });
 }
 
+/**
+ * Extract the remaining (not-done) plan steps from message history.
+ * Scans backwards for the most recent "plan" tool_result and parses its JSON output.
+ * Returns a formatted string of remaining steps only, or null if no plan exists
+ * or all steps are already completed.
+ */
+export function extractLatestPlanState(messages: Message[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === "tool_result" && msg.toolName === "plan") {
+      try {
+        const plan = JSON.parse(msg.output) as { title: string; steps: Array<{ text: string; done: boolean }> };
+        const remaining = plan.steps.filter((s) => !s.done);
+        if (remaining.length === 0) return null;
+        return `[Plan (${remaining.length} remaining)]\n${remaining.map((s) => `- ${s.text}`).join("\n")}`;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Build messages for the LLM with plan state injected.
+ * If a plan exists, inserts a plan state reminder right before the latest user message,
+ * so the LLM always sees: [...previous messages] [plan state] [user message].
+ * Skips injection when the last message is a tool_result (mid-tool-loop) to avoid
+ * breaking the API constraint that tool_results must be adjacent to their tool_calls.
+ * The original messages array is not mutated.
+ */
+export function withPlanStateInjected(messages: Message[]): Message[] {
+  if (messages.length === 0) return messages;
+
+  // Only inject when the conversation is at a natural boundary (last msg is user or assistant),
+  // not in the middle of tool call → tool result sequences
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg.role === "tool_result") return messages;
+
+  const planState = extractLatestPlanState(messages);
+  if (!planState) return messages;
+
+  const planMessage: Message = {
+    role: "user",
+    content: planState,
+    timestamp: Date.now(),
+  };
+
+  // Insert plan state before the last message
+  const result = [...messages];
+  result.splice(result.length - 1, 0, planMessage);
+  return result;
+}
+
 // D086: Convert Error to serializable representation
 function toSerializableError(err: unknown): SerializableError {
   if (err instanceof Error) {
@@ -299,9 +353,12 @@ async function streamAssistantResponse(
     ),
   );
 
+  // Inject plan state before the last message so the LLM always sees current plan
+  const messagesWithPlan = withPlanStateInjected(messages);
+
   const context: StreamContext = {
     systemPrompt: effectiveSystemPrompt,
-    messages,
+    messages: messagesWithPlan,
     tools: activeTools.map(toolToDefinition),
   };
 
