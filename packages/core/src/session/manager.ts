@@ -410,6 +410,16 @@ export class SessionManager {
     return this.followUpQueue.length > 0;
   }
 
+  /** Pop any undrained steering messages. Returns null if empty. */
+  popPendingSteering(): string[] | null {
+    if (this.steeringQueue.length === 0) return null;
+    const contents = this.steeringQueue.map((m) =>
+      m.role === "user" && typeof m.content === "string" ? m.content : "",
+    );
+    this.steeringQueue.length = 0;
+    return contents;
+  }
+
   private drainSteeringQueue(): Message[] {
     const msgs = this.steeringQueue.splice(0);
     // Persist as regular message entries at drain time (safe position)

@@ -410,6 +410,13 @@ export class DiligentAppServer {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
         params: { threadId: runtime.id, status: "idle" },
       });
+
+      // Auto-submit pending steering messages as next turn
+      const pendingSteering = runtime.manager.popPendingSteering();
+      if (pendingSteering && pendingSteering.length > 0) {
+        const message = pendingSteering.join("\n");
+        await this.handleTurnStart(runtime.id, message);
+      }
     }
   }
 
