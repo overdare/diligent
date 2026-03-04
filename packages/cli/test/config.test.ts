@@ -43,9 +43,9 @@ describe("loadConfig", () => {
 
   test("loads config from diligent.jsonc", async () => {
     const dir = join(TEST_ROOT, "jsonc");
-    await mkdir(dir, { recursive: true });
+    await mkdir(join(dir, ".diligent"), { recursive: true });
     await Bun.write(
-      join(dir, "diligent.jsonc"),
+      join(dir, ".diligent", "diligent.jsonc"),
       `{
         // Project config
         "model": "claude-haiku-3-20250307",
@@ -86,7 +86,11 @@ describe("loadConfig", () => {
     await mkdir(dir, { recursive: true });
 
     // diligent.jsonc has apiKey but it should be ignored
-    await Bun.write(join(dir, "diligent.jsonc"), `{ "provider": { "anthropic": { "apiKey": "config-key" } } }`);
+    await mkdir(join(dir, ".diligent"), { recursive: true });
+    await Bun.write(
+      join(dir, ".diligent", "diligent.jsonc"),
+      `{ "provider": { "anthropic": { "apiKey": "config-key" } } }`,
+    );
 
     const config = await loadConfig(dir);
     // Config apiKey is not read — no auth.json means no key
