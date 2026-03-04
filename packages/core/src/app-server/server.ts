@@ -311,6 +311,17 @@ export class DiligentAppServer {
       timestamp: Date.now(),
     };
 
+    const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
+    const userItem = { type: "userMessage" as const, itemId: userItemId, message: userMessage };
+    await this.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED,
+      params: { threadId: runtime.id, turnId, item: userItem },
+    });
+    await this.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED,
+      params: { threadId: runtime.id, turnId, item: userItem },
+    });
+
     const stream = runtime.manager.run(userMessage);
     void this.consumeStream(runtime, stream, turnId);
 

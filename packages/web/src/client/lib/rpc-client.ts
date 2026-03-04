@@ -52,6 +52,7 @@ export class WebRpcClient {
   private connectedListener: ((payload: ConnectedPayload) => void) | null = null;
   private notificationListener: ((notification: DiligentServerNotification) => void) | null = null;
   private serverRequestListener: ((id: number, request: DiligentServerRequest) => void) | null = null;
+  private serverRequestResolvedListener: ((id: number) => void) | null = null;
 
   constructor(private readonly url: string) {}
 
@@ -69,6 +70,10 @@ export class WebRpcClient {
 
   onServerRequest(listener: ((id: number, request: DiligentServerRequest) => void) | null): void {
     this.serverRequestListener = listener;
+  }
+
+  onServerRequestResolved(listener: ((id: number) => void) | null): void {
+    this.serverRequestResolvedListener = listener;
   }
 
   async connect(): Promise<void> {
@@ -298,6 +303,11 @@ export class WebRpcClient {
 
     if (message.type === "server_request") {
       this.serverRequestListener?.(message.id, message.request);
+      return;
+    }
+
+    if (message.type === "server_request_resolved") {
+      this.serverRequestResolvedListener?.(message.id);
     }
   }
 

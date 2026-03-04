@@ -4,7 +4,10 @@ import type { RefObject } from "react";
 import { useCallback, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
 
-export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
+export function useServerRequests(
+  rpcRef: RefObject<WebRpcClient | null>,
+  activeThreadIdRef?: RefObject<string | null>,
+) {
   const [approvalPrompt, setApprovalPrompt] = useState<{
     requestId: number;
     request: DiligentServerRequest;
@@ -16,13 +19,26 @@ export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   // Registered in App.tsx's main useEffect via rpc.onServerRequest(serverRequests.handleServerRequest)
-  const handleServerRequest = useCallback((requestId: number, request: DiligentServerRequest): void => {
-    if (request.method === "approval/request") {
-      setApprovalPrompt({ requestId, request });
-      return;
-    }
-    setAnswers({});
-    setQuestionPrompt({ requestId, request: request.params.request });
+  const handleServerRequest = useCallback(
+    (requestId: number, request: DiligentServerRequest): void => {
+      // Ignore requests for threads other than the active one
+      const threadId = request.params?.threadId;
+      if (threadId && activeThreadIdRef?.current && threadId !== activeThreadIdRef.current) {
+        return;
+      }
+      if (request.method === "approval/request") {
+        setApprovalPrompt({ requestId, request });
+        return;
+      }
+      setAnswers({});
+      setQuestionPrompt({ requestId, request: request.params.request });
+    },
+    [activeThreadIdRef],
+  );
+
+  const handleServerRequestResolved = useCallback((requestId: number): void => {
+    setApprovalPrompt((current) => (current?.requestId === requestId ? null : current));
+    setQuestionPrompt((current) => (current?.requestId === requestId ? null : current));
   }, []);
 
   const resolveApproval = useCallback(
@@ -55,6 +71,7 @@ export function useServerRequests(rpcRef: RefObject<WebRpcClient | null>) {
     answers,
     setAnswers,
     handleServerRequest,
+    handleServerRequestResolved,
     resolveApproval,
     resolveQuestion,
   };

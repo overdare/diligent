@@ -72,11 +72,11 @@ export function App() {
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
   const providerMgr = useProviderManager(rpcRef);
-  const serverRequests = useServerRequests(rpcRef);
+  const activeThreadIdRef = useRef<string | null>(null);
+  const serverRequests = useServerRequests(rpcRef, activeThreadIdRef);
 
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
   const adapterRef = useRef(new ProtocolNotificationAdapter());
-  const activeThreadIdRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
@@ -203,6 +203,7 @@ export function App() {
       dispatch({ type: "notification", payload: { notification, events } });
     });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
+    rpc.onServerRequestResolved((requestId) => serverRequests.handleServerRequestResolved(requestId));
   }, [
     refreshThreadList,
     providerMgr.refreshProviders,
@@ -211,6 +212,7 @@ export function App() {
     providerMgr.onAccountLoginCompleted,
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
+    serverRequests.handleServerRequestResolved,
     rpcRef.current,
   ]);
 

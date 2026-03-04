@@ -64,11 +64,17 @@ export type ConnectedMessage = {
 
 export type WsClientMessage = RpcRequestMessage | RpcNotifyMessage | ServerRequestResponseMessage;
 
+export type ServerRequestResolvedMessage = {
+  type: "server_request_resolved";
+  id: number;
+};
+
 export type WsServerMessage =
   | ConnectedMessage
   | RpcResponseMessage
   | ServerNotificationMessage
   | ServerRequestMessage
+  | ServerRequestResolvedMessage
   | {
       type: "error";
       message: string;

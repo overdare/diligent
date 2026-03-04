@@ -404,6 +404,25 @@ export function reduceServerNotification(
     return { ...state, activeThreadId: notification.params.threadId };
   }
 
+  // Handle userMessage items from other subscribers (not converted to AgentEvent by adapter)
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED) {
+    const item = (
+      notification.params as {
+        item?: { type?: string; itemId?: string; message?: { content?: unknown; timestamp?: number } };
+      }
+    ).item;
+    if (item?.type === "userMessage" && item.message) {
+      const text =
+        typeof item.message.content === "string" ? item.message.content : stringifyUnknown(item.message.content);
+      return withItem(state, `remote-user-${item.itemId}`, {
+        id: `remote-user-${item.itemId}`,
+        kind: "user",
+        text,
+        timestamp: item.message.timestamp ?? Date.now(),
+      });
+    }
+  }
+
   // Delegate all item lifecycle, status, usage, error, knowledge, loop, steering to AgentEvent reducer
   let current = state;
   for (const event of events) {

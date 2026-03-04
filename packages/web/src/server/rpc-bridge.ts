@@ -92,6 +92,7 @@ export class RpcBridge {
       sentTo: Set<string>;
     }
   >();
+  private readonly turnInitiators = new Map<string, string>(); // threadId → sessionId that started the turn
   private serverRequestSeq = 0;
   private currentModelId: string | undefined;
   private oauthPending: Promise<void> | null = null;
@@ -145,19 +146,7 @@ export class RpcBridge {
     const session = this.sessions.get(ws.data.sessionId);
     if (!session) return;
 
-    // Clean up all subscriptions for this session
-    for (const [subId, sub] of this.subscriptions.entries()) {
-      if (sub.sessionId === session.id) {
-        const subs = this.threadSubscribers.get(sub.threadId);
-        if (subs) {
-          subs.delete(session.id);
-          if (subs.size === 0) {
-            this.threadSubscribers.delete(sub.threadId);
-          }
-        }
-        this.subscriptions.delete(subId);
-      }
-    }
+    this.removeAllSubscriptionsForSession(session.id);
 
     // Resolve pending server requests if this was the last remaining subscriber
     for (const [requestId, pending] of this.pendingServerRequests.entries()) {
@@ -310,6 +299,7 @@ export class RpcBridge {
           return;
         }
         const subscriptionId = this.addSubscription(params.threadId, session.id);
+        session.currentThreadId = params.threadId;
         this.send(ws, {
           type: "rpc_response",
           response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { subscriptionId } }),
@@ -409,6 +399,12 @@ export class RpcBridge {
       }
 
       const params = this.withSessionDefaults(parsed.method, parsed.params, session);
+
+      // Set turnInitiators BEFORE forwarding so echo prevention works during notification routing
+      if (parsed.method === "turn/start" && session.currentThreadId) {
+        this.turnInitiators.set(session.currentThreadId, session.id);
+      }
+
       const response = await this.appServer.handleRequest({
         id: parsed.id,
         method: parsed.method,
@@ -418,6 +414,8 @@ export class RpcBridge {
       if (parsed.method === "thread/start" && "result" in response) {
         const maybeThreadId = (response.result as { threadId?: string }).threadId;
         if (maybeThreadId) {
+          // Unsubscribe from all previous threads — a tab views one thread at a time
+          this.removeAllSubscriptionsForSession(session.id);
           session.currentThreadId = maybeThreadId;
           this.addSubscription(maybeThreadId, session.id);
         }
@@ -426,9 +424,15 @@ export class RpcBridge {
       if (parsed.method === "thread/resume" && "result" in response) {
         const resumed = response.result as { found: boolean; threadId?: string };
         if (resumed.found && resumed.threadId) {
+          this.removeAllSubscriptionsForSession(session.id);
           session.currentThreadId = resumed.threadId;
           this.addSubscription(resumed.threadId, session.id);
         }
+      }
+
+      // Clean up turnInitiators if turn/start failed
+      if (parsed.method === "turn/start" && session.currentThreadId && !("result" in response)) {
+        this.turnInitiators.delete(session.currentThreadId);
       }
 
       if (parsed.method === "mode/set" && "result" in response) {
@@ -462,6 +466,16 @@ export class RpcBridge {
 
       clearTimeout(pending.timeoutId);
       this.pendingServerRequests.delete(parsed.id);
+
+      // Notify other subscribers that this request was resolved (dismiss their prompts)
+      const responderId = ws.data.sessionId;
+      for (const sessionId of pending.sentTo) {
+        if (sessionId === responderId) continue;
+        const session = this.sessions.get(sessionId);
+        if (session) {
+          this.send(session.ws, { type: "server_request_resolved", id: parsed.id });
+        }
+      }
 
       const safe = DiligentServerRequestResponseSchema.safeParse(parsed.response);
       if (!safe.success) {
@@ -593,18 +607,36 @@ export class RpcBridge {
       return;
     }
 
+    // Clean up turn initiator when turn completes
+    if (notification.method === "turn/completed") {
+      this.turnInitiators.delete(threadId);
+    }
+
     const subscribers = this.threadSubscribers.get(threadId);
     if (!subscribers || subscribers.size === 0) {
       this.broadcast({ type: "server_notification", notification });
       return;
     }
 
+    // Skip sender for userMessage items (sender already has it)
+    const skipSessionId = this.getUserMessageSender(notification, threadId);
+
     for (const sessionId of subscribers) {
+      if (sessionId === skipSessionId) continue;
       const session = this.sessions.get(sessionId);
       if (session) {
         this.send(session.ws, { type: "server_notification", notification });
       }
     }
+  }
+
+  private getUserMessageSender(notification: DiligentServerNotification, threadId: string): string | null {
+    if (notification.method !== "item/started" && notification.method !== "item/completed") {
+      return null;
+    }
+    const item = (notification.params as { item?: { type?: string } }).item;
+    if (item?.type !== "userMessage") return null;
+    return this.turnInitiators.get(threadId) ?? null;
   }
 
   private broadcast(message: WsServerMessage): void {
@@ -658,6 +690,21 @@ export class RpcBridge {
       }
     }
     this.threadSubscribers.delete(threadId);
+  }
+
+  private removeAllSubscriptionsForSession(sessionId: string): void {
+    for (const [subId, sub] of this.subscriptions.entries()) {
+      if (sub.sessionId === sessionId) {
+        const subs = this.threadSubscribers.get(sub.threadId);
+        if (subs) {
+          subs.delete(sessionId);
+          if (subs.size === 0) {
+            this.threadSubscribers.delete(sub.threadId);
+          }
+        }
+        this.subscriptions.delete(subId);
+      }
+    }
   }
 
   private send(ws: ServerWebSocket<RpcWsData>, message: WsServerMessage): void {
