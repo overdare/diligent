@@ -9,6 +9,9 @@ import type { DiligentConfig } from "../src/config/schema";
 const TEST_ROOT = join(tmpdir(), `diligent-config-test-${Date.now()}`);
 let origHome: string | undefined;
 
+/** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
+const projectConfigPath = (root: string) => join(root, ".diligent", "diligent.jsonc");
+
 beforeEach(() => {
   origHome = process.env.HOME;
   process.env.HOME = TEST_ROOT;
@@ -61,10 +64,11 @@ describe("loadDiligentConfig", () => {
     expect(sources).toEqual([]);
   });
 
-  it("loads project config from diligent.jsonc", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
+  it("loads project config from .diligent/diligent.jsonc", async () => {
+    const configFile = projectConfigPath(TEST_ROOT);
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
     await Bun.write(
-      join(TEST_ROOT, "diligent.jsonc"),
+      configFile,
       `{
         // Project config with JSONC comments
         "model": "claude-opus-4-20250514",
@@ -79,8 +83,8 @@ describe("loadDiligentConfig", () => {
   });
 
   it("template substitution replaces {env:VAR}", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
-    await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "provider": { "anthropic": { "apiKey": "{env:MY_KEY}" } } }`);
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(projectConfigPath(TEST_ROOT), `{ "provider": { "anthropic": { "apiKey": "{env:MY_KEY}" } } }`);
     process.env.MY_KEY = "resolved-key";
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
@@ -90,16 +94,16 @@ describe("loadDiligentConfig", () => {
   });
 
   it("template substitution with missing env var yields empty string", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
-    await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "systemPrompt": "prefix-{env:MISSING}-suffix" }`);
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(projectConfigPath(TEST_ROOT), `{ "systemPrompt": "prefix-{env:MISSING}-suffix" }`);
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.systemPrompt).toBe("prefix--suffix");
   });
 
   it("invalid config file warns and is skipped", async () => {
-    await mkdir(TEST_ROOT, { recursive: true });
-    await Bun.write(join(TEST_ROOT, "diligent.jsonc"), `{ "unknownKey": true }`);
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await Bun.write(projectConfigPath(TEST_ROOT), `{ "unknownKey": true }`);
 
     const warnSpy = [] as string[];
     const origWarn = console.warn;

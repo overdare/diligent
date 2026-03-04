@@ -14,8 +14,8 @@ export async function loadDiligentConfig(cwd: string): Promise<{ config: Diligen
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
-  // Layer 2: Project config
-  const projectPath = join(cwd, "diligent.jsonc");
+  // Layer 2: Project config (inside .diligent/ alongside sessions, knowledge, skills)
+  const projectPath = join(cwd, ".diligent", "diligent.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
 
