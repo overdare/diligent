@@ -6,7 +6,10 @@ import type {
   JSONRPCNotification,
   JSONRPCResponse,
   Mode,
+  ModelInfo,
 } from "@diligent/protocol";
+
+export type { ModelInfo } from "@diligent/protocol";
 
 export type RpcRequestMessage = {
   type: "rpc_request";
@@ -41,16 +44,6 @@ export type ServerRequestResponseMessage = {
   type: "server_request_response";
   id: number;
   response: DiligentServerRequestResponse;
-};
-
-export type ModelInfo = {
-  id: string;
-  provider: string;
-  contextWindow: number;
-  maxOutputTokens: number;
-  inputCostPer1M?: number;
-  outputCostPer1M?: number;
-  supportsThinking?: boolean;
 };
 
 export type ConnectedMessage = {

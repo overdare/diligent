@@ -313,6 +313,17 @@ export const ProviderAuthStatusSchema = z.object({
 });
 export type ProviderAuthStatus = z.infer<typeof ProviderAuthStatusSchema>;
 
+export const ModelInfoSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  contextWindow: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  inputCostPer1M: z.number().nonnegative().optional(),
+  outputCostPer1M: z.number().nonnegative().optional(),
+  supportsThinking: z.boolean().optional(),
+});
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
+
 export const ProtocolCapabilitiesSchema = z.object({
   supportsFollowUp: z.boolean(),
   supportsApprovals: z.boolean(),
