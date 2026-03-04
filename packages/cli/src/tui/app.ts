@@ -16,33 +16,26 @@ import {
   DiligentAppServer,
   ensureDiligentDir,
   ProtocolNotificationAdapter,
-  resolveModel,
 } from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
   Mode as ProtocolMode,
-  SessionSummary,
-  ThreadReadResponse,
 } from "@diligent/protocol";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
-import { loadConfig } from "../config";
-import { DEFAULT_MODELS, PROVIDER_HINTS, PROVIDER_NAMES, type ProviderName } from "../provider-manager";
+import type { ProviderName } from "../provider-manager";
+import { type CommandHandler, createCommandHandler } from "./command-handler";
 import { registerBuiltinCommands } from "./commands/builtin/index";
-import { promptSaveKey } from "./commands/builtin/provider";
-import { parseCommand } from "./commands/parser";
 import { CommandRegistry } from "./commands/registry";
-import type { CommandContext } from "./commands/types";
 import { ApprovalDialog } from "./components/approval-dialog";
 import { ChatView } from "./components/chat-view";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
-import { ListPicker, type ListPickerItem } from "./components/list-picker";
 import { QuestionInput } from "./components/question-input";
 import { StatusBar } from "./components/status-bar";
-import { TextInput } from "./components/text-input";
+import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
 import { matchesKey } from "./framework/keys";
 import { OverlayStack } from "./framework/overlay";
@@ -51,7 +44,9 @@ import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
 import { LocalAppServerRpcClient } from "./rpc-client";
+import { createSetupWizard, type SetupWizard } from "./setup-wizard";
 import { t } from "./theme";
+import { createThreadManager, type ThreadManager } from "./thread-manager";
 import { buildTools } from "./tools";
 
 export interface AppOptions {
@@ -90,6 +85,12 @@ export class App {
   private agentRegistry: AgentRegistry | undefined;
   private permissionEngine: ReturnType<typeof createPermissionEngine> | undefined;
 
+  // Extracted modules
+  private threadManager: ThreadManager;
+  private configManager: ConfigManager;
+  private commandHandler: CommandHandler;
+  private setupWizard: SetupWizard;
+
   constructor(
     private config: AppConfig,
     private paths?: DiligentPaths,
@@ -117,9 +118,9 @@ export class App {
       {
         onSubmit: (text) => {
           if (this.isProcessing) {
-            this.handleSteering(text);
+            this.commandHandler.handleSteering(text);
           } else {
-            this.handleSubmit(text);
+            this.commandHandler.handleSubmit(text);
           }
         },
         onCancel: () => this.handleCancel(),
@@ -139,6 +140,90 @@ export class App {
 
     this.renderer = new TUIRenderer(this.terminal, this.root);
     this.renderer.setOverlayStack(this.overlayStack);
+
+    // Wire extracted modules
+    this.threadManager = createThreadManager({
+      getRpcClient: () => this.rpcClient,
+      getCurrentMode: () => this.currentMode,
+      setCurrentThreadId: (id) => {
+        this.currentThreadId = id;
+      },
+      updateStatusBar: (updates) => this.statusBar.update(updates),
+    });
+
+    this.configManager = createConfigManager({
+      getRpcClient: () => this.rpcClient,
+      getCurrentThreadId: () => this.currentThreadId,
+      getConfig: () => this.config,
+      setConfig: (c) => {
+        this.config = c;
+      },
+      getPaths: () => this.paths,
+      setCurrentMode: (mode) => {
+        this.currentMode = mode;
+      },
+      setSkills: (s) => {
+        this.skills = s;
+      },
+      setCommandRegistry: (r) => {
+        this.commandRegistry = r;
+      },
+      updateStatusBar: (updates) => this.statusBar.update(updates),
+      displayError: (msg) => {
+        this.chatView.addLines([`  ${t.error}${msg}${t.reset}`]);
+      },
+      requestRender: () => this.renderer.requestRender(),
+    });
+
+    this.commandHandler = createCommandHandler({
+      getRpcClient: () => this.rpcClient,
+      getCurrentThreadId: () => this.currentThreadId,
+      getConfig: () => this.config,
+      getCommandRegistry: () => this.commandRegistry,
+      getSkills: () => this.skills,
+      getCurrentMode: () => this.currentMode,
+      getIsProcessing: () => this.isProcessing,
+      setIsProcessing: (val) => {
+        this.isProcessing = val;
+      },
+      setPendingTurn: (turn) => {
+        this.pendingTurn = turn;
+      },
+      addUserMessage: (text) => this.chatView.addUserMessage(text),
+      addLines: (lines) => this.chatView.addLines(lines),
+      clearActive: () => this.chatView.clearActive(),
+      handleAgentStartEvent: () => this.chatView.handleEvent({ type: "agent_start" }),
+      handleTurnError: (err) => {
+        this.chatView.handleEvent({
+          type: "error",
+          error: {
+            message: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : "Error",
+          },
+          fatal: false,
+        });
+      },
+      updateStatusBar: (updates) => this.statusBar.update(updates),
+      requestRender: () => this.renderer.requestRender(),
+      showOverlay: (c, o) => this.overlayStack.show(c, o),
+      confirm: (o) => this.confirm(o),
+      shutdown: () => this.shutdown(),
+      onModelChanged: (modelId) => {
+        this.statusBar.update({ model: modelId });
+        this.renderer.requestRender();
+      },
+      threadManager: this.threadManager,
+      configManager: this.configManager,
+    });
+
+    this.setupWizard = createSetupWizard({
+      config: this.config,
+      addLines: (lines) => this.chatView.addLines(lines),
+      requestRender: () => this.renderer.requestRender(),
+      showOverlay: (c, o) => this.overlayStack.show(c, o),
+      buildCommandContext: () => this.commandHandler.buildCommandContext(),
+      updateStatusBar: (updates) => this.statusBar.update(updates),
+    });
   }
 
   async start(): Promise<void> {
@@ -166,7 +251,7 @@ export class App {
     // Setup wizard: if current provider has no API key, prompt user
     const currentProvider = (this.config.model.provider ?? "anthropic") as ProviderName;
     if (!this.config.providerManager.hasKeyFor(currentProvider)) {
-      await this.runSetupWizard();
+      await this.setupWizard.runSetupWizard();
     }
 
     // Show welcome banner
@@ -194,101 +279,15 @@ export class App {
     await this.rpcClient.notify("initialized", { ready: true });
 
     if (this.options?.resume) {
-      const resumedId = await this.resumeThread();
+      const resumedId = await this.threadManager.resumeThread();
       if (!resumedId) {
-        await this.startNewThread();
+        await this.threadManager.startNewThread();
       }
     } else {
-      await this.startNewThread();
+      await this.threadManager.startNewThread();
     }
 
     this.renderer.requestRender();
-  }
-
-  /** Setup wizard: provider selection → API key input → save confirmation */
-  private async runSetupWizard(): Promise<void> {
-    this.chatView.addLines(["", `  ${t.warn}No API key found.${t.reset} Let's set one up.`, ""]);
-    this.renderer.requestRender();
-
-    // Step 1: Pick provider
-    const provider = await this.wizardPickProvider();
-    if (!provider) {
-      this.chatView.addLines([
-        `  ${t.dim}Setup skipped. Use /provider set <anthropic|openai> to configure later.${t.reset}`,
-        "",
-      ]);
-      this.renderer.requestRender();
-      return;
-    }
-
-    // Step 2: Enter API key
-    const apiKey = await this.wizardEnterApiKey(provider);
-    if (!apiKey) {
-      this.chatView.addLines([
-        `  ${t.dim}Setup skipped. Use /provider set ${provider} to configure later.${t.reset}`,
-        "",
-      ]);
-      this.renderer.requestRender();
-      return;
-    }
-
-    // Apply key immediately
-    this.config.providerManager.setApiKey(provider, apiKey);
-
-    // Step 3: Save to global config?
-    const ctx = this.buildCommandContext();
-    await promptSaveKey(provider, apiKey, ctx);
-
-    // Switch model if the selected provider differs from current
-    const currentProvider = this.config.model.provider ?? "anthropic";
-    if (currentProvider !== provider) {
-      const defaultModelId = DEFAULT_MODELS[provider];
-      this.config.model = resolveModel(defaultModelId);
-      this.statusBar.update({ model: this.config.model.id });
-    }
-
-    this.chatView.addLines([`  ${t.success}Ready!${t.reset} Using ${t.bold}${this.config.model.id}${t.reset}`, ""]);
-    this.renderer.requestRender();
-  }
-
-  private wizardPickProvider(): Promise<ProviderName | null> {
-    return new Promise((resolve) => {
-      const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
-        label: p,
-        description: this.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
-        value: p,
-      }));
-
-      const picker = new ListPicker({ title: "Select Provider", items }, (value) => {
-        handle.hide();
-        this.renderer.requestRender();
-        resolve(value as ProviderName | null);
-      });
-      const handle = this.overlayStack.show(picker, { anchor: "center" });
-      this.renderer.requestRender();
-    });
-  }
-
-  private wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
-    return new Promise((resolve) => {
-      const { apiKeyUrl: hint, apiKeyPlaceholder: placeholder } = PROVIDER_HINTS[provider];
-
-      const input = new TextInput(
-        {
-          title: `${provider} API Key`,
-          message: `Enter your ${provider} API key (${hint})`,
-          placeholder,
-          masked: true,
-        },
-        (value) => {
-          handle.hide();
-          this.renderer.requestRender();
-          resolve(value);
-        },
-      );
-      const handle = this.overlayStack.show(input, { anchor: "center" });
-      this.renderer.requestRender();
-    });
   }
 
   private handleInput(data: string): void {
@@ -328,150 +327,7 @@ export class App {
     const modes: ProtocolMode[] = ["default", "plan", "execute"];
     const idx = modes.indexOf(this.currentMode);
     const next = modes[(idx + 1) % modes.length];
-    this.setMode(next);
-  }
-
-  private async handleSubmit(text: string): Promise<void> {
-    // Check for slash command
-    const parsed = parseCommand(text);
-    if (parsed) {
-      await this.handleCommand(parsed.name, parsed.args);
-      return;
-    }
-
-    if (!this.rpcClient) {
-      this.chatView.addLines([`  ${t.error}App server is not initialized.${t.reset}`]);
-      this.renderer.requestRender();
-      return;
-    }
-    if (!this.currentThreadId) {
-      await this.startNewThread();
-    }
-    if (!this.currentThreadId) {
-      this.chatView.addLines([`  ${t.error}No active thread.${t.reset}`]);
-      this.renderer.requestRender();
-      return;
-    }
-
-    this.isProcessing = true;
-
-    this.chatView.addUserMessage(text);
-    this.chatView.handleEvent({ type: "agent_start" });
-    this.statusBar.update({ status: "busy" });
-    this.renderer.requestRender();
-
-    try {
-      const turnCompleted = new Promise<void>((resolve, reject) => {
-        this.pendingTurn = { resolve, reject };
-      });
-      await this.rpcClient.request("turn/start", {
-        threadId: this.currentThreadId,
-        message: text,
-      });
-      await turnCompleted;
-    } catch (err) {
-      this.chatView.handleEvent({
-        type: "error",
-        error: {
-          message: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : "Error",
-        },
-        fatal: false,
-      });
-    }
-
-    this.pendingTurn = null;
-    this.isProcessing = false;
-    this.statusBar.update({ status: "idle" });
-    this.renderer.requestRender();
-  }
-
-  private async handleCommand(name: string, args: string | undefined): Promise<void> {
-    const command = this.commandRegistry.get(name);
-    if (!command) {
-      this.chatView.addLines([
-        `  ${t.error}Unknown command: /${name}${t.reset}`,
-        "  Type /help for available commands.",
-      ]);
-      this.renderer.requestRender();
-      return;
-    }
-
-    if (this.isProcessing && !command.availableDuringTask) {
-      this.chatView.addLines([`  ${t.warn}Command not available while agent is running.${t.reset}`]);
-      this.renderer.requestRender();
-      return;
-    }
-
-    const ctx = this.buildCommandContext();
-    try {
-      await command.handler(args, ctx);
-    } catch (err) {
-      this.chatView.addLines([
-        `  ${t.error}Command error: ${err instanceof Error ? err.message : String(err)}${t.reset}`,
-      ]);
-    }
-    this.renderer.requestRender();
-  }
-
-  private buildCommandContext(): CommandContext {
-    return {
-      app: { confirm: (o) => this.confirm(o), stop: () => this.shutdown() },
-      config: this.config,
-      threadId: this.currentThreadId,
-      skills: this.skills,
-      registry: this.commandRegistry,
-      requestRender: () => this.renderer.requestRender(),
-      displayLines: (lines) => {
-        this.chatView.addLines(lines);
-        this.renderer.requestRender();
-      },
-      displayError: (msg) => {
-        this.chatView.addLines([`  ${t.error}${msg}${t.reset}`]);
-        this.renderer.requestRender();
-      },
-      showOverlay: (c, o) => this.overlayStack.show(c, o),
-      runAgent: (text) => this.handleSubmit(text),
-      reload: () => this.reloadConfig(),
-      currentMode: this.currentMode,
-      setMode: (mode) => this.setMode(mode),
-      startNewThread: () => this.startNewThread(),
-      resumeThread: (threadId) => this.resumeThread(threadId),
-      deleteThread: (threadId) => this.deleteThread(threadId),
-      listThreads: () => this.listThreads(),
-      readThread: () => this.readThread(),
-      onModelChanged: (modelId) => {
-        this.statusBar.update({ model: modelId });
-        this.renderer.requestRender();
-      },
-    };
-  }
-
-  private setMode(mode: ProtocolMode): void {
-    this.currentMode = mode;
-    this.statusBar.update({ mode });
-    if (this.rpcClient && this.currentThreadId) {
-      void this.rpcClient.request("mode/set", { threadId: this.currentThreadId, mode }).catch(() => {});
-    }
-    this.renderer.requestRender();
-  }
-
-  private async reloadConfig(): Promise<void> {
-    try {
-      const newConfig = await loadConfig(process.cwd(), this.paths);
-      this.config = newConfig;
-      this.skills = newConfig.skills ?? [];
-
-      // Rebuild command registry with new skills
-      this.commandRegistry = new CommandRegistry();
-      registerBuiltinCommands(this.commandRegistry, this.skills);
-
-      this.statusBar.update({ model: newConfig.model.id, contextWindow: newConfig.model.contextWindow });
-    } catch (err) {
-      this.chatView.addLines([
-        `  ${t.error}Reload error: ${err instanceof Error ? err.message : String(err)}${t.reset}`,
-      ]);
-    }
+    this.configManager.setMode(next);
   }
 
   private handleAgentEvent(event: AgentEvent): void {
@@ -496,19 +352,6 @@ export class App {
     } else if (!this.isProcessing) {
       this.shutdown();
     }
-  }
-
-  private handleSteering(text: string): void {
-    if (!this.rpcClient || !this.currentThreadId) return;
-    this.chatView.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
-    void this.rpcClient
-      .request("turn/steer", {
-        threadId: this.currentThreadId,
-        content: text,
-        followUp: false,
-      })
-      .catch(() => {});
-    this.renderer.requestRender();
   }
 
   private createAppServer(paths: DiligentPaths): DiligentAppServer {
@@ -587,65 +430,6 @@ export class App {
       method: "userInput/request",
       result,
     };
-  }
-
-  private async startNewThread(): Promise<string> {
-    if (!this.rpcClient) {
-      throw new Error("App server is not initialized.");
-    }
-    const response = await this.rpcClient.request("thread/start", {
-      cwd: process.cwd(),
-      mode: this.currentMode,
-    });
-    this.currentThreadId = response.threadId;
-    this.statusBar.update({ sessionId: response.threadId });
-    return response.threadId;
-  }
-
-  private async resumeThread(threadId?: string): Promise<string | null> {
-    if (!this.rpcClient) {
-      throw new Error("App server is not initialized.");
-    }
-
-    const response = await this.rpcClient.request("thread/resume", {
-      threadId,
-      mostRecent: threadId ? undefined : true,
-    });
-
-    if (!response.found || !response.threadId) {
-      return null;
-    }
-    this.currentThreadId = response.threadId;
-    this.statusBar.update({ sessionId: response.threadId });
-    return response.threadId;
-  }
-
-  private async listThreads(): Promise<SessionSummary[]> {
-    if (!this.rpcClient) {
-      return [];
-    }
-    const response = await this.rpcClient.request("thread/list", {});
-    return response.data;
-  }
-
-  private async readThread(): Promise<ThreadReadResponse | null> {
-    if (!this.rpcClient || !this.currentThreadId) {
-      return null;
-    }
-    return this.rpcClient.request("thread/read", { threadId: this.currentThreadId });
-  }
-
-  private async deleteThread(threadId: string): Promise<boolean> {
-    if (!this.rpcClient) return false;
-    const response = await this.rpcClient.request("thread/delete", { threadId });
-    if (response.deleted && this.currentThreadId === threadId) {
-      // Switch away: try most recent, else start new
-      const resumed = await this.resumeThread();
-      if (!resumed) {
-        await this.startNewThread();
-      }
-    }
-    return response.deleted;
   }
 
   /** Show a confirmation dialog overlay */
@@ -753,18 +537,18 @@ export class App {
     const dirLine = truncate(`directory: ${dir}`);
     const yoloLine = this.config.diligent.yolo ? truncate("yolo:      ON ⚡ all permissions auto-approved") : "";
 
-    const row = (s: string) => `${t.dim}\u2502 ${pad(s)} \u2502${t.reset}`;
+    const row = (s: string) => `${t.dim}│ ${pad(s)} │${t.reset}`;
 
     return [
-      `${t.dim}\u256d${"─".repeat(boxWidth - 2)}\u256e${t.reset}`,
-      `${t.dim}\u2502${t.reset} ${t.bold}${pad(title)}${t.reset} ${t.dim}\u2502${t.reset}`,
+      `${t.dim}╭${"─".repeat(boxWidth - 2)}╮${t.reset}`,
+      `${t.dim}│${t.reset} ${t.bold}${pad(title)}${t.reset} ${t.dim}│${t.reset}`,
       row(""),
       row(modelLine),
       row(dirLine),
-      ...(yoloLine ? [`${t.dim}\u2502${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}\u2502${t.reset}`] : []),
-      `${t.dim}\u2570${"─".repeat(boxWidth - 2)}\u256f${t.reset}`,
+      ...(yoloLine ? [`${t.dim}│${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}│${t.reset}`] : []),
+      `${t.dim}╰${"─".repeat(boxWidth - 2)}╯${t.reset}`,
       "",
-      `${t.dim}  Tip: /help for commands \u00b7 ctrl+c to cancel \u00b7 ctrl+d to exit${t.reset}`,
+      `${t.dim}  Tip: /help for commands · ctrl+c to cancel · ctrl+d to exit${t.reset}`,
       "",
     ];
   }

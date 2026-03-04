@@ -1,0 +1,173 @@
+// @summary Factory for command dispatch, user submit, steering, and CommandContext assembly
+import type { SkillMetadata } from "@diligent/core";
+import type { Mode as ProtocolMode } from "@diligent/protocol";
+import type { AppConfig } from "../config";
+import { parseCommand } from "./commands/parser";
+import type { CommandRegistry } from "./commands/registry";
+import type { CommandContext } from "./commands/types";
+import type { ConfirmDialogOptions } from "./components/confirm-dialog";
+import type { ConfigManager } from "./config-manager";
+import type { Component, OverlayHandle, OverlayOptions } from "./framework/types";
+import type { LocalAppServerRpcClient } from "./rpc-client";
+import { t } from "./theme";
+import type { ThreadManager } from "./thread-manager";
+
+export interface CommandHandlerDeps {
+  getRpcClient: () => LocalAppServerRpcClient | null;
+  getCurrentThreadId: () => string | null;
+  getConfig: () => AppConfig;
+  getCommandRegistry: () => CommandRegistry;
+  getSkills: () => SkillMetadata[];
+  getCurrentMode: () => ProtocolMode;
+  getIsProcessing: () => boolean;
+  setIsProcessing: (val: boolean) => void;
+  setPendingTurn: (turn: { resolve: () => void; reject: (error: Error) => void } | null) => void;
+  // UI callbacks
+  addUserMessage: (text: string) => void;
+  addLines: (lines: string[]) => void;
+  clearActive: () => void;
+  handleAgentStartEvent: () => void;
+  handleTurnError: (err: unknown) => void;
+  updateStatusBar: (updates: Record<string, unknown>) => void;
+  requestRender: () => void;
+  showOverlay: (component: Component, options?: OverlayOptions) => OverlayHandle;
+  confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
+  shutdown: () => void;
+  onModelChanged: (modelId: string) => void;
+  // Domain modules
+  threadManager: ThreadManager;
+  configManager: ConfigManager;
+}
+
+export interface CommandHandler {
+  handleSubmit: (text: string) => Promise<void>;
+  handleCommand: (name: string, args: string | undefined) => Promise<void>;
+  buildCommandContext: () => CommandContext;
+  handleSteering: (text: string) => void;
+}
+
+export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
+  const handler: CommandHandler = {
+    async handleSubmit(text: string): Promise<void> {
+      // Check for slash command
+      const parsed = parseCommand(text);
+      if (parsed) {
+        await handler.handleCommand(parsed.name, parsed.args);
+        return;
+      }
+
+      const rpc = deps.getRpcClient();
+      if (!rpc) {
+        deps.addLines([`  ${t.error}App server is not initialized.${t.reset}`]);
+        deps.requestRender();
+        return;
+      }
+
+      let threadId = deps.getCurrentThreadId();
+      if (!threadId) {
+        await deps.threadManager.startNewThread();
+        threadId = deps.getCurrentThreadId();
+      }
+      if (!threadId) {
+        deps.addLines([`  ${t.error}No active thread.${t.reset}`]);
+        deps.requestRender();
+        return;
+      }
+
+      deps.setIsProcessing(true);
+      deps.addUserMessage(text);
+      deps.handleAgentStartEvent();
+      deps.updateStatusBar({ status: "busy" });
+      deps.requestRender();
+
+      try {
+        const turnCompleted = new Promise<void>((resolve, reject) => {
+          deps.setPendingTurn({ resolve, reject });
+        });
+        await rpc.request("turn/start", {
+          threadId,
+          message: text,
+        });
+        await turnCompleted;
+      } catch (err) {
+        deps.handleTurnError(err);
+      }
+
+      deps.setPendingTurn(null);
+      deps.setIsProcessing(false);
+      deps.updateStatusBar({ status: "idle" });
+      deps.requestRender();
+    },
+
+    async handleCommand(name: string, args: string | undefined): Promise<void> {
+      const registry = deps.getCommandRegistry();
+      const command = registry.get(name);
+      if (!command) {
+        deps.addLines([`  ${t.error}Unknown command: /${name}${t.reset}`, "  Type /help for available commands."]);
+        deps.requestRender();
+        return;
+      }
+
+      if (deps.getIsProcessing() && !command.availableDuringTask) {
+        deps.addLines([`  ${t.warn}Command not available while agent is running.${t.reset}`]);
+        deps.requestRender();
+        return;
+      }
+
+      const ctx = handler.buildCommandContext();
+      try {
+        await command.handler(args, ctx);
+      } catch (err) {
+        deps.addLines([`  ${t.error}Command error: ${err instanceof Error ? err.message : String(err)}${t.reset}`]);
+      }
+      deps.requestRender();
+    },
+
+    buildCommandContext(): CommandContext {
+      return {
+        app: { confirm: (o) => deps.confirm(o), stop: () => deps.shutdown() },
+        config: deps.getConfig(),
+        threadId: deps.getCurrentThreadId(),
+        skills: deps.getSkills(),
+        registry: deps.getCommandRegistry(),
+        requestRender: () => deps.requestRender(),
+        displayLines: (lines) => {
+          deps.addLines(lines);
+          deps.requestRender();
+        },
+        displayError: (msg) => {
+          deps.addLines([`  ${t.error}${msg}${t.reset}`]);
+          deps.requestRender();
+        },
+        showOverlay: (c, o) => deps.showOverlay(c, o),
+        runAgent: (text) => handler.handleSubmit(text),
+        reload: () => deps.configManager.reloadConfig(),
+        currentMode: deps.getCurrentMode(),
+        setMode: (mode) => deps.configManager.setMode(mode),
+        startNewThread: () => deps.threadManager.startNewThread(),
+        resumeThread: (threadId) => deps.threadManager.resumeThread(threadId),
+        deleteThread: (threadId) => deps.threadManager.deleteThread(threadId),
+        listThreads: () => deps.threadManager.listThreads(),
+        readThread: () => deps.threadManager.readThread(),
+        onModelChanged: (modelId) => deps.onModelChanged(modelId),
+      };
+    },
+
+    handleSteering(text: string): void {
+      const rpc = deps.getRpcClient();
+      const threadId = deps.getCurrentThreadId();
+      if (!rpc || !threadId) return;
+      deps.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
+      void rpc
+        .request("turn/steer", {
+          threadId,
+          content: text,
+          followUp: false,
+        })
+        .catch(() => {});
+      deps.requestRender();
+    },
+  };
+
+  return handler;
+}
