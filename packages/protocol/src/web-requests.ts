@@ -67,21 +67,89 @@ export const AuthOAuthStartResponseSchema = z.object({
 });
 export type AuthOAuthStartResponse = z.infer<typeof AuthOAuthStartResponseSchema>;
 
+// --- thread/subscribe ---
+export const ThreadSubscribeParamsSchema = z.object({
+  threadId: z.string(),
+});
+export type ThreadSubscribeParams = z.infer<typeof ThreadSubscribeParamsSchema>;
+
+export const ThreadSubscribeResponseSchema = z.object({
+  subscriptionId: z.string(),
+});
+export type ThreadSubscribeResponse = z.infer<typeof ThreadSubscribeResponseSchema>;
+
+// --- thread/unsubscribe ---
+export const ThreadUnsubscribeParamsSchema = z.object({
+  subscriptionId: z.string(),
+});
+export type ThreadUnsubscribeParams = z.infer<typeof ThreadUnsubscribeParamsSchema>;
+
+export const ThreadUnsubscribeResponseSchema = z.object({
+  ok: z.boolean(),
+});
+export type ThreadUnsubscribeResponse = z.infer<typeof ThreadUnsubscribeResponseSchema>;
+
 // --- Discriminated unions (parallel to DiligentClientRequestSchema) ---
 export const DiligentWebRequestSchema = z.discriminatedUnion("method", [
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET), params: ConfigSetParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST), params: AuthListParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_SET), params: AuthSetParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE), params: AuthRemoveParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START), params: AuthOAuthStartParamsSchema }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET),
+    params: ConfigSetParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST),
+    params: AuthListParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_SET),
+    params: AuthSetParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE),
+    params: AuthRemoveParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START),
+    params: AuthOAuthStartParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE),
+    params: ThreadSubscribeParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
+    params: ThreadUnsubscribeParamsSchema,
+  }),
 ]);
 export type DiligentWebRequest = z.infer<typeof DiligentWebRequestSchema>;
 
 export const DiligentWebResponseSchema = z.discriminatedUnion("method", [
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET), result: ConfigSetResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST), result: AuthListResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_SET), result: AuthSetResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE), result: AuthRemoveResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START), result: AuthOAuthStartResponseSchema }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET),
+    result: ConfigSetResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST),
+    result: AuthListResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_SET),
+    result: AuthSetResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE),
+    result: AuthRemoveResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START),
+    result: AuthOAuthStartResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE),
+    result: ThreadSubscribeResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
+    result: ThreadUnsubscribeResponseSchema,
+  }),
 ]);
 export type DiligentWebResponse = z.infer<typeof DiligentWebResponseSchema>;

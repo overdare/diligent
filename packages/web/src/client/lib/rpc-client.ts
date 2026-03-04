@@ -46,6 +46,8 @@ export class WebRpcClient {
   private reconnectAttempts = 0;
   private stopped = false;
 
+  private readonly activeSubscriptions = new Map<string, string>(); // subscriptionId → threadId
+
   private connectionListener: ((state: ConnectionState) => void) | null = null;
   private connectedListener: ((payload: ConnectedPayload) => void) | null = null;
   private notificationListener: ((notification: DiligentServerNotification) => void) | null = null;
@@ -87,6 +89,7 @@ export class WebRpcClient {
     this.stopped = true;
     this.ws?.close();
     this.ws = null;
+    this.activeSubscriptions.clear();
     this.rejectPending("disconnected");
     this.emitConnection("disconnected");
   }
@@ -156,6 +159,20 @@ export class WebRpcClient {
         params,
       }),
     );
+  }
+
+  async subscribe(threadId: string): Promise<{ subscriptionId: string }> {
+    const result = (await this.webRequest("thread/subscribe", { threadId })) as { subscriptionId: string };
+    this.activeSubscriptions.set(result.subscriptionId, threadId);
+    return result;
+  }
+
+  async unsubscribe(subscriptionId: string): Promise<{ ok: boolean }> {
+    const result = (await this.webRequest("thread/unsubscribe", { subscriptionId })) as { ok: boolean };
+    if (result.ok) {
+      this.activeSubscriptions.delete(subscriptionId);
+    }
+    return result;
   }
 
   respondServerRequest(id: number, response: DiligentServerRequestResponse): void {
@@ -258,6 +275,7 @@ export class WebRpcClient {
     }
 
     if (message.type === "connected") {
+      this.resubscribeAll();
       this.connectedListener?.({
         cwd: message.cwd,
         mode: message.mode,
@@ -304,6 +322,17 @@ export class WebRpcClient {
       clearTimeout(pending.timeoutId);
       pending.reject(new Error(reason));
       this.pending.delete(id);
+    }
+  }
+
+  private resubscribeAll(): void {
+    // Collect unique threadIds, then clear old (now-invalid) subscriptionIds
+    const threadIds = new Set(this.activeSubscriptions.values());
+    this.activeSubscriptions.clear();
+
+    for (const threadId of threadIds) {
+      // Fire-and-forget — subscribe() will re-populate activeSubscriptions
+      void this.subscribe(threadId).catch(() => {});
     }
   }
 

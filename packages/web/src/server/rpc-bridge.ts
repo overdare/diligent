@@ -47,14 +47,6 @@ interface RpcSession {
   cwd: string;
   mode: Mode;
   currentThreadId: string | null;
-  pendingServerRequests: Map<
-    number,
-    {
-      resolve: (response: DiligentServerRequestResponse) => void;
-      timeoutId: ReturnType<typeof setTimeout>;
-      request: DiligentServerRequest;
-    }
-  >;
 }
 
 export interface RpcWsData {
@@ -89,7 +81,17 @@ interface ModelConfig {
 
 export class RpcBridge {
   private readonly sessions = new Map<string, RpcSession>();
-  private readonly threadOwners = new Map<string, string>();
+  private readonly threadSubscribers = new Map<string, Set<string>>();
+  private readonly subscriptions = new Map<string, { threadId: string; sessionId: string }>();
+  private readonly pendingServerRequests = new Map<
+    number,
+    {
+      resolve: (response: DiligentServerRequestResponse) => void;
+      timeoutId: ReturnType<typeof setTimeout>;
+      request: DiligentServerRequest;
+      sentTo: Set<string>;
+    }
+  >();
   private serverRequestSeq = 0;
   private currentModelId: string | undefined;
   private oauthPending: Promise<void> | null = null;
@@ -108,12 +110,11 @@ export class RpcBridge {
 
     this.appServer.setServerRequestHandler(async (request) => {
       const threadId = request.params.threadId;
-      const session = threadId ? this.findSessionByThreadId(threadId) : null;
-      if (!session) {
+      const subscribers = threadId ? this.threadSubscribers.get(threadId) : null;
+      if (!subscribers || subscribers.size === 0) {
         return toSafeFallback(request);
       }
-
-      return this.requestFromClient(session.id, request);
+      return this.requestFromSubscribers(subscribers, request);
     });
   }
 
@@ -125,7 +126,6 @@ export class RpcBridge {
       cwd: this.cwd,
       mode: this.initialMode,
       currentThreadId: null,
-      pendingServerRequests: new Map(),
     };
 
     this.sessions.set(sessionId, session);
@@ -145,9 +145,28 @@ export class RpcBridge {
     const session = this.sessions.get(ws.data.sessionId);
     if (!session) return;
 
-    for (const pending of session.pendingServerRequests.values()) {
-      clearTimeout(pending.timeoutId);
-      pending.resolve(toSafeFallback(pending.request));
+    // Clean up all subscriptions for this session
+    for (const [subId, sub] of this.subscriptions.entries()) {
+      if (sub.sessionId === session.id) {
+        const subs = this.threadSubscribers.get(sub.threadId);
+        if (subs) {
+          subs.delete(session.id);
+          if (subs.size === 0) {
+            this.threadSubscribers.delete(sub.threadId);
+          }
+        }
+        this.subscriptions.delete(subId);
+      }
+    }
+
+    // Resolve pending server requests if this was the last remaining subscriber
+    for (const [requestId, pending] of this.pendingServerRequests.entries()) {
+      pending.sentTo.delete(session.id);
+      if (pending.sentTo.size === 0) {
+        clearTimeout(pending.timeoutId);
+        this.pendingServerRequests.delete(requestId);
+        pending.resolve(toSafeFallback(pending.request));
+      }
     }
 
     this.sessions.delete(session.id);
@@ -278,6 +297,46 @@ export class RpcBridge {
         return;
       }
 
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE) {
+        const params = parsed.params as { threadId?: string };
+        if (!params?.threadId) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: "threadId is required" },
+            }),
+          });
+          return;
+        }
+        const subscriptionId = this.addSubscription(params.threadId, session.id);
+        this.send(ws, {
+          type: "rpc_response",
+          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { subscriptionId } }),
+        });
+        return;
+      }
+
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE) {
+        const params = parsed.params as { subscriptionId?: string };
+        if (!params?.subscriptionId) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: "subscriptionId is required" },
+            }),
+          });
+          return;
+        }
+        const ok = this.removeSubscription(params.subscriptionId);
+        this.send(ws, {
+          type: "rpc_response",
+          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok } }),
+        });
+        return;
+      }
+
       if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START && this.providerManager) {
         if (this.oauthPending) {
           this.send(ws, {
@@ -359,22 +418,16 @@ export class RpcBridge {
       if (parsed.method === "thread/start" && "result" in response) {
         const maybeThreadId = (response.result as { threadId?: string }).threadId;
         if (maybeThreadId) {
-          if (session.currentThreadId) {
-            this.threadOwners.delete(session.currentThreadId);
-          }
           session.currentThreadId = maybeThreadId;
-          this.threadOwners.set(maybeThreadId, session.id);
+          this.addSubscription(maybeThreadId, session.id);
         }
       }
 
       if (parsed.method === "thread/resume" && "result" in response) {
         const resumed = response.result as { found: boolean; threadId?: string };
         if (resumed.found && resumed.threadId) {
-          if (session.currentThreadId && session.currentThreadId !== resumed.threadId) {
-            this.threadOwners.delete(session.currentThreadId);
-          }
           session.currentThreadId = resumed.threadId;
-          this.threadOwners.set(resumed.threadId, session.id);
+          this.addSubscription(resumed.threadId, session.id);
         }
       }
 
@@ -389,7 +442,7 @@ export class RpcBridge {
         const r = response.result as { deleted?: boolean };
         const deletedId = (parsed.params as { threadId?: string }).threadId;
         if (r.deleted && deletedId) {
-          this.threadOwners.delete(deletedId);
+          this.removeAllSubscriptionsForThread(deletedId);
           if (session.currentThreadId === deletedId) {
             session.currentThreadId = null;
           }
@@ -401,18 +454,14 @@ export class RpcBridge {
     }
 
     if (parsed.type === "server_request_response") {
-      const session = this.sessions.get(ws.data.sessionId);
-      if (!session) {
-        return;
-      }
-
-      const pending = session.pendingServerRequests.get(parsed.id);
+      // Global pending map — first responder wins, subsequent responses are ignored
+      const pending = this.pendingServerRequests.get(parsed.id);
       if (!pending) {
         return;
       }
 
       clearTimeout(pending.timeoutId);
-      session.pendingServerRequests.delete(parsed.id);
+      this.pendingServerRequests.delete(parsed.id);
 
       const safe = DiligentServerRequestResponseSchema.safeParse(parsed.response);
       if (!safe.success) {
@@ -427,12 +476,10 @@ export class RpcBridge {
     }
   }
 
-  async requestFromClient(sessionId: string, request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return toSafeFallback(request);
-    }
-
+  requestFromSubscribers(
+    subscribers: Set<string>,
+    request: DiligentServerRequest,
+  ): Promise<DiligentServerRequestResponse> {
     const requestId = ++this.serverRequestSeq;
     const payload: WsServerMessage = {
       type: "server_request",
@@ -440,21 +487,33 @@ export class RpcBridge {
       request,
     };
 
-    this.send(session.ws, payload);
+    const sentTo = new Set<string>();
+    for (const sessionId of subscribers) {
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        this.send(session.ws, payload);
+        sentTo.add(sessionId);
+      }
+    }
+
+    if (sentTo.size === 0) {
+      return Promise.resolve(toSafeFallback(request));
+    }
 
     return new Promise<DiligentServerRequestResponse>((resolve) => {
       const timeoutId = setTimeout(
         () => {
-          session.pendingServerRequests.delete(requestId);
+          this.pendingServerRequests.delete(requestId);
           resolve(toSafeFallback(request));
         },
         5 * 60 * 1000,
       );
 
-      session.pendingServerRequests.set(requestId, {
+      this.pendingServerRequests.set(requestId, {
         resolve,
         timeoutId,
         request,
+        sentTo,
       });
     });
   }
@@ -534,19 +593,18 @@ export class RpcBridge {
       return;
     }
 
-    const ownerSessionId = this.threadOwners.get(threadId);
-    if (!ownerSessionId) {
+    const subscribers = this.threadSubscribers.get(threadId);
+    if (!subscribers || subscribers.size === 0) {
       this.broadcast({ type: "server_notification", notification });
       return;
     }
 
-    const session = this.sessions.get(ownerSessionId);
-    if (!session) {
-      this.broadcast({ type: "server_notification", notification });
-      return;
+    for (const sessionId of subscribers) {
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        this.send(session.ws, { type: "server_notification", notification });
+      }
     }
-
-    this.send(session.ws, { type: "server_notification", notification });
   }
 
   private broadcast(message: WsServerMessage): void {
@@ -555,10 +613,51 @@ export class RpcBridge {
     }
   }
 
-  private findSessionByThreadId(threadId: string): RpcSession | null {
-    const sessionId = this.threadOwners.get(threadId);
-    if (!sessionId) return null;
-    return this.sessions.get(sessionId) ?? null;
+  private addSubscription(threadId: string, sessionId: string): string {
+    let subs = this.threadSubscribers.get(threadId);
+    if (!subs) {
+      subs = new Set();
+      this.threadSubscribers.set(threadId, subs);
+    }
+
+    // If already subscribed, return existing subscriptionId
+    if (subs.has(sessionId)) {
+      for (const [subId, sub] of this.subscriptions.entries()) {
+        if (sub.threadId === threadId && sub.sessionId === sessionId) {
+          return subId;
+        }
+      }
+    }
+
+    subs.add(sessionId);
+    const subId = randomBytes(16).toString("hex");
+    this.subscriptions.set(subId, { threadId, sessionId });
+    return subId;
+  }
+
+  private removeSubscription(subscriptionId: string): boolean {
+    const sub = this.subscriptions.get(subscriptionId);
+    if (!sub) return false;
+
+    const subs = this.threadSubscribers.get(sub.threadId);
+    if (subs) {
+      subs.delete(sub.sessionId);
+      if (subs.size === 0) {
+        this.threadSubscribers.delete(sub.threadId);
+      }
+    }
+
+    this.subscriptions.delete(subscriptionId);
+    return true;
+  }
+
+  private removeAllSubscriptionsForThread(threadId: string): void {
+    for (const [subId, sub] of this.subscriptions.entries()) {
+      if (sub.threadId === threadId) {
+        this.subscriptions.delete(subId);
+      }
+    }
+    this.threadSubscribers.delete(threadId);
   }
 
   private send(ws: ServerWebSocket<RpcWsData>, message: WsServerMessage): void {

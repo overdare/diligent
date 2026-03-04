@@ -58,6 +58,8 @@ export const DILIGENT_WEB_REQUEST_METHODS = {
   AUTH_SET: "auth/set",
   AUTH_REMOVE: "auth/remove",
   AUTH_OAUTH_START: "auth/oauth/start",
+  THREAD_SUBSCRIBE: "thread/subscribe",
+  THREAD_UNSUBSCRIBE: "thread/unsubscribe",
 } as const;
 
 export type DiligentWebRequestMethod = (typeof DILIGENT_WEB_REQUEST_METHODS)[keyof typeof DILIGENT_WEB_REQUEST_METHODS];
