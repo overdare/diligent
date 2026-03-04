@@ -38,6 +38,15 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   USAGE_UPDATED: "usage/updated",
   ACCOUNT_LOGIN_COMPLETED: "account/login/completed",
   ACCOUNT_UPDATED: "account/updated",
+  COLLAB_SPAWN_BEGIN: "collab/spawn/begin",
+  COLLAB_SPAWN_END: "collab/spawn/end",
+  COLLAB_WAIT_BEGIN: "collab/wait/begin",
+  COLLAB_WAIT_END: "collab/wait/end",
+  COLLAB_CLOSE_BEGIN: "collab/close/begin",
+  COLLAB_CLOSE_END: "collab/close/end",
+  COLLAB_TOOL_START: "collab/tool/start",
+  COLLAB_TOOL_END: "collab/tool/end",
+  COLLAB_TURN_START: "collab/turn/start",
   STEERING_INJECTED: "steering/injected",
 } as const;
 

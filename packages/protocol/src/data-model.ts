@@ -100,6 +100,24 @@ export const SerializableErrorSchema = z.object({
 });
 export type SerializableError = z.infer<typeof SerializableErrorSchema>;
 
+export const CollabAgentStatusSchema = z.enum(["pending", "running", "completed", "errored", "shutdown"]);
+export type CollabAgentStatus = z.infer<typeof CollabAgentStatusSchema>;
+
+export const CollabAgentRefSchema = z.object({
+  agentId: z.string(),
+  nickname: z.string().optional(),
+  description: z.string().optional(),
+});
+export type CollabAgentRef = z.infer<typeof CollabAgentRefSchema>;
+
+export const CollabAgentStatusEntrySchema = z.object({
+  agentId: z.string(),
+  nickname: z.string().optional(),
+  status: CollabAgentStatusSchema,
+  message: z.string().optional(),
+});
+export type CollabAgentStatusEntry = z.infer<typeof CollabAgentStatusEntrySchema>;
+
 export const AgentEventSchema = z.union([
   z.object({ type: z.literal("agent_start") }),
   z.object({ type: z.literal("agent_end"), messages: z.array(MessageSchema) }),
@@ -162,6 +180,69 @@ export const AgentEventSchema = z.union([
   z.object({ type: z.literal("knowledge_saved"), knowledgeId: z.string(), content: z.string() }),
   z.object({ type: z.literal("loop_detected"), patternLength: z.number().int().positive(), toolName: z.string() }),
   z.object({ type: z.literal("steering_injected"), messageCount: z.number().int().nonnegative() }),
+  // Collab — sub-agent orchestration events (3 pairs of begin/end)
+  z.object({
+    type: z.literal("collab_spawn_begin"),
+    callId: z.string(),
+    prompt: z.string(),
+  }),
+  z.object({
+    type: z.literal("collab_spawn_end"),
+    callId: z.string(),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+    description: z.string().optional(),
+    prompt: z.string(),
+    status: CollabAgentStatusSchema,
+    message: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("collab_wait_begin"),
+    callId: z.string(),
+    agents: z.array(CollabAgentRefSchema),
+  }),
+  z.object({
+    type: z.literal("collab_wait_end"),
+    callId: z.string(),
+    agentStatuses: z.array(CollabAgentStatusEntrySchema),
+    timedOut: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("collab_close_begin"),
+    callId: z.string(),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("collab_close_end"),
+    callId: z.string(),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+    status: CollabAgentStatusSchema,
+    message: z.string().optional(),
+  }),
+  // Collab — sub-agent internal activity forwarded from child stream
+  z.object({
+    type: z.literal("collab_tool_start"),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+    toolName: z.string(),
+    toolCallId: z.string(),
+  }),
+  z.object({
+    type: z.literal("collab_tool_end"),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+    toolName: z.string(),
+    toolCallId: z.string(),
+    isError: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("collab_turn_start"),
+    agentId: z.string(),
+    nickname: z.string().optional(),
+    turnNumber: z.number().int().positive(),
+  }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 
@@ -212,6 +293,18 @@ export const ThreadItemSchema = z.union([
     itemId: z.string(),
     patternLength: z.number().int().positive(),
     toolName: z.string(),
+  }),
+  z.object({
+    type: z.literal("collabEvent"),
+    itemId: z.string(),
+    eventKind: z.enum(["spawn", "wait", "close"]),
+    agentId: z.string().optional(),
+    nickname: z.string().optional(),
+    description: z.string().optional(),
+    status: CollabAgentStatusSchema.optional(),
+    message: z.string().optional(),
+    agents: z.array(CollabAgentStatusEntrySchema).optional(),
+    timedOut: z.boolean().optional(),
   }),
 ]);
 export type ThreadItem = z.infer<typeof ThreadItemSchema>;

@@ -65,6 +65,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         approve,
         ask,
         permissionEngine: runtimeConfig.permissionEngine,
+        registry: result.registry,
       };
     },
     compaction: runtimeConfig.compaction,

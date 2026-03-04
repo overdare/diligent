@@ -70,7 +70,55 @@ export type AgentEvent =
   // Loop detection (1) — P0
   | { type: "loop_detected"; patternLength: number; toolName: string }
   // Steering (1) — P1
-  | { type: "steering_injected"; messageCount: number };
+  | { type: "steering_injected"; messageCount: number }
+  // Collab — sub-agent orchestration boundary events (3 begin/end pairs)
+  | { type: "collab_spawn_begin"; callId: string; prompt: string }
+  | {
+      type: "collab_spawn_end";
+      callId: string;
+      agentId: string;
+      nickname?: string;
+      description?: string;
+      prompt: string;
+      status: "pending" | "running" | "completed" | "errored" | "shutdown";
+      message?: string;
+    }
+  | {
+      type: "collab_wait_begin";
+      callId: string;
+      agents: Array<{ agentId: string; nickname?: string; description?: string }>;
+    }
+  | {
+      type: "collab_wait_end";
+      callId: string;
+      agentStatuses: Array<{
+        agentId: string;
+        nickname?: string;
+        status: "pending" | "running" | "completed" | "errored" | "shutdown";
+        message?: string;
+      }>;
+      timedOut: boolean;
+    }
+  | { type: "collab_close_begin"; callId: string; agentId: string; nickname?: string }
+  | {
+      type: "collab_close_end";
+      callId: string;
+      agentId: string;
+      nickname?: string;
+      status: "pending" | "running" | "completed" | "errored" | "shutdown";
+      message?: string;
+    }
+  // Collab — sub-agent internal activity forwarded from child stream
+  | { type: "collab_tool_start"; agentId: string; nickname?: string; toolName: string; toolCallId: string }
+  | {
+      type: "collab_tool_end";
+      agentId: string;
+      nickname?: string;
+      toolName: string;
+      toolCallId: string;
+      isError: boolean;
+    }
+  | { type: "collab_turn_start"; agentId: string; nickname?: string; turnNumber: number };
 
 // D008: Config for a single agent invocation
 export interface AgentLoopConfig {

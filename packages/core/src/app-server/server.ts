@@ -19,6 +19,7 @@ import {
   type SessionSummary,
 } from "@diligent/protocol";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
+import type { AgentRegistry } from "../collab/registry";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
@@ -37,7 +38,8 @@ export interface DiligentAppServerConfig {
     approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
     getSessionId?: () => string | undefined;
-  }) => AgentLoopConfig;
+    onCollabEvent?: (event: AgentEvent) => void;
+  }) => AgentLoopConfig & { registry?: AgentRegistry };
   compaction?: SessionManagerConfig["compaction"];
 }
 
@@ -51,6 +53,7 @@ interface ThreadRuntime {
   manager: SessionManager;
   abortController: AbortController | null;
   isRunning: boolean;
+  registry?: AgentRegistry;
 }
 
 export class DiligentAppServer {
@@ -393,6 +396,13 @@ export class DiligentAppServer {
     stream: ReturnType<SessionManager["run"]>,
     turnId: string,
   ): Promise<void> {
+    // Wire collab events from the registry into the notification stream
+    if (runtime.registry) {
+      runtime.registry.setCollabEventHandler((event) => {
+        void this.emitFromAgentEvent(runtime.id, turnId, event);
+      });
+    }
+
     try {
       for await (const event of stream) {
         await this.emitFromAgentEvent(runtime.id, turnId, event);
@@ -415,6 +425,9 @@ export class DiligentAppServer {
         },
       });
     } finally {
+      // Disconnect collab event handler
+      runtime.registry?.setCollabEventHandler(undefined);
+
       // Wait for the inner agent loop (executeLoop) to fully settle
       // before clearing state — prevents zombie loop from mutating leafId
       await stream.waitForInnerWork().catch(() => {});
@@ -561,6 +574,109 @@ export class DiligentAppServer {
         });
         return;
 
+      // Collab — sub-agent orchestration boundary events
+      case "collab_spawn_begin":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN,
+          params: { threadId, callId: event.callId, prompt: event.prompt },
+        });
+        return;
+
+      case "collab_spawn_end":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_END,
+          params: {
+            threadId,
+            callId: event.callId,
+            agentId: event.agentId,
+            nickname: event.nickname,
+            description: event.description,
+            prompt: event.prompt,
+            status: event.status,
+            message: event.message,
+          },
+        });
+        return;
+
+      case "collab_wait_begin":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_WAIT_BEGIN,
+          params: { threadId, callId: event.callId, agents: event.agents },
+        });
+        return;
+
+      case "collab_wait_end":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_WAIT_END,
+          params: {
+            threadId,
+            callId: event.callId,
+            agentStatuses: event.agentStatuses,
+            timedOut: event.timedOut,
+          },
+        });
+        return;
+
+      case "collab_close_begin":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_BEGIN,
+          params: { threadId, callId: event.callId, agentId: event.agentId, nickname: event.nickname },
+        });
+        return;
+
+      case "collab_close_end":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_END,
+          params: {
+            threadId,
+            callId: event.callId,
+            agentId: event.agentId,
+            nickname: event.nickname,
+            status: event.status,
+            message: event.message,
+          },
+        });
+        return;
+
+      case "collab_tool_start":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_START,
+          params: {
+            threadId,
+            agentId: event.agentId,
+            nickname: event.nickname,
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+          },
+        });
+        return;
+
+      case "collab_tool_end":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_END,
+          params: {
+            threadId,
+            agentId: event.agentId,
+            nickname: event.nickname,
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            isError: event.isError,
+          },
+        });
+        return;
+
+      case "collab_turn_start":
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TURN_START,
+          params: {
+            threadId,
+            agentId: event.agentId,
+            nickname: event.nickname,
+            turnNumber: event.turnNumber,
+          },
+        });
+        return;
+
       default:
         return;
     }
@@ -587,7 +703,7 @@ export class DiligentAppServer {
       paths,
       agentConfig: () => {
         const signal = runtime.abortController?.signal ?? new AbortController().signal;
-        return this.config.buildAgentConfig({
+        const result = this.config.buildAgentConfig({
           cwd,
           mode: runtime.mode,
           signal,
@@ -595,6 +711,10 @@ export class DiligentAppServer {
           ask: (request) => this.requestUserInput(runtime.id, request),
           getSessionId: () => runtime.manager.sessionId,
         });
+        if (result.registry) {
+          runtime.registry = result.registry;
+        }
+        return result;
       },
       compaction: this.config.compaction,
       knowledgePath: paths.knowledge,

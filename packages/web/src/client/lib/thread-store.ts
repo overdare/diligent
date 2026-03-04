@@ -64,6 +64,21 @@ export type RenderItem =
       status: "streaming" | "done";
       timestamp: number;
       toolCallId: string;
+    }
+  | {
+      id: string;
+      kind: "collab";
+      eventType: "spawn" | "wait" | "close";
+      agentId?: string;
+      nickname?: string;
+      description?: string;
+      status?: string;
+      message?: string;
+      agents?: Array<{ agentId: string; nickname?: string; status?: string; message?: string }>;
+      timedOut?: boolean;
+      turnNumber?: number;
+      childTools: Array<{ toolCallId: string; toolName: string; status: "running" | "done"; isError: boolean }>;
+      timestamp: number;
     };
 
 export interface ThreadState {
@@ -149,6 +164,17 @@ function updateItem(state: ThreadState, itemId: string, updater: (item: RenderIt
     ...state,
     items: nextItems,
   };
+}
+
+/** Find the most recent collab spawn RenderItem for a given agentId. */
+function findCollabSpawnItem(state: ThreadState, agentId: string): Extract<RenderItem, { kind: "collab" }> | undefined {
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const item = state.items[i];
+    if (item.kind === "collab" && item.eventType === "spawn" && item.agentId === agentId) {
+      return item;
+    }
+  }
+  return undefined;
 }
 
 function parsePlanOutput(output: string): PlanState | null {
@@ -369,6 +395,104 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         pendingSteers: remaining,
         items: [...state.items, ...newItems],
       };
+    }
+
+    case "collab_spawn_begin":
+      return state;
+
+    case "collab_spawn_end": {
+      const renderId = `collab:spawn:${event.callId}`;
+      return withItem(state, renderId, {
+        id: renderId,
+        kind: "collab",
+        eventType: "spawn",
+        agentId: event.agentId,
+        nickname: event.nickname,
+        description: event.description,
+        status: event.status,
+        message: event.message,
+        childTools: [],
+        timestamp: Date.now(),
+      });
+    }
+
+    case "collab_wait_begin":
+      return state;
+
+    case "collab_wait_end": {
+      const renderId = `collab:wait:${event.callId}`;
+      return withItem(state, renderId, {
+        id: renderId,
+        kind: "collab",
+        eventType: "wait",
+        agents: event.agentStatuses.map((a) => ({
+          agentId: a.agentId,
+          nickname: a.nickname,
+          status: a.status,
+          message: a.message,
+        })),
+        timedOut: event.timedOut,
+        childTools: [],
+        timestamp: Date.now(),
+      });
+    }
+
+    case "collab_close_begin":
+      return state;
+
+    case "collab_close_end": {
+      const renderId = `collab:close:${event.callId}`;
+      return withItem(state, renderId, {
+        id: renderId,
+        kind: "collab",
+        eventType: "close",
+        agentId: event.agentId,
+        nickname: event.nickname,
+        status: event.status,
+        message: event.message,
+        childTools: [],
+        timestamp: Date.now(),
+      });
+    }
+
+    // Collab — sub-agent internal activity: update the spawn item for this agent
+    case "collab_tool_start": {
+      const spawnItem = findCollabSpawnItem(state, event.agentId);
+      if (!spawnItem) return state;
+      return updateItem(state, spawnItem.id, (item) =>
+        item.kind === "collab"
+          ? {
+              ...item,
+              childTools: [
+                ...item.childTools,
+                { toolCallId: event.toolCallId, toolName: event.toolName, status: "running" as const, isError: false },
+              ],
+            }
+          : item,
+      );
+    }
+
+    case "collab_tool_end": {
+      const spawnItem = findCollabSpawnItem(state, event.agentId);
+      if (!spawnItem) return state;
+      return updateItem(state, spawnItem.id, (item) =>
+        item.kind === "collab"
+          ? {
+              ...item,
+              childTools: item.childTools.map((t) =>
+                t.toolCallId === event.toolCallId ? { ...t, status: "done" as const, isError: event.isError } : t,
+              ),
+            }
+          : item,
+      );
+    }
+
+    case "collab_turn_start": {
+      const spawnItem = findCollabSpawnItem(state, event.agentId);
+      if (!spawnItem) return state;
+      return updateItem(state, spawnItem.id, (item) =>
+        item.kind === "collab" ? { ...item, turnNumber: event.turnNumber } : item,
+      );
     }
 
     case "turn_start":

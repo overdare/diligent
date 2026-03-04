@@ -1,4 +1,5 @@
-// @summary AgentStatus, AgentEntry, and CollabToolDeps types for non-blocking multi-agent collab
+// @summary AgentStatus, AgentEntry, CollabToolDeps, and CollabEvent types for non-blocking multi-agent collab
+import type { AgentEvent } from "../agent/types";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import type { SessionManager } from "../session/manager";
@@ -27,6 +28,9 @@ export interface AgentEntry {
   createdAt: number;
 }
 
+/** Extract collab event types from AgentEvent union. */
+export type CollabAgentEvent = Extract<AgentEvent, { type: `collab_${string}` }>;
+
 export interface CollabToolDeps {
   cwd: string;
   paths: DiligentPaths;
@@ -37,4 +41,6 @@ export interface CollabToolDeps {
   maxAgents?: number; // default 8
   getParentSessionId?: () => string | undefined;
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
+  /** Called when collab boundary events fire (spawn/wait/close begin+end). */
+  onCollabEvent?: (event: CollabAgentEvent) => void;
 }

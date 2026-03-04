@@ -6,8 +6,20 @@ import { agentTypeToModelClass, resolveModelForClass } from "../provider/models"
 import { SessionManager } from "../session/manager";
 import type { TextBlock } from "../types";
 import { NicknamePool } from "./nicknames";
-import type { AgentEntry, AgentStatus, CollabToolDeps } from "./types";
+import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
+
+type CollabStatusString = "pending" | "running" | "completed" | "errored" | "shutdown";
+
+function toCollabStatus(s: AgentStatus): CollabStatusString {
+  return s.kind;
+}
+
+function statusMessage(s: AgentStatus): string | undefined {
+  if (s.kind === "completed") return s.output ?? undefined;
+  if (s.kind === "errored") return s.error;
+  return undefined;
+}
 
 /** Tool names that belong to the collab layer — excluded from child agents. */
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
@@ -21,9 +33,20 @@ export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();
   private pool = new NicknamePool();
   private maxAgents: number;
+  private collabEventHandler?: (event: CollabAgentEvent) => void;
 
   constructor(private deps: CollabToolDeps) {
     this.maxAgents = deps.maxAgents ?? 8;
+    this.collabEventHandler = deps.onCollabEvent;
+  }
+
+  /** Set or replace the collab event handler. Used by SessionManager to wire events into the active stream. */
+  setCollabEventHandler(handler: ((event: CollabAgentEvent) => void) | undefined): void {
+    this.collabEventHandler = handler;
+  }
+
+  private emit(event: CollabAgentEvent): void {
+    this.collabEventHandler?.(event);
   }
 
   /**
@@ -48,6 +71,13 @@ export class AgentRegistry {
     const agentId = nextId();
     const nickname = this.pool.reserve();
     const abortController = new AbortController();
+    const callId = agentId; // use agentId as callId for spawn
+
+    this.emit({
+      type: "collab_spawn_begin",
+      callId,
+      prompt: params.prompt,
+    });
 
     // Build child tool list
     let childTools = this.deps.parentTools;
@@ -114,9 +144,35 @@ export class AgentRegistry {
 
       const stream = childManager.run(userMessage);
       let output: string | null = null;
+      let turnNumber = 0;
 
       for await (const event of stream) {
-        if (event.type === "message_end") {
+        if (event.type === "turn_start") {
+          turnNumber++;
+          this.emit({
+            type: "collab_turn_start",
+            agentId,
+            nickname,
+            turnNumber,
+          });
+        } else if (event.type === "tool_start") {
+          this.emit({
+            type: "collab_tool_start",
+            agentId,
+            nickname,
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+          });
+        } else if (event.type === "tool_end") {
+          this.emit({
+            type: "collab_tool_end",
+            agentId,
+            nickname,
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            isError: event.isError,
+          });
+        } else if (event.type === "message_end") {
           const textBlocks = event.message.content.filter((b): b is TextBlock => b.type === "text");
           output = textBlocks.map((b) => b.text).join("\n") || null;
         } else if (event.type === "error" && event.fatal) {
@@ -139,6 +195,17 @@ export class AgentRegistry {
 
     entry.promise = promise;
     this.agents.set(agentId, entry);
+
+    this.emit({
+      type: "collab_spawn_end",
+      callId,
+      agentId,
+      nickname,
+      description: params.description || undefined,
+      prompt: params.prompt,
+      status: "running",
+    });
+
     return { agentId, nickname };
   }
 
@@ -159,6 +226,16 @@ export class AgentRegistry {
     if (unknownIds.length > 0) {
       throw new Error(`Unknown agent IDs: ${unknownIds.join(", ")}`);
     }
+
+    const waitCallId = `wait-${Date.now()}`;
+    this.emit({
+      type: "collab_wait_begin",
+      callId: waitCallId,
+      agents: validIds.map((id) => {
+        const entry = this.agents.get(id)!;
+        return { agentId: id, nickname: entry.nickname, description: entry.description || undefined };
+      }),
+    });
 
     // Collect already-final entries
     const result: Record<string, AgentStatus> = {};
@@ -241,6 +318,22 @@ export class AgentRegistry {
       }
     }
 
+    this.emit({
+      type: "collab_wait_end",
+      callId: waitCallId,
+      agentStatuses: validIds.map((id) => {
+        const entry = this.agents.get(id);
+        const status = result[id] ?? entry?.status ?? { kind: "pending" as const };
+        return {
+          agentId: id,
+          nickname: entry?.nickname,
+          status: toCollabStatus(status),
+          message: statusMessage(status),
+        };
+      }),
+      timedOut,
+    });
+
     return { status: result, timedOut };
   }
 
@@ -257,6 +350,14 @@ export class AgentRegistry {
     const entry = this.agents.get(agentId);
     if (!entry) throw new Error(`Unknown agent: ${agentId}`);
 
+    const closeCallId = `close-${agentId}`;
+    this.emit({
+      type: "collab_close_begin",
+      callId: closeCallId,
+      agentId,
+      nickname: entry.nickname,
+    });
+
     if (!isFinal(entry.status)) {
       entry.abortController.abort();
     }
@@ -265,6 +366,16 @@ export class AgentRegistry {
     const shutdownStatus: AgentStatus = { kind: "shutdown" };
     entry.status = shutdownStatus;
     this.agents.delete(agentId);
+
+    this.emit({
+      type: "collab_close_end",
+      callId: closeCallId,
+      agentId,
+      nickname: entry.nickname,
+      status: toCollabStatus(finalStatus),
+      message: statusMessage(finalStatus),
+    });
+
     return finalStatus;
   }
 

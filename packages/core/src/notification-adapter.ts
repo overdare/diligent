@@ -86,6 +86,92 @@ export class ProtocolNotificationAdapter {
           },
         ];
 
+      // Collab — sub-agent orchestration boundary events
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN:
+        return [{ type: "collab_spawn_begin", callId: notification.params.callId, prompt: notification.params.prompt }];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_END:
+        return [
+          {
+            type: "collab_spawn_end",
+            callId: notification.params.callId,
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+            description: notification.params.description,
+            prompt: notification.params.prompt,
+            status: notification.params.status,
+            message: notification.params.message,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_WAIT_BEGIN:
+        return [{ type: "collab_wait_begin", callId: notification.params.callId, agents: notification.params.agents }];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_WAIT_END:
+        return [
+          {
+            type: "collab_wait_end",
+            callId: notification.params.callId,
+            agentStatuses: notification.params.agentStatuses,
+            timedOut: notification.params.timedOut,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_BEGIN:
+        return [
+          {
+            type: "collab_close_begin",
+            callId: notification.params.callId,
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_END:
+        return [
+          {
+            type: "collab_close_end",
+            callId: notification.params.callId,
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+            status: notification.params.status,
+            message: notification.params.message,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_START:
+        return [
+          {
+            type: "collab_tool_start",
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+            toolName: notification.params.toolName,
+            toolCallId: notification.params.toolCallId,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_END:
+        return [
+          {
+            type: "collab_tool_end",
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+            toolName: notification.params.toolName,
+            toolCallId: notification.params.toolCallId,
+            isError: notification.params.isError,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TURN_START:
+        return [
+          {
+            type: "collab_turn_start",
+            agentId: notification.params.agentId,
+            nickname: notification.params.nickname,
+            turnNumber: notification.params.turnNumber,
+          },
+        ];
+
       default:
         return [];
     }

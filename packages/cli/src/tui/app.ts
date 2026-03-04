@@ -386,6 +386,7 @@ export class App {
           approve,
           ask,
           permissionEngine: this.permissionEngine,
+          registry,
         };
       },
       compaction: this.config.compaction,
