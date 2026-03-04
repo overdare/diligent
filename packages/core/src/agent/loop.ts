@@ -281,6 +281,24 @@ async function streamAssistantResponse(
   agentStream: EventStream<AgentEvent, Message[]>,
   generateItemId: () => string,
 ): Promise<AssistantMessage> {
+  // Debug: log last 3 messages before every LLM call
+  const tail = messages.slice(-3);
+  console.log(
+    "[AgentLoop] Sending %d messages to %s, last 3: %s",
+    messages.length,
+    config.model.id,
+    JSON.stringify(
+      tail.map((m) => {
+        if (m.role === "user")
+          return { role: "user", content: typeof m.content === "string" ? m.content.slice(0, 60) : "(blocks)" };
+        if (m.role === "assistant")
+          return { role: "assistant", blocks: m.content.map((b) => b.type), stop: m.stopReason };
+        if (m.role === "tool_result") return { role: "tool_result", tool: m.toolName, err: m.isError };
+        return { role: (m as { role: string }).role };
+      }),
+    ),
+  );
+
   const context: StreamContext = {
     systemPrompt: effectiveSystemPrompt,
     messages,
