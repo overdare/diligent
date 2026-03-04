@@ -32,6 +32,8 @@ Note: you are operating as a new hire with no prior context. Any friction you en
 
 Build a complete picture before forming judgments. The project is a custom coding agent (Bun + TypeScript monorepo). The 11-layer architecture (L0-L10) is fully implemented — development now focuses on features, providers/transports, and hardening.
 
+**Use `/explore-aug` to map the project structure first.** Run it on key directories (`packages/core/src`, `packages/cli/src`, `packages/web/src`, etc.) to get the full directory tree with `@summary` annotations before diving into individual files.
+
 ### Review Scope
 
 The user may request a **full review** (default) or a **scoped review** targeting specific packages. For scoped reviews, focus depth on the target but always check cross-package impacts (type flows, protocol compliance, shared state).
@@ -177,11 +179,30 @@ This axis is the hardest to see. Today's code works for today's requirements. Th
 [Evidence: specific interface, type, or assumption]
 [What the fix looks like now vs. later]
 
+## Persistent Issues
+
+After completing the review above, read the 3 most recent previous assessments from `docs/review/tech-lead/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
+
+[List findings that appeared in 2+ previous reviews and remain unresolved. For each:]
+
+### [Issue name]
+- **First raised**: [date and review file]
+- **Appearances**: [list of review dates]
+- **Status trajectory**: Getting worse / Same / Partially addressed
+- **Current evidence**: [specific files, line numbers]
+- **Why it persists**: [hypothesis — too low priority? blocked by something? forgotten?]
+
 ## Priority Actions
 
-1. [Most urgent action]
-2. [Second priority]
-3. [Third priority]
+Group actions by execution dependency. Actions within the same group have no dependencies on each other and can be done in parallel. Groups must be executed in order.
+
+### Group 1 (parallel)
+1. [Action A] — [file path, decision ref]
+2. [Action B] — [file path, decision ref]
+
+### Group 2 (parallel, after Group 1)
+3. [Action C — depends on A] — [file path, decision ref]
+4. [Action D — independent but lower priority] — [file path, decision ref]
 
 Each action should reference specific decision IDs and file paths.
 ```
