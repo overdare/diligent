@@ -45,7 +45,7 @@ export function createWaitTool(registry: AgentRegistry): Tool<typeof WaitParams>
 
       const onUpdate = (summary: string) => ctx.onUpdate?.(summary);
 
-      const { status, timedOut } = await registry.wait(args.ids, timeoutMs, onUpdate);
+      const { status, timedOut } = await registry.wait(args.ids, timeoutMs, onUpdate, ctx.signal);
 
       // Build human-readable summary
       const lines: string[] = [];

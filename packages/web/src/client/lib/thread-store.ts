@@ -1,5 +1,7 @@
 // @summary Protocol event reducer and view-state normalization for Web CLI thread rendering
+
 import type { AgentEvent } from "@diligent/core/client";
+import { isSummaryMessage, SUMMARY_PREFIX } from "@diligent/core/client";
 import type {
   ApprovalRequest,
   DiligentServerNotification,
@@ -32,6 +34,12 @@ export interface UsageState {
 }
 
 export type RenderItem =
+  | {
+      id: string;
+      kind: "context";
+      summary: string;
+      timestamp: number;
+    }
   | {
       id: string;
       kind: "user";
@@ -430,6 +438,16 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
 
   for (const message of payload.messages) {
     if (message.role === "user") {
+      if (isSummaryMessage(message)) {
+        const summary = (message.content as string).slice(SUMMARY_PREFIX.length + 1);
+        current = withItem(current, `history:context:${message.timestamp}`, {
+          id: `history:context:${message.timestamp}`,
+          kind: "context",
+          summary,
+          timestamp: message.timestamp,
+        });
+        continue;
+      }
       const text = typeof message.content === "string" ? message.content : stringifyUnknown(message.content);
       current = withItem(current, `history:user:${message.timestamp}`, {
         id: `history:user:${message.timestamp}`,

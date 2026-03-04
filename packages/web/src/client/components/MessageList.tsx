@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
 import { ApprovalCard } from "./ApprovalCard";
 import { AssistantMessage } from "./AssistantMessage";
+import { ContextMessage } from "./ContextMessage";
 import { EmptyState } from "./EmptyState";
 import { QuestionCard } from "./QuestionCard";
 import { ScrollToBottom } from "./ScrollToBottom";
@@ -62,11 +63,13 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
         ) : (
           <div className="space-y-1">
             {items.map((item, idx) => {
+              if (item.kind === "context") return <ContextMessage key={item.id} summary={item.summary} />;
               if (item.kind === "tool") return <ToolBlock key={item.id} item={item} />;
               if (item.kind === "user") return <UserMessage key={item.id} text={item.text} />;
+              const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
               const nextItem = items[idx + 1];
               const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
-              const displayItem = isFollowedByUserInputTool ? { ...item, text: "" } : item;
+              const displayItem = isFollowedByUserInputTool ? { ...assistantItem, text: "" } : assistantItem;
               return <AssistantMessage key={item.id} item={displayItem} />;
             })}
 

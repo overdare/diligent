@@ -139,6 +139,7 @@ export class AgentRegistry {
     ids: string[],
     timeoutMs: number,
     onUpdate?: (s: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ status: Record<string, AgentStatus>; timedOut: boolean }> {
     const validIds = ids.filter((id) => this.agents.has(id));
     const unknownIds = ids.filter((id) => !this.agents.has(id));
@@ -194,7 +195,27 @@ export class AgentRegistry {
       }),
     );
 
-    await Promise.race([Promise.all(racers), timeoutPromise]);
+    const abortPromise = signal
+      ? new Promise<void>((resolve) => {
+          if (signal.aborted) {
+            timedOut = true;
+            resolve();
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => {
+              if (!resolved) {
+                timedOut = true;
+                resolve();
+              }
+            },
+            { once: true },
+          );
+        })
+      : new Promise<void>(() => {}); // never resolves
+
+    await Promise.race([Promise.all(racers), timeoutPromise, abortPromise]);
     resolved = true;
 
     // Collect final statuses for all known agents and auto-cleanup completed ones

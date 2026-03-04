@@ -127,7 +127,7 @@ export class SessionManager {
     const signal = this.resolveAgentConfig().signal;
     if (signal) outerStream.attachSignal(signal);
 
-    this.runWithCompaction(context.messages, compactionConfig, outerStream).catch((err) => {
+    const innerWork = this.executeLoop(context.messages, compactionConfig, outerStream).catch((err) => {
       outerStream.push({
         type: "error",
         error: { message: String(err), name: err?.name ?? "Error" },
@@ -136,6 +136,7 @@ export class SessionManager {
       outerStream.push({ type: "agent_end", messages: context.messages });
       outerStream.end(context.messages);
     });
+    outerStream.setInnerWork(innerWork);
 
     return outerStream;
   }
@@ -145,7 +146,7 @@ export class SessionManager {
     await this.writeQueue;
   }
 
-  private async runWithCompaction(
+  private async executeLoop(
     messages: Message[],
     compactionConfig: { enabled: boolean; reserveTokens: number; keepRecentTokens: number },
     outerStream: EventStream<AgentEvent, Message[]>,

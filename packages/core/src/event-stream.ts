@@ -8,6 +8,7 @@ export class EventStream<T, R> implements AsyncIterable<T> {
   private resultReject!: (error: Error) => void;
   private resultPromise: Promise<R>;
   private observers: Array<(event: T) => void> = [];
+  private innerWork?: Promise<void>;
 
   constructor(
     private isComplete: (event: T) => boolean,
@@ -82,6 +83,16 @@ export class EventStream<T, R> implements AsyncIterable<T> {
 
   result(): Promise<R> {
     return this.resultPromise;
+  }
+
+  /** Track a background promise that must settle before the stream's consumer cleans up. */
+  setInnerWork(promise: Promise<void>): void {
+    this.innerWork = promise;
+  }
+
+  /** Wait for the tracked inner work to settle. Resolves immediately if none was set. */
+  waitForInnerWork(): Promise<void> {
+    return this.innerWork ?? Promise.resolve();
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {

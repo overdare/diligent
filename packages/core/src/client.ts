@@ -8,7 +8,7 @@ export type {
 } from "./agent/types";
 
 export { ProtocolNotificationAdapter } from "./notification-adapter";
-
+export { isSummaryMessage, SUMMARY_PREFIX } from "./session/compaction";
 export type {
   AssistantMessage,
   ContentBlock,
