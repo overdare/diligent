@@ -62,24 +62,24 @@ describe("requestUserInputTool", () => {
     expect(result.output).toBe("[approach] Which approach?\nAnswer: Fix in place\n\n[confirm] Proceed?\nAnswer: Yes");
   });
 
-  it("throws Aborted when question answer is missing", async () => {
+  it("returns abortRequested when question answer is missing", async () => {
     const ctx = makeCtx(async () => ({ answers: {} }));
-    await expect(
-      requestUserInputTool.execute(
-        { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
-        ctx,
-      ),
-    ).rejects.toThrow("Aborted");
+    const result = await requestUserInputTool.execute(
+      { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
+      ctx,
+    );
+    expect(result.abortRequested).toBe(true);
+    expect(result.output).toContain("[Cancelled by user]");
   });
 
-  it("throws Aborted when question answer is blank", async () => {
+  it("returns abortRequested when question answer is blank", async () => {
     const ctx = makeCtx(async () => ({ answers: { q1: "   " } }));
-    await expect(
-      requestUserInputTool.execute(
-        { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
-        ctx,
-      ),
-    ).rejects.toThrow("Aborted");
+    const result = await requestUserInputTool.execute(
+      { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
+      ctx,
+    );
+    expect(result.abortRequested).toBe(true);
+    expect(result.output).toContain("[Cancelled by user]");
   });
 
   it("rejects call when options array has fewer than 2 items", () => {

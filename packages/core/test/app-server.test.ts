@@ -181,15 +181,18 @@ describe("DiligentAppServer", () => {
     });
 
     const notifications: DiligentServerNotification[] = [];
-    let resolveTurnInterrupted: (() => void) | null = null;
-    const turnInterrupted = new Promise<void>((resolve) => {
-      resolveTurnInterrupted = resolve;
+    let resolveTurnDone: (() => void) | null = null;
+    const turnDone = new Promise<void>((resolve) => {
+      resolveTurnDone = resolve;
     });
 
     server.setNotificationListener((notification) => {
       notifications.push(notification);
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
-        resolveTurnInterrupted?.();
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED
+      ) {
+        resolveTurnDone?.();
       }
     });
 
@@ -221,9 +224,10 @@ describe("DiligentAppServer", () => {
     const turnStartResult = readResult(turnStart) as { accepted: boolean };
     expect(turnStartResult.accepted).toBe(true);
 
-    await turnInterrupted;
+    await turnDone;
 
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(true);
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(false);
+    // abortRequested causes a normal (non-throwing) loop exit → TURN_COMPLETED, not TURN_INTERRUPTED
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(false);
   });
 });
