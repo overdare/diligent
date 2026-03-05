@@ -35,13 +35,13 @@ describe("collab integration", () => {
     const s2 = JSON.parse((await spawnTool.execute({ message: "task B", description: "B" }, makeCtx())).output);
 
     const result = JSON.parse(
-      (await waitTool.execute({ ids: [s1.agent_id, s2.agent_id], timeout_ms: 10000 }, makeCtx())).output,
+      (await waitTool.execute({ ids: [s1.thread_id, s2.thread_id], timeout_ms: 10000 }, makeCtx())).output,
     );
     const { status } = result;
 
     expect(result.timed_out).toBe(false);
-    expect(isFinal(status[s1.agent_id])).toBe(true);
-    expect(isFinal(status[s2.agent_id])).toBe(true);
+    expect(isFinal(status[s1.thread_id])).toBe(true);
+    expect(isFinal(status[s2.thread_id])).toBe(true);
   });
 
   it("spawn → wait → output captured in status", async () => {
@@ -55,9 +55,9 @@ describe("collab integration", () => {
     const waitTool = tools.find((t) => t.name === "wait")!;
 
     const spawned = JSON.parse((await spawnTool.execute({ message: "analyze code" }, makeCtx())).output);
-    const { status } = JSON.parse((await waitTool.execute({ ids: [spawned.agent_id] }, makeCtx())).output);
+    const { status } = JSON.parse((await waitTool.execute({ ids: [spawned.thread_id] }, makeCtx())).output);
 
-    const s = status[spawned.agent_id];
+    const s = status[spawned.thread_id];
     expect(s.kind).toBe("completed");
     if (s.kind === "completed") {
       expect(s.output).toContain("analysis complete");
@@ -82,6 +82,6 @@ describe("collab integration", () => {
     // Verify via internal logic: spawn with general type should exclude spawn_agent from parentTools
     // parentTools in deps is empty, so this just verifies no error
     const r = registry.spawn({ prompt: "task", description: "", agentType: "general" });
-    expect(typeof r.agentId).toBe("string");
+    expect(typeof r.threadId).toBe("string");
   });
 });

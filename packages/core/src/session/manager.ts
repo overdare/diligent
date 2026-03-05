@@ -142,9 +142,9 @@ export class SessionManager {
     return listSessions(this.config.paths.sessions);
   }
 
-  /** Scan session entries for spawn_agent tool results to restore collab agent IDs on resume. */
-  getHistoricalCollabAgents(): Array<{ agentId: string; nickname: string }> {
-    const results: Array<{ agentId: string; nickname: string }> = [];
+  /** Scan session entries for spawn_agent tool results to restore collab thread IDs on resume. */
+  getHistoricalCollabAgents(): Array<{ threadId: string; nickname: string }> {
+    const results: Array<{ threadId: string; nickname: string }> = [];
     for (const entry of this.entries) {
       if (
         entry.type === "message" &&
@@ -154,8 +154,8 @@ export class SessionManager {
       ) {
         try {
           const parsed = JSON.parse((entry.message as { output: string }).output);
-          if (parsed.agent_id && parsed.nickname) {
-            results.push({ agentId: parsed.agent_id, nickname: parsed.nickname });
+          if (parsed.thread_id && parsed.nickname) {
+            results.push({ threadId: parsed.thread_id, nickname: parsed.nickname });
           }
         } catch {
           // skip malformed output

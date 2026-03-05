@@ -1,4 +1,4 @@
-// @summary spawn_agent tool — non-blocking sub-agent creation returning agent_id and nickname
+// @summary spawn_agent tool — non-blocking sub-agent creation returning thread_id and nickname
 import { z } from "zod";
 import type { Tool, ToolContext, ToolResult } from "../tool/types";
 import type { AgentRegistry } from "./registry";
@@ -28,12 +28,12 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
   return {
     name: "spawn_agent",
     description:
-      "Spawn a sub-agent in the background (non-blocking). Returns immediately with agent_id and nickname. " +
+      "Spawn a sub-agent in the background (non-blocking). Returns immediately with thread_id and nickname. " +
       "Use 'wait' to collect results. Use 'general' for tasks requiring file writes/edits. " +
       "Use 'explore' for read-only research. Use 'planner' to analyse a task and produce a plan document.",
     parameters: SpawnAgentParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      const { agentId, nickname } = registry.spawn({
+      const { threadId, nickname } = registry.spawn({
         prompt: args.message,
         description: args.description ?? "",
         agentType: args.agent_type,
@@ -41,7 +41,7 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
         modelClass: args.model_class,
       });
       return {
-        output: JSON.stringify({ agent_id: agentId, nickname }),
+        output: JSON.stringify({ thread_id: threadId, nickname }),
       };
     },
   };

@@ -9,7 +9,7 @@ const MIN_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
 const WaitParams = z.object({
-  ids: z.array(z.string()).min(1).describe("Agent IDs to wait for"),
+  ids: z.array(z.string()).min(1).describe("Thread IDs of agents to wait for"),
   timeout_ms: z
     .number()
     .optional()

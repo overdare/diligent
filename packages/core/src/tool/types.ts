@@ -27,7 +27,7 @@ export interface UserInputQuestion {
 }
 
 export interface UserInputSource {
-  agentId: string;
+  threadId: string;
   nickname: string;
 }
 

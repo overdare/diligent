@@ -17,7 +17,7 @@ export function isFinal(s: AgentStatus): boolean {
 }
 
 export interface AgentEntry {
-  id: string;
+  threadId: string;
   nickname: string;
   agentType: string;
   description: string;
@@ -28,8 +28,13 @@ export interface AgentEntry {
   createdAt: number;
 }
 
-/** Extract collab event types from AgentEvent union. */
-export type CollabAgentEvent = Extract<AgentEvent, { type: `collab_${string}` }>;
+/** Events emitted by the collab layer — collab boundary events + child tool/turn events with childThreadId. */
+export type CollabAgentEvent =
+  | Extract<AgentEvent, { type: `collab_${string}` }>
+  | (Extract<AgentEvent, { type: "turn_start" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "tool_start" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "tool_update" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "tool_end" }> & { childThreadId: string });
 
 export interface CollabToolDeps {
   cwd: string;

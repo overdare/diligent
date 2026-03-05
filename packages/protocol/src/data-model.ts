@@ -104,14 +104,14 @@ export const CollabAgentStatusSchema = z.enum(["pending", "running", "completed"
 export type CollabAgentStatus = z.infer<typeof CollabAgentStatusSchema>;
 
 export const CollabAgentRefSchema = z.object({
-  agentId: z.string(),
+  threadId: z.string(),
   nickname: z.string().optional(),
   description: z.string().optional(),
 });
 export type CollabAgentRef = z.infer<typeof CollabAgentRefSchema>;
 
 export const CollabAgentStatusEntrySchema = z.object({
-  agentId: z.string(),
+  threadId: z.string(),
   nickname: z.string().optional(),
   status: CollabAgentStatusSchema,
   message: z.string().optional(),
@@ -121,7 +121,13 @@ export type CollabAgentStatusEntry = z.infer<typeof CollabAgentStatusEntrySchema
 export const AgentEventSchema = z.union([
   z.object({ type: z.literal("agent_start") }),
   z.object({ type: z.literal("agent_end"), messages: z.array(MessageSchema) }),
-  z.object({ type: z.literal("turn_start"), turnId: z.string() }),
+  z.object({
+    type: z.literal("turn_start"),
+    turnId: z.string(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
+    turnNumber: z.number().int().positive().optional(),
+  }),
   z.object({
     type: z.literal("turn_end"),
     turnId: z.string(),
@@ -142,6 +148,8 @@ export const AgentEventSchema = z.union([
     toolCallId: z.string(),
     toolName: z.string(),
     input: z.unknown(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("tool_update"),
@@ -149,6 +157,8 @@ export const AgentEventSchema = z.union([
     toolCallId: z.string(),
     toolName: z.string(),
     partialResult: z.string(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("tool_end"),
@@ -157,6 +167,8 @@ export const AgentEventSchema = z.union([
     toolName: z.string(),
     output: z.string(),
     isError: z.boolean(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("status_change"),
@@ -189,7 +201,7 @@ export const AgentEventSchema = z.union([
   z.object({
     type: z.literal("collab_spawn_end"),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
     description: z.string().optional(),
     prompt: z.string(),
@@ -210,38 +222,32 @@ export const AgentEventSchema = z.union([
   z.object({
     type: z.literal("collab_close_begin"),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("collab_close_end"),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
     status: CollabAgentStatusSchema,
     message: z.string().optional(),
   }),
-  // Collab — sub-agent internal activity forwarded from child stream
+  // Collab — interaction events (send_input)
   z.object({
-    type: z.literal("collab_tool_start"),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    toolName: z.string(),
-    toolCallId: z.string(),
+    type: z.literal("collab_interaction_begin"),
+    callId: z.string(),
+    receiverThreadId: z.string(),
+    receiverNickname: z.string().optional(),
+    prompt: z.string(),
   }),
   z.object({
-    type: z.literal("collab_tool_end"),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    toolName: z.string(),
-    toolCallId: z.string(),
-    isError: z.boolean(),
-  }),
-  z.object({
-    type: z.literal("collab_turn_start"),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    turnNumber: z.number().int().positive(),
+    type: z.literal("collab_interaction_end"),
+    callId: z.string(),
+    receiverThreadId: z.string(),
+    receiverNickname: z.string().optional(),
+    prompt: z.string(),
+    status: CollabAgentStatusSchema,
   }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
@@ -297,8 +303,8 @@ export const ThreadItemSchema = z.union([
   z.object({
     type: z.literal("collabEvent"),
     itemId: z.string(),
-    eventKind: z.enum(["spawn", "wait", "close"]),
-    agentId: z.string().optional(),
+    eventKind: z.enum(["spawn", "wait", "close", "interaction"]),
+    childThreadId: z.string().optional(),
     nickname: z.string().optional(),
     description: z.string().optional(),
     status: CollabAgentStatusSchema.optional(),
@@ -358,7 +364,7 @@ export const UserInputQuestionSchema = z.object({
 export type UserInputQuestion = z.infer<typeof UserInputQuestionSchema>;
 
 export const UserInputSourceSchema = z.object({
-  agentId: z.string(),
+  threadId: z.string(),
   nickname: z.string(),
 });
 export type UserInputSource = z.infer<typeof UserInputSourceSchema>;

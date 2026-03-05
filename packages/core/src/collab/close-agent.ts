@@ -4,7 +4,7 @@ import type { Tool, ToolContext, ToolResult } from "../tool/types";
 import type { AgentRegistry } from "./registry";
 
 const CloseAgentParams = z.object({
-  id: z.string().describe("Agent ID to close"),
+  id: z.string().describe("Thread ID of the agent to close"),
 });
 
 export function createCloseAgentTool(registry: AgentRegistry): Tool<typeof CloseAgentParams> {

@@ -31,7 +31,19 @@ export class ProtocolNotificationAdapter {
         ];
 
       case DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED:
-        return [{ type: "turn_start", turnId: notification.params.turnId }];
+        return [
+          {
+            type: "turn_start",
+            turnId: notification.params.turnId,
+            ...(notification.params.childThreadId
+              ? {
+                  childThreadId: notification.params.childThreadId,
+                  nickname: notification.params.nickname,
+                  turnNumber: notification.params.turnNumber,
+                }
+              : {}),
+          },
+        ];
 
       case DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED:
         return this.handleItemStarted(notification);
@@ -96,7 +108,7 @@ export class ProtocolNotificationAdapter {
           {
             type: "collab_spawn_end",
             callId: notification.params.callId,
-            agentId: notification.params.agentId,
+            childThreadId: notification.params.childThreadId,
             nickname: notification.params.nickname,
             description: notification.params.description,
             prompt: notification.params.prompt,
@@ -123,7 +135,7 @@ export class ProtocolNotificationAdapter {
           {
             type: "collab_close_begin",
             callId: notification.params.callId,
-            agentId: notification.params.agentId,
+            childThreadId: notification.params.childThreadId,
             nickname: notification.params.nickname,
           },
         ];
@@ -133,45 +145,33 @@ export class ProtocolNotificationAdapter {
           {
             type: "collab_close_end",
             callId: notification.params.callId,
-            agentId: notification.params.agentId,
+            childThreadId: notification.params.childThreadId,
             nickname: notification.params.nickname,
             status: notification.params.status,
             message: notification.params.message,
           },
         ];
 
-      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_START:
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_BEGIN:
         return [
           {
-            type: "collab_tool_start",
-            agentId: notification.params.agentId,
-            nickname: notification.params.nickname,
-            toolName: notification.params.toolName,
-            toolCallId: notification.params.toolCallId,
-            input: notification.params.input,
+            type: "collab_interaction_begin",
+            callId: notification.params.callId,
+            receiverThreadId: notification.params.receiverThreadId,
+            receiverNickname: notification.params.receiverNickname,
+            prompt: notification.params.prompt,
           },
         ];
 
-      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_END:
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_END:
         return [
           {
-            type: "collab_tool_end",
-            agentId: notification.params.agentId,
-            nickname: notification.params.nickname,
-            toolName: notification.params.toolName,
-            toolCallId: notification.params.toolCallId,
-            isError: notification.params.isError,
-            output: notification.params.output,
-          },
-        ];
-
-      case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TURN_START:
-        return [
-          {
-            type: "collab_turn_start",
-            agentId: notification.params.agentId,
-            nickname: notification.params.nickname,
-            turnNumber: notification.params.turnNumber,
+            type: "collab_interaction_end",
+            callId: notification.params.callId,
+            receiverThreadId: notification.params.receiverThreadId,
+            receiverNickname: notification.params.receiverNickname,
+            prompt: notification.params.prompt,
+            status: notification.params.status,
           },
         ];
 
@@ -191,7 +191,7 @@ export class ProtocolNotificationAdapter {
       { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED }
     >,
   ): AgentEvent[] {
-    const { item } = notification.params;
+    const { item, childThreadId, nickname } = notification.params;
 
     if (item.type === "agentMessage") {
       this.agentMessageByItemId.set(item.itemId, item.message);
@@ -211,6 +211,7 @@ export class ProtocolNotificationAdapter {
           toolCallId: item.toolCallId,
           toolName: item.toolName,
           input: item.input,
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }
@@ -224,7 +225,7 @@ export class ProtocolNotificationAdapter {
       { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA }
     >,
   ): AgentEvent[] {
-    const { itemId, delta } = notification.params;
+    const { itemId, delta, childThreadId, nickname } = notification.params;
 
     if (delta.type === "messageText" || delta.type === "messageThinking") {
       const message = this.agentMessageByItemId.get(itemId) ?? createEmptyAssistantMessage();
@@ -252,6 +253,7 @@ export class ProtocolNotificationAdapter {
           toolCallId: tool.toolCallId,
           toolName: tool.toolName,
           partialResult: delta.delta,
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }
@@ -265,7 +267,7 @@ export class ProtocolNotificationAdapter {
       { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED }
     >,
   ): AgentEvent[] {
-    const { item } = notification.params;
+    const { item, childThreadId, nickname } = notification.params;
 
     if (item.type === "agentMessage") {
       const message = this.agentMessageByItemId.get(item.itemId) ?? item.message;
@@ -285,6 +287,7 @@ export class ProtocolNotificationAdapter {
           toolName: started?.toolName ?? item.toolName,
           output: item.output ?? "",
           isError: item.isError ?? false,
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }

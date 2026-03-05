@@ -24,11 +24,6 @@ function statusMessage(s: AgentStatus): string | undefined {
 /** Tool names that belong to the collab layer — excluded from child agents. */
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 
-let _nextId = 1;
-function nextId(): string {
-  return `agent-${(_nextId++).toString().padStart(4, "0")}`;
-}
-
 export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();
   private pool = new NicknamePool();
@@ -51,7 +46,7 @@ export class AgentRegistry {
 
   /**
    * Spawn a new sub-agent in the background.
-   * Synchronous — returns immediately with {agentId, nickname}.
+   * Synchronous — returns immediately with {threadId, nickname}.
    */
   spawn(params: {
     prompt: string;
@@ -60,7 +55,7 @@ export class AgentRegistry {
     resumeId?: string;
     modelClass?: ModelClass;
   }): {
-    agentId: string;
+    threadId: string;
     nickname: string;
   } {
     const activeCount = [...this.agents.values()].filter((e) => !isFinal(e.status)).length;
@@ -69,16 +64,8 @@ export class AgentRegistry {
     }
 
     const agentType = BUILTIN_AGENT_TYPES[params.agentType] ?? BUILTIN_AGENT_TYPES.general;
-    const agentId = nextId();
     const nickname = this.pool.reserve();
     const abortController = new AbortController();
-    const callId = agentId; // use agentId as callId for spawn
-
-    this.emit({
-      type: "collab_spawn_begin",
-      callId,
-      prompt: params.prompt,
-    });
 
     // Build child tool list
     let childTools = this.deps.parentTools;
@@ -97,13 +84,6 @@ export class AgentRegistry {
     const targetClass: ModelClass = params.modelClass ?? agentTypeToModelClass(params.agentType, this.deps.model);
     const childModel = resolveModelForClass(this.deps.model, targetClass);
 
-    // Wrap the parent ask callback to inject source attribution (agentId + nickname).
-    // This allows the UI to show which sub-agent is asking without needing a new event type.
-    const childAsk = this.deps.ask
-      ? (request: import("../tool/types").UserInputRequest) =>
-          this.deps.ask!({ ...request, source: { agentId, nickname } })
-      : undefined;
-
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
     const childManager = factory({
       cwd: this.deps.cwd,
@@ -115,19 +95,32 @@ export class AgentRegistry {
         streamFunction: this.deps.streamFunction,
         maxTurns: agentType.maxTurns,
         signal: abortController.signal,
-        ask: childAsk,
+        // Wrap the parent ask callback to inject source attribution (threadId + nickname).
+        ask: this.deps.ask
+          ? (request: import("../tool/types").UserInputRequest) =>
+              this.deps.ask!({ ...request, source: { threadId: childManager.sessionId, nickname } })
+          : undefined,
       },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
       parentSession: this.deps.getParentSessionId?.(),
       collabMeta: {
-        agentId,
         nickname,
         description: params.description || undefined,
       },
     });
 
+    // Use child sessionId as the canonical threadId
+    const threadId = childManager.sessionId;
+    const callId = threadId;
+
+    this.emit({
+      type: "collab_spawn_begin",
+      callId,
+      prompt: params.prompt,
+    });
+
     const entry: AgentEntry = {
-      id: agentId,
+      threadId,
       nickname,
       agentType: params.agentType,
       description: params.description,
@@ -164,29 +157,23 @@ export class AgentRegistry {
         if (event.type === "turn_start") {
           turnNumber++;
           this.emit({
-            type: "collab_turn_start",
-            agentId,
+            type: "turn_start",
+            turnId: event.turnId,
+            childThreadId: threadId,
             nickname,
             turnNumber,
           });
         } else if (event.type === "tool_start") {
           this.emit({
-            type: "collab_tool_start",
-            agentId,
+            ...event,
+            childThreadId: threadId,
             nickname,
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            input: event.input,
           });
         } else if (event.type === "tool_end") {
           this.emit({
-            type: "collab_tool_end",
-            agentId,
+            ...event,
+            childThreadId: threadId,
             nickname,
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            isError: event.isError,
-            output: event.output,
           });
         } else if (event.type === "message_end") {
           const textBlocks = event.message.content.filter((b): b is TextBlock => b.type === "text");
@@ -210,19 +197,19 @@ export class AgentRegistry {
     });
 
     entry.promise = promise;
-    this.agents.set(agentId, entry);
+    this.agents.set(threadId, entry);
 
     this.emit({
       type: "collab_spawn_end",
       callId,
-      agentId,
+      childThreadId: threadId,
       nickname,
       description: params.description || undefined,
       prompt: params.prompt,
       status: "running",
     });
 
-    return { agentId, nickname };
+    return { threadId, nickname };
   }
 
   /**
@@ -247,7 +234,7 @@ export class AgentRegistry {
       callId: waitCallId,
       agents: ids.map((id) => {
         const entry = this.agents.get(id)!;
-        return { agentId: id, nickname: entry.nickname, description: entry.description || undefined };
+        return { threadId: id, nickname: entry.nickname, description: entry.description || undefined };
       }),
     });
 
@@ -291,7 +278,7 @@ export class AgentRegistry {
 
     const racers = pending.map((entry) =>
       entry.promise.then((status) => {
-        result[entry.id] = status;
+        result[entry.threadId] = status;
         onUpdate?.(statusSummary());
       }),
     );
@@ -334,7 +321,7 @@ export class AgentRegistry {
         const entry = this.agents.get(id)!;
         const status = result[id] ?? entry.status;
         return {
-          agentId: id,
+          threadId: id,
           nickname: entry.nickname,
           status: toCollabStatus(status),
           message: statusMessage(status),
@@ -347,23 +334,42 @@ export class AgentRegistry {
   }
 
   /** Send a steering message to a running agent. */
-  async sendInput(agentId: string, message: string): Promise<void> {
-    const entry = this.agents.get(agentId);
-    if (!entry) throw new Error(`Unknown agent: ${agentId}`);
+  async sendInput(threadId: string, message: string): Promise<void> {
+    const entry = this.agents.get(threadId);
+    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
     if (isFinal(entry.status)) throw new Error(`Agent ${entry.nickname} is not running (${entry.status.kind})`);
+
+    const callId = `interaction-${threadId}-${Date.now()}`;
+    this.emit({
+      type: "collab_interaction_begin",
+      callId,
+      receiverThreadId: threadId,
+      receiverNickname: entry.nickname,
+      prompt: message,
+    });
+
     entry.sessionManager.steer(message);
+
+    this.emit({
+      type: "collab_interaction_end",
+      callId,
+      receiverThreadId: threadId,
+      receiverNickname: entry.nickname,
+      prompt: message,
+      status: toCollabStatus(entry.status),
+    });
   }
 
   /** Abort an agent and wait for it to settle. Returns final status. */
-  async close(agentId: string): Promise<AgentStatus> {
-    const entry = this.agents.get(agentId);
-    if (!entry) throw new Error(`Unknown agent: ${agentId}`);
+  async close(threadId: string): Promise<AgentStatus> {
+    const entry = this.agents.get(threadId);
+    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
 
-    const closeCallId = `close-${agentId}`;
+    const closeCallId = `close-${threadId}`;
     this.emit({
       type: "collab_close_begin",
       callId: closeCallId,
-      agentId,
+      childThreadId: threadId,
       nickname: entry.nickname,
     });
 
@@ -377,7 +383,7 @@ export class AgentRegistry {
     this.emit({
       type: "collab_close_end",
       callId: closeCallId,
-      agentId,
+      childThreadId: threadId,
       nickname: entry.nickname,
       status: toCollabStatus(finalStatus),
       message: statusMessage(finalStatus),
@@ -386,25 +392,25 @@ export class AgentRegistry {
     return finalStatus;
   }
 
-  getStatus(agentId: string): AgentStatus {
-    const entry = this.agents.get(agentId);
-    if (!entry) throw new Error(`Unknown agent: ${agentId}`);
+  getStatus(threadId: string): AgentStatus {
+    const entry = this.agents.get(threadId);
+    if (!entry) throw new Error(`Unknown agent: ${threadId}`);
     return entry.status;
   }
 
-  getNickname(agentId: string): string | undefined {
-    return this.agents.get(agentId)?.nickname;
+  getNickname(threadId: string): string | undefined {
+    return this.agents.get(threadId)?.nickname;
   }
 
   /**
    * Restore a previously-known agent as shutdown.
    * Used on session resume to re-populate the in-memory registry
-   * so that agent IDs from a prior server lifetime remain valid.
+   * so that thread IDs from a prior server lifetime remain valid.
    */
-  restoreAgent(agentId: string, nickname: string): void {
-    if (this.agents.has(agentId)) return; // already known
-    this.agents.set(agentId, {
-      id: agentId,
+  restoreAgent(threadId: string, nickname: string): void {
+    if (this.agents.has(threadId)) return; // already known
+    this.agents.set(threadId, {
+      threadId,
       nickname,
       agentType: "unknown",
       description: "",

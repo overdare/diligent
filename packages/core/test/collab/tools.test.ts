@@ -14,7 +14,7 @@ function makeCtx(updates: string[] = []): ToolContext {
 }
 
 describe("spawn_agent tool", () => {
-  it("returns agent_id and nickname as JSON", async () => {
+  it("returns thread_id and nickname as JSON", async () => {
     const { tools } = createCollabTools(
       makeCollabDeps({
         sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
@@ -23,7 +23,7 @@ describe("spawn_agent tool", () => {
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const result = await spawnTool.execute({ message: "do something", agent_type: "general" }, makeCtx());
     const parsed = JSON.parse(result.output);
-    expect(typeof parsed.agent_id).toBe("string");
+    expect(typeof parsed.thread_id).toBe("string");
     expect(typeof parsed.nickname).toBe("string");
   });
 
@@ -36,7 +36,7 @@ describe("spawn_agent tool", () => {
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const result = await spawnTool.execute({ message: "task" }, makeCtx());
     const parsed = JSON.parse(result.output);
-    expect(typeof parsed.agent_id).toBe("string");
+    expect(typeof parsed.thread_id).toBe("string");
   });
 
   it("passes resume_id when provided", async () => {
@@ -51,7 +51,7 @@ describe("spawn_agent tool", () => {
       makeCtx(),
     );
     const parsed = JSON.parse(result.output);
-    expect(typeof parsed.agent_id).toBe("string");
+    expect(typeof parsed.thread_id).toBe("string");
   });
 });
 
@@ -66,10 +66,10 @@ describe("wait tool", () => {
     const waitTool = tools.find((t) => t.name === "wait")!;
 
     const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
-    const result = await waitTool.execute({ ids: [spawned.agent_id] }, makeCtx());
+    const result = await waitTool.execute({ ids: [spawned.thread_id] }, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(parsed.timed_out).toBe(false);
-    expect(parsed.status[spawned.agent_id]).toBeDefined();
+    expect(parsed.status[spawned.thread_id]).toBeDefined();
   });
 
   it("clamps timeout_ms to minimum", async () => {
@@ -83,7 +83,7 @@ describe("wait tool", () => {
     const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
 
     // Provide 1ms timeout — should be clamped to 10s min, still resolves before that
-    const result = await waitTool.execute({ ids: [spawned.agent_id], timeout_ms: 1 }, makeCtx());
+    const result = await waitTool.execute({ ids: [spawned.thread_id], timeout_ms: 1 }, makeCtx());
     const parsed = JSON.parse(result.output);
     // May timeout (1ms clamped to 10s, but agent completes first) or complete — just verify structure
     expect(typeof parsed.timed_out).toBe("boolean");
@@ -100,7 +100,7 @@ describe("wait tool", () => {
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     const waitTool = tools.find((t) => t.name === "wait")!;
     const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
-    await waitTool.execute({ ids: [spawned.agent_id] }, makeCtx(updates));
+    await waitTool.execute({ ids: [spawned.thread_id] }, makeCtx(updates));
     // onUpdate may or may not be called depending on timing, but should not error
   });
 
@@ -138,7 +138,7 @@ describe("send_input tool", () => {
     // Agent may have already completed in a microtask — just verify the send_input path
     // If it throws "not running", that's also valid behavior for a completed agent
     try {
-      const result = await sendTool.execute({ id: spawned.agent_id, message: "new guidance" }, makeCtx());
+      const result = await sendTool.execute({ id: spawned.thread_id, message: "new guidance" }, makeCtx());
       const parsed = JSON.parse(result.output);
       expect(parsed.ok).toBe(true);
     } catch (err) {
@@ -159,7 +159,7 @@ describe("close_agent tool", () => {
     const closeTool = tools.find((t) => t.name === "close_agent")!;
 
     const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
-    const result = await closeTool.execute({ id: spawned.agent_id }, makeCtx());
+    const result = await closeTool.execute({ id: spawned.thread_id }, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(typeof parsed.nickname).toBe("string");
     expect(parsed.final_status).toBeDefined();

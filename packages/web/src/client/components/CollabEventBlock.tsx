@@ -10,8 +10,8 @@ interface CollabEventBlockProps {
   item: Extract<RenderItem, { kind: "collab" }>;
 }
 
-function agentLabel(nickname?: string, agentId?: string): string {
-  return nickname ?? agentId ?? "agent";
+function agentLabel(nickname?: string, threadId?: string): string {
+  return nickname ?? threadId ?? "agent";
 }
 
 function statusBadge(status?: string): { text: string; className: string } | null {
@@ -30,31 +30,35 @@ function statusBadge(status?: string): { text: string; className: string } | nul
 }
 
 export function CollabEventBlock({ item }: CollabEventBlockProps) {
-  const icon = item.eventType === "spawn" ? "◈" : item.eventType === "wait" ? "⏳" : "✕";
+  const iconMap: Record<string, string> = { spawn: "◈", wait: "⏳", close: "✕", interaction: "→" };
+  const icon = iconMap[item.eventType] ?? "◈";
 
   const hasRunningTool = item.childTools.some((t) => t.status === "running");
 
   const [expanded, setExpanded] = useState(false);
 
-  let title: string;
+  let title = "";
   let details: string | null = null;
 
   switch (item.eventType) {
     case "spawn":
-      title = `Spawned ${agentLabel(item.nickname, item.agentId)}`;
+      title = `Spawned ${agentLabel(item.nickname, item.childThreadId)}`;
       if (item.description) details = item.description;
       break;
     case "wait": {
       const count = item.agents?.length ?? 0;
       if (count === 1 && item.agents?.[0]) {
-        title = `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].agentId)}`;
+        title = `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`;
       } else {
         title = `Finished waiting for ${count} agents`;
       }
       break;
     }
     case "close":
-      title = `Closed ${agentLabel(item.nickname, item.agentId)}`;
+      title = `Closed ${agentLabel(item.nickname, item.childThreadId)}`;
+      break;
+    case "interaction":
+      title = `Sent message to ${agentLabel(item.nickname, item.childThreadId)}`;
       break;
   }
 
@@ -104,9 +108,9 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
               {item.agents!.map((agent) => {
                 const aBadge = statusBadge(agent.status);
                 return (
-                  <div key={agent.agentId} className="flex items-center gap-1.5 text-xs">
+                  <div key={agent.threadId} className="flex items-center gap-1.5 text-xs">
                     <span className="text-text/40">└</span>
-                    <span className="font-medium text-accent/80">{agentLabel(agent.nickname, agent.agentId)}</span>
+                    <span className="font-medium text-accent/80">{agentLabel(agent.nickname, agent.threadId)}</span>
                     {aBadge && <span className={aBadge.className}>{aBadge.text}</span>}
                     {agent.message && <span className="max-w-[60ch] truncate text-text/40">— {agent.message}</span>}
                   </div>

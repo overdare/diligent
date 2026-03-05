@@ -46,6 +46,9 @@ export const TurnStartedNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     turnId: z.string(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
+    turnNumber: z.number().int().positive().optional(),
   }),
 });
 export type TurnStartedNotification = z.infer<typeof TurnStartedNotificationSchema>;
@@ -56,6 +59,8 @@ export const ItemStartedNotificationSchema = z.object({
     threadId: z.string(),
     turnId: z.string(),
     item: ThreadItemSchema,
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
 });
 export type ItemStartedNotification = z.infer<typeof ItemStartedNotificationSchema>;
@@ -67,6 +72,8 @@ export const ItemDeltaNotificationSchema = z.object({
     turnId: z.string(),
     itemId: z.string(),
     delta: ThreadItemDeltaSchema,
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
 });
 export type ItemDeltaNotification = z.infer<typeof ItemDeltaNotificationSchema>;
@@ -77,6 +84,8 @@ export const ItemCompletedNotificationSchema = z.object({
     threadId: z.string(),
     turnId: z.string(),
     item: ThreadItemSchema,
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
 });
 export type ItemCompletedNotification = z.infer<typeof ItemCompletedNotificationSchema>;
@@ -180,7 +189,7 @@ export const CollabSpawnEndNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
     description: z.string().optional(),
     prompt: z.string(),
@@ -216,7 +225,7 @@ export const CollabCloseBeginNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
   }),
 });
@@ -227,7 +236,7 @@ export const CollabCloseEndNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     callId: z.string(),
-    agentId: z.string(),
+    childThreadId: z.string(),
     nickname: z.string().optional(),
     status: CollabAgentStatusSchema,
     message: z.string().optional(),
@@ -235,43 +244,30 @@ export const CollabCloseEndNotificationSchema = z.object({
 });
 export type CollabCloseEndNotification = z.infer<typeof CollabCloseEndNotificationSchema>;
 
-export const CollabToolStartNotificationSchema = z.object({
-  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_START),
+export const CollabInteractionBeginNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_BEGIN),
   params: z.object({
     threadId: z.string(),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    toolName: z.string(),
-    toolCallId: z.string(),
-    input: z.unknown().optional(),
+    callId: z.string(),
+    receiverThreadId: z.string(),
+    receiverNickname: z.string().optional(),
+    prompt: z.string(),
   }),
 });
-export type CollabToolStartNotification = z.infer<typeof CollabToolStartNotificationSchema>;
+export type CollabInteractionBeginNotification = z.infer<typeof CollabInteractionBeginNotificationSchema>;
 
-export const CollabToolEndNotificationSchema = z.object({
-  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_END),
+export const CollabInteractionEndNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_END),
   params: z.object({
     threadId: z.string(),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    toolName: z.string(),
-    toolCallId: z.string(),
-    isError: z.boolean(),
-    output: z.string().optional(),
+    callId: z.string(),
+    receiverThreadId: z.string(),
+    receiverNickname: z.string().optional(),
+    prompt: z.string(),
+    status: CollabAgentStatusSchema,
   }),
 });
-export type CollabToolEndNotification = z.infer<typeof CollabToolEndNotificationSchema>;
-
-export const CollabTurnStartNotificationSchema = z.object({
-  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TURN_START),
-  params: z.object({
-    threadId: z.string(),
-    agentId: z.string(),
-    nickname: z.string().optional(),
-    turnNumber: z.number().int().positive(),
-  }),
-});
-export type CollabTurnStartNotification = z.infer<typeof CollabTurnStartNotificationSchema>;
+export type CollabInteractionEndNotification = z.infer<typeof CollabInteractionEndNotificationSchema>;
 
 export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
@@ -296,8 +292,7 @@ export const DiligentServerNotificationSchema = z.union([
   CollabWaitEndNotificationSchema,
   CollabCloseBeginNotificationSchema,
   CollabCloseEndNotificationSchema,
-  CollabToolStartNotificationSchema,
-  CollabToolEndNotificationSchema,
-  CollabTurnStartNotificationSchema,
+  CollabInteractionBeginNotificationSchema,
+  CollabInteractionEndNotificationSchema,
 ]);
 export type DiligentServerNotification = z.infer<typeof DiligentServerNotificationSchema>;

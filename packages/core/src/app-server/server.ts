@@ -504,6 +504,19 @@ export class DiligentAppServer {
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     switch (event.type) {
       case "turn_start":
+        if (event.childThreadId) {
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+            params: {
+              threadId,
+              turnId: event.turnId,
+              childThreadId: event.childThreadId,
+              nickname: event.nickname,
+              turnNumber: event.turnNumber,
+            },
+          });
+        }
+        return;
       case "turn_end":
         return;
 
@@ -550,6 +563,7 @@ export class DiligentAppServer {
               toolName: event.toolName,
               input: event.input,
             },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
         });
         return;
@@ -562,6 +576,7 @@ export class DiligentAppServer {
             turnId,
             itemId: event.itemId,
             delta: { type: "toolOutput", itemId: event.itemId, delta: event.partialResult },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
         });
         return;
@@ -581,6 +596,7 @@ export class DiligentAppServer {
               output: event.output,
               isError: event.isError,
             },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
         });
         return;
@@ -641,7 +657,7 @@ export class DiligentAppServer {
           params: {
             threadId,
             callId: event.callId,
-            agentId: event.agentId,
+            childThreadId: event.childThreadId,
             nickname: event.nickname,
             description: event.description,
             prompt: event.prompt,
@@ -673,7 +689,7 @@ export class DiligentAppServer {
       case "collab_close_begin":
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_BEGIN,
-          params: { threadId, callId: event.callId, agentId: event.agentId, nickname: event.nickname },
+          params: { threadId, callId: event.callId, childThreadId: event.childThreadId, nickname: event.nickname },
         });
         return;
 
@@ -683,7 +699,7 @@ export class DiligentAppServer {
           params: {
             threadId,
             callId: event.callId,
-            agentId: event.agentId,
+            childThreadId: event.childThreadId,
             nickname: event.nickname,
             status: event.status,
             message: event.message,
@@ -691,43 +707,29 @@ export class DiligentAppServer {
         });
         return;
 
-      case "collab_tool_start":
+      case "collab_interaction_begin":
         await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_START,
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_BEGIN,
           params: {
             threadId,
-            agentId: event.agentId,
-            nickname: event.nickname,
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            input: event.input,
+            callId: event.callId,
+            receiverThreadId: event.receiverThreadId,
+            receiverNickname: event.receiverNickname,
+            prompt: event.prompt,
           },
         });
         return;
 
-      case "collab_tool_end":
+      case "collab_interaction_end":
         await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TOOL_END,
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_END,
           params: {
             threadId,
-            agentId: event.agentId,
-            nickname: event.nickname,
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            isError: event.isError,
-            output: event.output,
-          },
-        });
-        return;
-
-      case "collab_turn_start":
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_TURN_START,
-          params: {
-            threadId,
-            agentId: event.agentId,
-            nickname: event.nickname,
-            turnNumber: event.turnNumber,
+            callId: event.callId,
+            receiverThreadId: event.receiverThreadId,
+            receiverNickname: event.receiverNickname,
+            prompt: event.prompt,
+            status: event.status,
           },
         });
         return;
@@ -768,9 +770,9 @@ export class DiligentAppServer {
         });
         if (result.registry) {
           runtime.registry = result.registry;
-          // Restore agent IDs from session history so collab tools work after server restart
+          // Restore thread IDs from session history so collab tools work after server restart
           for (const agent of runtime.manager.getHistoricalCollabAgents()) {
-            result.registry.restoreAgent(agent.agentId, agent.nickname);
+            result.registry.restoreAgent(agent.threadId, agent.nickname);
           }
         }
         return result;

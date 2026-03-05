@@ -73,6 +73,8 @@ export function makeErrorStreamFn(errorMsg = "Provider error"): StreamFunction {
  * Create a controllable mock SessionManager factory.
  * The factory returns mock session managers that produce a fixed EventStream.
  */
+let _mockSessionCounter = 0;
+
 export function makeMockSessionManagerFactory(
   response: AssistantMessage | Error,
 ): CollabToolDeps["sessionManagerFactory"] {
@@ -80,6 +82,7 @@ export function makeMockSessionManagerFactory(
     const assistantMsg = response instanceof Error ? makeAssistant("error fallback") : response;
     const shouldError = response instanceof Error;
     const errorMsg = response instanceof Error ? response.message : "";
+    const mockId = `mock-session-${++_mockSessionCounter}`;
 
     return {
       entries: [] as import("../../src/session/types").SessionEntry[],
@@ -121,7 +124,7 @@ export function makeMockSessionManagerFactory(
         return null;
       },
       get sessionId(): string {
-        return "mock-session-id";
+        return mockId;
       },
       get entryCount(): number {
         return 0;

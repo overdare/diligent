@@ -91,15 +91,16 @@ function HighlightedText({ text, pattern }: { text: string; pattern: string }) {
     const parts = text.split(regex);
     return (
       <>
-        {parts.map((part, i) =>
-          regex.test(part) ? (
-            <span key={`${part}-${i}`} className="rounded bg-accent/20 text-accent">
+        {parts.map((part, i) => {
+          const key = `${i}-${part.slice(0, 8)}`;
+          return regex.test(part) ? (
+            <span key={key} className="rounded bg-accent/20 text-accent">
               {part}
             </span>
           ) : (
-            <span key={`${part}-${i}`}>{part}</span>
-          ),
-        )}
+            <span key={key}>{part}</span>
+          );
+        })}
       </>
     );
   } catch {

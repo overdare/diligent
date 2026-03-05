@@ -72,7 +72,6 @@ export type ThreadReadParams = z.infer<typeof ThreadReadParamsSchema>;
 
 export const ChildSessionSchema = z.object({
   sessionId: z.string(),
-  agentId: z.string().optional(),
   nickname: z.string().optional(),
   description: z.string().optional(),
   messages: z.array(MessageSchema),

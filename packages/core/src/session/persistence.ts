@@ -119,7 +119,6 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
 /** Hydrated child session for ThreadReadResponse */
 export interface ChildSessionData {
   sessionId: string;
-  agentId?: string;
   nickname?: string;
   description?: string;
   messages: import("../types").Message[];
@@ -146,7 +145,6 @@ export async function readChildSessions(sessionsDir: string, parentSessionId: st
 
       children.push({
         sessionId: header.id,
-        agentId: header.agentId,
         nickname: header.nickname,
         description: header.description,
         messages: context.messages,
@@ -223,7 +221,6 @@ export class DeferredWriter {
       timestamp: new Date().toISOString(),
       cwd: this.cwd,
       parentSession: this.parentSession,
-      agentId: this.collabMeta?.agentId,
       nickname: this.collabMeta?.nickname,
       description: this.collabMeta?.description,
     };

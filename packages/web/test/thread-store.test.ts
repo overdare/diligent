@@ -288,7 +288,7 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
         role: "tool_result",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
-        output: JSON.stringify({ agent_id: "agent-0001", nickname: "Cleo" }),
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
       },
@@ -296,7 +296,7 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
     childSessions: [
       {
         sessionId: "ses-child-1",
-        agentId: "agent-0001",
+
         nickname: "Cleo",
         description: "do work",
         messages: [],
@@ -335,7 +335,7 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
         role: "tool_result",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
-        output: JSON.stringify({ agent_id: "agent-0001", nickname: "Cleo" }),
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
       },
@@ -346,7 +346,7 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
             type: "tool_call",
             id: "tc-wait-1",
             name: "wait",
-            input: { ids: ["agent-0001"] },
+            input: { ids: ["ses-child-1"] },
           },
         ],
         model: "x",
@@ -359,7 +359,7 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
         toolCallId: "tc-wait-1",
         toolName: "wait",
         output: JSON.stringify({
-          status: { "agent-0001": { kind: "completed", output: "done" } },
+          status: { "ses-child-1": { kind: "completed", output: "done" } },
           timed_out: false,
         }),
         isError: false,
@@ -369,7 +369,7 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
     childSessions: [
       {
         sessionId: "ses-child-1",
-        agentId: "agent-0001",
+
         nickname: "Cleo",
         description: "do work",
         messages: [
@@ -497,7 +497,7 @@ test("hydrateFromThreadRead shows completed sub-agent when parent is not running
         role: "tool_result",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
-        output: JSON.stringify({ agent_id: "agent-0001", nickname: "Cleo" }),
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
       },
@@ -505,7 +505,7 @@ test("hydrateFromThreadRead shows completed sub-agent when parent is not running
     childSessions: [
       {
         sessionId: "ses-child-1",
-        agentId: "agent-0001",
+
         nickname: "Cleo",
         description: "do work",
         messages: [],

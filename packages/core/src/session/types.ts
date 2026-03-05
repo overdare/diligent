@@ -26,7 +26,6 @@ export interface SessionHeader {
   cwd: string;
   parentSession?: string;
   /** Sub-agent metadata — present only on child sessions spawned via collab */
-  agentId?: string;
   nickname?: string;
   description?: string;
 }
@@ -97,7 +96,6 @@ export type SessionFileLine = SessionHeader | SessionEntry;
 
 /** Sub-agent identity metadata stored in child session headers */
 export interface CollabSessionMeta {
-  agentId: string;
   nickname: string;
   description?: string;
 }

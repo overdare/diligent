@@ -45,9 +45,8 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   COLLAB_WAIT_END: "collab/wait/end",
   COLLAB_CLOSE_BEGIN: "collab/close/begin",
   COLLAB_CLOSE_END: "collab/close/end",
-  COLLAB_TOOL_START: "collab/tool/start",
-  COLLAB_TOOL_END: "collab/tool/end",
-  COLLAB_TURN_START: "collab/turn/start",
+  COLLAB_INTERACTION_BEGIN: "collab/interaction/begin",
+  COLLAB_INTERACTION_END: "collab/interaction/end",
   STEERING_INJECTED: "steering/injected",
 } as const;
 

@@ -40,16 +40,41 @@ export type AgentEvent =
   | { type: "agent_start" }
   | { type: "agent_end"; messages: Message[] }
   // Turn (2)
-  | { type: "turn_start"; turnId: string }
+  | { type: "turn_start"; turnId: string; childThreadId?: string; nickname?: string; turnNumber?: number }
   | { type: "turn_end"; turnId: string; message: AssistantMessage; toolResults: ToolResultMessage[] }
   // Message streaming (3) — D086: itemId groups related events
   | { type: "message_start"; itemId: string; message: AssistantMessage }
   | { type: "message_delta"; itemId: string; message: AssistantMessage; delta: MessageDelta }
   | { type: "message_end"; itemId: string; message: AssistantMessage }
   // Tool execution (3) — D086: itemId groups related events
-  | { type: "tool_start"; itemId: string; toolCallId: string; toolName: string; input: unknown }
-  | { type: "tool_update"; itemId: string; toolCallId: string; toolName: string; partialResult: string }
-  | { type: "tool_end"; itemId: string; toolCallId: string; toolName: string; output: string; isError: boolean }
+  | {
+      type: "tool_start";
+      itemId: string;
+      toolCallId: string;
+      toolName: string;
+      input: unknown;
+      childThreadId?: string;
+      nickname?: string;
+    }
+  | {
+      type: "tool_update";
+      itemId: string;
+      toolCallId: string;
+      toolName: string;
+      partialResult: string;
+      childThreadId?: string;
+      nickname?: string;
+    }
+  | {
+      type: "tool_end";
+      itemId: string;
+      toolCallId: string;
+      toolName: string;
+      output: string;
+      isError: boolean;
+      childThreadId?: string;
+      nickname?: string;
+    }
   // Status (1)
   | { type: "status_change"; status: "idle" | "busy" | "retry"; retry?: { attempt: number; delayMs: number } }
   // Usage (1)
@@ -76,7 +101,7 @@ export type AgentEvent =
   | {
       type: "collab_spawn_end";
       callId: string;
-      agentId: string;
+      childThreadId: string;
       nickname?: string;
       description?: string;
       prompt: string;
@@ -86,47 +111,44 @@ export type AgentEvent =
   | {
       type: "collab_wait_begin";
       callId: string;
-      agents: Array<{ agentId: string; nickname?: string; description?: string }>;
+      agents: Array<{ threadId: string; nickname?: string; description?: string }>;
     }
   | {
       type: "collab_wait_end";
       callId: string;
       agentStatuses: Array<{
-        agentId: string;
+        threadId: string;
         nickname?: string;
         status: "pending" | "running" | "completed" | "errored" | "shutdown";
         message?: string;
       }>;
       timedOut: boolean;
     }
-  | { type: "collab_close_begin"; callId: string; agentId: string; nickname?: string }
+  | { type: "collab_close_begin"; callId: string; childThreadId: string; nickname?: string }
   | {
       type: "collab_close_end";
       callId: string;
-      agentId: string;
+      childThreadId: string;
       nickname?: string;
       status: "pending" | "running" | "completed" | "errored" | "shutdown";
       message?: string;
     }
-  // Collab — sub-agent internal activity forwarded from child stream
+  // Collab — interaction events (send_input)
   | {
-      type: "collab_tool_start";
-      agentId: string;
-      nickname?: string;
-      toolName: string;
-      toolCallId: string;
-      input?: unknown;
+      type: "collab_interaction_begin";
+      callId: string;
+      receiverThreadId: string;
+      receiverNickname?: string;
+      prompt: string;
     }
   | {
-      type: "collab_tool_end";
-      agentId: string;
-      nickname?: string;
-      toolName: string;
-      toolCallId: string;
-      isError: boolean;
-      output?: string;
-    }
-  | { type: "collab_turn_start"; agentId: string; nickname?: string; turnNumber: number };
+      type: "collab_interaction_end";
+      callId: string;
+      receiverThreadId: string;
+      receiverNickname?: string;
+      prompt: string;
+      status: "pending" | "running" | "completed" | "errored" | "shutdown";
+    };
 
 // D008: Config for a single agent invocation
 export interface AgentLoopConfig {
