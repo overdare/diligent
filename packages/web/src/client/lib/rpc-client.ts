@@ -302,6 +302,15 @@ export class WebRpcClient {
     }
 
     if (message.type === "server_notification") {
+      if (message.notification.method.startsWith("collab/")) {
+        const params = message.notification.params as { threadId?: string; callId?: string; childThreadId?: string };
+        console.log("[WebRpcClient][collab] received server_notification", {
+          method: message.notification.method,
+          threadId: params.threadId,
+          callId: params.callId,
+          childThreadId: params.childThreadId,
+        });
+      }
       this.notificationListener?.(message.notification);
       return;
     }

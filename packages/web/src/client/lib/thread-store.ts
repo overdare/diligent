@@ -291,7 +291,15 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       // Child agent tool — nest under spawn item
       if (event.childThreadId) {
         const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) return state;
+        if (!spawnItem) {
+          console.log(
+            "[ThreadStore][collab-debug] child tool_start dropped: spawn item not found",
+            event.childThreadId,
+            event.toolName,
+            event.toolCallId,
+          );
+          return state;
+        }
         return updateItem(state, spawnItem.id, (item) =>
           item.kind === "collab"
             ? {
@@ -339,7 +347,15 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       // Child agent tool — stream update into spawn item's childTools
       if (event.childThreadId) {
         const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) return state;
+        if (!spawnItem) {
+          console.log(
+            "[ThreadStore][collab-debug] child tool_update dropped: spawn item not found",
+            event.childThreadId,
+            event.toolName,
+            event.toolCallId,
+          );
+          return state;
+        }
         return updateItem(state, spawnItem.id, (item) =>
           item.kind === "collab"
             ? {
@@ -362,7 +378,15 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       // Child agent tool — update spawn item
       if (event.childThreadId) {
         const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) return state;
+        if (!spawnItem) {
+          console.log(
+            "[ThreadStore][collab-debug] child tool_end dropped: spawn item not found",
+            event.childThreadId,
+            event.toolName,
+            event.toolCallId,
+          );
+          return state;
+        }
         return updateItem(state, spawnItem.id, (item) =>
           item.kind === "collab"
             ? {
@@ -498,6 +522,10 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_spawn_begin": {
+      console.log("[ThreadStore][collab-debug] collab_spawn_begin", {
+        callId: event.callId,
+        promptPreview: event.prompt.slice(0, 80),
+      });
       // Create the spawn item eagerly so that child events (tool_start/update/end)
       // arriving before collab_spawn_end can find it via findCollabSpawnItem.
       // In the registry, callId === childThreadId (both are the child session id).
@@ -514,6 +542,12 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_spawn_end": {
+      console.log("[ThreadStore][collab-debug] collab_spawn_end", {
+        callId: event.callId,
+        childThreadId: event.childThreadId,
+        nickname: event.nickname,
+        status: event.status,
+      });
       const renderId = `collab:spawn:${event.callId}`;
       // If the item was already created by collab_spawn_begin, update it in place.
       const existing = findCollabSpawnItem(state, event.childThreadId);
@@ -547,9 +581,19 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_wait_begin":
+      console.log("[ThreadStore][collab-debug] collab_wait_begin", {
+        callId: event.callId,
+        agentCount: event.agents.length,
+        agents: event.agents.map((a) => a.threadId),
+      });
       return state;
 
     case "collab_wait_end": {
+      console.log("[ThreadStore][collab-debug] collab_wait_end", {
+        callId: event.callId,
+        timedOut: event.timedOut,
+        statuses: event.agentStatuses.map((a) => `${a.threadId}:${a.status}`),
+      });
       const renderId = `collab:wait:${event.callId}`;
       let next = withItem(state, renderId, {
         id: renderId,
@@ -671,6 +715,13 @@ export function reduceServerNotification(
     state.activeThreadId !== null &&
     notification.params.threadId !== state.activeThreadId
   ) {
+    if (notification.method.startsWith("collab/") || notification.method.startsWith("item/")) {
+      console.log("[ThreadStore][collab-debug] notification ignored due to active-thread mismatch", {
+        method: notification.method,
+        activeThreadId: state.activeThreadId,
+        incomingThreadId: notification.params.threadId,
+      });
+    }
     return state;
   }
 

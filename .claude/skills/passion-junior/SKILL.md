@@ -17,7 +17,14 @@ Execute Group 1 quick fixes from the latest tech-lead review, each as an individ
 
 ### 1. Find the latest review
 
-Read the most recent file in `docs/review/tech-lead/` (sort by date prefix).
+Find the most recently committed review file using git:
+
+```bash
+git log --oneline --diff-filter=A -- 'docs/review/tech-lead/*.md' | head -5
+```
+
+This lists commits that added files in that directory, newest first. The first result's file is the latest review. Multiple files may share the same date prefix, so filename sorting is unreliable — always use git commit order.
+
 See [references/review-format.md](references/review-format.md) for format details.
 
 ### 2. Extract Group 1 tasks

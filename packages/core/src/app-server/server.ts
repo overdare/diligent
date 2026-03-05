@@ -871,6 +871,23 @@ export class DiligentAppServer {
     if (!this.notificationListener) {
       return;
     }
+
+    // Collab debugging: always-on server-side log for collab/* notifications.
+    // Intentionally redact large prompt fields to avoid noisy logs.
+    if (notification.method.startsWith("collab/")) {
+      const params = notification.params as Record<string, unknown>;
+      const safeParams: Record<string, unknown> = { ...params };
+      if (typeof safeParams.prompt === "string") {
+        const prompt = safeParams.prompt as string;
+        safeParams.prompt = `${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
+        safeParams.promptLength = prompt.length;
+      }
+      console.log("[AppServer][collab] → client notification", {
+        method: notification.method,
+        params: safeParams,
+      });
+    }
+
     await this.notificationListener(notification);
   }
 

@@ -593,6 +593,14 @@ export class RpcBridge {
     const params = notification.params as { threadId?: string };
     const threadId = params.threadId;
 
+    if (notification.method.startsWith("collab/")) {
+      console.log("[RpcBridge][collab] routeNotification", {
+        method: notification.method,
+        threadId,
+        hasThreadId: Boolean(threadId),
+      });
+    }
+
     if (!threadId) {
       this.broadcast({ type: "server_notification", notification });
       return;
@@ -605,6 +613,12 @@ export class RpcBridge {
 
     const subscribers = this.threadSubscribers.get(threadId);
     if (!subscribers || subscribers.size === 0) {
+      if (notification.method.startsWith("collab/")) {
+        console.log("[RpcBridge][collab] no thread subscribers; broadcasting", {
+          method: notification.method,
+          threadId,
+        });
+      }
       this.broadcast({ type: "server_notification", notification });
       return;
     }
@@ -616,6 +630,13 @@ export class RpcBridge {
       if (sessionId === skipSessionId) continue;
       const session = this.sessions.get(sessionId);
       if (session) {
+        if (notification.method.startsWith("collab/")) {
+          console.log("[RpcBridge][collab] send to session", {
+            method: notification.method,
+            threadId,
+            sessionId,
+          });
+        }
         this.send(session.ws, { type: "server_notification", notification });
       }
     }

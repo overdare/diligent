@@ -41,6 +41,18 @@ export class AgentRegistry {
   }
 
   private emit(event: CollabAgentEvent): void {
+    // Collab debugging: always-on log at the source of truth.
+    // This runs even if no handler is currently wired, which helps detect dropped events.
+    const base = {
+      type: event.type,
+      // Narrow common fields for easier grepping
+      callId: (event as { callId?: string }).callId,
+      childThreadId: (event as { childThreadId?: string }).childThreadId,
+      receiverThreadId: (event as { receiverThreadId?: string }).receiverThreadId,
+    };
+    const hasHandler = Boolean(this.collabEventHandler);
+    console.log("[CollabRegistry] emit", { ...base, hasHandler });
+
     this.collabEventHandler?.(event);
   }
 

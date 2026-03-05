@@ -42,8 +42,8 @@ export function ContentGrep({ pattern, include, path, output, isError = false }:
       {lines.length > 0 ? (
         <div>
           <div className="space-y-0 px-3 py-2">
-            {visibleLines.map((line) => (
-              <MatchLine key={line} line={line} pattern={pattern} isError={isError} />
+            {visibleLines.map((line, index) => (
+              <MatchLine key={`${index}:${line}`} line={line} pattern={pattern} isError={isError} />
             ))}
           </div>
           {isLong ? (
