@@ -35,6 +35,7 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_VERSION,
   DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
   JSONRPCErrorResponseSchema,
@@ -134,7 +135,7 @@ export class RpcBridge {
       type: "connected",
       cwd: this.cwd,
       mode: this.initialMode,
-      serverVersion: "0.0.1",
+      serverVersion: DILIGENT_VERSION,
       currentModel: this.currentModelId,
       availableModels: this.modelConfig.getAvailableModels(),
     };
