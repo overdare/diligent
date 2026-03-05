@@ -43,6 +43,17 @@
 - [x] **Sub-agent permission isolation (D064)** — `general` excludes `task` (no infinite nesting), `explore` uses PLAN_MODE_ALLOWED_TOOLS only. (done: 2026-03-02)
 - [x] **Sub-agent result format (D065)** — `<task_result sessionId="...">` wrapping. TUI renders `[type] desc · elapsed` with preview line. (done: 2026-03-02)
 
+### P2a — Protocol Evolution (P028)
+
+> Codex-RS inspired thread operations and streaming granularity. See `docs/plan/feature/P028-thread-ops-and-streaming-granularity.md`.
+
+- [ ] **Thread Fork (D089)** — `thread/fork` creates independent copy of a thread at current point. New JSONL file with `forkedFromId` metadata. Enables "try a different approach" workflow. (added: 2026-03-05)
+- [ ] **Thread Compact (D090)** — `thread/compact/start` exposes existing compaction as user-triggered operation. Rejects during active turns. Emits `thread/compacted` notification. (added: 2026-03-05)
+- [ ] **Thread Archive/Unarchive (D091)** — Soft delete via `ArchiveEntry` in JSONL. Filtered from `thread/list` by default. `SESSION_VERSION` 5→6. (added: 2026-03-05)
+- [ ] **Thread Name Set (D092)** — `thread/name/set` exposes existing `SessionInfoEntry` name mechanism via protocol. (added: 2026-03-05)
+- [ ] **Fine-grained streaming deltas (D093)** — Replace unified `item/delta` with 6 type-specific notifications: `agentMessage/delta`, `reasoning/summaryTextDelta`, `plan/delta`, `toolExecution/outputDelta`, `fileChange/outputDelta`, `reasoning/textDelta`. Old `item/delta` kept as deprecated. (added: 2026-03-05)
+- [ ] **Streaming capability negotiation (D094)** — Clients declare `streamingDeltaVersion: 1 | 2` in `initialize`. Enables gradual client migration without breaking existing frontends. (added: 2026-03-05)
+
 ### P3 — Low (opportunistic)
 
 - [ ] **Sync debug-viewer shared types** — `packages/debug-viewer/src/shared/types.ts` duplicates core types by convention (DV-01). Sync with current session entry types (SESSION_VERSION 4, ModeChangeEntry, SteeringEntry, etc.). D086's serialization contract is the reference for format stability. (added: 2026-02-25)

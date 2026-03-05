@@ -614,3 +614,45 @@ Decisions made during synthesis reviews, with rationale.
 - **Alternatives considered**: Reuse approval mechanism for questions (D087 original — rejected: wrong semantics), plan-mode-only restriction (D087 original — rejected: blocks clarification in default/execute modes)
 - **References**: D027, D028, D087, codex-rs `protocol/src/request_user_input.rs`
 - **Date**: 2026-03-02
+
+## Protocol Evolution Decisions (P028)
+
+### D089: Thread Fork — File-level branch-point duplication
+- **Decision**: `thread/fork` creates a new JSONL file by copying all session entries up to the current leaf. The forked session gets a new ID and `forkedFromId` metadata linking to the parent. This is a user-facing file-level operation, distinct from the internal `parentId` tree branching.
+- **Rationale**: Users need a visible "try a different approach" workflow. The existing parentId tree is an internal mechanism for context building that doesn't appear in thread/list. Codex-RS's fork creates flat independent sessions with metadata links — simple, no hierarchical tree enforcement.
+- **Session format**: `SessionHeader` gains optional `forkedFromId: string`.
+- **References**: P028, codex-rs `thread/fork`, D006
+- **Date**: 2026-03-05
+
+### D090: Thread Compact — User-triggered compaction via protocol
+- **Decision**: `thread/compact/start` exposes the existing compaction machinery as an explicit client-triggered operation. Rejects when a turn is running or context is already small (< 4000 tokens). Emits `thread/compacted` notification on completion.
+- **Rationale**: Users sometimes want to compact proactively before complex tasks. Currently compaction is purely automatic (proactive threshold + reactive context_overflow). Codex-RS exposes both local and remote compaction as explicit operations.
+- **Implementation**: Extracts `compactNow()` public method from existing `SessionManager.performCompaction()`.
+- **References**: P028, D037, D038, D039, D041
+- **Date**: 2026-03-05
+
+### D091: Thread Archive — Soft delete via append-only entry
+- **Decision**: Archive/unarchive threads by appending an `ArchiveEntry { type: "archive", archived: boolean }` to the session JSONL. Last archive entry determines state. Archived threads excluded from `thread/list` by default, shown with `archived: true` filter.
+- **Rationale**: Preserves append-only JSONL invariant (D006). Header rewriting would violate this principle. Codex-RS supports archive sweep for disk cleanup; our approach is simpler (entry-based flag) but achieves the same user experience of "hide without losing data".
+- **Session format**: New `ArchiveEntry` in `SessionEntry` union. `SESSION_VERSION` 5 → 6.
+- **References**: P028, D006, D042
+- **Date**: 2026-03-05
+
+### D092: Thread Name — Protocol-level name management
+- **Decision**: `thread/name/set` creates a `SessionInfoEntry` with the new name. The existing `SessionSummary.name` field already reads from this entry type. This decision just exposes the capability via the protocol.
+- **Rationale**: Thread names are already supported in the session format but have no protocol API. Naming is essential for thread management UX, especially with fork (users need to distinguish branches).
+- **References**: P028, D040
+- **Date**: 2026-03-05
+
+### D093: Fine-grained streaming delta types
+- **Decision**: Replace the unified `item/delta` notification with 6 type-specific delta notifications: `item/agentMessage/delta`, `item/reasoning/summaryTextDelta`, `item/plan/delta`, `item/toolExecution/outputDelta`, `item/fileChange/outputDelta`, `item/reasoning/textDelta`. The old `item/delta` is kept as deprecated, coexisting with new types during migration via capability negotiation (D094).
+- **Rationale**: Codex-RS separates 8 delta types, enabling clients to render reasoning, plans, and output with different UI treatments. Our current unified delta loses semantic meaning at the protocol boundary — the client has to inspect sub-types to decide rendering. Type-specific methods let clients subscribe to what they need.
+- **Key mapping**: `message_delta(text_delta)` → `agentMessage/delta`, `message_delta(thinking_delta)` → `reasoning/summaryTextDelta`, `tool_update(plan)` → `plan/delta`, `tool_update(bash/read/grep)` → `toolExecution/outputDelta`, `tool_update(write/edit)` → `fileChange/outputDelta`.
+- **References**: P028, D004, D086
+- **Date**: 2026-03-05
+
+### D094: Streaming capability negotiation
+- **Decision**: Clients declare `streamingDeltaVersion: 1 | 2` in `InitializeParams.capabilities`. Version 1 = legacy unified `item/delta`, version 2 = type-specific deltas. Server matches the requested version. Default is v1 for backward compatibility.
+- **Rationale**: Additive protocol evolution without breaking existing clients. TUI and Web can migrate independently. No protocol version bump needed — these are purely additive notification methods.
+- **References**: P028, D086
+- **Date**: 2026-03-05
