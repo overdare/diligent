@@ -38,9 +38,18 @@ export const requestUserInputTool: Tool<typeof ParamsSchema> = {
       return { output: "User input not available in this context." };
     }
     const response = await ctx.ask({ questions: args.questions });
-    const lines = args.questions.map(
-      (q) => `[${q.header}] ${q.question}\nAnswer: ${response.answers[q.id] ?? "(no answer)"}`,
-    );
+
+    // Treat cancel/blank/no-answer — persist result but abort the agent loop.
+    const hasUnanswered = args.questions.some((q) => {
+      const answer = response.answers[q.id];
+      return typeof answer !== "string" || answer.trim().length === 0;
+    });
+    if (hasUnanswered) {
+      const summary = args.questions.map((q) => `[${q.header}] ${q.question}`).join("\n");
+      return { output: `[Cancelled by user]\n\n${summary}`, abortRequested: true };
+    }
+
+    const lines = args.questions.map((q) => `[${q.header}] ${q.question}\nAnswer: ${response.answers[q.id]}`);
     return { output: lines.join("\n\n") };
   },
 };

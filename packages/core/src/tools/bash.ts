@@ -36,7 +36,7 @@ export const bashTool: Tool<typeof BashParams> = {
       details: { command: args.command },
     });
     if (approval === "reject") {
-      return { output: "[Rejected by user]", metadata: { error: true } };
+      return { output: "[Rejected by user]", metadata: { error: true }, abortRequested: true };
     }
 
     const timeout = args.timeout ?? DEFAULT_TIMEOUT;

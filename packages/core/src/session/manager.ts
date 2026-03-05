@@ -262,9 +262,14 @@ export class SessionManager {
             msg.includes("too many tokens") ||
             msg.includes("maximum") ||
             msg.includes("context_overflow");
+          const isAbort = fatalError.error.name === "AbortError" || msg === "aborted";
 
           if (isContextOverflow) {
             throw new ProviderError(fatalError.error.message, "context_overflow", false);
+          }
+          if (isAbort) {
+            outerStream.error(new Error("Aborted"));
+            return;
           }
           outerStream.push(fatalError);
         }
@@ -277,6 +282,13 @@ export class SessionManager {
           continue;
         }
         throw err;
+      }
+
+      // On abort, stop immediately even if pending queue is non-empty.
+      // Otherwise we can re-enter agentLoop with an already-aborted signal forever
+      // (agentLoop exits at top-of-loop before draining pending steering messages).
+      if (this.resolveAgentConfig().signal?.aborted) {
+        return;
       }
 
       // Check unified queue — pending messages trigger next iteration

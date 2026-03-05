@@ -129,9 +129,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
   const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
   const outputSummary =
-    !isUserInput && item.status === "done" && !item.isError && item.outputText
-      ? summarizeOutput(item.toolName, item.outputText)
-      : "";
+    !isUserInput && item.status === "done" && item.outputText ? summarizeOutput(item.toolName, item.outputText) : "";
 
   const isStreaming = item.status === "streaming";
   const isAction = category === "action";
@@ -145,17 +143,16 @@ export function ToolBlock({ item }: ToolBlockProps) {
     <span className="shrink-0 text-xs text-danger">error</span>
   ) : null;
 
-  const chevronEl =
-    !isStreaming && !item.isError ? (
-      <span
-        className={cn(
-          "shrink-0 text-xs leading-none text-muted transition-transform duration-150",
-          open ? "rotate-180" : "rotate-0",
-        )}
-      >
-        ▾
-      </span>
-    ) : null;
+  const chevronEl = !isStreaming ? (
+    <span
+      className={cn(
+        "shrink-0 text-xs leading-none text-muted transition-transform duration-150",
+        open ? "rotate-180" : "rotate-0",
+      )}
+    >
+      ▾
+    </span>
+  ) : null;
 
   const iconColorClass = isAction
     ? isStreaming

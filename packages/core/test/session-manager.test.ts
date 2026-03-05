@@ -205,4 +205,42 @@ describe("SessionManager", () => {
 
     expect(() => mgr.appendModeChange("execute")).not.toThrow();
   });
+
+  test("aborted signal with pending steering settles inner work (no re-entry loop)", async () => {
+    const dir = await setupDir();
+    const controller = new AbortController();
+    controller.abort();
+
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agentConfig: {
+        model: TEST_MODEL,
+        systemPrompt: [{ label: "test", content: "test" }],
+        tools: [],
+        streamFunction: createMockStreamFn([makeAssistant("should not run")]),
+        signal: controller.signal,
+      },
+    });
+    await mgr.create();
+
+    // Keep pending queue non-empty: this used to trigger re-entry with an already-aborted signal.
+    mgr.steer("queued while aborting");
+
+    const stream = mgr.run({ role: "user", content: "hi", timestamp: Date.now() });
+
+    // Consume iterator so stream lifecycle mirrors app-server usage.
+    for await (const _ of stream) {
+    }
+
+    // Aborted outer stream rejects its result promise; consume it to avoid unhandled rejection noise.
+    await stream.result().catch(() => {});
+
+    const settled = await Promise.race([
+      stream.waitForInnerWork().then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+    ]);
+
+    expect(settled).toBe(true);
+  });
 });

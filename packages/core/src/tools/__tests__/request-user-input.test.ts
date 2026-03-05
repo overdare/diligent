@@ -62,13 +62,24 @@ describe("requestUserInputTool", () => {
     expect(result.output).toBe("[approach] Which approach?\nAnswer: Fix in place\n\n[confirm] Proceed?\nAnswer: Yes");
   });
 
-  it("shows '(no answer)' for missing question ids", async () => {
+  it("throws Aborted when question answer is missing", async () => {
     const ctx = makeCtx(async () => ({ answers: {} }));
-    const result = await requestUserInputTool.execute(
-      { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
-      ctx,
-    );
-    expect(result.output).toBe("[info] Any thoughts?\nAnswer: (no answer)");
+    await expect(
+      requestUserInputTool.execute(
+        { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
+        ctx,
+      ),
+    ).rejects.toThrow("Aborted");
+  });
+
+  it("throws Aborted when question answer is blank", async () => {
+    const ctx = makeCtx(async () => ({ answers: { q1: "   " } }));
+    await expect(
+      requestUserInputTool.execute(
+        { questions: [{ id: "q1", header: "info", question: "Any thoughts?", options: YES_NO_OPTIONS }] },
+        ctx,
+      ),
+    ).rejects.toThrow("Aborted");
   });
 
   it("rejects call when options array has fewer than 2 items", () => {

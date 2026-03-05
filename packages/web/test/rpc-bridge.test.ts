@@ -77,13 +77,11 @@ async function startThread(bridge: RpcBridge, ws: ReturnType<typeof createFakeWs
 }
 
 describe("RpcBridge multi-subscriber", () => {
-  test("resolves server request using subscriber response", async () => {
-    const { bridge } = createBridge();
+  test("resolves server request using client response", async () => {
+    const server = new FakeAppServer();
+    const { bridge } = createBridge(server);
     const { ws, sent } = createFakeWs("s1");
     bridge.open(ws);
-
-    // Start a thread to auto-subscribe
-    await startThread(bridge, ws, "thread1");
 
     const request: DiligentServerRequest = {
       method: "approval/request",
@@ -93,12 +91,13 @@ describe("RpcBridge multi-subscriber", () => {
       },
     };
 
-    const subscribers = new Set(["s1"]);
-    const responsePromise = bridge.requestFromSubscribers(subscribers, request);
+    // Trigger server request through the handler (broadcasts to all clients)
+    const responsePromise = server.serverRequestHandler!(request);
 
     const serverRequest = sent.find((entry) => (entry as { type?: string }).type === "server_request") as {
       id: number;
     };
+    expect(serverRequest).toBeTruthy();
 
     await bridge.message(
       ws,
@@ -169,7 +168,8 @@ describe("RpcBridge multi-subscriber", () => {
   });
 
   test("first-responder wins: second response is ignored", async () => {
-    const { bridge } = createBridge();
+    const server = new FakeAppServer();
+    const { bridge } = createBridge(server);
     const { ws: ws1, sent: sent1 } = createFakeWs("s1");
     const { ws: ws2, sent: sent2 } = createFakeWs("s2");
     bridge.open(ws1);
@@ -183,8 +183,8 @@ describe("RpcBridge multi-subscriber", () => {
       },
     };
 
-    const subscribers = new Set(["s1", "s2"]);
-    const responsePromise = bridge.requestFromSubscribers(subscribers, request);
+    // Broadcast to all clients
+    const responsePromise = server.serverRequestHandler!(request);
 
     // Both sessions should receive the server_request
     const req1 = sent1.find((e) => (e as { type?: string }).type === "server_request") as { id: number };
@@ -256,11 +256,11 @@ describe("RpcBridge multi-subscriber", () => {
     expect(notif2).toBeTruthy();
   });
 
-  test("disconnect keeps pending request alive and re-delivers on resubscribe", async () => {
-    const { bridge } = createBridge();
-    const { ws: ws1 } = createFakeWs("s1");
-    bridge.open(ws1);
+  test("no connected clients: server request resolves with safe fallback", async () => {
+    const server = new FakeAppServer();
+    createBridge(server);
 
+    // No clients connected — request should resolve immediately with fallback
     const request: DiligentServerRequest = {
       method: "approval/request",
       params: {
@@ -269,47 +269,10 @@ describe("RpcBridge multi-subscriber", () => {
       },
     };
 
-    const subscribers = new Set(["s1"]);
-    const responsePromise = bridge.requestFromSubscribers(subscribers, request);
-
-    // Disconnect — pending request should NOT resolve yet
-    bridge.close(ws1);
-    let resolved = false;
-    void responsePromise.then(() => {
-      resolved = true;
-    });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(resolved).toBe(false);
-
-    // A new client connects and subscribes to the same thread
-    const { ws: ws2, sent: sent2 } = createFakeWs("s2");
-    bridge.open(ws2);
-    await bridge.message(
-      ws2,
-      JSON.stringify({ type: "rpc_request", id: 1, method: "thread/subscribe", params: { threadId: "thread1" } }),
-    );
-
-    // The pending request should be re-delivered to the new session
-    const redelivered = sent2.find((msg) => (msg as { type?: string }).type === "server_request") as
-      | { type: string; id: number; request: DiligentServerRequest }
-      | undefined;
-    expect(redelivered).toBeTruthy();
-    expect(redelivered!.request.method).toBe("approval/request");
-
-    // Respond from the new session — original promise should resolve
-    await bridge.message(
-      ws2,
-      JSON.stringify({
-        type: "server_request_response",
-        id: redelivered!.id,
-        response: { method: "approval/request", result: { decision: "once" } },
-      }),
-    );
-
-    const response = await responsePromise;
+    const response = await server.serverRequestHandler!(request);
     expect(response.method).toBe("approval/request");
     if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("once");
+      expect(response.result.decision).toBe("reject"); // safe fallback
     }
   });
 

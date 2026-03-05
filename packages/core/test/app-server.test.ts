@@ -4,10 +4,15 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import type { DiligentServerNotification } from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS, type JSONRPCResponse } from "@diligent/protocol";
+import {
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  DILIGENT_SERVER_REQUEST_METHODS,
+  type JSONRPCResponse,
+} from "@diligent/protocol";
 import { DiligentAppServer } from "../src/app-server";
 import { EventStream } from "../src/event-stream";
 import { ensureDiligentDir } from "../src/infrastructure/diligent-dir";
+import { requestUserInputTool } from "../src/tools/request-user-input";
 
 function readResult(response: JSONRPCResponse): unknown {
   if ("error" in response) {
@@ -109,5 +114,116 @@ describe("DiligentAppServer", () => {
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA)).toBe(true);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED)).toBe(true);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
+  });
+
+  it("treats empty user-input response as aborted turn", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [requestUserInputTool as never],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "tool_use",
+              message: {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_call",
+                    id: "tc-1",
+                    name: "request_user_input",
+                    input: {
+                      questions: [
+                        {
+                          id: "q1",
+                          header: "scope",
+                          question: "Pick one",
+                          options: [
+                            { label: "A (Recommended)", description: "Preferred" },
+                            { label: "B", description: "Alternative" },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                ],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "tool_use",
+                timestamp: Date.now(),
+              },
+            });
+          });
+
+          return stream as never;
+        },
+      }),
+    });
+
+    const notifications: DiligentServerNotification[] = [];
+    let resolveTurnInterrupted: (() => void) | null = null;
+    const turnInterrupted = new Promise<void>((resolve) => {
+      resolveTurnInterrupted = resolve;
+    });
+
+    server.setNotificationListener((notification) => {
+      notifications.push(notification);
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
+        resolveTurnInterrupted?.();
+      }
+    });
+
+    server.setServerRequestHandler(async (request) => {
+      if (request.method === DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST) {
+        return {
+          method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+          result: { answers: {} },
+        };
+      }
+      return {
+        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+        result: { decision: "once" },
+      };
+    });
+
+    const start = await server.handleRequest({
+      id: 20,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const startResult = readResult(start) as { threadId: string };
+
+    const turnStart = await server.handleRequest({
+      id: 21,
+      method: "turn/start",
+      params: { threadId: startResult.threadId, message: "hi" },
+    });
+    const turnStartResult = readResult(turnStart) as { accepted: boolean };
+    expect(turnStartResult.accepted).toBe(true);
+
+    await turnInterrupted;
+
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(true);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(false);
   });
 });

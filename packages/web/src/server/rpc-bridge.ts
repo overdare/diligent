@@ -114,12 +114,7 @@ export class RpcBridge {
     });
 
     this.appServer.setServerRequestHandler(async (request) => {
-      const threadId = request.params.threadId;
-      const subscribers = threadId ? this.threadSubscribers.get(threadId) : null;
-      if (!subscribers || subscribers.size === 0) {
-        return toSafeFallback(request);
-      }
-      return this.requestFromSubscribers(subscribers, request);
+      return this.broadcastServerRequest(request);
     });
   }
 
@@ -151,14 +146,6 @@ export class RpcBridge {
     if (!session) return;
 
     this.removeAllSubscriptionsForSession(session.id);
-
-    // Remove session from pending-request tracking but keep them alive — the
-    // client may reconnect and re-subscribe, at which point addSubscription()
-    // re-delivers outstanding requests. The 5-min timeout is the safety net.
-    for (const pending of this.pendingServerRequests.values()) {
-      pending.sentTo.delete(session.id);
-    }
-
     this.sessions.delete(session.id);
   }
 
@@ -495,10 +482,12 @@ export class RpcBridge {
     }
   }
 
-  requestFromSubscribers(
-    subscribers: Set<string>,
-    request: DiligentServerRequest,
-  ): Promise<DiligentServerRequestResponse> {
+  /**
+   * Broadcast a server request to ALL connected clients.
+   * Each client decides whether to show the dialog (active thread) or buffer it (inactive thread).
+   * First response wins; others get a server_request_resolved message.
+   */
+  private broadcastServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
     const requestId = ++this.serverRequestSeq;
     const payload: WsServerMessage = {
       type: "server_request",
@@ -507,12 +496,9 @@ export class RpcBridge {
     };
 
     const sentTo = new Set<string>();
-    for (const sessionId of subscribers) {
-      const session = this.sessions.get(sessionId);
-      if (session) {
-        this.send(session.ws, payload);
-        sentTo.add(sessionId);
-      }
+    for (const session of this.sessions.values()) {
+      this.send(session.ws, payload);
+      sentTo.add(session.id);
     }
 
     if (sentTo.size === 0) {
@@ -672,20 +658,6 @@ export class RpcBridge {
     subs.add(sessionId);
     const subId = randomBytes(16).toString("hex");
     this.subscriptions.set(subId, { threadId, sessionId });
-
-    // Re-deliver pending server requests for this thread that lost all
-    // recipients (e.g. previous WebSocket disconnected while user was in
-    // another window and the client has now reconnected).
-    const session = this.sessions.get(sessionId);
-    if (session) {
-      for (const [reqId, pending] of this.pendingServerRequests) {
-        const reqThread = pending.request.params?.threadId;
-        if (reqThread === threadId && !pending.sentTo.has(sessionId)) {
-          this.send(session.ws, { type: "server_request", id: reqId, request: pending.request });
-          pending.sentTo.add(sessionId);
-        }
-      }
-    }
     return subId;
   }
 

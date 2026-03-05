@@ -135,8 +135,6 @@ export function App() {
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
   const providerMgr = useProviderManager(rpcRef);
   const activeThreadIdRef = useRef<string | null>(null);
-  const serverRequests = useServerRequests(rpcRef, activeThreadIdRef);
-
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
   const adapterRef = useRef(new ProtocolNotificationAdapter());
   const stateRef = useRef(state);
@@ -148,8 +146,19 @@ export function App() {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
-  // Track threads where a turn completed while the user was viewing a different thread
-  const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(new Set());
+  // Threads needing attention (turn completed, approval/user-input buffered while user is elsewhere)
+  const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
+
+  const markAttention = useCallback((threadId: string) => {
+    setAttentionThreadIds((prev) => {
+      if (prev.has(threadId)) return prev;
+      const next = new Set(prev);
+      next.add(threadId);
+      return next;
+    });
+  }, []);
+
+  const serverRequests = useServerRequests(rpcRef, activeThreadIdRef, markAttention);
 
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
@@ -266,18 +275,14 @@ export function App() {
         void providerMgr.onAccountUpdated(notification.params);
         return;
       }
-      // Mark non-active threads as unread when their turn completes
+      // Mark non-active threads as needing attention when their turn completes
       if (
         notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
         "threadId" in notification.params &&
         activeThreadIdRef.current &&
         notification.params.threadId !== activeThreadIdRef.current
       ) {
-        setUnreadThreadIds((prev) => {
-          const next = new Set(prev);
-          next.add(notification.params.threadId);
-          return next;
-        });
+        markAttention(notification.params.threadId);
       }
 
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
@@ -320,6 +325,7 @@ export function App() {
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
     serverRequests.handleServerRequestResolved,
+    markAttention,
     rpcRef.current,
   ]);
 
@@ -357,8 +363,8 @@ export function App() {
         await refreshThreadList(rpc);
         await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
 
-        // Clear unread marker for this thread
-        setUnreadThreadIds((prev) => {
+        // Clear attention marker for this thread
+        setAttentionThreadIds((prev) => {
           if (!prev.has(resumedId)) return prev;
           const next = new Set(prev);
           next.delete(resumedId);
@@ -371,7 +377,7 @@ export function App() {
         console.error(error);
       }
     },
-    [dispatch, state.mode, setUnreadThreadIds, providerMgr, serverRequests, refreshThreadList],
+    [dispatch, state.mode, providerMgr, serverRequests, refreshThreadList],
   );
 
   // Handle browser back/forward navigation between threads
@@ -523,8 +529,7 @@ export function App() {
           cwd={cwd}
           threadList={state.threadList}
           activeThreadId={state.activeThreadId}
-          pendingApprovalThreadIds={serverRequests.pendingApprovalThreadIds}
-          unreadThreadIds={unreadThreadIds}
+          attentionThreadIds={attentionThreadIds}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
           onDeleteThread={(id) => setPendingDeleteThreadId(id)}

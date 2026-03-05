@@ -63,6 +63,9 @@ export interface ToolResult {
   output: string;
   metadata?: Record<string, unknown>;
   truncateDirection?: "head" | "tail" | "head_tail"; // D025: hint for auto-truncation. Default: "tail"
+  /** When true, the tool result is persisted to the session but NOT sent to the LLM.
+   *  The agent loop aborts immediately after this tool completes. */
+  abortRequested?: boolean;
 }
 
 // D014: Registry type

@@ -830,50 +830,13 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     if (message.role === "assistant") {
       let text = "";
       let thinking = "";
+      // First pass: collect text and thinking
       for (const block of message.content) {
         if (block.type === "text") text += block.text;
         if (block.type === "thinking") thinking += block.thinking;
-        if (block.type === "tool_call") {
-          // spawn_agent: create collab spawn item from child session data
-          if (block.name === "spawn_agent") {
-            const spawnInfo = spawnResultByToolCallId.get(block.id);
-            const child = spawnInfo?.child;
-            const childThreadId = spawnInfo?.threadId ?? child?.sessionId;
-            // Determine status: if parent is running and this agent hasn't been waited/closed, it's still running
-            const isSettled = childThreadId ? settledThreadIds.has(childThreadId) : true;
-            const spawnStatus = !payload.isRunning || isSettled ? "completed" : "running";
-            current = withItem(current, `history:collab:spawn:${block.id}`, {
-              id: `history:collab:spawn:${block.id}`,
-              kind: "collab",
-              eventType: "spawn",
-              childThreadId,
-              nickname: spawnInfo?.nickname ?? child?.nickname,
-              description: child?.description ?? (block.input as { description?: string })?.description,
-              status: spawnStatus,
-              childTools: child ? extractChildTools(child) : [],
-              childMessages: child ? extractChildMessages(child) : undefined,
-              timestamp: message.timestamp,
-            });
-            continue;
-          }
-          // Other collab tools (wait, close_agent) — skip, handled in tool_result below
-          if (COLLAB_RENDERED_TOOLS.has(block.name)) continue;
-
-          const inProgress = payload.isRunning && !resolvedToolCallIds.has(block.id);
-          current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
-            id: `history:tool:${block.id}`,
-            kind: "tool",
-            toolName: block.name,
-            inputText: stringifyUnknown(block.input),
-            outputText: "",
-            isError: false,
-            status: inProgress ? "streaming" : "done",
-            timestamp: message.timestamp,
-            toolCallId: block.id,
-          });
-        }
       }
 
+      // Emit assistant text/thinking BEFORE tool calls so it appears above them
       current = withItem(current, `history:assistant:${message.timestamp}`, {
         id: `history:assistant:${message.timestamp}`,
         kind: "assistant",
@@ -882,6 +845,48 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         thinkingDone: true,
         timestamp: message.timestamp,
       });
+
+      // Second pass: emit tool call items
+      for (const block of message.content) {
+        if (block.type !== "tool_call") continue;
+        // spawn_agent: create collab spawn item from child session data
+        if (block.name === "spawn_agent") {
+          const spawnInfo = spawnResultByToolCallId.get(block.id);
+          const child = spawnInfo?.child;
+          const childThreadId = spawnInfo?.threadId ?? child?.sessionId;
+          // Determine status: if parent is running and this agent hasn't been waited/closed, it's still running
+          const isSettled = childThreadId ? settledThreadIds.has(childThreadId) : true;
+          const spawnStatus = !payload.isRunning || isSettled ? "completed" : "running";
+          current = withItem(current, `history:collab:spawn:${block.id}`, {
+            id: `history:collab:spawn:${block.id}`,
+            kind: "collab",
+            eventType: "spawn",
+            childThreadId,
+            nickname: spawnInfo?.nickname ?? child?.nickname,
+            description: child?.description ?? (block.input as { description?: string })?.description,
+            status: spawnStatus,
+            childTools: child ? extractChildTools(child) : [],
+            childMessages: child ? extractChildMessages(child) : undefined,
+            timestamp: message.timestamp,
+          });
+          continue;
+        }
+        // Other collab tools (wait, close_agent) — skip, handled in tool_result below
+        if (COLLAB_RENDERED_TOOLS.has(block.name)) continue;
+
+        const inProgress = payload.isRunning && !resolvedToolCallIds.has(block.id);
+        current = withItem(current, `history:toolcall:${block.id}:${message.timestamp}`, {
+          id: `history:tool:${block.id}`,
+          kind: "tool",
+          toolName: block.name,
+          inputText: stringifyUnknown(block.input),
+          outputText: "",
+          isError: false,
+          status: inProgress ? "streaming" : "done",
+          timestamp: message.timestamp,
+          toolCallId: block.id,
+        });
+      }
       continue;
     }
 

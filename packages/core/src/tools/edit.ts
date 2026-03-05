@@ -24,7 +24,7 @@ export function createEditTool(): Tool<typeof EditParams> {
         details: { file_path },
       });
       if (approval === "reject") {
-        return { output: "[Rejected by user]", metadata: { error: true } };
+        return { output: "[Rejected by user]", metadata: { error: true }, abortRequested: true };
       }
 
       // 1. Read file content

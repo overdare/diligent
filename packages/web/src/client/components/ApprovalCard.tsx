@@ -10,7 +10,27 @@ interface ApprovalCardProps {
   onDecide: (decision: "once" | "always" | "reject") => void;
 }
 
+/** Derive a short human-readable scope label that mirrors the server's generatePattern logic. */
+function describeAlwaysScope(request: ApprovalRequest): string {
+  const filePath = request.details?.file_path ?? request.details?.path;
+  if (typeof filePath === "string") {
+    const lastSlash = filePath.lastIndexOf("/");
+    if (lastSlash > 0) {
+      const dirName = filePath.slice(0, lastSlash).split("/").pop();
+      return `${dirName}/`;
+    }
+  }
+  if (typeof request.details?.command === "string") {
+    const cmd = String(request.details.command);
+    const firstSpace = cmd.indexOf(" ");
+    return firstSpace > 0 ? `${cmd.slice(0, firstSpace)} *` : cmd;
+  }
+  return request.toolName;
+}
+
 export function ApprovalCard({ request, onDecide }: ApprovalCardProps) {
+  const scope = describeAlwaysScope(request);
+
   return (
     <SystemCard>
       <SectionLabel>Permission request</SectionLabel>
@@ -29,7 +49,7 @@ export function ApprovalCard({ request, onDecide }: ApprovalCardProps) {
           Once
         </Button>
         <Button size="sm" onClick={() => onDecide("always")}>
-          Always
+          Always in {scope}
         </Button>
         <Button size="sm" intent="danger" onClick={() => onDecide("reject")}>
           Reject

@@ -232,6 +232,7 @@ async function runLoop(
 
     // 3. Execute tools sequentially (D015)
     const toolResults: ToolResultMessage[] = [];
+    let abortAfterTurn = false;
 
     for (const toolCall of toolCalls) {
       if (config.signal?.aborted) {
@@ -291,7 +292,6 @@ async function runLoop(
       };
 
       toolResults.push(toolResult);
-      allMessages.push(toolResult);
 
       stream.push({
         type: "tool_end",
@@ -302,6 +302,13 @@ async function runLoop(
         isError: toolResult.isError,
       });
 
+      // User rejected approval or cancelled input — persist result but don't feed to LLM
+      if (result.abortRequested) {
+        abortAfterTurn = true;
+        break;
+      }
+
+      allMessages.push(toolResult);
       loopDetector.record(toolCall.name, toolCall.input);
     }
 
@@ -325,6 +332,8 @@ async function runLoop(
       message: assistantMessage,
       toolResults,
     });
+
+    if (abortAfterTurn) break;
     // Loop continues — LLM sees tool results and responds
   }
 

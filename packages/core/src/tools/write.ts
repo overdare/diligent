@@ -25,7 +25,7 @@ export function createWriteTool(): Tool<typeof WriteParams> {
         details: { file_path },
       });
       if (approval === "reject") {
-        return { output: "[Rejected by user]", metadata: { error: true } };
+        return { output: "[Rejected by user]", metadata: { error: true }, abortRequested: true };
       }
 
       try {
