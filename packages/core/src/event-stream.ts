@@ -91,8 +91,10 @@ export class EventStream<T, R> implements AsyncIterable<T> {
   }
 
   /** Wait for the tracked inner work to settle. Resolves immediately if none was set. */
-  waitForInnerWork(): Promise<void> {
-    return this.innerWork ?? Promise.resolve();
+  waitForInnerWork(timeoutMs?: number): Promise<void> {
+    const work = this.innerWork ?? Promise.resolve();
+    if (timeoutMs == null) return work;
+    return Promise.race([work, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {

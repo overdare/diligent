@@ -480,7 +480,7 @@ export class DiligentAppServer {
 
       // Wait for the inner agent loop (executeLoop) to fully settle
       // before clearing state — prevents zombie loop from mutating leafId
-      await stream.waitForInnerWork().catch(() => {});
+      await stream.waitForInnerWork(wasAborted ? 5_000 : undefined).catch(() => {});
 
       runtime.abortController = null;
       runtime.isRunning = false;
