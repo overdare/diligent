@@ -27,9 +27,10 @@ export function estimateTokens(messages: Message[]): number {
 
 /**
  * Check if compaction should trigger.
- * D038: contextTokens > contextWindow - reserveTokens
+ * D038: contextTokens > contextWindow * (1 - reservePercent / 100)
  */
-export function shouldCompact(estimatedTokens: number, contextWindow: number, reserveTokens: number): boolean {
+export function shouldCompact(estimatedTokens: number, contextWindow: number, reservePercent: number): boolean {
+  const reserveTokens = Math.floor(contextWindow * (reservePercent / 100));
   return estimatedTokens > contextWindow - reserveTokens;
 }
 

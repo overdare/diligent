@@ -27,7 +27,7 @@ describe("DiligentConfigSchema", () => {
       instructions: ["Use TypeScript", "Run tests"],
       session: { autoResume: true },
       knowledge: { enabled: true, nudgeInterval: 5, injectionBudget: 4096 },
-      compaction: { enabled: true, reserveTokens: 8192, keepRecentTokens: 2048 },
+      compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 2048 },
     };
     const result = DiligentConfigSchema.safeParse(full);
     expect(result.success).toBe(true);

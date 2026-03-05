@@ -27,7 +27,7 @@ export interface AppConfig {
   agentLoopFn?: AgentLoopFn;
   skills: SkillMetadata[];
   mode: ModeKind; // D087: always set, defaults to "default"
-  compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number };
+  compaction: { enabled: boolean; reservePercent: number; keepRecentTokens: number };
   providerManager: ProviderManager;
 }
 

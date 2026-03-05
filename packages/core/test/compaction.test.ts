@@ -121,22 +121,22 @@ describe("estimateTokens", () => {
 });
 
 describe("shouldCompact", () => {
-  const RESERVE = Math.floor(200_000 * 0.16); // 32000
+  const RESERVE_PERCENT = 16; // 16% of 200k = 32000 tokens reserved
 
   it("returns true when tokens exceed threshold", () => {
-    expect(shouldCompact(100_000, 200_000, RESERVE)).toBe(false);
-    expect(shouldCompact(190_000, 200_000, RESERVE)).toBe(true);
-    expect(shouldCompact(168_001, 200_000, RESERVE)).toBe(true); // just above boundary
+    expect(shouldCompact(100_000, 200_000, RESERVE_PERCENT)).toBe(false);
+    expect(shouldCompact(190_000, 200_000, RESERVE_PERCENT)).toBe(true);
+    expect(shouldCompact(168_001, 200_000, RESERVE_PERCENT)).toBe(true); // just above boundary
   });
 
   it("returns false when tokens are below threshold", () => {
-    expect(shouldCompact(50_000, 200_000, RESERVE)).toBe(false);
+    expect(shouldCompact(50_000, 200_000, RESERVE_PERCENT)).toBe(false);
   });
 
   it("handles edge case: exactly at threshold", () => {
-    // threshold = 200000 - 32000 = 168000
-    expect(shouldCompact(168_000, 200_000, RESERVE)).toBe(false);
-    expect(shouldCompact(168_001, 200_000, RESERVE)).toBe(true);
+    // threshold = 200000 - floor(200000 * 0.16) = 200000 - 32000 = 168000
+    expect(shouldCompact(168_000, 200_000, RESERVE_PERCENT)).toBe(false);
+    expect(shouldCompact(168_001, 200_000, RESERVE_PERCENT)).toBe(true);
   });
 });
 

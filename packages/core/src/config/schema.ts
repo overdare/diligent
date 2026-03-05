@@ -60,7 +60,7 @@ export const DiligentConfigSchema = z
     compaction: z
       .object({
         enabled: z.boolean().optional(),
-        reserveTokens: z.number().int().positive().optional(),
+        reservePercent: z.number().min(1).max(100).optional(),
         keepRecentTokens: z.number().int().positive().optional(),
       })
       .optional(),

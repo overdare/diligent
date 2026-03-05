@@ -24,7 +24,7 @@ export interface SessionManagerConfig {
   agentConfig: AgentLoopConfig | (() => AgentLoopConfig | Promise<AgentLoopConfig>);
   compaction?: {
     enabled: boolean;
-    reserveTokens: number;
+    reservePercent: number;
     keepRecentTokens: number;
   };
   knowledgePath?: string;
@@ -188,7 +188,7 @@ export class SessionManager {
     // 3. Compaction config
     const compactionConfig = this.config.compaction ?? {
       enabled: true,
-      reserveTokens: 16384,
+      reservePercent: 16,
       keepRecentTokens: 20000,
     };
 
@@ -229,7 +229,7 @@ export class SessionManager {
 
   private async runSession(
     messages: Message[],
-    compactionConfig: { enabled: boolean; reserveTokens: number; keepRecentTokens: number },
+    compactionConfig: { enabled: boolean; reservePercent: number; keepRecentTokens: number },
     outerStream: EventStream<AgentEvent, Message[]>,
     initialConfig: AgentLoopConfig,
   ): Promise<void> {
@@ -240,7 +240,7 @@ export class SessionManager {
     if (compactionConfig.enabled) {
       const heuristicTokens = estimateTokens(currentMessages);
       const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
-      if (shouldCompact(tokens, initialConfig.model.contextWindow, compactionConfig.reserveTokens)) {
+      if (shouldCompact(tokens, initialConfig.model.contextWindow, compactionConfig.reservePercent)) {
         currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, initialConfig);
       }
     }
@@ -325,7 +325,7 @@ export class SessionManager {
 
   private async performCompaction(
     tokensBefore: number,
-    compactionConfig: { reserveTokens: number; keepRecentTokens: number },
+    compactionConfig: { reservePercent: number; keepRecentTokens: number },
     stream: EventStream<AgentEvent, Message[]>,
     initialConfig?: AgentLoopConfig,
   ): Promise<Message[]> {
