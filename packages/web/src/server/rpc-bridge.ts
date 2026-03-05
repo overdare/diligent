@@ -37,6 +37,8 @@ import {
   DiligentServerRequestResponseSchema,
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
+  ThreadSubscribeParamsSchema,
+  ThreadUnsubscribeParamsSchema,
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
 import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
@@ -284,19 +286,19 @@ export class RpcBridge {
       }
 
       if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE) {
-        const params = parsed.params as { threadId?: string };
-        if (!params?.threadId) {
+        const validated = ThreadSubscribeParamsSchema.safeParse(parsed.params);
+        if (!validated.success) {
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCErrorResponseSchema.parse({
               id: parsed.id,
-              error: { code: -32602, message: "threadId is required" },
+              error: { code: -32602, message: validated.error.message },
             }),
           });
           return;
         }
-        const subscriptionId = this.addSubscription(params.threadId, session.id);
-        session.currentThreadId = params.threadId;
+        const subscriptionId = this.addSubscription(validated.data.threadId, session.id);
+        session.currentThreadId = validated.data.threadId;
         this.send(ws, {
           type: "rpc_response",
           response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { subscriptionId } }),
@@ -305,18 +307,18 @@ export class RpcBridge {
       }
 
       if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE) {
-        const params = parsed.params as { subscriptionId?: string };
-        if (!params?.subscriptionId) {
+        const validated = ThreadUnsubscribeParamsSchema.safeParse(parsed.params);
+        if (!validated.success) {
           this.send(ws, {
             type: "rpc_response",
             response: JSONRPCErrorResponseSchema.parse({
               id: parsed.id,
-              error: { code: -32602, message: "subscriptionId is required" },
+              error: { code: -32602, message: validated.error.message },
             }),
           });
           return;
         }
-        const ok = this.removeSubscription(params.subscriptionId);
+        const ok = this.removeSubscription(validated.data.subscriptionId);
         this.send(ws, {
           type: "rpc_response",
           response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok } }),
