@@ -1,5 +1,6 @@
 // @summary React hook for server-driven approval and user-input prompt state and resolution
 import type { DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
+import { DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
@@ -36,14 +37,14 @@ export function useServerRequests(
   /** Dismiss a buffered request by sending a safe fallback response. */
   const dismissBuffered = useCallback(
     (entry: BufferedServerRequest): void => {
-      if (entry.request.method === "approval/request") {
+      if (entry.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
         rpcRef.current?.respondServerRequest(entry.requestId, {
-          method: "approval/request",
+          method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
           result: { decision: "reject" },
         });
       } else {
         rpcRef.current?.respondServerRequest(entry.requestId, {
-          method: "userInput/request",
+          method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
           result: { answers: {} },
         } as DiligentServerRequestResponse);
       }
@@ -56,7 +57,7 @@ export function useServerRequests(
     const prev = approvalRef.current;
     if (prev) {
       rpcRef.current?.respondServerRequest(prev.requestId, {
-        method: "approval/request",
+        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
         result: { decision: "reject" },
       });
       approvalRef.current = null;
@@ -81,7 +82,7 @@ export function useServerRequests(
         return;
       }
 
-      if (request.method === "approval/request") {
+      if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
         // If there is already a pending approval, auto-reject it before showing
         // the new one. Only one approval dialog can be visible at a time.
         rejectPendingApproval();
@@ -121,7 +122,7 @@ export function useServerRequests(
       const current = approvalRef.current;
       if (!current) return;
       rpcRef.current?.respondServerRequest(current.requestId, {
-        method: "approval/request",
+        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
         result: { decision },
       });
       approvalRef.current = null;
@@ -135,7 +136,7 @@ export function useServerRequests(
       const current = questionRef.current;
       if (!current) return;
       rpcRef.current?.respondServerRequest(current.requestId, {
-        method: "userInput/request",
+        method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
         result: { answers: respondAnswers },
       } as DiligentServerRequestResponse);
       questionRef.current = null;
@@ -173,7 +174,7 @@ export function useServerRequests(
 
       bufferedRef.current.delete(threadId);
 
-      if (buffered.request.method === "approval/request") {
+      if (buffered.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
         approvalRef.current = buffered;
         setApprovalPrompt(buffered);
       } else {
