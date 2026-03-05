@@ -26,8 +26,15 @@ export interface UserInputQuestion {
   is_secret?: boolean;
 }
 
+export interface UserInputSource {
+  agentId: string;
+  nickname: string;
+}
+
 export interface UserInputRequest {
   questions: UserInputQuestion[];
+  /** Present when the request originates from a sub-agent rather than the main agent. */
+  source?: UserInputSource;
 }
 
 export interface UserInputResponse {

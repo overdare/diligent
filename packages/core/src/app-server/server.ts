@@ -186,7 +186,7 @@ export class DiligentAppServer {
     if (params.threadId) {
       const existing = this.threads.get(params.threadId);
       if (existing) {
-        const context = existing.manager.getContext(existing.isRunning);
+        const context = existing.manager.getContext();
         this.activeThreadId = params.threadId;
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
@@ -277,9 +277,9 @@ export class DiligentAppServer {
     const children = await readChildSessions(paths.sessions, sessionId);
 
     return {
-      messages: runtime.manager.getContext(runtime.isRunning),
+      messages: runtime.manager.getContext(),
       childSessions: children.length > 0 ? children : undefined,
-      hasFollowUp: runtime.manager.hasFollowUp(),
+      hasFollowUp: runtime.manager.hasPendingMessages(),
       entryCount: runtime.manager.entryCount,
       isRunning: runtime.isRunning,
     };
@@ -336,12 +336,11 @@ export class DiligentAppServer {
   private async handleTurnSteer(
     threadId: string | undefined,
     content: string,
-    followUp: boolean,
+    _followUp: boolean,
   ): Promise<{ queued: true }> {
     const runtime = await this.resolveThreadRuntime(threadId);
-    if (followUp) runtime.manager.followUp(content);
-    else runtime.manager.steer(content);
-
+    // Unified queue — followUp and steer are now the same operation
+    runtime.manager.steer(content);
     return { queued: true };
   }
 
@@ -433,10 +432,10 @@ export class DiligentAppServer {
         params: { threadId: runtime.id, status: "idle" },
       });
 
-      // Auto-submit pending steering messages as next turn
-      const pendingSteering = runtime.manager.popPendingSteering();
-      if (pendingSteering && pendingSteering.length > 0) {
-        const message = pendingSteering.join("\n");
+      // Auto-submit pending messages as next turn
+      const pendingMessages = runtime.manager.popPendingMessages();
+      if (pendingMessages && pendingMessages.length > 0) {
+        const message = pendingMessages.join("\n");
         await this.handleTurnStart(runtime.id, message);
       }
     }
@@ -707,6 +706,10 @@ export class DiligentAppServer {
         });
         if (result.registry) {
           runtime.registry = result.registry;
+          // Restore agent IDs from session history so collab tools work after server restart
+          for (const agent of runtime.manager.getHistoricalCollabAgents()) {
+            result.registry.restoreAgent(agent.agentId, agent.nickname);
+          }
         }
         return result;
       },

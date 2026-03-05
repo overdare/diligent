@@ -357,8 +357,16 @@ export const UserInputQuestionSchema = z.object({
 });
 export type UserInputQuestion = z.infer<typeof UserInputQuestionSchema>;
 
+export const UserInputSourceSchema = z.object({
+  agentId: z.string(),
+  nickname: z.string(),
+});
+export type UserInputSource = z.infer<typeof UserInputSourceSchema>;
+
 export const UserInputRequestSchema = z.object({
   questions: z.array(UserInputQuestionSchema).min(1),
+  /** Present when the request originates from a sub-agent rather than the main agent. */
+  source: UserInputSourceSchema.optional(),
 });
 export type UserInputRequest = z.infer<typeof UserInputRequestSchema>;
 

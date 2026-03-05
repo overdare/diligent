@@ -14,14 +14,7 @@ import {
 } from "./compaction";
 import { buildSessionContext } from "./context-builder";
 import { DeferredWriter, listSessions, readSessionFile } from "./persistence";
-import type {
-  CollabSessionMeta,
-  CompactionEntry,
-  ModeChangeEntry,
-  SessionEntry,
-  SessionInfo,
-  SteeringEntry,
-} from "./types";
+import type { CollabSessionMeta, CompactionEntry, ModeChangeEntry, SessionEntry, SessionInfo } from "./types";
 import { generateEntryId } from "./types";
 
 export interface SessionManagerConfig {
@@ -52,8 +45,7 @@ export class SessionManager {
   private writer: DeferredWriter;
   private byId = new Map<string, SessionEntry>();
   private writeQueue: Promise<void> = Promise.resolve();
-  private steeringQueue: Message[] = [];
-  private followUpQueue: Message[] = [];
+  private pendingMessages: Message[] = [];
   private lastApiInputTokens = 0;
 
   constructor(private config: SessionManagerConfig) {
@@ -106,7 +98,43 @@ export class SessionManager {
     this.writeQueue = Promise.resolve();
     this.writer = new DeferredWriter(this.config.paths.sessions, this.config.cwd, sessionPath);
 
+    this.repairEntries();
+
     return true;
+  }
+
+  /** Repair orphaned tool_calls on resume — inject synthetic "interrupted" tool_results. */
+  private repairEntries(): void {
+    const path = this.getPathEntries();
+    if (path.length === 0) return;
+
+    const last = path[path.length - 1];
+    if (last.type !== "message" || last.message.role !== "assistant") return;
+
+    const assistantMsg = last.message;
+    const toolCalls = assistantMsg.content.filter((b) => b.type === "tool_call");
+    if (toolCalls.length === 0) return;
+
+    // Check which tool_calls have matching tool_results
+    const toolCallIds = new Set(toolCalls.map((b) => (b as { id: string }).id));
+    for (const entry of path) {
+      if (entry.type === "message" && entry.message.role === "tool_result") {
+        toolCallIds.delete((entry.message as { toolCallId: string }).toolCallId);
+      }
+    }
+
+    // Inject synthetic results for orphaned tool_calls
+    for (const id of toolCallIds) {
+      const block = toolCalls.find((b) => (b as { id: string }).id === id);
+      this.appendMessageEntry({
+        role: "tool_result",
+        toolCallId: id,
+        toolName: (block as { name: string })?.name ?? "unknown",
+        output: "Session interrupted before tool execution completed.",
+        isError: true,
+        timestamp: assistantMsg.timestamp,
+      });
+    }
   }
 
   /** List available sessions */
@@ -114,9 +142,32 @@ export class SessionManager {
     return listSessions(this.config.paths.sessions);
   }
 
+  /** Scan session entries for spawn_agent tool results to restore collab agent IDs on resume. */
+  getHistoricalCollabAgents(): Array<{ agentId: string; nickname: string }> {
+    const results: Array<{ agentId: string; nickname: string }> = [];
+    for (const entry of this.entries) {
+      if (
+        entry.type === "message" &&
+        entry.message.role === "tool_result" &&
+        (entry.message as { toolName?: string }).toolName === "spawn_agent" &&
+        !(entry.message as { isError?: boolean }).isError
+      ) {
+        try {
+          const parsed = JSON.parse((entry.message as { output: string }).output);
+          if (parsed.agent_id && parsed.nickname) {
+            results.push({ agentId: parsed.agent_id, nickname: parsed.nickname });
+          }
+        } catch {
+          // skip malformed output
+        }
+      }
+    }
+    return results;
+  }
+
   /** Get the current message context for display (e.g., after resume) */
-  getContext(skipRepair?: boolean): Message[] {
-    const context = buildSessionContext(this.entries, this.leafId, { skipRepair });
+  getContext(): Message[] {
+    const context = buildSessionContext(this.entries, this.leafId);
     return context.messages;
   }
 
@@ -148,7 +199,7 @@ export class SessionManager {
     const signal = this.resolveAgentConfig().signal;
     if (signal) outerStream.attachSignal(signal);
 
-    const innerWork = this.executeLoop(context.messages, compactionConfig, outerStream).catch((err) => {
+    const innerWork = this.runSession(context.messages, compactionConfig, outerStream).catch((err) => {
       outerStream.push({
         type: "error",
         error: { message: String(err), name: err?.name ?? "Error" },
@@ -167,14 +218,14 @@ export class SessionManager {
     await this.writeQueue;
   }
 
-  private async executeLoop(
+  private async runSession(
     messages: Message[],
     compactionConfig: { enabled: boolean; reserveTokens: number; keepRecentTokens: number },
     outerStream: EventStream<AgentEvent, Message[]>,
   ): Promise<void> {
     let currentMessages = messages;
 
-    // Proactive compaction check — use max of heuristic and last API-reported tokens
+    // Proactive compaction
     if (compactionConfig.enabled) {
       const heuristicTokens = estimateTokens(currentMessages);
       const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
@@ -183,87 +234,62 @@ export class SessionManager {
       }
     }
 
-    // Run agent loop and proxy events
-    try {
-      await this.proxyAgentLoop(currentMessages, outerStream);
-    } catch (err) {
-      // Reactive compaction on context overflow
-      if (err instanceof ProviderError && err.errorType === "context_overflow" && compactionConfig.enabled) {
-        const tokens = Math.max(estimateTokens(currentMessages), this.lastApiInputTokens);
-        currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
-        await this.proxyAgentLoop(currentMessages, outerStream);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Run one agent loop iteration, proxying events to outerStream.
-   * Always filters agent_start/agent_end from the inner stream —
-   * the outer proxyAgentLoop controls lifecycle events.
-   * Returns the final messages array from the inner agent loop.
-   */
-  private async runAgentLoopInner(
-    messages: Message[],
-    outerStream: EventStream<AgentEvent, Message[]>,
-  ): Promise<Message[]> {
-    const agentStream = agentLoop(messages, this.resolveAgentConfig());
-
-    let fatalError: AgentEvent | null = null;
-
-    for await (const event of agentStream) {
-      this.handleEvent(event);
-
-      // Intercept fatal errors before forwarding — check if it's context_overflow
-      if (event.type === "error" && event.fatal) {
-        fatalError = event;
-        continue;
-      }
-
-      // Always filter inner lifecycle — outer controls lifecycle
-      if (event.type === "agent_start" || event.type === "agent_end") {
-        continue;
-      }
-
-      outerStream.push(event);
-    }
-
-    // If we got a fatal error, check if it's context_overflow
-    if (fatalError && fatalError.type === "error") {
-      const msg = fatalError.error.message.toLowerCase();
-      const isContextOverflow =
-        msg.includes("context") ||
-        msg.includes("too many tokens") ||
-        msg.includes("maximum") ||
-        msg.includes("context_overflow");
-
-      if (isContextOverflow) {
-        throw new ProviderError(fatalError.error.message, "context_overflow", false);
-      }
-
-      // Not context overflow — forward the error
-      outerStream.push(fatalError);
-    }
-
-    return agentStream.result();
-  }
-
-  private async proxyAgentLoop(messages: Message[], outerStream: EventStream<AgentEvent, Message[]>): Promise<void> {
     outerStream.push({ type: "agent_start" });
 
-    let result = await this.runAgentLoopInner(messages, outerStream);
+    while (true) {
+      let result: Message[];
 
-    // Follow-up loop: drain follow-ups and run additional inner loops
-    // Follow-up messages are already persisted as SteeringEntries by followUp()
-    while (this.followUpQueue.length > 0) {
-      this.followUpQueue.splice(0);
+      try {
+        const innerStream = agentLoop(currentMessages, this.resolveAgentConfig());
+
+        let fatalError: AgentEvent | null = null;
+
+        for await (const event of innerStream) {
+          this.handleEvent(event);
+
+          if (event.type === "error" && event.fatal) {
+            fatalError = event;
+            continue;
+          }
+          if (event.type === "agent_start" || event.type === "agent_end") continue;
+          outerStream.push(event);
+        }
+
+        if (fatalError && fatalError.type === "error") {
+          const msg = fatalError.error.message.toLowerCase();
+          const isContextOverflow =
+            msg.includes("context") ||
+            msg.includes("too many tokens") ||
+            msg.includes("maximum") ||
+            msg.includes("context_overflow");
+
+          if (isContextOverflow) {
+            throw new ProviderError(fatalError.error.message, "context_overflow", false);
+          }
+          outerStream.push(fatalError);
+        }
+
+        result = await innerStream.result();
+      } catch (err) {
+        if (err instanceof ProviderError && err.errorType === "context_overflow" && compactionConfig.enabled) {
+          const tokens = Math.max(estimateTokens(currentMessages), this.lastApiInputTokens);
+          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
+          continue;
+        }
+        throw err;
+      }
+
+      // Check unified queue — pending messages trigger next iteration
+      if (this.pendingMessages.length === 0) {
+        outerStream.push({ type: "agent_end", messages: result });
+        outerStream.end(result);
+        return;
+      }
+
+      // Rebuild context for next iteration
       const context = buildSessionContext(this.entries, this.leafId);
-      result = await this.runAgentLoopInner(context.messages, outerStream);
+      currentMessages = context.messages;
     }
-
-    outerStream.push({ type: "agent_end", messages: result });
-    outerStream.end(result);
   }
 
   private async performCompaction(
@@ -296,7 +322,6 @@ export class SessionManager {
     const messagesToSummarize: Message[] = [];
     for (const entry of result.entriesToSummarize) {
       if (entry.type === "message") messagesToSummarize.push(entry.message);
-      else if (entry.type === "steering") messagesToSummarize.push(entry.message);
     }
 
     // Extract file operations (D039)
@@ -402,68 +427,41 @@ export class SessionManager {
       for (const toolResult of event.toolResults) {
         this.appendMessageEntry(toolResult);
       }
+    } else if (event.type === "steering_injected") {
+      // Event-Ordered Persistence: consumer persists steering messages
+      for (const msg of event.messages) {
+        this.appendMessageEntry(msg);
+      }
     }
   }
 
-  /** Inject a mid-task steering message into the current agent loop.
-   * Memory-only — not persisted to disk. Injected at a safe position
-   * (never between tool_use and tool_result) by the agent loop's drainSteering(). */
+  /** Queue a steering message into the unified pending queue.
+   * Memory-only — persisted via event-ordered persistence when drained. */
   steer(content: string): void {
-    this.steeringQueue.push({
+    this.pendingMessages.push({
       role: "user",
       content,
       timestamp: Date.now(),
     });
   }
 
-  /** Queue a follow-up message to run after the current agent loop completes. */
-  followUp(content: string): void {
-    const message: Message = {
-      role: "user",
-      content,
-      timestamp: Date.now(),
-    };
-    this.followUpQueue.push(message);
-    this.appendSteeringEntry(message, "follow_up");
+  /** Check if pending messages exist (steering or follow-up). */
+  hasPendingMessages(): boolean {
+    return this.pendingMessages.length > 0;
   }
 
-  /** Check if follow-up messages are pending. */
-  hasFollowUp(): boolean {
-    return this.followUpQueue.length > 0;
-  }
-
-  /** Pop any undrained steering messages. Returns null if empty. */
-  popPendingSteering(): string[] | null {
-    if (this.steeringQueue.length === 0) return null;
-    const contents = this.steeringQueue.map((m) =>
+  /** Pop any undrained pending messages. Returns null if empty. */
+  popPendingMessages(): string[] | null {
+    if (this.pendingMessages.length === 0) return null;
+    const contents = this.pendingMessages.map((m) =>
       m.role === "user" && typeof m.content === "string" ? m.content : "",
     );
-    this.steeringQueue.length = 0;
+    this.pendingMessages.length = 0;
     return contents;
   }
 
-  private drainSteeringQueue(): Message[] {
-    const msgs = this.steeringQueue.splice(0);
-    // Persist as regular message entries at drain time (safe position)
-    for (const msg of msgs) {
-      this.appendMessageEntry(msg);
-    }
-    return msgs;
-  }
-
-  private appendSteeringEntry(message: Message, source: SteeringEntry["source"]): void {
-    const entry: SteeringEntry = {
-      type: "steering",
-      id: generateEntryId(),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-      message,
-      source,
-    };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+  private drainPendingMessages(): Message[] {
+    return this.pendingMessages.splice(0);
   }
 
   appendModeChange(mode: ModeKind, changedBy: ModeChangeEntry["changedBy"] = "command"): void {
@@ -502,7 +500,11 @@ export class SessionManager {
 
   private resolveAgentConfig(): AgentLoopConfig {
     const base = typeof this.config.agentConfig === "function" ? this.config.agentConfig() : this.config.agentConfig;
-    return { ...base, getSteeringMessages: () => this.drainSteeringQueue() };
+    return {
+      ...base,
+      getSteeringMessages: () => this.drainPendingMessages(),
+      hasPendingMessages: () => this.pendingMessages.length > 0,
+    };
   }
 
   get sessionPath(): string | null {

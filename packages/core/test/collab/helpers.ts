@@ -114,8 +114,8 @@ export function makeMockSessionManagerFactory(
       },
       waitForWrites: async () => {},
       steer: (_content: string) => {},
-      followUp: (_content: string) => {},
-      hasFollowUp: () => false,
+      hasPendingMessages: () => false,
+      popPendingMessages: () => null,
       appendModeChange: () => {},
       get sessionPath(): string | null {
         return null;

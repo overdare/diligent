@@ -59,6 +59,7 @@ export class NonInteractiveRunner {
           systemPrompt: this.config.systemPrompt,
           streamFunction: this.config.streamFunction,
           getParentSessionId: getSessionId,
+          ask,
         };
         const { tools } = buildTools(cwd, this.paths, deps);
 

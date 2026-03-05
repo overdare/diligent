@@ -83,6 +83,7 @@ export class ProtocolNotificationAdapter {
           {
             type: "steering_injected",
             messageCount: notification.params.messageCount,
+            messages: [], // Messages handled server-side via event-ordered persistence
           },
         ];
 

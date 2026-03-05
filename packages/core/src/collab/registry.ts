@@ -63,8 +63,9 @@ export class AgentRegistry {
     agentId: string;
     nickname: string;
   } {
-    if (this.agents.size >= this.maxAgents) {
-      throw new Error(`Max agents reached (${this.maxAgents}). Close some agents first.`);
+    const activeCount = [...this.agents.values()].filter((e) => !isFinal(e.status)).length;
+    if (activeCount >= this.maxAgents) {
+      throw new Error(`Max active agents reached (${this.maxAgents}). Close some agents first.`);
     }
 
     const agentType = BUILTIN_AGENT_TYPES[params.agentType] ?? BUILTIN_AGENT_TYPES.general;
@@ -96,6 +97,13 @@ export class AgentRegistry {
     const targetClass: ModelClass = params.modelClass ?? agentTypeToModelClass(params.agentType, this.deps.model);
     const childModel = resolveModelForClass(this.deps.model, targetClass);
 
+    // Wrap the parent ask callback to inject source attribution (agentId + nickname).
+    // This allows the UI to show which sub-agent is asking without needing a new event type.
+    const childAsk = this.deps.ask
+      ? (request: import("../tool/types").UserInputRequest) =>
+          this.deps.ask!({ ...request, source: { agentId, nickname } })
+      : undefined;
+
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
     const childManager = factory({
       cwd: this.deps.cwd,
@@ -107,6 +115,7 @@ export class AgentRegistry {
         streamFunction: this.deps.streamFunction,
         maxTurns: agentType.maxTurns,
         signal: abortController.signal,
+        ask: childAsk,
       },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
       parentSession: this.deps.getParentSessionId?.(),
@@ -225,9 +234,7 @@ export class AgentRegistry {
     onUpdate?: (s: string) => void,
     signal?: AbortSignal,
   ): Promise<{ status: Record<string, AgentStatus>; timedOut: boolean }> {
-    const validIds = ids.filter((id) => this.agents.has(id));
     const unknownIds = ids.filter((id) => !this.agents.has(id));
-
     if (unknownIds.length > 0) {
       throw new Error(`Unknown agent IDs: ${unknownIds.join(", ")}`);
     }
@@ -236,17 +243,16 @@ export class AgentRegistry {
     this.emit({
       type: "collab_wait_begin",
       callId: waitCallId,
-      agents: validIds.map((id) => {
+      agents: ids.map((id) => {
         const entry = this.agents.get(id)!;
         return { agentId: id, nickname: entry.nickname, description: entry.description || undefined };
       }),
     });
 
-    // Collect already-final entries
     const result: Record<string, AgentStatus> = {};
     const pending: AgentEntry[] = [];
 
-    for (const id of validIds) {
+    for (const id of ids) {
       const entry = this.agents.get(id)!;
       if (isFinal(entry.status)) {
         result[id] = entry.status;
@@ -261,11 +267,10 @@ export class AgentRegistry {
 
     // Wait for the first batch of pending to finish or timeout
     const statusSummary = () => {
-      const parts = validIds.map((id) => {
+      const parts = ids.map((id) => {
         const e = this.agents.get(id)!;
-        const s = e.status.kind;
         const done = isFinal(e.status);
-        return `${e.nickname} ${done ? "✓" : s}`;
+        return `${e.nickname} ${done ? "✓" : e.status.kind}`;
       });
       return parts.join(" | ");
     };
@@ -312,26 +317,23 @@ export class AgentRegistry {
     await Promise.race([Promise.all(racers), timeoutPromise, abortPromise]);
     resolved = true;
 
-    // Collect final statuses for all known agents and auto-cleanup completed ones
-    for (const id of validIds) {
+    // Collect final statuses — agents are retained (not deleted) for later reference
+    for (const id of ids) {
       if (!(id in result)) {
         const entry = this.agents.get(id)!;
         result[id] = entry.status;
-      }
-      if (isFinal(result[id])) {
-        this.agents.delete(id);
       }
     }
 
     this.emit({
       type: "collab_wait_end",
       callId: waitCallId,
-      agentStatuses: validIds.map((id) => {
-        const entry = this.agents.get(id);
-        const status = result[id] ?? entry?.status ?? { kind: "pending" as const };
+      agentStatuses: ids.map((id) => {
+        const entry = this.agents.get(id)!;
+        const status = result[id] ?? entry.status;
         return {
           agentId: id,
-          nickname: entry?.nickname,
+          nickname: entry.nickname,
           status: toCollabStatus(status),
           message: statusMessage(status),
         };
@@ -368,9 +370,7 @@ export class AgentRegistry {
     }
 
     const finalStatus = await entry.promise;
-    const shutdownStatus: AgentStatus = { kind: "shutdown" };
-    entry.status = shutdownStatus;
-    this.agents.delete(agentId);
+    entry.status = { kind: "shutdown" };
 
     this.emit({
       type: "collab_close_end",
@@ -392,6 +392,26 @@ export class AgentRegistry {
 
   getNickname(agentId: string): string | undefined {
     return this.agents.get(agentId)?.nickname;
+  }
+
+  /**
+   * Restore a previously-known agent as shutdown.
+   * Used on session resume to re-populate the in-memory registry
+   * so that agent IDs from a prior server lifetime remain valid.
+   */
+  restoreAgent(agentId: string, nickname: string): void {
+    if (this.agents.has(agentId)) return; // already known
+    this.agents.set(agentId, {
+      id: agentId,
+      nickname,
+      agentType: "unknown",
+      description: "",
+      sessionManager: null as unknown as import("../session/manager").SessionManager,
+      promise: Promise.resolve({ kind: "shutdown" as const }),
+      status: { kind: "shutdown" },
+      abortController: new AbortController(),
+      createdAt: 0,
+    });
   }
 
   /** Abort all agents and wait for them all to settle. */

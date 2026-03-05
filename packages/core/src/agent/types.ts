@@ -70,7 +70,7 @@ export type AgentEvent =
   // Loop detection (1) — P0
   | { type: "loop_detected"; patternLength: number; toolName: string }
   // Steering (1) — P1
-  | { type: "steering_injected"; messageCount: number }
+  | { type: "steering_injected"; messageCount: number; messages: Message[] }
   // Collab — sub-agent orchestration boundary events (3 begin/end pairs)
   | { type: "collab_spawn_begin"; callId: string; prompt: string }
   | {
@@ -133,6 +133,7 @@ export interface AgentLoopConfig {
   retryMaxDelayMs?: number; // default: 30_000
   mode?: ModeKind; // D087: defaults to "default"
   getSteeringMessages?: () => Message[];
+  hasPendingMessages?: () => boolean;
   /** D028: Called for each ctx.approve() — rule engine + optional UI callback */
   approve?: (request: ApprovalRequest) => Promise<ApprovalResponse>;
   /** D088: Called for each request_user_input tool execution */

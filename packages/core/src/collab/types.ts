@@ -3,7 +3,7 @@ import type { AgentEvent } from "../agent/types";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import type { Model, StreamFunction, SystemSection } from "../provider/types";
 import type { SessionManager } from "../session/manager";
-import type { Tool } from "../tool/types";
+import type { Tool, UserInputRequest, UserInputResponse } from "../tool/types";
 
 export type AgentStatus =
   | { kind: "pending" }
@@ -43,4 +43,6 @@ export interface CollabToolDeps {
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
   /** Called when collab boundary events fire (spawn/wait/close begin+end). */
   onCollabEvent?: (event: CollabAgentEvent) => void;
+  /** Routes sub-agent user input requests up to the parent session's ask handler. */
+  ask?: (request: UserInputRequest) => Promise<UserInputResponse>;
 }

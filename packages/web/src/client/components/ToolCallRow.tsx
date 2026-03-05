@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import { getToolHeaderTitle, getToolInfo, summarizeInput } from "../lib/tool-info";
+import { getToolHeaderTitle, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { SectionLabel } from "./SectionLabel";
 import { StatusDot } from "./StatusDot";
 
@@ -15,8 +15,12 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
   const [open, setOpen] = useState(false);
   const { icon } = getToolInfo(item.toolName);
   const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText);
-  const summary = item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
-  const summaryText = item.toolName.toLowerCase() === "request_user_input" ? "" : summary;
+  const isUserInput = item.toolName.toLowerCase() === "request_user_input";
+  const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
+  const outputSummary =
+    !isUserInput && item.status === "done" && !item.isError && item.outputText
+      ? summarizeOutput(item.toolName, item.outputText)
+      : "";
 
   const statusEl = item.isError ? (
     <span className="shrink-0 text-xs text-danger">error</span>
@@ -44,16 +48,27 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-full items-center gap-1.5 px-3 py-2 text-left"
+          className="flex max-w-full flex-col gap-0.5 px-3 py-2 text-left"
           disabled={item.status === "streaming"}
         >
-          <span className="shrink-0 font-mono text-sm text-muted">{icon}</span>
-          <span className="text-xs font-semibold text-muted">{headerTitle}</span>
-          {chevronEl}
-          {summaryText ? (
-            <span className="max-w-[56ch] truncate font-mono text-xs text-text/60">{summaryText}</span>
+          {/* Header row: icon + name + chevron + status */}
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 font-mono text-sm text-muted">{icon}</span>
+            <span className="text-xs font-semibold text-muted">{headerTitle}</span>
+            {chevronEl}
+            {statusEl}
+          </div>
+          {/* Summary rows */}
+          {inputSummary || outputSummary ? (
+            <div className="ml-5 flex flex-col gap-0.5">
+              {inputSummary ? (
+                <span className="max-w-[64ch] truncate font-mono text-xs text-text/50">{inputSummary}</span>
+              ) : null}
+              {outputSummary ? (
+                <span className="max-w-[64ch] truncate font-mono text-xs text-accent/70">↳ {outputSummary}</span>
+              ) : null}
+            </div>
           ) : null}
-          {statusEl}
         </button>
 
         {open ? (

@@ -1,4 +1,10 @@
-# P029: Multi-Client Thread Subscription (Peer Model)
+---
+id: P030
+status: done
+created: 2026-03-05
+---
+
+# Multi-Client Thread Subscription (Peer Model)
 
 ## Context
 

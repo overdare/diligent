@@ -107,7 +107,7 @@ function drainSteering(
   const msgs = config.getSteeringMessages();
   if (msgs.length === 0) return false;
   for (const msg of msgs) allMessages.push(msg);
-  stream.push({ type: "steering_injected", messageCount: msgs.length });
+  stream.push({ type: "steering_injected", messageCount: msgs.length, messages: msgs });
   return true;
 }
 
@@ -210,17 +210,15 @@ async function runLoop(
     const toolCalls = assistantMessage.content.filter((b): b is ToolCallBlock => b.type === "tool_call");
 
     if (toolCalls.length === 0) {
-      // codex-rs pattern: needs_follow_up |= has_pending_input()
-      // Drain any steering that arrived during the LLM response (e.g. during thinking).
-      // If steers were pending, continue the loop so the LLM can address them.
-      const hadSteering = drainSteering(config, allMessages, stream);
+      // Peek only — drain happens at loop top on next iteration
+      const hasPending = config.hasPendingMessages?.() ?? false;
       stream.push({
         type: "turn_end",
         turnId,
         message: assistantMessage,
         toolResults: [],
       });
-      if (hadSteering) continue;
+      if (hasPending) continue;
       break;
     }
 
@@ -295,9 +293,6 @@ async function runLoop(
 
       loopDetector.record(toolCall.name, toolCall.input);
     }
-
-    // Drain steering after tool execution
-    drainSteering(config, allMessages, stream);
 
     const loopResult = loopDetector.check();
     if (loopResult.detected) {

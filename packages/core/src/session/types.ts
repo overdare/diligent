@@ -85,22 +85,12 @@ export interface ModeChangeEntry {
   changedBy: "cli" | "command" | "config";
 }
 
-export interface SteeringEntry {
-  type: "steering";
-  id: string;
-  parentId: string | null;
-  timestamp: string;
-  message: Message;
-  source: "steer" | "follow_up";
-}
-
 export type SessionEntry =
   | SessionMessageEntry
   | ModelChangeEntry
   | SessionInfoEntry
   | CompactionEntry
-  | ModeChangeEntry
-  | SteeringEntry;
+  | ModeChangeEntry;
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;

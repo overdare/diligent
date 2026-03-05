@@ -281,6 +281,7 @@ test("steering injected", () => {
   expect(events[0].type).toBe("steering_injected");
   if (events[0].type === "steering_injected") {
     expect(events[0].messageCount).toBe(2);
+    expect(events[0].messages).toEqual([]);
   }
 });
 

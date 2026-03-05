@@ -1,4 +1,4 @@
-// @summary Tests for session steering and follow-up message handling
+// @summary Tests for unified session steering (single queue, event-ordered persistence)
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,9 +12,9 @@ import { buildSessionContext } from "../src/session/context-builder";
 import type { SessionManagerConfig } from "../src/session/manager";
 import { SessionManager } from "../src/session/manager";
 import { readSessionFile } from "../src/session/persistence";
-import type { SessionEntry, SteeringEntry } from "../src/session/types";
+import type { SessionEntry } from "../src/session/types";
 import type { Tool } from "../src/tool/types";
-import type { AssistantMessage, Message } from "../src/types";
+import type { AssistantMessage } from "../src/types";
 
 const TEST_ROOT = join(tmpdir(), `diligent-steering-test-${Date.now()}`);
 
@@ -112,38 +112,9 @@ afterEach(async () => {
   } catch {}
 });
 
-describe("SessionManager.steer()", () => {
-  test("steer() is memory-only — not persisted to disk", async () => {
+describe("SessionManager.steer() — unified queue", () => {
+  test("steer() message is drained into agent loop and persisted via event-ordered persistence", async () => {
     const dir = await setupDir();
-    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
-    await mgr.create();
-
-    // Run initial conversation
-    const userMsg: Message = { role: "user", content: "start task", timestamp: Date.now() };
-    const stream = mgr.run(userMsg);
-
-    // Steer mid-execution
-    mgr.steer("focus on tests instead");
-
-    const events: AgentEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-    await mgr.waitForWrites();
-
-    // Entry count: user msg + assistant response only (steering is memory-only)
-    expect(mgr.entryCount).toBeGreaterThanOrEqual(2);
-
-    // No steering entries persisted to disk
-    const { entries } = await readSessionFile(mgr.sessionPath!);
-    const steeringEntries = entries.filter((e) => e.type === "steering");
-    expect(steeringEntries).toHaveLength(0);
-  });
-
-  test("steer() message is drained into agent loop", async () => {
-    const dir = await setupDir();
-    // Tool call response ensures the post-tool drain point is reached,
-    // giving steer() time to queue before the second LLM call
     const toolCallResponse = makeToolCallAssistant("tc_1", "echo", { message: "hi" });
     const finalResponse = makeAssistant("acknowledged steering");
     const mgr = new SessionManager(
@@ -152,33 +123,7 @@ describe("SessionManager.steer()", () => {
     await mgr.create();
 
     const stream = mgr.run({ role: "user", content: "hello", timestamp: Date.now() });
-    // steer() is called synchronously after run() returns, before the mock's
-    // queueMicrotask fires. The post-tool drain point picks up this message.
     mgr.steer("change approach");
-
-    const events: AgentEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-
-    // Should have a steering_injected event from the agent loop
-    const steeringEvents = events.filter((e) => e.type === "steering_injected");
-    expect(steeringEvents.length).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe("SessionManager.followUp()", () => {
-  test("followUp() queues message and persists SteeringEntry with follow_up source", async () => {
-    const dir = await setupDir();
-    const mgr = new SessionManager(
-      makeManagerConfig(dir, createMockStreamFn([makeAssistant("first"), makeAssistant("second")])),
-    );
-    await mgr.create();
-
-    const stream = mgr.run({ role: "user", content: "initial task", timestamp: Date.now() });
-
-    // Queue follow-up while agent is running
-    mgr.followUp("now do the next thing");
 
     const events: AgentEvent[] = [];
     for await (const event of stream) {
@@ -186,17 +131,37 @@ describe("SessionManager.followUp()", () => {
     }
     await mgr.waitForWrites();
 
-    // Should have persisted follow_up entry
+    // Should have a steering_injected event from the agent loop
+    const steeringEvents = events.filter((e) => e.type === "steering_injected");
+    expect(steeringEvents.length).toBeGreaterThanOrEqual(1);
+
+    // Steering message should be persisted as a regular message entry (not SteeringEntry)
     const { entries } = await readSessionFile(mgr.sessionPath!);
-    const followUpEntries = entries.filter((e) => e.type === "steering" && (e as SteeringEntry).source === "follow_up");
-    expect(followUpEntries.length).toBeGreaterThanOrEqual(1);
-    const fue = followUpEntries[0] as SteeringEntry;
-    expect(fue.message.content).toBe("now do the next thing");
+    const userEntries = entries.filter(
+      (e) => e.type === "message" && e.message.role === "user" && typeof e.message.content === "string",
+    );
+    const hasSteeringContent = userEntries.some(
+      (e) => e.type === "message" && (e.message.content as string) === "change approach",
+    );
+    expect(hasSteeringContent).toBe(true);
+
+    // No steering-type entries should exist
+    const steeringEntries = entries.filter((e) => (e as { type: string }).type === "steering");
+    expect(steeringEntries).toHaveLength(0);
   });
 
-  test("followUp() triggers additional agent loop iteration", async () => {
+  test("hasPendingMessages() reflects queue state", async () => {
     const dir = await setupDir();
-    // Need enough responses: first for initial run, second for follow-up
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    expect(mgr.hasPendingMessages()).toBe(false);
+    mgr.steer("do something");
+    expect(mgr.hasPendingMessages()).toBe(true);
+  });
+
+  test("steer() triggers additional loop iteration via pending queue", async () => {
+    const dir = await setupDir();
     const mgr = new SessionManager(
       makeManagerConfig(
         dir,
@@ -206,7 +171,7 @@ describe("SessionManager.followUp()", () => {
     await mgr.create();
 
     const stream = mgr.run({ role: "user", content: "task 1", timestamp: Date.now() });
-    mgr.followUp("task 2");
+    mgr.steer("task 2");
 
     const events: AgentEvent[] = [];
     for await (const event of stream) {
@@ -223,20 +188,10 @@ describe("SessionManager.followUp()", () => {
     const turnStarts = events.filter((e) => e.type === "turn_start");
     expect(turnStarts.length).toBeGreaterThanOrEqual(2);
   });
-
-  test("hasFollowUp() reflects queue state", async () => {
-    const dir = await setupDir();
-    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
-    await mgr.create();
-
-    expect(mgr.hasFollowUp()).toBe(false);
-    mgr.followUp("do something later");
-    expect(mgr.hasFollowUp()).toBe(true);
-  });
 });
 
-describe("Context builder: SteeringEntry", () => {
-  test("SteeringEntry produces user-role message on resume (no compaction)", () => {
+describe("Context builder: message entries on resume", () => {
+  test("message entries produce user-role messages on resume (no compaction)", () => {
     const entries: SessionEntry[] = [
       {
         type: "message",
@@ -260,12 +215,11 @@ describe("Context builder: SteeringEntry", () => {
         },
       },
       {
-        type: "steering",
+        type: "message",
         id: "s1",
         parentId: "a2",
         timestamp: "2026-02-27T10:00:02.000Z",
         message: { role: "user", content: "change focus", timestamp: 1708900000000 },
-        source: "steer",
       },
       {
         type: "message",
@@ -292,7 +246,7 @@ describe("Context builder: SteeringEntry", () => {
     expect(ctx.messages[3].role).toBe("assistant");
   });
 
-  test("SteeringEntry works after compaction", () => {
+  test("steering messages work after compaction", () => {
     const entries: SessionEntry[] = [
       {
         type: "message",
@@ -326,12 +280,11 @@ describe("Context builder: SteeringEntry", () => {
         tokensAfter: 5000,
       },
       {
-        type: "steering",
+        type: "message",
         id: "s1",
         parentId: "c1",
         timestamp: "2026-02-27T10:01:01.000Z",
         message: { role: "user", content: "new direction", timestamp: 1708900000000 },
-        source: "steer",
       },
       {
         type: "message",

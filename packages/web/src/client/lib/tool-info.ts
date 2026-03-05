@@ -93,8 +93,29 @@ export function getToolHeaderTitle(toolName: string, inputText: string, outputTe
     const outputTitle = parseRequestUserInputTitleFromOutput(outputText);
     return outputTitle ? `Question - ${clip(outputTitle, 72)}` : "Question";
   }
+  if (normalizedName === "plan") {
+    return parsePlanHeaderTitle(inputText);
+  }
   void inputText;
   return displayName;
+}
+
+function parsePlanHeaderTitle(inputText: string): string {
+  try {
+    const parsed = JSON.parse(inputText) as Record<string, unknown>;
+    if (parsed.close === true) return "Plan — Closed";
+    const steps = parsed.steps as Array<{ text: string; done?: boolean }> | undefined;
+    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+    if (!steps || !Array.isArray(steps)) return title ? `Plan — ${clip(title, 50)}` : "Plan";
+    const doneCount = steps.filter((s) => s.done).length;
+    const totalCount = steps.length;
+    const progress = `${doneCount}/${totalCount}`;
+    const label = doneCount === 0 ? "Created" : doneCount === totalCount ? "Done" : "Updated";
+    const suffix = title ? ` — ${clip(title, 40)}` : "";
+    return `Plan ${label} ${progress}${suffix}`;
+  } catch {
+    return "Plan";
+  }
 }
 
 export function isContextTool(toolName: string): boolean {
@@ -103,6 +124,62 @@ export function isContextTool(toolName: string): boolean {
 
 export function isBashTool(toolName: string): boolean {
   return toolName.toLowerCase() === "bash";
+}
+
+/** Extract a short human-readable summary from tool output text */
+export function summarizeOutput(toolName: string, outputText: string): string {
+  if (!outputText.trim()) return "";
+  const name = toolName.toLowerCase();
+
+  // bash / shell: show first non-empty line of stdout
+  if (name === "bash") {
+    const firstLine = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    return firstLine ? clip(firstLine) : "";
+  }
+
+  // read / write / edit: show line count or written confirmation
+  if (name === "write" || name === "edit" || name === "multiedit") {
+    const lineMatch = outputText.match(/(\d+)\s*line/i);
+    if (lineMatch) return `${lineMatch[1]} lines`;
+    const firstLine = outputText.split("\n")[0]?.trim();
+    return firstLine ? clip(firstLine) : "";
+  }
+
+  // grep: show match count or first match
+  if (name === "grep") {
+    const lines = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) return "no matches";
+    return lines.length === 1 ? clip(lines[0]) : `${lines.length} matches`;
+  }
+
+  // glob / ls: show item count
+  if (name === "glob" || name === "ls") {
+    const lines = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) return "empty";
+    return lines.length === 1 ? clip(lines[0]) : `${lines.length} items`;
+  }
+
+  // spawn_agent / wait / send_input / close_agent: first line
+  if (["spawn_agent", "wait", "send_input", "close_agent"].includes(name)) {
+    const firstLine = outputText.split("\n")[0]?.trim();
+    return firstLine ? clip(firstLine) : "";
+  }
+
+  // add_knowledge / plan / todowrite / taskwrite: first non-empty line
+  const firstLine = outputText
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return firstLine ? clip(firstLine) : "";
 }
 
 /** Extract a short human-readable summary from tool input JSON */
@@ -114,6 +191,9 @@ export function summarizeInput(_toolName: string, inputText: string): string {
       const title = parseRequestUserInputTitle(parsed);
       return title ? clip(title, 60) : "";
     }
+
+    // Plan: headerTitle already carries all useful info
+    if (_toolName.toLowerCase() === "plan") return "";
 
     const intent = readStringField(parsed, [
       "description",

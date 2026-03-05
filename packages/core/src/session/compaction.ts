@@ -80,12 +80,10 @@ export function findRecentUserMessages(
   // All entries after last compaction are summarized
   const entriesToSummarize = pathEntries.slice(startIndex);
 
-  // Collect user messages (excluding summary injections), include steering
+  // Collect user messages (excluding summary injections)
   const userMessages: Message[] = [];
   for (const entry of entriesToSummarize) {
     if (entry.type === "message" && entry.message.role === "user" && !isSummaryMessage(entry.message)) {
-      userMessages.push(entry.message);
-    } else if (entry.type === "steering") {
       userMessages.push(entry.message);
     }
   }

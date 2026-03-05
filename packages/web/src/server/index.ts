@@ -49,6 +49,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         systemPrompt: runtimeConfig.systemPrompt,
         streamFunction: runtimeConfig.streamFunction,
         getParentSessionId: getSessionId,
+        ask,
       };
       const result = buildTools(requestCwd, paths, deps);
       if (result.registry) {

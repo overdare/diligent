@@ -371,6 +371,7 @@ export class App {
           systemPrompt: this.config.systemPrompt,
           streamFunction: this.config.streamFunction,
           getParentSessionId: getSessionId,
+          ask,
         };
         const { tools, registry } = buildTools(cwd, paths, deps);
         if (registry) {

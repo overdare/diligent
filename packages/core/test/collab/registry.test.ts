@@ -80,7 +80,9 @@ describe("AgentRegistry", () => {
     );
     registry.spawn({ prompt: "task1", description: "", agentType: "general" });
     registry.spawn({ prompt: "task2", description: "", agentType: "general" });
-    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(/Max agents/);
+    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(
+      /Max active agents/,
+    );
   });
 
   it("throws for unknown agent ID in wait", async () => {
@@ -115,8 +117,8 @@ describe("AgentRegistry", () => {
     const { agentId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
     const finalStatus = await registry.close(agentId);
     expect(isFinal(finalStatus)).toBe(true);
-    // Agent should be removed from registry
-    expect(registry.getNickname(agentId)).toBeUndefined();
+    // Agent is retained with shutdown status (not deleted)
+    expect(registry.getStatus(agentId)).toEqual({ kind: "shutdown" });
   });
 
   it("two unique nicknames for two agents", () => {
@@ -128,6 +130,43 @@ describe("AgentRegistry", () => {
     const r1 = registry.spawn({ prompt: "task1", description: "", agentType: "general" });
     const r2 = registry.spawn({ prompt: "task2", description: "", agentType: "general" });
     expect(r1.nickname).not.toBe(r2.nickname);
+  });
+
+  it("restoreAgent registers agent as shutdown", () => {
+    const registry = new AgentRegistry(makeCollabDeps());
+    registry.restoreAgent("agent-9999", "RestoredBot");
+    expect(registry.getNickname("agent-9999")).toBe("RestoredBot");
+    expect(registry.getStatus("agent-9999")).toEqual({ kind: "shutdown" });
+  });
+
+  it("restoreAgent skips if agent already exists", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    const { agentId, nickname } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    registry.restoreAgent(agentId, "DifferentNick");
+    // Original nickname preserved — restore was a no-op
+    expect(registry.getNickname(agentId)).toBe(nickname);
+  });
+
+  it("restored agents do not count toward maxAgents", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        maxAgents: 2,
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    registry.restoreAgent("agent-old-1", "Old1");
+    registry.restoreAgent("agent-old-2", "Old2");
+    // Can still spawn 2 active agents despite 2 restored (shutdown) agents
+    registry.spawn({ prompt: "task1", description: "", agentType: "general" });
+    registry.spawn({ prompt: "task2", description: "", agentType: "general" });
+    // 3rd active would exceed limit
+    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(
+      /Max active agents/,
+    );
   });
 
   it("spawn passes parentSessionId to child SessionManager config", () => {

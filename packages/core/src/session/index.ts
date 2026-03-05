@@ -32,6 +32,5 @@ export type {
   SessionInfo,
   SessionInfoEntry,
   SessionMessageEntry,
-  SteeringEntry,
 } from "./types";
 export { generateEntryId, generateSessionId, SESSION_VERSION } from "./types";

@@ -140,7 +140,6 @@ export type {
   SessionInfoEntry,
   SessionManagerConfig,
   SessionMessageEntry,
-  SteeringEntry,
 } from "./session/index";
 export {
   appendEntry,
@@ -182,6 +181,7 @@ export type {
   UserInputQuestion,
   UserInputRequest,
   UserInputResponse,
+  UserInputSource,
 } from "./tool/index";
 export { executeTool, ToolRegistryBuilder } from "./tool/index";
 // Built-in tools

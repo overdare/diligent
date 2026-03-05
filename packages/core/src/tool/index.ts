@@ -22,4 +22,5 @@ export type {
   UserInputQuestion,
   UserInputRequest,
   UserInputResponse,
+  UserInputSource,
 } from "./types";
