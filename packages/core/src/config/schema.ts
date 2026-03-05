@@ -89,6 +89,23 @@ export const DiligentConfigSchema = z
 
     // YOLO mode — auto-approve all permission prompts without asking
     yolo: z.boolean().optional(),
+
+    // Tool configuration (P032)
+    tools: z
+      .object({
+        builtin: z.record(z.string(), z.boolean()).optional(),
+        plugins: z
+          .array(
+            z.object({
+              package: z.string(),
+              enabled: z.boolean().optional().default(true),
+              tools: z.record(z.string(), z.boolean()).optional(),
+            }),
+          )
+          .optional(),
+        conflictPolicy: z.enum(["error", "builtin_wins", "plugin_wins"]).optional(),
+      })
+      .optional(),
   })
   .strict();
 

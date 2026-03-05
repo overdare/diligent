@@ -185,9 +185,18 @@ export type {
 } from "./tool/index";
 export { executeTool, ToolRegistryBuilder } from "./tool/index";
 // Built-in tools
+export type {
+  BuildDefaultToolsResult,
+  PluginLoadError,
+  PluginLoadResult,
+  PluginManifest,
+  ToolCatalogResult,
+  ToolStateEntry,
+} from "./tools/index";
 export {
   bashTool,
   buildDefaultTools,
+  buildToolCatalog,
   createAddKnowledgeTool,
   createEditTool,
   createGlobTool,
@@ -196,6 +205,9 @@ export {
   createPlanTool,
   createReadTool,
   createWriteTool,
+  IMMUTABLE_TOOLS,
+  isImmutableTool,
+  loadPlugin,
   requestUserInputTool,
 } from "./tools/index";
 export type {

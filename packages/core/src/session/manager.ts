@@ -21,7 +21,7 @@ export interface SessionManagerConfig {
   cwd: string;
   paths: DiligentPaths;
   // D087: Factory allows per-run config (e.g. collaboration mode, mid-session knowledge refresh)
-  agentConfig: AgentLoopConfig | (() => AgentLoopConfig);
+  agentConfig: AgentLoopConfig | (() => AgentLoopConfig | Promise<AgentLoopConfig>);
   compaction?: {
     enabled: boolean;
     reserveTokens: number;
@@ -198,10 +198,17 @@ export class SessionManager {
       (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
     );
 
-    const signal = this.resolveAgentConfig().signal;
-    if (signal) outerStream.attachSignal(signal);
-
-    const innerWork = this.runSession(context.messages, compactionConfig, outerStream).catch((err) => {
+    // Resolve config — may be sync or async depending on whether factory returns a Promise.
+    // When sync, we preserve the original microtask timing: agentLoop starts in the same
+    // synchronous execution frame as run(), which is critical for steering message delivery.
+    const configResult = this.resolveAgentConfig();
+    const startSession = (initialConfig: AgentLoopConfig) => {
+      if (initialConfig.signal) outerStream.attachSignal(initialConfig.signal);
+      return this.runSession(context.messages, compactionConfig, outerStream, initialConfig);
+    };
+    const innerWork = (
+      configResult instanceof Promise ? configResult.then(startSession) : startSession(configResult)
+    ).catch((err) => {
       outerStream.push({
         type: "error",
         error: { message: String(err), name: err?.name ?? "Error" },
@@ -224,25 +231,35 @@ export class SessionManager {
     messages: Message[],
     compactionConfig: { enabled: boolean; reserveTokens: number; keepRecentTokens: number },
     outerStream: EventStream<AgentEvent, Message[]>,
+    initialConfig: AgentLoopConfig,
   ): Promise<void> {
     let currentMessages = messages;
 
-    // Proactive compaction
+    // Proactive compaction — uses initialConfig (resolved once at startup) for
+    // model.contextWindow since compaction settings don't change between turns.
     if (compactionConfig.enabled) {
       const heuristicTokens = estimateTokens(currentMessages);
       const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
-      if (shouldCompact(tokens, this.resolveAgentConfig().model.contextWindow, compactionConfig.reserveTokens)) {
-        currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
+      if (shouldCompact(tokens, initialConfig.model.contextWindow, compactionConfig.reserveTokens)) {
+        currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, initialConfig);
       }
     }
 
     outerStream.push({ type: "agent_start" });
 
+    // resolveAgentConfig() returns synchronously when the factory is sync.
+    // We avoid unnecessary `await` to preserve microtask timing — the agentLoop's
+    // drainSteering() must run in the same synchronous frame as run() for steering
+    // messages queued immediately after run() to be delivered on the correct turn.
+    const resolveConfig = (): AgentLoopConfig | Promise<AgentLoopConfig> => this.resolveAgentConfig();
+
     while (true) {
       let result: Message[];
 
       try {
-        const innerStream = agentLoop(currentMessages, this.resolveAgentConfig());
+        const configResult = resolveConfig();
+        const config = configResult instanceof Promise ? await configResult : configResult;
+        const innerStream = agentLoop(currentMessages, config);
 
         let fatalError: AgentEvent | null = null;
 
@@ -280,7 +297,7 @@ export class SessionManager {
       } catch (err) {
         if (err instanceof ProviderError && err.errorType === "context_overflow" && compactionConfig.enabled) {
           const tokens = Math.max(estimateTokens(currentMessages), this.lastApiInputTokens);
-          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream);
+          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, initialConfig);
           continue;
         }
         throw err;
@@ -289,7 +306,7 @@ export class SessionManager {
       // On abort, stop immediately even if pending queue is non-empty.
       // Otherwise we can re-enter agentLoop with an already-aborted signal forever
       // (agentLoop exits at top-of-loop before draining pending steering messages).
-      if (this.resolveAgentConfig().signal?.aborted) {
+      if (initialConfig.signal?.aborted) {
         return;
       }
 
@@ -310,6 +327,7 @@ export class SessionManager {
     tokensBefore: number,
     compactionConfig: { reserveTokens: number; keepRecentTokens: number },
     stream: EventStream<AgentEvent, Message[]>,
+    initialConfig?: AgentLoopConfig,
   ): Promise<Message[]> {
     stream.push({ type: "compaction_start", estimatedTokens: tokensBefore });
 
@@ -341,13 +359,12 @@ export class SessionManager {
     // Extract file operations (D039)
     const details = extractFileOperations(messagesToSummarize, previousCompaction?.details);
 
-    // Generate summary (D037)
-    const summary = await generateSummary(
-      messagesToSummarize,
-      this.resolveAgentConfig().streamFunction,
-      this.resolveAgentConfig().model,
-      { previousSummary: previousCompaction?.summary, signal: this.resolveAgentConfig().signal },
-    );
+    // Generate summary (D037) — use initialConfig when available (resolved once at startup)
+    const cfg = initialConfig ?? (await this.resolveAgentConfig());
+    const summary = await generateSummary(messagesToSummarize, cfg.streamFunction, cfg.model, {
+      previousSummary: previousCompaction?.summary,
+      signal: cfg.signal,
+    });
 
     // Save CompactionEntry
     const compactionEntry: CompactionEntry = {
@@ -512,13 +529,23 @@ export class SessionManager {
     return entry;
   }
 
-  private resolveAgentConfig(): AgentLoopConfig {
-    const base = typeof this.config.agentConfig === "function" ? this.config.agentConfig() : this.config.agentConfig;
-    return {
+  /**
+   * Resolve the agent config. When the factory returns a Promise, this returns a Promise.
+   * When it returns synchronously, this returns synchronously — preserving microtask timing
+   * for the run() → agentLoop flow where steering message delivery depends on execution order.
+   */
+  private resolveAgentConfig(): AgentLoopConfig | Promise<AgentLoopConfig> {
+    const baseOrPromise =
+      typeof this.config.agentConfig === "function" ? this.config.agentConfig() : this.config.agentConfig;
+    const wrap = (base: AgentLoopConfig): AgentLoopConfig => ({
       ...base,
       getSteeringMessages: () => this.drainPendingMessages(),
       hasPendingMessages: () => this.pendingMessages.length > 0,
-    };
+    });
+    if (baseOrPromise instanceof Promise) {
+      return baseOrPromise.then(wrap);
+    }
+    return wrap(baseOrPromise);
   }
 
   get sessionPath(): string | null {

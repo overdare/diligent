@@ -53,7 +53,7 @@ export class NonInteractiveRunner {
 
     const server = new DiligentAppServer({
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: ({ cwd, mode, signal, approve, ask, getSessionId }) => {
+      buildAgentConfig: async ({ cwd, mode, signal, approve, ask, getSessionId }) => {
         const deps = {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
@@ -61,7 +61,7 @@ export class NonInteractiveRunner {
           getParentSessionId: getSessionId,
           ask,
         };
-        const { tools } = buildTools(cwd, this.paths, deps);
+        const { tools } = await buildTools(cwd, this.paths, deps, this.config.diligent.tools);
 
         return {
           model: this.config.model,

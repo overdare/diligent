@@ -34,17 +34,11 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
         const proc = Bun.spawn(rgArgs, { stdout: "pipe", stderr: "pipe" });
 
         const stdout = await new Response(proc.stdout).text();
-        const stderr = await new Response(proc.stderr).text();
+        await new Response(proc.stderr).text(); // drain stderr to avoid pipe stall
         await proc.exited;
 
         if (proc.exitCode !== 0 && !stdout.trim()) {
-          if (proc.exitCode === 1) {
-            return { output: "No matches found." };
-          }
-          return {
-            output: `Error running grep: ${stderr.trim()}`,
-            metadata: { error: true },
-          };
+          return { output: "No matches found." };
         }
 
         // Parse and limit output

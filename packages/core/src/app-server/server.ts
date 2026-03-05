@@ -40,7 +40,7 @@ export interface DiligentAppServerConfig {
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
     getSessionId?: () => string | undefined;
     onCollabEvent?: (event: AgentEvent) => void;
-  }) => AgentLoopConfig & { registry?: AgentRegistry };
+  }) => (AgentLoopConfig & { registry?: AgentRegistry }) | Promise<AgentLoopConfig & { registry?: AgentRegistry }>;
   compaction?: SessionManagerConfig["compaction"];
 }
 
@@ -758,9 +758,9 @@ export class DiligentAppServer {
     runtime.manager = new SessionManager({
       cwd,
       paths,
-      agentConfig: () => {
+      agentConfig: async () => {
         const signal = runtime.abortController?.signal ?? new AbortController().signal;
-        const result = this.config.buildAgentConfig({
+        const result = await this.config.buildAgentConfig({
           cwd,
           mode: runtime.mode,
           signal,

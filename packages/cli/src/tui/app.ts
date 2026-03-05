@@ -365,7 +365,7 @@ export class App {
   private createAppServer(paths: DiligentPaths): DiligentAppServer {
     const appServerConfig: DiligentAppServerConfig = {
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: ({ cwd, mode, signal, approve, ask, getSessionId }) => {
+      buildAgentConfig: async ({ cwd, mode, signal, approve, ask, getSessionId }) => {
         const deps = {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
@@ -373,7 +373,7 @@ export class App {
           getParentSessionId: getSessionId,
           ask,
         };
-        const { tools, registry } = buildTools(cwd, paths, deps);
+        const { tools, registry } = await buildTools(cwd, paths, deps, this.config.diligent.tools);
         if (registry) {
           this.agentRegistry = registry;
         }

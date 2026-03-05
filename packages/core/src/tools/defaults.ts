@@ -1,10 +1,13 @@
 // @summary Shared default tool assembly used by both CLI and Web server
 import type { AgentRegistry, CollabToolDeps } from "../collab";
 import { createCollabTools } from "../collab";
+import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import type { Tool } from "../tool/types";
 import { createAddKnowledgeTool } from "./add-knowledge";
 import { bashTool } from "./bash";
+import type { PluginLoadError, ToolStateEntry } from "./catalog";
+import { buildToolCatalog } from "./catalog";
 import { createEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
@@ -14,12 +17,21 @@ import { createReadTool } from "./read";
 import { requestUserInputTool } from "./request-user-input";
 import { createWriteTool } from "./write";
 
-export function buildDefaultTools(
+export interface BuildDefaultToolsResult {
+  tools: Tool[];
+  registry?: AgentRegistry;
+  toolState: ToolStateEntry[];
+  pluginErrors: PluginLoadError[];
+}
+
+export async function buildDefaultTools(
   cwd: string,
   paths?: DiligentPaths,
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
-): { tools: Tool[]; registry?: AgentRegistry } {
-  const tools: Tool[] = [
+  toolsConfig?: DiligentConfig["tools"],
+): Promise<BuildDefaultToolsResult> {
+  // 1. Assemble all built-in tools
+  const builtinTools: Tool[] = [
     bashTool,
     createReadTool(),
     createWriteTool(),
@@ -32,19 +44,32 @@ export function buildDefaultTools(
   ];
 
   if (paths) {
-    tools.push(createAddKnowledgeTool(paths.knowledge));
+    builtinTools.push(createAddKnowledgeTool(paths.knowledge));
   }
 
+  // 2. Run catalog resolution (applies config toggles, loads plugins, enforces immutables)
+  const catalog = await buildToolCatalog(builtinTools, toolsConfig, cwd);
+
+  // 3. Add collab tools (always enabled, not user-configurable)
   if (paths && collabDeps) {
     const { tools: collabTools, registry } = createCollabTools({
       ...collabDeps,
       cwd,
       paths,
-      parentTools: tools,
+      parentTools: catalog.tools,
     });
-    tools.push(...collabTools);
-    return { tools, registry };
+    catalog.tools.push(...collabTools);
+    return {
+      tools: catalog.tools,
+      registry,
+      toolState: catalog.state,
+      pluginErrors: catalog.pluginErrors,
+    };
   }
 
-  return { tools };
+  return {
+    tools: catalog.tools,
+    toolState: catalog.state,
+    pluginErrors: catalog.pluginErrors,
+  };
 }

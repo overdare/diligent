@@ -4,7 +4,7 @@ import type { Tool, ToolContext, ToolResult } from "../tool/types";
 import type { AgentRegistry } from "./registry";
 import type { AgentStatus } from "./types";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const MIN_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 

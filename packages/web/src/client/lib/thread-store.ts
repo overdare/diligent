@@ -826,12 +826,33 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     }
   }
 
+  // Accumulate usage from assistant messages to restore token counts on thread switch
+  const hydratedUsage: UsageState = { ...zeroUsage };
+  let lastInputTokens = 0;
+  for (const message of payload.messages) {
+    if (message.role === "assistant") {
+      const u = (
+        message as {
+          usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+        }
+      ).usage;
+      if (u) {
+        hydratedUsage.inputTokens += u.inputTokens;
+        hydratedUsage.outputTokens += u.outputTokens;
+        hydratedUsage.cacheReadTokens += u.cacheReadTokens;
+        hydratedUsage.cacheWriteTokens += u.cacheWriteTokens;
+        if (u.inputTokens > 0) lastInputTokens = u.inputTokens;
+      }
+    }
+  }
+
   const base: ThreadState = {
     ...state,
     items: [],
     seenKeys: {},
     itemSlots: {},
-    usage: zeroUsage,
+    usage: hydratedUsage,
+    currentContextTokens: lastInputTokens,
     planState: null,
     pendingSteers: [],
     threadStatus: payload.isRunning ? "busy" : "idle",
