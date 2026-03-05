@@ -188,13 +188,14 @@ export class DeferredWriter {
     existingPath?: string,
     private parentSession?: string,
     private collabMeta?: CollabSessionMeta,
+    preAssignedId?: string,
   ) {
     if (existingPath) {
       this.sessionPath = existingPath;
       this.flushed = true;
       this.preAssignedId = existingPath.split("/").pop()!.replace(".jsonl", "");
     } else {
-      this.preAssignedId = generateSessionId();
+      this.preAssignedId = preAssignedId ?? generateSessionId();
     }
   }
 

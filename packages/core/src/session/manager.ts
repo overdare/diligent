@@ -55,6 +55,7 @@ export class SessionManager {
       undefined,
       config.parentSession,
       config.collabMeta,
+      config.sessionId,
     );
   }
 
@@ -70,6 +71,7 @@ export class SessionManager {
       undefined,
       this.config.parentSession,
       this.config.collabMeta,
+      this.config.sessionId ?? this.writer.id,
     );
   }
 
