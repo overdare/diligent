@@ -11,6 +11,7 @@ import type {
   Mode,
   ModelInfo,
 } from "@diligent/protocol";
+import { DILIGENT_WEB_REQUEST_METHODS } from "@diligent/protocol";
 import type { WsServerMessage } from "../../shared/ws-protocol";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";
@@ -167,13 +168,17 @@ export class WebRpcClient {
   }
 
   async subscribe(threadId: string): Promise<{ subscriptionId: string }> {
-    const result = (await this.webRequest("thread/subscribe", { threadId })) as { subscriptionId: string };
+    const result = (await this.webRequest(DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId })) as {
+      subscriptionId: string;
+    };
     this.activeSubscriptions.set(result.subscriptionId, threadId);
     return result;
   }
 
   async unsubscribe(subscriptionId: string): Promise<{ ok: boolean }> {
-    const result = (await this.webRequest("thread/unsubscribe", { subscriptionId })) as { ok: boolean };
+    const result = (await this.webRequest(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE, { subscriptionId })) as {
+      ok: boolean;
+    };
     if (result.ok) {
       this.activeSubscriptions.delete(subscriptionId);
     }

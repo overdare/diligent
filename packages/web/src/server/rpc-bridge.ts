@@ -32,6 +32,8 @@ import {
   AuthRemoveParamsSchema,
   AuthSetParamsSchema,
   ConfigSetParamsSchema,
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
@@ -398,7 +400,7 @@ export class RpcBridge {
       const params = this.withSessionDefaults(parsed.method, parsed.params, session);
 
       // Set turnInitiators BEFORE forwarding so echo prevention works during notification routing
-      if (parsed.method === "turn/start" && session.currentThreadId) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START && session.currentThreadId) {
         this.turnInitiators.set(session.currentThreadId, session.id);
       }
 
@@ -408,7 +410,7 @@ export class RpcBridge {
         params,
       });
 
-      if (parsed.method === "thread/start" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START && "result" in response) {
         const maybeThreadId = (response.result as { threadId?: string }).threadId;
         if (maybeThreadId) {
           // Unsubscribe from all previous threads — a tab views one thread at a time
@@ -418,7 +420,7 @@ export class RpcBridge {
         }
       }
 
-      if (parsed.method === "thread/resume" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME && "result" in response) {
         const resumed = response.result as { found: boolean; threadId?: string };
         if (resumed.found && resumed.threadId) {
           this.removeAllSubscriptionsForSession(session.id);
@@ -428,18 +430,22 @@ export class RpcBridge {
       }
 
       // Clean up turnInitiators if turn/start failed
-      if (parsed.method === "turn/start" && session.currentThreadId && !("result" in response)) {
+      if (
+        parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START &&
+        session.currentThreadId &&
+        !("result" in response)
+      ) {
         this.turnInitiators.delete(session.currentThreadId);
       }
 
-      if (parsed.method === "mode/set" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET && "result" in response) {
         const mode = (response.result as { mode?: Mode }).mode;
         if (mode) {
           session.mode = mode;
         }
       }
 
-      if (parsed.method === "thread/delete" && "result" in response) {
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
         const r = response.result as { deleted?: boolean };
         const deletedId = (parsed.params as { threadId?: string }).threadId;
         if (r.deleted && deletedId) {
@@ -567,7 +573,7 @@ export class RpcBridge {
 
     const objectParams = params as Record<string, unknown>;
 
-    if (method === "thread/start") {
+    if (method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START) {
       return {
         ...objectParams,
         cwd: typeof objectParams.cwd === "string" ? objectParams.cwd : session.cwd,
@@ -576,12 +582,12 @@ export class RpcBridge {
     }
 
     if (
-      method === "turn/start" ||
-      method === "turn/interrupt" ||
-      method === "turn/steer" ||
-      method === "mode/set" ||
-      method === "thread/read" ||
-      method === "knowledge/list"
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST
     ) {
       return {
         ...objectParams,
@@ -605,7 +611,7 @@ export class RpcBridge {
     }
 
     // Clean up turn initiator when turn completes
-    if (notification.method === "turn/completed") {
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
       this.turnInitiators.delete(threadId);
     }
 
@@ -628,7 +634,10 @@ export class RpcBridge {
   }
 
   private getUserMessageSender(notification: DiligentServerNotification, threadId: string): string | null {
-    if (notification.method !== "item/started" && notification.method !== "item/completed") {
+    if (
+      notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED &&
+      notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED
+    ) {
       return null;
     }
     const item = (notification.params as { item?: { type?: string } }).item;
