@@ -230,86 +230,141 @@ async function runLoop(
       break;
     }
 
-    // 3. Execute tools sequentially (D015)
+    // 3. Execute tools — D015: parallel when all tools support it, sequential otherwise
     const toolResults: ToolResultMessage[] = [];
     let abortAfterTurn = false;
 
-    for (const toolCall of toolCalls) {
-      if (config.signal?.aborted) {
-        console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
-        break;
+    /** Build a ToolContext for a specific tool call + pre-allocated itemId */
+    const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
+      toolCallId: toolCall.id,
+      signal: config.signal ?? new AbortController().signal,
+      approve: async (request) => {
+        if (config.permissionEngine) {
+          const action = config.permissionEngine.evaluate(request);
+          if (action === "allow") return "once";
+          if (action === "deny") return "reject";
+        }
+        if (!config.approve) return "once";
+        const response = await config.approve(request);
+        if (response === "always" && config.permissionEngine) {
+          config.permissionEngine.remember(request, "allow");
+        }
+        return response;
+      },
+      ask: config.ask ? (request) => config.ask!(request) : undefined,
+      onUpdate: (partial) => {
+        stream.push({
+          type: "tool_update",
+          itemId: toolItemId,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          partialResult: partial,
+        });
+      },
+    });
+
+    const allParallel = toolCalls.length > 1 && toolCalls.every((tc) => registry.get(tc.name)?.supportParallel);
+
+    if (allParallel) {
+      // --- Parallel path ---
+      const itemIds = toolCalls.map(() => generateItemId());
+
+      // Emit all tool_start events upfront
+      for (let i = 0; i < toolCalls.length; i++) {
+        stream.push({
+          type: "tool_start",
+          itemId: itemIds[i],
+          toolCallId: toolCalls[i].id,
+          toolName: toolCalls[i].name,
+          input: toolCalls[i].input,
+        });
       }
 
-      const toolItemId = generateItemId();
+      // Execute all in parallel
+      const results = await Promise.all(
+        toolCalls.map((tc, i) => executeTool(registry, tc, buildToolContext(tc, itemIds[i]))),
+      );
 
-      stream.push({
-        type: "tool_start",
-        itemId: toolItemId,
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        input: toolCall.input,
-      });
+      // Process results in original order
+      for (let i = 0; i < toolCalls.length; i++) {
+        const result = results[i];
+        const toolCall = toolCalls[i];
+        const toolResult: ToolResultMessage = {
+          role: "tool_result",
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: result.output,
+          isError: !!result.metadata?.error,
+          timestamp: Date.now(),
+        };
 
-      const ctx: ToolContext = {
-        toolCallId: toolCall.id,
-        signal: config.signal ?? new AbortController().signal,
-        approve: async (request) => {
-          // Consult permission engine first
-          if (config.permissionEngine) {
-            const action = config.permissionEngine.evaluate(request);
-            if (action === "allow") return "once";
-            if (action === "deny") return "reject";
-          }
-          // Fall through to UI prompt
-          if (!config.approve) return "once";
-          const response = await config.approve(request);
-          // "always" → store session rule
-          if (response === "always" && config.permissionEngine) {
-            config.permissionEngine.remember(request, "allow");
-          }
-          return response;
-        },
-        ask: config.ask ? (request) => config.ask!(request) : undefined,
-        onUpdate: (partial) => {
-          stream.push({
-            type: "tool_update",
-            itemId: toolItemId,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            partialResult: partial,
-          });
-        },
-      };
+        toolResults.push(toolResult);
 
-      const result = await executeTool(registry, toolCall, ctx);
-      const toolResult: ToolResultMessage = {
-        role: "tool_result",
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        output: result.output,
-        isError: !!result.metadata?.error,
-        timestamp: Date.now(),
-      };
+        stream.push({
+          type: "tool_end",
+          itemId: itemIds[i],
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: result.output,
+          isError: toolResult.isError,
+        });
 
-      toolResults.push(toolResult);
+        if (result.abortRequested) {
+          abortAfterTurn = true;
+          break;
+        }
 
-      stream.push({
-        type: "tool_end",
-        itemId: toolItemId,
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        output: result.output,
-        isError: toolResult.isError,
-      });
-
-      // User rejected approval or cancelled input — persist result but don't feed to LLM
-      if (result.abortRequested) {
-        abortAfterTurn = true;
-        break;
+        allMessages.push(toolResult);
+        loopDetector.record(toolCall.name, toolCall.input);
       }
+    } else {
+      // --- Sequential path (original) ---
+      for (const toolCall of toolCalls) {
+        if (config.signal?.aborted) {
+          console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
+          break;
+        }
 
-      allMessages.push(toolResult);
-      loopDetector.record(toolCall.name, toolCall.input);
+        const toolItemId = generateItemId();
+
+        stream.push({
+          type: "tool_start",
+          itemId: toolItemId,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          input: toolCall.input,
+        });
+
+        const ctx = buildToolContext(toolCall, toolItemId);
+        const result = await executeTool(registry, toolCall, ctx);
+        const toolResult: ToolResultMessage = {
+          role: "tool_result",
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: result.output,
+          isError: !!result.metadata?.error,
+          timestamp: Date.now(),
+        };
+
+        toolResults.push(toolResult);
+
+        stream.push({
+          type: "tool_end",
+          itemId: toolItemId,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: result.output,
+          isError: toolResult.isError,
+        });
+
+        if (result.abortRequested) {
+          abortAfterTurn = true;
+          break;
+        }
+
+        allMessages.push(toolResult);
+        loopDetector.record(toolCall.name, toolCall.input);
+      }
     }
 
     const loopResult = loopDetector.check();

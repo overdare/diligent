@@ -86,6 +86,7 @@ export function createReadTool(): Tool<typeof ReadParams> {
     name: "read",
     description: "Read a file from the filesystem. Returns file contents with line numbers.",
     parameters: ReadParams,
+    supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const { file_path, offset, limit } = args;
 

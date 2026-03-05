@@ -15,6 +15,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     name: "glob",
     description: "Find files matching a glob pattern. Returns file paths sorted by modification time (newest first).",
     parameters: GlobParams,
+    supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const searchPath = args.path ?? cwd;
 

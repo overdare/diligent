@@ -7,6 +7,7 @@ export interface Tool<TParams extends z.ZodType = any> {
   description: string;
   parameters: TParams;
   execute: (args: z.infer<TParams>, ctx: ToolContext) => Promise<ToolResult>;
+  supportParallel?: boolean; // D015: When true, tool can run concurrently with other parallel tools
 }
 
 // D086: Approval response — "once" (proceed once), "always" (remember), "reject" (deny)

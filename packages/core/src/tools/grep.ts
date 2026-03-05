@@ -18,6 +18,7 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     name: "grep",
     description: "Search file contents using regex. Returns matching lines with file paths and line numbers.",
     parameters: GrepParams,
+    supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const searchPath = args.path ?? cwd;
 

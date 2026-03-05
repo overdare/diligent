@@ -79,6 +79,34 @@ const echoTool: Tool = {
   },
 };
 
+/** A read-only tool that supports parallel execution and records timing */
+function createParallelTool(name: string, delayMs = 50): Tool & { calls: number[] } {
+  const calls: number[] = [];
+  return {
+    name,
+    description: `Parallel tool ${name}`,
+    parameters: z.object({ query: z.string() }),
+    supportParallel: true,
+    async execute(args: { query: string }) {
+      const start = Date.now();
+      calls.push(start);
+      await new Promise((r) => setTimeout(r, delayMs));
+      return { output: `${name}:${args.query}` };
+    },
+    calls,
+  };
+}
+
+/** A sequential tool (no supportParallel flag) */
+const sequentialTool: Tool = {
+  name: "seq_tool",
+  description: "Sequential tool",
+  parameters: z.object({ data: z.string() }),
+  async execute(args: { data: string }) {
+    return { output: `seq:${args.data}` };
+  },
+};
+
 describe("agentLoop", () => {
   test("text-only response: single turn", async () => {
     const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
@@ -265,5 +293,146 @@ describe("agentLoop", () => {
     const toolEnd = events.find((e) => e.type === "tool_end") as Extract<AgentEvent, { type: "tool_end" }>;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.output).toContain("Unknown tool");
+  });
+
+  test("parallel tools: all supportParallel=true → parallel execution (all tool_start before tool_end)", async () => {
+    const toolA = createParallelTool("ptool_a", 50);
+    const toolB = createParallelTool("ptool_b", 50);
+
+    const toolCallMsg = makeAssistant(
+      [
+        { type: "tool_call", id: "tc_1", name: "ptool_a", input: { query: "hello" } },
+        { type: "tool_call", id: "tc_2", name: "ptool_b", input: { query: "world" } },
+      ],
+      "tool_use",
+    );
+    const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
+    const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [toolA, toolB],
+      streamFunction: streamFn,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    const types = events.map((e) => e.type);
+
+    // All tool_start events should appear before any tool_end
+    const firstToolEnd = types.indexOf("tool_end");
+    const toolStarts = types.filter((t) => t === "tool_start");
+    const toolStartIndices: number[] = [];
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === "tool_start") toolStartIndices.push(i);
+    }
+
+    expect(toolStarts).toHaveLength(2);
+    expect(toolStartIndices.every((idx) => idx < firstToolEnd)).toBe(true);
+
+    // Both tools should have been called (timing: starts should be close together)
+    expect(toolA.calls).toHaveLength(1);
+    expect(toolB.calls).toHaveLength(1);
+    const timeDiff = Math.abs(toolA.calls[0] - toolB.calls[0]);
+    // If truly parallel, start times should be within ~10ms of each other
+    expect(timeDiff).toBeLessThan(30);
+  });
+
+  test("mixed tools: sequential + parallel → sequential fallback", async () => {
+    const toolA = createParallelTool("ptool_a", 50);
+
+    const toolCallMsg = makeAssistant(
+      [
+        { type: "tool_call", id: "tc_1", name: "ptool_a", input: { query: "hello" } },
+        { type: "tool_call", id: "tc_2", name: "seq_tool", input: { data: "world" } },
+      ],
+      "tool_use",
+    );
+    const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
+    const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [toolA, sequentialTool],
+      streamFunction: streamFn,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    const types = events.map((e) => e.type);
+
+    // Sequential: tool_start, tool_end, tool_start, tool_end (interleaved)
+    const toolEvents = types.filter((t) => t === "tool_start" || t === "tool_end");
+    expect(toolEvents).toEqual(["tool_start", "tool_end", "tool_start", "tool_end"]);
+  });
+
+  test("single parallel tool: no parallel path (length must be > 1)", async () => {
+    const toolA = createParallelTool("ptool_a", 10);
+
+    const toolCallMsg = makeAssistant(
+      [{ type: "tool_call", id: "tc_1", name: "ptool_a", input: { query: "solo" } }],
+      "tool_use",
+    );
+    const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
+    const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [toolA],
+      streamFunction: streamFn,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    // Works correctly — single tool still executes
+    const toolEnds = events.filter((e) => e.type === "tool_end") as Extract<AgentEvent, { type: "tool_end" }>[];
+    expect(toolEnds).toHaveLength(1);
+    expect(toolEnds[0].output).toBe("ptool_a:solo");
+  });
+
+  test("tool without supportParallel flag: treated as sequential (default false)", async () => {
+    // echoTool has no supportParallel flag
+    const toolCallMsg = makeAssistant(
+      [
+        { type: "tool_call", id: "tc_1", name: "echo", input: { message: "a" } },
+        { type: "tool_call", id: "tc_2", name: "echo", input: { message: "b" } },
+      ],
+      "tool_use",
+    );
+    const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
+    const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
+
+    const config: AgentLoopConfig = {
+      model: TEST_MODEL,
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [echoTool],
+      streamFunction: streamFn,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
+    const events: AgentEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+    }
+
+    const types = events.map((e) => e.type);
+    // Sequential: interleaved tool_start/tool_end
+    const toolEvents = types.filter((t) => t === "tool_start" || t === "tool_end");
+    expect(toolEvents).toEqual(["tool_start", "tool_end", "tool_start", "tool_end"]);
   });
 });

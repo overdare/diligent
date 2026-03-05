@@ -21,6 +21,7 @@ export type PlanStep = z.infer<typeof PlanStep>;
 export function createPlanTool(): Tool<typeof PlanParams> {
   return {
     name: "plan",
+    supportParallel: true,
     description:
       "Create or update a visible task checklist. " +
       "Call this at the start of complex multi-step tasks to show the user your plan. " +

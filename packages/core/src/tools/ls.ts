@@ -14,6 +14,7 @@ export function createLsTool(): Tool<typeof LsParams> {
     name: "ls",
     description: "List directory contents. Shows files and subdirectories with type indicators.",
     parameters: LsParams,
+    supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const { path } = args;
 
