@@ -668,6 +668,7 @@ export class DiligentAppServer {
             nickname: event.nickname,
             toolName: event.toolName,
             toolCallId: event.toolCallId,
+            input: event.input,
           },
         });
         return;
@@ -682,6 +683,7 @@ export class DiligentAppServer {
             toolName: event.toolName,
             toolCallId: event.toolCallId,
             isError: event.isError,
+            output: event.output,
           },
         });
         return;

@@ -176,6 +176,7 @@ export class AgentRegistry {
             nickname,
             toolName: event.toolName,
             toolCallId: event.toolCallId,
+            input: event.input,
           });
         } else if (event.type === "tool_end") {
           this.emit({
@@ -185,6 +186,7 @@ export class AgentRegistry {
             toolName: event.toolName,
             toolCallId: event.toolCallId,
             isError: event.isError,
+            output: event.output,
           });
         } else if (event.type === "message_end") {
           const textBlocks = event.message.content.filter((b): b is TextBlock => b.type === "text");

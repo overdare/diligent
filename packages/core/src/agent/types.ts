@@ -109,7 +109,7 @@ export type AgentEvent =
       message?: string;
     }
   // Collab — sub-agent internal activity forwarded from child stream
-  | { type: "collab_tool_start"; agentId: string; nickname?: string; toolName: string; toolCallId: string }
+  | { type: "collab_tool_start"; agentId: string; nickname?: string; toolName: string; toolCallId: string; input?: unknown }
   | {
       type: "collab_tool_end";
       agentId: string;
@@ -117,6 +117,7 @@ export type AgentEvent =
       toolName: string;
       toolCallId: string;
       isError: boolean;
+      output?: string;
     }
   | { type: "collab_turn_start"; agentId: string; nickname?: string; turnNumber: number };
 

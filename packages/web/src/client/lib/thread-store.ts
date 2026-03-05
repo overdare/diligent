@@ -81,7 +81,14 @@ export type RenderItem =
       agents?: Array<{ agentId: string; nickname?: string; status?: string; message?: string }>;
       timedOut?: boolean;
       turnNumber?: number;
-      childTools: Array<{ toolCallId: string; toolName: string; status: "running" | "done"; isError: boolean }>;
+      childTools: Array<{
+        toolCallId: string;
+        toolName: string;
+        status: "running" | "done";
+        isError: boolean;
+        inputText: string;
+        outputText: string;
+      }>;
       childMessages?: string[];
       timestamp: number;
     };
@@ -480,7 +487,14 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
               ...item,
               childTools: [
                 ...item.childTools,
-                { toolCallId: event.toolCallId, toolName: event.toolName, status: "running" as const, isError: false },
+                {
+                  toolCallId: event.toolCallId,
+                  toolName: event.toolName,
+                  status: "running" as const,
+                  isError: false,
+                  inputText: stringifyUnknown(event.input),
+                  outputText: "",
+                },
               ],
             }
           : item,
@@ -495,7 +509,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
           ? {
               ...item,
               childTools: item.childTools.map((t) =>
-                t.toolCallId === event.toolCallId ? { ...t, status: "done" as const, isError: event.isError } : t,
+                t.toolCallId === event.toolCallId
+                  ? { ...t, status: "done" as const, isError: event.isError, outputText: event.output ?? "" }
+                  : t,
               ),
             }
           : item,
@@ -607,8 +623,8 @@ export function reduceServerNotification(
 /** Build childTools from a child session's messages for collab RenderItem */
 function extractChildTools(
   child: ChildSession,
-): Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean }> {
-  const tools: Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean }> = [];
+): Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean; inputText: string; outputText: string }> {
+  const tools: Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean; inputText: string; outputText: string }> = [];
   for (const msg of child.messages) {
     if (msg.role === "tool_result") {
       tools.push({
@@ -616,6 +632,8 @@ function extractChildTools(
         toolName: (msg as { toolName: string }).toolName,
         status: "done",
         isError: (msg as { isError: boolean }).isError,
+        inputText: stringifyUnknown((msg as { input?: unknown }).input),
+        outputText: typeof (msg as { output?: string }).output === "string" ? (msg as { output: string }).output : "",
       });
     }
   }

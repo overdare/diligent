@@ -148,6 +148,7 @@ export class ProtocolNotificationAdapter {
             nickname: notification.params.nickname,
             toolName: notification.params.toolName,
             toolCallId: notification.params.toolCallId,
+            input: notification.params.input,
           },
         ];
 
@@ -160,6 +161,7 @@ export class ProtocolNotificationAdapter {
             toolName: notification.params.toolName,
             toolCallId: notification.params.toolCallId,
             isError: notification.params.isError,
+            output: notification.params.output,
           },
         ];
 

@@ -243,6 +243,7 @@ export const CollabToolStartNotificationSchema = z.object({
     nickname: z.string().optional(),
     toolName: z.string(),
     toolCallId: z.string(),
+    input: z.unknown().optional(),
   }),
 });
 export type CollabToolStartNotification = z.infer<typeof CollabToolStartNotificationSchema>;
@@ -256,6 +257,7 @@ export const CollabToolEndNotificationSchema = z.object({
     toolName: z.string(),
     toolCallId: z.string(),
     isError: z.boolean(),
+    output: z.string().optional(),
   }),
 });
 export type CollabToolEndNotification = z.infer<typeof CollabToolEndNotificationSchema>;

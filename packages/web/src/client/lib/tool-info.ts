@@ -140,7 +140,17 @@ export function summarizeOutput(toolName: string, outputText: string): string {
     return firstLine ? clip(firstLine) : "";
   }
 
-  // read / write / edit: show line count or written confirmation
+  // read: show line count from "(showing lines X-Y of Z total)" or count content lines
+  if (name === "read") {
+    // Look for the standard footer: "(showing lines 1-50 of 200 total)"
+    const showingMatch = outputText.match(/\(showing lines \d+-\d+ of (\d+) total\)/);
+    if (showingMatch) return `${showingMatch[1]} lines`;
+    // Count non-empty content lines (output has "  N\t..." format)
+    const contentLines = outputText.split("\n").filter((l) => l.trim().length > 0);
+    return `${contentLines.length} lines`;
+  }
+
+  // write / edit: show line count or written confirmation
   if (name === "write" || name === "edit" || name === "multiedit") {
     const lineMatch = outputText.match(/(\d+)\s*line/i);
     if (lineMatch) return `${lineMatch[1]} lines`;
@@ -148,14 +158,14 @@ export function summarizeOutput(toolName: string, outputText: string): string {
     return firstLine ? clip(firstLine) : "";
   }
 
-  // grep: show match count or first match
+  // grep: count actual match lines (file:line:content pattern)
   if (name === "grep") {
-    const lines = outputText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    if (lines.length === 0) return "no matches";
-    return lines.length === 1 ? clip(lines[0]) : `${lines.length} matches`;
+    const allLines = outputText.split("\n").filter((l) => l.trim().length > 0);
+    // Match lines have "path:number:content" format; context lines have "path-number-content"
+    const matchLines = allLines.filter((l) => /^.+?:\d+:/.test(l));
+    const count = matchLines.length || allLines.length;
+    if (count === 0) return "no matches";
+    return count === 1 ? clip(matchLines[0] ?? allLines[0] ?? "") : `${count} matches`;
   }
 
   // glob / ls: show item count
