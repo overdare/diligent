@@ -313,7 +313,7 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
   expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
 });
 
-test("hydrateFromThreadRead shows completed sub-agent after wait result", () => {
+test("hydrateFromThreadRead shows wait-derived final status on spawn item", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [
       {
@@ -398,6 +398,80 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
   expect(spawn && spawn.kind === "collab" ? spawn.childMessages : []).toEqual(["I finished the work."]);
 });
 
+test("hydrateFromThreadRead shows close-derived final status on spawn item", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-close-1",
+            name: "close_agent",
+            input: { id: "ses-child-1" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 102,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-close-1",
+        toolName: "close_agent",
+        output: JSON.stringify({
+          thread_id: "ses-child-1",
+          nickname: "Cleo",
+          final_status: { kind: "shutdown" },
+        }),
+        isError: false,
+        timestamp: 103,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 4,
+  });
+
+  const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("shutdown");
+});
+
 test("turn/interrupted settles in-flight thinking and streaming tool items", () => {
   resetAdapter();
 
@@ -475,7 +549,7 @@ test("turn/interrupted settles in-flight thinking and streaming tool items", () 
   expect(Object.keys(after.itemSlots).length).toBe(0);
 });
 
-test("hydrateFromThreadRead shows completed sub-agent when parent is not running", () => {
+test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [
       {
@@ -519,5 +593,5 @@ test("hydrateFromThreadRead shows completed sub-agent when parent is not running
 
   const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
   expect(collab).toBeDefined();
-  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("completed");
+  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
 });

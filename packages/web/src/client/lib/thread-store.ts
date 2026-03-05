@@ -192,6 +192,26 @@ function findCollabSpawnItem(
   return undefined;
 }
 
+/** Update the latest spawn item's status for a child thread. */
+function updateCollabSpawnStatus(
+  state: ThreadState,
+  childThreadId: string,
+  status: string,
+  message?: string,
+): ThreadState {
+  const spawnItem = findCollabSpawnItem(state, childThreadId);
+  if (!spawnItem) return state;
+  return updateItem(state, spawnItem.id, (item) =>
+    item.kind === "collab" && item.eventType === "spawn"
+      ? {
+          ...item,
+          status,
+          message: message ?? item.message,
+        }
+      : item,
+  );
+}
+
 /** Returns null when the plan output signals closure ({closed:true}), otherwise parses PlanState. */
 function parsePlanOutput(output: string): PlanState | null | "closed" {
   try {
@@ -486,7 +506,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
     case "collab_wait_end": {
       const renderId = `collab:wait:${event.callId}`;
-      return withItem(state, renderId, {
+      let next = withItem(state, renderId, {
         id: renderId,
         kind: "collab",
         eventType: "wait",
@@ -500,6 +520,11 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         childTools: [],
         timestamp: Date.now(),
       });
+
+      for (const agent of event.agentStatuses) {
+        next = updateCollabSpawnStatus(next, agent.threadId, agent.status, agent.message);
+      }
+      return next;
     }
 
     case "collab_close_begin":
@@ -507,7 +532,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
     case "collab_close_end": {
       const renderId = `collab:close:${event.callId}`;
-      return withItem(state, renderId, {
+      let next = withItem(state, renderId, {
         id: renderId,
         kind: "collab",
         eventType: "close",
@@ -518,6 +543,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         childTools: [],
         timestamp: Date.now(),
       });
+
+      next = updateCollabSpawnStatus(next, event.childThreadId, event.status, event.message);
+      return next;
     }
 
     case "collab_interaction_begin":
@@ -736,10 +764,10 @@ function parseWaitOutput(
 }
 
 /** Parse close_agent tool_result output */
-function parseCloseOutput(output: string): { nickname?: string; status?: string } {
+function parseCloseOutput(output: string): { threadId?: string; nickname?: string; status?: string } {
   try {
-    const parsed = JSON.parse(output) as { nickname?: string; final_status?: { kind?: string } };
-    return { nickname: parsed.nickname, status: parsed.final_status?.kind };
+    const parsed = JSON.parse(output) as { thread_id?: string; nickname?: string; final_status?: { kind?: string } };
+    return { threadId: parsed.thread_id, nickname: parsed.nickname, status: parsed.final_status?.kind };
   } catch {
     return {};
   }
@@ -768,6 +796,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   const spawnResultByToolCallId = new Map<string, { threadId: string; nickname?: string; child?: ChildSession }>();
   // Track which threadIds have been settled (appeared in wait/close_agent results)
   const settledThreadIds = new Set<string>();
+  // Track final status from wait/close results per child thread
+  const finalStatusByThreadId = new Map<string, string>();
   for (const message of payload.messages) {
     if (message.role === "tool_result" && message.toolName === "spawn_agent") {
       const { threadId, nickname } = parseSpawnOutput(message.output);
@@ -779,15 +809,19 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     if (message.role === "tool_result" && message.toolName === "wait") {
       const waitData = parseWaitOutput(message.output);
       if (waitData) {
-        for (const a of waitData.agents) settledThreadIds.add(a.threadId);
+        for (const a of waitData.agents) {
+          settledThreadIds.add(a.threadId);
+          if (a.status) finalStatusByThreadId.set(a.threadId, a.status);
+        }
       }
     }
     if (message.role === "tool_result" && message.toolName === "close_agent") {
-      try {
-        const parsed = JSON.parse(message.output) as { thread_id?: string };
-        if (parsed.thread_id) settledThreadIds.add(parsed.thread_id);
-      } catch {
-        /* ignore */
+      const close = parseCloseOutput(message.output);
+      const resolvedThreadId =
+        close.threadId ?? (close.nickname ? childByNickname.get(close.nickname)?.sessionId : undefined);
+      if (resolvedThreadId) {
+        settledThreadIds.add(resolvedThreadId);
+        if (close.status) finalStatusByThreadId.set(resolvedThreadId, close.status);
       }
     }
   }
@@ -854,9 +888,9 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
           const spawnInfo = spawnResultByToolCallId.get(block.id);
           const child = spawnInfo?.child;
           const childThreadId = spawnInfo?.threadId ?? child?.sessionId;
-          // Determine status: if parent is running and this agent hasn't been waited/closed, it's still running
-          const isSettled = childThreadId ? settledThreadIds.has(childThreadId) : true;
-          const spawnStatus = !payload.isRunning || isSettled ? "completed" : "running";
+          // Only mark terminal status when explicitly observed via wait/close results.
+          const isSettled = childThreadId ? settledThreadIds.has(childThreadId) : false;
+          const spawnStatus = childThreadId ? (finalStatusByThreadId.get(childThreadId) ?? "running") : "running";
           current = withItem(current, `history:collab:spawn:${block.id}`, {
             id: `history:collab:spawn:${block.id}`,
             kind: "collab",
@@ -864,7 +898,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
             childThreadId,
             nickname: spawnInfo?.nickname ?? child?.nickname,
             description: child?.description ?? (block.input as { description?: string })?.description,
-            status: spawnStatus,
+            status: isSettled ? spawnStatus : "running",
             childTools: child ? extractChildTools(child) : [],
             childMessages: child ? extractChildMessages(child) : undefined,
             timestamp: message.timestamp,

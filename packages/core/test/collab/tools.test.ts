@@ -171,7 +171,7 @@ describe("send_input tool", () => {
 });
 
 describe("close_agent tool", () => {
-  it("returns nickname and final_status", async () => {
+  it("returns thread_id, nickname and final_status", async () => {
     const { tools } = createCollabTools(
       makeCollabDeps({
         sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("done")),
@@ -183,6 +183,7 @@ describe("close_agent tool", () => {
     const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
     const result = await closeTool.execute({ id: spawned.thread_id }, makeCtx());
     const parsed = JSON.parse(result.output);
+    expect(parsed.thread_id).toBe(spawned.thread_id);
     expect(typeof parsed.nickname).toBe("string");
     expect(parsed.final_status).toBeDefined();
     expect(typeof parsed.final_status.kind).toBe("string");

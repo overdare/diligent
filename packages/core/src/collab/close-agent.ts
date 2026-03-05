@@ -16,7 +16,7 @@ export function createCloseAgentTool(registry: AgentRegistry): Tool<typeof Close
       const nickname = registry.getNickname(args.id) ?? args.id;
       const finalStatus = await registry.close(args.id);
       return {
-        output: JSON.stringify({ nickname, final_status: finalStatus }),
+        output: JSON.stringify({ thread_id: args.id, nickname, final_status: finalStatus }),
       };
     },
   };
