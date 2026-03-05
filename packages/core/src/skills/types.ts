@@ -8,7 +8,7 @@ export interface SkillMetadata {
   /** Directory containing the SKILL.md */
   baseDir: string;
   /** Where this skill was discovered */
-  source: "global" | "project" | "agents" | "config";
+  source: "global" | "project" | "config";
   /** Whether the LLM can autonomously decide to use this skill */
   disableModelInvocation: boolean;
 }

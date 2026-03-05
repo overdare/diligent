@@ -67,7 +67,7 @@ export interface CompactionEntry {
   recentUserMessages: Message[];
   tokensBefore: number;
   tokensAfter: number;
-  details?: CompactionDetails;
+  details: CompactionDetails;
 }
 
 export interface CompactionDetails {

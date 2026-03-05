@@ -93,6 +93,25 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
     }
   }, [items.length, threadStatus]);
 
+  // Watch for content height changes (e.g. plan updates) and auto-scroll / re-evaluate button visibility
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+      if (isAtBottomRef.current) {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        setShowScrollBtn(false);
+      } else {
+        setShowScrollBtn(!nearBottom);
+      }
+    });
+    // Observe the scrollable container's inner content
+    const inner = container.firstElementChild;
+    if (inner) observer.observe(inner);
+    return () => observer.disconnect();
+  }, []);
+
   const hasPrompt = approvalPrompt || questionPrompt;
 
   return (

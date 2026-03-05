@@ -146,7 +146,8 @@ describe("withPlanStateInjected", () => {
     const planMsg = result[result.length - 2];
     expect(planMsg.role).toBe("user");
     const content = (planMsg as UserMessage).content as string;
-    expect(content).toBe("[Plan (2 remaining)]\n- Step B\n- Step C");
+    expect(content).toStartWith("[Plan (2 remaining)]\n- Step B\n- Step C");
+    expect(content).toContain("Reminder:");
 
     // Last message should be the original user message
     const lastMsg = result[result.length - 1];

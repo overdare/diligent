@@ -60,15 +60,12 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
 
   if (lastCompaction) {
     // 1. Inject recent user messages (chronological, stored on CompactionEntry)
-    // Guard: v4 sessions may lack recentUserMessages
-    for (const msg of lastCompaction.recentUserMessages ?? []) {
+    for (const msg of lastCompaction.recentUserMessages) {
       messages.push(msg);
     }
 
     // 2. Inject summary with SUMMARY_PREFIX (last in prefix = stable for cache)
-    const summaryWithFiles = lastCompaction.details
-      ? lastCompaction.summary + formatFileOperations(lastCompaction.details)
-      : lastCompaction.summary;
+    const summaryWithFiles = lastCompaction.summary + formatFileOperations(lastCompaction.details);
 
     messages.push({
       role: "user",

@@ -42,9 +42,7 @@ function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) 
 
   // Bash → terminal
   if (name === "bash") {
-    return (
-      <ContentBash command={str(parsed?.command)} output={item.outputText || undefined} isError={item.isError} />
-    );
+    return <ContentBash command={str(parsed?.command)} output={item.outputText || undefined} isError={item.isError} />;
   }
 
   // Read → file viewer

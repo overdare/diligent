@@ -39,6 +39,7 @@ type AppAction =
   | { type: "set_mode"; payload: Mode }
   | { type: "local_user"; payload: string }
   | { type: "local_steer"; payload: string }
+  | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "clear_toast" };
 
 function appReducer(state: ThreadState, action: AppAction): ThreadState {
@@ -63,6 +64,22 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
   }
   if (action.type === "local_steer") {
     return { ...state, pendingSteers: [...state.pendingSteers, action.payload] };
+  }
+  if (action.type === "optimistic_thread") {
+    const { threadId, message } = action.payload;
+    // Only add if not already in the list
+    if (state.threadList.some((t) => t.id === threadId)) return state;
+    const now = new Date().toISOString();
+    const optimistic: SessionSummary = {
+      id: threadId,
+      path: "",
+      cwd: "",
+      created: now,
+      modified: now,
+      messageCount: 1,
+      firstUserMessage: message,
+    };
+    return { ...state, threadList: [optimistic, ...state.threadList] };
   }
   if (action.type === "clear_toast") return { ...state, toast: null };
   return state;
@@ -245,18 +262,26 @@ export function App() {
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
         void refreshThreadList(rpc);
-        // Re-hydrate if any tools are still showing as streaming (notifications missed during disconnect)
-        const hasStreamingItems = stateRef.current.items.some((i) => i.kind === "tool" && i.status === "streaming");
-        if (hasStreamingItems) {
-          const threadId = activeThreadIdRef.current;
-          if (threadId) {
-            void rpc
-              .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId })
-              .then((history) => {
-                adapterRef.current.reset();
-                dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
-              })
-              .catch(console.error);
+        // Re-hydrate if any items are still showing as in-flight (notifications missed during disconnect)
+        const params = notification.params as { status?: string };
+        if (params.status === "idle") {
+          const hasInFlightItems = stateRef.current.items.some(
+            (i) =>
+              (i.kind === "tool" && i.status === "streaming") ||
+              (i.kind === "assistant" && !(i as { thinkingDone: boolean }).thinkingDone),
+          );
+          if (hasInFlightItems) {
+            const threadId = activeThreadIdRef.current;
+            if (threadId) {
+              console.log("[App] thread/status/changed idle with in-flight items — re-hydrating thread", threadId);
+              void rpc
+                .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId })
+                .then((history) => {
+                  adapterRef.current.reset();
+                  dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
+                })
+                .catch(console.error);
+            }
           }
         }
       }
@@ -360,6 +385,10 @@ export function App() {
     const message = input.trim();
     setInput("");
     dispatch({ type: "local_user", payload: message });
+    // If this is the first message in the thread, immediately add an optimistic sidebar entry
+    if (state.items.length === 0 && state.activeThreadId) {
+      dispatch({ type: "optimistic_thread", payload: { threadId: state.activeThreadId, message } });
+    }
     try {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId: state.activeThreadId, message });
     } catch (error) {
@@ -423,7 +452,15 @@ export function App() {
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId) return;
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: state.activeThreadId });
+    console.log("[App] Stop pressed — sending turn/interrupt for thread", state.activeThreadId);
+    try {
+      const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
+        threadId: state.activeThreadId,
+      });
+      console.log("[App] turn/interrupt response:", result);
+    } catch (error) {
+      console.error("[App] turn/interrupt failed:", error);
+    }
   };
 
   const setMode = async (mode: Mode) => {

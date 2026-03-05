@@ -92,12 +92,12 @@ describe("discoverSkills", () => {
     await mkdir(projectDir, { recursive: true });
     await writeFile(join(projectDir, "SKILL.md"), makeSkillMd("my-skill", "Project version"));
 
-    // Agents skill (loaded second, same name)
-    const agentsDir = join(root, ".agents", "skills", "my-skill");
-    await mkdir(agentsDir, { recursive: true });
-    await writeFile(join(agentsDir, "SKILL.md"), makeSkillMd("my-skill", "Agents version"));
+    // Global skill (loaded second, same name)
+    const globalDir = join(root, "global-config", "skills", "my-skill");
+    await mkdir(globalDir, { recursive: true });
+    await writeFile(join(globalDir, "SKILL.md"), makeSkillMd("my-skill", "Global version"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "global-config") });
 
     // Only one skill loaded — the project one
     expect(result.skills).toHaveLength(1);
@@ -150,11 +150,6 @@ describe("discoverSkills", () => {
     await mkdir(projectDir, { recursive: true });
     await writeFile(join(projectDir, "SKILL.md"), makeSkillMd("project-skill", "From project"));
 
-    // Agents skill
-    const agentsDir = join(root, ".agents", "skills", "agents-skill");
-    await mkdir(agentsDir, { recursive: true });
-    await writeFile(join(agentsDir, "SKILL.md"), makeSkillMd("agents-skill", "From agents"));
-
     // Global skill
     const globalDir = join(root, "global-config");
     const globalSkillDir = join(globalDir, "skills", "global-skill");
@@ -174,18 +169,16 @@ describe("discoverSkills", () => {
     });
 
     expect(result.errors).toHaveLength(0);
-    expect(result.skills).toHaveLength(4);
+    expect(result.skills).toHaveLength(3);
 
     const names = result.skills.map((s) => s.name);
     expect(names).toContain("project-skill");
-    expect(names).toContain("agents-skill");
     expect(names).toContain("global-skill");
     expect(names).toContain("config-skill");
 
     // Verify sources
     const byName = Object.fromEntries(result.skills.map((s) => [s.name, s]));
     expect(byName["project-skill"].source).toBe("project");
-    expect(byName["agents-skill"].source).toBe("agents");
     expect(byName["global-skill"].source).toBe("global");
     expect(byName["config-skill"].source).toBe("config");
   });

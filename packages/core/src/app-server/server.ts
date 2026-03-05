@@ -327,8 +327,12 @@ export class DiligentAppServer {
 
   private async handleTurnInterrupt(threadId?: string): Promise<{ interrupted: boolean }> {
     const runtime = await this.resolveThreadRuntime(threadId);
-    if (!runtime.isRunning || !runtime.abortController) return { interrupted: false };
+    if (!runtime.isRunning || !runtime.abortController) {
+      console.log("[AppServer] turn/interrupt: no running turn for thread %s (isRunning=%s)", threadId, runtime.isRunning);
+      return { interrupted: false };
+    }
 
+    console.log("[AppServer] turn/interrupt: aborting thread %s", runtime.id);
     runtime.abortController.abort();
     return { interrupted: true };
   }
@@ -396,27 +400,44 @@ export class DiligentAppServer {
       });
     }
 
+    let wasAborted = false;
+
     try {
       for await (const event of stream) {
         await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
       await stream.result();
+      console.log("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
         params: { threadId: runtime.id, turnId },
       });
     } catch (error) {
-      await this.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-        params: {
-          threadId: runtime.id,
-          error: {
-            message: error instanceof Error ? error.message : String(error),
-            name: error instanceof Error ? error.name : "Error",
+      const isAbort =
+        (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
+        runtime.abortController?.signal.aborted === true;
+
+      if (isAbort) {
+        wasAborted = true;
+        console.log("[AppServer] consumeStream: turn %s interrupted (aborted) for thread %s", turnId, runtime.id);
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
+          params: { threadId: runtime.id, turnId },
+        });
+      } else {
+        console.error("[AppServer] consumeStream: turn %s error for thread %s:", turnId, runtime.id, error);
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+          params: {
+            threadId: runtime.id,
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+              name: error instanceof Error ? error.name : "Error",
+            },
+            fatal: false,
           },
-          fatal: false,
-        },
-      });
+        });
+      }
     } finally {
       // Disconnect collab event handler
       runtime.registry?.setCollabEventHandler(undefined);
@@ -427,16 +448,19 @@ export class DiligentAppServer {
 
       runtime.abortController = null;
       runtime.isRunning = false;
+      console.log("[AppServer] consumeStream: thread %s now idle (wasAborted=%s)", runtime.id, wasAborted);
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
         params: { threadId: runtime.id, status: "idle" },
       });
 
-      // Auto-submit pending messages as next turn
-      const pendingMessages = runtime.manager.popPendingMessages();
-      if (pendingMessages && pendingMessages.length > 0) {
-        const message = pendingMessages.join("\n");
-        await this.handleTurnStart(runtime.id, message);
+      // Auto-submit pending messages only if not aborted
+      if (!wasAborted) {
+        const pendingMessages = runtime.manager.popPendingMessages();
+        if (pendingMessages && pendingMessages.length > 0) {
+          const message = pendingMessages.join("\n");
+          await this.handleTurnStart(runtime.id, message);
+        }
       }
     }
   }

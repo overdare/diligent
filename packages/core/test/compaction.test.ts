@@ -215,6 +215,7 @@ describe("findRecentUserMessages", () => {
         recentUserMessages: [],
         tokensBefore: 5000,
         tokensAfter: 1000,
+        details: { readFiles: [], modifiedFiles: [] },
       },
       msgEntry("a3", "c1", userMsg("new message")),
       msgEntry("a4", "a3", assistantMsg("new response")),

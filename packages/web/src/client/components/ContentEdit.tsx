@@ -45,7 +45,15 @@ function DiffBlock({ label, text, color }: { label: string; text: string; color:
   );
 }
 
-export function ContentEdit({ filePath, mode, oldString, newString, content, output, isError = false }: ContentEditProps) {
+export function ContentEdit({
+  filePath,
+  mode,
+  oldString,
+  newString,
+  content,
+  output,
+  isError = false,
+}: ContentEditProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
       {/* File header */}

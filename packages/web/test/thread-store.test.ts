@@ -398,6 +398,83 @@ test("hydrateFromThreadRead shows completed sub-agent after wait result", () => 
   expect(spawn && spawn.kind === "collab" ? spawn.childMessages : []).toEqual(["I finished the work."]);
 });
 
+test("turn/interrupted settles in-flight thinking and streaming tool items", () => {
+  resetAdapter();
+
+  // Simulate: assistant thinking is in-flight (thinkingDone=false, no text yet)
+  const itemStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+  const thinkingDelta: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      itemId: "msg1",
+      delta: { type: "messageThinking", itemId: "msg1", delta: "hmm..." },
+    },
+  };
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tc1",
+        toolName: "bash",
+        input: { cmd: "sleep 10" },
+      },
+    },
+  };
+
+  let state = reduce({ ...initialThreadState, activeThreadId: "t1", threadStatus: "busy" }, itemStarted);
+  state = reduce(state, thinkingDelta);
+  state = reduce(state, toolStarted);
+
+  // Verify in-flight state before interrupt
+  const thinkingBefore = state.items.find((i) => i.kind === "assistant");
+  expect(thinkingBefore && thinkingBefore.kind === "assistant" ? thinkingBefore.thinkingDone : true).toBe(false);
+  const toolBefore = state.items.find((i) => i.kind === "tool");
+  expect(toolBefore && toolBefore.kind === "tool" ? toolBefore.status : "done").toBe("streaming");
+  expect(state.threadStatus).toBe("busy");
+
+  // Now send turn/interrupted
+  const interrupted: DiligentServerNotification = {
+    method: "turn/interrupted",
+    params: { threadId: "t1", turnId: "turn1" },
+  };
+  const after = reduce(state, interrupted);
+
+  // threadStatus should be idle
+  expect(after.threadStatus).toBe("idle");
+  // assistant thinking should be settled
+  const thinkingAfter = after.items.find((i) => i.kind === "assistant");
+  expect(thinkingAfter && thinkingAfter.kind === "assistant" ? thinkingAfter.thinkingDone : false).toBe(true);
+  // tool should be done
+  const toolAfter = after.items.find((i) => i.kind === "tool");
+  expect(toolAfter && toolAfter.kind === "tool" ? toolAfter.status : "streaming").toBe("done");
+  // itemSlots should be cleared
+  expect(Object.keys(after.itemSlots).length).toBe(0);
+});
+
 test("hydrateFromThreadRead shows completed sub-agent when parent is not running", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

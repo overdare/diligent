@@ -278,6 +278,7 @@ describe("Context builder: message entries on resume", () => {
         recentUserMessages: [],
         tokensBefore: 50000,
         tokensAfter: 5000,
+        details: { readFiles: [], modifiedFiles: [] },
       },
       {
         type: "message",

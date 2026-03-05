@@ -90,6 +90,15 @@ export const TurnCompletedNotificationSchema = z.object({
 });
 export type TurnCompletedNotification = z.infer<typeof TurnCompletedNotificationSchema>;
 
+export const TurnInterruptedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+  }),
+});
+export type TurnInterruptedNotification = z.infer<typeof TurnInterruptedNotificationSchema>;
+
 export const KnowledgeSavedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED),
   params: z.object({
@@ -271,6 +280,7 @@ export const DiligentServerNotificationSchema = z.union([
   ItemDeltaNotificationSchema,
   ItemCompletedNotificationSchema,
   TurnCompletedNotificationSchema,
+  TurnInterruptedNotificationSchema,
   KnowledgeSavedNotificationSchema,
   LoopDetectedNotificationSchema,
   ErrorNotificationSchema,

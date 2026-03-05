@@ -230,7 +230,7 @@ export function extractFileOperations(messages: Message[], previousDetails?: Com
     const call = toolCalls.get(msg.toolCallId);
     if (!call) continue;
 
-    const filePath = (call.input.file_path ?? call.input.path) as string | undefined;
+    const filePath = call.input.file_path as string | undefined;
     if (!filePath) continue;
 
     if (call.name === "read") {

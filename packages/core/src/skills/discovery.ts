@@ -20,9 +20,8 @@ export interface DiscoveryOptions {
  *
  * Discovery order (first-loaded wins for name collisions):
  * 1. Project: .diligent/skills/
- * 2. Agents: .agents/skills/ (cross-tool compat)
- * 3. Global: ~/.config/diligent/skills/
- * 4. Config paths: skills.paths[] from diligent.jsonc
+ * 2. Global: ~/.config/diligent/skills/
+ * 3. Config paths: skills.paths[] from diligent.jsonc
  */
 export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLoadResult> {
   const skills: SkillMetadata[] = [];
@@ -42,14 +41,11 @@ function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; sour
   // 1. Project local
   roots.push({ dir: join(options.cwd, ".diligent", "skills"), source: "project" });
 
-  // 2. Cross-tool compatibility
-  roots.push({ dir: join(options.cwd, ".agents", "skills"), source: "agents" });
-
-  // 3. Global
+  // 2. Global
   const globalDir = options.globalConfigDir ?? join(homedir(), ".config", "diligent");
   roots.push({ dir: join(globalDir, "skills"), source: "global" });
 
-  // 4. Additional config paths
+  // 3. Additional config paths
   for (const p of options.additionalPaths ?? []) {
     roots.push({ dir: p, source: "config" });
   }

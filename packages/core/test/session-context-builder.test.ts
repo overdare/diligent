@@ -113,6 +113,7 @@ describe("buildSessionContext", () => {
       recentUserMessages: [recentUserMsg],
       tokensBefore: 50000,
       tokensAfter: 5000,
+      details: { readFiles: [], modifiedFiles: [] },
     };
 
     const entries: SessionEntry[] = [
@@ -180,6 +181,7 @@ describe("buildSessionContext", () => {
       recentUserMessages: [],
       tokensBefore: 50000,
       tokensAfter: 5000,
+      details: { readFiles: [], modifiedFiles: [] },
     };
     const middleUserMsg = { role: "user" as const, content: "middle message", timestamp: 1708900000000 };
     const compaction2: CompactionEntry = {
@@ -191,6 +193,7 @@ describe("buildSessionContext", () => {
       recentUserMessages: [middleUserMsg],
       tokensBefore: 30000,
       tokensAfter: 3000,
+      details: { readFiles: [], modifiedFiles: [] },
     };
 
     const entries: SessionEntry[] = [

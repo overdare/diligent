@@ -182,9 +182,15 @@ function findCollabSpawnItem(state: ThreadState, agentId: string): Extract<Rende
   return undefined;
 }
 
-function parsePlanOutput(output: string): PlanState | null {
+/** Returns null when the plan output signals closure ({closed:true}), otherwise parses PlanState. */
+function parsePlanOutput(output: string): PlanState | null | "closed" {
   try {
-    const parsed = JSON.parse(output) as { title?: string; steps?: Array<{ text: string; done: boolean }> };
+    const parsed = JSON.parse(output) as {
+      closed?: boolean;
+      title?: string;
+      steps?: Array<{ text: string; done: boolean }>;
+    };
+    if (parsed?.closed) return "closed";
     if (parsed && Array.isArray(parsed.steps)) {
       return { title: parsed.title ?? "Plan", steps: parsed.steps };
     }
@@ -308,7 +314,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
       if (event.toolName === "plan" && event.output) {
         const plan = parsePlanOutput(event.output);
-        if (plan) {
+        if (plan === "closed") {
+          next = { ...next, planState: null };
+        } else if (plan) {
           next = { ...next, planState: plan };
         }
       }
@@ -510,6 +518,34 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
   }
 }
 
+/** Settle all in-flight items after abort/interrupt:
+ *  - assistant items with thinkingDone=false → set thinkingDone=true (stop the thinking spinner)
+ *  - tool items with status="streaming" → set status="done" (stop the tool spinner)
+ */
+function settleInFlightItems(state: ThreadState): ThreadState {
+  const hasInFlight = state.items.some(
+    (i) => (i.kind === "assistant" && !i.thinkingDone) || (i.kind === "tool" && i.status === "streaming"),
+  );
+  if (!hasInFlight) return state;
+
+  console.log("[ThreadStore] settleInFlightItems: settling in-flight items after interrupt");
+  return {
+    ...state,
+    itemSlots: {},
+    items: state.items.map((item) => {
+      if (item.kind === "assistant" && !item.thinkingDone) {
+        console.log("[ThreadStore] settleInFlightItems: closing thinking item", item.id);
+        return { ...item, thinkingDone: true };
+      }
+      if (item.kind === "tool" && item.status === "streaming") {
+        console.log("[ThreadStore] settleInFlightItems: closing streaming tool item", item.id, item.toolName);
+        return { ...item, status: "done" as const };
+      }
+      return item;
+    }),
+  };
+}
+
 export function reduceServerNotification(
   state: ThreadState,
   notification: DiligentServerNotification,
@@ -533,6 +569,12 @@ export function reduceServerNotification(
   }
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
     return { ...state, activeThreadId: notification.params.threadId };
+  }
+
+  // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
+    console.log("[ThreadStore] turn/interrupted received for thread", notification.params.threadId);
+    return settleInFlightItems({ ...state, threadStatus: "idle" });
   }
 
   // Handle userMessage items from other subscribers (not converted to AgentEvent by adapter)
@@ -860,7 +902,11 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   for (const message of payload.messages) {
     if (message.role === "tool_result" && message.toolName === "plan") {
       const plan = parsePlanOutput(message.output);
-      if (plan) lastPlan = plan;
+      if (plan === "closed") {
+        lastPlan = null;
+      } else if (plan) {
+        lastPlan = plan;
+      }
     }
   }
   current = { ...current, planState: lastPlan };

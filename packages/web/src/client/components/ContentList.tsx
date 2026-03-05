@@ -20,12 +20,7 @@ export function ContentList({ mode, pattern, path, output, isError = false }: Co
   const isLong = items.length > PREVIEW_ITEMS;
   const visibleItems = !expanded && isLong ? items.slice(0, PREVIEW_ITEMS) : items;
 
-  const shortPath = path
-    ? path
-        .split("/")
-        .slice(-2)
-        .join("/")
-    : "";
+  const shortPath = path ? path.split("/").slice(-2).join("/") : "";
 
   return (
     <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">

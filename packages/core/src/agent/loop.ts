@@ -46,8 +46,9 @@ export function extractLatestPlanState(messages: Message[]): string | null {
     const msg = messages[i];
     if (msg.role === "tool_result" && msg.toolName === "plan") {
       try {
-        const plan = JSON.parse(msg.output) as { title: string; steps: Array<{ text: string; done: boolean }> };
-        const remaining = plan.steps.filter((s) => !s.done);
+        const plan = JSON.parse(msg.output) as { closed?: boolean; title: string; steps?: Array<{ text: string; done: boolean }> };
+        if (plan.closed) return null;
+        const remaining = (plan.steps ?? []).filter((s) => !s.done);
         if (remaining.length === 0) return null;
         return `[Plan (${remaining.length} remaining)]\n${remaining.map((s) => `- ${s.text}`).join("\n")}`;
       } catch {
@@ -79,7 +80,7 @@ export function withPlanStateInjected(messages: Message[]): Message[] {
 
   const planMessage: Message = {
     role: "user",
-    content: planState,
+    content: `${planState}\n\nReminder: after completing each step, immediately call the plan tool to mark it done=true before proceeding to the next step.`,
     timestamp: Date.now(),
   };
 
@@ -178,7 +179,10 @@ async function runLoop(
   stream.push({ type: "agent_start" });
 
   while (turnCount < maxTurns) {
-    if (config.signal?.aborted) break;
+    if (config.signal?.aborted) {
+      console.log("[AgentLoop] signal aborted at top-of-loop, breaking after %d turns", turnCount);
+      break;
+    }
     turnCount++;
 
     const turnId = `turn-${turnCount}`;
@@ -226,7 +230,10 @@ async function runLoop(
     const toolResults: ToolResultMessage[] = [];
 
     for (const toolCall of toolCalls) {
-      if (config.signal?.aborted) break;
+      if (config.signal?.aborted) {
+        console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
+        break;
+      }
 
       const toolItemId = generateItemId();
 
@@ -403,6 +410,10 @@ async function streamAssistantResponse(
   }
 
   if (!currentMessage) {
+    if (config.signal?.aborted) {
+      console.log("[AgentLoop] provider stream ended without message (aborted)");
+      throw new Error("Aborted");
+    }
     throw new Error("Provider stream ended without producing a message");
   }
 
