@@ -7,9 +7,12 @@ const SpawnAgentParams = z.object({
   message: z.string().describe("The full prompt/instruction for the sub-agent"),
   description: z.string().optional().describe("Brief description for status display"),
   agent_type: z
-    .enum(["general", "explore"])
+    .enum(["general", "explore", "planner"])
     .default("general")
-    .describe("Agent type: 'general' has full tool access, 'explore' is read-only"),
+    .describe(
+      "Agent type: 'general' has full tool access, 'explore' is read-only, " +
+        "'planner' explores the codebase and writes a plan document to .diligent/plans/",
+    ),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
   model_class: z
     .enum(["pro", "general", "lite"])
@@ -27,7 +30,7 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
     description:
       "Spawn a sub-agent in the background (non-blocking). Returns immediately with agent_id and nickname. " +
       "Use 'wait' to collect results. Use 'general' for tasks requiring file writes/edits. " +
-      "Use 'explore' for read-only research.",
+      "Use 'explore' for read-only research. Use 'planner' to analyse a task and produce a plan document.",
     parameters: SpawnAgentParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       const { agentId, nickname } = registry.spawn({

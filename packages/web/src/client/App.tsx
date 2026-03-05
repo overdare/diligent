@@ -52,7 +52,18 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
     );
   }
   if (action.type === "set_mode") return { ...state, mode: action.payload };
-  if (action.type === "set_threads") return { ...state, threadList: action.payload };
+  if (action.type === "set_threads") {
+    // Merge: preserve optimistic firstUserMessage if the server hasn't persisted it yet
+    const optimisticMessages = new Map(
+      state.threadList.filter((t) => t.firstUserMessage).map((t) => [t.id, t.firstUserMessage!]),
+    );
+    const merged = action.payload.map((t) =>
+      !t.firstUserMessage && optimisticMessages.has(t.id)
+        ? { ...t, firstUserMessage: optimisticMessages.get(t.id) }
+        : t,
+    );
+    return { ...state, threadList: merged };
+  }
   if (action.type === "local_user") {
     const userItem: RenderItem = {
       id: `local-user-${Date.now()}`,
@@ -67,9 +78,19 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
   }
   if (action.type === "optimistic_thread") {
     const { threadId, message } = action.payload;
-    // Only add if not already in the list
-    if (state.threadList.some((t) => t.id === threadId)) return state;
     const now = new Date().toISOString();
+    const existing = state.threadList.find((t) => t.id === threadId);
+    if (existing) {
+      // Thread already in list (e.g. empty thread from startNewThread) — update firstUserMessage if missing
+      if (existing.firstUserMessage) return state;
+      return {
+        ...state,
+        threadList: state.threadList.map((t) =>
+          t.id === threadId ? { ...t, firstUserMessage: message, modified: now } : t,
+        ),
+      };
+    }
+    // Thread not yet in list — prepend optimistic entry
     const optimistic: SessionSummary = {
       id: threadId,
       path: "",

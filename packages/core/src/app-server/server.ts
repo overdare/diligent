@@ -62,6 +62,8 @@ export class DiligentAppServer {
   private readonly serverVersion: string;
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly knownCwds = new Set<string>();
+  /** In-memory cache of thread summaries — updated immediately on create/message so THREAD_LIST never lags disk */
+  private readonly threadSummaryCache = new Map<string, SessionSummary>();
   private activeThreadId: string | null = null;
   private notificationListener: NotificationListener | null = null;
   private serverRequestHandler: ServerRequestHandler | null = null;
@@ -173,6 +175,17 @@ export class DiligentAppServer {
     this.activeThreadId = threadId;
     this.knownCwds.add(params.cwd);
 
+    // Immediately register in cache so THREAD_LIST returns it without waiting for disk flush
+    const now = new Date().toISOString();
+    this.threadSummaryCache.set(threadId, {
+      id: threadId,
+      path: "",
+      cwd: params.cwd,
+      created: now,
+      modified: now,
+      messageCount: 0,
+    });
+
     await this.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED, params: { threadId } });
     return { threadId };
   }
@@ -229,35 +242,37 @@ export class DiligentAppServer {
   }
 
   private async handleThreadList(limit?: number, includeChildren?: boolean): Promise<{ data: SessionSummary[] }> {
-    const all = [] as SessionSummary[];
-
+    // Load from disk and populate cache for any entries not already tracked in memory.
+    // In-memory entries take precedence — they're always at least as fresh as disk.
     for (const cwd of this.knownCwds) {
       const paths = await this.config.resolvePaths(cwd);
       const sessions = await listSessions(paths.sessions);
-      all.push(
-        ...sessions.map((session) => ({
-          id: session.id,
-          path: session.path,
-          cwd: session.cwd,
-          name: session.name,
-          created: session.created.toISOString(),
-          modified: session.modified.toISOString(),
-          messageCount: session.messageCount,
-          firstUserMessage: session.firstUserMessage,
-          parentSession: session.parentSession,
-        })),
-      );
+      for (const session of sessions) {
+        if (!this.threadSummaryCache.has(session.id)) {
+          this.threadSummaryCache.set(session.id, {
+            id: session.id,
+            path: session.path,
+            cwd: session.cwd,
+            name: session.name,
+            created: session.created.toISOString(),
+            modified: session.modified.toISOString(),
+            messageCount: session.messageCount,
+            firstUserMessage: session.firstUserMessage,
+            parentSession: session.parentSession,
+          });
+        }
+      }
     }
 
-    const deduped = new Map<string, SessionSummary>();
-    for (const entry of all) deduped.set(entry.id, entry);
-
-    let result = Array.from(deduped.values());
+    let result = Array.from(this.threadSummaryCache.values());
 
     // Filter out sub-agent sessions by default
     if (!includeChildren) {
       result = result.filter((s) => !s.parentSession);
     }
+
+    // Sort by modified descending so newest thread always appears first
+    result.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
 
     return { data: result.slice(0, limit ?? 100) };
   }
@@ -307,6 +322,17 @@ export class DiligentAppServer {
       content: message,
       timestamp: Date.now(),
     };
+
+    // Immediately update cache with the new message — no need to wait for disk flush
+    const cached = this.threadSummaryCache.get(runtime.id);
+    if (cached) {
+      this.threadSummaryCache.set(runtime.id, {
+        ...cached,
+        firstUserMessage: cached.firstUserMessage ?? message.slice(0, 100),
+        messageCount: cached.messageCount + 1,
+        modified: new Date().toISOString(),
+      });
+    }
 
     const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
     const userItem = { type: "userMessage" as const, itemId: userItemId, message: userMessage };
@@ -384,6 +410,7 @@ export class DiligentAppServer {
 
     if (deleted) {
       this.threads.delete(threadId);
+      this.threadSummaryCache.delete(threadId);
       if (this.activeThreadId === threadId) {
         this.activeThreadId = null;
       }

@@ -38,8 +38,8 @@ export function ContentList({ mode, pattern, path, output, isError = false }: Co
       {items.length > 0 ? (
         <div>
           <div className="space-y-0 px-3 py-2">
-            {visibleItems.map((item, idx) => (
-              <FileEntry key={idx} entry={item} mode={mode} />
+            {visibleItems.map((item) => (
+              <FileEntry key={item} entry={item} mode={mode} />
             ))}
           </div>
           {isLong ? (

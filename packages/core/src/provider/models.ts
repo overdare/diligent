@@ -238,6 +238,7 @@ export function getModelClass(model: Model): ModelClass {
  */
 export function agentTypeToModelClass(agentType: string, parentModel: Model): ModelClass {
   if (agentType === "explore") return "lite";
+  if (agentType === "planner") return "pro";
   // general: keep the same class as parent
   return getModelClass(parentModel);
 }

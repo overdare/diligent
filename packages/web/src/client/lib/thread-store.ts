@@ -621,18 +621,44 @@ export function reduceServerNotification(
 }
 
 /** Build childTools from a child session's messages for collab RenderItem */
-function extractChildTools(
-  child: ChildSession,
-): Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean; inputText: string; outputText: string }> {
-  const tools: Array<{ toolCallId: string; toolName: string; status: "done"; isError: boolean; inputText: string; outputText: string }> = [];
+function extractChildTools(child: ChildSession): Array<{
+  toolCallId: string;
+  toolName: string;
+  status: "done";
+  isError: boolean;
+  inputText: string;
+  outputText: string;
+}> {
+  // Build a map of toolCallId → input from assistant message tool_call blocks
+  const inputMap = new Map<string, unknown>();
+  for (const msg of child.messages) {
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (typeof block === "object" && block !== null && "type" in block && block.type === "tool_call") {
+          const tb = block as { id: string; input: unknown };
+          inputMap.set(tb.id, tb.input);
+        }
+      }
+    }
+  }
+
+  const tools: Array<{
+    toolCallId: string;
+    toolName: string;
+    status: "done";
+    isError: boolean;
+    inputText: string;
+    outputText: string;
+  }> = [];
   for (const msg of child.messages) {
     if (msg.role === "tool_result") {
+      const toolCallId = (msg as { toolCallId: string }).toolCallId;
       tools.push({
-        toolCallId: (msg as { toolCallId: string }).toolCallId,
+        toolCallId,
         toolName: (msg as { toolName: string }).toolName,
         status: "done",
         isError: (msg as { isError: boolean }).isError,
-        inputText: stringifyUnknown((msg as { input?: unknown }).input),
+        inputText: stringifyUnknown(inputMap.get(toolCallId)),
         outputText: typeof (msg as { output?: string }).output === "string" ? (msg as { output: string }).output : "",
       });
     }

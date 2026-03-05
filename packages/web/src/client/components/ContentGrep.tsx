@@ -42,8 +42,8 @@ export function ContentGrep({ pattern, include, path, output, isError = false }:
       {lines.length > 0 ? (
         <div>
           <div className="space-y-0 px-3 py-2">
-            {visibleLines.map((line, idx) => (
-              <MatchLine key={idx} line={line} pattern={pattern} isError={isError} />
+            {visibleLines.map((line) => (
+              <MatchLine key={line} line={line} pattern={pattern} isError={isError} />
             ))}
           </div>
           {isLong ? (
@@ -93,11 +93,11 @@ function HighlightedText({ text, pattern }: { text: string; pattern: string }) {
       <>
         {parts.map((part, i) =>
           regex.test(part) ? (
-            <span key={i} className="rounded bg-accent/20 text-accent">
+            <span key={`${part}-${i}`} className="rounded bg-accent/20 text-accent">
               {part}
             </span>
           ) : (
-            <span key={i}>{part}</span>
+            <span key={`${part}-${i}`}>{part}</span>
           ),
         )}
       </>

@@ -1,4 +1,5 @@
 // @summary Agent type definitions, builtin registry, and collab tool name set
+import plannerPrompt from "./templates/planner.md" with { type: "text" };
 
 /** Definition of an agent type — controls system prompt, tool access, and turn limits. */
 export interface AgentTypeDef {
@@ -37,5 +38,13 @@ export const BUILTIN_AGENT_TYPES: Record<string, AgentTypeDef> = {
       "Do not run bash commands.\n",
     toolFilter: "readonly",
     maxTurns: 20,
+  },
+  planner: {
+    name: "planner",
+    description:
+      "Planning agent that explores the codebase and writes a decision-complete plan document to .diligent/plans/",
+    systemPromptPrefix: `${plannerPrompt}\n`,
+    toolFilter: "all",
+    maxTurns: 25,
   },
 };
