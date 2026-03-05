@@ -46,7 +46,11 @@ export function extractLatestPlanState(messages: Message[]): string | null {
     const msg = messages[i];
     if (msg.role === "tool_result" && msg.toolName === "plan") {
       try {
-        const plan = JSON.parse(msg.output) as { closed?: boolean; title: string; steps?: Array<{ text: string; done: boolean }> };
+        const plan = JSON.parse(msg.output) as {
+          closed?: boolean;
+          title: string;
+          steps?: Array<{ text: string; done: boolean }>;
+        };
         if (plan.closed) return null;
         const remaining = (plan.steps ?? []).filter((s) => !s.done);
         if (remaining.length === 0) return null;

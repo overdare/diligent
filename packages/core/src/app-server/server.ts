@@ -328,7 +328,11 @@ export class DiligentAppServer {
   private async handleTurnInterrupt(threadId?: string): Promise<{ interrupted: boolean }> {
     const runtime = await this.resolveThreadRuntime(threadId);
     if (!runtime.isRunning || !runtime.abortController) {
-      console.log("[AppServer] turn/interrupt: no running turn for thread %s (isRunning=%s)", threadId, runtime.isRunning);
+      console.log(
+        "[AppServer] turn/interrupt: no running turn for thread %s (isRunning=%s)",
+        threadId,
+        runtime.isRunning,
+      );
       return { interrupted: false };
     }
 

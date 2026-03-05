@@ -10,7 +10,10 @@ const PlanStep = z.object({
 const PlanParams = z.object({
   steps: z.array(PlanStep).min(1).optional().describe("Ordered list of steps in the plan"),
   title: z.string().optional().describe("Optional plan title (default: 'Plan')"),
-  close: z.boolean().optional().describe("If true, dismiss the plan panel entirely. Use when the task is done or cancelled."),
+  close: z
+    .boolean()
+    .optional()
+    .describe("If true, dismiss the plan panel entirely. Use when the task is done or cancelled."),
 });
 
 export type PlanStep = z.infer<typeof PlanStep>;
