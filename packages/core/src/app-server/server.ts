@@ -429,17 +429,27 @@ export class DiligentAppServer {
     stream: ReturnType<SessionManager["run"]>,
     turnId: string,
   ): Promise<void> {
-    // Wire collab events from the registry into the notification stream
-    if (runtime.registry) {
-      runtime.registry.setCollabEventHandler((event) => {
-        void this.emitFromAgentEvent(runtime.id, turnId, event);
-      });
-    }
+    // Wire collab events from the registry into the notification stream.
+    // NOTE: runtime.registry is set lazily inside buildAgentConfig (called by
+    // SessionManager on the first run). At this point it may still be undefined.
+    // We wire the handler eagerly if available, and also check on each event in
+    // the loop below so we catch the registry once it becomes available.
+    let collabHandlerWired = false;
+    const wireCollabHandler = () => {
+      if (!collabHandlerWired && runtime.registry) {
+        runtime.registry.setCollabEventHandler((event) => {
+          void this.emitFromAgentEvent(runtime.id, turnId, event);
+        });
+        collabHandlerWired = true;
+      }
+    };
+    wireCollabHandler();
 
     let wasAborted = false;
 
     try {
       for await (const event of stream) {
+        wireCollabHandler();
         await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
       await stream.result();
@@ -478,20 +488,31 @@ export class DiligentAppServer {
       // Disconnect collab event handler
       runtime.registry?.setCollabEventHandler(undefined);
 
-      // Wait for the inner agent loop (executeLoop) to fully settle
-      // before clearing state — prevents zombie loop from mutating leafId
-      await stream.waitForInnerWork(wasAborted ? 5_000 : undefined).catch(() => {});
+      if (wasAborted) {
+        // Abort path: release the thread immediately so new turns can start.
+        // The abort signal prevents runSession from doing meaningful work,
+        // so the zombie-loop risk is negligible.
+        runtime.abortController = null;
+        runtime.isRunning = false;
+        console.log("[AppServer] consumeStream: thread %s now idle (aborted)", runtime.id);
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+          params: { threadId: runtime.id, status: "idle" },
+        });
+        // Let innerWork settle in the background — don't block new turns
+        stream.waitForInnerWork(5_000).catch(() => {});
+      } else {
+        // Normal path: wait for innerWork before clearing state
+        await stream.waitForInnerWork(undefined).catch(() => {});
+        runtime.abortController = null;
+        runtime.isRunning = false;
+        console.log("[AppServer] consumeStream: thread %s now idle (normal)", runtime.id);
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+          params: { threadId: runtime.id, status: "idle" },
+        });
 
-      runtime.abortController = null;
-      runtime.isRunning = false;
-      console.log("[AppServer] consumeStream: thread %s now idle (wasAborted=%s)", runtime.id, wasAborted);
-      await this.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-        params: { threadId: runtime.id, status: "idle" },
-      });
-
-      // Auto-submit pending messages only if not aborted
-      if (!wasAborted) {
+        // Auto-submit pending messages only on normal completion
         const pendingMessages = runtime.manager.popPendingMessages();
         if (pendingMessages && pendingMessages.length > 0) {
           const message = pendingMessages.join("\n");
