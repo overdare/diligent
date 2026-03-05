@@ -497,11 +497,41 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
     }
 
-    case "collab_spawn_begin":
-      return state;
+    case "collab_spawn_begin": {
+      // Create the spawn item eagerly so that child events (tool_start/update/end)
+      // arriving before collab_spawn_end can find it via findCollabSpawnItem.
+      // In the registry, callId === childThreadId (both are the child session id).
+      const renderId = `collab:spawn:${event.callId}`;
+      return withItem(state, renderId, {
+        id: renderId,
+        kind: "collab",
+        eventType: "spawn",
+        childThreadId: event.callId,
+        status: "running",
+        childTools: [],
+        timestamp: Date.now(),
+      });
+    }
 
     case "collab_spawn_end": {
       const renderId = `collab:spawn:${event.callId}`;
+      // If the item was already created by collab_spawn_begin, update it in place.
+      const existing = findCollabSpawnItem(state, event.childThreadId);
+      if (existing) {
+        return updateItem(state, existing.id, (item) =>
+          item.kind === "collab" && item.eventType === "spawn"
+            ? {
+                ...item,
+                childThreadId: event.childThreadId,
+                nickname: event.nickname,
+                description: event.description,
+                status: event.status,
+                message: event.message,
+              }
+            : item,
+        );
+      }
+      // Fallback: create item if begin was missed (e.g. reconnect)
       return withItem(state, renderId, {
         id: renderId,
         kind: "collab",

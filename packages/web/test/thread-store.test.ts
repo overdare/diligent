@@ -549,13 +549,65 @@ test("turn/interrupted settles in-flight thinking and streaming tool items", () 
   expect(Object.keys(after.itemSlots).length).toBe(0);
 });
 
-test("child tool_update streams into collab spawn item childTools", () => {
+test("collab_spawn_begin creates spawn item so child events stream in real-time", () => {
   resetAdapter();
   const threadId = "t1";
   const childThreadId = "child-1";
   const base = { ...initialThreadState, activeThreadId: threadId };
 
-  // 1. collab_spawn_end → create the spawn item
+  // 1. collab_spawn_begin → eagerly creates the spawn item
+  const spawnBegin: DiligentServerNotification = {
+    method: "collab/spawn/begin",
+    params: {
+      threadId,
+      callId: childThreadId,
+      prompt: "do something",
+    },
+  };
+  let state = reduce(base, spawnBegin);
+  const earlyItem = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(earlyItem).toBeDefined();
+  expect(earlyItem && earlyItem.kind === "collab" ? earlyItem.childThreadId : "").toBe(childThreadId);
+  expect(earlyItem && earlyItem.kind === "collab" ? earlyItem.status : "").toBe("running");
+
+  // 2. Child tool_start before collab_spawn_end — should nest into the spawn item
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolStarted);
+  const afterStart = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools.length : 0).toBe(1);
+
+  // 3. Child tool_update — streams before spawn_end arrives
+  const toolDelta: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "streaming!" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta);
+  const afterDelta = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta && afterDelta.kind === "collab" ? afterDelta.childTools[0].outputText : "").toBe("streaming!");
+
+  // 4. collab_spawn_end → should update (not duplicate) the existing item
   const spawnEnd: DiligentServerNotification = {
     method: "collab/spawn/end",
     params: {
@@ -563,10 +615,35 @@ test("child tool_update streams into collab spawn item childTools", () => {
       callId: childThreadId,
       childThreadId,
       nickname: "Fern",
+      description: "worker",
       status: "running",
     },
   };
-  let state = reduce(base, spawnEnd);
+  state = reduce(state, spawnEnd);
+  const collabItems = state.items.filter((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(collabItems.length).toBe(1); // No duplicate
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].nickname : "").toBe("Fern");
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].description : "").toBe("worker");
+  // childTools should be preserved
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].childTools.length : 0).toBe(1);
+});
+
+test("child tool_update streams into collab spawn item childTools", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-1";
+  const base = { ...initialThreadState, activeThreadId: threadId };
+
+  // 1. collab_spawn_begin → create the spawn item
+  const spawnBegin: DiligentServerNotification = {
+    method: "collab/spawn/begin",
+    params: {
+      threadId,
+      callId: childThreadId,
+      prompt: "do work",
+    },
+  };
+  let state = reduce(base, spawnBegin);
   const spawnItem = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
   expect(spawnItem).toBeDefined();
 
