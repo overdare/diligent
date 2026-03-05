@@ -549,6 +549,108 @@ test("turn/interrupted settles in-flight thinking and streaming tool items", () 
   expect(Object.keys(after.itemSlots).length).toBe(0);
 });
 
+test("child tool_update streams into collab spawn item childTools", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-1";
+  const base = { ...initialThreadState, activeThreadId: threadId };
+
+  // 1. collab_spawn_end → create the spawn item
+  const spawnEnd: DiligentServerNotification = {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Fern",
+      status: "running",
+    },
+  };
+  let state = reduce(base, spawnEnd);
+  const spawnItem = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawnItem).toBeDefined();
+
+  // 2. item/started (toolCall with childThreadId) → add to childTools
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolStarted);
+  const afterStart = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools.length : 0).toBe(1);
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools[0].status : "").toBe("running");
+
+  // 3. item/delta (toolOutput with childThreadId) → stream into childTools
+  const toolDelta1: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "file1.ts\n" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta1);
+  const afterDelta1 = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta1 && afterDelta1.kind === "collab" ? afterDelta1.childTools[0].outputText : "").toBe("file1.ts\n");
+
+  // 4. Another delta — should append
+  const toolDelta2: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "file2.ts\n" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta2);
+  const afterDelta2 = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta2 && afterDelta2.kind === "collab" ? afterDelta2.childTools[0].outputText : "").toBe(
+    "file1.ts\nfile2.ts\n",
+  );
+
+  // 5. item/completed → finalize the tool
+  const toolCompleted: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+        output: "file1.ts\nfile2.ts\n",
+        isError: false,
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolCompleted);
+  const afterEnd = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterEnd && afterEnd.kind === "collab" ? afterEnd.childTools[0].status : "").toBe("done");
+  expect(afterEnd && afterEnd.kind === "collab" ? afterEnd.childTools[0].outputText : "").toBe("file1.ts\nfile2.ts\n");
+});
+
 test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

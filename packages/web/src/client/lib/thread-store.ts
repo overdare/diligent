@@ -336,6 +336,21 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "tool_update": {
+      // Child agent tool — stream update into spawn item's childTools
+      if (event.childThreadId) {
+        const spawnItem = findCollabSpawnItem(state, event.childThreadId);
+        if (!spawnItem) return state;
+        return updateItem(state, spawnItem.id, (item) =>
+          item.kind === "collab"
+            ? {
+                ...item,
+                childTools: item.childTools.map((t) =>
+                  t.toolCallId === event.toolCallId ? { ...t, outputText: t.outputText + event.partialResult } : t,
+                ),
+              }
+            : item,
+        );
+      }
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
       return updateItem(state, renderId, (item) =>

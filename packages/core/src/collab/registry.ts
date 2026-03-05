@@ -104,7 +104,7 @@ export class AgentRegistry {
               this.deps.ask!({ ...request, source: { threadId: childManager.sessionId, nickname } })
           : undefined,
       },
-      compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+      compaction: { enabled: true, reservePercent: 16, keepRecentTokens: 20000 },
       parentSession: this.deps.getParentSessionId?.(),
       collabMeta: {
         nickname,
@@ -167,6 +167,12 @@ export class AgentRegistry {
             turnNumber,
           });
         } else if (event.type === "tool_start") {
+          this.emit({
+            ...event,
+            childThreadId: threadId,
+            nickname,
+          });
+        } else if (event.type === "tool_update") {
           this.emit({
             ...event,
             childThreadId: threadId,
