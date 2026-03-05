@@ -63,7 +63,10 @@ export class AgentRegistry {
       throw new Error(`Max active agents reached (${this.maxAgents}). Close some agents first.`);
     }
 
-    const agentType = BUILTIN_AGENT_TYPES[params.agentType] ?? BUILTIN_AGENT_TYPES.general;
+    const agentType =
+      params.agentType in BUILTIN_AGENT_TYPES
+        ? BUILTIN_AGENT_TYPES[params.agentType as keyof typeof BUILTIN_AGENT_TYPES]
+        : BUILTIN_AGENT_TYPES.general;
     const nickname = this.pool.reserve();
     const abortController = new AbortController();
 

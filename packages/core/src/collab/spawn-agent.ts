@@ -1,18 +1,17 @@
 // @summary spawn_agent tool — non-blocking sub-agent creation returning thread_id and nickname
 import { z } from "zod";
+import {
+  BUILTIN_AGENT_TYPE_NAMES,
+  formatAgentTypeParameterDescription,
+  formatSpawnAgentToolDescription,
+} from "../agent/agent-types";
 import type { Tool, ToolContext, ToolResult } from "../tool/types";
 import type { AgentRegistry } from "./registry";
 
 const SpawnAgentParams = z.object({
   message: z.string().describe("The full prompt/instruction for the sub-agent"),
   description: z.string().optional().describe("Brief description for status display"),
-  agent_type: z
-    .enum(["general", "explore", "planner"])
-    .default("general")
-    .describe(
-      "Agent type: 'general' has full tool access, 'explore' is read-only, " +
-        "'planner' explores the codebase and writes a plan document to .diligent/plans/",
-    ),
+  agent_type: z.enum(BUILTIN_AGENT_TYPE_NAMES).default("general").describe(formatAgentTypeParameterDescription()),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
   model_class: z
     .enum(["pro", "general", "lite"])
@@ -20,17 +19,14 @@ const SpawnAgentParams = z.object({
     .describe(
       "Override the model class for this sub-agent. " +
         "'pro' for complex reasoning, 'general' for balanced tasks, 'lite' for simple/read-only. " +
-        "Defaults based on agent_type: explore→lite, general→same as parent.",
+        "Defaults by role: general→same as parent, explore→lite, planner→pro.",
     ),
 });
 
 export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof SpawnAgentParams> {
   return {
     name: "spawn_agent",
-    description:
-      "Spawn a sub-agent in the background (non-blocking). Returns immediately with thread_id and nickname. " +
-      "Use 'wait' to collect results. Use 'general' for tasks requiring file writes/edits. " +
-      "Use 'explore' for read-only research. Use 'planner' to analyse a task and produce a plan document.",
+    description: formatSpawnAgentToolDescription(),
     parameters: SpawnAgentParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       const { threadId, nickname } = registry.spawn({

@@ -1,5 +1,6 @@
 // @summary Tests for spawn_agent, wait, send_input, close_agent tool execute() methods
 import { describe, expect, it } from "bun:test";
+import { formatAgentTypeParameterDescription, formatSpawnAgentToolDescription } from "../../src/agent/agent-types";
 import { createCollabTools } from "../../src/collab/factory";
 import type { ToolContext } from "../../src/tool/types";
 import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "./helpers";
@@ -52,6 +53,27 @@ describe("spawn_agent tool", () => {
     );
     const parsed = JSON.parse(result.output);
     expect(typeof parsed.thread_id).toBe("string");
+  });
+
+  it("exposes detailed role guidance in tool description", () => {
+    const { tools } = createCollabTools(makeCollabDeps());
+    const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
+    expect(spawnTool.description).toBe(formatSpawnAgentToolDescription());
+    expect(spawnTool.description).toContain("Role selection guide:");
+    expect(spawnTool.description).toContain("'general':");
+    expect(spawnTool.description).toContain("'explore':");
+    expect(spawnTool.description).toContain("'planner':");
+  });
+
+  it("exposes detailed role guidance in agent_type schema description", () => {
+    const { tools } = createCollabTools(makeCollabDeps());
+    const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
+    const shape = (spawnTool.parameters as { shape: Record<string, { description?: string }> }).shape;
+    expect(shape.agent_type.description).toBe(formatAgentTypeParameterDescription());
+    expect(shape.agent_type.description).toContain("Available built-in roles");
+    expect(shape.agent_type.description).toContain("'general':");
+    expect(shape.agent_type.description).toContain("'explore':");
+    expect(shape.agent_type.description).toContain("'planner':");
   });
 });
 
