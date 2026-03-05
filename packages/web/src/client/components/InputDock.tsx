@@ -5,6 +5,7 @@ import { useRef } from "react";
 import type { ModelInfo } from "../../shared/ws-protocol";
 import type { ConnectionState } from "../lib/rpc-client";
 import type { UsageState } from "../lib/thread-store";
+import { Select, type SelectOption } from "./Select";
 import { StatusDot } from "./StatusDot";
 import { TextArea } from "./TextArea";
 
@@ -60,13 +61,19 @@ function formatUsageTooltip(usage: UsageState): string {
   ].join("\n");
 }
 
-function groupModelsByProvider(models: ModelInfo[]): Record<string, ModelInfo[]> {
-  const groups: Record<string, ModelInfo[]> = {};
-  for (const model of models) {
-    if (!groups[model.provider]) groups[model.provider] = [];
-    groups[model.provider].push(model);
-  }
-  return groups;
+function modelOptions(models: ModelInfo[]): SelectOption[] {
+  return models.map((model) => ({
+    value: model.id,
+    label: model.id,
+    group: model.provider,
+  }));
+}
+
+function modeOptions(): SelectOption[] {
+  return (Object.keys(MODE_LABELS) as Mode[]).map((m) => ({
+    value: m,
+    label: MODE_LABELS[m],
+  }));
 }
 
 export function InputDock({
@@ -116,7 +123,7 @@ export function InputDock({
         ) : (
           /* Textarea */
           <TextArea
-            className="min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+            className="-ml-1 mr-1 min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
             aria-label={isBusy ? "Steering input" : "Message input"}
             placeholder={isBusy ? "Steer the agent…" : "Ask anything…"}
             value={input}
@@ -176,36 +183,24 @@ export function InputDock({
           {/* Right: model selector + mode selector + send/stop */}
           <div className="flex items-center gap-2">
             {availableModels.length > 0 ? (
-              <select
-                aria-label="Model selector"
+              <Select
+                ariaLabel="Model selector"
                 value={currentModel}
-                onChange={(e) => onModelChange(e.target.value)}
-                className="h-7 max-w-[180px] rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-              >
-                {Object.entries(groupModelsByProvider(availableModels)).map(([provider, models]) => (
-                  <optgroup key={provider} label={provider}>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.id}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                options={modelOptions(availableModels)}
+                onChange={onModelChange}
+                openDirection="up"
+                className="w-[180px]"
+              />
             ) : null}
 
-            <select
-              aria-label="Mode selector"
+            <Select
+              ariaLabel="Mode selector"
               value={mode}
-              onChange={(e) => onModeChange(e.target.value as Mode)}
-              className="h-7 rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-            >
-              {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
-                <option key={m} value={m}>
-                  {MODE_LABELS[m]}
-                </option>
-              ))}
-            </select>
+              options={modeOptions()}
+              onChange={(value) => onModeChange(value as Mode)}
+              openDirection="up"
+              className="w-[110px]"
+            />
 
             {isBusy ? (
               <>

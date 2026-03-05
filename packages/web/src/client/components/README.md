@@ -24,6 +24,7 @@ components/
   QuestionCard.tsx           Inline chat card for agent user-input questions with text/password fields
   ScrollToBottom.tsx         Fixed scroll-to-bottom button shown when user has scrolled up
   SectionLabel.tsx           Uppercase monospace section label for tool input/output and card headers
+  Select.tsx                 Custom styled dropdown select with grouped options and outside-click close
   Sidebar.tsx                Sidebar with thread list, new thread button, and relative timestamps
   StatusDot.tsx              Colored status indicator dot with optional pulse animation
   StreamBlock.tsx            Message stream renderer for user, assistant (markdown), and thinking (collapsible) blocks

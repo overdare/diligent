@@ -24,9 +24,10 @@ export function useServerRequests(
   } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  // Track current approval in a ref so callbacks always see the latest value
-  // without needing it in their dependency array (avoids stale closure issues).
+  // Track current approval/question in refs so callbacks always see the latest value
+  // without needing them in their dependency array (avoids stale closure issues).
   const approvalRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
+  const questionRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
 
   // Buffered server requests for non-active threads — shown when the user switches to that thread.
   // Map key is threadId. Only the latest request per thread is kept; earlier ones are auto-rejected/dismissed.
@@ -88,6 +89,7 @@ export function useServerRequests(
         setApprovalPrompt({ requestId, request });
         return;
       }
+      questionRef.current = { requestId, request };
       setAnswers({});
       setQuestionPrompt({ requestId, request: request.params.request });
     },
@@ -95,9 +97,12 @@ export function useServerRequests(
   );
 
   const handleServerRequestResolved = useCallback((requestId: number): void => {
-    // Clear from active approval
+    // Clear from active approval/question
     if (approvalRef.current?.requestId === requestId) {
       approvalRef.current = null;
+    }
+    if (questionRef.current?.requestId === requestId) {
+      questionRef.current = null;
     }
     setApprovalPrompt((current) => (current?.requestId === requestId ? null : current));
     setQuestionPrompt((current) => (current?.requestId === requestId ? null : current));
@@ -127,36 +132,57 @@ export function useServerRequests(
 
   const resolveQuestion = useCallback(
     (respondAnswers: Record<string, string>): void => {
-      if (!questionPrompt) return;
-      rpcRef.current?.respondServerRequest(questionPrompt.requestId, {
+      const current = questionRef.current;
+      if (!current) return;
+      rpcRef.current?.respondServerRequest(current.requestId, {
         method: "userInput/request",
         result: { answers: respondAnswers },
       } as DiligentServerRequestResponse);
+      questionRef.current = null;
       setQuestionPrompt(null);
     },
-    [rpcRef, questionPrompt],
+    [rpcRef],
   );
 
-  /** Call when user switches to a thread. Promotes a buffered request to the active dialog. */
+  /** Shelve active prompts back into the buffer so they survive thread switches. */
+  const shelveActivePrompts = useCallback((): void => {
+    const prevApproval = approvalRef.current;
+    if (prevApproval) {
+      const tid = prevApproval.request.params?.threadId;
+      if (tid) bufferedRef.current.set(tid, prevApproval);
+      approvalRef.current = null;
+      setApprovalPrompt(null);
+    }
+    const prevQuestion = questionRef.current;
+    if (prevQuestion) {
+      const tid = prevQuestion.request.params?.threadId;
+      if (tid) bufferedRef.current.set(tid, prevQuestion);
+      questionRef.current = null;
+      setQuestionPrompt(null);
+    }
+  }, []);
+
+  /** Call when user switches to a thread. Shelves current prompts, promotes buffered request. */
   const activateThread = useCallback(
     (threadId: string): void => {
+      // Shelve current prompts back to buffer (preserves them for when user returns)
+      shelveActivePrompts();
+
       const buffered = bufferedRef.current.get(threadId);
       if (!buffered) return;
 
       bufferedRef.current.delete(threadId);
 
       if (buffered.request.method === "approval/request") {
-        // Replace any currently visible approval (auto-reject it first).
-        rejectPendingApproval();
         approvalRef.current = buffered;
         setApprovalPrompt(buffered);
       } else {
-        // Promote buffered user-input request to the active question prompt.
+        questionRef.current = buffered;
         setAnswers({});
         setQuestionPrompt({ requestId: buffered.requestId, request: buffered.request.params.request });
       }
     },
-    [rejectPendingApproval],
+    [shelveActivePrompts],
   );
 
   return {

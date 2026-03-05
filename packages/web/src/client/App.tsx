@@ -341,6 +341,7 @@ export function App() {
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
       pushThreadUrl(started.threadId);
+      serverRequests.activateThread(started.threadId);
       await refreshThreadList(rpc);
     } catch (error) {
       console.error(error);
