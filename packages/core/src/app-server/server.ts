@@ -398,16 +398,21 @@ export class DiligentAppServer {
       throw new Error("Cannot delete a thread that is currently running");
     }
 
-    let deleted = false;
+    // A thread that never had a message sent has no file on disk yet (DeferredWriter hasn't
+    // flushed). Treat it as deleted as long as we know about it in memory.
+    const knownInMemory = this.threadSummaryCache.has(threadId) || this.threads.has(threadId);
+
+    let deletedFromDisk = false;
     for (const cwd of this.knownCwds) {
       const paths = await this.config.resolvePaths(cwd);
       const result = await deleteSession(paths.sessions, threadId);
       if (result) {
-        deleted = true;
+        deletedFromDisk = true;
         break;
       }
     }
 
+    const deleted = deletedFromDisk || knownInMemory;
     if (deleted) {
       this.threads.delete(threadId);
       this.threadSummaryCache.delete(threadId);
