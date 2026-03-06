@@ -1,5 +1,8 @@
 // @summary Tests for RpcBridge multi-subscriber model, fan-out, and first-responder behavior
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DiligentServerRequest } from "@diligent/protocol";
 import { RpcBridge } from "../src/server/rpc-bridge";
 
@@ -31,14 +34,14 @@ class FakeAppServer {
   async handleNotification(): Promise<void> {}
 }
 
-function createBridge(fakeServer?: FakeAppServer) {
+function createBridge(fakeServer?: FakeAppServer, cwd = process.cwd()) {
   const server = fakeServer ?? new FakeAppServer();
-  const bridge = new RpcBridge(
-    server as unknown as import("@diligent/core").DiligentAppServer,
-    process.cwd(),
-    "default",
-    { currentModelId: "test-model", allModels: [], getAvailableModels: () => [], onModelChange: () => {} },
-  );
+  const bridge = new RpcBridge(server as unknown as import("@diligent/core").DiligentAppServer, cwd, "default", {
+    currentModelId: "test-model",
+    allModels: [],
+    getAvailableModels: () => [],
+    onModelChange: () => {},
+  });
   return { bridge, server };
 }
 
@@ -333,5 +336,46 @@ describe("RpcBridge multi-subscriber", () => {
     // Should still receive via broadcast since it's the only session
     const notif = sent.find((e) => (e as { type?: string }).type === "server_notification");
     expect(notif).toBeTruthy();
+  });
+
+  test("image/upload persists file and returns local_image attachment", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-rpc-bridge-"));
+    try {
+      const server = new FakeAppServer();
+      const { bridge } = createBridge(server, projectRoot);
+      const { ws, sent } = createFakeWs("s1");
+      bridge.open(ws);
+
+      await bridge.message(
+        ws,
+        JSON.stringify({
+          type: "rpc_request",
+          id: 50,
+          method: "image/upload",
+          params: {
+            threadId: "thread1",
+            fileName: "screen.png",
+            mediaType: "image/png",
+            dataBase64: Buffer.from("png-bytes").toString("base64"),
+          },
+        }),
+      );
+
+      const response = sent.find(
+        (entry) =>
+          (entry as { type?: string; response?: { id?: number } }).type === "rpc_response" &&
+          (entry as { response: { id: number } }).response.id === 50,
+      ) as {
+        response: { result: { attachment: { type: string; path: string; mediaType: string; fileName: string } } };
+      };
+
+      expect(response.response.result.attachment.type).toBe("local_image");
+      expect(response.response.result.attachment.mediaType).toBe("image/png");
+      expect(response.response.result.attachment.fileName).toBe("screen.png");
+      expect(response.response.result.attachment.path).toContain(".diligent/images/thread1/");
+      expect(await Bun.file(response.response.result.attachment.path).text()).toBe("png-bytes");
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 });

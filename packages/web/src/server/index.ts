@@ -81,6 +81,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     inputCostPer1M: m.inputCostPer1M,
     outputCostPer1M: m.outputCostPer1M,
     supportsThinking: m.supportsThinking,
+    supportsVision: m.supportsVision,
   }));
 
   const appServer = new DiligentAppServer(appServerConfig);

@@ -1,32 +1,36 @@
 // @summary Shared OpenAI Responses API utilities: message conversion, stop reason mapping, tool building, and SSE event handling
+import type { ResponseInputItem, ResponseInputMessageContentList } from "openai/resources/responses/responses";
 import type { EventStream } from "../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
+import { materializeUserContentBlocks } from "./image-io";
 import type { Model, ProviderEvent, ProviderResult, ToolDefinition } from "./types";
 import { ProviderError } from "./types";
 
-export type OpenAIInputItem =
-  | { role: "user"; content: string }
-  | { role: "assistant"; content: string }
-  | { type: "function_call"; call_id: string; name: string; arguments: string }
-  | { type: "function_call_output"; call_id: string; output: string };
-
-export function convertMessages(messages: Message[]): OpenAIInputItem[] {
-  const result: OpenAIInputItem[] = [];
+export async function convertMessages(messages: Message[]): Promise<ResponseInputItem[]> {
+  const result: ResponseInputItem[] = [];
   // Track function_calls that haven't been matched with an output yet (call_id -> index in result)
   const pendingCalls = new Map<string, number>();
 
   for (const msg of messages) {
     if (msg.role === "user") {
-      result.push({
-        role: "user",
-        content:
-          typeof msg.content === "string"
-            ? msg.content
-            : msg.content
-                .filter((b) => b.type === "text")
-                .map((b) => (b as { type: "text"; text: string }).text)
-                .join("\n"),
-      });
+      if (typeof msg.content === "string") {
+        result.push({ type: "message", role: "user", content: [{ type: "input_text", text: msg.content }] });
+      } else {
+        const blocks = await materializeUserContentBlocks(msg.content);
+        const content: ResponseInputMessageContentList = [];
+        for (const block of blocks) {
+          if (block.type === "text") {
+            content.push({ type: "input_text", text: block.text });
+          } else if (block.type === "image") {
+            content.push({
+              type: "input_image",
+              image_url: `data:${block.source.media_type};base64,${block.source.data}`,
+              detail: "auto",
+            });
+          }
+        }
+        result.push({ type: "message", role: "user", content });
+      }
     } else if (msg.role === "assistant") {
       for (const block of msg.content) {
         if (block.type === "text") {

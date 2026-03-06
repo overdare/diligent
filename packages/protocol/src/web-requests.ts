@@ -1,6 +1,6 @@
 // @summary Zod schemas for web-only RPC methods (auth & config)
 import { z } from "zod";
-import { ProviderAuthStatusSchema, ProviderNameSchema } from "./data-model";
+import { LocalImageBlockSchema, ProviderAuthStatusSchema, ProviderNameSchema } from "./data-model";
 import { DILIGENT_WEB_REQUEST_METHODS } from "./methods";
 
 // --- config/set ---
@@ -26,6 +26,7 @@ export const ModelInfoSchema = z.object({
   inputCostPer1M: z.number().optional(),
   outputCostPer1M: z.number().optional(),
   supportsThinking: z.boolean().optional(),
+  supportsVision: z.boolean().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
@@ -89,6 +90,20 @@ export const ThreadUnsubscribeResponseSchema = z.object({
 });
 export type ThreadUnsubscribeResponse = z.infer<typeof ThreadUnsubscribeResponseSchema>;
 
+// --- image/upload ---
+export const ImageUploadParamsSchema = z.object({
+  threadId: z.string().optional(),
+  fileName: z.string().min(1),
+  mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+  dataBase64: z.string().min(1),
+});
+export type ImageUploadParams = z.infer<typeof ImageUploadParamsSchema>;
+
+export const ImageUploadResponseSchema = z.object({
+  attachment: LocalImageBlockSchema,
+});
+export type ImageUploadResponse = z.infer<typeof ImageUploadResponseSchema>;
+
 // --- Discriminated unions (parallel to DiligentClientRequestSchema) ---
 export const DiligentWebRequestSchema = z.discriminatedUnion("method", [
   z.object({
@@ -118,6 +133,10 @@ export const DiligentWebRequestSchema = z.discriminatedUnion("method", [
   z.object({
     method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
     params: ThreadUnsubscribeParamsSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD),
+    params: ImageUploadParamsSchema,
   }),
 ]);
 export type DiligentWebRequest = z.infer<typeof DiligentWebRequestSchema>;
@@ -150,6 +169,10 @@ export const DiligentWebResponseSchema = z.discriminatedUnion("method", [
   z.object({
     method: z.literal(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE),
     result: ThreadUnsubscribeResponseSchema,
+  }),
+  z.object({
+    method: z.literal(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD),
+    result: ImageUploadResponseSchema,
   }),
 ]);
 export type DiligentWebResponse = z.infer<typeof DiligentWebResponseSchema>;

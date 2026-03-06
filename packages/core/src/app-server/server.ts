@@ -18,6 +18,7 @@ import {
   type Mode,
   type SessionSummary,
   type ThinkingEffort,
+  type TurnStartParams,
 } from "@diligent/protocol";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
@@ -148,7 +149,7 @@ export class DiligentAppServer {
         return this.handleThreadRead(request.params.threadId);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_START:
-        return this.handleTurnStart(request.params.threadId, request.params.message);
+        return this.handleTurnStart(request.params);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT:
         return this.handleTurnInterrupt(request.params.threadId);
@@ -307,8 +308,8 @@ export class DiligentAppServer {
     };
   }
 
-  private async handleTurnStart(threadId: string | undefined, message: string): Promise<{ accepted: true }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
+  private async handleTurnStart(params: TurnStartParams): Promise<{ accepted: true }> {
+    const runtime = await this.resolveThreadRuntime(params.threadId);
     if (runtime.isRunning) throw new Error("A turn is already running for this thread");
 
     runtime.abortController = new AbortController();
@@ -324,10 +325,23 @@ export class DiligentAppServer {
       params: { threadId: runtime.id, turnId },
     });
 
+    const timestamp = Date.now();
+    const content =
+      params.content && params.content.length > 0
+        ? params.content
+        : params.attachments && params.attachments.length > 0
+          ? [
+              ...((params.message.trim().length > 0 ? [{ type: "text", text: params.message }] : []) as Array<{
+                type: "text";
+                text: string;
+              }>),
+              ...params.attachments,
+            ]
+          : params.message;
     const userMessage = {
       role: "user" as const,
-      content: message,
-      timestamp: Date.now(),
+      content,
+      timestamp,
     };
 
     // Immediately update cache with the new message — no need to wait for disk flush
@@ -335,7 +349,7 @@ export class DiligentAppServer {
     if (cached) {
       this.threadSummaryCache.set(runtime.id, {
         ...cached,
-        firstUserMessage: cached.firstUserMessage ?? message.slice(0, 100),
+        firstUserMessage: cached.firstUserMessage ?? summarizeUserPreview(content),
         messageCount: cached.messageCount + 1,
         modified: new Date().toISOString(),
       });
@@ -534,7 +548,7 @@ export class DiligentAppServer {
         const pendingMessages = runtime.manager.popPendingMessages();
         if (pendingMessages && pendingMessages.length > 0) {
           const message = pendingMessages.join("\n");
-          await this.handleTurnStart(runtime.id, message);
+          await this.handleTurnStart({ threadId: runtime.id, message });
         }
       }
     }
@@ -692,4 +706,26 @@ export class DiligentAppServer {
       error: { code, message, data },
     });
   }
+}
+
+function summarizeUserPreview(content: string | unknown[]): string | undefined {
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    return trimmed ? trimmed.slice(0, 100) : undefined;
+  }
+
+  const text = content
+    .filter((block): block is { type: "text"; text: string } => {
+      return typeof block === "object" && block !== null && "type" in block && block.type === "text" && "text" in block;
+    })
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 100);
+  if (text) return text;
+
+  const imageCount = content.filter(
+    (block) => typeof block === "object" && block !== null && "type" in block && block.type === "local_image",
+  ).length;
+  return imageCount > 0 ? `[image${imageCount > 1 ? "s" : ""}]` : undefined;
 }

@@ -1,12 +1,10 @@
-// @summary Input dock with auto-resize textarea, send/stop controls, and status tray
+// @summary Input dock with auto-resize textarea, hover submenus, model/effort controls, and usage tray
 
 import type { Mode, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModelInfo } from "../../shared/ws-protocol";
-import type { ConnectionState } from "../lib/rpc-client";
 import type { UsageState } from "../lib/thread-store";
 import { Select, type SelectOption } from "./Select";
-import { StatusDot } from "./StatusDot";
 import { TextArea } from "./TextArea";
 
 interface InputDockProps {
@@ -15,11 +13,10 @@ interface InputDockProps {
   onSend: () => void;
   onSteer: () => void;
   onInterrupt: () => void;
+  onCompactionClick: () => void;
   canSend: boolean;
   canSteer: boolean;
   threadStatus: ThreadStatus;
-  connection: ConnectionState;
-  cwd: string;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   effort: ThinkingEffort;
@@ -32,14 +29,13 @@ interface InputDockProps {
   contextWindow: number;
   hasProvider: boolean;
   onOpenProviders: () => void;
+  supportsVision: boolean;
+  pendingImages: Array<{ path: string; url: string; fileName?: string }>;
+  onAddImages: (files: FileList | File[]) => void;
+  onRemoveImage: (path: string) => void;
 }
 
-const CONNECTION_DOT: Record<ConnectionState, { color: "success" | "accent" | "danger"; pulse: boolean }> = {
-  connected: { color: "success", pulse: false },
-  connecting: { color: "accent", pulse: true },
-  reconnecting: { color: "accent", pulse: true },
-  disconnected: { color: "danger", pulse: false },
-};
+type ComposerMenuKey = "mode" | "compaction";
 
 const MODE_LABELS: Record<Mode, string> = {
   default: "default",
@@ -98,11 +94,10 @@ export function InputDock({
   onSend,
   onSteer,
   onInterrupt,
+  onCompactionClick,
   canSend,
   canSteer,
   threadStatus,
-  connection,
-  cwd,
   mode,
   onModeChange,
   effort,
@@ -115,20 +110,69 @@ export function InputDock({
   contextWindow,
   hasProvider,
   onOpenProviders,
+  supportsVision,
+  pendingImages,
+  onAddImages,
+  onRemoveImage,
 }: InputDockProps) {
   const composingRef = useRef(false);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<ComposerMenuKey | null>(null);
   const isBusy = threadStatus === "busy";
   const totalTokens = usage.inputTokens + usage.outputTokens;
   const hasUsage = totalTokens > 0;
   const hasContext = currentContextTokens > 0;
   const contextPct = contextWindow > 0 ? Math.round((currentContextTokens / contextWindow) * 100) : 0;
+  const usageLabel = hasContext
+    ? `${formatTokenCount(currentContextTokens)} / ${formatTokenCount(contextWindow)} (${contextPct}%) · $${usage.totalCost.toFixed(2)}`
+    : hasUsage
+      ? `${formatTokenCount(totalTokens)} tokens · $${usage.totalCost.toFixed(2)}`
+      : null;
+  const modeMenuOptions = modeOptions();
+
+  useEffect(() => {
+    if (!isPlusMenuOpen) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!plusMenuRef.current) return;
+      if (!plusMenuRef.current.contains(event.target as Node)) {
+        setIsPlusMenuOpen(false);
+        setActiveSubmenu(null);
+      }
+    };
+
+    window.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      window.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [isPlusMenuOpen]);
+
+  const openPlusMenu = () => {
+    setIsPlusMenuOpen(true);
+    setActiveSubmenu(null);
+  };
+
+  const togglePlusMenu = () => {
+    if (isPlusMenuOpen) {
+      setIsPlusMenuOpen(false);
+      setActiveSubmenu(null);
+      return;
+    }
+    openPlusMenu();
+  };
+
+  const topLevelMenuItemClass = (menuKey: ComposerMenuKey): string =>
+    `flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
+      activeSubmenu === menuKey ? "bg-surface text-text shadow-sm" : "text-muted hover:bg-surface/80 hover:text-text"
+    }`;
 
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
       <div
-        className={`rounded-3xl border px-4 py-3 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}
+        className={`rounded-3xl border px-3 py-2.5 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}
       >
-        {/* No provider banner */}
         {!hasProvider ? (
           <button
             type="button"
@@ -139,67 +183,190 @@ export function InputDock({
             <span className="text-accent underline underline-offset-2">Connect one in the sidebar →</span>
           </button>
         ) : (
-          /* Textarea */
-          <TextArea
-            className="-ml-1 mr-1 min-h-[48px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
-            aria-label={isBusy ? "Steering input" : "Message input"}
-            placeholder={isBusy ? "Steer the agent…" : "Ask anything…"}
-            value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-            onKeyDown={(e) => {
-              // Prevent Korean/IME composition Enter from triggering submit.
-              if (composingRef.current || e.nativeEvent.isComposing) {
-                return;
+          <>
+            {pendingImages.length > 0 ? (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {pendingImages.map((image) => (
+                  <div
+                    key={image.path}
+                    className="group relative overflow-hidden rounded-xl border border-text/10 bg-surface/70"
+                  >
+                    <img src={image.url} alt={image.fileName ?? "Attached image"} className="h-20 w-20 object-cover" />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${image.fileName ?? "image"}`}
+                      onClick={() => onRemoveImage(image.path)}
+                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <TextArea
+              className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+              aria-label={isBusy ? "Steering input" : "Message input"}
+              placeholder={
+                isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
               }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (isBusy) onSteer();
-                else onSend();
-              }
-            }}
-          />
+              value={input}
+              onChange={(e) => onInputChange(e.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+              onKeyDown={(e) => {
+                if (composingRef.current || e.nativeEvent.isComposing) {
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (isBusy) onSteer();
+                  else onSend();
+                }
+              }}
+            />
+          </>
         )}
 
-        {/* Bottom bar (inside input panel) */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          {/* Left: connection + cwd + usage */}
-          <div className="flex min-w-0 items-center gap-1.5 text-xs- text-muted">
-            <StatusDot color={CONNECTION_DOT[connection].color} pulse={CONNECTION_DOT[connection].pulse} />
-            <span className="shrink-0">{connection}</span>
-            {cwd ? (
-              <>
-                <span className="opacity-30">·</span>
-                <span className="min-w-0 truncate font-mono opacity-60" title={cwd}>
-                  {cwd.split("/").slice(-2).join("/")}
-                </span>
-              </>
-            ) : null}
-            {hasContext ? (
-              <>
-                <span className="opacity-30">·</span>
-                <span className="shrink-0 cursor-default opacity-70" title={formatUsageTooltip(usage)}>
-                  {formatTokenCount(currentContextTokens)} / {formatTokenCount(contextWindow)} ({contextPct}%) · $
-                  {usage.totalCost.toFixed(2)}
-                </span>
-              </>
-            ) : hasUsage ? (
-              <>
-                <span className="opacity-30">·</span>
-                <span className="shrink-0 cursor-default opacity-70" title={formatUsageTooltip(usage)}>
-                  {formatTokenCount(totalTokens)} tokens · ${usage.totalCost.toFixed(2)}
-                </span>
-              </>
-            ) : null}
-          </div>
+        <div className="mt-2.5 flex items-center justify-between gap-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div ref={plusMenuRef} className="relative shrink-0">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    onAddImages(e.target.files);
+                    e.target.value = "";
+                  }
+                }}
+              />
 
-          {/* Right: model selector + mode selector + send/stop */}
-          <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Open composer options"
+                aria-haspopup="menu"
+                aria-expanded={isPlusMenuOpen}
+                onClick={togglePlusMenu}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
+                  isPlusMenuOpen
+                    ? "border-text/10 bg-surface text-text shadow-sm"
+                    : "border-transparent bg-transparent text-muted/80 hover:border-text/10 hover:bg-surface/80 hover:text-text"
+                }`}
+              >
+                +
+              </button>
+
+              {isPlusMenuOpen ? (
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-0 z-30 mb-2 min-w-[150px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur"
+                >
+                  <div className="relative">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                          setIsPlusMenuOpen(false);
+                          setActiveSubmenu(null);
+                        }}
+                        disabled={!supportsVision}
+                        className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                          supportsVision
+                            ? "text-muted hover:bg-surface/80 hover:text-text"
+                            : "cursor-not-allowed text-muted/40"
+                        }`}
+                      >
+                        Add images
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-haspopup="menu"
+                        aria-expanded={activeSubmenu === "mode"}
+                        onMouseEnter={() => setActiveSubmenu("mode")}
+                        onFocus={() => setActiveSubmenu("mode")}
+                        onClick={() => setActiveSubmenu("mode")}
+                        className={topLevelMenuItemClass("mode")}
+                      >
+                        <span>Mode</span>
+                        <span className="text-[10px] opacity-60">›</span>
+                      </button>
+
+                      {activeSubmenu === "mode" ? (
+                        <div className="absolute left-full top-0 ml-1 min-w-[132px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur">
+                          {modeMenuOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={option.value === mode}
+                              onClick={() => {
+                                onModeChange(option.value as Mode);
+                                setIsPlusMenuOpen(false);
+                                setActiveSubmenu(null);
+                              }}
+                              className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                                option.value === mode
+                                  ? "bg-accent/15 text-text shadow-sm"
+                                  : "text-muted hover:bg-surface/80 hover:text-text"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="relative">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-haspopup="menu"
+                        aria-expanded={activeSubmenu === "compaction"}
+                        onMouseEnter={() => setActiveSubmenu("compaction")}
+                        onFocus={() => setActiveSubmenu("compaction")}
+                        onClick={() => setActiveSubmenu("compaction")}
+                        className={topLevelMenuItemClass("compaction")}
+                      >
+                        <span>Compaction</span>
+                        <span className="text-[10px] opacity-60">›</span>
+                      </button>
+
+                      {activeSubmenu === "compaction" ? (
+                        <div className="absolute left-full top-0 ml-1 min-w-[156px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              onCompactionClick();
+                              setIsPlusMenuOpen(false);
+                              setActiveSubmenu(null);
+                            }}
+                            className="block w-full rounded-lg px-2.5 py-2 text-left text-xs text-muted transition hover:bg-surface/80 hover:text-text"
+                          >
+                            Compact now
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             {availableModels.length > 0 ? (
               <Select
                 ariaLabel="Model selector"
@@ -219,15 +386,14 @@ export function InputDock({
               openDirection="up"
               className="w-[90px]"
             />
+          </div>
 
-            <Select
-              ariaLabel="Mode selector"
-              value={mode}
-              options={modeOptions()}
-              onChange={(value) => onModeChange(value as Mode)}
-              openDirection="up"
-              className="w-[110px]"
-            />
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+            {usageLabel ? (
+              <span className="shrink-0 cursor-default text-xs text-muted/70" title={formatUsageTooltip(usage)}>
+                {usageLabel}
+              </span>
+            ) : null}
 
             {isBusy ? (
               <>

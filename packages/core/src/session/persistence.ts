@@ -94,6 +94,15 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
         const content = firstUserEntry.message.content;
         if (typeof content === "string") {
           firstUserMessage = content.slice(0, 100);
+        } else {
+          const text = content
+            .filter((block): block is { type: "text"; text: string } => block.type === "text")
+            .map((block) => block.text.trim())
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 100);
+          const imageCount = content.filter((block) => block.type === "local_image").length;
+          firstUserMessage = text || (imageCount > 0 ? `[image${imageCount > 1 ? "s" : ""}]` : undefined);
         }
       }
 

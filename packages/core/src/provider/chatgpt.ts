@@ -56,7 +56,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
         if (context.systemPrompt.length > 0) {
           body.instructions = flattenSections(context.systemPrompt);
         }
-        body.input = convertMessages(context.messages);
+        body.input = await convertMessages(context.messages);
         if (context.tools.length > 0) {
           body.tools = buildTools(context.tools);
         }

@@ -118,6 +118,177 @@ describe("DiligentAppServer", () => {
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
   });
 
+  it("accepts image-only turn content and emits userMessage item", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+
+          return stream as never;
+        },
+      }),
+    });
+
+    const notifications: DiligentServerNotification[] = [];
+    let resolveTurnCompleted: (() => void) | null = null;
+    const turnCompleted = new Promise<void>((resolve) => {
+      resolveTurnCompleted = resolve;
+    });
+
+    server.setNotificationListener((notification) => {
+      notifications.push(notification);
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+        resolveTurnCompleted?.();
+      }
+    });
+
+    const start = await server.handleRequest({
+      id: 100,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const startResult = readResult(start) as { threadId: string };
+
+    const turnStart = await server.handleRequest({
+      id: 101,
+      method: "turn/start",
+      params: {
+        threadId: startResult.threadId,
+        message: "",
+        attachments: [
+          {
+            type: "local_image",
+            path: "/tmp/example.png",
+            mediaType: "image/png",
+            fileName: "example.png",
+          },
+        ],
+      },
+    });
+    expect((readResult(turnStart) as { accepted: boolean }).accepted).toBe(true);
+
+    await turnCompleted;
+
+    const userStarted = notifications.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED);
+    expect(userStarted).toBeDefined();
+    const userItem = (userStarted as { params: { item: { type: string; message: { content: unknown } } } }).params.item;
+    expect(userItem.type).toBe("userMessage");
+    expect(userItem.message.content).toEqual([
+      {
+        type: "local_image",
+        path: "/tmp/example.png",
+        mediaType: "image/png",
+        fileName: "example.png",
+      },
+    ]);
+  });
+
+  it("uses image fallback preview in thread list cache when first turn is image-only", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const start = await server.handleRequest({ id: 110, method: "thread/start", params: { cwd: projectRoot } });
+    const threadId = (readResult(start) as { threadId: string }).threadId;
+    let resolveTurnCompleted: (() => void) | null = null;
+    const turnCompleted = new Promise<void>((resolve) => {
+      resolveTurnCompleted = resolve;
+    });
+    server.setNotificationListener((notification) => {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+        resolveTurnCompleted?.();
+      }
+    });
+
+    await server.handleRequest({
+      id: 111,
+      method: "turn/start",
+      params: {
+        threadId,
+        message: "",
+        attachments: [{ type: "local_image", path: "/tmp/a.png", mediaType: "image/png", fileName: "a.png" }],
+      },
+    });
+
+    await turnCompleted;
+
+    const list = await server.handleRequest({ id: 112, method: "thread/list", params: { limit: 10 } });
+    const result = readResult(list) as { data: Array<{ id: string; firstUserMessage?: string }> };
+    expect(result.data.find((item) => item.id === threadId)?.firstUserMessage).toBe("[image]");
+  });
+
   it("treats empty user-input response as aborted turn", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 

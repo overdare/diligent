@@ -30,7 +30,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
           {
             model: model.id,
             instructions: flattenSections(context.systemPrompt),
-            input: convertMessages(context.messages),
+            input: await convertMessages(context.messages),
             ...(context.tools.length > 0 && {
               tools: buildTools(context.tools, false) as unknown as Array<{
                 type: "function";

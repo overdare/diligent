@@ -54,7 +54,7 @@ function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
     } else if (item.kind === "tool") {
       result.push(<ToolBlock key={item.id} item={item} />);
     } else if (item.kind === "user") {
-      result.push(<UserMessage key={item.id} text={item.text} />);
+      result.push(<UserMessage key={item.id} text={item.text} images={item.images} />);
     } else {
       const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
       const nextItem = items[idx + 1];

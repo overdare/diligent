@@ -13,6 +13,7 @@ export type {
   AssistantMessage,
   ContentBlock,
   ImageBlock,
+  LocalImageBlock,
   Message,
   StopReason,
   TextBlock,
