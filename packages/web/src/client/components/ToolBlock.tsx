@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import { getToolHeaderTitle, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
+import {
+  formatToolDurationMs,
+  getToolHeaderTitle,
+  getToolInfo,
+  summarizeInput,
+  summarizeOutput,
+} from "../lib/tool-info";
 import { ContentBash } from "./ContentBash";
 import { ContentEdit } from "./ContentEdit";
 import { ContentGrep } from "./ContentGrep";
@@ -130,6 +136,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
   const outputSummary =
     !isUserInput && item.status === "done" && item.outputText ? summarizeOutput(item.toolName, item.outputText) : "";
+  const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;
 
   const isStreaming = item.status === "streaming";
   const isAction = category === "action";
@@ -182,6 +189,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
               {icon}
             </span>
             <span className="text-sm font-medium leading-none text-muted">{headerTitle}</span>
+            {durationLabel ? <span className="text-xs leading-none text-text/35">{durationLabel}</span> : null}
             {chevronEl}
             {statusEl}
           </div>

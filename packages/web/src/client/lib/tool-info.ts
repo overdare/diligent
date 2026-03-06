@@ -41,6 +41,11 @@ export function getToolInfo(toolName: string): ToolInfo {
   return TOOL_MAP[toolName.toLowerCase()] ?? { displayName: toolName, icon: "⚙", category: "action" };
 }
 
+export function formatToolDurationMs(durationMs?: number): string | null {
+  if (durationMs === undefined || Number.isNaN(durationMs) || durationMs < 0) return null;
+  return `${Math.round(durationMs)}ms`;
+}
+
 function clip(value: string, max = 60): string {
   return value.length > max ? `${value.slice(0, max - 3)}…` : value;
 }

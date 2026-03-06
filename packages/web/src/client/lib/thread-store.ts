@@ -70,6 +70,8 @@ export type RenderItem =
       status: "streaming" | "done";
       timestamp: number;
       toolCallId: string;
+      startedAt: number;
+      durationMs?: number;
     }
   | {
       id: string;
@@ -352,6 +354,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       if (COLLAB_RENDERED_TOOLS.has(event.toolName)) return state;
       const renderId = `item:${event.itemId}:${++renderSeq}`;
       if (state.itemSlots[event.itemId]) return state;
+      const now = Date.now();
       return {
         ...state,
         itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
@@ -365,8 +368,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             outputText: "",
             isError: false,
             status: "streaming",
-            timestamp: Date.now(),
+            timestamp: now,
             toolCallId: event.toolCallId,
+            startedAt: now,
           },
         ],
       };
@@ -444,6 +448,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 outputText: event.output || current.outputText,
                 isError: event.isError,
                 status: "done" as const,
+                durationMs: Date.now() - current.startedAt,
               }
             : current,
         ),
@@ -1067,6 +1072,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
           status: inProgress ? "streaming" : "done",
           timestamp: message.timestamp,
           toolCallId: block.id,
+          startedAt: message.timestamp,
         });
       }
       continue;
@@ -1129,6 +1135,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
               isError: message.isError,
               status: "done",
               timestamp: message.timestamp,
+              durationMs: Math.max(0, message.timestamp - item.startedAt),
             }
           : item,
       );
@@ -1145,6 +1152,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       status: "done",
       timestamp: message.timestamp,
       toolCallId: message.toolCallId,
+      startedAt: message.timestamp,
+      durationMs: 0,
     });
   }
 

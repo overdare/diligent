@@ -5,6 +5,7 @@ import { Button } from "../src/client/components/Button";
 import { Input } from "../src/client/components/Input";
 import { InputDock } from "../src/client/components/InputDock";
 import { Modal } from "../src/client/components/Modal";
+import { ToolBlock } from "../src/client/components/ToolBlock";
 import { UserMessage } from "../src/client/components/UserMessage";
 
 test("button renders aria-label and intent class", () => {
@@ -135,4 +136,49 @@ test("input dock shows uploading state and disables send affordance", () => {
 
   expect(html).toContain("Uploading images…");
   expect(html).toContain("disabled");
+});
+
+test("tool block renders completed duration in header", () => {
+  const html = renderToStaticMarkup(
+    <ToolBlock
+      item={{
+        id: "tool-1",
+        kind: "tool",
+        toolName: "bash",
+        inputText: '{"command":"echo hi"}',
+        outputText: "hi",
+        isError: false,
+        status: "done",
+        timestamp: 200,
+        toolCallId: "call-1",
+        startedAt: 100,
+        durationMs: 123,
+      }}
+    />,
+  );
+
+  expect(html).toContain("123ms");
+  expect(html).toContain("Shell");
+});
+
+test("tool block hides duration while tool is still running", () => {
+  const html = renderToStaticMarkup(
+    <ToolBlock
+      item={{
+        id: "tool-2",
+        kind: "tool",
+        toolName: "bash",
+        inputText: '{"command":"sleep 1"}',
+        outputText: "",
+        isError: false,
+        status: "streaming",
+        timestamp: 100,
+        toolCallId: "call-2",
+        startedAt: 100,
+      }}
+    />,
+  );
+
+  expect(html).not.toContain("123ms");
+  expect(html).toContain("running");
 });

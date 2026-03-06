@@ -110,6 +110,55 @@ test("ignores duplicate started item events", () => {
   expect(b.items.length).toBe(1);
 });
 
+test("computes tool duration when tool completes", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tool1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tool1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+        output: "done",
+        isError: false,
+      },
+    },
+  };
+
+  const realNow = Date.now;
+  let now = 400;
+  Date.now = () => now;
+  try {
+    const startedState = reduce(initialThreadState, started);
+    now = 700;
+    const completedState = reduce(startedState, completed);
+    const tool = completedState.items.find((item) => item.kind === "tool");
+
+    expect(tool && tool.kind === "tool" ? tool.durationMs : undefined).toBe(300);
+    expect(tool && tool.kind === "tool" ? tool.status : "").toBe("done");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test("creates a new assistant item when same itemId appears in a new turn", () => {
   resetAdapter();
   const startedTurn1: DiligentServerNotification = {
