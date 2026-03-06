@@ -10,22 +10,22 @@ decisions: [D095]
 ## Context
 
 Compaction currently only triggers at two points:
-1. **Proactive** — before `agentLoop` starts (`manager.ts:240-246`)
-2. **Reactive** — after `agentLoop` fails with `context_overflow` (`manager.ts:298-302`)
+1. **Proactive** — before `agentLoop` starts (`manager.ts:251-257`)
+2. **Reactive** — after `agentLoop` fails with `context_overflow` (`manager.ts:309-313`)
 
 There is **no compaction check between turns** inside `agentLoop`. If a session starts at 60% capacity and the LLM runs many tool-use turns within a single `agentLoop` invocation, tokens can silently exceed the threshold. Compaction doesn't fire until the provider actually rejects the request.
 
 ### Root cause: 2-level loop architecture
 
 ```
-runSession() — outer loop (manager.ts:256)     ← knows compaction
-  └─ agentLoop() — inner loop (loop.ts:185)    ← doesn't know compaction
+runSession() — outer loop (manager.ts:267)     ← knows compaction
+  └─ agentLoop() — inner loop (loop.ts:136)    ← doesn't know compaction
        └─ turn 1: LLM → tools
        └─ turn 2: LLM → tools  ← tokens overflow here, no check
        └─ turn N: ...
 ```
 
-The inner loop owns `allMessages` as a local array. The outer loop can't inspect or replace it. Compaction lives in the outer loop but the token growth happens in the inner loop.
+The inner loop (`runLoop`, lines 136-397) owns `allMessages` as a local array. The outer loop can't inspect or replace it. Compaction lives in the outer loop but the token growth happens in the inner loop.
 
 ### How Codex-RS solves this
 
@@ -64,17 +64,29 @@ Merge the 2-level loop (`runSession` + `agentLoop`) into a 1-level loop in `Sess
 ### Before (2-level)
 
 ```
-SessionManager.runSession()
-  ├─ proactive compaction check
-  ├─ while (true):
-  │    ├─ agentLoop(messages, config)     ← separate function, local allMessages
-  │    │    └─ while (turnCount < max):
-  │    │         ├─ drainSteering
-  │    │         ├─ streamAssistantResponse
-  │    │         ├─ executeTools
-  │    │         └─ check hasPendingMessages
-  │    ├─ catch context_overflow → compact
-  │    └─ check pendingMessages → rebuild context
+SessionManager.runSession()  (manager.ts:241-335)
+  ├─ proactive compaction check  (lines 251-257)
+  ├─ agent_start event  (line 259)
+  ├─ resolveConfig closure  (line 265)
+  ├─ while (true):  (line 267)
+  │    ├─ resolveAgentConfig()  (lines 566-578: sync/async factory + steering callbacks)
+  │    ├─ agentLoop(messages, config)  (loop.ts:119-134 → runLoop:136-397)
+  │    │    └─ runLoop: local allMessages, turnCount, maxTurns, LoopDetector
+  │    │         ├─ mode filtering (PLAN_MODE_ALLOWED_TOOLS)
+  │    │         ├─ permission filtering (filterAllowedTools)
+  │    │         ├─ effective system prompt (mode suffix)
+  │    │         ├─ retry wrapper setup
+  │    │         └─ while (turnCount < max):  (line 185)
+  │    │              ├─ drainSteering  (line 196, via config.getSteeringMessages callback)
+  │    │              ├─ streamAssistantResponse  (line 199)
+  │    │              ├─ executeTools (parallel or sequential)
+  │    │              ├─ loop detection  (lines 370-382)
+  │    │              └─ check hasPendingMessages  (line 222)
+  │    ├─ handleEvent: persist message_end/turn_end/steering_injected  (lines 462-478)
+  │    ├─ fatal error → detect context_overflow or abort  (lines 288-305)
+  │    ├─ catch ProviderError(context_overflow) → compact  (lines 309-313)
+  │    ├─ check signal.aborted → return  (lines 320-322)
+  │    └─ check pendingMessages → rebuild context  (lines 324-334)
   └─ end
 ```
 
@@ -110,10 +122,10 @@ Single compaction check at loop-top replaces both the pre-loop proactive check a
 
 | File | Action | Description |
 |------|--------|-------------|
-| `packages/core/src/session/manager.ts` | MODIFY | Inline agent loop logic into `runSession()`, add mid-turn compaction check |
-| `packages/core/src/agent/loop.ts` | MODIFY | Extract shared helpers (`drainSteering`, `streamAssistantResponse`, `withPlanStateInjected`, tool execution, `LoopDetector`) into importable functions. Remove `agentLoop()` and `runLoop()` |
-| `packages/core/src/agent/index.ts` | MODIFY | Update exports (remove `agentLoop`, add new helper exports) |
-| `packages/core/src/index.ts` | MODIFY | Update re-exports if needed |
+| `packages/core/src/session/manager.ts` | MODIFY | Inline agent loop logic into `runSession()` (lines 241-335), remove `handleEvent()` (lines 462-478), add mid-turn compaction check |
+| `packages/core/src/agent/loop.ts` | MODIFY | Export shared helpers currently private: `drainSteering` (106-117), `streamAssistantResponse` (399-495), `filterAllowedTools` (23-36), `toolPermission` (15-19). Extract tool execution from `runLoop` (233-368). Keep `agentLoop` as thin `@internal` wrapper |
+| `packages/core/src/agent/index.ts` | MODIFY | Add new helper exports (currently only exports `agentLoop`, `LoopDetector`, types, `withPlanStateInjected`, `extractLatestPlanState`) |
+| `packages/core/src/index.ts` | MODIFY | Update re-exports if needed (currently re-exports from `agent/index` at lines 127-163) |
 | `packages/core/test/agent-loop.test.ts` | MODIFY | Adapt tests to new structure |
 | `packages/core/test/agent-loop-steering.test.ts` | MODIFY | Adapt steering tests |
 | `packages/core/test/agent-loop-retry.test.ts` | MODIFY | Adapt retry tests |
@@ -121,13 +133,15 @@ Single compaction check at loop-top replaces both the pre-loop proactive check a
 
 ## What Does NOT Change
 
-- `compaction.ts` — all compaction logic stays as-is
-- `context-builder.ts` — session context rebuilding unchanged
+- `compaction.ts` — all compaction logic stays as-is (`estimateTokens`, `shouldCompact`, `findRecentUserMessages`, `generateSummary`, `extractFileOperations`)
+- `context-builder.ts` — `buildSessionContext()` (lines 22-116) unchanged
 - `types.ts` (session) — entry types unchanged
 - `persistence.ts` — write logic unchanged
 - `collab/registry.ts` — uses `SessionManager.run()`, not `agentLoop()` directly
-- `AgentEvent` types — all existing events preserved
-- `AgentLoopConfig` — interface stays (becomes config for `runSession` internals)
+- `AgentEvent` types — all 15 event types preserved (including collab events)
+- `AgentLoopConfig` — interface stays (lines 154-177 in `agent/types.ts`, becomes config for `runSession` internals)
+- `agent/types.ts` — `ModeKind`, `PLAN_MODE_ALLOWED_TOOLS`, `MODE_SYSTEM_PROMPT_SUFFIXES` unchanged
+- `agent/loop-detector.ts` — `LoopDetector` class unchanged
 - Provider/streaming layer — untouched
 - e2e tests — use `SessionManager` or real flows, not `agentLoop` directly
 
@@ -135,31 +149,54 @@ Single compaction check at loop-top replaces both the pre-loop proactive check a
 
 ### Task 1: Extract reusable helpers from `loop.ts`
 
-Move these functions from `agentLoop`/`runLoop` into standalone exports:
+Export these currently-private functions from `loop.ts`:
 
 ```typescript
-// loop.ts — exported helpers (already standalone functions, just need exporting)
-export function drainSteering(config, allMessages, stream): boolean
-export function withPlanStateInjected(messages): Message[]
-export function extractLatestPlanState(messages): string | null
+// loop.ts — already standalone functions, just need `export` keyword
 
-// NEW: extract streamAssistantResponse into a public helper
+// Lines 106-117: drains pending steering via config.getSteeringMessages callback
+export function drainSteering(
+  config: AgentLoopConfig,
+  allMessages: Message[],
+  stream: EventStream<AgentEvent, Message[]>,
+): boolean
+
+// Lines 74-95: already exported
+export function withPlanStateInjected(messages: Message[]): Message[]
+
+// Lines 44-64: already exported
+export function extractLatestPlanState(messages: Message[]): string | null
+
+// Lines 23-36: removes tools denied by permission engine
+export function filterAllowedTools(tools: Tool[], permissionEngine?: PermissionEngine): Tool[]
+
+// Lines 15-19: maps tool name to permission category
+export function toolPermission(toolName: string): "read" | "write" | "execute"
+
+// Lines 98-103: converts Error to SerializableError
+export function toSerializableError(err: unknown): SerializableError
+
+// Lines 399-495: streams LLM response with plan state injection and delta events
+// NEW: needs to be extracted from runLoop scope (currently uses closure variables)
 export async function streamAssistantResponse(
-  messages, config, activeTools, effectiveSystemPrompt,
-  streamFn, agentStream, generateItemId
+  messages: Message[], config: AgentLoopConfig, activeTools: Tool[],
+  effectiveSystemPrompt: SystemSection[],
+  streamFn: StreamFunction, agentStream: EventStream<AgentEvent, Message[]>,
+  generateItemId: () => string,
 ): Promise<AssistantMessage>
 
-// NEW: extract tool execution into a public helper
+// NEW: extract tool execution from runLoop (lines 233-368)
+// Handles both parallel and sequential tool execution paths
 export async function executeToolCalls(
-  toolCalls, registry, config, allMessages, stream, generateItemId
+  toolCalls: ToolCallBlock[], registry: Map<string, Tool>,
+  config: AgentLoopConfig, allMessages: Message[],
+  stream: EventStream<AgentEvent, Message[]>, generateItemId: () => string,
 ): Promise<{ toolResults: ToolResultMessage[]; abortRequested: boolean }>
 ```
 
-Also move: `toolToDefinition`, `createEmptyAssistantMessage`, `calculateCost`, `filterAllowedTools`, `toolPermission`.
-
 ### Task 2: Inline turn loop into `runSession()`
 
-Replace the current `runSession()` body (manager.ts:230-324) with a single-level loop:
+Replace the current `runSession()` body (manager.ts:241-335) with a single-level loop:
 
 ```typescript
 private async runSession(
@@ -276,17 +313,17 @@ private async runSession(
 
 ### Task 3: Update `handleEvent` → direct method calls
 
-Currently `handleEvent` processes events from the inner stream. In the 1-level loop, we call persistence methods directly:
+Currently `handleEvent` (manager.ts:462-478) processes events from the inner stream, persisting three event types:
 
-- `message_end` → `this.appendMessageEntry(assistantMessage)` + update `lastApiInputTokens`
-- `turn_end` tool results → `this.appendMessageEntry(toolResult)` for each
-- `steering_injected` → `this.appendMessageEntry(msg)` for each
+- `message_end` → `this.appendMessageEntry(event.message)` + update `lastApiInputTokens` (lines 463-467)
+- `turn_end` → `this.appendMessageEntry(toolResult)` for each tool result (lines 468-471)
+- `steering_injected` → `this.appendMessageEntry(msg)` for each steering message (lines 472-476)
 
-The `handleEvent` method becomes unnecessary.
+In the 1-level loop, these persist calls happen inline. The `handleEvent` method and the event-forwarding loop (lines 277-286) become unnecessary.
 
 ### Task 4: Handle pending messages (steering continuation)
 
-The current outer loop's pending message check (manager.ts:314-322) is now part of the single loop. When `hasPendingMessages` is true and no tool calls exist, the loop `continue`s. Steering messages are drained at loop-top via `drainSteering`.
+The current outer loop's pending message check (manager.ts:324-334) and abort guard (lines 320-322) are now part of the single loop. When `hasPendingMessages` is true and no tool calls exist, the loop `continue`s. Steering messages are drained at loop-top via `drainSteering`.
 
 Context rebuild on pending messages:
 ```typescript
@@ -300,16 +337,24 @@ if (needsContextRebuild) {
 
 ### Task 5: Adapt tests
 
-**agent-loop.test.ts** — Tests currently call `agentLoop()` directly. Two options:
-1. **Preferred**: Keep a thin `agentLoop()` wrapper that delegates to extracted helpers, purely for test compatibility
+**Existing test files** that call `agentLoop()` directly:
+- `agent-loop.test.ts` — main loop behavior tests
+- `agent-loop-steering.test.ts` — steering injection and pending message peeking
+- `agent-loop-retry.test.ts` — retry logic
+- `agent-mode-filter.test.ts` — plan/execute mode filtering and system prompt injection
+- `loop-detector.test.ts` — loop detection (independent, no changes needed)
+- `session-manager.test.ts` — manager integration tests
+
+Two options:
+1. **Preferred**: Keep a thin `agentLoop()` wrapper (current lines 119-134) that delegates to extracted helpers, purely for test compatibility
 2. **Alternative**: Rewrite tests to use `SessionManager.run()` (higher-level, more realistic)
 
-Recommendation: Option 1 — keep `agentLoop()` as a lightweight composition of the extracted helpers, marked `@internal`. This preserves all existing test coverage with minimal changes.
+Recommendation: Option 1 — keep `agentLoop()` as a lightweight composition of the extracted helpers, marked `@internal`. The current implementation (creates EventStream, calls runLoop, catches errors) is already this shape. This preserves all existing test coverage with minimal changes.
 
 ```typescript
 /** @internal — Thin wrapper for test compatibility. Production code uses SessionManager.runSession(). */
 export function agentLoop(messages: Message[], config: AgentLoopConfig): EventStream<AgentEvent, Message[]> {
-  // Same implementation as before, composing the extracted helpers
+  // Same implementation as current lines 119-134, composing the extracted helpers
 }
 ```
 
@@ -337,8 +382,10 @@ After confirming all tests pass:
 
 | Risk | Mitigation |
 |------|-----------|
-| Steering timing regression | Preserve sync config resolution path (microtask timing). Test: `agent-loop-steering.test.ts` |
-| Event ordering change | 1-level loop emits same events in same order. Direct persistence calls maintain event-ordered writes |
-| `agentLoop` removal breaks external consumers | Keep thin `agentLoop` wrapper for backward compatibility. Only `SessionManager` uses it in production |
+| Steering timing regression | Preserve sync config resolution path (manager.ts:261-265, `resolveAgentConfig` lines 566-578). Microtask timing is critical: `drainSteering` must run in same synchronous frame as `run()`. Test: `agent-loop-steering.test.ts` |
+| Event ordering change | 1-level loop emits same events in same order. Direct persistence calls replace `handleEvent` (lines 462-478) event-ordered writes |
+| `agentLoop` removal breaks external consumers | Keep thin `agentLoop` wrapper (lines 119-134) for backward compatibility. Only `SessionManager` uses it in production. `agentLoop` is also re-exported from `core/src/index.ts` |
+| Fatal error detection regression | Current fatal error detection (lines 288-305) checks error messages for context overflow keywords — this logic must be preserved in the single-level loop's catch block |
+| Abort signal handling | Current abort guard (lines 320-322) prevents re-entering loop with aborted signal. Must be preserved at loop-top |
 | Mid-turn compaction during tool execution | Check happens at loop-top (before LLM call), never interrupts a tool |
 | Compaction on every iteration overhead | `shouldCompact` is a trivial arithmetic check — negligible cost. `estimateTokens` is O(messages) but fast |
