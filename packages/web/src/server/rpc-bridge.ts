@@ -538,7 +538,7 @@ export class RpcBridge {
     this.broadcast({
       type: "server_notification",
       notification: {
-        method: "account/updated",
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
         params: { providers },
       },
     });
@@ -548,7 +548,7 @@ export class RpcBridge {
     this.broadcast({
       type: "server_notification",
       notification: {
-        method: "account/login/completed",
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
         params: { loginId, success, error },
       },
     });
