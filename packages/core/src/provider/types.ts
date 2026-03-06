@@ -49,7 +49,7 @@ export interface StreamOptions {
   maxTokens?: number;
   temperature?: number;
   budgetTokens?: number; // legacy fallback; prefer effort
-  effort?: ThinkingEffort; // thinking effort level; default "high" when absent
+  effort?: ThinkingEffort; // thinking effort level; default "medium" when absent
 }
 
 export interface ToolDefinition {

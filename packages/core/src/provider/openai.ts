@@ -22,7 +22,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
     (async () => {
       try {
         const useReasoning = model.supportsThinking;
-        const effort = options.effort ?? "high";
+        const effort = options.effort ?? "medium";
         // OpenAI only supports low/medium/high; map "max" → "high"
         const openaiEffort = effort === "max" ? "high" : effort;
 

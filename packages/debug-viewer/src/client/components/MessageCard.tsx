@@ -5,6 +5,7 @@ import type {
   AssistantMessageEntry,
   CompactionEntry,
   ContentBlock,
+  EffortChangeEntry,
   ModeChangeEntry,
   ModelChangeEntry,
   SessionEntry,
@@ -147,6 +148,10 @@ function getSystemEventInfo(entry: SessionEntry): { badge: string; description: 
       const e = entry as ModeChangeEntry;
       return { badge: "Mode Change", description: `${e.mode} (${e.changedBy})` };
     }
+    case "effort_change": {
+      const e = entry as EffortChangeEntry;
+      return { badge: "Effort Change", description: `${e.effort} (${e.changedBy})` };
+    }
     case "steering": {
       const e = entry as SteeringEntry;
       const content = typeof e.message.content === "string" ? e.message.content : JSON.stringify(e.message.content);
@@ -191,6 +196,7 @@ export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProp
     (entry.type === "model_change" ||
       entry.type === "session_info" ||
       entry.type === "mode_change" ||
+      entry.type === "effort_change" ||
       entry.type === "steering")
   ) {
     return <SystemEventCard entry={entry} onSelectEntry={onSelectEntry} />;

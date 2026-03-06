@@ -150,7 +150,7 @@ describe("detectEntryType", () => {
     expect((entry as { toolName: string }).toolName).toBe("read");
   });
 
-  test("parses model_change, session_info, mode_change, and steering entries", () => {
+  test("parses model_change, session_info, mode_change, effort_change, and steering entries", () => {
     const mc = detectEntryType({
       type: "model_change",
       id: "x",
@@ -188,10 +188,22 @@ describe("detectEntryType", () => {
     expect((mch as Record<string, unknown>).mode).toBe("plan");
     expect((mch as Record<string, unknown>).parentId).toBe("x");
 
-    const st = detectEntryType({
-      type: "steering",
+    const ec = detectEntryType({
+      type: "effort_change",
       id: "z",
       parentId: "y",
+      timestamp: "2026-01-01T00:00:00Z",
+      effort: "medium",
+      changedBy: "command",
+    });
+    expect(ec).not.toBeNull();
+    expect((ec as Record<string, unknown>).type).toBe("effort_change");
+    expect((ec as Record<string, unknown>).effort).toBe("medium");
+
+    const st = detectEntryType({
+      type: "steering",
+      id: "s",
+      parentId: "z",
       timestamp: "2026-01-01T00:00:00Z",
       message: { role: "user", content: "focus on tests" },
       source: "steer",
@@ -269,22 +281,24 @@ describe("parseSessionText", () => {
     expect(entries.length).toBe(1);
   });
 
-  test("includes mode_change entries in parsed output", () => {
+  test("includes mode_change and effort_change entries in parsed output", () => {
     const text = [
       '{"type":"session","version":3,"id":"s1","timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}',
       '{"type":"mode_change","id":"mc1","parentId":null,"timestamp":"2026-01-01T00:00:01Z","mode":"plan","changedBy":"cli"}',
-      '{"type":"mode_change","id":"mc2","parentId":"mc1","timestamp":"2026-01-01T00:00:02Z","mode":"execute","changedBy":"command"}',
-      '{"type":"message","id":"m1","parentId":"mc2","timestamp":"2026-01-01T00:00:03Z","message":{"role":"user","content":"hello","timestamp":1}}',
+      '{"type":"effort_change","id":"ec1","parentId":"mc1","timestamp":"2026-01-01T00:00:02Z","effort":"medium","changedBy":"command"}',
+      '{"type":"message","id":"m1","parentId":"ec1","timestamp":"2026-01-01T00:00:03Z","message":{"role":"user","content":"hello","timestamp":1}}',
     ].join("\n");
     const entries = parseSessionText(text);
-    // All entries should be present: session_header + 2 mode_change + user message
+    // All entries should be present: session_header + mode_change + effort_change + user message
     expect(entries.length).toBe(4);
     const modeChanges = entries.filter((e) => "type" in e && e.type === "mode_change");
-    expect(modeChanges.length).toBe(2);
-    // user message parentId should be preserved as-is (pointing to mc2)
+    expect(modeChanges.length).toBe(1);
+    const effortChanges = entries.filter((e) => "type" in e && e.type === "effort_change");
+    expect(effortChanges.length).toBe(1);
+    // user message parentId should be preserved as-is (pointing to ec1)
     const user = entries.find((e) => "role" in e && e.role === "user");
     expect(user).toBeDefined();
-    expect((user as { parentId?: string }).parentId).toBe("mc2");
+    expect((user as { parentId?: string }).parentId).toBe("ec1");
   });
 });
 

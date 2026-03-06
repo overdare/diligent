@@ -76,7 +76,7 @@ describe("buildSessionContext", () => {
     expect(ctxA.messages).toHaveLength(2);
   });
 
-  it("tracks model changes", () => {
+  it("tracks model and effort changes", () => {
     const entries: SessionEntry[] = [
       makeMsg("a1", null, "user", "hi"),
       {
@@ -87,13 +87,22 @@ describe("buildSessionContext", () => {
         provider: "anthropic",
         modelId: "claude-opus-4-20250514",
       },
-      makeMsg("a3", "a2", "assistant", "hello"),
+      {
+        type: "effort_change",
+        id: "a3",
+        parentId: "a2",
+        timestamp: "2026-02-25T10:00:02.000Z",
+        effort: "medium",
+        changedBy: "command",
+      },
+      makeMsg("a4", "a3", "assistant", "hello"),
     ];
 
     const ctx = buildSessionContext(entries);
     expect(ctx.currentModel?.provider).toBe("anthropic");
     expect(ctx.currentModel?.modelId).toBe("claude-opus-4-20250514");
-    expect(ctx.messages).toHaveLength(2); // model_change doesn't produce a message
+    expect(ctx.currentEffort).toBe("medium");
+    expect(ctx.messages).toHaveLength(2); // non-message changes don't produce messages
   });
 
   it("returns empty for unknown leafId", () => {

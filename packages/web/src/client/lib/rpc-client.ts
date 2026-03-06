@@ -10,6 +10,7 @@ import type {
   JSONRPCResponse,
   Mode,
   ModelInfo,
+  ThinkingEffort,
 } from "@diligent/protocol";
 import { DILIGENT_WEB_REQUEST_METHODS } from "@diligent/protocol";
 import type { WsServerMessage } from "../../shared/ws-protocol";
@@ -34,6 +35,7 @@ interface PendingRequest {
 interface ConnectedPayload {
   cwd: string;
   mode: Mode;
+  effort: ThinkingEffort;
   serverVersion: string;
   currentModel: string | undefined;
   availableModels: ModelInfo[];
@@ -289,6 +291,7 @@ export class WebRpcClient {
       this.connectedListener?.({
         cwd: message.cwd,
         mode: message.mode,
+        effort: message.effort,
         serverVersion: message.serverVersion,
         currentModel: message.currentModel,
         availableModels: message.availableModels,

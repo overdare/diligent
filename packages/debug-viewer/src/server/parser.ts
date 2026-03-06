@@ -2,6 +2,7 @@
 import type {
   AssistantMessageEntry,
   CompactionEntry,
+  EffortChangeEntry,
   ModeChangeEntry,
   ModelChangeEntry,
   SessionEntry,
@@ -124,6 +125,16 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
       changedBy: raw.changedBy as string,
       timestamp: new Date(raw.timestamp as string).getTime(),
     } as ModeChangeEntry;
+  }
+  if (raw.type === "effort_change") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      type: "effort_change",
+      effort: raw.effort as string,
+      changedBy: raw.changedBy as string,
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as EffortChangeEntry;
   }
   if (raw.type === "steering") {
     return {

@@ -14,7 +14,14 @@ import {
 } from "./compaction";
 import { buildSessionContext } from "./context-builder";
 import { DeferredWriter, listSessions, readSessionFile } from "./persistence";
-import type { CollabSessionMeta, CompactionEntry, ModeChangeEntry, SessionEntry, SessionInfo } from "./types";
+import type {
+  CollabSessionMeta,
+  CompactionEntry,
+  EffortChangeEntry,
+  ModeChangeEntry,
+  SessionEntry,
+  SessionInfo,
+} from "./types";
 import { generateEntryId } from "./types";
 
 export interface SessionManagerConfig {
@@ -171,6 +178,10 @@ export class SessionManager {
   getContext(): Message[] {
     const context = buildSessionContext(this.entries, this.leafId);
     return context.messages;
+  }
+
+  getCurrentEffort(): "low" | "medium" | "high" | "max" | undefined {
+    return buildSessionContext(this.entries, this.leafId).currentEffort;
   }
 
   /**
@@ -502,6 +513,24 @@ export class SessionManager {
       parentId: this.leafId,
       timestamp: new Date().toISOString(),
       mode,
+      changedBy,
+    };
+    this.entries.push(entry);
+    this.byId.set(entry.id, entry);
+    this.leafId = entry.id;
+    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+  }
+
+  appendEffortChange(
+    effort: "low" | "medium" | "high" | "max",
+    changedBy: EffortChangeEntry["changedBy"] = "command",
+  ): void {
+    const entry: EffortChangeEntry = {
+      type: "effort_change",
+      id: generateEntryId(),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      effort,
       changedBy,
     };
     this.entries.push(entry);

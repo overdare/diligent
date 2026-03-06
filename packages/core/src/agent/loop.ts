@@ -407,8 +407,15 @@ async function streamAssistantResponse(
 ): Promise<AssistantMessage> {
   // Debug: log last 5 messages before every LLM call
   const tail = messages.slice(-5);
+  const debugScope = [
+    config.debugThreadId ? `thread=${config.debugThreadId}` : null,
+    config.debugTurnId ? `turn=${config.debugTurnId}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   console.log(
-    "[AgentLoop] Sending %d messages to %s, last 5: %s",
+    "[AgentLoop]%s Sending %d messages to %s, last 5: %s",
+    debugScope ? ` ${debugScope}` : "",
     messages.length,
     config.model.id,
     JSON.stringify(
@@ -434,7 +441,7 @@ async function streamAssistantResponse(
 
   const providerStream = streamFn(config.model, context, {
     signal: config.signal,
-    effort: config.effort ?? "high",
+    effort: config.effort ?? "medium",
   });
 
   let currentMessage: AssistantMessage | undefined;

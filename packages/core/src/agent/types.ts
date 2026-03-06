@@ -157,12 +157,15 @@ export interface AgentLoopConfig {
   tools: Tool[];
   streamFunction: StreamFunction;
   signal?: AbortSignal;
+  /** Optional debug identifiers for correlating AgentLoop logs with outer thread/turn logs. */
+  debugThreadId?: string;
+  debugTurnId?: string;
   maxTurns?: number;
   maxRetries?: number; // D010: default 5
   retryBaseDelayMs?: number; // default: 1000
   retryMaxDelayMs?: number; // default: 30_000
   mode?: ModeKind; // D087: defaults to "default"
-  effort?: "low" | "medium" | "high" | "max"; // thinking effort; defaults to "high"
+  effort?: "low" | "medium" | "high" | "max"; // thinking effort; defaults to "medium"
   getSteeringMessages?: () => Message[];
   hasPendingMessages?: () => boolean;
   /** D028: Called for each ctx.approve() — rule engine + optional UI callback */

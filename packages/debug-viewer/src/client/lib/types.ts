@@ -14,6 +14,7 @@ export type {
   AssistantMessageEntry,
   CompactionEntry,
   ContentBlock,
+  EffortChangeEntry,
   ImageBlock,
   KnowledgeEntry,
   ModeChangeEntry,

@@ -32,7 +32,7 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
     (async () => {
       try {
-        const effort = options.effort ?? "high";
+        const effort = options.effort ?? "medium";
         const useAdaptive = model.supportsThinking && model.supportsAdaptiveThinking;
         const useBudget = model.supportsThinking && !model.supportsAdaptiveThinking;
         const useThinking = useAdaptive || useBudget;

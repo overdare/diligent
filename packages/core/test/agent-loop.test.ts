@@ -1,5 +1,5 @@
 // @summary Tests for core agent loop execution and tool calling
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";
 import type { AgentEvent, AgentLoopConfig } from "../src/agent/types";
@@ -210,6 +210,37 @@ describe("agentLoop", () => {
     // Should have exactly 2 turn_starts
     const turnStarts = events.filter((e) => e.type === "turn_start");
     expect(turnStarts).toHaveLength(2);
+  });
+
+  test("logs debug thread and turn identifiers when provided", async () => {
+    const originalLog = console.log;
+    const logSpy = mock(() => {});
+    console.log = logSpy as typeof console.log;
+
+    try {
+      const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
+      const streamFn = createMockStreamFunction([msg]);
+      const config: AgentLoopConfig = {
+        model: TEST_MODEL,
+        systemPrompt: [{ label: "test", content: "test" }],
+        tools: [],
+        streamFunction: streamFn,
+        debugThreadId: "thread-123",
+        debugTurnId: "turn-abc",
+      };
+
+      const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
+      const loop = agentLoop(messages, config);
+      for await (const _event of loop) {
+      }
+
+      expect(logSpy).toHaveBeenCalled();
+      const call = logSpy.mock.calls.find((args) => args[0] === "[AgentLoop]%s Sending %d messages to %s, last 5: %s");
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe(" thread=thread-123 turn=turn-abc");
+    } finally {
+      console.log = originalLog;
+    }
   });
 
   test("tool schemas: Zod types converted to valid JSON Schema in StreamContext", async () => {

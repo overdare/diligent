@@ -87,6 +87,7 @@ export const ThreadReadResponseSchema = z.object({
   hasFollowUp: z.boolean(),
   entryCount: z.number().int().nonnegative(),
   isRunning: z.boolean(),
+  currentEffort: ThinkingEffortSchema,
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
 

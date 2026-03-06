@@ -76,6 +76,14 @@ describe("Session entry serialization roundtrip", () => {
         timestamp: "2026-02-25T10:00:02.000Z",
         name: "Test session",
       },
+      {
+        type: "effort_change",
+        id: "a4",
+        parentId: "a3",
+        timestamp: "2026-02-25T10:00:03.000Z",
+        effort: "medium",
+        changedBy: "command",
+      },
     ];
     for (const entry of entries) {
       expect(JSON.parse(JSON.stringify(entry))).toEqual(entry);

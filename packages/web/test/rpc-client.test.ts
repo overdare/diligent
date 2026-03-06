@@ -26,6 +26,7 @@ class FakeWebSocket {
           type: "connected",
           cwd: process.cwd(),
           mode: "default",
+          effort: "medium",
           serverVersion: "test",
         }),
       });
@@ -110,6 +111,7 @@ test("retries when initial websocket open fails", async () => {
             type: "connected",
             cwd: process.cwd(),
             mode: "default",
+            effort: "medium",
             serverVersion: "test",
           }),
         });

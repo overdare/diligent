@@ -183,7 +183,7 @@ export function App() {
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
-  const [effort, setEffortState] = useState<ThinkingEffort>("high");
+  const [effort, setEffortState] = useState<ThinkingEffort>("medium");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
@@ -227,6 +227,7 @@ export function App() {
 
     rpc.onConnected(async (meta) => {
       setCwd(meta.cwd);
+      setEffortState(meta.effort);
       adapterRef.current.reset();
       // Sync model + available models into refs immediately so applySessionModel can use them
       providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels);
@@ -247,6 +248,7 @@ export function App() {
               threadId: resumed.threadId,
             });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
             await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
@@ -263,6 +265,7 @@ export function App() {
               threadId: resumed.threadId,
             });
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
+            setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
             await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
             await refreshThreadList(rpc);
@@ -278,6 +281,7 @@ export function App() {
             threadId: mostRecent.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
+          setEffortState(history.currentEffort);
           replaceThreadUrl(mostRecent.threadId);
           await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
           await refreshThreadList(rpc);
@@ -291,6 +295,7 @@ export function App() {
         });
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
+        setEffortState(history.currentEffort);
         replaceThreadUrl(started.threadId);
         await refreshThreadList(rpc);
       } catch (error) {
@@ -383,6 +388,7 @@ export function App() {
       });
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
+      setEffortState(history.currentEffort);
       pushThreadUrl(started.threadId);
       serverRequests.activateThread(started.threadId);
       await refreshThreadList(rpc);
@@ -403,6 +409,7 @@ export function App() {
         const resumedId = resumed.threadId;
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
         dispatch({ type: "hydrate", payload: { threadId: resumedId, mode: state.mode, history } });
+        setEffortState(history.currentEffort);
         pushThreadUrl(resumedId);
         await refreshThreadList(rpc);
         await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
@@ -537,6 +544,7 @@ export function App() {
             threadId: resumed.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
+          setEffortState(history.currentEffort);
           replaceThreadUrl(resumed.threadId);
         } else {
           const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
@@ -547,6 +555,7 @@ export function App() {
             threadId: started.threadId,
           });
           dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
+          setEffortState(history.currentEffort);
           replaceThreadUrl(started.threadId);
         }
       }

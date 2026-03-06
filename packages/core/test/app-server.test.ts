@@ -1,6 +1,6 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import type { DiligentServerNotification } from "@diligent/protocol";
@@ -217,6 +217,153 @@ describe("DiligentAppServer", () => {
     ]);
   });
 
+  it("restores thread effort from resumed sessions and uses it for new threads", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        effort,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const started = await server.handleRequest({ id: 120, method: "thread/start", params: { cwd: projectRoot } });
+    const originalThreadId = (readResult(started) as { threadId: string }).threadId;
+
+    const initialRead = await server.handleRequest({
+      id: 121,
+      method: "thread/read",
+      params: { threadId: originalThreadId },
+    });
+    expect((readResult(initialRead) as { currentEffort: string }).currentEffort).toBe("medium");
+
+    await server.handleRequest({
+      id: 122,
+      method: "effort/set",
+      params: { threadId: originalThreadId, effort: "max" },
+    });
+
+    let resolveTurnCompleted: (() => void) | null = null;
+    const turnCompleted = new Promise<void>((resolve) => {
+      resolveTurnCompleted = resolve;
+    });
+    server.setNotificationListener((notification) => {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+        resolveTurnCompleted?.();
+      }
+    });
+
+    await server.handleRequest({
+      id: 123,
+      method: "turn/start",
+      params: { threadId: originalThreadId, message: "remember this effort" },
+    });
+    await turnCompleted;
+
+    const resumedServer = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      cwd: projectRoot,
+      buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        effort,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const resumed = await resumedServer.handleRequest({
+      id: 124,
+      method: "thread/resume",
+      params: { threadId: originalThreadId },
+    });
+    expect((readResult(resumed) as { found: boolean }).found).toBe(true);
+
+    const resumedRead = await resumedServer.handleRequest({
+      id: 125,
+      method: "thread/read",
+      params: { threadId: originalThreadId },
+    });
+    expect((readResult(resumedRead) as { currentEffort: string }).currentEffort).toBe("max");
+
+    const newThread = await resumedServer.handleRequest({
+      id: 126,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const newThreadId = (readResult(newThread) as { threadId: string }).threadId;
+    const newThreadRead = await resumedServer.handleRequest({
+      id: 127,
+      method: "thread/read",
+      params: { threadId: newThreadId },
+    });
+    expect((readResult(newThreadRead) as { currentEffort: string }).currentEffort).toBe("max");
+  });
+
   it("uses image fallback preview in thread list cache when first turn is image-only", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
@@ -402,6 +549,92 @@ describe("DiligentAppServer", () => {
     // abortRequested causes a normal (non-throwing) loop exit → TURN_COMPLETED, not TURN_INTERRUPTED
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(false);
+  });
+
+  it("adds thread and turn ids to AgentLoop debug logs", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const originalLog = console.log;
+    const logSpy = mock(() => {});
+    console.log = logSpy as typeof console.log;
+
+    try {
+      const server = new DiligentAppServer({
+        resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+        buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+          model: {
+            id: "fake-model",
+            provider: "fake",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+          },
+          systemPrompt: [{ label: "base", content: "test" }],
+          tools: [],
+          mode,
+          signal,
+          approve,
+          ask,
+          streamFunction: () => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({ type: "text_delta", delta: "hello" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "hello" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+
+            return stream as never;
+          },
+        }),
+      });
+
+      let completedTurnId: string | undefined;
+      const turnDone = new Promise<void>((resolve) => {
+        server.setNotificationListener((notification) => {
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
+            completedTurnId = notification.params.turnId;
+          }
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+            resolve();
+          }
+        });
+      });
+
+      const start = await server.handleRequest({
+        id: 30,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const startResult = readResult(start) as { threadId: string };
+
+      await server.handleRequest({
+        id: 31,
+        method: "turn/start",
+        params: { threadId: startResult.threadId, message: "hi" },
+      });
+
+      await turnDone;
+
+      const call = logSpy.mock.calls.find((args) => args[0] === "[AgentLoop]%s Sending %d messages to %s, last 5: %s");
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe(` thread=${startResult.threadId} turn=${completedTurnId}`);
+    } finally {
+      console.log = originalLog;
+    }
   });
 
   it("rebinds collab handler when registry instance changes between turns", async () => {

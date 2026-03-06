@@ -132,7 +132,7 @@ export class RpcBridge {
       ws,
       cwd: this.cwd,
       mode: this.initialMode,
-      effort: "high",
+      effort: "medium",
       currentThreadId: null,
     };
 
@@ -142,6 +142,7 @@ export class RpcBridge {
       type: "connected",
       cwd: this.cwd,
       mode: this.initialMode,
+      effort: session.effort,
       serverVersion: DILIGENT_VERSION,
       currentModel: this.currentModelId,
       availableModels: this.modelConfig.getAvailableModels(),
@@ -457,6 +458,13 @@ export class RpcBridge {
           this.removeAllSubscriptionsForSession(session.id);
           session.currentThreadId = resumed.threadId;
           this.addSubscription(resumed.threadId, session.id);
+        }
+      }
+
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ && "result" in response) {
+        const currentEffort = (response.result as { currentEffort?: ThinkingEffort }).currentEffort;
+        if (currentEffort) {
+          session.effort = currentEffort;
         }
       }
 

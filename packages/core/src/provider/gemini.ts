@@ -33,7 +33,7 @@ export function createGeminiStream(apiKey: string, baseUrl?: string): StreamFunc
 
     (async () => {
       try {
-        const effort = options.effort ?? "high";
+        const effort = options.effort ?? "medium";
         const defaultBudgets = { low: 2_048, medium: 8_192, high: 16_384, max: 24_576 };
         const budgetTokens = model.supportsThinking
           ? (model.thinkingBudgets?.[effort] ?? defaultBudgets[effort])

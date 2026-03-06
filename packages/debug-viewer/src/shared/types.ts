@@ -116,6 +116,15 @@ export interface ModeChangeEntry {
   timestamp: number;
 }
 
+export interface EffortChangeEntry {
+  id: string;
+  parentId?: string;
+  type: "effort_change";
+  effort: string;
+  changedBy: string;
+  timestamp: number;
+}
+
 export interface SteeringEntry {
   id: string;
   parentId?: string;
@@ -134,6 +143,7 @@ export type SessionEntry =
   | ModelChangeEntry
   | SessionInfoEntry
   | ModeChangeEntry
+  | EffortChangeEntry
   | SteeringEntry;
 
 // Knowledge (D081)

@@ -45,6 +45,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
 
+        const effort = options.effort ?? "medium";
         const useReasoning = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);
 
         // Responses API format body
@@ -64,7 +65,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           body.max_output_tokens = options.maxTokens;
         }
         if (useReasoning) {
-          body.reasoning = { effort: "high", summary: "auto" };
+          body.reasoning = { effort: effort === "max" ? "high" : effort, summary: "auto" };
           body.include = ["reasoning.encrypted_content"];
         }
 

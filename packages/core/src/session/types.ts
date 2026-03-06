@@ -1,8 +1,9 @@
 import type { ModeKind } from "../agent/types";
+import type { ThinkingEffort } from "../provider/types";
 import type { Message } from "../types";
 
 /** Session file format version. Increment when entry schema changes. */
-export const SESSION_VERSION = 5;
+export const SESSION_VERSION = 6;
 
 /** Unique entry ID — 8-char hex */
 export function generateEntryId(): string {
@@ -84,12 +85,23 @@ export interface ModeChangeEntry {
   changedBy: "cli" | "command" | "config";
 }
 
+export interface EffortChangeEntry {
+  type: "effort_change";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  effort: ThinkingEffort;
+  /** Who triggered the change */
+  changedBy: "cli" | "command" | "config";
+}
+
 export type SessionEntry =
   | SessionMessageEntry
   | ModelChangeEntry
   | SessionInfoEntry
   | CompactionEntry
-  | ModeChangeEntry;
+  | ModeChangeEntry
+  | EffortChangeEntry;
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;

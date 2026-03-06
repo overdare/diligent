@@ -24,8 +24,9 @@ import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
+import { buildSessionContext } from "../session/context-builder";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import { deleteSession, listSessions, readChildSessions } from "../session/persistence";
+import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
 import { agentEventToNotification } from "./event-mapper";
@@ -58,6 +59,7 @@ interface ThreadRuntime {
   effort: ThinkingEffort;
   manager: SessionManager;
   abortController: AbortController | null;
+  currentTurnId: string | null;
   isRunning: boolean;
   registry?: AgentRegistry;
 }
@@ -174,7 +176,8 @@ export class DiligentAppServer {
   private async handleThreadStart(params: { cwd: string; mode?: Mode }): Promise<{ threadId: string }> {
     const mode = params.mode ?? "default";
     const tempId = generateSessionId();
-    const runtime = await this.createThreadRuntime(tempId, params.cwd, mode, true);
+    const effort = await this.getLatestEffortForCwd(params.cwd);
+    const runtime = await this.createThreadRuntime(tempId, params.cwd, mode, true, effort);
     // Use manager's sessionId as canonical threadId so it matches on resume
     const threadId = runtime.manager.sessionId;
     runtime.id = threadId;
@@ -221,7 +224,13 @@ export class DiligentAppServer {
 
     for (const cwd of candidateCwds) {
       const placeholderId = params.threadId ?? generateSessionId();
-      const runtime = await this.createThreadRuntime(placeholderId, cwd, "default", false);
+      const runtime = await this.createThreadRuntime(
+        placeholderId,
+        cwd,
+        "default",
+        false,
+        await this.getLatestEffortForCwd(cwd),
+      );
 
       const resumed = await runtime.manager.resume({
         sessionId: params.threadId,
@@ -235,6 +244,7 @@ export class DiligentAppServer {
       runtime.id = threadId;
 
       const context = runtime.manager.getContext();
+      runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
       this.threads.set(threadId, runtime);
       this.activeThreadId = threadId;
 
@@ -291,6 +301,7 @@ export class DiligentAppServer {
     hasFollowUp: boolean;
     entryCount: number;
     isRunning: boolean;
+    currentEffort: ThinkingEffort;
   }> {
     const runtime = await this.resolveThreadRuntime(threadId);
     const paths = await this.config.resolvePaths(runtime.cwd);
@@ -305,6 +316,7 @@ export class DiligentAppServer {
       hasFollowUp: runtime.manager.hasPendingMessages(),
       entryCount: runtime.manager.entryCount,
       isRunning: runtime.isRunning,
+      currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
     };
   }
 
@@ -315,6 +327,7 @@ export class DiligentAppServer {
     runtime.abortController = new AbortController();
     runtime.isRunning = true;
     const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
+    runtime.currentTurnId = turnId;
 
     await this.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
@@ -412,6 +425,7 @@ export class DiligentAppServer {
   ): Promise<{ effort: ThinkingEffort }> {
     const runtime = await this.resolveThreadRuntime(threadId);
     runtime.effort = effort;
+    runtime.manager.appendEffortChange(effort, "command");
     return { effort };
   }
 
@@ -525,6 +539,7 @@ export class DiligentAppServer {
         // The abort signal prevents runSession from doing meaningful work,
         // so the zombie-loop risk is negligible.
         runtime.abortController = null;
+        runtime.currentTurnId = null;
         runtime.isRunning = false;
         console.log("[AppServer] consumeStream: thread %s now idle (aborted)", runtime.id);
         await this.emit({
@@ -537,6 +552,7 @@ export class DiligentAppServer {
         // Normal path: wait for innerWork before clearing state
         await stream.waitForInnerWork(undefined).catch(() => {});
         runtime.abortController = null;
+        runtime.currentTurnId = null;
         runtime.isRunning = false;
         console.log("[AppServer] consumeStream: thread %s now idle (normal)", runtime.id);
         await this.emit({
@@ -566,7 +582,7 @@ export class DiligentAppServer {
     cwd: string,
     mode: Mode,
     createNew: boolean,
-    effort: ThinkingEffort = "high",
+    effort: ThinkingEffort = "medium",
   ): Promise<ThreadRuntime> {
     const runtime: ThreadRuntime = {
       id: threadId,
@@ -575,6 +591,7 @@ export class DiligentAppServer {
       effort,
       manager: null as unknown as SessionManager,
       abortController: null,
+      currentTurnId: null,
       isRunning: false,
     };
 
@@ -593,6 +610,8 @@ export class DiligentAppServer {
           ask: (request) => this.requestUserInput(runtime.id, request),
           getSessionId: () => runtime.manager.sessionId,
         });
+        result.debugThreadId = runtime.id;
+        result.debugTurnId = runtime.currentTurnId ?? undefined;
         if (result.registry) {
           runtime.registry = result.registry;
           // Restore thread IDs from session history so collab tools work after server restart
@@ -625,16 +644,76 @@ export class DiligentAppServer {
     }
 
     for (const cwd of this.knownCwds) {
-      const runtime = await this.createThreadRuntime(id, cwd, "default", false);
+      const runtime = await this.createThreadRuntime(id, cwd, "default", false, await this.getLatestEffortForCwd(cwd));
       const resumed = await runtime.manager.resume({ sessionId: id });
       if (!resumed) continue;
 
+      runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
       this.threads.set(id, runtime);
       this.activeThreadId = id;
       return runtime;
     }
 
     throw new Error(`Thread not found: ${id}`);
+  }
+
+  private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
+    const candidates = new Map<string, SessionSummary>();
+
+    for (const summary of this.threadSummaryCache.values()) {
+      if (summary.cwd === cwd) {
+        candidates.set(summary.id, summary);
+      }
+    }
+
+    const paths = await this.config.resolvePaths(cwd);
+    const sessions = await listSessions(paths.sessions);
+    for (const session of sessions) {
+      const summary: SessionSummary = {
+        id: session.id,
+        path: session.path,
+        cwd: session.cwd,
+        name: session.name,
+        created: session.created.toISOString(),
+        modified: session.modified.toISOString(),
+        messageCount: session.messageCount,
+        firstUserMessage: session.firstUserMessage,
+        parentSession: session.parentSession,
+      };
+      this.threadSummaryCache.set(session.id, summary);
+      if (session.cwd === cwd) {
+        candidates.set(session.id, summary);
+      }
+    }
+
+    const ordered = Array.from(candidates.values()).sort(
+      (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime(),
+    );
+
+    for (const summary of ordered) {
+      const runtime = this.threads.get(summary.id);
+      const runtimeEffort = runtime?.manager.getCurrentEffort() ?? runtime?.effort;
+      if (runtimeEffort) {
+        return runtimeEffort;
+      }
+
+      if (!summary.path) {
+        continue;
+      }
+
+      try {
+        const { entries } = await readSessionFile(summary.path);
+        const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+        const effort = buildSessionContext(entries, leafId).currentEffort;
+        if (effort) {
+          return effort;
+        }
+      } catch {
+        // Ignore unreadable session files and continue to older candidates.
+      }
+    }
+
+    return "medium";
   }
 
   private async requestApproval(threadId: string, request: ApprovalRequest): Promise<ApprovalResponse> {

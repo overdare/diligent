@@ -232,6 +232,7 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
     hasFollowUp: false,
     entryCount: 1,
     isRunning: false,
+    currentEffort: "medium",
   });
 
   const user = hydrated.items.find((item) => item.kind === "user");
@@ -260,6 +261,7 @@ test("hydrateFromThreadRead converts persisted local images to browser-safe rout
     hasFollowUp: false,
     entryCount: 1,
     isRunning: false,
+    currentEffort: "medium",
   });
 
   const user = hydrated.items.find((item) => item.kind === "user");
@@ -297,6 +299,7 @@ test("hydrateFromThreadRead restores tool_call input and merges matching tool_re
     ],
     hasFollowUp: false,
     entryCount: 2,
+    currentEffort: "medium",
   });
 
   const tool = hydrated.items.find((item) => item.kind === "tool" && item.toolCallId === "tc-read-1");
@@ -319,6 +322,7 @@ test("hydrateFromThreadRead keeps tool_result even without prior tool_call block
     ],
     hasFollowUp: false,
     entryCount: 1,
+    currentEffort: "medium",
   });
 
   const tool = hydrated.items.find((item) => item.kind === "tool" && item.toolCallId === "tc-ls-1");
@@ -367,6 +371,7 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
     isRunning: true,
     hasFollowUp: false,
     entryCount: 2,
+    currentEffort: "medium",
   });
 
   const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
@@ -449,6 +454,7 @@ test("hydrateFromThreadRead shows wait-derived final status on spawn item", () =
     isRunning: true,
     hasFollowUp: false,
     entryCount: 4,
+    currentEffort: "medium",
   });
 
   const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
@@ -526,6 +532,7 @@ test("hydrateFromThreadRead shows close-derived final status on spawn item", () 
     isRunning: false,
     hasFollowUp: false,
     entryCount: 4,
+    currentEffort: "medium",
   });
 
   const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
@@ -876,6 +883,7 @@ test("hydrateFromThreadRead keeps sub-agent running until wait/close settles sta
     isRunning: false,
     hasFollowUp: false,
     entryCount: 2,
+    currentEffort: "medium",
   });
 
   const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");

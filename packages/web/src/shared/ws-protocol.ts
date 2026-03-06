@@ -7,6 +7,7 @@ import type {
   JSONRPCResponse,
   Mode,
   ModelInfo,
+  ThinkingEffort,
 } from "@diligent/protocol";
 export type { ModelInfo };
 
@@ -49,6 +50,7 @@ export type ConnectedMessage = {
   type: "connected";
   cwd: string;
   mode: Mode;
+  effort: ThinkingEffort;
   serverVersion: string;
   currentModel: string | undefined;
   availableModels: ModelInfo[];
