@@ -221,10 +221,9 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
           { type: "text", text: "What is in this screenshot?" },
           {
             type: "local_image",
-            path: "/tmp/shot.png",
+            path: "/repo/.diligent/images/thread-1/shot.png",
             mediaType: "image/png",
             fileName: "shot.png",
-            previewUrl: "blob:shot",
           },
         ],
         timestamp: 100,
@@ -238,7 +237,7 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
   const user = hydrated.items.find((item) => item.kind === "user");
   expect(user && user.kind === "user" ? user.text : "").toBe("What is in this screenshot?");
   expect(user && user.kind === "user" ? user.images : []).toEqual([
-    { url: "blob:shot", fileName: "shot.png", mediaType: "image/png" },
+    { url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`, fileName: "shot.png", mediaType: "image/png" },
   ]);
 });
 

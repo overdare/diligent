@@ -42,7 +42,6 @@ export const LocalImageBlockSchema = z.object({
   path: z.string(),
   mediaType: z.string(),
   fileName: z.string().optional(),
-  previewUrl: z.string().optional(),
 });
 export type LocalImageBlock = z.infer<typeof LocalImageBlockSchema>;
 

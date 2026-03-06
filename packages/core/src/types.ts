@@ -16,7 +16,6 @@ export interface LocalImageBlock {
   path: string;
   mediaType: string;
   fileName?: string;
-  previewUrl?: string;
 }
 
 export interface ThinkingBlock {

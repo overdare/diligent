@@ -40,7 +40,6 @@ describe("protocol/flow", () => {
               path: "/tmp/shot.png",
               mediaType: "image/png",
               fileName: "shot.png",
-              previewUrl: "blob:shot",
             },
           ],
           content: [{ type: "local_image", path: "/tmp/shot.png", mediaType: "image/png", fileName: "shot.png" }],

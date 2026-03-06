@@ -95,7 +95,6 @@ export const TurnAttachmentSchema = z.object({
   path: z.string(),
   mediaType: z.string(),
   fileName: z.string().optional(),
-  previewUrl: z.string().optional(),
 });
 export type TurnAttachment = z.infer<typeof TurnAttachmentSchema>;
 

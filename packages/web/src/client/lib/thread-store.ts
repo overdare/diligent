@@ -187,8 +187,8 @@ function extractUserTextAndImages(content: unknown): {
       textParts.push((block as { text: string }).text);
     }
     if (block.type === "local_image") {
-      const b = block as { previewUrl?: string; path: string; fileName?: string; mediaType?: string };
-      images.push({ url: b.previewUrl ?? toWebImageUrl(b.path), fileName: b.fileName, mediaType: b.mediaType });
+      const b = block as { path: string; fileName?: string; mediaType?: string };
+      images.push({ url: toWebImageUrl(b.path), fileName: b.fileName, mediaType: b.mediaType });
     }
   }
 

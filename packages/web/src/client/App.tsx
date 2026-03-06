@@ -20,7 +20,6 @@ import {
   DILIGENT_WEB_REQUEST_METHODS,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { toWebImageUrl } from "../shared/image-routes";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
@@ -43,7 +42,7 @@ import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
 
-type PendingImage = LocalImageBlock & { webUrl?: string };
+type PendingImage = LocalImageBlock & { webUrl: string };
 
 type AppAction =
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
@@ -85,7 +84,7 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
       kind: "user",
       text,
       images: action.payload.images.map((image) => ({
-        url: image.previewUrl ?? image.webUrl ?? toWebImageUrl(image.path),
+        url: image.webUrl,
         fileName: image.fileName,
         mediaType: image.mediaType,
       })),
@@ -626,14 +625,11 @@ export function App() {
           dataBase64,
         });
         const attachment = result.attachment as ImageUploadAttachment;
-        uploaded.push({ ...attachment, previewUrl: URL.createObjectURL(file) });
+        uploaded.push(attachment);
       }
 
       setPendingImages((prev) => [...prev, ...uploaded]);
     } catch (error) {
-      for (const image of uploaded) {
-        if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
-      }
       dispatch({ type: "show_info_toast", payload: "Failed to upload images." });
       console.error(error);
     } finally {
@@ -642,11 +638,7 @@ export function App() {
   };
 
   const handleRemovePendingImage = (path: string) => {
-    setPendingImages((prev) => {
-      const found = prev.find((image) => image.path === path);
-      if (found?.previewUrl) URL.revokeObjectURL(found.previewUrl);
-      return prev.filter((image) => image.path !== path);
-    });
+    setPendingImages((prev) => prev.filter((image) => image.path !== path));
   };
 
   const threadTitle = useMemo(() => {
@@ -754,7 +746,7 @@ export function App() {
             supportsVision={supportsVision}
             pendingImages={pendingImages.map((image) => ({
               path: image.path,
-              url: image.previewUrl ?? image.webUrl ?? toWebImageUrl(image.path),
+              url: image.webUrl,
               fileName: image.fileName,
             }))}
             isUploadingImages={isUploadingImages}
