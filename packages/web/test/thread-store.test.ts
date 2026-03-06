@@ -728,6 +728,53 @@ test("child tool_update streams into collab spawn item childTools", () => {
   expect(afterEnd && afterEnd.kind === "collab" ? afterEnd.childTools[0].outputText : "").toBe("file1.ts\nfile2.ts\n");
 });
 
+test("collab_spawn_end updates same spawn item to errored status", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-err-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "read 3 markdown files",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Broom",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Broom",
+      status: "errored",
+      message: "400 The requested model 'codex-mini-latest' does not exist.",
+    },
+  });
+
+  const collabItems = state.items.filter((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(collabItems.length).toBe(1);
+  const spawn = collabItems[0];
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("errored");
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toContain("does not exist");
+});
+
 test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

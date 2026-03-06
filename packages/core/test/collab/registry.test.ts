@@ -1,5 +1,6 @@
 // @summary Tests for AgentRegistry: spawn, maxAgents, status tracking, shutdownAll
 import { describe, expect, it } from "bun:test";
+import type { AgentEvent } from "../../src/agent/types";
 import { AgentRegistry } from "../../src/collab/registry";
 import { isFinal } from "../../src/collab/types";
 import type { SessionManagerConfig } from "../../src/session/manager";
@@ -183,5 +184,29 @@ describe("AgentRegistry", () => {
     );
     registry.spawn({ prompt: "test", description: "", agentType: "general" });
     expect(capturedConfig?.parentSession).toBe("parent-xyz");
+  });
+
+  it("emits immediate errored spawn_end when child fails before wait", async () => {
+    const events: AgentEvent[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        onCollabEvent: (event) => events.push(event),
+        sessionManagerFactory: makeMockSessionManagerFactory(new Error("model not found")),
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+
+    const { status } = await registry.wait([threadId], 5000);
+    expect(status[threadId]?.kind).toBe("errored");
+
+    const spawnEndErrored = events.find(
+      (event) =>
+        event.type === "collab_spawn_end" &&
+        event.childThreadId === threadId &&
+        event.status === "errored" &&
+        event.message?.includes("model not found"),
+    );
+    expect(spawnEndErrored).toBeDefined();
   });
 });

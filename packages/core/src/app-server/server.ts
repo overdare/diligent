@@ -430,18 +430,20 @@ export class DiligentAppServer {
     turnId: string,
   ): Promise<void> {
     // Wire collab events from the registry into the notification stream.
-    // NOTE: runtime.registry is set lazily inside buildAgentConfig (called by
-    // SessionManager on the first run). At this point it may still be undefined.
-    // We wire the handler eagerly if available, and also check on each event in
-    // the loop below so we catch the registry once it becomes available.
-    let collabHandlerWired = false;
+    // NOTE: runtime.registry may be replaced on each resolveAgentConfig() call,
+    // because tool assembly can create a fresh AgentRegistry per iteration.
+    // Re-bind whenever the registry instance changes so child collab events
+    // are not dropped mid-turn.
+    let wiredRegistry: AgentRegistry | undefined;
+    const collabEventHandler = (event: AgentEvent) => {
+      void this.emitFromAgentEvent(runtime.id, turnId, event);
+    };
     const wireCollabHandler = () => {
-      if (!collabHandlerWired && runtime.registry) {
-        runtime.registry.setCollabEventHandler((event) => {
-          void this.emitFromAgentEvent(runtime.id, turnId, event);
-        });
-        collabHandlerWired = true;
-      }
+      const currentRegistry = runtime.registry;
+      if (!currentRegistry || currentRegistry === wiredRegistry) return;
+      wiredRegistry?.setCollabEventHandler(undefined);
+      currentRegistry.setCollabEventHandler(collabEventHandler);
+      wiredRegistry = currentRegistry;
     };
     wireCollabHandler();
 
@@ -485,8 +487,8 @@ export class DiligentAppServer {
         });
       }
     } finally {
-      // Disconnect collab event handler
-      runtime.registry?.setCollabEventHandler(undefined);
+      // Disconnect collab event handler from the last wired registry instance.
+      wiredRegistry?.setCollabEventHandler(undefined);
 
       if (wasAborted) {
         // Abort path: release the thread immediately so new turns can start.

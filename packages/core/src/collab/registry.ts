@@ -147,6 +147,19 @@ export class AgentRegistry {
     };
 
     // Background promise — always resolves, never rejects
+    const emitErroredSpawnEnd = (message: string): void => {
+      this.emit({
+        type: "collab_spawn_end",
+        callId,
+        childThreadId: threadId,
+        nickname,
+        description: params.description || undefined,
+        prompt: params.prompt,
+        status: "errored",
+        message,
+      });
+    };
+
     const promise = (async (): Promise<AgentStatus> => {
       entry.status = { kind: "running" };
 
@@ -203,6 +216,7 @@ export class AgentRegistry {
           await childManager.waitForWrites();
           const status: AgentStatus = { kind: "errored", error: event.error.message };
           entry.status = status;
+          emitErroredSpawnEnd(event.error.message);
           return status;
         }
       }
@@ -212,8 +226,10 @@ export class AgentRegistry {
       entry.status = status;
       return status;
     })().catch((err: unknown): AgentStatus => {
-      const status: AgentStatus = { kind: "errored", error: String(err) };
+      const message = String(err);
+      const status: AgentStatus = { kind: "errored", error: message };
       entry.status = status;
+      emitErroredSpawnEnd(message);
       return status;
     });
 
