@@ -4,6 +4,7 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
+  ImageUploadAttachment,
   LocalImageBlock,
   Mode,
   SessionSummary,
@@ -19,6 +20,7 @@ import {
   DILIGENT_WEB_REQUEST_METHODS,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { toWebImageUrl } from "../shared/image-routes";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { MessageList } from "./components/MessageList";
@@ -41,12 +43,14 @@ import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
 
+type PendingImage = LocalImageBlock & { webUrl?: string };
+
 type AppAction =
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
-  | { type: "local_user"; payload: { text: string; images: LocalImageBlock[] } }
+  | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
   | { type: "local_steer"; payload: string }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
@@ -81,7 +85,7 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
       kind: "user",
       text,
       images: action.payload.images.map((image) => ({
-        url: image.previewUrl ?? image.path,
+        url: image.previewUrl ?? image.webUrl ?? toWebImageUrl(image.path),
         fileName: image.fileName,
         mediaType: image.mediaType,
       })),
@@ -178,7 +182,8 @@ export function App() {
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
   const [input, setInput] = useState("");
-  const [pendingImages, setPendingImages] = useState<LocalImageBlock[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("high");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
@@ -453,7 +458,7 @@ export function App() {
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
-  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !isBusy;
+  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
   const canSteer = input.trim().length > 0 && isBusy;
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
   const supportsVision = currentModelInfo?.supportsVision === true;
@@ -586,7 +591,7 @@ export function App() {
 
   const handleAddImages = async (files: FileList | File[]): Promise<void> => {
     const rpc = rpcRef.current;
-    if (!rpc) return;
+    if (!rpc || isUploadingImages) return;
 
     const list = Array.from(files);
     if (pendingImages.length + list.length > 4) {
@@ -599,29 +604,41 @@ export function App() {
     }
 
     const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-    const uploaded: LocalImageBlock[] = [];
+    const uploaded: PendingImage[] = [];
 
-    for (const file of list) {
-      if (!allowedTypes.has(file.type)) {
-        dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${file.name}` });
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${file.name}` });
-        return;
+    setIsUploadingImages(true);
+    try {
+      for (const file of list) {
+        if (!allowedTypes.has(file.type)) {
+          dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${file.name}` });
+          return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${file.name}` });
+          return;
+        }
+
+        const dataBase64 = await fileToBase64(file);
+        const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
+          threadId: state.activeThreadId ?? undefined,
+          fileName: file.name,
+          mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+          dataBase64,
+        });
+        const attachment = result.attachment as ImageUploadAttachment;
+        uploaded.push({ ...attachment, previewUrl: URL.createObjectURL(file) });
       }
 
-      const dataBase64 = await fileToBase64(file);
-      const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
-        threadId: state.activeThreadId ?? undefined,
-        fileName: file.name,
-        mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
-        dataBase64,
-      });
-      uploaded.push({ ...result.attachment, previewUrl: URL.createObjectURL(file) });
+      setPendingImages((prev) => [...prev, ...uploaded]);
+    } catch (error) {
+      for (const image of uploaded) {
+        if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
+      }
+      dispatch({ type: "show_info_toast", payload: "Failed to upload images." });
+      console.error(error);
+    } finally {
+      setIsUploadingImages(false);
     }
-
-    setPendingImages((prev) => [...prev, ...uploaded]);
   };
 
   const handleRemovePendingImage = (path: string) => {
@@ -737,9 +754,10 @@ export function App() {
             supportsVision={supportsVision}
             pendingImages={pendingImages.map((image) => ({
               path: image.path,
-              url: image.previewUrl ?? image.path,
+              url: image.previewUrl ?? image.webUrl ?? toWebImageUrl(image.path),
               fileName: image.fileName,
             }))}
+            isUploadingImages={isUploadingImages}
             onAddImages={(files) => void handleAddImages(files)}
             onRemoveImage={handleRemovePendingImage}
           />

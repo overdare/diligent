@@ -82,6 +82,7 @@ test("input dock renders pending image preview and add-images action", () => {
       onOpenProviders={() => {}}
       supportsVision={true}
       pendingImages={[{ path: "/tmp/shot.png", url: "blob:shot", fileName: "shot.png" }]}
+      isUploadingImages={false}
       onAddImages={() => {}}
       onRemoveImage={() => {}}
     />,
@@ -90,4 +91,48 @@ test("input dock renders pending image preview and add-images action", () => {
   expect(html).toContain('src="blob:shot"');
   expect(html).toContain('accept="image/png,image/jpeg,image/webp,image/gif"');
   expect(html).toContain('placeholder="Ask anything or attach images…"');
+});
+
+test("input dock shows uploading state and disables send affordance", () => {
+  const html = renderToStaticMarkup(
+    <InputDock
+      input="Describe this"
+      onInputChange={() => {}}
+      onSend={() => {}}
+      onSteer={() => {}}
+      onInterrupt={() => {}}
+      onCompactionClick={() => {}}
+      canSend={false}
+      canSteer={false}
+      threadStatus="idle"
+      mode="default"
+      onModeChange={() => {}}
+      effort="high"
+      onEffortChange={() => {}}
+      currentModel="claude-sonnet-4-6"
+      availableModels={[
+        {
+          id: "claude-sonnet-4-6",
+          provider: "anthropic",
+          contextWindow: 200000,
+          maxOutputTokens: 16384,
+          supportsVision: true,
+        },
+      ]}
+      onModelChange={() => {}}
+      usage={{ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0 }}
+      currentContextTokens={0}
+      contextWindow={200000}
+      hasProvider={true}
+      onOpenProviders={() => {}}
+      supportsVision={true}
+      pendingImages={[]}
+      isUploadingImages={true}
+      onAddImages={() => {}}
+      onRemoveImage={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Uploading images…");
+  expect(html).toContain("disabled");
 });

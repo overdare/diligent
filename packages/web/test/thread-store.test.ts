@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { hydrateFromThreadRead, initialThreadState, reduceServerNotification } from "../src/client/lib/thread-store";
+import { WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
 function reduce(state: typeof initialThreadState, notification: DiligentServerNotification) {
   const adapter = adapterInstance;
@@ -238,6 +239,37 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
   expect(user && user.kind === "user" ? user.text : "").toBe("What is in this screenshot?");
   expect(user && user.kind === "user" ? user.images : []).toEqual([
     { url: "blob:shot", fileName: "shot.png", mediaType: "image/png" },
+  ]);
+});
+
+test("hydrateFromThreadRead converts persisted local images to browser-safe route URLs", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "local_image",
+            path: "/repo/.diligent/images/thread-1/shot 1.png",
+            mediaType: "image/png",
+            fileName: "shot 1.png",
+          },
+        ],
+        timestamp: 101,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+  });
+
+  const user = hydrated.items.find((item) => item.kind === "user");
+  expect(user && user.kind === "user" ? user.images : []).toEqual([
+    {
+      url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot%201.png`,
+      fileName: "shot 1.png",
+      mediaType: "image/png",
+    },
   ]);
 });
 

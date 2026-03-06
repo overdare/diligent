@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DiligentServerRequest } from "@diligent/protocol";
 import { RpcBridge } from "../src/server/rpc-bridge";
+import { WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
 type NotificationListener = (notification: import("@diligent/protocol").DiligentServerNotification) => void;
 type ServerRequestHandler = (
@@ -366,13 +367,18 @@ describe("RpcBridge multi-subscriber", () => {
           (entry as { type?: string; response?: { id?: number } }).type === "rpc_response" &&
           (entry as { response: { id: number } }).response.id === 50,
       ) as {
-        response: { result: { attachment: { type: string; path: string; mediaType: string; fileName: string } } };
+        response: {
+          result: {
+            attachment: { type: string; path: string; mediaType: string; fileName: string; webUrl: string };
+          };
+        };
       };
 
       expect(response.response.result.attachment.type).toBe("local_image");
       expect(response.response.result.attachment.mediaType).toBe("image/png");
       expect(response.response.result.attachment.fileName).toBe("screen.png");
       expect(response.response.result.attachment.path).toContain(".diligent/images/thread1/");
+      expect(response.response.result.attachment.webUrl).toContain(`${WEB_IMAGE_ROUTE_PREFIX}thread1/`);
       expect(await Bun.file(response.response.result.attachment.path).text()).toBe("png-bytes");
     } finally {
       await rm(projectRoot, { recursive: true, force: true });

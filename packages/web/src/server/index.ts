@@ -1,5 +1,5 @@
-// @summary Bun server entrypoint for Web CLI with /rpc WebSocket and static file hosting
-import { existsSync } from "node:fs";
+// @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type AgentRegistry,
@@ -13,6 +13,7 @@ import {
   type PROVIDER_NAMES,
   resolveModel,
 } from "@diligent/core";
+import { decodeWebImageRelativePath, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
 import { RpcBridge, type RpcWsData } from "./rpc-bridge";
 import { buildTools } from "./tools";
 
@@ -124,6 +125,20 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         return Response.json({ ok: true });
       }
 
+      if (url.pathname.startsWith(WEB_IMAGE_ROUTE_PREFIX)) {
+        const image = resolvePersistedImage(url.pathname, paths);
+        if (!image) {
+          return new Response("Not found", { status: 404 });
+        }
+        return new Response(Bun.file(image.path), {
+          headers: {
+            "Content-Type": image.mediaType,
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+
       if (!dev && hasDist) {
         let filePath = join(distDir, url.pathname === "/" ? "index.html" : url.pathname);
         if (!existsSync(filePath)) {
@@ -169,6 +184,56 @@ function resolveDistDir(): string {
   if (existsSync(candidate)) return candidate;
   // Dev fallback: relative to source file
   return resolve(import.meta.dir, "../../dist/client");
+}
+
+function resolvePersistedImage(pathname: string, paths: DiligentPaths): { path: string; mediaType: string } | null {
+  const relativePath = decodeWebImageRelativePath(pathname);
+  if (!relativePath) {
+    return null;
+  }
+
+  const segments = relativePath.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    return null;
+  }
+
+  const fullPath = resolve(paths.root, "images", ...segments);
+  const imageRoot = resolve(paths.root, "images");
+  const expectedPrefix = `${imageRoot}/`;
+  if (fullPath !== imageRoot && !fullPath.startsWith(expectedPrefix)) {
+    return null;
+  }
+  if (!existsSync(fullPath)) {
+    return null;
+  }
+
+  let resolvedPath: string;
+  let resolvedRoot: string;
+  try {
+    resolvedPath = realpathSync(fullPath);
+    resolvedRoot = realpathSync(imageRoot);
+  } catch {
+    return null;
+  }
+
+  const resolvedPrefix = `${resolvedRoot}/`;
+  if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedPrefix)) {
+    return null;
+  }
+
+  return {
+    path: resolvedPath,
+    mediaType: inferImageMediaType(resolvedPath),
+  };
+}
+
+function inferImageMediaType(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "application/octet-stream";
 }
 
 function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: string; cwd?: string } {

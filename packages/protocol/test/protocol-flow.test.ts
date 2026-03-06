@@ -4,10 +4,12 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_WEB_REQUEST_METHODS,
   DiligentClientRequestSchema,
   DiligentServerNotificationSchema,
   DiligentServerRequestResponseSchema,
   DiligentServerRequestSchema,
+  DiligentWebResponseSchema,
 } from "../src";
 
 describe("protocol/flow", () => {
@@ -42,6 +44,23 @@ describe("protocol/flow", () => {
             },
           ],
           content: [{ type: "local_image", path: "/tmp/shot.png", mediaType: "image/png", fileName: "shot.png" }],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts web image upload responses with canonical webUrl", () => {
+    expect(
+      DiligentWebResponseSchema.safeParse({
+        method: DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD,
+        result: {
+          attachment: {
+            type: "local_image",
+            path: "/repo/.diligent/images/thread-1/shot.png",
+            mediaType: "image/png",
+            fileName: "shot.png",
+            webUrl: "/_diligent/image/thread-1/shot.png",
+          },
         },
       }).success,
     ).toBe(true);

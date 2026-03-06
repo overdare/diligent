@@ -99,8 +99,13 @@ export const ImageUploadParamsSchema = z.object({
 });
 export type ImageUploadParams = z.infer<typeof ImageUploadParamsSchema>;
 
+export const ImageUploadAttachmentSchema = LocalImageBlockSchema.extend({
+  webUrl: z.string(),
+});
+export type ImageUploadAttachment = z.infer<typeof ImageUploadAttachmentSchema>;
+
 export const ImageUploadResponseSchema = z.object({
-  attachment: LocalImageBlockSchema,
+  attachment: ImageUploadAttachmentSchema,
 });
 export type ImageUploadResponse = z.infer<typeof ImageUploadResponseSchema>;
 

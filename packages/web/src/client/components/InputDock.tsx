@@ -31,6 +31,7 @@ interface InputDockProps {
   onOpenProviders: () => void;
   supportsVision: boolean;
   pendingImages: Array<{ path: string; url: string; fileName?: string }>;
+  isUploadingImages: boolean;
   onAddImages: (files: FileList | File[]) => void;
   onRemoveImage: (path: string) => void;
 }
@@ -112,6 +113,7 @@ export function InputDock({
   onOpenProviders,
   supportsVision,
   pendingImages,
+  isUploadingImages,
   onAddImages,
   onRemoveImage,
 }: InputDockProps) {
@@ -196,12 +198,22 @@ export function InputDock({
                       type="button"
                       aria-label={`Remove ${image.fileName ?? "image"}`}
                       onClick={() => onRemoveImage(image.path)}
-                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg"
+                      disabled={isUploadingImages}
+                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       ×
                     </button>
                   </div>
                 ))}
+                {isUploadingImages ? (
+                  <div className="flex h-20 min-w-[120px] items-center justify-center rounded-xl border border-dashed border-text/10 bg-surface/40 px-3 text-xs text-muted">
+                    Uploading images…
+                  </div>
+                ) : null}
+              </div>
+            ) : isUploadingImages ? (
+              <div className="mb-3 flex h-20 items-center justify-center rounded-xl border border-dashed border-text/10 bg-surface/40 px-3 text-xs text-muted">
+                Uploading images…
               </div>
             ) : null}
 
@@ -226,7 +238,7 @@ export function InputDock({
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   if (isBusy) onSteer();
-                  else onSend();
+                  else if (!isUploadingImages) onSend();
                 }
               }}
             />
@@ -241,6 +253,7 @@ export function InputDock({
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 multiple
+                disabled={isUploadingImages}
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) {
@@ -280,14 +293,14 @@ export function InputDock({
                           setIsPlusMenuOpen(false);
                           setActiveSubmenu(null);
                         }}
-                        disabled={!supportsVision}
+                        disabled={!supportsVision || isUploadingImages}
                         className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                          supportsVision
+                          supportsVision && !isUploadingImages
                             ? "text-muted hover:bg-surface/80 hover:text-text"
                             : "cursor-not-allowed text-muted/40"
                         }`}
                       >
-                        Add images
+                        {isUploadingImages ? "Uploading images…" : "Add images"}
                       </button>
 
                       <button

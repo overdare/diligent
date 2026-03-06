@@ -48,6 +48,7 @@ import {
   ThreadUnsubscribeParamsSchema,
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
+import { toWebImageUrl } from "../shared/image-routes";
 import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 
 interface RpcSession {
@@ -706,7 +707,7 @@ export class RpcBridge {
   private async handleImageUpload(
     params: { fileName: string; mediaType: string; dataBase64: string },
     threadId?: string,
-  ): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string }> {
+  ): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string; webUrl: string }> {
     const root = threadId
       ? join(this.cwd, ".diligent", "images", threadId)
       : join(this.cwd, ".diligent", "images", "drafts");
@@ -737,6 +738,7 @@ export class RpcBridge {
       path: absPath,
       mediaType: params.mediaType,
       fileName: params.fileName,
+      webUrl: toWebImageUrl(absPath),
     };
   }
 

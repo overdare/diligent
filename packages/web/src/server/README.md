@@ -6,6 +6,6 @@ This directory contains the runtime server layer for the Web frontend. It starts
 
 ## Files
 
-- `index.ts` — Bun server entrypoint; registers the `/rpc` WebSocket route, resolves config/model, and wires `RpcBridge` + `DiligentAppServer` together
+- `index.ts` — Bun server entrypoint; registers the `/rpc` WebSocket route, a persisted-image HTTP route, resolves config/model, and wires `RpcBridge` + `DiligentAppServer` together
 - `rpc-bridge.ts` — WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests between the browser and the core `DiligentAppServer`
 - `tools.ts` — Built-in Web CLI tool assembly; re-exports `buildDefaultTools` from `@diligent/core`

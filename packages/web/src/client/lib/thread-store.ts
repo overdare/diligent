@@ -13,6 +13,7 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { toWebImageUrl } from "../../shared/image-routes";
 
 /** Tools that produce collab RenderItems — suppress duplicate ToolBlock rendering. */
 const COLLAB_RENDERED_TOOLS = new Set(["spawn_agent", "wait", "close_agent"]);
@@ -187,7 +188,7 @@ function extractUserTextAndImages(content: unknown): {
     }
     if (block.type === "local_image") {
       const b = block as { previewUrl?: string; path: string; fileName?: string; mediaType?: string };
-      images.push({ url: b.previewUrl ?? b.path, fileName: b.fileName, mediaType: b.mediaType });
+      images.push({ url: b.previewUrl ?? toWebImageUrl(b.path), fileName: b.fileName, mediaType: b.mediaType });
     }
   }
 

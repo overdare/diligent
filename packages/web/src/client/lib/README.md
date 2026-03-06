@@ -14,3 +14,5 @@ lib/
   use-rpc.ts               WebRpcClient lifecycle: creation, connection state, reconnect
   use-server-requests.ts   Server-driven approval and user-input prompt state
 ```
+
+Shared route helpers for persisted image URLs live in `../shared/image-routes.ts`.
