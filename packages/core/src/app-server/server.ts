@@ -18,7 +18,6 @@ import {
   type Mode,
   type SessionSummary,
 } from "@diligent/protocol";
-import { agentEventToNotification } from "./event-mapper";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
@@ -27,6 +26,7 @@ import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
+import { agentEventToNotification } from "./event-mapper";
 
 export interface DiligentAppServerConfig {
   serverName?: string;
