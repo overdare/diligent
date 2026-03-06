@@ -27,6 +27,7 @@ import type {
   DiligentServerRequestResponse,
   Mode,
   ProviderAuthStatus,
+  ThinkingEffort,
 } from "@diligent/protocol";
 import {
   AuthRemoveParamsSchema,
@@ -50,6 +51,7 @@ interface RpcSession {
   ws: ServerWebSocket<RpcWsData>;
   cwd: string;
   mode: Mode;
+  effort: ThinkingEffort;
   currentThreadId: string | null;
 }
 
@@ -125,6 +127,7 @@ export class RpcBridge {
       ws,
       cwd: this.cwd,
       mode: this.initialMode,
+      effort: "high",
       currentThreadId: null,
     };
 
@@ -434,6 +437,13 @@ export class RpcBridge {
         }
       }
 
+      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET && "result" in response) {
+        const effort = (response.result as { effort?: ThinkingEffort }).effort;
+        if (effort) {
+          session.effort = effort;
+        }
+      }
+
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
         const r = response.result as { deleted?: boolean };
         const deletedId = (parsed.params as { threadId?: string }).threadId;
@@ -574,6 +584,7 @@ export class RpcBridge {
       method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT ||
       method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER ||
       method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET ||
+      method === DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET ||
       method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ ||
       method === DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST
     ) {

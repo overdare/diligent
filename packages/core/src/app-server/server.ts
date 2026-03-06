@@ -17,6 +17,7 @@ import {
   JSONRPCResponseSchema,
   type Mode,
   type SessionSummary,
+  type ThinkingEffort,
 } from "@diligent/protocol";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
@@ -35,6 +36,7 @@ export interface DiligentAppServerConfig {
   buildAgentConfig: (args: {
     cwd: string;
     mode: Mode;
+    effort: ThinkingEffort;
     signal: AbortSignal;
     approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
@@ -51,6 +53,7 @@ interface ThreadRuntime {
   id: string;
   cwd: string;
   mode: Mode;
+  effort: ThinkingEffort;
   manager: SessionManager;
   abortController: AbortController | null;
   isRunning: boolean;
@@ -154,6 +157,9 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET:
         return this.handleModeSet(request.params.threadId, request.params.mode);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET:
+        return this.handleEffortSet(request.params.threadId, request.params.effort);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
         return this.handleKnowledgeList(request.params.threadId, request.params.limit);
@@ -383,6 +389,15 @@ export class DiligentAppServer {
     runtime.mode = mode;
     runtime.manager.appendModeChange(mode as ModeKind, "command");
     return { mode };
+  }
+
+  private async handleEffortSet(
+    threadId: string | undefined,
+    effort: ThinkingEffort,
+  ): Promise<{ effort: ThinkingEffort }> {
+    const runtime = await this.resolveThreadRuntime(threadId);
+    runtime.effort = effort;
+    return { effort };
   }
 
   private async handleKnowledgeList(threadId: string | undefined, limit?: number): Promise<{ data: unknown[] }> {
@@ -767,11 +782,13 @@ export class DiligentAppServer {
     cwd: string,
     mode: Mode,
     createNew: boolean,
+    effort: ThinkingEffort = "high",
   ): Promise<ThreadRuntime> {
     const runtime: ThreadRuntime = {
       id: threadId,
       cwd,
       mode,
+      effort,
       manager: null as unknown as SessionManager,
       abortController: null,
       isRunning: false,
@@ -786,6 +803,7 @@ export class DiligentAppServer {
         const result = await this.config.buildAgentConfig({
           cwd,
           mode: runtime.mode,
+          effort: runtime.effort,
           signal,
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),

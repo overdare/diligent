@@ -21,7 +21,10 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
 
     (async () => {
       try {
-        const useReasoning = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);
+        const useReasoning = model.supportsThinking;
+        const effort = options.effort ?? "high";
+        // OpenAI only supports low/medium/high; map "max" → "high"
+        const openaiEffort = effort === "max" ? "high" : effort;
 
         const openaiStream = await client.responses.create(
           {
@@ -40,7 +43,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
             ...(options.maxTokens !== undefined && { max_output_tokens: options.maxTokens }),
             ...(options.temperature !== undefined && { temperature: options.temperature }),
             ...(useReasoning && {
-              reasoning: { effort: "high", summary: "auto" },
+              reasoning: { effort: openaiEffort, summary: "auto" },
               include: ["reasoning.encrypted_content"],
             }),
             stream: true,

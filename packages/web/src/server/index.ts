@@ -39,7 +39,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   const appServerConfig: DiligentAppServerConfig = {
     cwd,
     resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
-    buildAgentConfig: async ({ cwd: requestCwd, mode, signal, approve, ask, getSessionId }) => {
+    buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId }) => {
       if (!runtimeConfig.model) {
         throw new Error("No AI provider configured. Please add an API key in the provider settings.");
       }
@@ -62,6 +62,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
         tools: result.tools,
         streamFunction: runtimeConfig.streamFunction,
         mode: mode as ModeKind,
+        effort,
         signal,
         approve,
         ask,

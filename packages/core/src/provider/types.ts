@@ -9,6 +9,8 @@ export interface SystemSection {
   cacheControl?: "ephemeral"; // hint for Anthropic cache breakpoints
 }
 
+export type ThinkingEffort = "low" | "medium" | "high" | "max";
+
 export interface Model {
   id: string;
   provider: string;
@@ -17,7 +19,15 @@ export interface Model {
   inputCostPer1M?: number; // cost per 1M input tokens in USD
   outputCostPer1M?: number; // cost per 1M output tokens in USD
   supportsThinking?: boolean;
-  defaultBudgetTokens?: number;
+  defaultBudgetTokens?: number; // fallback when thinkingBudgets absent
+  supportsAdaptiveThinking?: boolean; // claude-opus-4-6, sonnet-4-6: model decides budget
+  thinkingBudgets?: {
+    // effort-level budgets for non-adaptive models
+    low: number;
+    medium: number;
+    high: number;
+    max: number;
+  };
 }
 
 // D003: StreamFunction — the provider contract
@@ -37,7 +47,8 @@ export interface StreamOptions {
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
-  budgetTokens?: number; // extended thinking budget (Anthropic) / reasoning effort (OpenAI)
+  budgetTokens?: number; // legacy fallback; prefer effort
+  effort?: ThinkingEffort; // thinking effort level; default "high" when absent
 }
 
 export interface ToolDefinition {

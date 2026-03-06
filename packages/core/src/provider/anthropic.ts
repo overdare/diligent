@@ -31,20 +31,29 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
     (async () => {
       try {
-        const useThinking = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);
-        const budgetTokens = options.budgetTokens ?? model.defaultBudgetTokens ?? 0;
+        const effort = options.effort ?? "high";
+        const useAdaptive = model.supportsThinking && model.supportsAdaptiveThinking;
+        const useBudget = model.supportsThinking && !model.supportsAdaptiveThinking;
+        const useThinking = useAdaptive || useBudget;
+
+        const budgetTokens = useThinking ? (model.thinkingBudgets?.[effort] ?? model.defaultBudgetTokens ?? 8_000) : 0;
+
+        // SDK types don't include "adaptive" yet — cast to bypass until SDK is updated
+        const thinking = useAdaptive
+          ? ({ type: "adaptive", budget_tokens: budgetTokens } as unknown as Anthropic.ThinkingConfigParam)
+          : useBudget
+            ? ({ type: "enabled", budget_tokens: budgetTokens } as Anthropic.ThinkingConfigParam)
+            : undefined;
 
         const sdkStream = client.messages.stream(
           {
             model: model.id,
-            max_tokens: useThinking
-              ? Math.max(options.maxTokens ?? model.maxOutputTokens, budgetTokens + 1000)
-              : (options.maxTokens ?? model.maxOutputTokens),
+            max_tokens: options.maxTokens ?? model.maxOutputTokens,
             system: toAnthropicBlocks(context.systemPrompt),
             messages: convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
-            ...(useThinking
-              ? { thinking: { type: "enabled" as const, budget_tokens: budgetTokens }, temperature: 1 }
+            ...(thinking
+              ? { thinking, temperature: 1 }
               : options.temperature !== undefined
                 ? { temperature: options.temperature }
                 : {}),

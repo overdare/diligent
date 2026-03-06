@@ -434,7 +434,7 @@ async function streamAssistantResponse(
 
   const providerStream = streamFn(config.model, context, {
     signal: config.signal,
-    budgetTokens: config.model.defaultBudgetTokens,
+    effort: config.effort ?? "high",
   });
 
   let currentMessage: AssistantMessage | undefined;

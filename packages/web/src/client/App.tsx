@@ -2,7 +2,13 @@
 
 import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
-import type { DiligentServerNotification, Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
+import type {
+  DiligentServerNotification,
+  Mode,
+  SessionSummary,
+  ThinkingEffort,
+  ThreadReadResponse,
+} from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
@@ -141,6 +147,7 @@ export function App() {
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
   const [input, setInput] = useState("");
+  const [effort, setEffortState] = useState<ThinkingEffort>("high");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
@@ -508,6 +515,13 @@ export function App() {
     dispatch({ type: "set_mode", payload: mode });
   };
 
+  const setEffort = async (e: ThinkingEffort) => {
+    const rpc = rpcRef.current;
+    if (!rpc || !state.activeThreadId) return;
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId: state.activeThreadId, effort: e });
+    setEffortState(e);
+  };
+
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -599,6 +613,8 @@ export function App() {
             cwd={cwd}
             mode={state.mode}
             onModeChange={(m) => void setMode(m)}
+            effort={effort}
+            onEffortChange={(e) => void setEffort(e)}
             currentModel={providerMgr.currentModel}
             availableModels={providerMgr.availableModels}
             onModelChange={(m) => void providerMgr.changeModel(m)}
