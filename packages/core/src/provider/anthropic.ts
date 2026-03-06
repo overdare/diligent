@@ -39,12 +39,21 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
         const budgetTokens = useThinking ? (model.thinkingBudgets?.[effort] ?? model.defaultBudgetTokens ?? 8_000) : 0;
 
-        // SDK types don't include "adaptive" yet — cast to bypass until SDK is updated
-        const thinking = useAdaptive
-          ? ({ type: "adaptive", budget_tokens: budgetTokens } as unknown as Anthropic.ThinkingConfigParam)
+        // SDK types lag behind Anthropic's adaptive thinking fields — keep payload assembly local.
+        const thinkingConfig = useAdaptive
+          ? {
+              thinking: { type: "adaptive" } as unknown as Anthropic.ThinkingConfigParam,
+              output_config: { effort },
+              temperature: 1,
+            }
           : useBudget
-            ? ({ type: "enabled", budget_tokens: budgetTokens } as Anthropic.ThinkingConfigParam)
-            : undefined;
+            ? {
+                thinking: { type: "enabled", budget_tokens: budgetTokens } as Anthropic.ThinkingConfigParam,
+                temperature: 1,
+              }
+            : options.temperature !== undefined
+              ? { temperature: options.temperature }
+              : {};
 
         const sdkStream = client.messages.stream(
           {
@@ -53,12 +62,8 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
             system: toAnthropicBlocks(context.systemPrompt),
             messages: await convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
-            ...(thinking
-              ? { thinking, temperature: 1 }
-              : options.temperature !== undefined
-                ? { temperature: options.temperature }
-                : {}),
-          },
+            ...thinkingConfig,
+          } as Anthropic.MessageCreateParams,
           ...(options.signal ? [{ signal: options.signal }] : []),
         );
 
