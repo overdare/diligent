@@ -407,12 +407,7 @@ async function streamAssistantResponse(
 ): Promise<AssistantMessage> {
   // Debug: log last 5 messages before every LLM call
   const tail = messages.slice(-5);
-  const debugScope = [
-    config.debugThreadId ? `thread=${config.debugThreadId}` : null,
-    config.debugTurnId ? `turn=${config.debugTurnId}` : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const debugScope = buildDebugScope(config);
   console.log(
     "[AgentLoop]%s Sending %d messages to %s, last 5: %s",
     debugScope ? ` ${debugScope}` : "",
@@ -439,6 +434,7 @@ async function streamAssistantResponse(
     tools: activeTools.map(toolToDefinition),
   };
 
+  const requestStartedAt = Date.now();
   const providerStream = streamFn(config.model, context, {
     signal: config.signal,
     effort: config.effort ?? "medium",
@@ -494,7 +490,40 @@ async function streamAssistantResponse(
 
   // The final message comes from the done event via providerStream.result()
   const result = await providerStream.result();
+  logAssistantResponseSummary(config, result.message, Date.now() - requestStartedAt);
   return result.message;
+}
+
+function buildDebugScope(config: AgentLoopConfig): string {
+  const effectiveEffort = config.effort ?? "high";
+  return [
+    config.debugThreadId ? `thread=${config.debugThreadId}` : null,
+    config.debugTurnId ? `turn=${config.debugTurnId}` : null,
+    `effort=${effectiveEffort}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function logAssistantResponseSummary(config: AgentLoopConfig, message: AssistantMessage, elapsedMs: number): void {
+  const debugScope = buildDebugScope(config);
+  const textLength = message.content.reduce((sum, block) => (block.type === "text" ? sum + block.text.length : sum), 0);
+  const thinkingLength = message.content.reduce(
+    (sum, block) => (block.type === "thinking" ? sum + block.thinking.length : sum),
+    0,
+  );
+  const toolCalls = message.content.filter((block): block is ToolCallBlock => block.type === "tool_call");
+
+  console.log(
+    "[AgentLoop]%s Response summary: stop=%s elapsed=%dms text=%d thinking=%d toolCalls=%d tools=%s",
+    debugScope ? ` ${debugScope}` : "",
+    message.stopReason,
+    elapsedMs,
+    textLength,
+    thinkingLength,
+    toolCalls.length,
+    toolCalls.length > 0 ? toolCalls.map((call) => call.name).join(",") : "-",
+  );
 }
 
 function toolToDefinition(tool: { name: string; description: string; parameters: z.ZodType }): ToolDefinition {

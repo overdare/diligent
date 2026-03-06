@@ -551,7 +551,7 @@ describe("DiligentAppServer", () => {
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(false);
   });
 
-  it("adds thread and turn ids to AgentLoop debug logs", async () => {
+  it("adds thread, turn, effort, and response summary to AgentLoop debug logs", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const originalLog = console.log;
@@ -561,7 +561,7 @@ describe("DiligentAppServer", () => {
     try {
       const server = new DiligentAppServer({
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-        buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
           model: {
             id: "fake-model",
             provider: "fake",
@@ -571,6 +571,7 @@ describe("DiligentAppServer", () => {
           systemPrompt: [{ label: "base", content: "test" }],
           tools: [],
           mode,
+          effort,
           signal,
           approve,
           ask,
@@ -629,9 +630,22 @@ describe("DiligentAppServer", () => {
 
       await turnDone;
 
-      const call = logSpy.mock.calls.find((args) => args[0] === "[AgentLoop]%s Sending %d messages to %s, last 5: %s");
-      expect(call).toBeDefined();
-      expect(call?.[1]).toBe(` thread=${startResult.threadId} turn=${completedTurnId}`);
+      const requestCall = logSpy.mock.calls.find(
+        (args) => args[0] === "[AgentLoop]%s Sending %d messages to %s, last 5: %s",
+      );
+      expect(requestCall).toBeDefined();
+      expect(requestCall?.[1]).toBe(` thread=${startResult.threadId} turn=${completedTurnId} effort=medium`);
+
+      const responseCall = logSpy.mock.calls.find(
+        (args) =>
+          args[0] === "[AgentLoop]%s Response summary: stop=%s elapsed=%dms text=%d thinking=%d toolCalls=%d tools=%s",
+      );
+      expect(responseCall).toBeDefined();
+      expect(responseCall?.[1]).toBe(` thread=${startResult.threadId} turn=${completedTurnId} effort=medium`);
+      expect(responseCall?.[2]).toBe("end_turn");
+      expect(typeof responseCall?.[3]).toBe("number");
+      expect((responseCall?.[3] as number) >= 0).toBe(true);
+      expect(responseCall?.slice(4)).toEqual([5, 0, 0, "-"]);
     } finally {
       console.log = originalLog;
     }
