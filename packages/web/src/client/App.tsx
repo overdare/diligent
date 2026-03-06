@@ -170,6 +170,27 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+function extensionForImageType(mediaType: string): string {
+  switch (mediaType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return ".bin";
+  }
+}
+
+export function normalizeImageFileName(file: File, index: number, timestamp = Date.now()): string {
+  const trimmedName = file.name?.trim() ?? "";
+  if (trimmedName.length > 0) return trimmedName;
+  return `pasted-image-${timestamp}-${index}${extensionForImageType(file.type)}`;
+}
+
 export function App() {
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
@@ -613,23 +634,25 @@ export function App() {
 
     const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
     const uploaded: PendingImage[] = [];
+    const uploadTimestamp = Date.now();
 
     setIsUploadingImages(true);
     try {
-      for (const file of list) {
+      for (const [index, file] of list.entries()) {
+        const normalizedFileName = normalizeImageFileName(file, index, uploadTimestamp);
         if (!allowedTypes.has(file.type)) {
-          dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${file.name}` });
+          dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${normalizedFileName}` });
           return;
         }
         if (file.size > 10 * 1024 * 1024) {
-          dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${file.name}` });
+          dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${normalizedFileName}` });
           return;
         }
 
         const dataBase64 = await fileToBase64(file);
         const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
           threadId: state.activeThreadId ?? undefined,
-          fileName: file.name,
+          fileName: normalizedFileName,
           mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
           dataBase64,
         });

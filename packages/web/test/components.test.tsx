@@ -1,12 +1,31 @@
 // @summary Static render tests for core UI components and accessibility attributes
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { normalizeImageFileName } from "../src/client/App";
 import { Button } from "../src/client/components/Button";
 import { Input } from "../src/client/components/Input";
-import { InputDock } from "../src/client/components/InputDock";
+import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
 import { Modal } from "../src/client/components/Modal";
 import { ToolBlock } from "../src/client/components/ToolBlock";
 import { UserMessage } from "../src/client/components/UserMessage";
+
+function createClipboardFile(name: string, type: string): File {
+  return new File([`${name}:${type}`], name, { type });
+}
+
+function createClipboardData(options: {
+  items?: Array<{ kind: string; type: string; file?: File | null }>;
+  files?: File[];
+}): DataTransfer {
+  return {
+    items: (options.items ?? []).map((item) => ({
+      kind: item.kind,
+      type: item.type,
+      getAsFile: () => item.file ?? null,
+    })),
+    files: options.files ?? [],
+  } as unknown as DataTransfer;
+}
 
 test("button renders aria-label and intent class", () => {
   const html = renderToStaticMarkup(
@@ -181,4 +200,56 @@ test("tool block hides duration while tool is still running", () => {
 
   expect(html).not.toContain("123ms");
   expect(html).toContain("running");
+});
+
+test("extractPastedImageFiles returns empty array for null clipboard", () => {
+  expect(extractPastedImageFiles(null)).toEqual([]);
+});
+
+test("extractPastedImageFiles ignores text-only clipboard items", () => {
+  const clipboardData = createClipboardData({
+    items: [{ kind: "string", type: "text/plain" }],
+  });
+
+  expect(extractPastedImageFiles(clipboardData)).toEqual([]);
+});
+
+test("extractPastedImageFiles returns supported image files from clipboard items", () => {
+  const png = createClipboardFile("shot.png", "image/png");
+  const jpeg = createClipboardFile("photo.jpg", "image/jpeg");
+  const clipboardData = createClipboardData({
+    items: [
+      { kind: "file", type: "image/png", file: png },
+      { kind: "file", type: "image/svg+xml", file: createClipboardFile("vector.svg", "image/svg+xml") },
+      { kind: "file", type: "image/jpeg", file: jpeg },
+    ],
+  });
+
+  expect(extractPastedImageFiles(clipboardData)).toEqual([png, jpeg]);
+});
+
+test("extractPastedImageFiles falls back to clipboard files when items are unavailable", () => {
+  const gif = createClipboardFile("anim.gif", "image/gif");
+  const txt = createClipboardFile("notes.txt", "text/plain");
+  const clipboardData = createClipboardData({
+    items: [],
+    files: [gif, txt],
+  });
+
+  expect(extractPastedImageFiles(clipboardData)).toEqual([gif]);
+});
+
+test("normalizeImageFileName keeps existing file names", () => {
+  const file = createClipboardFile("existing-name.webp", "image/webp");
+  expect(normalizeImageFileName(file, 0, 12345)).toBe("existing-name.webp");
+});
+
+test("normalizeImageFileName generates PNG fallback names for empty clipboard file names", () => {
+  const file = createClipboardFile("", "image/png");
+  expect(normalizeImageFileName(file, 2, 12345)).toBe("pasted-image-12345-2.png");
+});
+
+test("normalizeImageFileName generates JPEG fallback names for blank clipboard file names", () => {
+  const file = createClipboardFile("   ", "image/jpeg");
+  expect(normalizeImageFileName(file, 1, 222)).toBe("pasted-image-222-1.jpg");
 });

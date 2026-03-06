@@ -1,6 +1,7 @@
 // @summary Input dock with auto-resize textarea, hover submenus, model/effort controls, and usage tray
 
 import type { Mode, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
+import type { ClipboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelInfo } from "../../shared/ws-protocol";
 import type { UsageState } from "../lib/thread-store";
@@ -37,6 +38,23 @@ interface InputDockProps {
 }
 
 type ComposerMenuKey = "mode" | "compaction";
+
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+export function extractPastedImageFiles(clipboardData: DataTransfer | null): File[] {
+  if (!clipboardData) return [];
+
+  const filesFromItems = Array.from(clipboardData.items ?? [])
+    .filter((item) => item.kind === "file" && SUPPORTED_IMAGE_MIME_TYPES.has(item.type))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file instanceof File);
+
+  if (filesFromItems.length > 0) {
+    return filesFromItems;
+  }
+
+  return Array.from(clipboardData.files ?? []).filter((file) => SUPPORTED_IMAGE_MIME_TYPES.has(file.type));
+}
 
 const MODE_LABELS: Record<Mode, string> = {
   default: "default",
@@ -170,6 +188,15 @@ export function InputDock({
       activeSubmenu === menuKey ? "bg-surface text-text shadow-sm" : "text-muted hover:bg-surface/80 hover:text-text"
     }`;
 
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedImages = extractPastedImageFiles(event.clipboardData);
+    if (pastedImages.length === 0) return;
+
+    event.preventDefault();
+    if (isUploadingImages) return;
+    onAddImages(pastedImages);
+  };
+
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
       <div
@@ -231,6 +258,7 @@ export function InputDock({
               onCompositionEnd={() => {
                 composingRef.current = false;
               }}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (composingRef.current || e.nativeEvent.isComposing) {
                   return;
