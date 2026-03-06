@@ -1,6 +1,6 @@
 // @summary Input dock with auto-resize textarea, send/stop controls, and status tray
 
-import type { Mode, ThreadStatus } from "@diligent/protocol";
+import type { Mode, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import { useRef } from "react";
 import type { ModelInfo } from "../../shared/ws-protocol";
 import type { ConnectionState } from "../lib/rpc-client";
@@ -22,6 +22,8 @@ interface InputDockProps {
   cwd: string;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
+  effort: ThinkingEffort;
+  onEffortChange: (effort: ThinkingEffort) => void;
   currentModel: string;
   availableModels: ModelInfo[];
   onModelChange: (modelId: string) => void;
@@ -43,6 +45,13 @@ const MODE_LABELS: Record<Mode, string> = {
   default: "default",
   plan: "plan",
   execute: "execute",
+};
+
+const EFFORT_LABELS: Record<ThinkingEffort, string> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  max: "max",
 };
 
 function formatTokenCount(n: number): string {
@@ -76,6 +85,13 @@ function modeOptions(): SelectOption[] {
   }));
 }
 
+function effortOptions(): SelectOption[] {
+  return (Object.keys(EFFORT_LABELS) as ThinkingEffort[]).map((e) => ({
+    value: e,
+    label: EFFORT_LABELS[e],
+  }));
+}
+
 export function InputDock({
   input,
   onInputChange,
@@ -89,6 +105,8 @@ export function InputDock({
   cwd,
   mode,
   onModeChange,
+  effort,
+  onEffortChange,
   currentModel,
   availableModels,
   onModelChange,
@@ -192,6 +210,15 @@ export function InputDock({
                 className="w-[180px]"
               />
             ) : null}
+
+            <Select
+              ariaLabel="Effort selector"
+              value={effort}
+              options={effortOptions()}
+              onChange={(value) => onEffortChange(value as ThinkingEffort)}
+              openDirection="up"
+              className="w-[90px]"
+            />
 
             <Select
               ariaLabel="Mode selector"

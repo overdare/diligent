@@ -11,6 +11,7 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   TURN_INTERRUPT: "turn/interrupt",
   TURN_STEER: "turn/steer",
   MODE_SET: "mode/set",
+  EFFORT_SET: "effort/set",
   KNOWLEDGE_LIST: "knowledge/list",
   THREAD_DELETE: "thread/delete",
 } as const;

@@ -114,10 +114,11 @@ describe("resolveModelForClass", () => {
     expect(lite.provider).toBe("anthropic");
   });
 
-  it("resolves openai general → lite (codex-mini)", () => {
+  it("resolves openai general → lite", () => {
     const codex = resolveModel("gpt-5.3-codex");
     const lite = resolveModelForClass(codex, "lite");
-    expect(lite.id).toBe("codex-mini-latest");
+    // First lite OpenAI model in KNOWN_MODELS is o4-mini
+    expect(lite.id).toBe("o4-mini");
     expect(lite.provider).toBe("openai");
   });
 

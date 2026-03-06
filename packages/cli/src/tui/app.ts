@@ -365,7 +365,7 @@ export class App {
   private createAppServer(paths: DiligentPaths): DiligentAppServer {
     const appServerConfig: DiligentAppServerConfig = {
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: async ({ cwd, mode, signal, approve, ask, getSessionId }) => {
+      buildAgentConfig: async ({ cwd, mode, effort, signal, approve, ask, getSessionId }) => {
         const deps = {
           model: this.config.model,
           systemPrompt: this.config.systemPrompt,
@@ -383,6 +383,7 @@ export class App {
           tools,
           streamFunction: this.config.streamFunction,
           mode: mode as ModeKind,
+          effort,
           signal,
           approve,
           ask,

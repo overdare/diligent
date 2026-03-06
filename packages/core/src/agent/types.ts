@@ -162,6 +162,7 @@ export interface AgentLoopConfig {
   retryBaseDelayMs?: number; // default: 1000
   retryMaxDelayMs?: number; // default: 30_000
   mode?: ModeKind; // D087: defaults to "default"
+  effort?: "low" | "medium" | "high" | "max"; // thinking effort; defaults to "high"
   getSteeringMessages?: () => Message[];
   hasPendingMessages?: () => boolean;
   /** D028: Called for each ctx.approve() — rule engine + optional UI callback */

@@ -7,6 +7,9 @@ export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
 export const ModeSchema = z.enum(["default", "plan", "execute"]);
 export type Mode = z.infer<typeof ModeSchema>;
 
+export const ThinkingEffortSchema = z.enum(["low", "medium", "high", "max"]);
+export type ThinkingEffort = z.infer<typeof ThinkingEffortSchema>;
+
 export const StopReasonSchema = z.enum(["end_turn", "tool_use", "max_tokens", "error", "aborted"]);
 export type StopReason = z.infer<typeof StopReasonSchema>;
 

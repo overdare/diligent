@@ -7,6 +7,7 @@ import {
   ProtocolCapabilitiesSchema,
   ProtocolVersionSchema,
   SessionSummarySchema,
+  ThinkingEffortSchema,
 } from "./data-model";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
 
@@ -132,6 +133,17 @@ export const ModeSetResponseSchema = z.object({
 });
 export type ModeSetResponse = z.infer<typeof ModeSetResponseSchema>;
 
+export const EffortSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  effort: ThinkingEffortSchema,
+});
+export type EffortSetParams = z.infer<typeof EffortSetParamsSchema>;
+
+export const EffortSetResponseSchema = z.object({
+  effort: ThinkingEffortSchema,
+});
+export type EffortSetResponse = z.infer<typeof EffortSetResponseSchema>;
+
 export const KnowledgeListParamsSchema = z.object({
   threadId: z.string().optional(),
   limit: z.number().int().positive().max(500).optional(),
@@ -163,6 +175,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), params: TurnInterruptParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), params: TurnSteerParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
 ]);
@@ -178,6 +191,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), result: TurnInterruptResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), result: TurnSteerResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
 ]);
