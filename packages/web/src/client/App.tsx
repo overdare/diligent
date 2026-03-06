@@ -8,6 +8,7 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_VERSION,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
@@ -190,7 +191,7 @@ export function App() {
       try {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
           clientName: "diligent-web",
-          clientVersion: "0.0.1",
+          clientVersion: DILIGENT_VERSION,
           protocolVersion: 1,
         });
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
