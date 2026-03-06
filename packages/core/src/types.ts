@@ -1,5 +1,5 @@
 // Content blocks
-export type ContentBlock = TextBlock | ImageBlock | ThinkingBlock | ToolCallBlock;
+export type ContentBlock = TextBlock | ImageBlock | LocalImageBlock | ThinkingBlock | ToolCallBlock;
 
 export interface TextBlock {
   type: "text";
@@ -9,6 +9,14 @@ export interface TextBlock {
 export interface ImageBlock {
   type: "image";
   source: { type: "base64"; media_type: string; data: string };
+}
+
+export interface LocalImageBlock {
+  type: "local_image";
+  path: string;
+  mediaType: string;
+  fileName?: string;
+  previewUrl?: string;
 }
 
 export interface ThinkingBlock {

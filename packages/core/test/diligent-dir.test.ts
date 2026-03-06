@@ -20,6 +20,7 @@ describe("resolvePaths", () => {
     expect(paths.sessions).toBe("/project/.diligent/sessions");
     expect(paths.knowledge).toBe("/project/.diligent/knowledge");
     expect(paths.skills).toBe("/project/.diligent/skills");
+    expect(paths.images).toBe("/project/.diligent/images");
   });
 });
 
@@ -37,6 +38,10 @@ describe("ensureDiligentDir", () => {
     const knowledgeEntries = [];
     for await (const f of sessionsGlob.scan(paths.knowledge)) knowledgeEntries.push(f);
     expect(knowledgeEntries).toEqual([]);
+
+    const imageEntries = [];
+    for await (const f of sessionsGlob.scan(paths.images)) imageEntries.push(f);
+    expect(imageEntries).toEqual([]);
   });
 
   it("creates .gitignore with correct content", async () => {
@@ -46,6 +51,7 @@ describe("ensureDiligentDir", () => {
     const content = await Bun.file(gitignorePath).text();
     expect(content).toContain("sessions/");
     expect(content).toContain("knowledge/");
+    expect(content).toContain("images/");
     expect(content).not.toContain("skills/");
   });
 

@@ -4,6 +4,7 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
+  LocalImageBlock,
   Mode,
   SessionSummary,
   ThinkingEffort,
@@ -14,6 +15,7 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_WEB_REQUEST_METHODS,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
@@ -43,9 +45,10 @@ type AppAction =
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
-  | { type: "local_user"; payload: string }
+  | { type: "local_user"; payload: { text: string; images: LocalImageBlock[] } }
   | { type: "local_steer"; payload: string }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
+  | { type: "show_info_toast"; payload: string }
   | { type: "clear_toast" };
 
 function appReducer(state: ThreadState, action: AppAction): ThreadState {
@@ -71,10 +74,16 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
     return { ...state, threadList: merged };
   }
   if (action.type === "local_user") {
+    const text = action.payload.text;
     const userItem: RenderItem = {
       id: `local-user-${Date.now()}`,
       kind: "user",
-      text: action.payload,
+      text,
+      images: action.payload.images.map((image) => ({
+        url: image.previewUrl ?? image.path,
+        fileName: image.fileName,
+        mediaType: image.mediaType,
+      })),
       timestamp: Date.now(),
     };
     return { ...state, items: [...state.items, userItem] };
@@ -108,6 +117,16 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
     };
     return { ...state, threadList: [optimistic, ...state.threadList] };
   }
+  if (action.type === "show_info_toast") {
+    return {
+      ...state,
+      toast: {
+        id: `info-${Date.now()}`,
+        kind: "info",
+        message: action.payload,
+      },
+    };
+  }
   if (action.type === "clear_toast") return { ...state, toast: null };
   return state;
 }
@@ -136,6 +155,17 @@ function replaceThreadUrl(threadId: string): void {
   }
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 export function App() {
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
@@ -147,6 +177,7 @@ export function App() {
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<LocalImageBlock[]>([]);
   const [effort, setEffortState] = useState<ThinkingEffort>("high");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
@@ -421,21 +452,47 @@ export function App() {
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
-  const canSend = input.trim().length > 0 && !isBusy;
+  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !isBusy;
   const canSteer = input.trim().length > 0 && isBusy;
+  const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
+  const supportsVision = currentModelInfo?.supportsVision === true;
 
   const sendMessage = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId || !canSend) return;
     const message = input.trim();
+    const images = pendingImages;
     setInput("");
-    dispatch({ type: "local_user", payload: message });
+    setPendingImages([]);
+    dispatch({ type: "local_user", payload: { text: message, images } });
     // If this is the first message in the thread, immediately add an optimistic sidebar entry
     if (state.items.length === 0 && state.activeThreadId) {
-      dispatch({ type: "optimistic_thread", payload: { threadId: state.activeThreadId, message } });
+      dispatch({
+        type: "optimistic_thread",
+        payload: { threadId: state.activeThreadId, message: message || "[image]" },
+      });
     }
     try {
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId: state.activeThreadId, message });
+      const content = [
+        ...(message ? [{ type: "text" as const, text: message }] : []),
+        ...images.map((image) => ({
+          type: "local_image" as const,
+          path: image.path,
+          mediaType: image.mediaType,
+          fileName: image.fileName,
+        })),
+      ];
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+        threadId: state.activeThreadId,
+        message,
+        attachments: images.map((image) => ({
+          type: "local_image" as const,
+          path: image.path,
+          mediaType: image.mediaType,
+          fileName: image.fileName,
+        })),
+        content,
+      });
     } catch (error) {
       console.error(error);
     }
@@ -522,6 +579,58 @@ export function App() {
     setEffortState(e);
   };
 
+  const handleCompactionClick = () => {
+    dispatch({ type: "show_info_toast", payload: "Manual compaction is not wired yet." });
+  };
+
+  const handleAddImages = async (files: FileList | File[]): Promise<void> => {
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+
+    const list = Array.from(files);
+    if (pendingImages.length + list.length > 4) {
+      dispatch({ type: "show_info_toast", payload: "You can attach up to 4 images per message." });
+      return;
+    }
+    if (!supportsVision) {
+      dispatch({ type: "show_info_toast", payload: "The selected model does not support image input." });
+      return;
+    }
+
+    const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+    const uploaded: LocalImageBlock[] = [];
+
+    for (const file of list) {
+      if (!allowedTypes.has(file.type)) {
+        dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${file.name}` });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${file.name}` });
+        return;
+      }
+
+      const dataBase64 = await fileToBase64(file);
+      const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
+        threadId: state.activeThreadId ?? undefined,
+        fileName: file.name,
+        mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+        dataBase64,
+      });
+      uploaded.push({ ...result.attachment, previewUrl: URL.createObjectURL(file) });
+    }
+
+    setPendingImages((prev) => [...prev, ...uploaded]);
+  };
+
+  const handleRemovePendingImage = (path: string) => {
+    setPendingImages((prev) => {
+      const found = prev.find((image) => image.path === path);
+      if (found?.previewUrl) URL.revokeObjectURL(found.previewUrl);
+      return prev.filter((image) => image.path !== path);
+    });
+  };
+
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -606,11 +715,10 @@ export function App() {
             onSend={() => void sendMessage()}
             onSteer={() => void steerMessage()}
             onInterrupt={() => void interruptTurn()}
+            onCompactionClick={handleCompactionClick}
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}
-            connection={connection}
-            cwd={cwd}
             mode={state.mode}
             onModeChange={(m) => void setMode(m)}
             effort={effort}
@@ -625,6 +733,14 @@ export function App() {
             }
             hasProvider={providerMgr.providers.some((p) => p.configured || p.oauthConnected)}
             onOpenProviders={() => setShowProviderModal(true)}
+            supportsVision={supportsVision}
+            pendingImages={pendingImages.map((image) => ({
+              path: image.path,
+              url: image.previewUrl ?? image.path,
+              fileName: image.fileName,
+            }))}
+            onAddImages={(files) => void handleAddImages(files)}
+            onRemoveImage={handleRemovePendingImage}
           />
         </Panel>
       </div>

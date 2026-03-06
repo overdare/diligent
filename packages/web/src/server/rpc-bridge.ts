@@ -1,6 +1,8 @@
 // @summary WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests
 
 import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import {
   buildOAuthTokens,
   CHATGPT_AUTH_URL,
@@ -38,6 +40,7 @@ import {
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
+  ImageUploadParamsSchema,
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
   ThreadSubscribeParamsSchema,
@@ -315,6 +318,40 @@ export class RpcBridge {
           type: "rpc_response",
           response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok } }),
         });
+        return;
+      }
+
+      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD) {
+        const validated = ImageUploadParamsSchema.safeParse(parsed.params);
+        if (!validated.success) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32602, message: validated.error.message },
+            }),
+          });
+          return;
+        }
+
+        try {
+          const attachment = await this.handleImageUpload(
+            validated.data,
+            validated.data.threadId ?? session.currentThreadId ?? undefined,
+          );
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { attachment } }),
+          });
+        } catch (error) {
+          this.send(ws, {
+            type: "rpc_response",
+            response: JSONRPCErrorResponseSchema.parse({
+              id: parsed.id,
+              error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+            }),
+          });
+        }
         return;
       }
 
@@ -665,6 +702,43 @@ export class RpcBridge {
     return this.turnInitiators.get(threadId) ?? null;
   }
 
+  private async handleImageUpload(
+    params: { fileName: string; mediaType: string; dataBase64: string },
+    threadId?: string,
+  ): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string }> {
+    const root = threadId
+      ? join(this.cwd, ".diligent", "images", threadId)
+      : join(this.cwd, ".diligent", "images", "drafts");
+    await mkdir(root, { recursive: true });
+
+    const ext = extname(params.fileName) || mediaTypeToExtension(params.mediaType);
+    const safeBase = sanitizeFileStem(basename(params.fileName, ext));
+    const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}-${safeBase}${ext}`;
+    const absPath = join(root, fileName);
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(params.dataBase64, "base64");
+    } catch {
+      throw new Error("Invalid image payload");
+    }
+
+    if (buffer.length === 0) {
+      throw new Error("Empty image payload");
+    }
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error("Image exceeds 10 MB limit");
+    }
+
+    await Bun.write(absPath, buffer);
+    return {
+      type: "local_image",
+      path: absPath,
+      mediaType: params.mediaType,
+      fileName: params.fileName,
+    };
+  }
+
   private broadcast(message: WsServerMessage): void {
     for (const session of this.sessions.values()) {
       this.send(session.ws, message);
@@ -735,6 +809,29 @@ export class RpcBridge {
 
   private send(ws: ServerWebSocket<RpcWsData>, message: WsServerMessage): void {
     ws.send(JSON.stringify(message));
+  }
+}
+
+function sanitizeFileStem(input: string): string {
+  const cleaned = input
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "image";
+}
+
+function mediaTypeToExtension(mediaType: string): string {
+  switch (mediaType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return ".img";
   }
 }
 

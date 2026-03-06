@@ -48,6 +48,7 @@ export type RenderItem =
       id: string;
       kind: "user";
       text: string;
+      images: Array<{ url: string; fileName?: string; mediaType?: string }>;
       timestamp: number;
     }
   | {
@@ -164,6 +165,33 @@ function stringifyUnknown(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function extractUserTextAndImages(content: unknown): {
+  text: string;
+  images: Array<{ url: string; fileName?: string; mediaType?: string }>;
+} {
+  if (typeof content === "string") {
+    return { text: content, images: [] };
+  }
+  if (!Array.isArray(content)) {
+    return { text: stringifyUnknown(content), images: [] };
+  }
+
+  const textParts: string[] = [];
+  const images: Array<{ url: string; fileName?: string; mediaType?: string }> = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object" || !("type" in block)) continue;
+    if (block.type === "text" && typeof (block as { text?: unknown }).text === "string") {
+      textParts.push((block as { text: string }).text);
+    }
+    if (block.type === "local_image") {
+      const b = block as { previewUrl?: string; path: string; fileName?: string; mediaType?: string };
+      images.push({ url: b.previewUrl ?? b.path, fileName: b.fileName, mediaType: b.mediaType });
+    }
+  }
+
+  return { text: textParts.join("\n\n"), images };
 }
 
 function updateItem(state: ThreadState, itemId: string, updater: (item: RenderItem) => RenderItem): ThreadState {
@@ -512,6 +540,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         id: `steer-injected-${Date.now()}-${i}`,
         kind: "user" as const,
         text,
+        images: [],
         timestamp: Date.now(),
       }));
       return {
@@ -747,12 +776,12 @@ export function reduceServerNotification(
       }
     ).item;
     if (item?.type === "userMessage" && item.message) {
-      const text =
-        typeof item.message.content === "string" ? item.message.content : stringifyUnknown(item.message.content);
+      const { text, images } = extractUserTextAndImages(item.message.content);
       return withItem(state, `remote-user-${item.itemId}`, {
         id: `remote-user-${item.itemId}`,
         kind: "user",
         text,
+        images,
         timestamp: item.message.timestamp ?? Date.now(),
       });
     }
@@ -968,11 +997,12 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         });
         continue;
       }
-      const text = typeof message.content === "string" ? message.content : stringifyUnknown(message.content);
+      const { text, images } = extractUserTextAndImages(message.content);
       current = withItem(current, `history:user:${message.timestamp}`, {
         id: `history:user:${message.timestamp}`,
         kind: "user",
         text,
+        images,
         timestamp: message.timestamp,
       });
       continue;

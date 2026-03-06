@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { EventStream } from "../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 import { isNetworkError } from "./errors";
+import { materializeUserContentBlocks } from "./image-io";
 import { toAnthropicBlocks } from "./system-sections";
 import type {
   Model,
@@ -50,7 +51,7 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
             model: model.id,
             max_tokens: options.maxTokens ?? model.maxOutputTokens,
             system: toAnthropicBlocks(context.systemPrompt),
-            messages: convertMessages(context.messages),
+            messages: await convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
             ...(thinking
               ? { thinking, temperature: 1 }
@@ -126,7 +127,7 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
   };
 }
 
-function convertMessages(messages: Message[]): Anthropic.MessageParam[] {
+async function convertMessages(messages: Message[]): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
 
   for (const msg of messages) {
@@ -136,7 +137,7 @@ function convertMessages(messages: Message[]): Anthropic.MessageParam[] {
       } else {
         result.push({
           role: "user",
-          content: msg.content.map(convertContentBlock),
+          content: (await materializeUserContentBlocks(msg.content)).map(convertContentBlock),
         });
       }
     } else if (msg.role === "assistant") {
@@ -179,6 +180,8 @@ function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
           data: block.source.data,
         },
       };
+    case "local_image":
+      throw new Error("local_image blocks must be materialized before Anthropic conversion");
     case "thinking":
       return {
         type: "thinking",

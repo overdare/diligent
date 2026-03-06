@@ -37,6 +37,15 @@ export const ImageBlockSchema = z.object({
 });
 export type ImageBlock = z.infer<typeof ImageBlockSchema>;
 
+export const LocalImageBlockSchema = z.object({
+  type: z.literal("local_image"),
+  path: z.string(),
+  mediaType: z.string(),
+  fileName: z.string().optional(),
+  previewUrl: z.string().optional(),
+});
+export type LocalImageBlock = z.infer<typeof LocalImageBlockSchema>;
+
 export const ThinkingBlockSchema = z.object({
   type: z.literal("thinking"),
   thinking: z.string(),
@@ -55,6 +64,7 @@ export type ToolCallBlock = z.infer<typeof ToolCallBlockSchema>;
 export const ContentBlockSchema = z.union([
   TextBlockSchema,
   ImageBlockSchema,
+  LocalImageBlockSchema,
   ThinkingBlockSchema,
   ToolCallBlockSchema,
 ]);

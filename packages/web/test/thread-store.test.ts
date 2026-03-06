@@ -211,6 +211,36 @@ test("creates a new assistant item when same itemId appears in a new turn", () =
   expect(assistants[1] && assistants[1].kind === "assistant" ? assistants[1].text : "").toBe("second");
 });
 
+test("hydrateFromThreadRead restores user images from local_image blocks", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this screenshot?" },
+          {
+            type: "local_image",
+            path: "/tmp/shot.png",
+            mediaType: "image/png",
+            fileName: "shot.png",
+            previewUrl: "blob:shot",
+          },
+        ],
+        timestamp: 100,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+  });
+
+  const user = hydrated.items.find((item) => item.kind === "user");
+  expect(user && user.kind === "user" ? user.text : "").toBe("What is in this screenshot?");
+  expect(user && user.kind === "user" ? user.images : []).toEqual([
+    { url: "blob:shot", fileName: "shot.png", mediaType: "image/png" },
+  ]);
+});
+
 test("hydrateFromThreadRead restores tool_call input and merges matching tool_result output", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

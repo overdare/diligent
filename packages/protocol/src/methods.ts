@@ -70,6 +70,7 @@ export const DILIGENT_WEB_REQUEST_METHODS = {
   AUTH_OAUTH_START: "auth/oauth/start",
   THREAD_SUBSCRIBE: "thread/subscribe",
   THREAD_UNSUBSCRIBE: "thread/unsubscribe",
+  IMAGE_UPLOAD: "image/upload",
 } as const;
 
 export type DiligentWebRequestMethod = (typeof DILIGENT_WEB_REQUEST_METHODS)[keyof typeof DILIGENT_WEB_REQUEST_METHODS];

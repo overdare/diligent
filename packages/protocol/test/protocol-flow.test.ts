@@ -25,6 +25,26 @@ describe("protocol/flow", () => {
         params: { threadId: "th-1", message: "hello" },
       }).success,
     ).toBe(true);
+
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
+        params: {
+          threadId: "th-1",
+          message: "",
+          attachments: [
+            {
+              type: "local_image",
+              path: "/tmp/shot.png",
+              mediaType: "image/png",
+              fileName: "shot.png",
+              previewUrl: "blob:shot",
+            },
+          ],
+          content: [{ type: "local_image", path: "/tmp/shot.png", mediaType: "image/png", fileName: "shot.png" }],
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("accepts codex-like item lifecycle notifications", () => {

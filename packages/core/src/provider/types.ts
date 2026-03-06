@@ -19,6 +19,7 @@ export interface Model {
   inputCostPer1M?: number; // cost per 1M input tokens in USD
   outputCostPer1M?: number; // cost per 1M output tokens in USD
   supportsThinking?: boolean;
+  supportsVision?: boolean;
   defaultBudgetTokens?: number; // fallback when thinkingBudgets absent
   supportsAdaptiveThinking?: boolean; // claude-opus-4-6, sonnet-4-6: model decides budget
   thinkingBudgets?: {

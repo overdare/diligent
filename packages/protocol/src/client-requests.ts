@@ -1,6 +1,7 @@
 // @summary Diligent client->server request schemas and typed method/result maps
 import { z } from "zod";
 import {
+  ContentBlockSchema,
   KnowledgeEntrySchema,
   MessageSchema,
   ModeSchema,
@@ -89,9 +90,20 @@ export const ThreadReadResponseSchema = z.object({
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
 
+export const TurnAttachmentSchema = z.object({
+  type: z.literal("local_image"),
+  path: z.string(),
+  mediaType: z.string(),
+  fileName: z.string().optional(),
+  previewUrl: z.string().optional(),
+});
+export type TurnAttachment = z.infer<typeof TurnAttachmentSchema>;
+
 export const TurnStartParamsSchema = z.object({
   threadId: z.string().optional(),
   message: z.string(),
+  attachments: z.array(TurnAttachmentSchema).max(4).optional(),
+  content: z.array(ContentBlockSchema).optional(),
 });
 export type TurnStartParams = z.infer<typeof TurnStartParamsSchema>;
 
