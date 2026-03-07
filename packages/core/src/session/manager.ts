@@ -21,7 +21,7 @@ import {
   shouldCompact,
 } from "./compaction";
 import { buildSessionContext } from "./context-builder";
-import { DeferredWriter, listSessions, readSessionFile } from "./persistence";
+import { listSessions, readSessionFile, SessionWriter } from "./persistence";
 import type {
   CollabSessionMeta,
   CompactionEntry,
@@ -57,14 +57,14 @@ export interface ResumeSessionOptions {
 export class SessionManager {
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
-  private writer: DeferredWriter;
+  private writer: SessionWriter;
   private byId = new Map<string, SessionEntry>();
   private writeQueue: Promise<void> = Promise.resolve();
   private pendingMessages: Message[] = [];
   private lastApiInputTokens = 0;
 
   constructor(private config: SessionManagerConfig) {
-    this.writer = new DeferredWriter(
+    this.writer = new SessionWriter(
       config.paths.sessions,
       config.cwd,
       undefined,
@@ -80,7 +80,7 @@ export class SessionManager {
     this.leafId = null;
     this.byId.clear();
     this.writeQueue = Promise.resolve();
-    this.writer = new DeferredWriter(
+    this.writer = new SessionWriter(
       this.config.paths.sessions,
       this.config.cwd,
       undefined,
@@ -88,6 +88,7 @@ export class SessionManager {
       this.config.collabMeta,
       this.config.sessionId ?? this.writer.id,
     );
+    await this.writer.create();
   }
 
   /** Resume an existing session */
@@ -113,7 +114,7 @@ export class SessionManager {
     }
     this.leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
     this.writeQueue = Promise.resolve();
-    this.writer = new DeferredWriter(this.config.paths.sessions, this.config.cwd, sessionPath);
+    this.writer = new SessionWriter(this.config.paths.sessions, this.config.cwd, sessionPath);
 
     this.repairEntries();
 

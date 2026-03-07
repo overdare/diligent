@@ -431,7 +431,58 @@ describe("DiligentAppServer", () => {
     expect((readResult(newThreadRead) as { currentEffort: string }).currentEffort).toBe("max");
   });
 
-  it("uses image fallback preview in thread list cache when first turn is image-only", async () => {
+  it("lists a newly started thread before the first turn", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const start = await server.handleRequest({ id: 110, method: "thread/start", params: { cwd: projectRoot } });
+    const threadId = (readResult(start) as { threadId: string }).threadId;
+
+    const list = await server.handleRequest({ id: 111, method: "thread/list", params: { limit: 10 } });
+    const result = readResult(list) as { data: Array<{ id: string; messageCount: number }> };
+    expect(result.data.find((item) => item.id === threadId)).toMatchObject({ id: threadId, messageCount: 0 });
+  });
+
+  it("reads image fallback preview from persisted thread list data when first turn is image-only", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({

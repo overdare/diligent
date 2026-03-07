@@ -16,10 +16,10 @@ export { SessionManager } from "./manager";
 export {
   appendEntry,
   createSessionFile,
-  DeferredWriter,
   deleteSession,
   listSessions,
   readSessionFile,
+  SessionWriter,
 } from "./persistence";
 export type {
   CompactionDetails,

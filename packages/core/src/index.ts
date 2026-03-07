@@ -184,7 +184,6 @@ export {
   appendEntry,
   buildSessionContext,
   createSessionFile,
-  DeferredWriter,
   estimateTokens,
   extractFileOperations,
   findRecentUserMessages,
@@ -197,6 +196,7 @@ export {
   readSessionFile,
   SESSION_VERSION,
   SessionManager,
+  SessionWriter,
   SUMMARY_PREFIX,
   shouldCompact,
 } from "./session/index";

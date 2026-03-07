@@ -228,10 +228,11 @@ Decisions made during synthesis reviews, with rationale.
 - **Rationale**: codex-rs's `InitialContextInjection` pattern addresses a real problem: compaction summaries capture conversation content but may miss system-level context. Re-injection ensures the LLM always has the current system prompt and instructions, even after heavy compaction. pi-agent and opencode rely on the summary carrying this, which can be lossy.
 - **Date**: 2026-02-23
 
-### D042: Deferred persistence — Write on first assistant message
-- **Decision**: Don't create the session file until the first assistant message arrives. Prevents empty/abandoned session files.
-- **Rationale**: pi-agent's deferred persistence pattern avoids cluttering the sessions directory with files from sessions where the user typed something but the LLM never responded (e.g., user aborted before response, connection error). Simple optimization with real usability benefit.
+### D042: Immediate persistence — Create session file at session start
+- **Decision**: Create the session file as soon as the session/thread is created, then append entries immediately.
+- **Rationale**: Deferred persistence and app-server thread summary caching introduced timing/state complexity around listing, resume visibility, and in-memory-vs-disk consistency. Immediate persistence makes disk the single source of truth for thread/session state and simplifies the implementation.
 - **Date**: 2026-02-23
+- **Updated**: 2026-03-07
 
 ### D043: Session version migration
 - **Decision**: Include a version number in the session header. Support forward migration on load (parse → detect version → transform if needed). Follow pi-agent's pattern of backward-compatible entry additions.

@@ -143,8 +143,6 @@ export class DiligentAppServer {
   private readonly serverVersion: string;
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly knownCwds = new Set<string>();
-  /** In-memory cache of thread summaries — updated immediately on create/message so THREAD_LIST never lags disk */
-  private readonly threadSummaryCache = new Map<string, SessionSummary>();
   private activeThreadId: string | null = null;
 
   // New multi-connection infrastructure
@@ -589,17 +587,6 @@ export class DiligentAppServer {
     this.activeThreadId = threadId;
     this.knownCwds.add(params.cwd);
 
-    // Immediately register in cache so THREAD_LIST returns it without waiting for disk flush
-    const now = new Date().toISOString();
-    this.threadSummaryCache.set(threadId, {
-      id: threadId,
-      path: "",
-      cwd: params.cwd,
-      created: now,
-      modified: now,
-      messageCount: 0,
-    });
-
     await this.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED, params: { threadId } });
     return { threadId };
   }
@@ -663,39 +650,30 @@ export class DiligentAppServer {
   }
 
   private async handleThreadList(limit?: number, includeChildren?: boolean): Promise<{ data: SessionSummary[] }> {
-    // Load from disk and populate cache for any entries not already tracked in memory.
-    // In-memory entries take precedence — they're always at least as fresh as disk.
+    const result: SessionSummary[] = [];
+
     for (const cwd of this.knownCwds) {
       const paths = await this.config.resolvePaths(cwd);
       const sessions = await listSessions(paths.sessions);
       for (const session of sessions) {
-        if (!this.threadSummaryCache.has(session.id)) {
-          this.threadSummaryCache.set(session.id, {
-            id: session.id,
-            path: session.path,
-            cwd: session.cwd,
-            name: session.name,
-            created: session.created.toISOString(),
-            modified: session.modified.toISOString(),
-            messageCount: session.messageCount,
-            firstUserMessage: session.firstUserMessage,
-            parentSession: session.parentSession,
-          });
-        }
+        result.push({
+          id: session.id,
+          path: session.path,
+          cwd: session.cwd,
+          name: session.name,
+          created: session.created.toISOString(),
+          modified: session.modified.toISOString(),
+          messageCount: session.messageCount,
+          firstUserMessage: session.firstUserMessage,
+          parentSession: session.parentSession,
+        });
       }
     }
 
-    let result = Array.from(this.threadSummaryCache.values());
+    const filtered = includeChildren ? result : result.filter((s) => !s.parentSession);
+    filtered.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
 
-    // Filter out sub-agent sessions by default
-    if (!includeChildren) {
-      result = result.filter((s) => !s.parentSession);
-    }
-
-    // Sort by modified descending so newest thread always appears first
-    result.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-
-    return { data: result.slice(0, limit ?? 100) };
+    return { data: filtered.slice(0, limit ?? 100) };
   }
 
   private async handleThreadRead(threadId?: string): Promise<{
@@ -764,17 +742,6 @@ export class DiligentAppServer {
       content,
       timestamp,
     };
-
-    // Immediately update cache with the new message — no need to wait for disk flush
-    const cached = this.threadSummaryCache.get(runtime.id);
-    if (cached) {
-      this.threadSummaryCache.set(runtime.id, {
-        ...cached,
-        firstUserMessage: cached.firstUserMessage ?? summarizeUserPreview(content),
-        messageCount: cached.messageCount + 1,
-        modified: new Date().toISOString(),
-      });
-    }
 
     const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
     const userItem = { type: "userMessage" as const, itemId: userItemId, message: userMessage };
@@ -850,9 +817,7 @@ export class DiligentAppServer {
       throw new Error("Cannot delete a thread that is currently running");
     }
 
-    // A thread that never had a message sent has no file on disk yet (DeferredWriter hasn't
-    // flushed). Treat it as deleted as long as we know about it in memory.
-    const knownInMemory = this.threadSummaryCache.has(threadId) || this.threads.has(threadId);
+    const knownInMemory = this.threads.has(threadId);
 
     let deletedFromDisk = false;
     for (const cwd of this.knownCwds) {
@@ -867,7 +832,6 @@ export class DiligentAppServer {
     const deleted = deletedFromDisk || knownInMemory;
     if (deleted) {
       this.threads.delete(threadId);
-      this.threadSummaryCache.delete(threadId);
       if (this.activeThreadId === threadId) {
         this.activeThreadId = null;
       }
@@ -1281,18 +1245,10 @@ export class DiligentAppServer {
   }
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
-    const candidates = new Map<string, SessionSummary>();
-
-    for (const summary of this.threadSummaryCache.values()) {
-      if (summary.cwd === cwd) {
-        candidates.set(summary.id, summary);
-      }
-    }
-
     const paths = await this.config.resolvePaths(cwd);
-    const sessions = await listSessions(paths.sessions);
-    for (const session of sessions) {
-      const summary: SessionSummary = {
+    const ordered = (await listSessions(paths.sessions))
+      .filter((session) => session.cwd === cwd)
+      .map<SessionSummary>((session) => ({
         id: session.id,
         path: session.path,
         cwd: session.cwd,
@@ -1302,16 +1258,7 @@ export class DiligentAppServer {
         messageCount: session.messageCount,
         firstUserMessage: session.firstUserMessage,
         parentSession: session.parentSession,
-      };
-      this.threadSummaryCache.set(session.id, summary);
-      if (session.cwd === cwd) {
-        candidates.set(session.id, summary);
-      }
-    }
-
-    const ordered = Array.from(candidates.values()).sort(
-      (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime(),
-    );
+      }));
 
     for (const summary of ordered) {
       const runtime = this.threads.get(summary.id);
@@ -1447,26 +1394,4 @@ function mediaTypeToExtension(mediaType: string): string {
     default:
       return ".img";
   }
-}
-
-function summarizeUserPreview(content: string | unknown[]): string | undefined {
-  if (typeof content === "string") {
-    const trimmed = content.trim();
-    return trimmed ? trimmed.slice(0, 100) : undefined;
-  }
-
-  const text = content
-    .filter((block): block is { type: "text"; text: string } => {
-      return typeof block === "object" && block !== null && "type" in block && block.type === "text" && "text" in block;
-    })
-    .map((block) => block.text.trim())
-    .filter(Boolean)
-    .join(" ")
-    .slice(0, 100);
-  if (text) return text;
-
-  const imageCount = content.filter(
-    (block) => typeof block === "object" && block !== null && "type" in block && block.type === "local_image",
-  ).length;
-  return imageCount > 0 ? `[image${imageCount > 1 ? "s" : ""}]` : undefined;
 }

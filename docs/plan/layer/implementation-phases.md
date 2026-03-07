@@ -191,7 +191,7 @@ User → exits, --continue → conversation resumes from persisted session
 | L1 (Agent Loop) | `itemId` on grouped AgentEvent subtypes (D086) | Compaction trigger hook (Phase 3b) |
 | L2 (Tool System) | Expand `ApprovalRequest`/`ApprovalResponse` types (D086, D028, D029). `approve()` returns `ApprovalResponse`. Phase 3a still auto-returns `"once"` | Actual approval logic (Phase 4) |
 | L5 (Config) | Full JSONC + Zod validation, 3-layer hierarchy, CLAUDE.md discovery, template substitution (D032-D035) | Enterprise config, config editing UI |
-| L6 (Session) | **SessionManager** mediator class (D086): wraps `agentLoop()`, owns session lifecycle (create/resume/fork per D040). JSONL persistence, tree structure, deferred persistence (D036-REV, D040-D043) | Compaction, knowledge (Phase 3b) |
+| L6 (Session) | **SessionManager** mediator class (D086): wraps `agentLoop()`, owns session lifecycle (create/resume/fork per D040). JSONL persistence, tree structure, immediate persistence (D036-REV, D040-D043) | Compaction, knowledge (Phase 3b) |
 | L7 (TUI) | Switches from direct `agentLoop()` to `SessionManager`. CLI: `--continue`, `--list` | No new TUI features |
 | Infrastructure | `.diligent/` project data directory convention (D080), auto-generated `.gitignore`, JSON serialization roundtrip test convention (D086) | — |
 

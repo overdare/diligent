@@ -1,4 +1,4 @@
-// @summary Session file persistence with JSONL format, deferred writing, and session listing
+// @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { buildSessionContext } from "./context-builder";
@@ -19,8 +19,10 @@ export async function createSessionFile(
   sessionsDir: string,
   cwd: string,
   parentSession?: string,
+  collabMeta?: CollabSessionMeta,
+  sessionId?: string,
 ): Promise<{ path: string; header: SessionHeader }> {
-  const id = generateSessionId();
+  const id = sessionId ?? generateSessionId();
   const header: SessionHeader = {
     type: "session",
     version: SESSION_VERSION,
@@ -28,6 +30,8 @@ export async function createSessionFile(
     timestamp: new Date().toISOString(),
     cwd,
     parentSession,
+    nickname: collabMeta?.nickname,
+    description: collabMeta?.description,
   };
   const path = join(sessionsDir, `${id}.jsonl`);
   await Bun.write(path, `${JSON.stringify(header)}\n`);
@@ -184,15 +188,11 @@ export async function deleteSession(sessionsDir: string, sessionId: string): Pro
 }
 
 /**
- * Deferred persistence manager (D042).
- * Accumulates entries in memory until the first assistant message arrives,
- * then flushes all at once. Prevents abandoned empty session files.
+ * Immediate persistence manager.
+ * Creates the session file up front and appends every entry directly.
  */
-export class DeferredWriter {
-  private pendingEntries: SessionEntry[] = [];
-  private flushed = false;
+export class SessionWriter {
   private sessionPath: string | null = null;
-  /** Pre-assigned ID — available immediately, before flush. */
   private readonly preAssignedId: string;
 
   constructor(
@@ -205,61 +205,39 @@ export class DeferredWriter {
   ) {
     if (existingPath) {
       this.sessionPath = existingPath;
-      this.flushed = true;
       this.preAssignedId = existingPath.split("/").pop()!.replace(".jsonl", "");
     } else {
       this.preAssignedId = preAssignedId ?? generateSessionId();
     }
   }
 
-  /** Queue an entry. Triggers flush on first assistant message. */
-  async write(entry: SessionEntry): Promise<void> {
-    this.pendingEntries.push(entry);
+  /** Ensure the session file exists on disk. */
+  async create(): Promise<string> {
+    if (this.sessionPath) return this.sessionPath;
 
-    if (!this.flushed && entry.type === "message" && entry.message.role === "assistant") {
-      await this.flush();
-    } else if (this.flushed && this.sessionPath) {
-      await appendEntry(this.sessionPath, entry);
-    }
-  }
-
-  /** Force flush all pending entries to disk. */
-  async flush(): Promise<string> {
-    if (this.flushed && this.sessionPath) return this.sessionPath;
-
-    const path = join(this.sessionsDir, `${this.preAssignedId}.jsonl`);
-    const header: SessionHeader = {
-      type: "session",
-      version: SESSION_VERSION,
-      id: this.preAssignedId,
-      timestamp: new Date().toISOString(),
-      cwd: this.cwd,
-      parentSession: this.parentSession,
-      nickname: this.collabMeta?.nickname,
-      description: this.collabMeta?.description,
-    };
-    await Bun.write(path, `${JSON.stringify(header)}\n`);
+    const { path } = await createSessionFile(
+      this.sessionsDir,
+      this.cwd,
+      this.parentSession,
+      this.collabMeta,
+      this.preAssignedId,
+    );
     this.sessionPath = path;
-
-    for (const entry of this.pendingEntries) {
-      await appendEntry(path, entry);
-    }
-
-    this.flushed = true;
-    this.pendingEntries = [];
     return path;
   }
 
-  /** Session ID — always available, even before flush. */
+  /** Append an entry to disk immediately. */
+  async write(entry: SessionEntry): Promise<void> {
+    const path = await this.create();
+    await appendEntry(path, entry);
+  }
+
+  /** Session ID — always available. */
   get id(): string {
     return this.preAssignedId;
   }
 
   get path(): string | null {
     return this.sessionPath;
-  }
-
-  get isFlushed(): boolean {
-    return this.flushed;
   }
 }

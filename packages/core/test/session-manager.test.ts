@@ -129,7 +129,7 @@ describe("SessionManager", () => {
     // Should have persisted user + assistant messages
     expect(mgr.entryCount).toBeGreaterThanOrEqual(2);
 
-    // Session file should exist (deferred write triggered by assistant message)
+    // Session file should exist after session creation
     expect(mgr.sessionPath).not.toBeNull();
 
     // Read back from disk

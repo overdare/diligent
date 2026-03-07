@@ -6,10 +6,10 @@ import { join } from "node:path";
 import {
   appendEntry,
   createSessionFile,
-  DeferredWriter,
   deleteSession,
   listSessions,
   readSessionFile,
+  SessionWriter,
 } from "../src/session/persistence";
 import type { SessionMessageEntry } from "../src/session/types";
 import { generateEntryId, SESSION_VERSION } from "../src/session/types";
@@ -204,56 +204,37 @@ describe("listSessions parentSession", () => {
   });
 });
 
-describe("DeferredWriter", () => {
-  it("does not write to disk on user messages only", async () => {
+describe("SessionWriter", () => {
+  it("creates the session file immediately", async () => {
     const dir = await setupDir();
-    const writer = new DeferredWriter(dir, "/project");
+    const writer = new SessionWriter(dir, "/project");
 
-    await writer.write(makeUserEntry());
+    const path = await writer.create();
 
-    expect(writer.isFlushed).toBe(false);
-    expect(writer.path).toBeNull();
+    expect(writer.path).toBe(path);
+    const { entries } = await readSessionFile(path);
+    expect(entries).toEqual([]);
   });
 
-  it("flushes on first assistant message", async () => {
+  it("writes entries immediately", async () => {
     const dir = await setupDir();
-    const writer = new DeferredWriter(dir, "/project");
+    const writer = new SessionWriter(dir, "/project");
 
     const userEntry = makeUserEntry();
     await writer.write(userEntry);
     const assistantEntry = makeAssistantEntry(userEntry.id);
     await writer.write(assistantEntry);
 
-    expect(writer.isFlushed).toBe(true);
     expect(writer.path).not.toBeNull();
-
-    // Verify file contents
     const { entries } = await readSessionFile(writer.path!);
     expect(entries).toHaveLength(2);
-  });
-
-  it("writes subsequent entries immediately after flush", async () => {
-    const dir = await setupDir();
-    const writer = new DeferredWriter(dir, "/project");
-
-    const user1 = makeUserEntry();
-    await writer.write(user1);
-    const assistant1 = makeAssistantEntry(user1.id);
-    await writer.write(assistant1); // triggers flush
-
-    const user2 = makeUserEntry(assistant1.id);
-    await writer.write(user2); // should write immediately
-
-    const { entries } = await readSessionFile(writer.path!);
-    expect(entries).toHaveLength(3);
   });
 
   it("accepts existing path for resumed sessions", async () => {
     const dir = await setupDir();
     const { path } = await createSessionFile(dir, "/project");
 
-    const writer = new DeferredWriter(dir, "/project", path);
-    expect(writer.isFlushed).toBe(true);
+    const writer = new SessionWriter(dir, "/project", path);
 
     const entry = makeUserEntry();
     await writer.write(entry);
@@ -262,13 +243,11 @@ describe("DeferredWriter", () => {
     expect(entries).toHaveLength(1);
   });
 
-  it("passes parentSession to session header on flush", async () => {
+  it("passes parentSession to session header on create", async () => {
     const dir = await setupDir();
-    const writer = new DeferredWriter(dir, "/project", undefined, "parent-abc");
+    const writer = new SessionWriter(dir, "/project", undefined, "parent-abc");
 
-    const userEntry = makeUserEntry();
-    await writer.write(userEntry);
-    await writer.write(makeAssistantEntry(userEntry.id));
+    await writer.create();
 
     const { header } = await readSessionFile(writer.path!);
     expect(header.parentSession).toBe("parent-abc");

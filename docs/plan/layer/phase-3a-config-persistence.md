@@ -1371,7 +1371,7 @@ Phase 2 stubs and placeholders replaced in Phase 3a:
 5. **CLAUDE.md** — discovered via findUp, injected into system prompt
 6. **Template substitution** — `{env:VAR}` in config values replaced
 7. **`.diligent/`** — directory auto-created on first run with `.gitignore`
-8. **Session create** — new session creates JSONL file after first assistant response (deferred write)
+8. **Session create** — new session creates JSONL file immediately at session start
 9. **Session persist** — messages written as JSONL entries with tree structure (id/parentId)
 10. **Session resume** — `--continue` flag loads most recent session, conversation history intact
 11. **Session list** — `--list` flag shows sessions sorted by modified date
