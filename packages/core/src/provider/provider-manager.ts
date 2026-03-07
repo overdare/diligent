@@ -29,6 +29,12 @@ export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPla
   gemini: { apiKeyUrl: "https://aistudio.google.com/apikey", apiKeyPlaceholder: "AIza..." },
 };
 
+const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) => StreamFunction> = {
+  anthropic: createAnthropicStream,
+  openai: createOpenAIStream,
+  gemini: createGeminiStream,
+};
+
 /**
  * Manages provider API keys and creates a proxy StreamFunction
  * that dispatches to the correct provider based on model.provider.
@@ -175,14 +181,9 @@ export class ProviderManager {
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
-    let stream: StreamFunction;
-    if (provider === "openai") {
-      stream = createOpenAIStream(apiKey, this.baseUrls.openai);
-    } else if (provider === "gemini") {
-      stream = createGeminiStream(apiKey, this.baseUrls.gemini);
-    } else {
-      stream = createAnthropicStream(apiKey);
-    }
+    const factory = PROVIDER_FACTORIES[provider];
+    if (!factory) throw new Error(`Unknown provider: ${provider}`);
+    const stream = factory(apiKey, this.baseUrls[provider]);
 
     this.cache.set(cacheKey, stream);
     return stream;
