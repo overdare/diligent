@@ -4,7 +4,10 @@ import type { Tool, ToolContext, ToolResult } from "../tool/types";
 
 const PlanStep = z.object({
   text: z.string().describe("Step description"),
-  done: z.boolean().default(false).describe("Whether this step is complete"),
+  status: z
+    .enum(["pending", "in_progress", "done"])
+    .default("pending")
+    .describe("Step status: 'pending' (not started), 'in_progress' (currently active), or 'done' (completed)"),
 });
 
 const PlanParams = z.object({
@@ -27,8 +30,9 @@ export function createPlanTool(): Tool<typeof PlanParams> {
       "Call this at the start of complex multi-step tasks to show the user your plan. " +
       "You MUST call this immediately after completing each step to mark it done=true before moving on to the next step. " +
       "Never skip updating the plan after a step is done — always mark the finished step before starting the next one. " +
+      "Exactly ONE step should be in_progress at a time — mark it in_progress when starting, done when finished, before moving to the next. " +
       "Call with close=true (no steps needed) to dismiss the plan when the task is done or cancelled. " +
-      "Do not use for simple tasks that require fewer than 3 steps.",
+      "Use for complex multi-step tasks that require 3 or more distinct steps. Do not use for simple tasks that require fewer than 3 steps.",
     parameters: PlanParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       if (args.close) {
@@ -40,7 +44,7 @@ export function createPlanTool(): Tool<typeof PlanParams> {
       return {
         output: JSON.stringify({
           title: args.title ?? "Plan",
-          steps: args.steps.map((s) => ({ text: s.text, done: s.done ?? false })),
+          steps: args.steps.map((s) => ({ text: s.text, status: s.status ?? "pending" })),
         }),
       };
     },

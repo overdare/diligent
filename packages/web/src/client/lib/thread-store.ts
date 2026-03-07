@@ -20,7 +20,7 @@ const COLLAB_RENDERED_TOOLS = new Set(["spawn_agent", "wait", "close_agent"]);
 
 export interface PlanState {
   title: string;
-  steps: Array<{ text: string; done: boolean }>;
+  steps: Array<{ text: string; status: "pending" | "in_progress" | "done" }>;
 }
 
 export interface ToastState {
@@ -249,11 +249,18 @@ function parsePlanOutput(output: string): PlanState | null | "closed" {
     const parsed = JSON.parse(output) as {
       closed?: boolean;
       title?: string;
-      steps?: Array<{ text: string; done: boolean }>;
+      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done"; done?: boolean }>;
     };
     if (parsed?.closed) return "closed";
     if (parsed && Array.isArray(parsed.steps)) {
-      return { title: parsed.title ?? "Plan", steps: parsed.steps };
+      return {
+        title: parsed.title ?? "Plan",
+        steps: parsed.steps.map((s) => ({
+          text: s.text,
+          // backwards compat: old `done: boolean` format
+          status: s.status ?? (s.done ? "done" : "pending"),
+        })),
+      };
     }
   } catch {
     // not valid plan JSON

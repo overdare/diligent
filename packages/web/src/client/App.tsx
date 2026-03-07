@@ -730,7 +730,7 @@ export function App() {
     state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
   const statusDotPulse = state.threadStatus !== "idle";
 
-  const showPlan = state.planState?.steps.some((s) => !s.done);
+  const showPlan = state.planState?.steps.some((s) => s.status !== "done");
 
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();

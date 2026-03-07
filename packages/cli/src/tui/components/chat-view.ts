@@ -180,9 +180,15 @@ export class ChatView implements Component {
           const lines: string[] = [`${icon} ${t.bold}${header}${t.reset}${elapsed}`];
 
           if (parsed?.steps && Array.isArray(parsed.steps)) {
-            for (const step of parsed.steps as Array<{ text: string; done: boolean }>) {
-              const check = step.done ? `${t.success}☑${t.reset}` : `${t.dim}☐${t.reset}`;
-              const text = step.done ? `${t.dim}${step.text}${t.reset}` : step.text;
+            for (const step of parsed.steps as Array<{
+              text: string;
+              status?: "pending" | "in_progress" | "done";
+              done?: boolean;
+            }>) {
+              const status = step.status ?? (step.done ? "done" : "pending");
+              const check =
+                status === "done" ? `${t.success}☑${t.reset}` : status === "in_progress" ? "▶" : `${t.dim}☐${t.reset}`;
+              const text = status === "done" ? `${t.dim}${step.text}${t.reset}` : step.text;
               lines.push(`  ${check} ${text}`);
             }
           }
