@@ -18,9 +18,9 @@ describe("plan tool", () => {
     const result = await tool.execute(
       {
         steps: [
-          { text: "Read the code", done: true },
-          { text: "Write the fix", done: false },
-          { text: "Run tests", done: false },
+          { text: "Read the code", status: "done" },
+          { text: "Write the fix", status: "in_progress" },
+          { text: "Run tests", status: "pending" },
         ],
       },
       makeCtx(),
@@ -29,22 +29,25 @@ describe("plan tool", () => {
     const parsed = JSON.parse(result.output);
     expect(parsed.title).toBe("Plan");
     expect(parsed.steps).toHaveLength(3);
-    expect(parsed.steps[0]).toEqual({ text: "Read the code", done: true });
-    expect(parsed.steps[1]).toEqual({ text: "Write the fix", done: false });
+    expect(parsed.steps[0]).toEqual({ text: "Read the code", status: "done" });
+    expect(parsed.steps[1]).toEqual({ text: "Write the fix", status: "in_progress" });
   });
 
   it("uses custom title when provided", async () => {
     const tool = createPlanTool();
-    const result = await tool.execute({ title: "Refactor Plan", steps: [{ text: "Step 1", done: false }] }, makeCtx());
+    const result = await tool.execute(
+      { title: "Refactor Plan", steps: [{ text: "Step 1", status: "pending" }] },
+      makeCtx(),
+    );
     const parsed = JSON.parse(result.output);
     expect(parsed.title).toBe("Refactor Plan");
   });
 
-  it("defaults done to false when omitted", async () => {
+  it("defaults status to pending when omitted", async () => {
     const tool = createPlanTool();
     const result = await tool.execute({ steps: [{ text: "Do something" }] }, makeCtx());
     const parsed = JSON.parse(result.output);
-    expect(parsed.steps[0].done).toBe(false);
+    expect(parsed.steps[0].status).toBe("pending");
   });
 
   it("rejects empty steps array", async () => {
@@ -55,9 +58,9 @@ describe("plan tool", () => {
   it("preserves step order", async () => {
     const tool = createPlanTool();
     const steps = [
-      { text: "Alpha", done: false },
-      { text: "Beta", done: true },
-      { text: "Gamma", done: false },
+      { text: "Alpha", status: "pending" as const },
+      { text: "Beta", status: "done" as const },
+      { text: "Gamma", status: "pending" as const },
     ];
     const result = await tool.execute({ steps }, makeCtx());
     const parsed = JSON.parse(result.output);
