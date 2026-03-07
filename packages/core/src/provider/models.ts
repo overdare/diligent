@@ -38,7 +38,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     id: "claude-sonnet-4-6",
     provider: "anthropic",
     contextWindow: 200_000,
-    maxOutputTokens: 128_000,
+    maxOutputTokens: 64_000,
     inputCostPer1M: 3.0,
     outputCostPer1M: 15.0,
     supportsThinking: true,

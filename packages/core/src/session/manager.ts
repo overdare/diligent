@@ -255,14 +255,14 @@ export class SessionManager {
     let currentMessages = [...messages];
     let currentConfig = initialConfig;
     let turnCount = 0;
-    const maxTurns = initialConfig.maxTurns ?? 100;
+    const maxTurns = initialConfig.maxTurns;
     let itemCounter = 0;
     const generateItemId = () => `item-${++itemCounter}`;
     const loopDetector = new LoopDetector();
 
     outerStream.push({ type: "agent_start" });
 
-    while (turnCount < maxTurns) {
+    while (maxTurns === undefined || turnCount < maxTurns) {
       if (turnCount > 0) {
         const nextConfigResult = this.resolveAgentConfig();
         currentConfig = nextConfigResult instanceof Promise ? await nextConfigResult : nextConfigResult;

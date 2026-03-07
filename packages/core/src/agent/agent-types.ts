@@ -40,7 +40,6 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
     name: "general",
     description: "General-purpose agent with full tool access for complex tasks",
     toolFilter: "all",
-    maxTurns: 30,
     spawnGuidance: {
       summary: "Execution agent for implementation and production work",
       whenToUse: [
@@ -60,7 +59,6 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
     description: "Read-only agent for codebase exploration and research",
     systemPromptPrefix: `${explorePrompt}\n`,
     toolFilter: "readonly",
-    maxTurns: 20,
     spawnGuidance: {
       summary: "Fast, authoritative codebase Q&A for specific scoped questions",
       whenToUse: [
@@ -82,7 +80,6 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
       "Planning agent that explores the codebase and writes a decision-complete plan document to .diligent/plans/",
     systemPromptPrefix: `${plannerPrompt}\n`,
     toolFilter: "all",
-    maxTurns: 25,
     spawnGuidance: {
       summary: "Planning-focused agent that writes structured plan documents",
       whenToUse: [

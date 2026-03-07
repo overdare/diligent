@@ -205,14 +205,14 @@ async function runLoop(
 
   const allMessages = [...messages];
   let turnCount = 0;
-  const maxTurns = config.maxTurns ?? 100;
+  const maxTurns = config.maxTurns;
 
   const loopDetector = new LoopDetector();
   const turnRuntime = createTurnRuntime(config, stream);
 
   stream.push({ type: "agent_start" });
 
-  while (turnCount < maxTurns) {
+  while (maxTurns === undefined || turnCount < maxTurns) {
     if (config.signal?.aborted) {
       console.log("[AgentLoop] signal aborted at top-of-loop, breaking after %d turns", turnCount);
       break;
