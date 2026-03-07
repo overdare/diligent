@@ -2,7 +2,7 @@
 name: passion-junior
 description: >
   Auto-fix simple, independent tasks from the latest tech-lead review and open individual PRs for each.
-  Reads the most recent review in docs/review/tech-lead/, parses "Group 1" (parallel quick fixes) from
+  Reads the most recent review in docs/review/, parses "Group 1" (parallel quick fixes) from
   the Priority Actions section, then executes each fix on a separate branch and opens a PR.
   Use this skill when: the user says "passion-junior", "auto-fix review items", "fix quick wins from review",
   "run the junior fixes", or asks to automatically resolve simple tech-lead review findings.
@@ -20,7 +20,7 @@ Execute Group 1 quick fixes from the latest tech-lead review, each as an individ
 Find the most recently committed review file using git:
 
 ```bash
-git log --oneline --diff-filter=A -- 'docs/review/tech-lead/*.md' | head -5
+git log --oneline --diff-filter=A -- 'docs/review/[0-9]*.md' | head -5
 ```
 
 This lists commits that added files in that directory, newest first. The first result's file is the latest review. Multiple files may share the same date prefix, so filename sorting is unreliable — always use git commit order.

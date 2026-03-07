@@ -2,7 +2,7 @@
 
 ## Review File Location
 
-Reviews are stored in `docs/review/tech-lead/` with naming convention:
+Reviews are stored in `docs/review/` with naming convention:
 `YYYY-MM-DD-<short-commit-hash>.md` (optionally with scope suffix like `-web`).
 
 ## Finding the Latest Review

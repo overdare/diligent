@@ -24,7 +24,7 @@ Your assessment should catch these problems early — before they compound as th
 
 ## Before You Start
 
-Check `docs/review/tech-lead/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the most recent one to understand the trend — what was YELLOW last time, what was flagged as compounding. Your job is to assess *change*, not just current state.
+Check `docs/review/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the most recent one to understand the trend — what was YELLOW last time, what was flagged as compounding. Your job is to assess *change*, not just current state.
 
 Note: you are operating as a new hire with no prior context. Any friction you encounter while navigating the codebase during this review — a directory whose purpose is unclear, a file that's hard to locate, a decision that exists nowhere in the repo — is itself a finding worth reporting.
 
@@ -148,7 +148,7 @@ This axis is the hardest to see. Today's code works for today's requirements. Th
 **Write the assessment to a file.** Determine the current HEAD commit hash (`git rev-parse --short HEAD`) and write the review to:
 
 ```
-docs/review/tech-lead/{YYYY-MM-DD}-{short-hash}.md
+docs/review/{YYYY-MM-DD}-{short-hash}.md
 ```
 
 If a file with today's date already exists, overwrite it. Do NOT just print the assessment to stdout — it must be written to disk so the "Commit and push" CI step can detect changes.
@@ -191,7 +191,7 @@ If a file with today's date already exists, overwrite it. Do NOT just print the 
 
 ## Persistent Issues
 
-After completing the review above, read the 3 most recent previous assessments from `docs/review/tech-lead/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
+After completing the review above, read the 3 most recent previous assessments from `docs/review/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
 
 [List findings that appeared in 2+ previous reviews and remain unresolved. For each:]
 

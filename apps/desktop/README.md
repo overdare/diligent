@@ -2,8 +2,6 @@
 
 Tauri v2 desktop application that wraps the Diligent web UI as a native Mac/Windows app.
 
-For directory structure, see [EXPLORE.md](EXPLORE.md).
-
 ## Architecture
 
 ```
