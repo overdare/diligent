@@ -24,6 +24,9 @@ function statusMessage(s: AgentStatus): string | undefined {
 /** Tool names that belong to the collab layer — excluded from child agents. */
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 
+/** Subset of CollabToolDeps that can safely be mutated between turns (excludes structural fields). */
+export type MutableCollabDeps = Omit<CollabToolDeps, "cwd" | "paths" | "parentTools" | "maxAgents" | "sessionManagerFactory">;
+
 export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();
   private pool = new NicknamePool();
@@ -33,6 +36,27 @@ export class AgentRegistry {
   constructor(private deps: CollabToolDeps) {
     this.maxAgents = deps.maxAgents ?? 8;
     this.collabEventHandler = deps.onCollabEvent;
+  }
+
+  /**
+   * Update the mutable fields of CollabToolDeps in-place.
+   * Called at the start of each turn when the registry is reused across turns.
+   * Does NOT touch structural fields (cwd, paths, parentTools, maxAgents, sessionManagerFactory).
+   */
+  updateDeps(next: MutableCollabDeps): void {
+    this.deps = {
+      ...this.deps,
+      model: next.model,
+      systemPrompt: next.systemPrompt,
+      streamFunction: next.streamFunction,
+      getParentSessionId: next.getParentSessionId,
+      ask: next.ask,
+      onCollabEvent: next.onCollabEvent,
+    };
+    // Sync the collab event handler if it was updated
+    if (next.onCollabEvent !== undefined) {
+      this.collabEventHandler = next.onCollabEvent;
+    }
   }
 
   /** Set or replace the collab event handler. Used by SessionManager to wire events into the active stream. */

@@ -28,7 +28,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
   const config: DiligentAppServerConfig = {
     cwd,
     resolvePaths: (requestCwd) => ensureDiligentDir(requestCwd),
-    buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId }) => {
+    buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId, existingRegistry }) => {
       if (!runtimeConfig.model) {
         throw new Error("No AI provider configured. Please add an API key in the provider settings.");
       }
@@ -41,7 +41,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         getParentSessionId: getSessionId,
         ask,
       };
-      const result = await buildDefaultTools(requestCwd, paths, deps, runtimeConfig.diligent.tools);
+      const result = await buildDefaultTools(requestCwd, paths, deps, runtimeConfig.diligent.tools, existingRegistry);
 
       return {
         model: runtimeConfig.model,

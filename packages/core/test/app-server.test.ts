@@ -769,6 +769,95 @@ describe("DiligentAppServer", () => {
     }
   });
 
+  it("logs iterator drain before final turn completion", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const originalLog = console.log;
+    const logSpy = mock(() => {});
+    console.log = logSpy as typeof console.log;
+
+    try {
+      const server = new DiligentAppServer({
+        resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+        buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
+          model: {
+            id: "fake-model",
+            provider: "fake",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+          },
+          systemPrompt: [{ label: "base", content: "test" }],
+          tools: [],
+          mode,
+          effort,
+          signal,
+          approve,
+          ask,
+          streamFunction: () => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({ type: "text_delta", delta: "hello" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "hello" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+
+            return stream as never;
+          },
+        }),
+      });
+
+      let completedTurnId: string | undefined;
+      const turnDone = new Promise<void>((resolve) => {
+        server.setNotificationListener((notification) => {
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
+            completedTurnId = notification.params.turnId;
+          }
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+            resolve();
+          }
+        });
+      });
+
+      const start = await server.handleRequest({
+        id: 300,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const startResult = readResult(start) as { threadId: string };
+
+      await server.handleRequest({
+        id: 301,
+        method: "turn/start",
+        params: { threadId: startResult.threadId, message: "hi" },
+      });
+
+      await turnDone;
+
+      const iteratorDrainCall = logSpy.mock.calls.find(
+        (args) => args[0] === "[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result",
+      );
+      expect(iteratorDrainCall).toBeDefined();
+      expect(iteratorDrainCall?.slice(1)).toEqual([completedTurnId, startResult.threadId]);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
   it("lists effective tool state and persists tool settings for next turns", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const runtimeConfig = makeFactoryRuntimeConfig({

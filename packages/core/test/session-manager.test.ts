@@ -1,5 +1,5 @@
 // @summary Tests for session manager creation, persistence, and resumption
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -262,6 +262,67 @@ describe("SessionManager", () => {
     ]);
 
     expect(settled).toBe(true);
+  });
+
+  test("logs when a tool_result is persisted and when a tool requests turn stop", async () => {
+    const dir = await setupDir();
+    const originalLog = console.log;
+    const originalError = console.error;
+    const logSpy = mock(() => {});
+    const errorSpy = mock(() => {});
+    console.log = logSpy as typeof console.log;
+    console.error = errorSpy as typeof console.error;
+
+    const stopTool: Tool = {
+      name: "stop_now",
+      description: "Stop after producing a tool result",
+      parameters: z.object({}),
+      async execute() {
+        return { output: "stopped", abortRequested: true };
+      },
+    };
+
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agentConfig: {
+        model: TEST_MODEL,
+        systemPrompt: [{ label: "test", content: "test" }],
+        tools: [stopTool],
+        streamFunction: createMockStreamFn([
+          makeAssistantMessage([{ type: "tool_call", id: "tc_stop", name: "stop_now", input: {} }], "tool_use"),
+        ]),
+        debugThreadId: "thread-log",
+        debugTurnId: "turn-log",
+      },
+    });
+    await mgr.create();
+
+    try {
+      const stream = mgr.run({ role: "user", content: "stop", timestamp: Date.now() });
+      for await (const _event of stream) {
+      }
+      await mgr.waitForWrites();
+
+      const persistedCall = logSpy.mock.calls.find(
+        (args) => args[0] === "[SessionManager] Persisted tool_result session=%s tool=%s callId=%s isError=%s",
+      );
+      expect(persistedCall).toBeDefined();
+      expect(persistedCall?.slice(1)).toEqual([mgr.sessionId, "stop_now", "tc_stop", false]);
+
+      const stopCall = logSpy.mock.calls.find(
+        (args) =>
+          args[0] ===
+          "[SessionManager]%s Ending run after tool-requested stop; session may legitimately end on tool_result (abortingTools=%s toolResults=%d)",
+      );
+      expect(stopCall).toBeDefined();
+      expect(stopCall?.[1]).toBe(` session=${mgr.sessionId} thread=thread-log turn=turn-1 effort=high`);
+      expect(stopCall?.slice(2)).toEqual(["stop_now", 1]);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
   });
 
   test("run() compacts between tool turn and next LLM call", async () => {

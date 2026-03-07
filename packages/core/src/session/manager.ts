@@ -341,6 +341,18 @@ export class SessionManager {
             loopDetector.record(execution.toolCall.name, execution.toolCall.input);
           }
 
+          if (abortAfterTurn) {
+            const abortingTools = executions
+              .filter((execution) => !execution.includeInConversation)
+              .map((execution) => execution.toolCall.name);
+            console.log(
+              "[SessionManager]%s Ending run after tool-requested stop; session may legitimately end on tool_result (abortingTools=%s toolResults=%d)",
+              buildSessionDebugScope(currentConfig, turnId, this.writer.id),
+              abortingTools.length > 0 ? abortingTools.join(",") : "-",
+              toolResults.length,
+            );
+          }
+
           const loopResult = loopDetector.check();
           if (loopResult.detected) {
             outerStream.push({
@@ -384,6 +396,11 @@ export class SessionManager {
         }
 
         if (isAbort) {
+          console.log(
+            "[SessionManager]%s Run aborted after last persisted message=%s",
+            buildSessionDebugScope(currentConfig, turnId, this.writer.id),
+            summarizeLastPersistedMessage(this.entries),
+          );
           outerStream.error(new Error("Aborted"));
           return;
         }
@@ -605,7 +622,27 @@ export class SessionManager {
     this.leafId = entry.id;
 
     // Chain writes to avoid concurrent file access
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.writeQueue = this.writeQueue
+      .then(async () => {
+        await this.writer.write(entry);
+        if (message.role === "tool_result") {
+          console.log(
+            "[SessionManager] Persisted tool_result session=%s tool=%s callId=%s isError=%s",
+            this.writer.id,
+            message.toolName,
+            message.toolCallId,
+            message.isError,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error(
+          "[SessionManager] Failed to persist %s for session=%s: %s",
+          message.role,
+          this.writer.id,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
 
     return entry;
   }
@@ -641,4 +678,28 @@ export class SessionManager {
   get entryCount(): number {
     return this.entries.length;
   }
+}
+
+function buildSessionDebugScope(config: AgentLoopConfig, turnId: string, sessionId: string): string {
+  const effort = config.effort ?? "high";
+  return ` session=${sessionId} thread=${config.debugThreadId ?? "-"} turn=${turnId} effort=${effort}`;
+}
+
+function summarizeLastPersistedMessage(entries: SessionEntry[]): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== "message") continue;
+    const { message } = entry;
+    if (message.role === "tool_result") {
+      return `tool_result:${message.toolName}:error=${message.isError}`;
+    }
+    if (message.role === "assistant") {
+      const blockTypes = message.content.map((block) => block.type).join(",") || "-";
+      return `assistant:stop=${message.stopReason}:blocks=${blockTypes}`;
+    }
+    if (message.role === "user") {
+      return "user";
+    }
+  }
+  return "none";
 }

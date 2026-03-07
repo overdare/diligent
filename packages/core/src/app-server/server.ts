@@ -90,6 +90,12 @@ export interface DiligentAppServerConfig {
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
     getSessionId?: () => string | undefined;
     onCollabEvent?: (event: AgentEvent) => void;
+    /**
+     * The thread's current registry, if one already exists.
+     * Passed so buildAgentConfig can reuse it across turns (preserving live child-agent entries)
+     * instead of creating a fresh registry on every turn.
+     */
+    existingRegistry?: AgentRegistry;
   }) => (AgentLoopConfig & { registry?: AgentRegistry }) | Promise<AgentLoopConfig & { registry?: AgentRegistry }>;
   compaction?: SessionManagerConfig["compaction"];
   /** Config/model management — required for CONFIG_SET and AUTH_LIST */
@@ -940,6 +946,7 @@ export class DiligentAppServer {
         wireCollabHandler();
         await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
+      console.log("[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result", turnId, runtime.id);
       await stream.result();
       console.log("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
       await this.emit({
@@ -953,13 +960,26 @@ export class DiligentAppServer {
 
       if (isAbort) {
         wasAborted = true;
-        console.log("[AppServer] consumeStream: turn %s interrupted (aborted) for thread %s", turnId, runtime.id);
+        console.log(
+          "[AppServer] consumeStream: turn %s interrupted (aborted) for thread %s; session=%s lastPersisted=%s",
+          turnId,
+          runtime.id,
+          runtime.manager.sessionId,
+          summarizeSessionTail(runtime.manager.getContext()),
+        );
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
           params: { threadId: runtime.id, turnId },
         });
       } else {
-        console.error("[AppServer] consumeStream: turn %s error for thread %s:", turnId, runtime.id, error);
+        console.error(
+          "[AppServer] consumeStream: turn %s error for thread %s; session=%s lastPersisted=%s:",
+          turnId,
+          runtime.id,
+          runtime.manager.sessionId,
+          summarizeSessionTail(runtime.manager.getContext()),
+          error,
+        );
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
           params: {
@@ -1196,12 +1216,17 @@ export class DiligentAppServer {
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),
           getSessionId: () => runtime.manager.sessionId,
+          // Pass the thread's existing registry so it can be reused rather than
+          // recreated. This preserves live child-agent entries across turns, ensuring
+          // that wait() in turn N can see agents spawned in turn N-1.
+          existingRegistry: runtime.registry,
         });
         result.debugThreadId = runtime.id;
         result.debugTurnId = runtime.currentTurnId ?? undefined;
         if (result.registry) {
           runtime.registry = result.registry;
-          // Restore thread IDs from session history so collab tools work after server restart
+          // Restore thread IDs from session history so collab tools work after server restart.
+          // restoreAgent() is a no-op for IDs already in the registry (live agents stay intact).
           for (const agent of runtime.manager.getHistoricalCollabAgents()) {
             result.registry.restoreAgent(agent.threadId, agent.nickname);
           }
@@ -1371,6 +1396,17 @@ export class DiligentAppServer {
 function maskKey(key: string): string {
   if (key.length <= 11) return "***";
   return `${key.slice(0, 7)}...${key.slice(-4)}`;
+}
+
+function summarizeSessionTail(messages: ReturnType<SessionManager["getContext"]>): string {
+  const last = messages[messages.length - 1];
+  if (!last) return "none";
+  if (last.role === "tool_result") return `tool_result:${last.toolName}:error=${last.isError}`;
+  if (last.role === "assistant") {
+    const blockTypes = last.content.map((block) => block.type).join(",") || "-";
+    return `assistant:stop=${last.stopReason}:blocks=${blockTypes}`;
+  }
+  return last.role;
 }
 
 function sanitizeFileStem(input: string): string {

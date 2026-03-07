@@ -30,6 +30,12 @@ export async function buildDefaultTools(
   paths?: DiligentPaths,
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
   toolsConfig?: DiligentConfig["tools"],
+  /**
+   * Existing registry to reuse across turns.
+   * When provided, the registry's mutable deps are updated but live child-agent
+   * entries are preserved so cross-turn spawn→wait works correctly.
+   */
+  existingRegistry?: AgentRegistry,
 ): Promise<BuildDefaultToolsResult> {
   // 1. Assemble all built-in tools
   const builtinTools: Tool[] = [
@@ -58,7 +64,7 @@ export async function buildDefaultTools(
       cwd,
       paths,
       parentTools: catalog.tools,
-    });
+    }, existingRegistry);
     catalog.tools.push(...collabTools);
     return {
       tools: catalog.tools,

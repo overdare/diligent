@@ -7,11 +7,26 @@ import { createSpawnAgentTool } from "./spawn-agent";
 import type { CollabToolDeps } from "./types";
 import { createWaitTool } from "./wait";
 
-export function createCollabTools(deps: CollabToolDeps): {
+export function createCollabTools(
+  deps: CollabToolDeps,
+  /**
+   * Pass an existing registry to reuse across turns.
+   * Its mutable deps will be updated in-place so child agents spawned
+   * in previous turns remain accessible from subsequent turns.
+   */
+  existingRegistry?: AgentRegistry,
+): {
   tools: Tool[];
   registry: AgentRegistry;
 } {
-  const registry = new AgentRegistry(deps);
+  let registry: AgentRegistry;
+  if (existingRegistry) {
+    // Reuse existing registry: update mutable deps only
+    existingRegistry.updateDeps(deps);
+    registry = existingRegistry;
+  } else {
+    registry = new AgentRegistry(deps);
+  }
   const tools: Tool[] = [
     createSpawnAgentTool(registry),
     createWaitTool(registry),
