@@ -132,7 +132,9 @@ describe("RpcBridge multi-subscriber", () => {
 
     const responsePromise = server.serverRequestHandler!(request);
 
-    const serverRequest = sent.find((entry) => "id" in entry && "method" in entry && entry.method === "approval/request") as {
+    const serverRequest = sent.find(
+      (entry) => "id" in entry && "method" in entry && entry.method === "approval/request",
+    ) as {
       id: number;
     };
     expect(serverRequest).toBeTruthy();

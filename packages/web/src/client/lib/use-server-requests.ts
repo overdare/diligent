@@ -1,5 +1,10 @@
 // @summary React hook for server-driven approval and user-input prompt state and resolution
-import type { DiligentServerNotification, DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
+import type {
+  DiligentServerNotification,
+  DiligentServerRequest,
+  DiligentServerRequestResponse,
+  UserInputRequest,
+} from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";

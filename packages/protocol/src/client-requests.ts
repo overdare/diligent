@@ -10,8 +10,8 @@ import {
   SessionSummarySchema,
   ThinkingEffortSchema,
 } from "./data-model";
-import { ModelInfoSchema } from "./web-requests";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
+import { ModelInfoSchema } from "./web-requests";
 
 export const InitializeParamsSchema = z.object({
   clientName: z.string(),
