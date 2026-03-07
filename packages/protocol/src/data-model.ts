@@ -122,12 +122,11 @@ export const TableBlockSchema = z.object({
 export type TableBlock = z.infer<typeof TableBlockSchema>;
 
 // TreeNode uses lazy recursion to allow nested children
-const TreeNodeSchema: z.ZodType<{ label: string; children?: { label: string; children?: unknown[] }[] }> = z.lazy(
-  () =>
-    z.object({
-      label: z.string(),
-      children: z.array(TreeNodeSchema).optional(),
-    }),
+const TreeNodeSchema: z.ZodType<{ label: string; children?: { label: string; children?: unknown[] }[] }> = z.lazy(() =>
+  z.object({
+    label: z.string(),
+    children: z.array(TreeNodeSchema).optional(),
+  }),
 );
 export type TreeNode = { label: string; children?: TreeNode[] };
 

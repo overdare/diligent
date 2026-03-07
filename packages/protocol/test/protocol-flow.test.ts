@@ -12,8 +12,8 @@ import {
   InitializeResponseSchema,
   PluginDescriptorSchema,
   ToolDescriptorSchema,
-  ToolResultMessageSchema,
   ToolRenderPayloadSchema,
+  ToolResultMessageSchema,
   ToolsListResponseSchema,
 } from "../src";
 

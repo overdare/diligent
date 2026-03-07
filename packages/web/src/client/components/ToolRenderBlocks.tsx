@@ -46,11 +46,7 @@ function toneText(tone?: string) {
 /* ── SummaryBlock ─────────────────────────────────────────────────── */
 
 function RenderSummary({ block }: { block: SummaryBlock }) {
-  return (
-    <div className={cn("px-3 py-2 font-mono text-xs", toneText(block.tone))}>
-      {block.text}
-    </div>
-  );
+  return <div className={cn("px-3 py-2 font-mono text-xs", toneText(block.tone))}>{block.text}</div>;
 }
 
 /* ── KeyValueBlock ────────────────────────────────────────────────── */
@@ -65,7 +61,9 @@ function RenderKeyValue({ block }: { block: KeyValueBlock }) {
         {block.items.map((item, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: static list
           <div key={i} className="flex gap-3 leading-relaxed">
-            <dt className="shrink-0 text-muted" style={{ width: `${maxKeyLen}ch` }}>{item.key}</dt>
+            <dt className="shrink-0 text-muted" style={{ width: `${maxKeyLen}ch` }}>
+              {item.key}
+            </dt>
             <dd className="min-w-0 truncate text-text/80">{item.value}</dd>
           </div>
         ))}
@@ -97,10 +95,7 @@ function RenderList({ block }: { block: ListBlock }) {
 /* ── TableBlock ───────────────────────────────────────────────────── */
 
 function RenderTable({ block }: { block: TableBlock }) {
-  const copyText = [
-    block.columns.join("\t"),
-    ...block.rows.map((r) => r.join("\t")),
-  ].join("\n");
+  const copyText = [block.columns.join("\t"), ...block.rows.map((r) => r.join("\t"))].join("\n");
 
   return (
     <BlockShell title={block.title} copyText={copyText}>
@@ -145,7 +140,10 @@ function TreeNodeRow({ node, prefix, isLast }: { node: TreeNode; prefix: string;
   return (
     <>
       <li className="leading-relaxed text-text/80">
-        <span className="text-muted">{prefix}{connector}</span>
+        <span className="text-muted">
+          {prefix}
+          {connector}
+        </span>
         {node.label}
       </li>
       {children?.map((child, i) => (

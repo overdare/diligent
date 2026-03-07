@@ -14,8 +14,8 @@ import { ContentBash } from "./ContentBash";
 import { ContentEdit } from "./ContentEdit";
 import { ContentRead } from "./ContentRead";
 import { ContentText } from "./ContentText";
-import { ToolRenderBlocks } from "./ToolRenderBlocks";
 import { StatusDot } from "./StatusDot";
+import { ToolRenderBlocks } from "./ToolRenderBlocks";
 
 interface ToolBlockProps {
   item: Extract<RenderItem, { kind: "tool" }>;
