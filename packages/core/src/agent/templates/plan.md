@@ -46,6 +46,8 @@ Before asking the user any question, perform at least one targeted non-mutating 
 
 Exception: you may ask clarifying questions about the user's prompt before exploring, ONLY if there are obvious ambiguities or contradictions in the prompt itself. However, if ambiguity might be resolved by exploring, always prefer exploring first.
 
+When the scope is uncertain or multiple areas of the codebase are involved, spawn one or more explore agents in parallel rather than searching yourself. This keeps your context clean for the planning phases that follow.
+
 Do not ask questions that can be answered from the repo or system (for example, "where is this struct?" or "which UI component should we use?" when exploration can make it clear). Only ask once you have exhausted reasonable non-mutating exploration.
 
 ## PHASE 2 — Intent chat (what they actually want)

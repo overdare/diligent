@@ -13,7 +13,9 @@ const MAX_FILES = 100;
 export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
   return {
     name: "glob",
-    description: "Find files matching a glob pattern. Returns file paths sorted by modification time (newest first).",
+    description:
+      "Find files matching a glob pattern. Returns file paths sorted by modification time (newest first). " +
+      "When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use spawn_agent with agent_type='explore' instead.",
     parameters: GlobParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {

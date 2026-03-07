@@ -1,4 +1,5 @@
 // @summary Agent type definitions, builtin registry, and role-guidance formatters for spawn_agent
+import explorePrompt from "./templates/explore.md" with { type: "text" };
 import plannerPrompt from "./templates/planner.md" with { type: "text" };
 
 /** Built-in agent type names supported by spawn_agent. */
@@ -57,11 +58,7 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   explore: {
     name: "explore",
     description: "Read-only agent for codebase exploration and research",
-    systemPromptPrefix:
-      "You are a read-only exploration agent. " +
-      "You may only read files, search code, and explore the codebase. " +
-      "You must NOT create, edit, delete, or write any files. " +
-      "Do not run bash commands.\n",
+    systemPromptPrefix: `${explorePrompt}\n`,
     toolFilter: "readonly",
     maxTurns: 20,
     spawnGuidance: {
