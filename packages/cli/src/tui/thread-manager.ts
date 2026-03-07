@@ -1,10 +1,10 @@
 // @summary Factory for thread lifecycle operations (start, resume, list, read, delete)
 import type { Mode as ProtocolMode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import type { LocalAppServerRpcClient } from "./rpc-client";
+import type { AppServerRpcClient } from "./rpc-client";
 
 export interface ThreadManagerDeps {
-  getRpcClient: () => LocalAppServerRpcClient | null;
+  getRpcClient: () => AppServerRpcClient | null;
   getCurrentMode: () => ProtocolMode;
   setCurrentThreadId: (id: string | null) => void;
   updateStatusBar: (updates: { sessionId: string }) => void;
@@ -40,6 +40,9 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       });
       setThread(response.threadId);
       deps.updateStatusBar({ sessionId: response.threadId });
+      await rpc
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId: response.threadId })
+        .catch(() => {});
       return response.threadId;
     },
 
@@ -57,6 +60,9 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       }
       setThread(response.threadId);
       deps.updateStatusBar({ sessionId: response.threadId });
+      await rpc
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId: response.threadId })
+        .catch(() => {});
       return response.threadId;
     },
 

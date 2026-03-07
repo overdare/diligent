@@ -1,9 +1,8 @@
 // @summary Input dock with auto-resize textarea, hover submenus, model/effort controls, and usage tray
 
-import type { Mode, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
+import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import type { ClipboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { ModelInfo } from "../../shared/ws-protocol";
 import type { UsageState } from "../lib/thread-store";
 import { Select, type SelectOption } from "./Select";
 import { TextArea } from "./TextArea";

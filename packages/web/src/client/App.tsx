@@ -4,7 +4,7 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
-  ImageUploadAttachment,
+  InitializeResponse,
   LocalImageBlock,
   Mode,
   SessionSummary,
@@ -17,7 +17,6 @@ import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_VERSION,
-  DILIGENT_WEB_REQUEST_METHODS,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
@@ -201,6 +200,8 @@ export function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
+  const cwdRef = useRef<string>("");
+  cwdRef.current = cwd;
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
@@ -240,92 +241,11 @@ export function App() {
     [rpcRef],
   );
 
-  // Register onConnected, onNotification, onServerRequest on the rpc instance created by useRpcClient.
-  // Runs once on mount (all deps are stable useCallbacks). Listeners replace each other on re-registration.
+  // Register notification + server request listeners on the rpc instance created by useRpcClient.
+  // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
   useEffect(() => {
     const rpc = rpcRef.current;
     if (!rpc) return;
-
-    rpc.onConnected(async (meta) => {
-      setCwd(meta.cwd);
-      setEffortState(meta.effort);
-      adapterRef.current.reset();
-      // Sync model + available models into refs immediately so applySessionModel can use them
-      providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels);
-      try {
-        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
-          clientName: "diligent-web",
-          clientVersion: DILIGENT_VERSION,
-          protocolVersion: 1,
-        });
-        rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
-
-        // 1. On reconnect, resume the previous active thread
-        const prevThreadId = activeThreadIdRef.current;
-        if (prevThreadId) {
-          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: prevThreadId });
-          if (resumed.found && resumed.threadId) {
-            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-              threadId: resumed.threadId,
-            });
-            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
-            setEffortState(history.currentEffort);
-            replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
-            await refreshThreadList(rpc);
-            return;
-          }
-        }
-
-        // 2. On fresh load, honour the threadId in the URL (e.g. /abc123)
-        const urlThreadId = getThreadIdFromUrl();
-        if (urlThreadId) {
-          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: urlThreadId });
-          if (resumed.found && resumed.threadId) {
-            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-              threadId: resumed.threadId,
-            });
-            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: meta.mode, history } });
-            setEffortState(history.currentEffort);
-            replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
-            await refreshThreadList(rpc);
-            return;
-          }
-          // URL threadId was invalid — fall through to most recent
-        }
-
-        // 3. Fall back to the most recent session
-        const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
-        if (mostRecent.found && mostRecent.threadId) {
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-            threadId: mostRecent.threadId,
-          });
-          dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode: meta.mode, history } });
-          setEffortState(history.currentEffort);
-          replaceThreadUrl(mostRecent.threadId);
-          await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
-          await refreshThreadList(rpc);
-          return;
-        }
-
-        // 4. No sessions at all — start a new thread
-        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-          cwd: meta.cwd,
-          mode: meta.mode,
-        });
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
-        dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: meta.mode, history } });
-        setEffortState(history.currentEffort);
-        replaceThreadUrl(started.threadId);
-        await refreshThreadList(rpc);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        // Always refresh providers regardless of thread setup outcome
-        await providerMgr.refreshProviders(rpc);
-      }
-    });
 
     rpc.onNotification((notification: DiligentServerNotification) => {
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED) {
@@ -384,18 +304,120 @@ export function App() {
       dispatch({ type: "notification", payload: { notification, events } });
     });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
-    rpc.onServerRequestResolved((requestId) => serverRequests.handleServerRequestResolved(requestId));
   }, [
     refreshThreadList,
-    providerMgr.refreshProviders,
-    providerMgr.setInitialModel,
-    providerMgr.applySessionModel,
     providerMgr.onAccountLoginCompleted,
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
-    serverRequests.handleServerRequestResolved,
     markAttention,
     rpcRef.current,
+  ]);
+
+  useEffect(() => {
+    if (connection !== "connected") {
+      return;
+    }
+
+    const rpc = rpcRef.current;
+    if (!rpc) return;
+
+    let cancelled = false;
+
+    const bootstrap = async (): Promise<void> => {
+      try {
+        const meta = (await rpc.initialize({
+          clientName: "diligent-web",
+          clientVersion: DILIGENT_VERSION,
+          protocolVersion: 1,
+        })) as InitializeResponse;
+        if (cancelled) return;
+
+        setCwd(meta.cwd ?? "");
+        setEffortState(meta.effort ?? "medium");
+        adapterRef.current.reset();
+        providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
+        rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
+
+        const mode = meta.mode ?? "default";
+
+        const prevThreadId = activeThreadIdRef.current;
+        if (prevThreadId) {
+          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: prevThreadId });
+          if (!cancelled && resumed.found && resumed.threadId) {
+            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+              threadId: resumed.threadId,
+            });
+            if (cancelled) return;
+            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
+            setEffortState(history.currentEffort);
+            replaceThreadUrl(resumed.threadId);
+            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+            await refreshThreadList(rpc);
+            return;
+          }
+        }
+
+        const urlThreadId = getThreadIdFromUrl();
+        if (urlThreadId) {
+          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: urlThreadId });
+          if (!cancelled && resumed.found && resumed.threadId) {
+            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+              threadId: resumed.threadId,
+            });
+            if (cancelled) return;
+            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
+            setEffortState(history.currentEffort);
+            replaceThreadUrl(resumed.threadId);
+            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+            await refreshThreadList(rpc);
+            return;
+          }
+        }
+
+        const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
+        if (!cancelled && mostRecent.found && mostRecent.threadId) {
+          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+            threadId: mostRecent.threadId,
+          });
+          if (cancelled) return;
+          dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode, history } });
+          setEffortState(history.currentEffort);
+          replaceThreadUrl(mostRecent.threadId);
+          await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+          await refreshThreadList(rpc);
+          return;
+        }
+
+        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
+          cwd: (meta.cwd ?? cwdRef.current) || "/",
+          mode,
+        });
+        if (cancelled) return;
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
+        if (cancelled) return;
+        dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode, history } });
+        setEffortState(history.currentEffort);
+        replaceThreadUrl(started.threadId);
+        await refreshThreadList(rpc);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        await providerMgr.refreshProviders(rpc);
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    connection,
+    providerMgr.setInitialModel,
+    providerMgr.applySessionModel,
+    providerMgr.refreshProviders,
+    refreshThreadList,
+    rpcRef,
   ]);
 
   const startNewThread = async (): Promise<void> => {
@@ -650,14 +672,13 @@ export function App() {
         }
 
         const dataBase64 = await fileToBase64(file);
-        const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
+        const result = await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD, {
           threadId: state.activeThreadId ?? undefined,
           fileName: normalizedFileName,
           mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
           dataBase64,
         });
-        const attachment = result.attachment as ImageUploadAttachment;
-        uploaded.push(attachment);
+        uploaded.push(result.attachment as PendingImage);
       }
 
       setPendingImages((prev) => [...prev, ...uploaded]);

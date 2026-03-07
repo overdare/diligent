@@ -6,15 +6,16 @@ import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { CommandRegistry } from "./commands/registry";
-import type { LocalAppServerRpcClient } from "./rpc-client";
+import type { AppServerRpcClient } from "./rpc-client";
 
 export interface ConfigManagerDeps {
-  getRpcClient: () => LocalAppServerRpcClient | null;
+  getRpcClient: () => AppServerRpcClient | null;
   getCurrentThreadId: () => string | null;
   getConfig: () => AppConfig;
   setConfig: (config: AppConfig) => void;
   getPaths: () => DiligentPaths | undefined;
   setCurrentMode: (mode: ProtocolMode) => void;
+  restartRpcClient: () => Promise<void>;
   setSkills: (skills: SkillMetadata[]) => void;
   setCommandRegistry: (registry: CommandRegistry) => void;
   updateStatusBar: (updates: Record<string, unknown>) => void;
@@ -44,6 +45,7 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
       try {
         const newConfig = await loadConfig(process.cwd(), deps.getPaths());
         deps.setConfig(newConfig);
+        await deps.restartRpcClient();
         deps.setSkills(newConfig.skills ?? []);
 
         // Rebuild command registry with new skills

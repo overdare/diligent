@@ -1,22 +1,13 @@
 // @summary Main TUI application component managing the agent loop and interface
 import type {
   AgentEvent,
-  AgentRegistry,
   ApprovalRequest,
   ApprovalResponse,
-  DiligentAppServerConfig,
   DiligentPaths,
-  ModeKind,
   SkillMetadata,
   UserInputRequest,
 } from "@diligent/core";
-import {
-  createPermissionEngine,
-  createYoloPermissionEngine,
-  DiligentAppServer,
-  ensureDiligentDir,
-  ProtocolNotificationAdapter,
-} from "@diligent/core";
+import { ProtocolNotificationAdapter } from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
@@ -49,14 +40,15 @@ import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
-import { LocalAppServerRpcClient } from "./rpc-client";
+import type { SpawnedAppServer } from "./rpc-client";
+import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
 import { createSetupWizard, type SetupWizard } from "./setup-wizard";
 import { t } from "./theme";
 import { createThreadManager, type ThreadManager } from "./thread-manager";
-import { buildTools } from "./tools";
 
 export interface AppOptions {
   resume?: boolean;
+  rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
 }
 
 export class App {
@@ -80,7 +72,7 @@ export class App {
 
   // State
   private isProcessing = false;
-  private rpcClient: LocalAppServerRpcClient | null = null;
+  private rpcClient: SpawnedAppServer | null = null;
   private notificationAdapter = new ProtocolNotificationAdapter();
   private currentThreadId: string | null = null;
   private pendingTurn: {
@@ -88,8 +80,6 @@ export class App {
     reject: (error: Error) => void;
   } | null = null;
   private currentMode: ProtocolMode;
-  private agentRegistry: AgentRegistry | undefined;
-  private permissionEngine: ReturnType<typeof createPermissionEngine> | undefined;
 
   // Extracted modules
   private threadManager: ThreadManager;
@@ -167,6 +157,9 @@ export class App {
       getPaths: () => this.paths,
       setCurrentMode: (mode) => {
         this.currentMode = mode;
+      },
+      restartRpcClient: async () => {
+        await this.restartRpcClient();
       },
       setSkills: (s) => {
         this.skills = s;
@@ -263,26 +256,23 @@ export class App {
     // Show welcome banner
     this.chatView.addLines(this.buildWelcomeBanner());
 
-    // Initialize PermissionEngine — yolo mode auto-approves everything
-    this.permissionEngine = this.config.diligent.yolo
-      ? createYoloPermissionEngine()
-      : createPermissionEngine(this.config.diligent.permissions ?? []);
-
     if (!this.paths) {
       throw new Error("No .diligent directory paths are available.");
     }
 
-    const server = this.createAppServer(this.paths);
-    this.rpcClient = new LocalAppServerRpcClient(server);
-    this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
-    this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
+    await this.restartRpcClient();
 
-    await this.rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
+    const rpcClient = this.rpcClient;
+    if (!rpcClient) {
+      throw new Error("App server failed to start.");
+    }
+
+    await rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
       clientName: "diligent-tui",
       clientVersion: pkgVersion,
       protocolVersion: 1,
     });
-    await this.rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
+    await rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
     if (this.options?.resume) {
       const resumedId = await this.threadManager.resumeThread();
@@ -294,6 +284,20 @@ export class App {
     }
 
     this.renderer.requestRender();
+  }
+
+  private async restartRpcClient(): Promise<void> {
+    this.rpcClient?.setNotificationListener(null);
+    this.rpcClient?.setServerRequestHandler(null);
+    await this.rpcClient?.dispose().catch(() => {});
+    const spawnFn = this.options?.rpcClientFactory ?? spawnCliAppServer;
+    this.rpcClient = await spawnFn({
+      cwd: process.cwd(),
+      yolo: this.config.diligent.yolo,
+      onStderrLine: (line) => this.handleAppServerStderr(line),
+    });
+    this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
+    this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
   }
 
   private handleInput(data: string): void {
@@ -362,39 +366,9 @@ export class App {
     }
   }
 
-  private createAppServer(paths: DiligentPaths): DiligentAppServer {
-    const appServerConfig: DiligentAppServerConfig = {
-      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: async ({ cwd, mode, effort, signal, approve, ask, getSessionId }) => {
-        const deps = {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          streamFunction: this.config.streamFunction,
-          getParentSessionId: getSessionId,
-          ask,
-        };
-        const { tools, registry } = await buildTools(cwd, paths, deps, this.config.diligent.tools);
-        if (registry) {
-          this.agentRegistry = registry;
-        }
-        return {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          tools,
-          streamFunction: this.config.streamFunction,
-          mode: mode as ModeKind,
-          effort,
-          signal,
-          approve,
-          ask,
-          permissionEngine: this.permissionEngine,
-          registry,
-        };
-      },
-      compaction: this.config.compaction,
-    };
-
-    return new DiligentAppServer(appServerConfig);
+  private handleAppServerStderr(_line: string): void {
+    // App-server stderr (operational logs) is intentionally suppressed in TUI.
+    // Errors surface as RPC error responses, not as raw log lines.
   }
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
@@ -528,8 +502,7 @@ export class App {
     this.overlayStack.clear();
     this.renderer.stop();
     this.terminal.stop();
-    // Shut down any active sub-agents in the background (fire-and-forget)
-    this.agentRegistry?.shutdownAll().catch(() => {});
+    void this.rpcClient?.dispose().catch(() => {});
   }
 
   private buildWelcomeBanner(): string[] {

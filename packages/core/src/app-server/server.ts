@@ -1,10 +1,14 @@
 // @summary JSON-RPC app server mapping SessionManager/AgentEvent to shared protocol requests and notifications
 
+import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  type DiligentClientRequest,
   DiligentClientRequestSchema,
   type DiligentServerNotification,
   type DiligentServerRequest,
@@ -16,14 +20,37 @@ import {
   type JSONRPCResponse,
   JSONRPCResponseSchema,
   type Mode,
+  type ModelInfo,
+  type ProviderAuthStatus,
   type SessionSummary,
   type ThinkingEffort,
   type TurnStartParams,
 } from "@diligent/protocol";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
+import {
+  loadAuthStore,
+  loadOAuthTokens,
+  removeAuthKey,
+  removeOAuthTokens,
+  saveAuthKey,
+  saveOAuthTokens,
+} from "../auth/auth-store";
+import {
+  buildOAuthTokens,
+  CHATGPT_AUTH_URL,
+  CHATGPT_CLIENT_ID,
+  CHATGPT_REDIRECT_URI,
+  CHATGPT_SCOPES,
+  openBrowser as defaultOpenBrowser,
+  exchangeCodeForTokens,
+  generatePKCE,
+  waitForCallback,
+} from "../auth/oauth";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
+import { PROVIDER_NAMES, type ProviderManager } from "../provider/provider-manager";
+import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { buildSessionContext } from "../session/context-builder";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
@@ -31,10 +58,17 @@ import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
 import { agentEventToNotification } from "./event-mapper";
 
+export interface ModelConfig {
+  currentModelId: string | undefined;
+  getAvailableModels: () => ModelInfo[];
+  onModelChange: (modelId: string) => void;
+}
+
 export interface DiligentAppServerConfig {
   serverName?: string;
   serverVersion?: string;
   cwd?: string;
+  getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   buildAgentConfig: (args: {
     cwd: string;
@@ -47,10 +81,37 @@ export interface DiligentAppServerConfig {
     onCollabEvent?: (event: AgentEvent) => void;
   }) => (AgentLoopConfig & { registry?: AgentRegistry }) | Promise<AgentLoopConfig & { registry?: AgentRegistry }>;
   compaction?: SessionManagerConfig["compaction"];
+  /** Config/model management — required for CONFIG_SET and AUTH_LIST */
+  modelConfig?: ModelConfig;
+  /** Provider manager — required for AUTH_* methods */
+  providerManager?: ProviderManager;
+  /** Open a URL in the browser — defaults to the built-in openBrowser from @diligent/core */
+  openBrowser?: (url: string) => void;
+  /** Convert an absolute image path to a URL for web clients (omit if not needed) */
+  toImageUrl?: (absPath: string) => string | undefined;
 }
 
+/** @deprecated Use connect() instead */
 export type NotificationListener = (notification: DiligentServerNotification) => void | Promise<void>;
+/** @deprecated Use connect() instead */
 export type ServerRequestHandler = (request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>;
+
+interface ConnectedPeer {
+  id: string;
+  peer: RpcPeer;
+  subscriptions: Set<string>;
+  currentThreadId: string | null;
+  cwd: string;
+  mode: Mode;
+  effort: ThinkingEffort;
+}
+
+interface PendingServerRequest {
+  method: string;
+  resolve: (response: DiligentServerRequestResponse | null) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+  sentTo: Set<string>;
+}
 
 interface ThreadRuntime {
   id: string;
@@ -72,32 +133,177 @@ export class DiligentAppServer {
   /** In-memory cache of thread summaries — updated immediately on create/message so THREAD_LIST never lags disk */
   private readonly threadSummaryCache = new Map<string, SessionSummary>();
   private activeThreadId: string | null = null;
+
+  // New multi-connection infrastructure
+  private readonly connections = new Map<string, ConnectedPeer>();
+  private readonly subscriptionMap = new Map<string, { connectionId: string; threadId: string }>();
+  private readonly turnInitiators = new Map<string, string>(); // threadId → connectionId
+  private readonly pendingServerRequests = new Map<number, PendingServerRequest>();
+  private serverRequestSeq = 0;
+
+  // Deprecated backward-compat fields (used by rpc-bridge.ts and old tests)
   private notificationListener: NotificationListener | null = null;
   private serverRequestHandler: ServerRequestHandler | null = null;
+
+  // Config/auth state
+  private currentModelId: string | undefined;
+  private oauthPending: Promise<void> | null = null;
 
   constructor(private readonly config: DiligentAppServerConfig) {
     this.serverName = config.serverName ?? "diligent-app-server";
     this.serverVersion = config.serverVersion ?? "0.0.1";
     this.knownCwds.add(config.cwd ?? process.cwd());
+    this.currentModelId = config.modelConfig?.currentModelId;
   }
 
+  // ─── New multi-connection API ───────────────────────────────────────────────
+
+  connect(connectionId: string, peer: RpcPeer, options?: { cwd?: string; mode?: Mode }): () => void {
+    const conn: ConnectedPeer = {
+      id: connectionId,
+      peer,
+      subscriptions: new Set(),
+      currentThreadId: null,
+      cwd: options?.cwd ?? this.config.cwd ?? process.cwd(),
+      mode: options?.mode ?? "default",
+      effort: "medium",
+    };
+    this.connections.set(connectionId, conn);
+
+    peer.onMessage(async (message) => {
+      if (!this.connections.has(connectionId)) return;
+
+      if (isRpcRequest(message)) {
+        const response = await this.handleRequest(connectionId, message);
+        await peer.send(response);
+        return;
+      }
+
+      if (isRpcNotification(message)) {
+        await this.handleNotification(message);
+        return;
+      }
+
+      if (isRpcResponse(message)) {
+        const reqId = typeof message.id === "number" ? message.id : parseInt(String(message.id), 10);
+        if (Number.isNaN(reqId)) return;
+
+        const pending = this.pendingServerRequests.get(reqId);
+        if (!pending) return;
+
+        clearTimeout(pending.timeoutId);
+        this.pendingServerRequests.delete(reqId);
+
+        // Notify other connections that this request was resolved
+        for (const otherId of pending.sentTo) {
+          if (otherId === connectionId) continue;
+          const other = this.connections.get(otherId);
+          if (other) {
+            void other.peer.send({
+              method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+              params: { requestId: reqId },
+            });
+          }
+        }
+
+        if ("error" in message) {
+          pending.resolve(null);
+          return;
+        }
+
+        const parsed = DiligentServerRequestResponseSchema.safeParse({
+          method: pending.method,
+          result: message.result,
+        });
+        pending.resolve(parsed.success ? parsed.data : null);
+      }
+    });
+
+    peer.onClose?.(() => {
+      this.disconnect(connectionId);
+    });
+
+    return () => this.disconnect(connectionId);
+  }
+
+  disconnect(connectionId: string): void {
+    const conn = this.connections.get(connectionId);
+    if (!conn) return;
+
+    // Clean up subscriptions for this connection
+    for (const [subId, sub] of this.subscriptionMap) {
+      if (sub.connectionId === connectionId) {
+        this.subscriptionMap.delete(subId);
+      }
+    }
+
+    // Resolve pending server requests where this was the only remaining responder
+    for (const [reqId, pending] of this.pendingServerRequests) {
+      if (pending.sentTo.has(connectionId)) {
+        pending.sentTo.delete(connectionId);
+        if (pending.sentTo.size === 0) {
+          clearTimeout(pending.timeoutId);
+          this.pendingServerRequests.delete(reqId);
+          pending.resolve(null);
+        }
+      }
+    }
+
+    this.connections.delete(connectionId);
+  }
+
+  subscribeToThread(connectionId: string, threadId: string): string {
+    const conn = this.connections.get(connectionId);
+    if (!conn) throw new Error(`Unknown connection: ${connectionId}`);
+    const subscriptionId = `sub-${crypto.randomUUID().slice(0, 8)}`;
+    conn.subscriptions.add(threadId);
+    this.subscriptionMap.set(subscriptionId, { connectionId, threadId });
+    return subscriptionId;
+  }
+
+  unsubscribeFromThread(subscriptionId: string): boolean {
+    const sub = this.subscriptionMap.get(subscriptionId);
+    if (!sub) return false;
+    this.subscriptionMap.delete(subscriptionId);
+    const conn = this.connections.get(sub.connectionId);
+    if (conn) conn.subscriptions.delete(sub.threadId);
+    return true;
+  }
+
+  // ─── Deprecated backward-compat API ────────────────────────────────────────
+
+  /** @deprecated Use connect() instead */
   setNotificationListener(listener: NotificationListener | null): void {
     this.notificationListener = listener;
   }
 
+  /** @deprecated Use connect() instead */
   setServerRequestHandler(handler: ServerRequestHandler | null): void {
     this.serverRequestHandler = handler;
   }
 
-  async handleRequest(raw: unknown): Promise<JSONRPCResponse> {
+  // ─── Request handling ───────────────────────────────────────────────────────
+
+  async handleRequest(connectionId: string, raw: unknown): Promise<JSONRPCResponse>;
+  /** @deprecated Pass connectionId as first argument */
+  async handleRequest(raw: unknown): Promise<JSONRPCResponse>;
+  async handleRequest(connectionIdOrRaw: string | unknown, rawArg?: unknown): Promise<JSONRPCResponse> {
+    const [connectionId, raw] =
+      typeof connectionIdOrRaw === "string" && rawArg !== undefined
+        ? [connectionIdOrRaw, rawArg]
+        : ["_legacy", connectionIdOrRaw];
+
     const request = JSONRPCRequestSchema.safeParse(raw);
     if (!request.success) {
       return this.errorResponse("unknown", -32600, "Invalid Request", request.error.message);
     }
 
+    const rawParams = (request.data.params ?? {}) as Record<string, unknown>;
+    const params = this.applySessionDefaults(connectionId, request.data.method, rawParams);
+
     const parsed = DiligentClientRequestSchema.safeParse({
       method: request.data.method,
-      params: request.data.params ?? {},
+      params,
     });
 
     if (!parsed.success) {
@@ -105,11 +311,15 @@ export class DiligentAppServer {
     }
 
     try {
-      const result = await this.dispatchClientRequest(parsed.data);
+      const result = await this.dispatchClientRequest(connectionId, parsed.data);
       return JSONRPCResponseSchema.parse({ id: request.data.id, result });
     } catch (error) {
+      const code =
+        error instanceof Error && typeof (error as unknown as { code?: unknown }).code === "number"
+          ? (error as unknown as { code: number }).code
+          : -32000;
       const message = error instanceof Error ? error.message : String(error);
-      return this.errorResponse(request.data.id, -32000, message);
+      return this.errorResponse(request.data.id, code, message);
     }
   }
 
@@ -124,9 +334,51 @@ export class DiligentAppServer {
     }
   }
 
-  private async dispatchClientRequest(request: import("@diligent/protocol").DiligentClientRequest): Promise<unknown> {
+  // ─── Session defaults injection ─────────────────────────────────────────────
+
+  private applySessionDefaults(
+    connectionId: string,
+    method: string,
+    params: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const conn = this.connections.get(connectionId);
+    if (!conn) return params;
+
+    if (method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START) {
+      return {
+        ...params,
+        cwd: (params.cwd as string | undefined)?.length ? params.cwd : conn.cwd,
+        mode: (params.mode as string | undefined) ?? conn.mode,
+      };
+    }
+
+    const threadScoped: string[] = [
+      DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
+      DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT,
+      DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
+      DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET,
+      DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
+      DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
+      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
+    ];
+
+    if (threadScoped.includes(method)) {
+      const threadId = params.threadId as string | undefined;
+      return {
+        ...params,
+        threadId: threadId?.length ? threadId : (conn.currentThreadId ?? undefined),
+      };
+    }
+
+    return params;
+  }
+
+  // ─── Request dispatch ───────────────────────────────────────────────────────
+
+  private async dispatchClientRequest(connectionId: string, request: DiligentClientRequest): Promise<unknown> {
     switch (request.method) {
-      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE:
+      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
+        const extra = (await this.config.getInitializeResult?.()) ?? {};
         return {
           serverName: this.serverName,
           serverVersion: this.serverVersion,
@@ -136,13 +388,23 @@ export class DiligentAppServer {
             supportsApprovals: true,
             supportsUserInput: true,
           },
+          ...extra,
         };
+      }
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START:
-        return this.handleThreadStart(request.params);
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START: {
+        const result = await this.handleThreadStart(request.params);
+        const conn = this.connections.get(connectionId);
+        if (conn) conn.currentThreadId = result.threadId;
+        return result;
+      }
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME:
-        return this.handleThreadResume(request.params);
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME: {
+        const result = await this.handleThreadResume(request.params);
+        const conn = this.connections.get(connectionId);
+        if (conn && result.found && result.threadId) conn.currentThreadId = result.threadId;
+        return result;
+      }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST:
         return this.handleThreadList(request.params.limit, request.params.includeChildren);
@@ -151,7 +413,7 @@ export class DiligentAppServer {
         return this.handleThreadRead(request.params.threadId);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_START:
-        return this.handleTurnStart(request.params);
+        return this.handleTurnStart(request.params, connectionId);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT:
         return this.handleTurnInterrupt(request.params.threadId);
@@ -170,8 +432,128 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
         return this.handleThreadDelete(request.params.threadId);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE: {
+        const subscriptionId = this.subscribeToThread(connectionId, request.params.threadId);
+        return { subscriptionId };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE: {
+        const ok = this.unsubscribeFromThread(request.params.subscriptionId);
+        return { ok };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
+        const { model } = request.params;
+        if (!model) return { model: this.currentModelId };
+        const mc = this.config.modelConfig;
+        if (!mc) throw Object.assign(new Error("Model config not available"), { code: -32601 });
+        const valid = mc.getAvailableModels().find((m) => m.id === model);
+        if (!valid) throw Object.assign(new Error(`Unknown model: ${model}`), { code: -32602 });
+        this.currentModelId = model;
+        mc.onModelChange(model);
+        return { model };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
+        const pm = this.config.providerManager;
+        const mc = this.config.modelConfig;
+        if (!pm || !mc) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+        const providers = await this.buildProviderList();
+        return { providers, availableModels: mc.getAvailableModels() };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET: {
+        const pm = this.config.providerManager;
+        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+        await saveAuthKey(request.params.provider, request.params.apiKey);
+        pm.setApiKey(request.params.provider, request.params.apiKey);
+        const providers = await this.buildProviderList();
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
+          params: { providers },
+        });
+        return { ok: true as const };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE: {
+        const pm = this.config.providerManager;
+        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+        await removeAuthKey(request.params.provider);
+        pm.removeApiKey(request.params.provider);
+        if (request.params.provider === "openai") {
+          await removeOAuthTokens();
+          pm.removeOAuthTokens();
+        }
+        const providers = await this.buildProviderList();
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
+          params: { providers },
+        });
+        return { ok: true as const };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START: {
+        const pm = this.config.providerManager;
+        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+        if (this.oauthPending) throw Object.assign(new Error("OAuth flow already in progress"), { code: -32000 });
+        const { codeVerifier, codeChallenge } = generatePKCE();
+        const state = randomBytes(16).toString("hex");
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: CHATGPT_CLIENT_ID,
+          redirect_uri: CHATGPT_REDIRECT_URI,
+          scope: CHATGPT_SCOPES,
+          code_challenge: codeChallenge,
+          code_challenge_method: "S256",
+          id_token_add_organizations: "true",
+          codex_cli_simplified_flow: "true",
+          originator: "diligent",
+          state,
+        });
+        const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
+        const loginId = state;
+        const browser = this.config.openBrowser ?? defaultOpenBrowser;
+        browser(authUrl);
+        this.oauthPending = (async () => {
+          try {
+            const { code } = await waitForCallback(state, 5 * 60 * 1000);
+            const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
+            const tokens = buildOAuthTokens(rawTokens);
+            await saveOAuthTokens(tokens);
+            pm.setOAuthTokens(tokens);
+            await this.emit({
+              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
+              params: { loginId, success: true, error: null },
+            });
+            const providers = await this.buildProviderList();
+            await this.emit({
+              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
+              params: { providers },
+            });
+          } catch (e) {
+            const error = e instanceof Error ? e.message : "OAuth flow failed";
+            await this.emit({
+              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
+              params: { loginId, success: false, error },
+            });
+          } finally {
+            this.oauthPending = null;
+          }
+        })();
+        return { authUrl };
+      }
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
+        const conn = this.connections.get(connectionId);
+        const effectiveThreadId = request.params.threadId ?? conn?.currentThreadId ?? undefined;
+        const attachment = await this.handleImageUpload(request.params, effectiveThreadId, conn?.cwd);
+        return { attachment };
+      }
     }
   }
+
+  // ─── Thread management handlers ─────────────────────────────────────────────
 
   private async handleThreadStart(params: { cwd: string; mode?: Mode }): Promise<{ threadId: string }> {
     const mode = params.mode ?? "default";
@@ -320,9 +702,14 @@ export class DiligentAppServer {
     };
   }
 
-  private async handleTurnStart(params: TurnStartParams): Promise<{ accepted: true }> {
+  private async handleTurnStart(params: TurnStartParams, connectionId?: string): Promise<{ accepted: true }> {
     const runtime = await this.resolveThreadRuntime(params.threadId);
     if (runtime.isRunning) throw new Error("A turn is already running for this thread");
+
+    // Track which connection initiated this turn (for userMessage notification skip)
+    if (connectionId) {
+      this.turnInitiators.set(runtime.id, connectionId);
+    }
 
     runtime.abortController = new AbortController();
     runtime.isRunning = true;
@@ -468,6 +855,8 @@ export class DiligentAppServer {
     return { deleted };
   }
 
+  // ─── Stream consumption ─────────────────────────────────────────────────────
+
   private async consumeStream(
     runtime: ThreadRuntime,
     stream: ReturnType<SessionManager["run"]>,
@@ -576,6 +965,149 @@ export class DiligentAppServer {
       await this.emit(notification);
     }
   }
+
+  // ─── Notification routing ───────────────────────────────────────────────────
+
+  private async emit(notification: DiligentServerNotification): Promise<void> {
+    // Collab debugging: always-on server-side log for collab/* notifications.
+    // Intentionally redact large prompt fields to avoid noisy logs.
+    if (notification.method.startsWith("collab/")) {
+      const params = notification.params as Record<string, unknown>;
+      const safeParams: Record<string, unknown> = { ...params };
+      if (typeof safeParams.prompt === "string") {
+        const prompt = safeParams.prompt as string;
+        safeParams.prompt = `${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
+        safeParams.promptLength = prompt.length;
+      }
+      console.log("[AppServer][collab] → client notification", {
+        method: notification.method,
+        params: safeParams,
+      });
+    }
+
+    // Clear turn initiator when turn ends
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED
+    ) {
+      const params = notification.params as { threadId?: string };
+      if (params.threadId) this.turnInitiators.delete(params.threadId);
+    }
+
+    // Deprecated: backward-compat single listener (used by rpc-bridge.ts and old tests)
+    if (this.notificationListener) {
+      await this.notificationListener(notification);
+    }
+
+    // New: multi-connection routing
+    if (this.connections.size === 0) return;
+
+    const threadId = (notification.params as { threadId?: string } | undefined)?.threadId;
+
+    if (!threadId) {
+      // No threadId → broadcast to all connections
+      for (const conn of this.connections.values()) {
+        await conn.peer.send(notification);
+      }
+      return;
+    }
+
+    // Thread-scoped: route to subscribed connections; fallback to all if none subscribed
+    const subscribers = [...this.connections.values()].filter((c) => c.subscriptions.has(threadId));
+    const targets = subscribers.length > 0 ? subscribers : [...this.connections.values()];
+
+    for (const conn of targets) {
+      // Skip turn initiator for userMessage item notifications
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED ||
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED
+      ) {
+        const item = (notification.params as { item?: { type?: string } }).item;
+        if (item?.type === "userMessage" && this.turnInitiators.get(threadId) === conn.id) {
+          continue;
+        }
+      }
+      await conn.peer.send(notification);
+    }
+  }
+
+  // ─── Server request broadcasting ────────────────────────────────────────────
+
+  private async broadcastServerRequest(method: string, params: unknown): Promise<DiligentServerRequestResponse | null> {
+    if (this.connections.size === 0) return null;
+
+    const id = ++this.serverRequestSeq;
+    const sentTo = new Set<string>();
+
+    return new Promise<DiligentServerRequestResponse | null>((resolve) => {
+      const timeoutId = setTimeout(
+        () => {
+          this.pendingServerRequests.delete(id);
+          resolve(null);
+        },
+        5 * 60 * 1000,
+      );
+
+      this.pendingServerRequests.set(id, { method, resolve, timeoutId, sentTo });
+
+      for (const conn of this.connections.values()) {
+        sentTo.add(conn.id);
+        void conn.peer.send({ id, method, params });
+      }
+    });
+  }
+
+  private async requestApproval(threadId: string, request: ApprovalRequest): Promise<ApprovalResponse> {
+    // New: broadcast to connections if any exist
+    if (this.connections.size > 0) {
+      const response = await this.broadcastServerRequest(DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST, {
+        threadId,
+        request,
+      });
+      if (!response) return "once";
+      const parsed = DiligentServerRequestResponseSchema.safeParse(response);
+      if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) return "reject";
+      return parsed.data.result.decision;
+    }
+
+    // Deprecated fallback: old single-handler approach
+    if (!this.serverRequestHandler) return "once";
+    const response = await this.serverRequestHandler({
+      method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+      params: { threadId, request },
+    });
+    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
+    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) return "reject";
+    return parsed.data.result.decision;
+  }
+
+  private async requestUserInput(threadId: string, request: UserInputRequest): Promise<UserInputResponse> {
+    // New: broadcast to connections if any exist
+    if (this.connections.size > 0) {
+      const response = await this.broadcastServerRequest(DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST, {
+        threadId,
+        request,
+      });
+      if (!response) return { answers: {} };
+      const parsed = DiligentServerRequestResponseSchema.safeParse(response);
+      if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST)
+        return { answers: {} };
+      return parsed.data.result;
+    }
+
+    // Deprecated fallback: old single-handler approach
+    if (!this.serverRequestHandler) return { answers: {} };
+    const response = await this.serverRequestHandler({
+      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+      params: { threadId, request },
+    });
+    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
+    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST)
+      return { answers: {} };
+    return parsed.data.result;
+  }
+
+  // ─── Thread runtime utilities ────────────────────────────────────────────────
 
   private async createThreadRuntime(
     threadId: string,
@@ -716,62 +1248,51 @@ export class DiligentAppServer {
     return "medium";
   }
 
-  private async requestApproval(threadId: string, request: ApprovalRequest): Promise<ApprovalResponse> {
-    if (!this.serverRequestHandler) {
-      return "once";
-    }
+  // ─── Auth / config helpers ───────────────────────────────────────────────────
 
-    const response = await this.serverRequestHandler({
-      method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
-      params: { threadId, request },
-    });
-
-    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
-      return "reject";
-    }
-    return parsed.data.result.decision;
+  private async buildProviderList(): Promise<ProviderAuthStatus[]> {
+    const keys = await loadAuthStore();
+    const oauthTokens = await loadOAuthTokens();
+    return PROVIDER_NAMES.map((p) => ({
+      provider: p,
+      configured: Boolean(keys[p]),
+      maskedKey: keys[p] ? maskKey(keys[p] as string) : undefined,
+      oauthConnected: p === "openai" ? Boolean(oauthTokens) : undefined,
+    }));
   }
 
-  private async requestUserInput(threadId: string, request: UserInputRequest): Promise<UserInputResponse> {
-    if (!this.serverRequestHandler) {
-      return { answers: {} };
+  // ─── Image upload helper ─────────────────────────────────────────────────────
+
+  private async handleImageUpload(
+    params: { fileName: string; mediaType: string; dataBase64: string },
+    threadId?: string,
+    cwd?: string,
+  ): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string; webUrl?: string }> {
+    const baseCwd = cwd ?? this.config.cwd ?? process.cwd();
+    const root = threadId
+      ? join(baseCwd, ".diligent", "images", threadId)
+      : join(baseCwd, ".diligent", "images", "drafts");
+    await mkdir(root, { recursive: true });
+
+    const ext = extname(params.fileName) || mediaTypeToExtension(params.mediaType);
+    const safeBase = sanitizeFileStem(basename(params.fileName, ext));
+    const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}-${safeBase}${ext}`;
+    const absPath = join(root, fileName);
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(params.dataBase64, "base64");
+    } catch {
+      throw new Error("Invalid image payload");
     }
 
-    const response = await this.serverRequestHandler({
-      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
-      params: { threadId, request },
-    });
+    if (buffer.length === 0) throw new Error("Empty image payload");
+    if (buffer.length > 10 * 1024 * 1024) throw new Error("Image exceeds 10 MB limit");
 
-    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST) {
-      return { answers: {} };
-    }
-    return parsed.data.result;
-  }
+    await Bun.write(absPath, buffer);
 
-  private async emit(notification: DiligentServerNotification): Promise<void> {
-    if (!this.notificationListener) {
-      return;
-    }
-
-    // Collab debugging: always-on server-side log for collab/* notifications.
-    // Intentionally redact large prompt fields to avoid noisy logs.
-    if (notification.method.startsWith("collab/")) {
-      const params = notification.params as Record<string, unknown>;
-      const safeParams: Record<string, unknown> = { ...params };
-      if (typeof safeParams.prompt === "string") {
-        const prompt = safeParams.prompt as string;
-        safeParams.prompt = `${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
-        safeParams.promptLength = prompt.length;
-      }
-      console.log("[AppServer][collab] → client notification", {
-        method: notification.method,
-        params: safeParams,
-      });
-    }
-
-    await this.notificationListener(notification);
+    const webUrl = this.config.toImageUrl?.(absPath);
+    return { type: "local_image", path: absPath, mediaType: params.mediaType, fileName: params.fileName, webUrl };
   }
 
   private errorResponse(
@@ -784,6 +1305,34 @@ export class DiligentAppServer {
       id: id === "unknown" ? "unknown" : id,
       error: { code, message, data },
     });
+  }
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 11) return "***";
+  return `${key.slice(0, 7)}...${key.slice(-4)}`;
+}
+
+function sanitizeFileStem(input: string): string {
+  const cleaned = input
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "image";
+}
+
+function mediaTypeToExtension(mediaType: string): string {
+  switch (mediaType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return ".img";
   }
 }
 

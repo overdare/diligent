@@ -20,8 +20,13 @@ export {
   PLAN_MODE_ALLOWED_TOOLS,
 } from "./agent/index";
 // App server (JSON-RPC)
-export type { DiligentAppServerConfig, NotificationListener, ServerRequestHandler } from "./app-server";
-export { DiligentAppServer } from "./app-server";
+export type {
+  CreateAppServerConfigOptions,
+  DiligentAppServerConfig,
+  NotificationListener,
+  ServerRequestHandler,
+} from "./app-server";
+export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval/index";
@@ -115,6 +120,7 @@ export {
   DEFAULT_PROVIDER,
   flattenSections,
   getModelClass,
+  getModelInfoList,
   KNOWN_MODELS,
   PROVIDER_HINTS,
   PROVIDER_NAMES,
@@ -124,6 +130,15 @@ export {
   resolveModelForClass,
   withRetry,
 } from "./provider/index";
+export type { NdjsonParser, RpcMessageSink, RpcMessageSource, RpcPeer } from "./rpc";
+export {
+  createNdjsonParser,
+  formatNdjsonMessage,
+  isRpcNotification,
+  isRpcRequest,
+  isRpcResponse,
+  RpcClientSession,
+} from "./rpc";
 // Session
 export type {
   CompactionDetails,

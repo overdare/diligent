@@ -3,19 +3,23 @@ import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type AgentRegistry,
+  createAppServerConfig,
   DiligentAppServer,
-  type DiligentAppServerConfig,
   type DiligentPaths,
   ensureDiligentDir,
-  KNOWN_MODELS,
+  getModelInfoList,
   loadRuntimeConfig,
-  type ModeKind,
   type PROVIDER_NAMES,
-  resolveModel,
+  type RpcPeer,
 } from "@diligent/core";
-import { decodeWebImageRelativePath, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
-import { RpcBridge, type RpcWsData } from "./rpc-bridge";
-import { buildTools } from "./tools";
+import type { JSONRPCMessage } from "@diligent/protocol";
+import { JSONRPCMessageSchema } from "@diligent/protocol";
+import type { ServerWebSocket } from "bun";
+import { decodeWebImageRelativePath, toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
+
+interface WsData {
+  connectionId: string;
+}
 
 interface CreateServerOptions {
   port?: number;
@@ -25,7 +29,7 @@ interface CreateServerOptions {
 }
 
 export async function createWebServer(options: CreateServerOptions = {}): Promise<{
-  server: Bun.Server<RpcWsData>;
+  server: Bun.Server<WsData>;
   stop: () => void;
 }> {
   const cwd = options.cwd ?? process.cwd();
@@ -37,86 +41,49 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   let registry: AgentRegistry | undefined;
 
-  const appServerConfig: DiligentAppServerConfig = {
+  const baseConfig = createAppServerConfig({
     cwd,
-    resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
-    buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId }) => {
-      if (!runtimeConfig.model) {
-        throw new Error("No AI provider configured. Please add an API key in the provider settings.");
-      }
-
-      const deps = {
-        model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
-        streamFunction: runtimeConfig.streamFunction,
-        getParentSessionId: getSessionId,
-        ask,
-      };
-      const result = await buildTools(requestCwd, paths, deps, runtimeConfig.diligent.tools);
-      if (result.registry) {
-        registry = result.registry;
-      }
-
-      return {
-        model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
-        tools: result.tools,
-        streamFunction: runtimeConfig.streamFunction,
-        mode: mode as ModeKind,
-        effort,
-        signal,
-        approve,
-        ask,
-        permissionEngine: runtimeConfig.permissionEngine,
-        registry: result.registry,
-      };
+    runtimeConfig,
+    overrides: {
+      toImageUrl: (absPath) => toWebImageUrl(absPath),
+      getInitializeResult: async () => ({
+        cwd,
+        mode: runtimeConfig.mode,
+        effort: "medium",
+        currentModel: runtimeConfig.model?.id,
+        availableModels: getModelInfoList().filter((m) =>
+          runtimeConfig.providerManager
+            .getConfiguredProviders()
+            .includes(m.provider as (typeof PROVIDER_NAMES)[number]),
+        ),
+      }),
     },
-    compaction: runtimeConfig.compaction,
+  });
+
+  // Wrap buildAgentConfig to capture registry for shutdown
+  const origBuild = baseConfig.buildAgentConfig;
+  baseConfig.buildAgentConfig = async (args) => {
+    const result = await origBuild(args);
+    if (result.registry) registry = result.registry;
+    return result;
   };
 
-  const allModels = KNOWN_MODELS.map((m) => ({
-    id: m.id,
-    provider: m.provider,
-    contextWindow: m.contextWindow,
-    maxOutputTokens: m.maxOutputTokens,
-    inputCostPer1M: m.inputCostPer1M,
-    outputCostPer1M: m.outputCostPer1M,
-    supportsThinking: m.supportsThinking,
-    supportsVision: m.supportsVision,
-  }));
+  const appServer = new DiligentAppServer(baseConfig);
 
-  const appServer = new DiligentAppServer(appServerConfig);
-  const bridge = new RpcBridge(
-    appServer,
-    cwd,
-    runtimeConfig.mode,
-    {
-      currentModelId: runtimeConfig.model?.id,
-      allModels,
-      getAvailableModels: () => {
-        const configured = runtimeConfig.providerManager.getConfiguredProviders();
-        return allModels.filter((m) => configured.includes(m.provider as (typeof PROVIDER_NAMES)[number]));
-      },
-      onModelChange: (modelId) => {
-        runtimeConfig.model = resolveModel(modelId);
-      },
-    },
-    runtimeConfig.providerManager,
-  );
+  // Map from connectionId → peer receive function, for routing WS messages
+  const peerReceivers = new Map<string, (raw: string | Buffer) => void>();
 
   const distDir = options.distDir ?? resolveDistDir();
   const hasDist = existsSync(distDir);
 
-  const server = Bun.serve<RpcWsData>({
+  const server = Bun.serve<WsData>({
     port,
     fetch(req, bunServer) {
       const url = new URL(req.url);
 
       if (url.pathname === "/rpc") {
-        const sessionId = `web-${crypto.randomUUID().slice(0, 8)}`;
-        const upgraded = bunServer.upgrade(req, {
-          data: { sessionId },
-        });
+        const connectionId = `web-${crypto.randomUUID().slice(0, 8)}`;
+        const upgraded = bunServer.upgrade(req, { data: { connectionId } });
         if (upgraded) return undefined as unknown as Response;
         return new Response("WebSocket upgrade failed", { status: 400 });
       }
@@ -158,13 +125,16 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     },
     websocket: {
       open(ws) {
-        bridge.open(ws);
+        const { peer, receive } = createWsPeer(ws);
+        peerReceivers.set(ws.data.connectionId, receive);
+        appServer.connect(ws.data.connectionId, peer);
       },
-      async message(ws, message) {
-        await bridge.message(ws, message);
+      message(ws, raw) {
+        peerReceivers.get(ws.data.connectionId)?.(raw);
       },
       close(ws) {
-        bridge.close(ws);
+        peerReceivers.delete(ws.data.connectionId);
+        appServer.disconnect(ws.data.connectionId);
       },
     },
   });
@@ -176,6 +146,38 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       server.stop();
     },
   };
+}
+
+/** Create a transport-neutral RpcPeer backed by a Bun WebSocket */
+function createWsPeer(ws: ServerWebSocket<WsData>): {
+  peer: RpcPeer;
+  receive: (raw: string | Buffer) => void;
+} {
+  const listeners: Array<(msg: JSONRPCMessage) => void | Promise<void>> = [];
+
+  const peer: RpcPeer = {
+    send(message: JSONRPCMessage): void {
+      ws.send(JSON.stringify(message));
+    },
+    onMessage(listener: (msg: JSONRPCMessage) => void | Promise<void>): void {
+      listeners.push(listener);
+    },
+  };
+
+  const receive = (raw: string | Buffer): void => {
+    let parsed: JSONRPCMessage;
+    try {
+      parsed = JSONRPCMessageSchema.parse(JSON.parse(typeof raw === "string" ? raw : raw.toString()));
+    } catch {
+      ws.send(JSON.stringify({ id: "unknown", error: { code: -32700, message: "Malformed JSON" } }));
+      return;
+    }
+    for (const listener of listeners) {
+      void listener(parsed);
+    }
+  };
+
+  return { peer, receive };
 }
 
 function resolveDistDir(): string {

@@ -1,12 +1,6 @@
 // @summary Non-interactive runner using JSON-RPC app-server communication
-import type { AgentEvent, DiligentPaths, ModeKind } from "@diligent/core";
-import {
-  createPermissionEngine,
-  createYoloPermissionEngine,
-  DiligentAppServer,
-  ensureDiligentDir,
-  ProtocolNotificationAdapter,
-} from "@diligent/core";
+import type { AgentEvent, DiligentPaths } from "@diligent/core";
+import { ProtocolNotificationAdapter } from "@diligent/core";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
@@ -15,13 +9,16 @@ import {
   DILIGENT_VERSION,
 } from "@diligent/protocol";
 import type { AppConfig } from "../config";
-import { LocalAppServerRpcClient } from "./rpc-client";
+import type { SpawnedAppServer } from "./rpc-client";
+import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
 import { t } from "./theme";
-import { buildTools } from "./tools";
 
 export interface RunnerOptions {
   resume?: boolean;
+  rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
 }
+
+const APP_SERVER_STDERR_PREFIX = "[app-server]";
 
 export class NonInteractiveRunner {
   private exitCode = 0;
@@ -40,9 +37,6 @@ export class NonInteractiveRunner {
     }
 
     const isTTY = process.stderr.isTTY === true;
-    const permissionEngine = this.config.diligent.yolo
-      ? createYoloPermissionEngine()
-      : createPermissionEngine(this.config.diligent.permissions ?? []);
     const adapter = new ProtocolNotificationAdapter();
     let hasText = false;
     let threadId: string | null = null;
@@ -52,35 +46,17 @@ export class NonInteractiveRunner {
       reject: (error: Error) => void;
     } | null = null;
 
-    const server = new DiligentAppServer({
-      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-      buildAgentConfig: async ({ cwd, mode, effort, signal, approve, ask, getSessionId }) => {
-        const deps = {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          streamFunction: this.config.streamFunction,
-          getParentSessionId: getSessionId,
-          ask,
-        };
-        const { tools } = await buildTools(cwd, this.paths, deps, this.config.diligent.tools);
-
-        return {
-          model: this.config.model,
-          systemPrompt: this.config.systemPrompt,
-          tools,
-          streamFunction: this.config.streamFunction,
-          mode: mode as ModeKind,
-          effort,
-          signal,
-          approve,
-          ask,
-          permissionEngine,
-        };
+    const spawnFn = this.options?.rpcClientFactory ?? spawnCliAppServer;
+    const rpc = await spawnFn({
+      cwd: process.cwd(),
+      yolo: this.config.diligent.yolo,
+      onStderrLine: (line) => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          this.writeStderr(`${APP_SERVER_STDERR_PREFIX} ${trimmed}`, isTTY);
+        }
       },
-      compaction: this.config.compaction,
     });
-
-    const rpc = new LocalAppServerRpcClient(server);
     rpc.setNotificationListener((notification: DiligentServerNotification) => {
       for (const event of adapter.toAgentEvents(notification)) {
         hasText = this.handleEvent(event, isTTY, hasText);
@@ -125,6 +101,10 @@ export class NonInteractiveRunner {
         threadId = started.threadId;
       }
 
+      if (threadId) {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId });
+      }
+
       const turnDone = new Promise<void>((resolve, reject) => {
         pendingTurn = { resolve, reject };
       });
@@ -137,6 +117,8 @@ export class NonInteractiveRunner {
     } catch (err) {
       this.writeStderr(`[error] ${err instanceof Error ? err.message : String(err)}`, isTTY);
       this.exitCode = 1;
+    } finally {
+      await rpc.dispose().catch(() => {});
     }
 
     if (hasText) {

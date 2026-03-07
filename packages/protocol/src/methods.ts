@@ -14,6 +14,14 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   EFFORT_SET: "effort/set",
   KNOWLEDGE_LIST: "knowledge/list",
   THREAD_DELETE: "thread/delete",
+  CONFIG_SET: "config/set",
+  AUTH_LIST: "auth/list",
+  AUTH_SET: "auth/set",
+  AUTH_REMOVE: "auth/remove",
+  AUTH_OAUTH_START: "auth/oauth/start",
+  THREAD_SUBSCRIBE: "thread/subscribe",
+  THREAD_UNSUBSCRIBE: "thread/unsubscribe",
+  IMAGE_UPLOAD: "image/upload",
 } as const;
 
 export type DiligentClientRequestMethod =
@@ -36,6 +44,7 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   ITEM_COMPLETED: "item/completed",
   TURN_COMPLETED: "turn/completed",
   TURN_INTERRUPTED: "turn/interrupted",
+  SERVER_REQUEST_RESOLVED: "server/request/resolved",
   KNOWLEDGE_SAVED: "knowledge/saved",
   LOOP_DETECTED: "loop/detected",
   ERROR: "error",
@@ -63,16 +72,3 @@ export const DILIGENT_SERVER_REQUEST_METHODS = {
 
 export type DiligentServerRequestMethod =
   (typeof DILIGENT_SERVER_REQUEST_METHODS)[keyof typeof DILIGENT_SERVER_REQUEST_METHODS];
-
-export const DILIGENT_WEB_REQUEST_METHODS = {
-  CONFIG_SET: "config/set",
-  AUTH_LIST: "auth/list",
-  AUTH_SET: "auth/set",
-  AUTH_REMOVE: "auth/remove",
-  AUTH_OAUTH_START: "auth/oauth/start",
-  THREAD_SUBSCRIBE: "thread/subscribe",
-  THREAD_UNSUBSCRIBE: "thread/unsubscribe",
-  IMAGE_UPLOAD: "image/upload",
-} as const;
-
-export type DiligentWebRequestMethod = (typeof DILIGENT_WEB_REQUEST_METHODS)[keyof typeof DILIGENT_WEB_REQUEST_METHODS];

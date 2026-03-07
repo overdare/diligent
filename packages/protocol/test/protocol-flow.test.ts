@@ -4,12 +4,12 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
-  DILIGENT_WEB_REQUEST_METHODS,
   DiligentClientRequestSchema,
+  DiligentClientResponseSchema,
   DiligentServerNotificationSchema,
   DiligentServerRequestResponseSchema,
   DiligentServerRequestSchema,
-  DiligentWebResponseSchema,
+  InitializeResponseSchema,
 } from "../src";
 
 describe("protocol/flow", () => {
@@ -48,10 +48,30 @@ describe("protocol/flow", () => {
     ).toBe(true);
   });
 
+  it("accepts initialize response bootstrap metadata for raw web transport", () => {
+    expect(
+      InitializeResponseSchema.safeParse({
+        serverName: "diligent-app-server",
+        serverVersion: "0.0.1",
+        protocolVersion: 1,
+        capabilities: {
+          supportsFollowUp: true,
+          supportsApprovals: true,
+          supportsUserInput: true,
+        },
+        cwd: "/repo",
+        mode: "default",
+        effort: "medium",
+        currentModel: "claude-sonnet-4-6",
+        availableModels: [],
+      }).success,
+    ).toBe(true);
+  });
+
   it("accepts web image upload responses with canonical webUrl", () => {
     expect(
-      DiligentWebResponseSchema.safeParse({
-        method: DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD,
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD,
         result: {
           attachment: {
             type: "local_image",
@@ -63,6 +83,14 @@ describe("protocol/flow", () => {
         },
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts server/request/resolved notification", () => {
+    const resolved = DiligentServerNotificationSchema.safeParse({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+      params: { requestId: 42 },
+    });
+    expect(resolved.success).toBe(true);
   });
 
   it("accepts codex-like item lifecycle notifications", () => {

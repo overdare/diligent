@@ -29,8 +29,6 @@ class MockAnthropicClient {
       return new MockAnthropicStream();
     },
   };
-
-  constructor(_options: { apiKey: string }) {}
 }
 
 mock.module("@anthropic-ai/sdk", () => ({

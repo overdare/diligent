@@ -15,6 +15,7 @@ import { EventStream, ensureDiligentDir } from "@diligent/core";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { NonInteractiveRunner } from "../src/tui/runner";
+import { createInProcessRpcClientFactory } from "./helpers/in-process-server";
 
 const TEST_MODEL: Model = {
   id: "test-model",
@@ -214,7 +215,10 @@ describe("NonInteractiveRunner", () => {
 
     const { stdout, restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       const exitCode = await runner.run("say hello");
       expect(exitCode).toBe(0);
     } finally {
@@ -244,7 +248,10 @@ describe("NonInteractiveRunner", () => {
 
     const { stdout, stderr, restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       const exitCode = await runner.run("run echo");
       expect(exitCode).toBe(0);
     } finally {
@@ -266,7 +273,10 @@ describe("NonInteractiveRunner", () => {
 
     const { stderr, restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       const exitCode = await runner.run("fail");
       expect(exitCode).toBe(1);
     } finally {
@@ -284,7 +294,10 @@ describe("NonInteractiveRunner", () => {
 
     const { restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       await runner.run("hello agent");
     } finally {
       restore();
@@ -313,7 +326,10 @@ describe("NonInteractiveRunner", () => {
 
     const { stdout, restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       await runner.run("think");
     } finally {
       restore();
@@ -338,7 +354,10 @@ describe("NonInteractiveRunner", () => {
 
     const { stdout, restore } = captureOutput();
     try {
-      const runner = new NonInteractiveRunner(makeConfig(streamFn), workspace.paths);
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
       const exitCode = await runner.run("list files");
       expect(exitCode).toBe(0);
     } finally {
