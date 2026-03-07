@@ -10,6 +10,7 @@ import {
   SessionSummarySchema,
   ThinkingEffortSchema,
 } from "./data-model";
+import { ModelInfoSchema } from "./web-requests";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
 
 export const InitializeParamsSchema = z.object({
@@ -24,6 +25,11 @@ export const InitializeResponseSchema = z.object({
   serverVersion: z.string(),
   protocolVersion: ProtocolVersionSchema,
   capabilities: ProtocolCapabilitiesSchema,
+  cwd: z.string().optional(),
+  mode: ModeSchema.optional(),
+  effort: ThinkingEffortSchema.optional(),
+  currentModel: z.string().optional(),
+  availableModels: z.array(ModelInfoSchema).optional(),
 });
 export type InitializeResponse = z.infer<typeof InitializeResponseSchema>;
 

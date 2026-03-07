@@ -63,6 +63,13 @@ describe("RPC binding", () => {
     });
 
     const server = new DiligentAppServer({
+      getInitializeResult: async () => ({
+        cwd: projectRoot,
+        mode: "default",
+        effort: "medium",
+        currentModel: "fake-model",
+        availableModels: [],
+      }),
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -111,6 +118,10 @@ describe("RPC binding", () => {
       protocolVersion: 1,
     });
     expect(init.protocolVersion).toBe(1);
+    expect(init.cwd).toBe(projectRoot);
+    expect(init.mode).toBe("default");
+    expect(init.effort).toBe("medium");
+    expect(init.currentModel).toBe("fake-model");
 
     const started = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: projectRoot });
     expect(started.threadId).toMatch(/^\d{14}-[0-9a-f]{6}$/);

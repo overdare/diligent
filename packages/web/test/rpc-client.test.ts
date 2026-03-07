@@ -1,5 +1,6 @@
-// @summary Tests for WebRpcClient request handling and reconnect delay policy
+// @summary Tests for WebRpcClient raw JSON-RPC request handling and reconnect delay policy
 import { afterEach, expect, test } from "bun:test";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import { getReconnectAttemptLimit, getReconnectDelay, WebRpcClient } from "../src/client/lib/rpc-client";
 
 const OriginalWebSocket = globalThis.WebSocket;
@@ -21,30 +22,56 @@ class FakeWebSocket {
     queueMicrotask(() => {
       this.readyState = FakeWebSocket.OPEN;
       this.onopen?.();
-      this.onmessage?.({
-        data: JSON.stringify({
-          type: "connected",
-          cwd: process.cwd(),
-          mode: "default",
-          effort: "medium",
-          serverVersion: "test",
-        }),
-      });
     });
   }
 
   send(payload: string) {
     this.sent.push(payload);
-    const parsed = JSON.parse(payload) as { type: string; id?: number };
-    if (parsed.type === "rpc_request" && typeof parsed.id === "number") {
+    const parsed = JSON.parse(payload) as { id?: number; method?: string; params?: Record<string, unknown> };
+    if (parsed.method === "initialize" && typeof parsed.id === "number") {
       queueMicrotask(() => {
         this.onmessage?.({
           data: JSON.stringify({
-            type: "rpc_response",
-            response: {
-              id: parsed.id,
-              result: { accepted: true },
+            id: parsed.id,
+            result: {
+              serverName: "fake",
+              serverVersion: "test",
+              protocolVersion: 1,
+              capabilities: {
+                supportsFollowUp: true,
+                supportsApprovals: true,
+                supportsUserInput: true,
+              },
+              cwd: process.cwd(),
+              mode: "default",
+              effort: "medium",
+              currentModel: "test-model",
+              availableModels: [],
             },
+          }),
+        });
+      });
+      return;
+    }
+
+    if (parsed.method === "turn/start" && typeof parsed.id === "number") {
+      queueMicrotask(() => {
+        this.onmessage?.({
+          data: JSON.stringify({
+            id: parsed.id,
+            result: { accepted: true },
+          }),
+        });
+      });
+      return;
+    }
+
+    if (parsed.method === "thread/subscribe" && typeof parsed.id === "number") {
+      queueMicrotask(() => {
+        this.onmessage?.({
+          data: JSON.stringify({
+            id: parsed.id,
+            result: { subscriptionId: `sub-${parsed.params?.threadId ?? "x"}` },
           }),
         });
       });
@@ -62,11 +89,16 @@ afterEach(() => {
   FakeWebSocket.instances = [];
 });
 
-test("sends rpc request and resolves rpc response", async () => {
+test("sends raw json-rpc request and resolves response", async () => {
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
   const client = new WebRpcClient("ws://example.test/rpc");
   await client.connect();
+  await client.initialize({
+    clientName: "diligent-web",
+    clientVersion: "0.0.1",
+    protocolVersion: 1,
+  });
 
   const result = await client.request("turn/start", {
     threadId: "t1",
@@ -74,6 +106,71 @@ test("sends rpc request and resolves rpc response", async () => {
   });
 
   expect((result as { accepted: boolean }).accepted).toBe(true);
+  const sent = FakeWebSocket.instances[0]?.sent.map((entry) => JSON.parse(entry));
+  expect(sent?.some((entry) => entry.method === "turn/start" && entry.id === 2)).toBe(true);
+  client.disconnect();
+});
+
+test("initialize result is the bootstrap source and triggers resubscribe", async () => {
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+  const client = new WebRpcClient("ws://example.test/rpc");
+  await client.connect();
+  await client.subscribe("thread-1");
+  FakeWebSocket.instances[0]!.sent.length = 0;
+
+  const init = await client.initialize({
+    clientName: "diligent-web",
+    clientVersion: "0.0.1",
+    protocolVersion: 1,
+  });
+
+  expect(init.cwd).toBe(process.cwd());
+  expect(init.mode).toBe("default");
+  const sentMethods = FakeWebSocket.instances[0]!.sent.map((entry) => JSON.parse(entry).method);
+  expect(sentMethods).toContain("initialize");
+  expect(sentMethods).toContain("thread/subscribe");
+  client.disconnect();
+});
+
+test("server request response resolution emits server/request/resolved notification locally", async () => {
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+  const client = new WebRpcClient("ws://example.test/rpc");
+  await client.connect();
+
+  const seen: Array<{ id: number; method: string }> = [];
+  const resolved: number[] = [];
+  client.onServerRequest((id, request) => {
+    seen.push({ id, method: request.method });
+  });
+  client.onNotification((notification) => {
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED) {
+      resolved.push(notification.params.requestId);
+    }
+  });
+
+  FakeWebSocket.instances[0]!.onmessage?.({
+    data: JSON.stringify({
+      id: 41,
+      method: "approval/request",
+      params: {
+        threadId: "thread-1",
+        request: { permission: "execute", toolName: "bash", description: "run" },
+      },
+    }),
+  });
+
+  expect(seen).toEqual([{ id: 41, method: "approval/request" }]);
+
+  FakeWebSocket.instances[0]!.onmessage?.({
+    data: JSON.stringify({
+      id: 41,
+      result: { decision: "once" },
+    }),
+  });
+
+  expect(resolved).toEqual([41]);
   client.disconnect();
 });
 
@@ -106,15 +203,6 @@ test("retries when initial websocket open fails", async () => {
         }
         this.readyState = FlakyWebSocket.OPEN;
         this.onopen?.();
-        this.onmessage?.({
-          data: JSON.stringify({
-            type: "connected",
-            cwd: process.cwd(),
-            mode: "default",
-            effort: "medium",
-            serverVersion: "test",
-          }),
-        });
       });
     }
 

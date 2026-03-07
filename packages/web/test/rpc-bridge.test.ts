@@ -1,9 +1,10 @@
-// @summary Tests for RpcBridge multi-subscriber model, fan-out, and first-responder behavior
+// @summary Tests for RpcBridge raw JSON-RPC multi-subscriber fan-out and first-responder behavior
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DiligentServerRequest } from "@diligent/protocol";
+import type { DiligentServerRequest, JSONRPCMessage } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import { RpcBridge } from "../src/server/rpc-bridge";
 import { WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
@@ -30,6 +31,21 @@ class FakeAppServer {
     if (req.method === "thread/start") {
       return { id: req.id, result: { threadId: `t-${Date.now()}` } };
     }
+    if (req.method === "initialize") {
+      return {
+        id: req.id,
+        result: {
+          serverName: "fake",
+          serverVersion: "0.0.1",
+          protocolVersion: 1,
+          capabilities: {
+            supportsFollowUp: true,
+            supportsApprovals: true,
+            supportsUserInput: true,
+          },
+        },
+      };
+    }
     return { id: req.id, result: {} };
   }
   async handleNotification(): Promise<void> {}
@@ -47,11 +63,11 @@ function createBridge(fakeServer?: FakeAppServer, cwd = process.cwd()) {
 }
 
 function createFakeWs(sessionId: string) {
-  const sent: unknown[] = [];
+  const sent: JSONRPCMessage[] = [];
   const ws = {
     data: { sessionId },
     send(payload: string) {
-      sent.push(JSON.parse(payload));
+      sent.push(JSON.parse(payload) as JSONRPCMessage);
     },
   };
   return { ws: ws as unknown as import("bun").ServerWebSocket<import("../src/server/rpc-bridge").RpcWsData>, sent };
@@ -70,7 +86,6 @@ async function startThread(bridge: RpcBridge, ws: ReturnType<typeof createFakeWs
   await bridge.message(
     ws,
     JSON.stringify({
-      type: "rpc_request",
       id: 1,
       method: "thread/start",
       params: { cwd: "/tmp" },
@@ -81,6 +96,26 @@ async function startThread(bridge: RpcBridge, ws: ReturnType<typeof createFakeWs
 }
 
 describe("RpcBridge multi-subscriber", () => {
+  test("routes raw initialize request and response", async () => {
+    const { bridge } = createBridge();
+    const { ws, sent } = createFakeWs("s1");
+    bridge.open(ws);
+
+    await bridge.message(
+      ws,
+      JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: { clientName: "web", clientVersion: "0.0.1", protocolVersion: 1 },
+      }),
+    );
+
+    const response = sent.find((entry) => "id" in entry && entry.id === 1 && "result" in entry) as
+      | { id: number; result: { protocolVersion: number } }
+      | undefined;
+    expect(response?.result.protocolVersion).toBe(1);
+  });
+
   test("resolves server request using client response", async () => {
     const server = new FakeAppServer();
     const { bridge } = createBridge(server);
@@ -95,10 +130,9 @@ describe("RpcBridge multi-subscriber", () => {
       },
     };
 
-    // Trigger server request through the handler (broadcasts to all clients)
     const responsePromise = server.serverRequestHandler!(request);
 
-    const serverRequest = sent.find((entry) => (entry as { type?: string }).type === "server_request") as {
+    const serverRequest = sent.find((entry) => "id" in entry && "method" in entry && entry.method === "approval/request") as {
       id: number;
     };
     expect(serverRequest).toBeTruthy();
@@ -106,9 +140,8 @@ describe("RpcBridge multi-subscriber", () => {
     await bridge.message(
       ws,
       JSON.stringify({
-        type: "server_request_response",
         id: serverRequest.id,
-        response: { method: "approval/request", result: { decision: "once" } },
+        result: { decision: "once" },
       }),
     );
 
@@ -128,50 +161,32 @@ describe("RpcBridge multi-subscriber", () => {
     bridge.open(ws1);
     bridge.open(ws2);
 
-    // Both subscribe to the same thread
     await startThread(bridge, ws1, "thread1");
 
-    // s2 subscribes via thread/subscribe
     await bridge.message(
       ws2,
       JSON.stringify({
-        type: "rpc_request",
         id: 10,
         method: "thread/subscribe",
         params: { threadId: "thread1" },
       }),
     );
 
-    // Verify subscription response
-    const subResponse = sent2.find(
-      (entry) =>
-        (entry as { type?: string }).type === "rpc_response" &&
-        (
-          (entry as { response?: { result?: { subscriptionId?: string } } }).response?.result as {
-            subscriptionId?: string;
-          }
-        )?.subscriptionId,
-    );
-    expect(subResponse).toBeTruthy();
-
-    // Clear sent arrays to only track the notification
     sent1.length = 0;
     sent2.length = 0;
 
-    // Emit a notification for thread1
     server.notificationListener!({
       method: "item/delta",
       params: { threadId: "thread1", itemId: "i1", delta: { text: "hello" } },
-    });
+    } as import("@diligent/protocol").DiligentServerNotification);
 
-    // Both should receive it
-    const notif1 = sent1.find((e) => (e as { type?: string }).type === "server_notification");
-    const notif2 = sent2.find((e) => (e as { type?: string }).type === "server_notification");
+    const notif1 = sent1.find((e) => "method" in e && e.method === "item/delta");
+    const notif2 = sent2.find((e) => "method" in e && e.method === "item/delta");
     expect(notif1).toBeTruthy();
     expect(notif2).toBeTruthy();
   });
 
-  test("first-responder wins: second response is ignored", async () => {
+  test("first-responder wins: second response is ignored and others are notified", async () => {
     const server = new FakeAppServer();
     const { bridge } = createBridge(server);
     const { ws: ws1, sent: sent1 } = createFakeWs("s1");
@@ -187,41 +202,41 @@ describe("RpcBridge multi-subscriber", () => {
       },
     };
 
-    // Broadcast to all clients
     const responsePromise = server.serverRequestHandler!(request);
 
-    // Both sessions should receive the server_request
-    const req1 = sent1.find((e) => (e as { type?: string }).type === "server_request") as { id: number };
-    const req2 = sent2.find((e) => (e as { type?: string }).type === "server_request") as { id: number };
-    expect(req1).toBeTruthy();
-    expect(req2).toBeTruthy();
-    expect(req1.id).toBe(req2.id); // same requestId
+    const req1 = sent1.find((e) => "id" in e && "method" in e && e.method === "approval/request") as { id: number };
+    const req2 = sent2.find((e) => "id" in e && "method" in e && e.method === "approval/request") as { id: number };
+    expect(req1.id).toBe(req2.id);
 
-    // s1 responds first
     await bridge.message(
       ws1,
       JSON.stringify({
-        type: "server_request_response",
         id: req1.id,
-        response: { method: "approval/request", result: { decision: "once" } },
+        result: { decision: "once" },
       }),
     );
 
-    // s2 responds late — should be silently ignored
     await bridge.message(
       ws2,
       JSON.stringify({
-        type: "server_request_response",
         id: req2.id,
-        response: { method: "approval/request", result: { decision: "always" } },
+        result: { decision: "always" },
       }),
     );
 
     const response = await responsePromise;
     expect(response.method).toBe("approval/request");
     if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("once"); // first responder wins
+      expect(response.result.decision).toBe("once");
     }
+
+    const resolvedNotification = sent2.find(
+      (entry) =>
+        "method" in entry &&
+        entry.method === DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED &&
+        (entry as { params?: { requestId?: number } }).params?.requestId === req1.id,
+    );
+    expect(resolvedNotification).toBeTruthy();
   });
 
   test("disconnect cleanup: remaining subscriber still receives notifications", async () => {
@@ -238,25 +253,22 @@ describe("RpcBridge multi-subscriber", () => {
     await bridge.message(
       ws2,
       JSON.stringify({
-        type: "rpc_request",
         id: 10,
         method: "thread/subscribe",
         params: { threadId: "thread1" },
       }),
     );
 
-    // s1 disconnects
     bridge.close(ws1);
 
     sent2.length = 0;
 
-    // Emit notification — only s2 should receive
     server.notificationListener!({
       method: "item/delta",
       params: { threadId: "thread1", itemId: "i1", delta: { text: "world" } },
-    });
+    } as import("@diligent/protocol").DiligentServerNotification);
 
-    const notif2 = sent2.find((e) => (e as { type?: string }).type === "server_notification");
+    const notif2 = sent2.find((e) => "method" in e && e.method === "item/delta");
     expect(notif2).toBeTruthy();
   });
 
@@ -264,7 +276,6 @@ describe("RpcBridge multi-subscriber", () => {
     const server = new FakeAppServer();
     createBridge(server);
 
-    // No clients connected — request should resolve immediately with fallback
     const request: DiligentServerRequest = {
       method: "approval/request",
       params: {
@@ -276,7 +287,7 @@ describe("RpcBridge multi-subscriber", () => {
     const response = await server.serverRequestHandler!(request);
     expect(response.method).toBe("approval/request");
     if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("reject"); // safe fallback
+      expect(response.result.decision).toBe("reject");
     }
   });
 
@@ -287,55 +298,42 @@ describe("RpcBridge multi-subscriber", () => {
     const { ws, sent } = createFakeWs("s1");
     bridge.open(ws);
 
-    // Subscribe
     await bridge.message(
       ws,
       JSON.stringify({
-        type: "rpc_request",
         id: 10,
         method: "thread/subscribe",
         params: { threadId: "thread1" },
       }),
     );
 
-    // Extract subscriptionId
     const subResponse = sent.find(
-      (e) =>
-        (e as { type?: string }).type === "rpc_response" &&
-        ((e as { response?: { result?: { subscriptionId?: string } } }).response?.result as { subscriptionId?: string })
-          ?.subscriptionId,
-    ) as { response: { result: { subscriptionId: string } } };
-    const subscriptionId = subResponse.response.result.subscriptionId;
+      (e) => "id" in e && e.id === 10 && "result" in e && (e.result as { subscriptionId?: string }).subscriptionId,
+    ) as { result: { subscriptionId: string } };
+    const subscriptionId = subResponse.result.subscriptionId;
 
-    // Unsubscribe
     await bridge.message(
       ws,
       JSON.stringify({
-        type: "rpc_request",
         id: 11,
         method: "thread/unsubscribe",
         params: { subscriptionId },
       }),
     );
 
-    // Verify unsubscribe response
-    const unsubResponse = sent.find(
-      (e) =>
-        (e as { type?: string; response?: { id?: number } }).type === "rpc_response" &&
-        (e as { response: { id: number } }).response.id === 11,
-    ) as { response: { result: { ok: boolean } } };
-    expect(unsubResponse.response.result.ok).toBe(true);
+    const unsubResponse = sent.find((e) => "id" in e && e.id === 11 && "result" in e) as {
+      result: { ok: boolean };
+    };
+    expect(unsubResponse.result.ok).toBe(true);
 
     sent.length = 0;
 
-    // Notification should now broadcast (no subscribers)
     server.notificationListener!({
       method: "item/delta",
       params: { threadId: "thread1", itemId: "i1", delta: { text: "test" } },
-    });
+    } as import("@diligent/protocol").DiligentServerNotification);
 
-    // Should still receive via broadcast since it's the only session
-    const notif = sent.find((e) => (e as { type?: string }).type === "server_notification");
+    const notif = sent.find((e) => "method" in e && e.method === "item/delta");
     expect(notif).toBeTruthy();
   });
 
@@ -350,7 +348,6 @@ describe("RpcBridge multi-subscriber", () => {
       await bridge.message(
         ws,
         JSON.stringify({
-          type: "rpc_request",
           id: 50,
           method: "image/upload",
           params: {
@@ -362,24 +359,18 @@ describe("RpcBridge multi-subscriber", () => {
         }),
       );
 
-      const response = sent.find(
-        (entry) =>
-          (entry as { type?: string; response?: { id?: number } }).type === "rpc_response" &&
-          (entry as { response: { id: number } }).response.id === 50,
-      ) as {
-        response: {
-          result: {
-            attachment: { type: string; path: string; mediaType: string; fileName: string; webUrl: string };
-          };
+      const response = sent.find((entry) => "id" in entry && entry.id === 50 && "result" in entry) as {
+        result: {
+          attachment: { type: string; path: string; mediaType: string; fileName: string; webUrl: string };
         };
       };
 
-      expect(response.response.result.attachment.type).toBe("local_image");
-      expect(response.response.result.attachment.mediaType).toBe("image/png");
-      expect(response.response.result.attachment.fileName).toBe("screen.png");
-      expect(response.response.result.attachment.path).toContain(".diligent/images/thread1/");
-      expect(response.response.result.attachment.webUrl).toContain(`${WEB_IMAGE_ROUTE_PREFIX}thread1/`);
-      expect(await Bun.file(response.response.result.attachment.path).text()).toBe("png-bytes");
+      expect(response.result.attachment.type).toBe("local_image");
+      expect(response.result.attachment.mediaType).toBe("image/png");
+      expect(response.result.attachment.fileName).toBe("screen.png");
+      expect(response.result.attachment.path).toContain(".diligent/images/thread1/");
+      expect(response.result.attachment.webUrl).toContain(`${WEB_IMAGE_ROUTE_PREFIX}thread1/`);
+      expect(await Bun.file(response.result.attachment.path).text()).toBe("png-bytes");
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }

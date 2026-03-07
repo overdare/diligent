@@ -1,4 +1,4 @@
-// @summary WebSocket bridge that multiplexes JSON-RPC calls, notifications, and server requests
+// @summary WebSocket bridge that routes raw JSON-RPC messages with Web-specific subscription semantics
 
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -27,7 +27,12 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
+  JSONRPCMessage,
+  JSONRPCNotification,
+  JSONRPCRequest,
+  JSONRPCResponse,
   Mode,
+  ModelInfo,
   ProviderAuthStatus,
   ThinkingEffort,
 } from "@diligent/protocol";
@@ -44,6 +49,7 @@ import {
   EffortSetResponseSchema,
   ImageUploadParamsSchema,
   JSONRPCErrorResponseSchema,
+  JSONRPCMessageSchema,
   JSONRPCResponseSchema,
   ModeSetResponseSchema,
   ThreadDeleteParamsSchema,
@@ -56,7 +62,6 @@ import {
 } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
 import { toWebImageUrl } from "../shared/image-routes";
-import type { ConnectedMessage, ModelInfo, WsClientMessage, WsServerMessage } from "../shared/ws-protocol";
 
 interface RpcSession {
   id: string;
@@ -110,7 +115,7 @@ export class RpcBridge {
       sentTo: Set<string>;
     }
   >();
-  private readonly turnInitiators = new Map<string, string>(); // threadId → sessionId that started the turn
+  private readonly turnInitiators = new Map<string, string>();
   private serverRequestSeq = 0;
   private currentModelId: string | undefined;
   private oauthPending: Promise<void> | null = null;
@@ -144,17 +149,6 @@ export class RpcBridge {
     };
 
     this.sessions.set(sessionId, session);
-
-    const connected: ConnectedMessage = {
-      type: "connected",
-      cwd: this.cwd,
-      mode: this.initialMode,
-      effort: session.effort,
-      serverVersion: DILIGENT_VERSION,
-      currentModel: this.currentModelId,
-      availableModels: this.modelConfig.getAvailableModels(),
-    };
-    this.send(ws, connected);
   }
 
   close(ws: ServerWebSocket<RpcWsData>): void {
@@ -166,397 +160,352 @@ export class RpcBridge {
   }
 
   async message(ws: ServerWebSocket<RpcWsData>, raw: string | Buffer): Promise<void> {
-    let parsed: WsClientMessage;
+    let parsed: JSONRPCMessage;
     try {
-      parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as WsClientMessage;
+      parsed = JSONRPCMessageSchema.parse(JSON.parse(typeof raw === "string" ? raw : raw.toString()));
     } catch {
-      this.send(ws, { type: "error", message: "Malformed JSON" });
-      return;
-    }
-
-    if (parsed.type === "rpc_notify") {
-      await this.appServer.handleNotification({ method: parsed.method, params: parsed.params });
-      return;
-    }
-
-    if (parsed.type === "rpc_request") {
-      const session = this.sessions.get(ws.data.sessionId);
-      if (!session) {
-        this.send(ws, { type: "error", message: "Session not found" });
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET) {
-        const validated = ConfigSetParamsSchema.safeParse(parsed.params ?? {});
-        if (!validated.success) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-          return;
-        }
-        const modelId = validated.data.model;
-        if (modelId) {
-          const valid = this.modelConfig.getAvailableModels().find((m) => m.id === modelId);
-          if (valid) {
-            this.currentModelId = modelId;
-            this.modelConfig.onModelChange(modelId);
-            this.send(ws, {
-              type: "rpc_response",
-              response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { model: modelId } }),
-            });
-          } else {
-            this.send(ws, {
-              type: "rpc_response",
-              response: JSONRPCErrorResponseSchema.parse({
-                id: parsed.id,
-                error: { code: -32602, message: `Unknown model: ${modelId}` },
-              }),
-            });
-          }
-        } else {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { model: this.currentModelId } }),
-          });
-        }
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST && this.providerManager) {
-        const providers = await this.buildProviderList();
-        this.send(ws, {
-          type: "rpc_response",
-          response: JSONRPCResponseSchema.parse({
-            id: parsed.id,
-            result: { providers, availableModels: this.modelConfig.getAvailableModels() },
-          }),
-        });
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_SET && this.providerManager) {
-        const validated = AuthSetParamsSchema.safeParse(parsed.params);
-        if (validated.success) {
-          const { provider, apiKey } = validated.data;
-          await saveAuthKey(provider, apiKey);
-          this.providerManager.setApiKey(provider, apiKey);
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
-          });
-          const providers = await this.buildProviderList();
-          this.emitAccountUpdated(providers);
-        } else {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-        }
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE && this.providerManager) {
-        const validated = AuthRemoveParamsSchema.safeParse(parsed.params);
-        if (validated.success) {
-          const { provider } = validated.data;
-          await removeAuthKey(provider);
-          this.providerManager.removeApiKey(provider);
-          if (provider === "openai") {
-            await removeOAuthTokens();
-            this.providerManager.removeOAuthTokens();
-          }
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok: true } }),
-          });
-          const providers = await this.buildProviderList();
-          this.emitAccountUpdated(providers);
-        } else {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-        }
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE) {
-        const validated = ThreadSubscribeParamsSchema.safeParse(parsed.params);
-        if (!validated.success) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-          return;
-        }
-        const subscriptionId = this.addSubscription(validated.data.threadId, session.id);
-        session.currentThreadId = validated.data.threadId;
-        this.send(ws, {
-          type: "rpc_response",
-          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { subscriptionId } }),
-        });
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE) {
-        const validated = ThreadUnsubscribeParamsSchema.safeParse(parsed.params);
-        if (!validated.success) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-          return;
-        }
-        const ok = this.removeSubscription(validated.data.subscriptionId);
-        this.send(ws, {
-          type: "rpc_response",
-          response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { ok } }),
-        });
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD) {
-        const validated = ImageUploadParamsSchema.safeParse(parsed.params);
-        if (!validated.success) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32602, message: validated.error.message },
-            }),
-          });
-          return;
-        }
-
-        try {
-          const attachment = await this.handleImageUpload(
-            validated.data,
-            validated.data.threadId ?? session.currentThreadId ?? undefined,
-          );
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { attachment } }),
-          });
-        } catch (error) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
-            }),
-          });
-        }
-        return;
-      }
-
-      if (parsed.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START && this.providerManager) {
-        if (this.oauthPending) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32000, message: "OAuth flow already in progress" },
-            }),
-          });
-          return;
-        }
-
-        try {
-          const { codeVerifier, codeChallenge } = generatePKCE();
-          const state = randomBytes(16).toString("hex");
-
-          const params = new URLSearchParams({
-            response_type: "code",
-            client_id: CHATGPT_CLIENT_ID,
-            redirect_uri: CHATGPT_REDIRECT_URI,
-            scope: CHATGPT_SCOPES,
-            code_challenge: codeChallenge,
-            code_challenge_method: "S256",
-            id_token_add_organizations: "true",
-            codex_cli_simplified_flow: "true",
-            originator: "diligent",
-            state,
-          });
-
-          const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
-          const loginId = state;
-
-          // Respond immediately with the auth URL and open the browser server-side
-          // (client-side window.open() fails in Tauri WebView)
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCResponseSchema.parse({ id: parsed.id, result: { authUrl } }),
-          });
-          openBrowser(authUrl);
-
-          // Run OAuth flow asynchronously, notify on completion
-          this.oauthPending = (async () => {
-            try {
-              const { code } = await waitForCallback(state, 5 * 60 * 1000);
-              const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
-              const tokens = buildOAuthTokens(rawTokens);
-              await saveOAuthTokens(tokens);
-              this.providerManager!.setOAuthTokens(tokens);
-
-              this.emitAccountLoginCompleted(loginId, true, null);
-              const providers = await this.buildProviderList();
-              this.emitAccountUpdated(providers);
-            } catch (e) {
-              const error = e instanceof Error ? e.message : "OAuth flow failed";
-              this.emitAccountLoginCompleted(loginId, false, error);
-            } finally {
-              this.oauthPending = null;
-            }
-          })();
-        } catch (e) {
-          this.send(ws, {
-            type: "rpc_response",
-            response: JSONRPCErrorResponseSchema.parse({
-              id: parsed.id,
-              error: { code: -32000, message: e instanceof Error ? e.message : "OAuth start failed" },
-            }),
-          });
-        }
-        return;
-      }
-
-      const params = this.withSessionDefaults(parsed.method, parsed.params, session);
-
-      // Set turnInitiators BEFORE forwarding so echo prevention works during notification routing
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START && session.currentThreadId) {
-        this.turnInitiators.set(session.currentThreadId, session.id);
-      }
-
-      const response = await this.appServer.handleRequest({
-        id: parsed.id,
-        method: parsed.method,
-        params,
+      this.send(ws, {
+        id: "unknown",
+        error: { code: -32700, message: "Malformed JSON" },
       });
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START && "result" in response) {
-        const r = ThreadStartResponseSchema.parse(response.result);
-        if (r.threadId) {
-          // Unsubscribe from all previous threads — a tab views one thread at a time
-          this.removeAllSubscriptionsForSession(session.id);
-          session.currentThreadId = r.threadId;
-          this.addSubscription(r.threadId, session.id);
-        }
-      }
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME && "result" in response) {
-        const resumed = ThreadResumeResponseSchema.parse(response.result);
-        if (resumed.found && resumed.threadId) {
-          this.removeAllSubscriptionsForSession(session.id);
-          session.currentThreadId = resumed.threadId;
-          this.addSubscription(resumed.threadId, session.id);
-        }
-      }
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ && "result" in response) {
-        const r = ThreadReadResponseSchema.parse(response.result);
-        if (r.currentEffort) {
-          session.effort = r.currentEffort;
-        }
-      }
-
-      // Clean up turnInitiators if turn/start failed
-      if (
-        parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START &&
-        session.currentThreadId &&
-        !("result" in response)
-      ) {
-        this.turnInitiators.delete(session.currentThreadId);
-      }
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET && "result" in response) {
-        const r = ModeSetResponseSchema.parse(response.result);
-        if (r.mode) {
-          session.mode = r.mode;
-        }
-      }
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET && "result" in response) {
-        const r = EffortSetResponseSchema.parse(response.result);
-        if (r.effort) {
-          session.effort = r.effort;
-        }
-      }
-
-      if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
-        const r = ThreadDeleteResponseSchema.parse(response.result);
-        const deletedId = ThreadDeleteParamsSchema.parse(parsed.params).threadId;
-        if (r.deleted && deletedId) {
-          this.removeAllSubscriptionsForThread(deletedId);
-          if (session.currentThreadId === deletedId) {
-            session.currentThreadId = null;
-          }
-        }
-      }
-
-      this.send(ws, { type: "rpc_response", response });
       return;
     }
 
-    if (parsed.type === "server_request_response") {
-      // Global pending map — first responder wins, subsequent responses are ignored
-      const pending = this.pendingServerRequests.get(parsed.id);
-      if (!pending) {
-        return;
-      }
-
-      clearTimeout(pending.timeoutId);
-      this.pendingServerRequests.delete(parsed.id);
-
-      // Notify other subscribers that this request was resolved (dismiss their prompts)
-      const responderId = ws.data.sessionId;
-      for (const sessionId of pending.sentTo) {
-        if (sessionId === responderId) continue;
-        const session = this.sessions.get(sessionId);
-        if (session) {
-          this.send(session.ws, { type: "server_request_resolved", id: parsed.id });
-        }
-      }
-
-      const safe = DiligentServerRequestResponseSchema.safeParse(parsed.response);
-      if (!safe.success) {
-        pending.resolve({
-          method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
-          result: { decision: "reject" },
-        });
-        return;
-      }
-
-      pending.resolve(safe.data);
+    if (this.isResponse(parsed)) {
+      this.handleServerRequestResponse(ws, parsed);
+      return;
     }
+
+    if (this.isNotification(parsed)) {
+      await this.appServer.handleNotification(parsed);
+      return;
+    }
+
+    const session = this.sessions.get(ws.data.sessionId);
+    if (!session) {
+      this.send(ws, {
+        id: parsed.id,
+        error: { code: -32000, message: "Session not found" },
+      });
+      return;
+    }
+
+    await this.handleRequest(ws, session, parsed);
   }
 
-  /**
-   * Broadcast a server request to ALL connected clients.
-   * Each client decides whether to show the dialog (active thread) or buffer it (inactive thread).
-   * First response wins; others get a server_request_resolved message.
-   */
+  private async handleRequest(
+    ws: ServerWebSocket<RpcWsData>,
+    session: RpcSession,
+    request: JSONRPCRequest,
+  ): Promise<void> {
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET) {
+      const validated = ConfigSetParamsSchema.safeParse(request.params ?? {});
+      if (!validated.success) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+        return;
+      }
+      const modelId = validated.data.model;
+      if (modelId) {
+        const valid = this.modelConfig.getAvailableModels().find((m) => m.id === modelId);
+        if (valid) {
+          this.currentModelId = modelId;
+          this.modelConfig.onModelChange(modelId);
+          this.send(ws, { id: request.id, result: { model: modelId } });
+        } else {
+          this.send(ws, {
+            id: request.id,
+            error: { code: -32602, message: `Unknown model: ${modelId}` },
+          });
+        }
+      } else {
+        this.send(ws, { id: request.id, result: { model: this.currentModelId } });
+      }
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_LIST && this.providerManager) {
+      const providers = await this.buildProviderList();
+      this.send(ws, {
+        id: request.id,
+        result: { providers, availableModels: this.modelConfig.getAvailableModels() },
+      });
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_SET && this.providerManager) {
+      const validated = AuthSetParamsSchema.safeParse(request.params);
+      if (validated.success) {
+        const { provider, apiKey } = validated.data;
+        await saveAuthKey(provider, apiKey);
+        this.providerManager.setApiKey(provider, apiKey);
+        this.send(ws, { id: request.id, result: { ok: true } });
+        const providers = await this.buildProviderList();
+        this.emitAccountUpdated(providers);
+      } else {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+      }
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_REMOVE && this.providerManager) {
+      const validated = AuthRemoveParamsSchema.safeParse(request.params);
+      if (validated.success) {
+        const { provider } = validated.data;
+        await removeAuthKey(provider);
+        this.providerManager.removeApiKey(provider);
+        if (provider === "openai") {
+          await removeOAuthTokens();
+          this.providerManager.removeOAuthTokens();
+        }
+        this.send(ws, { id: request.id, result: { ok: true } });
+        const providers = await this.buildProviderList();
+        this.emitAccountUpdated(providers);
+      } else {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+      }
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE) {
+      const validated = ThreadSubscribeParamsSchema.safeParse(request.params);
+      if (!validated.success) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+        return;
+      }
+      const subscriptionId = this.addSubscription(validated.data.threadId, session.id);
+      session.currentThreadId = validated.data.threadId;
+      this.send(ws, { id: request.id, result: { subscriptionId } });
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE) {
+      const validated = ThreadUnsubscribeParamsSchema.safeParse(request.params);
+      if (!validated.success) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+        return;
+      }
+      const ok = this.removeSubscription(validated.data.subscriptionId);
+      this.send(ws, { id: request.id, result: { ok } });
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD) {
+      const validated = ImageUploadParamsSchema.safeParse(request.params);
+      if (!validated.success) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32602, message: validated.error.message },
+        });
+        return;
+      }
+
+      try {
+        const attachment = await this.handleImageUpload(
+          validated.data,
+          validated.data.threadId ?? session.currentThreadId ?? undefined,
+        );
+        this.send(ws, { id: request.id, result: { attachment } });
+      } catch (error) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+        });
+      }
+      return;
+    }
+
+    if (request.method === DILIGENT_WEB_REQUEST_METHODS.AUTH_OAUTH_START && this.providerManager) {
+      if (this.oauthPending) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32000, message: "OAuth flow already in progress" },
+        });
+        return;
+      }
+
+      try {
+        const { codeVerifier, codeChallenge } = generatePKCE();
+        const state = randomBytes(16).toString("hex");
+
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: CHATGPT_CLIENT_ID,
+          redirect_uri: CHATGPT_REDIRECT_URI,
+          scope: CHATGPT_SCOPES,
+          code_challenge: codeChallenge,
+          code_challenge_method: "S256",
+          id_token_add_organizations: "true",
+          codex_cli_simplified_flow: "true",
+          originator: "diligent",
+          state,
+        });
+
+        const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
+        const loginId = state;
+
+        this.send(ws, { id: request.id, result: { authUrl } });
+        openBrowser(authUrl);
+
+        this.oauthPending = (async () => {
+          try {
+            const { code } = await waitForCallback(state, 5 * 60 * 1000);
+            const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
+            const tokens = buildOAuthTokens(rawTokens);
+            await saveOAuthTokens(tokens);
+            this.providerManager!.setOAuthTokens(tokens);
+
+            this.emitAccountLoginCompleted(loginId, true, null);
+            const providers = await this.buildProviderList();
+            this.emitAccountUpdated(providers);
+          } catch (e) {
+            const error = e instanceof Error ? e.message : "OAuth flow failed";
+            this.emitAccountLoginCompleted(loginId, false, error);
+          } finally {
+            this.oauthPending = null;
+          }
+        })();
+      } catch (e) {
+        this.send(ws, {
+          id: request.id,
+          error: { code: -32000, message: e instanceof Error ? e.message : "OAuth start failed" },
+        });
+      }
+      return;
+    }
+
+    const params = this.withSessionDefaults(request.method, request.params, session);
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START && session.currentThreadId) {
+      this.turnInitiators.set(session.currentThreadId, session.id);
+    }
+
+    const response = await this.appServer.handleRequest({
+      id: request.id,
+      method: request.method,
+      params,
+    });
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START && "result" in response) {
+      const r = ThreadStartResponseSchema.parse(response.result);
+      if (r.threadId) {
+        this.removeAllSubscriptionsForSession(session.id);
+        session.currentThreadId = r.threadId;
+        this.addSubscription(r.threadId, session.id);
+      }
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME && "result" in response) {
+      const resumed = ThreadResumeResponseSchema.parse(response.result);
+      if (resumed.found && resumed.threadId) {
+        this.removeAllSubscriptionsForSession(session.id);
+        session.currentThreadId = resumed.threadId;
+        this.addSubscription(resumed.threadId, session.id);
+      }
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ && "result" in response) {
+      const r = ThreadReadResponseSchema.parse(response.result);
+      if (r.currentEffort) {
+        session.effort = r.currentEffort;
+      }
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START && session.currentThreadId && !("result" in response)) {
+      this.turnInitiators.delete(session.currentThreadId);
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET && "result" in response) {
+      const r = ModeSetResponseSchema.parse(response.result);
+      if (r.mode) {
+        session.mode = r.mode;
+      }
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET && "result" in response) {
+      const r = EffortSetResponseSchema.parse(response.result);
+      if (r.effort) {
+        session.effort = r.effort;
+      }
+    }
+
+    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
+      const r = ThreadDeleteResponseSchema.parse(response.result);
+      const deletedId = ThreadDeleteParamsSchema.parse(request.params).threadId;
+      if (r.deleted && deletedId) {
+        this.removeAllSubscriptionsForThread(deletedId);
+        if (session.currentThreadId === deletedId) {
+          session.currentThreadId = null;
+        }
+      }
+    }
+
+    this.send(ws, response);
+  }
+
+  private handleServerRequestResponse(ws: ServerWebSocket<RpcWsData>, response: JSONRPCResponse): void {
+    const requestId = Number(response.id);
+    if (!Number.isInteger(requestId) || requestId < 0) {
+      return;
+    }
+
+    const pending = this.pendingServerRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeoutId);
+    this.pendingServerRequests.delete(requestId);
+
+    const responderId = ws.data.sessionId;
+    for (const sessionId of pending.sentTo) {
+      if (sessionId === responderId) continue;
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        this.send(session.ws, {
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+          params: { requestId },
+        });
+      }
+    }
+
+    if ("error" in response) {
+      pending.resolve(toSafeFallback(pending.request));
+      return;
+    }
+
+    const safe = DiligentServerRequestResponseSchema.safeParse({
+      method: pending.request.method,
+      result: response.result,
+    });
+    if (!safe.success) {
+      pending.resolve(toSafeFallback(pending.request));
+      return;
+    }
+
+    pending.resolve(safe.data);
+  }
+
   private broadcastServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
     const requestId = ++this.serverRequestSeq;
-    const payload: WsServerMessage = {
-      type: "server_request",
+    const payload: JSONRPCRequest = {
       id: requestId,
-      request,
+      method: request.method,
+      params: request.params,
     };
 
     const sentTo = new Set<string>();
@@ -600,21 +549,15 @@ export class RpcBridge {
 
   private emitAccountUpdated(providers: ProviderAuthStatus[]): void {
     this.broadcast({
-      type: "server_notification",
-      notification: {
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
-        params: { providers },
-      },
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
+      params: { providers },
     });
   }
 
   private emitAccountLoginCompleted(loginId: string, success: boolean, error: string | null): void {
     this.broadcast({
-      type: "server_notification",
-      notification: {
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
-        params: { loginId, success, error },
-      },
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
+      params: { loginId, success, error },
     });
   }
 
@@ -667,11 +610,10 @@ export class RpcBridge {
     }
 
     if (!threadId) {
-      this.broadcast({ type: "server_notification", notification });
+      this.broadcast(notification);
       return;
     }
 
-    // Clean up turn initiator when turn completes
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
       this.turnInitiators.delete(threadId);
     }
@@ -684,11 +626,10 @@ export class RpcBridge {
           threadId,
         });
       }
-      this.broadcast({ type: "server_notification", notification });
+      this.broadcast(notification);
       return;
     }
 
-    // Skip sender for userMessage items (sender already has it)
     const skipSessionId = this.getUserMessageSender(notification, threadId);
 
     for (const sessionId of subscribers) {
@@ -702,7 +643,7 @@ export class RpcBridge {
             sessionId,
           });
         }
-        this.send(session.ws, { type: "server_notification", notification });
+        this.send(session.ws, notification);
       }
     }
   }
@@ -757,7 +698,7 @@ export class RpcBridge {
     };
   }
 
-  private broadcast(message: WsServerMessage): void {
+  private broadcast(message: JSONRPCNotification): void {
     for (const session of this.sessions.values()) {
       this.send(session.ws, message);
     }
@@ -770,7 +711,6 @@ export class RpcBridge {
       this.threadSubscribers.set(threadId, subs);
     }
 
-    // If already subscribed, return existing subscriptionId
     if (subs.has(sessionId)) {
       for (const [subId, sub] of this.subscriptions.entries()) {
         if (sub.threadId === threadId && sub.sessionId === sessionId) {
@@ -825,8 +765,16 @@ export class RpcBridge {
     }
   }
 
-  private send(ws: ServerWebSocket<RpcWsData>, message: WsServerMessage): void {
+  private send(ws: ServerWebSocket<RpcWsData>, message: JSONRPCRequest | JSONRPCNotification | JSONRPCResponse): void {
     ws.send(JSON.stringify(message));
+  }
+
+  private isResponse(message: JSONRPCMessage): message is JSONRPCResponse {
+    return "id" in message && ("result" in message || "error" in message);
+  }
+
+  private isNotification(message: JSONRPCMessage): message is JSONRPCNotification {
+    return !("id" in message) && "method" in message;
   }
 }
 

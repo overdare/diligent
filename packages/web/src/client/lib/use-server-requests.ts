@@ -1,6 +1,6 @@
 // @summary React hook for server-driven approval and user-input prompt state and resolution
-import type { DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
-import { DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
+import type { DiligentServerNotification, DiligentServerRequest, DiligentServerRequestResponse, UserInputRequest } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
@@ -25,16 +25,10 @@ export function useServerRequests(
   } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  // Track current approval/question in refs so callbacks always see the latest value
-  // without needing them in their dependency array (avoids stale closure issues).
   const approvalRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
   const questionRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
-
-  // Buffered server requests for non-active threads — shown when the user switches to that thread.
-  // Map key is threadId. Only the latest request per thread is kept; earlier ones are auto-rejected/dismissed.
   const bufferedRef = useRef<Map<string, BufferedServerRequest>>(new Map());
 
-  /** Dismiss a buffered request by sending a safe fallback response. */
   const dismissBuffered = useCallback(
     (entry: BufferedServerRequest): void => {
       if (entry.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
@@ -52,7 +46,6 @@ export function useServerRequests(
     [rpcRef],
   );
 
-  /** Auto-reject a pending approval that is about to be displaced by a new one. */
   const rejectPendingApproval = useCallback((): void => {
     const prev = approvalRef.current;
     if (prev) {
@@ -64,15 +57,11 @@ export function useServerRequests(
     }
   }, [rpcRef]);
 
-  // Registered in App.tsx's main useEffect via rpc.onServerRequest(serverRequests.handleServerRequest)
   const handleServerRequest = useCallback(
     (requestId: number, request: DiligentServerRequest): void => {
       const threadId = request.params?.threadId;
 
-      // Request targets a thread other than the currently viewed one —
-      // buffer it so the user sees a marker in the sidebar and can switch to respond.
       if (threadId && activeThreadIdRef?.current && threadId !== activeThreadIdRef.current) {
-        // Auto-dismiss previously buffered request for the same thread (only latest kept).
         const prev = bufferedRef.current.get(threadId);
         if (prev) {
           dismissBuffered(prev);
@@ -83,8 +72,6 @@ export function useServerRequests(
       }
 
       if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
-        // If there is already a pending approval, auto-reject it before showing
-        // the new one. Only one approval dialog can be visible at a time.
         rejectPendingApproval();
         approvalRef.current = { requestId, request };
         setApprovalPrompt({ requestId, request });
@@ -97,8 +84,13 @@ export function useServerRequests(
     [activeThreadIdRef, dismissBuffered, rejectPendingApproval, onAttention],
   );
 
-  const handleServerRequestResolved = useCallback((requestId: number): void => {
-    // Clear from active approval/question
+  const handleNotification = useCallback((notification: DiligentServerNotification): void => {
+    if (notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED) {
+      return;
+    }
+
+    const requestId = notification.params.requestId;
+
     if (approvalRef.current?.requestId === requestId) {
       approvalRef.current = null;
     }
@@ -108,7 +100,6 @@ export function useServerRequests(
     setApprovalPrompt((current) => (current?.requestId === requestId ? null : current));
     setQuestionPrompt((current) => (current?.requestId === requestId ? null : current));
 
-    // Clear from buffer if it was resolved server-side (e.g. another client responded)
     for (const [tid, entry] of bufferedRef.current) {
       if (entry.requestId === requestId) {
         bufferedRef.current.delete(tid);
@@ -145,7 +136,6 @@ export function useServerRequests(
     [rpcRef],
   );
 
-  /** Shelve active prompts back into the buffer so they survive thread switches. */
   const shelveActivePrompts = useCallback((): void => {
     const prevApproval = approvalRef.current;
     if (prevApproval) {
@@ -163,10 +153,8 @@ export function useServerRequests(
     }
   }, []);
 
-  /** Call when user switches to a thread. Shelves current prompts, promotes buffered request. */
   const activateThread = useCallback(
     (threadId: string): void => {
-      // Shelve current prompts back to buffer (preserves them for when user returns)
       shelveActivePrompts();
 
       const buffered = bufferedRef.current.get(threadId);
@@ -192,7 +180,7 @@ export function useServerRequests(
     answers,
     setAnswers,
     handleServerRequest,
-    handleServerRequestResolved,
+    handleNotification,
     resolveApproval,
     resolveQuestion,
     activateThread,

@@ -108,6 +108,14 @@ export const TurnInterruptedNotificationSchema = z.object({
 });
 export type TurnInterruptedNotification = z.infer<typeof TurnInterruptedNotificationSchema>;
 
+export const ServerRequestResolvedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED),
+  params: z.object({
+    requestId: z.number().int().nonnegative(),
+  }),
+});
+export type ServerRequestResolvedNotification = z.infer<typeof ServerRequestResolvedNotificationSchema>;
+
 export const KnowledgeSavedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.KNOWLEDGE_SAVED),
   params: z.object({
@@ -279,6 +287,7 @@ export const DiligentServerNotificationSchema = z.union([
   ItemCompletedNotificationSchema,
   TurnCompletedNotificationSchema,
   TurnInterruptedNotificationSchema,
+  ServerRequestResolvedNotificationSchema,
   KnowledgeSavedNotificationSchema,
   LoopDetectedNotificationSchema,
   ErrorNotificationSchema,

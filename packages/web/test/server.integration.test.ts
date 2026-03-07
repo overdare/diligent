@@ -1,6 +1,6 @@
-// @summary Integration-style test for RpcBridge websocket message flow with app-server contract
+// @summary Integration-style test for RpcBridge raw JSON-RPC websocket message flow with app-server contract
 import { expect, test } from "bun:test";
-import type { JSONRPCResponse } from "@diligent/protocol";
+import type { JSONRPCMessage, JSONRPCResponse } from "@diligent/protocol";
 import { RpcBridge } from "../src/server/rpc-bridge";
 
 class FakeAppServer {
@@ -29,6 +29,11 @@ class FakeAppServer {
             supportsApprovals: true,
             supportsUserInput: true,
           },
+          cwd: process.cwd(),
+          mode: "default",
+          effort: "medium",
+          currentModel: "test-model",
+          availableModels: [],
         },
       };
     }
@@ -73,7 +78,7 @@ class FakeAppServer {
   async handleNotification(): Promise<void> {}
 }
 
-test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt", async () => {
+test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt over raw json-rpc", async () => {
   const fakeServer = new FakeAppServer();
   const bridge = new RpcBridge(
     fakeServer as unknown as import("@diligent/core").DiligentAppServer,
@@ -82,11 +87,11 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
     { currentModelId: "test-model", allModels: [], getAvailableModels: () => [], onModelChange: () => {} },
   );
 
-  const sent: unknown[] = [];
+  const sent: JSONRPCMessage[] = [];
   const ws = {
     data: { sessionId: "s1" },
     send(payload: string) {
-      sent.push(JSON.parse(payload));
+      sent.push(JSON.parse(payload) as JSONRPCMessage);
     },
   };
 
@@ -97,7 +102,6 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
   await bridge.message(
     serverWs,
     JSON.stringify({
-      type: "rpc_request",
       id: 1,
       method: "initialize",
       params: {
@@ -111,7 +115,6 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
   await bridge.message(
     serverWs,
     JSON.stringify({
-      type: "rpc_request",
       id: 2,
       method: "thread/start",
       params: { cwd: process.cwd(), mode: "default" },
@@ -121,7 +124,6 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
   await bridge.message(
     serverWs,
     JSON.stringify({
-      type: "rpc_request",
       id: 3,
       method: "turn/start",
       params: { message: "hello" },
@@ -131,29 +133,26 @@ test("bridge routes initialize -> thread/start -> turn/start -> turn/interrupt",
   await bridge.message(
     serverWs,
     JSON.stringify({
-      type: "rpc_request",
       id: 4,
       method: "turn/interrupt",
       params: {},
     }),
   );
 
-  const responses = sent.filter((entry) => (entry as { type?: string }).type === "rpc_response") as Array<{
-    response: { id: number; result: unknown };
+  const responses = sent.filter((entry) => "id" in entry && "result" in entry) as Array<{
+    id: number;
+    result: unknown;
   }>;
 
   expect(responses.length).toBe(4);
-  expect((responses.find((r) => r.response.id === 2)?.response.result as { threadId: string }).threadId).toBe(
-    "thread-test",
-  );
-  expect((responses.find((r) => r.response.id === 3)?.response.result as { accepted: boolean }).accepted).toBe(true);
-  expect((responses.find((r) => r.response.id === 4)?.response.result as { interrupted: boolean }).interrupted).toBe(
-    true,
-  );
+  expect((responses.find((r) => r.id === 1)?.result as { cwd: string }).cwd).toBe(process.cwd());
+  expect((responses.find((r) => r.id === 2)?.result as { threadId: string }).threadId).toBe("thread-test");
+  expect((responses.find((r) => r.id === 3)?.result as { accepted: boolean }).accepted).toBe(true);
+  expect((responses.find((r) => r.id === 4)?.result as { interrupted: boolean }).interrupted).toBe(true);
 
-  const turnStartedNotif = sent.find(
-    (entry) => (entry as { type?: string; notification?: { method?: string } }).type === "server_notification",
-  ) as { notification: { method: string } } | undefined;
+  const turnStartedNotif = sent.find((entry) => "method" in entry && entry.method === "turn/started") as
+    | { method: string }
+    | undefined;
 
-  expect(turnStartedNotif?.notification.method).toBe("turn/started");
+  expect(turnStartedNotif?.method).toBe("turn/started");
 });

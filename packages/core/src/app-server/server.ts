@@ -35,6 +35,7 @@ export interface DiligentAppServerConfig {
   serverName?: string;
   serverVersion?: string;
   cwd?: string;
+  getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   buildAgentConfig: (args: {
     cwd: string;
@@ -126,7 +127,8 @@ export class DiligentAppServer {
 
   private async dispatchClientRequest(request: import("@diligent/protocol").DiligentClientRequest): Promise<unknown> {
     switch (request.method) {
-      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE:
+      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
+        const extra = (await this.config.getInitializeResult?.()) ?? {};
         return {
           serverName: this.serverName,
           serverVersion: this.serverVersion,
@@ -136,7 +138,9 @@ export class DiligentAppServer {
             supportsApprovals: true,
             supportsUserInput: true,
           },
+          ...extra,
         };
+      }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START:
         return this.handleThreadStart(request.params);

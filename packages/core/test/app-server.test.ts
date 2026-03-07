@@ -28,6 +28,13 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      getInitializeResult: async () => ({
+        cwd: projectRoot,
+        mode: "default",
+        effort: "medium",
+        currentModel: "fake-model",
+        availableModels: [],
+      }),
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -88,8 +95,18 @@ describe("DiligentAppServer", () => {
       method: "initialize",
       params: { clientName: "tui", clientVersion: "0.0.1", protocolVersion: 1 },
     });
-    const initResult = readResult(init) as { protocolVersion: number };
+    const initResult = readResult(init) as {
+      protocolVersion: number;
+      cwd?: string;
+      mode?: string;
+      effort?: string;
+      currentModel?: string;
+    };
     expect(initResult.protocolVersion).toBe(1);
+    expect(initResult.cwd).toBe(projectRoot);
+    expect(initResult.mode).toBe("default");
+    expect(initResult.effort).toBe("medium");
+    expect(initResult.currentModel).toBe("fake-model");
 
     const start = await server.handleRequest({
       id: 2,

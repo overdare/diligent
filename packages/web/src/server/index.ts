@@ -39,6 +39,15 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   const appServerConfig: DiligentAppServerConfig = {
     cwd,
+    getInitializeResult: async () => ({
+      cwd,
+      mode: runtimeConfig.mode,
+      effort: "medium",
+      currentModel: runtimeConfig.model?.id,
+      availableModels: allModels.filter((m) =>
+        runtimeConfig.providerManager.getConfiguredProviders().includes(m.provider as (typeof PROVIDER_NAMES)[number]),
+      ),
+    }),
     resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
     buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId }) => {
       if (!runtimeConfig.model) {

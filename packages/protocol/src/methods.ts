@@ -36,6 +36,7 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   ITEM_COMPLETED: "item/completed",
   TURN_COMPLETED: "turn/completed",
   TURN_INTERRUPTED: "turn/interrupted",
+  SERVER_REQUEST_RESOLVED: "server/request/resolved",
   KNOWLEDGE_SAVED: "knowledge/saved",
   LOOP_DETECTED: "loop/detected",
   ERROR: "error",
