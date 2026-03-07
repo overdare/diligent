@@ -3,6 +3,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { EventStream } from "../event-stream";
 import { withRetry } from "../provider/retry";
 import type { Model, StreamContext, StreamFunction, SystemSection, ToolDefinition } from "../provider/types";
+import { resolveMaxTokens } from "../provider/types";
 import { executeTool } from "../tool/executor";
 import type { Tool, ToolContext, ToolRegistry } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage } from "../types";
@@ -337,6 +338,7 @@ export async function streamAssistantResponse(
   const providerStream = turnRuntime.streamFunction(config.model, context, {
     signal: config.signal,
     effort: config.effort ?? "medium",
+    maxTokens: resolveMaxTokens(config.model, config.reservePercent),
   });
 
   let currentMessage: AssistantMessage | undefined;

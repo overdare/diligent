@@ -1,10 +1,14 @@
 // @summary Tests for session compaction and token estimation
 import { describe, expect, it } from "bun:test";
+import { EventStream } from "../src/event-stream";
+import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
+import { resolveMaxTokens } from "../src/provider/types";
 import {
   estimateTokens,
   extractFileOperations,
   findRecentUserMessages,
   formatFileOperations,
+  generateSummary,
   isSummaryMessage,
   SUMMARY_PREFIX,
   shouldCompact,
@@ -63,6 +67,13 @@ function msgEntry(id: string, parentId: string | null, msg: Message): SessionEnt
   return { type: "message", id, parentId, timestamp: new Date().toISOString(), message: msg };
 }
 
+const TEST_MODEL: Model = {
+  id: "test-model",
+  provider: "test",
+  contextWindow: 100_000,
+  maxOutputTokens: 40_000,
+};
+
 // --- Tests ---
 
 describe("estimateTokens", () => {
@@ -117,6 +128,16 @@ describe("estimateTokens", () => {
     // "hi" = 2 chars, tool_call: JSON.stringify({command:"ls -la"}) + "bash" = ~24 chars
     const tokens = estimateTokens(messages);
     expect(tokens).toBeGreaterThan(0);
+  });
+});
+
+describe("resolveMaxTokens", () => {
+  it("returns the model output limit when it is smaller than the buffered context", () => {
+    expect(resolveMaxTokens({ ...TEST_MODEL, maxOutputTokens: 5_000 }, 16)).toBe(5_000);
+  });
+
+  it("returns the buffered context when it is smaller than the model output limit", () => {
+    expect(resolveMaxTokens(TEST_MODEL, 16)).toBe(16_000);
   });
 });
 
@@ -323,6 +344,35 @@ describe("extractFileOperations", () => {
     const details = extractFileOperations(messages);
     expect(details.readFiles).toEqual([]);
     expect(details.modifiedFiles).toEqual([]);
+  });
+});
+
+describe("generateSummary", () => {
+  it("uses maxTokens derived from the reservePercent cap", async () => {
+    const capturedOptions: Array<{ maxTokens?: number }> = [];
+    const streamFunction: StreamFunction = (_model, _context, options) => {
+      capturedOptions.push({ maxTokens: options.maxTokens });
+      const message = assistantMsg("Summary text") as Extract<Message, { role: "assistant" }>;
+      const stream = new EventStream<ProviderEvent, ProviderResult>(
+        (event) => event.type === "done" || event.type === "error",
+        (event) => {
+          if (event.type === "done") return { message: event.message };
+          throw event.error;
+        },
+      );
+      queueMicrotask(() => {
+        stream.push({ type: "start" });
+        stream.push({ type: "done", stopReason: "end_turn", message });
+      });
+      return stream;
+    };
+
+    const summary = await generateSummary([userMsg("Please summarize")], streamFunction, TEST_MODEL, {
+      reservePercent: 16,
+    });
+
+    expect(summary).toBe("Summary text");
+    expect(capturedOptions).toEqual([{ maxTokens: 16_000 }]);
   });
 });
 

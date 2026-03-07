@@ -4,7 +4,14 @@ import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";
 import type { AgentEvent, AgentLoopConfig } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
-import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../src/provider/types";
+import type {
+  Model,
+  ProviderEvent,
+  ProviderResult,
+  StreamContext,
+  StreamFunction,
+  StreamOptions,
+} from "../src/provider/types";
 import type { Tool } from "../src/tool/types";
 import type { AssistantMessage, Message } from "../src/types";
 
@@ -29,12 +36,16 @@ function makeAssistant(
   };
 }
 
-function createMockStreamFunction(responses: AssistantMessage[]): StreamFunction & { contexts: StreamContext[] } {
+function createMockStreamFunction(
+  responses: AssistantMessage[],
+): StreamFunction & { contexts: StreamContext[]; options: StreamOptions[] } {
   let callIndex = 0;
   const contexts: StreamContext[] = [];
+  const options: StreamOptions[] = [];
 
-  const fn: StreamFunction = (_model, context, _options) => {
+  const fn: StreamFunction = (_model, context, streamOptions) => {
     contexts.push(context);
+    options.push(streamOptions);
     const msg = responses[callIndex++];
     const stream = new EventStream<ProviderEvent, ProviderResult>(
       (event) => event.type === "done" || event.type === "error",
@@ -67,7 +78,7 @@ function createMockStreamFunction(responses: AssistantMessage[]): StreamFunction
     return stream;
   };
 
-  return Object.assign(fn, { contexts });
+  return Object.assign(fn, { contexts, options });
 }
 
 const echoTool: Tool = {
@@ -181,6 +192,48 @@ describe("agentLoop", () => {
     expect(tools[0].description).toBe("Echo a message");
     expect(tools[0].inputSchema).toHaveProperty("properties");
     expect((tools[0].inputSchema as Record<string, unknown>).properties).toHaveProperty("message");
+  });
+
+  test("passes maxTokens derived from reservePercent and model limits", async () => {
+    const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
+    const streamFn = createMockStreamFunction([msg]);
+
+    const config: AgentLoopConfig = {
+      model: { ...TEST_MODEL, contextWindow: 100_000, maxOutputTokens: 5_000 },
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [],
+      streamFunction: streamFn,
+      reservePercent: 16,
+      maxTurns: 1,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], config);
+    for await (const _event of loop) {
+    }
+
+    expect(streamFn.options).toHaveLength(1);
+    expect(streamFn.options[0].maxTokens).toBe(5_000);
+  });
+
+  test("caps maxTokens to buffered context when model output limit is higher", async () => {
+    const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
+    const streamFn = createMockStreamFunction([msg]);
+
+    const config: AgentLoopConfig = {
+      model: { ...TEST_MODEL, contextWindow: 100_000, maxOutputTokens: 40_000 },
+      systemPrompt: [{ label: "test", content: "test" }],
+      tools: [],
+      streamFunction: streamFn,
+      reservePercent: 16,
+      maxTurns: 1,
+    };
+
+    const loop = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], config);
+    for await (const _event of loop) {
+    }
+
+    expect(streamFn.options).toHaveLength(1);
+    expect(streamFn.options[0].maxTokens).toBe(16_000);
   });
 
   test("maxTurns safety: loop exits after max turns", async () => {

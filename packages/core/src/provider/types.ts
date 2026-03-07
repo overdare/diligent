@@ -31,6 +31,12 @@ export interface Model {
   };
 }
 
+export function resolveMaxTokens(model: Model, reservePercent = 16): number {
+  const normalizedReservePercent = Number.isFinite(reservePercent) ? Math.min(Math.max(reservePercent, 0), 100) : 16;
+  const bufferedContextTokens = Math.floor(model.contextWindow * (normalizedReservePercent / 100));
+  return Math.max(1, Math.min(model.maxOutputTokens, bufferedContextTokens));
+}
+
 // D003: StreamFunction — the provider contract
 export type StreamFunction = (
   model: Model,

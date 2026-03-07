@@ -1,5 +1,7 @@
 // @summary Session compaction with LLM summarization, recent user message selection, and file operation tracking
+
 import type { Model, StreamContext, StreamFunction } from "../provider/types";
+import { resolveMaxTokens } from "../provider/types";
 import type { Message, TextBlock } from "../types";
 import type { CompactionDetails, SessionEntry } from "./types";
 
@@ -176,6 +178,7 @@ export async function generateSummary(
   options: {
     previousSummary?: string;
     signal?: AbortSignal;
+    reservePercent?: number;
   },
 ): Promise<string> {
   const prompt = options.previousSummary
@@ -197,7 +200,7 @@ export async function generateSummary(
 
   const providerStream = streamFunction(model, context, {
     signal: options.signal,
-    maxTokens: 4096,
+    maxTokens: resolveMaxTokens(model, options.reservePercent),
   });
 
   const result = await providerStream.result();

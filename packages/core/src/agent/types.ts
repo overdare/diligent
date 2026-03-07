@@ -157,6 +157,7 @@ export interface AgentLoopConfig {
   tools: Tool[];
   streamFunction: StreamFunction;
   signal?: AbortSignal;
+  reservePercent?: number;
   /** Optional debug identifiers for correlating AgentLoop logs with outer thread/turn logs. */
   debugThreadId?: string;
   debugTurnId?: string;

@@ -443,6 +443,7 @@ export class SessionManager {
     const summary = await generateSummary(messagesToSummarize, cfg.streamFunction, cfg.model, {
       previousSummary: previousCompaction?.summary,
       signal: cfg.signal,
+      reservePercent: cfg.reservePercent,
     });
 
     // Save CompactionEntry
@@ -618,6 +619,7 @@ export class SessionManager {
       typeof this.config.agentConfig === "function" ? this.config.agentConfig() : this.config.agentConfig;
     const wrap = (base: AgentLoopConfig): AgentLoopConfig => ({
       ...base,
+      reservePercent: base.reservePercent ?? this.config.compaction?.reservePercent ?? 16,
       getSteeringMessages: () => this.drainPendingMessages(),
       hasPendingMessages: () => this.pendingMessages.length > 0,
     });
