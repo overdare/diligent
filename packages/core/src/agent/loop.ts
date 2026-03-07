@@ -1,18 +1,35 @@
 // @summary Main agent loop that iterates turns, manages tools, and handles retries
-import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { EventStream } from "../event-stream";
 import { withRetry } from "../provider/retry";
-import type { Model, StreamContext, SystemSection, ToolDefinition } from "../provider/types";
+import type { Model, StreamContext, StreamFunction, SystemSection, ToolDefinition } from "../provider/types";
 import { executeTool } from "../tool/executor";
-import type { ToolContext } from "../tool/types";
+import type { Tool, ToolContext, ToolRegistry } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage } from "../types";
 import { LoopDetector } from "./loop-detector";
 import type { AgentEvent, AgentLoopConfig, SerializableError } from "./types";
 import { MODE_SYSTEM_PROMPT_SUFFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
 
+export interface AgentTurnRuntime {
+  activeTools: AgentLoopConfig["tools"];
+  registry: ToolRegistry;
+  effectiveSystemPrompt: SystemSection[];
+  streamFunction: StreamFunction;
+}
+
+export interface ToolExecutionRecord {
+  toolCall: ToolCallBlock;
+  toolResult: ToolResultMessage;
+  includeInConversation: boolean;
+}
+
+export interface ToolExecutionBatch {
+  executions: ToolExecutionRecord[];
+  abortAfterTurn: boolean;
+}
+
 // D070: Map tool name to permission category for deny-filtering
-function toolPermission(toolName: string): "read" | "write" | "execute" {
+export function toolPermission(toolName: string): "read" | "write" | "execute" {
   if (toolName === "bash") return "execute";
   if (toolName === "write" || toolName === "edit") return "write";
   return "read";
@@ -20,7 +37,7 @@ function toolPermission(toolName: string): "read" | "write" | "execute" {
 
 // D070: Remove tools that are statically denied by config-level rules.
 // Session-scoped rules are NOT used here — they only affect ctx.approve() at call time.
-function filterAllowedTools(
+export function filterAllowedTools(
   tools: AgentLoopConfig["tools"],
   engine: AgentLoopConfig["permissionEngine"],
 ): AgentLoopConfig["tools"] {
@@ -95,25 +112,69 @@ export function withPlanStateInjected(messages: Message[]): Message[] {
 }
 
 // D086: Convert Error to serializable representation
-function toSerializableError(err: unknown): SerializableError {
+export function toSerializableError(err: unknown): SerializableError {
   if (err instanceof Error) {
     return { message: err.message, name: err.name, stack: err.stack };
   }
   return { message: String(err), name: "Error" };
 }
 
-/** Drain pending steering messages into allMessages. Returns true if any were injected. */
-function drainSteering(
+/** Drain pending steering messages into allMessages and emit the same event payload as before. */
+export function drainSteering(
   config: AgentLoopConfig,
   allMessages: Message[],
   stream: EventStream<AgentEvent, Message[]>,
-): boolean {
-  if (!config.getSteeringMessages) return false;
+): Message[] {
+  if (!config.getSteeringMessages) return [];
   const msgs = config.getSteeringMessages();
-  if (msgs.length === 0) return false;
+  if (msgs.length === 0) return [];
   for (const msg of msgs) allMessages.push(msg);
   stream.push({ type: "steering_injected", messageCount: msgs.length, messages: msgs });
-  return true;
+  return msgs;
+}
+
+export function createTurnRuntime(
+  config: AgentLoopConfig,
+  stream: EventStream<AgentEvent, Message[]>,
+): AgentTurnRuntime {
+  // D087: Filter tools for plan mode (read-only exploration)
+  const activeMode = config.mode ?? "default";
+  const modeFilteredTools =
+    activeMode === "plan" ? config.tools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name)) : config.tools;
+  // D070: Filter tools denied by config-level permission rules (session rules only affect prompt-time)
+  const activeTools = filterAllowedTools(modeFilteredTools, config.permissionEngine);
+  const registry = new Map(activeTools.map((t) => [t.name, t]));
+
+  // D087: Append mode instructions as a section (after base prompt to preserve its prefix)
+  const effectiveSystemPrompt: SystemSection[] =
+    activeMode === "default"
+      ? config.systemPrompt
+      : [
+          ...config.systemPrompt,
+          { tag: "collaboration_mode", label: "mode", content: MODE_SYSTEM_PROMPT_SUFFIXES[activeMode] },
+        ];
+
+  // D010: Wrap stream function with retry
+  const streamFunction = withRetry(config.streamFunction, {
+    maxAttempts: config.maxRetries ?? 5,
+    baseDelayMs: config.retryBaseDelayMs ?? 1000,
+    maxDelayMs: config.retryMaxDelayMs ?? 30_000,
+    signal: config.signal,
+    onRetry: (attempt, delayMs, _error) => {
+      stream.push({
+        type: "status_change",
+        status: "retry",
+        retry: { attempt, delayMs },
+      });
+    },
+  });
+
+  return {
+    activeTools,
+    registry,
+    effectiveSystemPrompt,
+    streamFunction,
+  };
 }
 
 export function agentLoop(messages: Message[], config: AgentLoopConfig): EventStream<AgentEvent, Message[]> {
@@ -147,38 +208,7 @@ async function runLoop(
   const maxTurns = config.maxTurns ?? 100;
 
   const loopDetector = new LoopDetector();
-
-  // D087: Filter tools for plan mode (read-only exploration)
-  const activeMode = config.mode ?? "default";
-  const modeFilteredTools =
-    activeMode === "plan" ? config.tools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name)) : config.tools;
-  // D070: Filter tools denied by config-level permission rules (session rules only affect prompt-time)
-  const activeTools = filterAllowedTools(modeFilteredTools, config.permissionEngine);
-  const registry = new Map(activeTools.map((t) => [t.name, t]));
-
-  // D087: Append mode instructions as a section (after base prompt to preserve its prefix)
-  const effectiveSystemPrompt: SystemSection[] =
-    activeMode === "default"
-      ? config.systemPrompt
-      : [
-          ...config.systemPrompt,
-          { tag: "collaboration_mode", label: "mode", content: MODE_SYSTEM_PROMPT_SUFFIXES[activeMode] },
-        ];
-
-  // D010: Wrap stream function with retry
-  const retryStreamFn = withRetry(config.streamFunction, {
-    maxAttempts: config.maxRetries ?? 5,
-    baseDelayMs: config.retryBaseDelayMs ?? 1000,
-    maxDelayMs: config.retryMaxDelayMs ?? 30_000,
-    signal: config.signal,
-    onRetry: (attempt, delayMs, _error) => {
-      stream.push({
-        type: "status_change",
-        status: "retry",
-        retry: { attempt, delayMs },
-      });
-    },
-  });
+  const turnRuntime = createTurnRuntime(config, stream);
 
   stream.push({ type: "agent_start" });
 
@@ -196,15 +226,7 @@ async function runLoop(
     drainSteering(config, allMessages, stream);
 
     // 1. Stream LLM response (with retry)
-    const assistantMessage = await streamAssistantResponse(
-      allMessages,
-      config,
-      activeTools,
-      effectiveSystemPrompt,
-      retryStreamFn,
-      stream,
-      generateItemId,
-    );
+    const assistantMessage = await streamAssistantResponse(allMessages, config, turnRuntime, stream, generateItemId);
     allMessages.push(assistantMessage);
 
     // Emit usage after each turn
@@ -231,140 +253,19 @@ async function runLoop(
     }
 
     // 3. Execute tools — D015: parallel when all tools support it, sequential otherwise
-    const toolResults: ToolResultMessage[] = [];
-    let abortAfterTurn = false;
+    const { executions, abortAfterTurn } = await executeToolCalls(
+      toolCalls,
+      config,
+      turnRuntime,
+      stream,
+      generateItemId,
+    );
+    const toolResults = executions.map((execution) => execution.toolResult);
 
-    /** Build a ToolContext for a specific tool call + pre-allocated itemId */
-    const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
-      toolCallId: toolCall.id,
-      signal: config.signal ?? new AbortController().signal,
-      approve: async (request) => {
-        if (config.permissionEngine) {
-          const action = config.permissionEngine.evaluate(request);
-          if (action === "allow") return "once";
-          if (action === "deny") return "reject";
-        }
-        if (!config.approve) return "once";
-        const response = await config.approve(request);
-        if (response === "always" && config.permissionEngine) {
-          config.permissionEngine.remember(request, "allow");
-        }
-        return response;
-      },
-      ask: config.ask ? (request) => config.ask!(request) : undefined,
-      onUpdate: (partial) => {
-        stream.push({
-          type: "tool_update",
-          itemId: toolItemId,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          partialResult: partial,
-        });
-      },
-    });
-
-    const allParallel = toolCalls.length > 1 && toolCalls.every((tc) => registry.get(tc.name)?.supportParallel);
-
-    if (allParallel) {
-      // --- Parallel path ---
-      const itemIds = toolCalls.map(() => generateItemId());
-
-      // Emit all tool_start events upfront
-      for (let i = 0; i < toolCalls.length; i++) {
-        stream.push({
-          type: "tool_start",
-          itemId: itemIds[i],
-          toolCallId: toolCalls[i].id,
-          toolName: toolCalls[i].name,
-          input: toolCalls[i].input,
-        });
-      }
-
-      // Execute all in parallel
-      const results = await Promise.all(
-        toolCalls.map((tc, i) => executeTool(registry, tc, buildToolContext(tc, itemIds[i]))),
-      );
-
-      // Process results in original order
-      for (let i = 0; i < toolCalls.length; i++) {
-        const result = results[i];
-        const toolCall = toolCalls[i];
-        const toolResult: ToolResultMessage = {
-          role: "tool_result",
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          output: result.output,
-          isError: !!result.metadata?.error,
-          timestamp: Date.now(),
-        };
-
-        toolResults.push(toolResult);
-
-        stream.push({
-          type: "tool_end",
-          itemId: itemIds[i],
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          output: result.output,
-          isError: toolResult.isError,
-        });
-
-        if (result.abortRequested) {
-          abortAfterTurn = true;
-          break;
-        }
-
-        allMessages.push(toolResult);
-        loopDetector.record(toolCall.name, toolCall.input);
-      }
-    } else {
-      // --- Sequential path (original) ---
-      for (const toolCall of toolCalls) {
-        if (config.signal?.aborted) {
-          console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
-          break;
-        }
-
-        const toolItemId = generateItemId();
-
-        stream.push({
-          type: "tool_start",
-          itemId: toolItemId,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          input: toolCall.input,
-        });
-
-        const ctx = buildToolContext(toolCall, toolItemId);
-        const result = await executeTool(registry, toolCall, ctx);
-        const toolResult: ToolResultMessage = {
-          role: "tool_result",
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          output: result.output,
-          isError: !!result.metadata?.error,
-          timestamp: Date.now(),
-        };
-
-        toolResults.push(toolResult);
-
-        stream.push({
-          type: "tool_end",
-          itemId: toolItemId,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          output: result.output,
-          isError: toolResult.isError,
-        });
-
-        if (result.abortRequested) {
-          abortAfterTurn = true;
-          break;
-        }
-
-        allMessages.push(toolResult);
-        loopDetector.record(toolCall.name, toolCall.input);
-      }
+    for (const execution of executions) {
+      if (!execution.includeInConversation) continue;
+      allMessages.push(execution.toolResult);
+      loopDetector.record(execution.toolCall.name, execution.toolCall.input);
     }
 
     const loopResult = loopDetector.check();
@@ -396,12 +297,10 @@ async function runLoop(
   stream.end(allMessages);
 }
 
-async function streamAssistantResponse(
+export async function streamAssistantResponse(
   messages: Message[],
   config: AgentLoopConfig,
-  activeTools: typeof config.tools,
-  effectiveSystemPrompt: SystemSection[],
-  streamFn: typeof config.streamFunction,
+  turnRuntime: AgentTurnRuntime,
   agentStream: EventStream<AgentEvent, Message[]>,
   generateItemId: () => string,
 ): Promise<AssistantMessage> {
@@ -429,13 +328,13 @@ async function streamAssistantResponse(
   const messagesWithPlan = withPlanStateInjected(messages);
 
   const context: StreamContext = {
-    systemPrompt: effectiveSystemPrompt,
+    systemPrompt: turnRuntime.effectiveSystemPrompt,
     messages: messagesWithPlan,
-    tools: activeTools.map(toolToDefinition),
+    tools: turnRuntime.activeTools.map(toolToDefinition),
   };
 
   const requestStartedAt = Date.now();
-  const providerStream = streamFn(config.model, context, {
+  const providerStream = turnRuntime.streamFunction(config.model, context, {
     signal: config.signal,
     effort: config.effort ?? "medium",
   });
@@ -494,6 +393,153 @@ async function streamAssistantResponse(
   return result.message;
 }
 
+export async function executeToolCalls(
+  toolCalls: ToolCallBlock[],
+  config: AgentLoopConfig,
+  turnRuntime: AgentTurnRuntime,
+  stream: EventStream<AgentEvent, Message[]>,
+  generateItemId: () => string,
+): Promise<ToolExecutionBatch> {
+  const executions: ToolExecutionRecord[] = [];
+  let abortAfterTurn = false;
+
+  /** Build a ToolContext for a specific tool call + pre-allocated itemId */
+  const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
+    toolCallId: toolCall.id,
+    signal: config.signal ?? new AbortController().signal,
+    approve: async (request) => {
+      if (config.permissionEngine) {
+        const action = config.permissionEngine.evaluate(request);
+        if (action === "allow") return "once";
+        if (action === "deny") return "reject";
+      }
+      if (!config.approve) return "once";
+      const response = await config.approve(request);
+      if (response === "always" && config.permissionEngine) {
+        config.permissionEngine.remember(request, "allow");
+      }
+      return response;
+    },
+    ask: config.ask ? (request) => config.ask!(request) : undefined,
+    onUpdate: (partial) => {
+      stream.push({
+        type: "tool_update",
+        itemId: toolItemId,
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        partialResult: partial,
+      });
+    },
+  });
+
+  const allParallel =
+    toolCalls.length > 1 && toolCalls.every((toolCall) => turnRuntime.registry.get(toolCall.name)?.supportParallel);
+
+  if (allParallel) {
+    const itemIds = toolCalls.map(() => generateItemId());
+
+    for (let i = 0; i < toolCalls.length; i++) {
+      stream.push({
+        type: "tool_start",
+        itemId: itemIds[i],
+        toolCallId: toolCalls[i].id,
+        toolName: toolCalls[i].name,
+        input: toolCalls[i].input,
+      });
+    }
+
+    const results = await Promise.all(
+      toolCalls.map((toolCall, i) =>
+        executeTool(turnRuntime.registry, toolCall, buildToolContext(toolCall, itemIds[i])),
+      ),
+    );
+
+    for (let i = 0; i < toolCalls.length; i++) {
+      const result = results[i];
+      const toolCall = toolCalls[i];
+      const toolResult: ToolResultMessage = {
+        role: "tool_result",
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        output: result.output,
+        isError: !!result.metadata?.error,
+        timestamp: Date.now(),
+      };
+
+      stream.push({
+        type: "tool_end",
+        itemId: itemIds[i],
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        output: result.output,
+        isError: toolResult.isError,
+      });
+
+      executions.push({
+        toolCall,
+        toolResult,
+        includeInConversation: !result.abortRequested,
+      });
+
+      if (result.abortRequested) {
+        abortAfterTurn = true;
+        break;
+      }
+    }
+
+    return { executions, abortAfterTurn };
+  }
+
+  for (const toolCall of toolCalls) {
+    if (config.signal?.aborted) {
+      console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
+      break;
+    }
+
+    const toolItemId = generateItemId();
+
+    stream.push({
+      type: "tool_start",
+      itemId: toolItemId,
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      input: toolCall.input,
+    });
+
+    const result = await executeTool(turnRuntime.registry, toolCall, buildToolContext(toolCall, toolItemId));
+    const toolResult: ToolResultMessage = {
+      role: "tool_result",
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      output: result.output,
+      isError: !!result.metadata?.error,
+      timestamp: Date.now(),
+    };
+
+    stream.push({
+      type: "tool_end",
+      itemId: toolItemId,
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      output: result.output,
+      isError: toolResult.isError,
+    });
+
+    executions.push({
+      toolCall,
+      toolResult,
+      includeInConversation: !result.abortRequested,
+    });
+
+    if (result.abortRequested) {
+      abortAfterTurn = true;
+      break;
+    }
+  }
+
+  return { executions, abortAfterTurn };
+}
+
 function buildDebugScope(config: AgentLoopConfig): string {
   const effectiveEffort = config.effort ?? "high";
   return [
@@ -526,7 +572,7 @@ function logAssistantResponseSummary(config: AgentLoopConfig, message: Assistant
   );
 }
 
-function toolToDefinition(tool: { name: string; description: string; parameters: z.ZodType }): ToolDefinition {
+export function toolToDefinition(tool: Pick<Tool, "name" | "description" | "parameters">): ToolDefinition {
   const { $schema, ...schema } = zodToJsonSchema(tool.parameters) as Record<string, unknown>;
   return {
     name: tool.name,
@@ -535,7 +581,7 @@ function toolToDefinition(tool: { name: string; description: string; parameters:
   };
 }
 
-function createEmptyAssistantMessage(model: string): AssistantMessage {
+export function createEmptyAssistantMessage(model: string): AssistantMessage {
   return {
     role: "assistant",
     content: [],
@@ -546,7 +592,7 @@ function createEmptyAssistantMessage(model: string): AssistantMessage {
   };
 }
 
-function calculateCost(model: Model, usage: Usage): number {
+export function calculateCost(model: Model, usage: Usage): number {
   const inputCost = (usage.inputTokens / 1_000_000) * (model.inputCostPer1M ?? 0);
   const outputCost = (usage.outputTokens / 1_000_000) * (model.outputCostPer1M ?? 0);
   return inputCost + outputCost;

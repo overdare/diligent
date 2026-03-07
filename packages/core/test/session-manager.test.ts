@@ -3,13 +3,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import type { AgentEvent } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
 import { resolvePaths } from "../src/infrastructure/diligent-dir";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
+import { ProviderError } from "../src/provider/types";
 import type { SessionManagerConfig } from "../src/session/manager";
 import { SessionManager } from "../src/session/manager";
 import { readSessionFile } from "../src/session/persistence";
+import type { Tool } from "../src/tool/types";
 import type { AssistantMessage, Message } from "../src/types";
 
 const TEST_ROOT = join(tmpdir(), `diligent-sm-test-${Date.now()}`);
@@ -22,34 +25,51 @@ const TEST_MODEL: Model = {
 };
 
 function makeAssistant(text: string = "hi"): AssistantMessage {
+  return makeAssistantMessage([{ type: "text", text }]);
+}
+
+function makeAssistantMessage(
+  content: AssistantMessage["content"],
+  stopReason: AssistantMessage["stopReason"] = "end_turn",
+): AssistantMessage {
   return {
     role: "assistant",
-    content: [{ type: "text", text }],
+    content,
     model: TEST_MODEL.id,
     usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    stopReason: "end_turn",
+    stopReason,
     timestamp: Date.now(),
   };
 }
 
+function createProviderEventStream(outcome: AssistantMessage | Error): EventStream<ProviderEvent, ProviderResult> {
+  const stream = new EventStream<ProviderEvent, ProviderResult>(
+    (event) => event.type === "done" || event.type === "error",
+    (event) => {
+      if (event.type === "done") return { message: event.message };
+      throw (event as { type: "error"; error: Error }).error;
+    },
+  );
+
+  queueMicrotask(() => {
+    stream.push({ type: "start" });
+    if (outcome instanceof Error) {
+      stream.push({ type: "error", error: outcome });
+      return;
+    }
+    const firstText = outcome.content[0];
+    if (firstText?.type === "text") {
+      stream.push({ type: "text_delta", delta: firstText.text });
+    }
+    stream.push({ type: "done", stopReason: outcome.stopReason, message: outcome });
+  });
+
+  return stream;
+}
+
 function createMockStreamFn(responses: AssistantMessage[]): StreamFunction {
   let callIndex = 0;
-  return (_model, _context, _options) => {
-    const msg = responses[callIndex++] ?? makeAssistant();
-    const stream = new EventStream<ProviderEvent, ProviderResult>(
-      (event) => event.type === "done" || event.type === "error",
-      (event) => {
-        if (event.type === "done") return { message: event.message };
-        throw (event as { type: "error"; error: Error }).error;
-      },
-    );
-    queueMicrotask(() => {
-      stream.push({ type: "start" });
-      stream.push({ type: "text_delta", delta: msg.content[0].type === "text" ? msg.content[0].text : "" });
-      stream.push({ type: "done", stopReason: "end_turn", message: msg });
-    });
-    return stream;
-  };
+  return (_model, _context, _options) => createProviderEventStream(responses[callIndex++] ?? makeAssistant());
 }
 
 async function setupDir(): Promise<string> {
@@ -242,5 +262,122 @@ describe("SessionManager", () => {
     ]);
 
     expect(settled).toBe(true);
+  });
+
+  test("run() compacts between tool turn and next LLM call", async () => {
+    const dir = await setupDir();
+    const compactingTool: Tool = {
+      name: "inflate",
+      description: "Inflate context",
+      parameters: z.object({}),
+      async execute() {
+        return { output: `tool-result-${"x".repeat(400)}` };
+      },
+    };
+
+    let providerCallCount = 0;
+    const providerContexts: Message[][] = [];
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 200 },
+      agentConfig: {
+        model: { ...TEST_MODEL, contextWindow: 120 },
+        systemPrompt: [{ label: "test", content: "test" }],
+        tools: [compactingTool],
+        streamFunction: (_model, context, _options) => {
+          if (context.systemPrompt.some((section) => section.label === "test")) {
+            providerContexts.push([...context.messages]);
+          }
+          if (providerCallCount++ === 0) {
+            return createProviderEventStream(
+              makeAssistantMessage([{ type: "tool_call", id: "tc_1", name: "inflate", input: {} }], "tool_use"),
+            );
+          }
+          return createProviderEventStream(makeAssistant("after compaction"));
+        },
+      },
+    });
+    await mgr.create();
+
+    const events: AgentEvent[] = [];
+    const stream = mgr.run({ role: "user", content: "start compacting", timestamp: Date.now() });
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    const compactionStartIndex = events.findIndex((event) => event.type === "compaction_start");
+    const firstTurnEndIndex = events.findIndex((event) => event.type === "turn_end");
+    expect(compactionStartIndex).toBeGreaterThan(firstTurnEndIndex);
+
+    const result = await stream.result();
+    const summaryIndex = result.findIndex(
+      (msg) =>
+        msg.role === "user" &&
+        typeof msg.content === "string" &&
+        msg.content.includes("Another language model started to solve this problem"),
+    );
+    expect(providerContexts).toHaveLength(2);
+    expect(providerContexts[0].some((msg) => msg.role === "tool_result")).toBe(false);
+    expect(providerContexts[1].some((msg) => msg.role === "tool_result")).toBe(false);
+    expect(
+      providerContexts[1].some(
+        (msg) =>
+          msg.role === "user" &&
+          typeof msg.content === "string" &&
+          msg.content.includes("Another language model started to solve this problem"),
+      ),
+    ).toBe(true);
+    expect(events.some((event) => event.type === "tool_end")).toBe(true);
+    expect(summaryIndex).toBeGreaterThan(-1);
+  });
+
+  test("run() retries same turn after reactive context overflow compaction", async () => {
+    const dir = await setupDir();
+    let callIndex = 0;
+    const streamFunction: StreamFunction = (_model, _context, _options) =>
+      createProviderEventStream(
+        callIndex++ === 0
+          ? new ProviderError("context_overflow", "context_overflow", false)
+          : makeAssistant("recovered after compaction"),
+      );
+
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 200 },
+      agentConfig: {
+        model: { ...TEST_MODEL, contextWindow: 120 },
+        systemPrompt: [{ label: "test", content: "test" }],
+        tools: [],
+        streamFunction,
+      },
+    });
+    await mgr.create();
+
+    const events: AgentEvent[] = [];
+    const stream = mgr.run({ role: "user", content: "overflow then recover", timestamp: Date.now() });
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    const turnStarts = events.filter((event) => event.type === "turn_start");
+    expect(turnStarts).toHaveLength(2);
+    expect(events.some((event) => event.type === "compaction_start")).toBe(true);
+
+    const result = await stream.result();
+    const summaryIndex = result.findIndex(
+      (msg) =>
+        msg.role === "user" &&
+        typeof msg.content === "string" &&
+        msg.content.includes("Another language model started to solve this problem"),
+    );
+    const finalAssistantIndex = result.findIndex(
+      (msg) =>
+        msg.role === "assistant" &&
+        msg.content.some((block) => block.type === "text" && block.text === "recovered after compaction"),
+    );
+    expect(summaryIndex).toBeGreaterThan(-1);
+    expect(summaryIndex).toBeLessThan(finalAssistantIndex);
   });
 });

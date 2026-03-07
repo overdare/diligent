@@ -15,9 +15,21 @@ export type {
 export {
   agentLoop,
   BUILTIN_AGENT_TYPES,
+  calculateCost,
+  createEmptyAssistantMessage,
+  createTurnRuntime,
+  drainSteering,
+  executeToolCalls,
+  extractLatestPlanState,
+  filterAllowedTools,
   LoopDetector,
   MODE_SYSTEM_PROMPT_SUFFIXES,
   PLAN_MODE_ALLOWED_TOOLS,
+  streamAssistantResponse,
+  toolPermission,
+  toolToDefinition,
+  toSerializableError,
+  withPlanStateInjected,
 } from "./agent/index";
 // App server (JSON-RPC)
 export type {

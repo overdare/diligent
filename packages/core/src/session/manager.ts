@@ -1,10 +1,18 @@
 // @summary Session manager orchestrating agent loop, persistence, compaction, and steering
-import { agentLoop } from "../agent/loop";
+import {
+  calculateCost,
+  createTurnRuntime,
+  drainSteering,
+  executeToolCalls,
+  streamAssistantResponse,
+  toSerializableError,
+} from "../agent/loop";
+import { LoopDetector } from "../agent/loop-detector";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import { EventStream } from "../event-stream";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { ProviderError } from "../provider/types";
-import type { Message } from "../types";
+import type { AssistantMessage, Message, ToolCallBlock } from "../types";
 import {
   estimateTokens,
   extractFileOperations,
@@ -203,14 +211,14 @@ export class SessionManager {
       keepRecentTokens: 20000,
     };
 
-    // 4. Create outer stream that wraps the agent loop
+    // 4. Create outer stream that wraps the session loop
     const outerStream = new EventStream<AgentEvent, Message[]>(
       (event) => event.type === "agent_end",
       (event) => (event as { type: "agent_end"; messages: Message[] }).messages,
     );
 
     // Resolve config — may be sync or async depending on whether factory returns a Promise.
-    // When sync, we preserve the original microtask timing: agentLoop starts in the same
+    // When sync, we preserve the original microtask timing: runSession starts in the same
     // synchronous execution frame as run(), which is critical for steering message delivery.
     const configResult = this.resolveAgentConfig();
     const startSession = (initialConfig: AgentLoopConfig) => {
@@ -244,101 +252,161 @@ export class SessionManager {
     outerStream: EventStream<AgentEvent, Message[]>,
     initialConfig: AgentLoopConfig,
   ): Promise<void> {
-    let currentMessages = messages;
-
-    // Proactive compaction — uses initialConfig (resolved once at startup) for
-    // model.contextWindow since compaction settings don't change between turns.
-    if (compactionConfig.enabled) {
-      const heuristicTokens = estimateTokens(currentMessages);
-      const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
-      if (shouldCompact(tokens, initialConfig.model.contextWindow, compactionConfig.reservePercent)) {
-        currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, initialConfig);
-      }
-    }
+    let currentMessages = [...messages];
+    let currentConfig = initialConfig;
+    let turnCount = 0;
+    const maxTurns = initialConfig.maxTurns ?? 100;
+    let itemCounter = 0;
+    const generateItemId = () => `item-${++itemCounter}`;
+    const loopDetector = new LoopDetector();
 
     outerStream.push({ type: "agent_start" });
 
-    // resolveAgentConfig() returns synchronously when the factory is sync.
-    // We avoid unnecessary `await` to preserve microtask timing — the agentLoop's
-    // drainSteering() must run in the same synchronous frame as run() for steering
-    // messages queued immediately after run() to be delivered on the correct turn.
-    const resolveConfig = (): AgentLoopConfig | Promise<AgentLoopConfig> => this.resolveAgentConfig();
+    while (turnCount < maxTurns) {
+      if (turnCount > 0) {
+        const nextConfigResult = this.resolveAgentConfig();
+        currentConfig = nextConfigResult instanceof Promise ? await nextConfigResult : nextConfigResult;
+      }
 
-    while (true) {
-      let result: Message[];
+      if (currentConfig.signal?.aborted) {
+        console.log("[SessionManager] signal aborted at top-of-loop, breaking after %d turns", turnCount);
+        return;
+      }
 
+      if (compactionConfig.enabled) {
+        const heuristicTokens = estimateTokens(currentMessages);
+        const tokens = Math.max(heuristicTokens, this.lastApiInputTokens);
+        if (shouldCompact(tokens, currentConfig.model.contextWindow, compactionConfig.reservePercent)) {
+          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, currentConfig);
+        }
+      }
+
+      turnCount++;
+      const turnId = `turn-${turnCount}`;
+      outerStream.push({ type: "turn_start", turnId });
+
+      const drainedSteering = drainSteering(currentConfig, currentMessages, outerStream);
+      for (const msg of drainedSteering) {
+        this.appendMessageEntry(msg);
+      }
+
+      let assistantMessage: AssistantMessage;
       try {
-        const configResult = resolveConfig();
-        const config = configResult instanceof Promise ? await configResult : configResult;
-        const innerStream = agentLoop(currentMessages, config);
+        const turnRuntime = createTurnRuntime(currentConfig, outerStream);
+        assistantMessage = await streamAssistantResponse(
+          currentMessages,
+          currentConfig,
+          turnRuntime,
+          outerStream,
+          generateItemId,
+        );
 
-        let fatalError: AgentEvent | null = null;
-
-        for await (const event of innerStream) {
-          this.handleEvent(event);
-
-          if (event.type === "error" && event.fatal) {
-            fatalError = event;
-            continue;
-          }
-          if (event.type === "agent_start" || event.type === "agent_end") continue;
-          outerStream.push(event);
+        currentMessages.push(assistantMessage);
+        this.appendMessageEntry(assistantMessage);
+        if (assistantMessage.usage.inputTokens > 0) {
+          this.lastApiInputTokens = assistantMessage.usage.inputTokens;
         }
 
-        if (fatalError && fatalError.type === "error") {
-          const msg = fatalError.error.message.toLowerCase();
-          const isContextOverflow =
-            msg.includes("context") ||
-            msg.includes("too many tokens") ||
-            msg.includes("maximum") ||
-            msg.includes("context_overflow");
-          const isAbort = fatalError.error.name === "AbortError" || msg === "aborted";
+        outerStream.push({
+          type: "usage",
+          usage: assistantMessage.usage,
+          cost: calculateCost(currentConfig.model, assistantMessage.usage),
+        });
 
-          if (isContextOverflow) {
-            throw new ProviderError(fatalError.error.message, "context_overflow", false);
-          }
-          if (isAbort) {
-            outerStream.error(new Error("Aborted"));
+        const toolCalls = assistantMessage.content.filter((b): b is ToolCallBlock => b.type === "tool_call");
+
+        if (toolCalls.length === 0) {
+          const hasPending = currentConfig.hasPendingMessages?.() ?? false;
+          outerStream.push({ type: "turn_end", turnId, message: assistantMessage, toolResults: [] });
+          if (!hasPending) {
+            outerStream.push({ type: "agent_end", messages: currentMessages });
+            outerStream.end(currentMessages);
             return;
           }
-          outerStream.push(fatalError);
-        }
+        } else {
+          const { executions, abortAfterTurn } = await executeToolCalls(
+            toolCalls,
+            currentConfig,
+            turnRuntime,
+            outerStream,
+            generateItemId,
+          );
+          const toolResults = executions.map((execution) => execution.toolResult);
 
-        result = await innerStream.result();
+          for (const execution of executions) {
+            this.appendMessageEntry(execution.toolResult);
+            if (!execution.includeInConversation) continue;
+            currentMessages.push(execution.toolResult);
+            loopDetector.record(execution.toolCall.name, execution.toolCall.input);
+          }
+
+          const loopResult = loopDetector.check();
+          if (loopResult.detected) {
+            outerStream.push({
+              type: "loop_detected",
+              patternLength: loopResult.patternLength!,
+              toolName: loopResult.toolName!,
+            });
+            currentMessages.push({
+              role: "user",
+              content: `[WARNING: Loop detected — tool "${loopResult.toolName}" is being called in a repeating pattern (length ${loopResult.patternLength}). Try a different approach.]`,
+              timestamp: Date.now(),
+            });
+          }
+
+          outerStream.push({ type: "turn_end", turnId, message: assistantMessage, toolResults });
+
+          if (abortAfterTurn) {
+            outerStream.push({ type: "agent_end", messages: currentMessages });
+            outerStream.end(currentMessages);
+            return;
+          }
+        }
       } catch (err) {
-        if (err instanceof ProviderError && err.errorType === "context_overflow" && compactionConfig.enabled) {
+        const serializable = toSerializableError(err);
+        const msg = serializable.message.toLowerCase();
+        const isContextOverflow =
+          err instanceof ProviderError
+            ? err.errorType === "context_overflow"
+            : msg.includes("context") ||
+              msg.includes("too many tokens") ||
+              msg.includes("maximum") ||
+              msg.includes("context_overflow");
+        const isAbort =
+          serializable.name === "AbortError" || msg === "aborted" || (currentConfig.signal?.aborted ?? false);
+
+        if (isContextOverflow && compactionConfig.enabled) {
           const tokens = Math.max(estimateTokens(currentMessages), this.lastApiInputTokens);
-          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, initialConfig);
+          currentMessages = await this.performCompaction(tokens, compactionConfig, outerStream, currentConfig);
+          turnCount--;
           continue;
         }
-        throw err;
-      }
 
-      // On abort, stop immediately even if pending queue is non-empty.
-      // Otherwise we can re-enter agentLoop with an already-aborted signal forever
-      // (agentLoop exits at top-of-loop before draining pending steering messages).
-      if (initialConfig.signal?.aborted) {
+        if (isAbort) {
+          outerStream.error(new Error("Aborted"));
+          return;
+        }
+
+        outerStream.push({ type: "error", error: serializable, fatal: true });
+        outerStream.push({ type: "agent_end", messages: currentMessages });
+        outerStream.end(currentMessages);
         return;
       }
 
-      // Check unified queue — pending messages trigger next iteration
-      if (this.pendingMessages.length === 0) {
-        outerStream.push({ type: "agent_end", messages: result });
-        outerStream.end(result);
+      if (currentConfig.signal?.aborted) {
         return;
       }
-
-      // Rebuild context for next iteration
-      const context = buildSessionContext(this.entries, this.leafId);
-      currentMessages = context.messages;
     }
+
+    outerStream.push({ type: "agent_end", messages: currentMessages });
+    outerStream.end(currentMessages);
   }
 
   private async performCompaction(
     tokensBefore: number,
     compactionConfig: { reservePercent: number; keepRecentTokens: number },
     stream: EventStream<AgentEvent, Message[]>,
-    initialConfig?: AgentLoopConfig,
+    currentConfig?: AgentLoopConfig,
   ): Promise<Message[]> {
     stream.push({ type: "compaction_start", estimatedTokens: tokensBefore });
 
@@ -370,8 +438,8 @@ export class SessionManager {
     // Extract file operations (D039)
     const details = extractFileOperations(messagesToSummarize, previousCompaction?.details);
 
-    // Generate summary (D037) — use initialConfig when available (resolved once at startup)
-    const cfg = initialConfig ?? (await this.resolveAgentConfig());
+    // Generate summary (D037) using the current turn config when available
+    const cfg = currentConfig ?? (await this.resolveAgentConfig());
     const summary = await generateSummary(messagesToSummarize, cfg.streamFunction, cfg.model, {
       previousSummary: previousCompaction?.summary,
       signal: cfg.signal,
@@ -459,24 +527,6 @@ export class SessionManager {
     return undefined;
   }
 
-  private handleEvent(event: AgentEvent): void {
-    if (event.type === "message_end") {
-      this.appendMessageEntry(event.message);
-      if (event.message.usage.inputTokens > 0) {
-        this.lastApiInputTokens = event.message.usage.inputTokens;
-      }
-    } else if (event.type === "turn_end") {
-      for (const toolResult of event.toolResults) {
-        this.appendMessageEntry(toolResult);
-      }
-    } else if (event.type === "steering_injected") {
-      // Event-Ordered Persistence: consumer persists steering messages
-      for (const msg of event.messages) {
-        this.appendMessageEntry(msg);
-      }
-    }
-  }
-
   /** Queue a steering message into the unified pending queue.
    * Memory-only — persisted via event-ordered persistence when drained. */
   steer(content: string): void {
@@ -561,7 +611,7 @@ export class SessionManager {
   /**
    * Resolve the agent config. When the factory returns a Promise, this returns a Promise.
    * When it returns synchronously, this returns synchronously — preserving microtask timing
-   * for the run() → agentLoop flow where steering message delivery depends on execution order.
+   * for the run() flow where steering message delivery depends on execution order.
    */
   private resolveAgentConfig(): AgentLoopConfig | Promise<AgentLoopConfig> {
     const baseOrPromise =

@@ -862,21 +862,21 @@ export class DiligentAppServer {
     stream: ReturnType<SessionManager["run"]>,
     turnId: string,
   ): Promise<void> {
-    // Wire collab events from the registry into the notification stream.
-    // NOTE: runtime.registry may be replaced on each resolveAgentConfig() call,
-    // because tool assembly can create a fresh AgentRegistry per iteration.
-    // Re-bind whenever the registry instance changes so child collab events
-    // are not dropped mid-turn.
-    let wiredRegistry: AgentRegistry | undefined;
+    // Wire collab events from any registry instance used during this turn into
+    // the notification stream. A fresh AgentRegistry can appear on each
+    // resolveAgentConfig() call, but previously spawned child agents may still
+    // emit through older registry instances. Keep the handler attached to every
+    // seen registry until the turn fully settles so child events are not dropped
+    // after a turn-boundary registry refresh.
+    const wiredRegistries = new Set<AgentRegistry>();
     const collabEventHandler = (event: AgentEvent) => {
       void this.emitFromAgentEvent(runtime.id, turnId, event);
     };
     const wireCollabHandler = () => {
       const currentRegistry = runtime.registry;
-      if (!currentRegistry || currentRegistry === wiredRegistry) return;
-      wiredRegistry?.setCollabEventHandler(undefined);
+      if (!currentRegistry || wiredRegistries.has(currentRegistry)) return;
       currentRegistry.setCollabEventHandler(collabEventHandler);
-      wiredRegistry = currentRegistry;
+      wiredRegistries.add(currentRegistry);
     };
     wireCollabHandler();
 
@@ -920,8 +920,10 @@ export class DiligentAppServer {
         });
       }
     } finally {
-      // Disconnect collab event handler from the last wired registry instance.
-      wiredRegistry?.setCollabEventHandler(undefined);
+      // Disconnect collab event handlers from every registry instance wired during this turn.
+      for (const registry of wiredRegistries) {
+        registry.setCollabEventHandler(undefined);
+      }
 
       if (wasAborted) {
         // Abort path: release the thread immediately so new turns can start.
