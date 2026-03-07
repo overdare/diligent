@@ -25,7 +25,10 @@ function statusMessage(s: AgentStatus): string | undefined {
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 
 /** Subset of CollabToolDeps that can safely be mutated between turns (excludes structural fields). */
-export type MutableCollabDeps = Omit<CollabToolDeps, "cwd" | "paths" | "parentTools" | "maxAgents" | "sessionManagerFactory">;
+export type MutableCollabDeps = Omit<
+  CollabToolDeps,
+  "cwd" | "paths" | "parentTools" | "maxAgents" | "sessionManagerFactory"
+>;
 
 export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();

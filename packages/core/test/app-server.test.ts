@@ -849,7 +849,8 @@ describe("DiligentAppServer", () => {
       await turnDone;
 
       const iteratorDrainCall = logSpy.mock.calls.find(
-        (args) => args[0] === "[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result",
+        (args) =>
+          args[0] === "[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result",
       );
       expect(iteratorDrainCall).toBeDefined();
       expect(iteratorDrainCall?.slice(1)).toEqual([completedTurnId, startResult.threadId]);

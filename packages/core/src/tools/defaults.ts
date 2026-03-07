@@ -59,12 +59,15 @@ export async function buildDefaultTools(
 
   // 3. Add collab tools (always enabled, not user-configurable)
   if (paths && collabDeps) {
-    const { tools: collabTools, registry } = createCollabTools({
-      ...collabDeps,
-      cwd,
-      paths,
-      parentTools: catalog.tools,
-    }, existingRegistry);
+    const { tools: collabTools, registry } = createCollabTools(
+      {
+        ...collabDeps,
+        cwd,
+        paths,
+        parentTools: catalog.tools,
+      },
+      existingRegistry,
+    );
     catalog.tools.push(...collabTools);
     return {
       tools: catalog.tools,

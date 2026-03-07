@@ -946,7 +946,11 @@ export class DiligentAppServer {
         wireCollabHandler();
         await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
-      console.log("[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result", turnId, runtime.id);
+      console.log(
+        "[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result",
+        turnId,
+        runtime.id,
+      );
       await stream.result();
       console.log("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
       await this.emit({

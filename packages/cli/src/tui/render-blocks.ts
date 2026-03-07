@@ -78,8 +78,7 @@ function renderTable(block: TableBlock): string[] {
     return Math.max(col.length, maxRowLen);
   });
 
-  const formatRow = (cells: string[]) =>
-    cells.map((cell, ci) => cell.padEnd(colWidths[ci] ?? 0)).join("  ");
+  const formatRow = (cells: string[]) => cells.map((cell, ci) => cell.padEnd(colWidths[ci] ?? 0)).join("  ");
 
   // Header row
   lines.push(`  ${t.bold}${formatRow(block.columns)}${t.reset}`);
