@@ -5,22 +5,17 @@ import type { Readable, Writable } from "node:stream";
 import { format } from "node:util";
 import {
   bindAppServer,
+  createAppServerConfig,
   createNdjsonParser,
-  createPermissionEngine,
   createYoloPermissionEngine,
   DiligentAppServer,
-  type DiligentPaths,
   ensureDiligentDir,
   formatNdjsonMessage,
-  KNOWN_MODELS,
-  type ModeKind,
+  loadRuntimeConfig,
   openBrowser,
-  resolveModel,
   type RpcPeer,
 } from "@diligent/core";
 import type { JSONRPCMessage } from "@diligent/protocol";
-import { type AppConfig, loadConfig } from "./config";
-import { buildTools } from "./tui/tools";
 
 export interface AppServerStdioOptions {
   cwd: string;
@@ -29,62 +24,18 @@ export interface AppServerStdioOptions {
 
 export async function createCliAppServer(options: AppServerStdioOptions): Promise<DiligentAppServer> {
   const paths = await ensureDiligentDir(options.cwd);
-  const config = await loadCliConfig(options, paths);
-  const permissionEngine = config.diligent.yolo
-    ? createYoloPermissionEngine()
-    : createPermissionEngine(config.diligent.permissions ?? []);
+  const runtimeConfig = await loadRuntimeConfig(options.cwd, paths);
 
-  const allModels = KNOWN_MODELS.map((m) => ({
-    id: m.id,
-    provider: m.provider,
-    contextWindow: m.contextWindow,
-    maxOutputTokens: m.maxOutputTokens,
-    inputCostPer1M: m.inputCostPer1M,
-    outputCostPer1M: m.outputCostPer1M,
-    supportsThinking: m.supportsThinking,
-    supportsVision: m.supportsVision,
-  }));
+  if (options.yolo) {
+    runtimeConfig.permissionEngine = createYoloPermissionEngine();
+  }
 
-  return new DiligentAppServer({
-    resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-    buildAgentConfig: async ({ cwd, mode, effort, signal, approve, ask, getSessionId }) => {
-      const deps = {
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        streamFunction: config.streamFunction,
-        getParentSessionId: getSessionId,
-        ask,
-      };
-      const { tools, registry } = await buildTools(cwd, paths, deps, config.diligent.tools);
-
-      return {
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        tools,
-        streamFunction: config.streamFunction,
-        mode: mode as ModeKind,
-        effort,
-        signal,
-        approve,
-        ask,
-        permissionEngine,
-        registry,
-      };
-    },
-    compaction: config.compaction,
-    modelConfig: {
-      currentModelId: config.model?.id,
-      getAvailableModels: () => {
-        const configured = config.providerManager.getConfiguredProviders() as string[];
-        return allModels.filter((m) => configured.includes(m.provider));
-      },
-      onModelChange: (modelId) => {
-        config.model = resolveModel(modelId);
-      },
-    },
-    providerManager: config.providerManager,
-    openBrowser,
+  const config = createAppServerConfig({
+    cwd: options.cwd,
+    runtimeConfig,
+    overrides: { openBrowser },
   });
+  return new DiligentAppServer(config);
 }
 
 export function createStdioPeer(input: Readable, output: Writable): RpcPeer {
@@ -186,14 +137,6 @@ export async function runAppServerStdio(options: AppServerStdioOptions): Promise
   process.stdin.resume();
 
   return await new Promise<never>(() => {});
-}
-
-async function loadCliConfig(options: AppServerStdioOptions, paths: DiligentPaths): Promise<AppConfig> {
-  const config = await loadConfig(options.cwd, paths);
-  if (options.yolo) {
-    config.diligent = { ...config.diligent, yolo: true };
-  }
-  return config;
 }
 
 export function redirectConsoleToStderr(): void {

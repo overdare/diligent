@@ -3,22 +3,19 @@ import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type AgentRegistry,
+  createAppServerConfig,
   DiligentAppServer,
-  type DiligentAppServerConfig,
   type DiligentPaths,
   ensureDiligentDir,
-  KNOWN_MODELS,
+  getModelInfoList,
   loadRuntimeConfig,
-  type ModeKind,
   type PROVIDER_NAMES,
   type RpcPeer,
-  resolveModel,
 } from "@diligent/core";
 import type { JSONRPCMessage } from "@diligent/protocol";
 import { JSONRPCMessageSchema } from "@diligent/protocol";
 import type { ServerWebSocket } from "bun";
 import { decodeWebImageRelativePath, toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
-import { buildTools } from "./tools";
 
 interface WsData {
   connectionId: string;
@@ -44,76 +41,34 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   let registry: AgentRegistry | undefined;
 
-  const allModels = KNOWN_MODELS.map((m) => ({
-    id: m.id,
-    provider: m.provider,
-    contextWindow: m.contextWindow,
-    maxOutputTokens: m.maxOutputTokens,
-    inputCostPer1M: m.inputCostPer1M,
-    outputCostPer1M: m.outputCostPer1M,
-    supportsThinking: m.supportsThinking,
-    supportsVision: m.supportsVision,
-  }));
-
-  const appServerConfig: DiligentAppServerConfig = {
+  const baseConfig = createAppServerConfig({
     cwd,
-    getInitializeResult: async () => ({
-      cwd,
-      mode: runtimeConfig.mode,
-      effort: "medium",
-      currentModel: runtimeConfig.model?.id,
-      availableModels: allModels.filter((m) =>
-        runtimeConfig.providerManager.getConfiguredProviders().includes(m.provider as (typeof PROVIDER_NAMES)[number]),
-      ),
-    }),
-    resolvePaths: async (requestCwd) => ensureDiligentDir(requestCwd),
-    buildAgentConfig: async ({ cwd: requestCwd, mode, effort, signal, approve, ask, getSessionId }) => {
-      if (!runtimeConfig.model) {
-        throw new Error("No AI provider configured. Please add an API key in the provider settings.");
-      }
-
-      const deps = {
-        model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
-        streamFunction: runtimeConfig.streamFunction,
-        getParentSessionId: getSessionId,
-        ask,
-      };
-      const result = await buildTools(requestCwd, paths, deps, runtimeConfig.diligent.tools);
-      if (result.registry) {
-        registry = result.registry;
-      }
-
-      return {
-        model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
-        tools: result.tools,
-        streamFunction: runtimeConfig.streamFunction,
-        mode: mode as ModeKind,
-        effort,
-        signal,
-        approve,
-        ask,
-        permissionEngine: runtimeConfig.permissionEngine,
-        registry: result.registry,
-      };
+    runtimeConfig,
+    overrides: {
+      toImageUrl: (absPath) => toWebImageUrl(absPath),
+      getInitializeResult: async () => ({
+        cwd,
+        mode: runtimeConfig.mode,
+        effort: "medium",
+        currentModel: runtimeConfig.model?.id,
+        availableModels: getModelInfoList().filter((m) =>
+          runtimeConfig.providerManager
+            .getConfiguredProviders()
+            .includes(m.provider as (typeof PROVIDER_NAMES)[number]),
+        ),
+      }),
     },
-    compaction: runtimeConfig.compaction,
-    modelConfig: {
-      currentModelId: runtimeConfig.model?.id,
-      getAvailableModels: () => {
-        const configured = runtimeConfig.providerManager.getConfiguredProviders();
-        return allModels.filter((m) => configured.includes(m.provider as (typeof PROVIDER_NAMES)[number]));
-      },
-      onModelChange: (modelId) => {
-        runtimeConfig.model = resolveModel(modelId);
-      },
-    },
-    providerManager: runtimeConfig.providerManager,
-    toImageUrl: (absPath) => toWebImageUrl(absPath),
+  });
+
+  // Wrap buildAgentConfig to capture registry for shutdown
+  const origBuild = baseConfig.buildAgentConfig;
+  baseConfig.buildAgentConfig = async (args) => {
+    const result = await origBuild(args);
+    if (result.registry) registry = result.registry;
+    return result;
   };
 
-  const appServer = new DiligentAppServer(appServerConfig);
+  const appServer = new DiligentAppServer(baseConfig);
 
   // Map from connectionId → peer receive function, for routing WS messages
   const peerReceivers = new Map<string, (raw: string | Buffer) => void>();

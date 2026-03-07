@@ -22,7 +22,6 @@ import {
   type Mode,
   type ModelInfo,
   type ProviderAuthStatus,
-  type ProviderName,
   type SessionSummary,
   type ThinkingEffort,
   type TurnStartParams,

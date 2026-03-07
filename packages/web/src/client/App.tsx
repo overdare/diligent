@@ -411,7 +411,6 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: providerMgr callbacks are stable useCallbacks; cwdRef avoids re-triggering on cwd state change
   }, [
     connection,
     providerMgr.setInitialModel,

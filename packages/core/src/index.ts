@@ -20,8 +20,13 @@ export {
   PLAN_MODE_ALLOWED_TOOLS,
 } from "./agent/index";
 // App server (JSON-RPC)
-export type { DiligentAppServerConfig, NotificationListener, ServerRequestHandler } from "./app-server";
-export { bindAppServer, DiligentAppServer } from "./app-server";
+export type {
+  CreateAppServerConfigOptions,
+  DiligentAppServerConfig,
+  NotificationListener,
+  ServerRequestHandler,
+} from "./app-server";
+export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval/index";
@@ -115,6 +120,7 @@ export {
   DEFAULT_PROVIDER,
   flattenSections,
   getModelClass,
+  getModelInfoList,
   KNOWN_MODELS,
   PROVIDER_HINTS,
   PROVIDER_NAMES,

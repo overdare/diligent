@@ -1,4 +1,5 @@
 // @summary Known models registry with resolution logic for aliases, inference, and model classes
+import type { ModelInfo } from "@diligent/protocol";
 import type { Model } from "./types";
 
 /**
@@ -223,6 +224,22 @@ export function agentTypeToModelClass(agentType: string, parentModel: Model): Mo
   if (agentType === "planner") return "pro";
   // general: keep the same class as parent
   return getModelClass(parentModel);
+}
+
+/**
+ * Map all known models to the protocol-facing ModelInfo shape.
+ */
+export function getModelInfoList(): ModelInfo[] {
+  return KNOWN_MODELS.map((m) => ({
+    id: m.id,
+    provider: m.provider,
+    contextWindow: m.contextWindow,
+    maxOutputTokens: m.maxOutputTokens,
+    inputCostPer1M: m.inputCostPer1M,
+    outputCostPer1M: m.outputCostPer1M,
+    supportsThinking: m.supportsThinking,
+    supportsVision: m.supportsVision,
+  }));
 }
 
 /**

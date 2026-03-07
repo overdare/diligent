@@ -97,22 +97,6 @@ function sendRpc(peer: FakePeer, msg: object) {
 
 function waitFor(peer: FakePeer, predicate: (msg: JSONRPCMessage) => boolean, timeout = 500): Promise<JSONRPCMessage> {
   return new Promise((resolve, reject) => {
-    const check = () => {
-      const found = peer.sent.find(predicate);
-      if (found) {
-        resolve(found);
-        return;
-      }
-      const timer = setTimeout(check, 10);
-      const deadline = setTimeout(() => {
-        clearTimeout(timer);
-        reject(new Error("Timed out waiting for message"));
-      }, timeout);
-      // Clear deadline when found on next tick
-      void found;
-      void deadline;
-    };
-    // Poll
     const interval = setInterval(() => {
       const found = peer.sent.find(predicate);
       if (found) {
