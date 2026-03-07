@@ -124,7 +124,10 @@ export function formatSpawnAgentToolDescription(): string {
     "Spawn a sub-agent in the background (non-blocking). Returns immediately with thread_id and nickname. " +
     "Use 'wait' to collect results.\n" +
     "Role selection guide:\n" +
-    roleLines
+    roleLines +
+    "\n\nDelegation rules:\n" +
+    "- Do not duplicate sub-agent work by searching the same areas yourself.\n" +
+    "- Write prompts as if briefing a colleague who just walked into the room: explain what you're trying to accomplish, what you already know, and what specifically you need them to find or do. Terse, vague prompts produce shallow results."
   );
 }
 
