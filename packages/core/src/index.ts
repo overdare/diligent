@@ -21,7 +21,7 @@ export {
 } from "./agent/index";
 // App server (JSON-RPC)
 export type { DiligentAppServerConfig, NotificationListener, ServerRequestHandler } from "./app-server";
-export { DiligentAppServer } from "./app-server";
+export { bindAppServer, DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval/index";
@@ -124,6 +124,15 @@ export {
   resolveModelForClass,
   withRetry,
 } from "./provider/index";
+export type { NdjsonParser, RpcMessageSink, RpcMessageSource, RpcPeer } from "./rpc";
+export {
+  createNdjsonParser,
+  formatNdjsonMessage,
+  isRpcNotification,
+  isRpcRequest,
+  isRpcResponse,
+  RpcClientSession,
+} from "./rpc";
 // Session
 export type {
   CompactionDetails,

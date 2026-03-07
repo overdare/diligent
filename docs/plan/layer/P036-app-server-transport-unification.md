@@ -1,10 +1,39 @@
 ---
 id: P036
-status: backlog
+status: in_progress
 created: 2026-03-07
+updated: 2026-03-07
 ---
 
 # App-Server Transport Unification — CLI stdio Child + Raw JSON-RPC WebSocket
+
+## Progress
+
+### Done
+
+- Task 1 core checkpoint landed.
+  - Added `packages/core/src/rpc/channel.ts`, `framing.ts`, `client.ts`, `server-binding.ts`, and `index.ts`.
+  - Added transport-neutral JSON-RPC binding and request-correlation helpers around `DiligentAppServer`.
+  - Re-exported `bindAppServer` and RPC primitives from core/app-server entry points.
+  - Added `packages/core/test/rpc-binding.test.ts` for in-memory peer binding, approval request roundtrip, and NDJSON framing coverage.
+- Task 2 CLI stdio app-server checkpoint landed.
+  - Added `packages/cli/src/app-server-stdio.ts` with `createCliAppServer()`, `createStdioPeer()`, `redirectConsoleToStderr()`, and `runAppServerStdio()`.
+  - Updated `packages/cli/src/index.ts` to support `diligent app-server --stdio`.
+  - Added `packages/cli/src/app-server-stdio.test.ts` and verified stdout stays protocol-only.
+- Task 3 CLI child stdio RPC checkpoint landed.
+  - `packages/cli/src/tui/rpc-client.ts` now implements a child-process stdio RPC client (`StdioAppServerRpcClient`) instead of the old in-process shortcut.
+  - Added `packages/cli/src/tui/app-server-process.ts` and `rpc-framed-client.ts` for child spawn and stdio transport wiring.
+  - `packages/cli/src/tui/app.ts` and `runner.ts` now use the spawned child app-server path.
+  - Config reload now restarts the child RPC client so new runtime config is applied consistently.
+  - Added `packages/cli/src/tui/__tests__/rpc-client.test.ts` for request framing and server-request fallback coverage.
+
+### In Progress
+
+- Web raw JSON-RPC migration remains the next major unfinished slice.
+
+### Deferred / Out of Scope for This Checkpoint
+
+- A separately packaged/invocable app-server binary is intentionally deferred. Current direction remains a real process boundary via `diligent app-server --stdio`; packaging separation can be evaluated later as a follow-up decision if needed.
 
 ## Goal
 
@@ -132,17 +161,17 @@ Web
 
 | File | Action | Description |
 |------|--------|------------|
-| `app.ts` | MODIFY | Replace in-process app server creation with spawned child stdio client. |
-| `runner.ts` | MODIFY | Use spawned child stdio RPC client in non-interactive mode. |
-| `rpc-client.ts` | REPLACE | Remove `LocalAppServerRpcClient`; implement stdio child-backed RPC client. |
-| `app-server-process.ts` | CREATE | Spawn, monitor, and terminate the child app-server process. |
-| `rpc-framed-client.ts` | CREATE | CLI-specific stdio framing and message dispatch adapter over child stdio. |
+| `app.ts` | MODIFIED (checkpoint landed) | Replaced in-process app server creation with spawned child stdio client. |
+| `runner.ts` | MODIFIED (checkpoint landed) | Uses spawned child stdio RPC client in non-interactive mode. |
+| `rpc-client.ts` | REPLACED (checkpoint landed) | Child-process stdio RPC client with request correlation and server-request handling. |
+| `app-server-process.ts` | CREATED (checkpoint landed) | Spawns, monitors, and terminates the child app-server process. |
+| `rpc-framed-client.ts` | CREATED (checkpoint landed) | CLI-specific stdio framing and child-process adapter over app-server stdio. |
 
 ### `packages/cli/src/tui/__tests__/`
 
 | File | Action | Description |
 |------|--------|------------|
-| `rpc-client.test.ts` | CREATE | Test stdio request/response correlation and server-request roundtrips. |
+| `rpc-client.test.ts` | CREATED (checkpoint landed) | Tests stdio request/response framing and default server-request responses. |
 | `runner.test.ts` | MODIFY | Verify non-interactive runner still behaves correctly via child RPC. |
 | `app.integration.test.ts` | MODIFY | Adapt TUI integration expectations to child-process-backed RPC. |
 
@@ -339,6 +368,102 @@ Key decisions to land here:
 - browser bootstrap data should move out of the custom `connected` wrapper and into shared JSON-RPC flows, most likely `initialize`
 - server-originated approval/user-input requests become ordinary JSON-RPC requests to the browser
 - any current Web-only synthetic messages that still matter should be promoted to explicit protocol methods/notifications or eliminated
+
+#### Task 4 implementation guide for the next agent
+
+Start from the current wrapper boundaries:
+
+- `packages/web/src/shared/ws-protocol.ts`
+  - currently defines wrapper discriminators like `connected`, `rpc_request`, `rpc_response`, `server_notification`, `server_request`, `server_request_response`, and `server_request_resolved`
+- `packages/web/src/server/rpc-bridge.ts`
+  - currently parses wrapper messages in `message()` and emits wrapper messages from `open()`, `routeNotification()`, and `broadcastServerRequest()`
+- `packages/web/src/client/lib/rpc-client.ts`
+  - currently assumes wrapper messages in `request()`, `notify()`, `respondServerRequest()`, and `handleMessage()`
+- `packages/web/src/client/App.tsx`
+  - currently depends on `rpc.onConnected(...)` receiving bootstrap metadata from the synthetic `connected` message before it sends `initialize`
+- `packages/web/src/client/lib/use-server-requests.ts`
+  - currently expects a numeric request id and explicit `server_request_resolved` cleanup notifications
+
+Recommended migration order:
+
+1. **Promote bootstrap data into `initialize` before changing the wire format.**
+   - Today `App.tsx` depends on `connected` metadata for `cwd`, `mode`, `effort`, `currentModel`, and `availableModels`.
+   - Do not remove `connected` first and then figure this out later.
+   - Expand the shared initialize result so Web can get everything it currently receives from `connected`.
+   - Then update `App.tsx` / `WebRpcClient` to treat `initialize` as the source of bootstrap metadata.
+
+2. **Keep Web-only methods, but send them as raw JSON-RPC requests.**
+   - `config/set`, `auth/list`, `auth/set`, `auth/remove`, `auth/oauth/start`, `thread/subscribe`, `thread/unsubscribe`, and `image/upload` can remain Web-only methods for now.
+   - The migration goal is the wire format, not necessarily eliminating every Web-only method in the same checkpoint.
+   - `rpc-bridge.ts` should still special-case these methods, but receive them as ordinary JSON-RPC requests instead of `{ type: "rpc_request", ... }` wrappers.
+
+3. **Convert server notifications to plain JSON-RPC notifications.**
+   - Replace `{ type: "server_notification", notification }` with the notification object itself.
+   - `routeNotification()` in `rpc-bridge.ts` should send raw `DiligentServerNotification` values directly.
+   - `WebRpcClient.handleMessage()` should treat `method` without `id` as a notification.
+
+4. **Convert server-originated approval/user-input to plain JSON-RPC requests.**
+   - Replace `{ type: "server_request", id, request }` with `{ id, method, params }`.
+   - Replace `{ type: "server_request_response", id, response }` with a normal JSON-RPC response carrying `result`.
+   - Prefer removing `server_request_resolved` entirely if normal JSON-RPC request/response handling makes it redundant.
+   - If the browser still needs explicit cleanup for buffered prompts resolved in another tab, promote that to an explicit protocol notification rather than keeping a WS-only wrapper discriminator.
+
+5. **Preserve multi-subscriber semantics in `RpcBridge`; do not simplify them away.**
+   - Current bridge behavior that must survive the migration:
+     - `threadSubscribers` routing
+     - `subscriptions` bookkeeping
+     - `turnInitiators` routing
+     - first-responder wins for approval/user-input
+     - safe fallback when no clients are connected
+   - Task 4 is a wire-format migration, not a behavior rewrite.
+
+6. **Do not break reconnect logic while changing bootstrap.**
+   - `WebRpcClient` currently calls `resubscribeAll()` when it receives `connected`.
+   - After removing `connected`, resubscribe after the socket opens and/or after a successful `initialize`, but do it deterministically in one place.
+   - `App.tsx` currently does reconnect bootstrap in `rpc.onConnected(...)`; that orchestration will need to move to either:
+     - an initialize result callback from `WebRpcClient`, or
+     - explicit `await rpc.initialize()` flow in the app layer.
+
+Recommended concrete code changes:
+
+- `packages/web/src/shared/ws-protocol.ts`
+  - shrink or delete the wrapper unions
+  - if any non-RPC-only WebSocket payload remains, document exactly why it is not a protocol method
+- `packages/web/src/client/lib/rpc-client.ts`
+  - parse raw `JSONRPCMessageSchema`
+  - classify response vs request vs notification by JSON-RPC shape only
+  - keep request correlation map
+  - keep reconnect policy
+  - likely replace `onConnected(...)` with either:
+    - `initialize()` returning bootstrap metadata, or
+    - a listener fed by initialize result rather than raw socket open
+- `packages/web/src/server/rpc-bridge.ts`
+  - parse raw JSON objects as JSON-RPC requests / notifications / responses
+  - keep the current special handling for Web-only methods, but emit normal JSON-RPC responses
+  - convert notification fan-out and server-request fan-out to raw JSON-RPC messages
+- `packages/web/src/client/App.tsx`
+  - move all bootstrap currently triggered by `connected` to an initialize-driven flow
+  - keep reconnect resume logic intact after the bootstrap source changes
+- `packages/web/src/client/lib/use-server-requests.ts`
+  - make sure prompt buffering/cleanup still works if `server_request_resolved` disappears
+  - if another-tab resolution still needs server-side notification, do not reintroduce a WS wrapper; use a real protocol notification
+
+Known traps from the current code:
+
+- `App.tsx` currently calls `providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels)` inside `rpc.onConnected(...)`. If initialize result is not expanded first, provider/model state will regress.
+- `WebRpcClient.resubscribeAll()` currently depends on receipt of `connected`. Reconnect behavior will silently regress if that call is not relocated.
+- `RpcBridge.open()` currently sends bootstrap immediately on socket open. Once removed, the browser must not assume state is ready before initialize resolves.
+- `use-server-requests.ts` currently tracks buffered cross-thread prompts and listens for `handleServerRequestResolved()`. Decide that replacement before deleting the old signal.
+- `rpc-bridge.test.ts` and `server.integration.test.ts` are heavily wrapper-oriented today; rewrite them as raw JSON-RPC tests instead of mechanically renaming fields.
+
+Suggested acceptance slice for the next agent:
+
+1. initialize returns bootstrap metadata needed by Web
+2. raw JSON-RPC request/response works for initialize/thread/start/turn/start
+3. raw JSON-RPC notifications fan out correctly
+4. approval/user-input round-trip as raw JSON-RPC requests/responses
+5. reconnect + resubscribe still works
+6. multi-subscriber first-responder semantics still pass
 
 **Verify:** browser `initialize`, `thread/start`, `turn/start`, approval, user-input, reconnect, and multi-subscriber routing all work with raw JSON-RPC over `/rpc`.
 

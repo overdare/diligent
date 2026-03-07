@@ -9,12 +9,12 @@ import type { CommandContext } from "./commands/types";
 import type { ConfirmDialogOptions } from "./components/confirm-dialog";
 import type { ConfigManager } from "./config-manager";
 import type { Component, OverlayHandle, OverlayOptions } from "./framework/types";
-import type { LocalAppServerRpcClient } from "./rpc-client";
+import type { AppServerRpcClient } from "./rpc-client";
 import { t } from "./theme";
 import type { ThreadManager } from "./thread-manager";
 
 export interface CommandHandlerDeps {
-  getRpcClient: () => LocalAppServerRpcClient | null;
+  getRpcClient: () => AppServerRpcClient | null;
   getCurrentThreadId: () => string | null;
   getConfig: () => AppConfig;
   getCommandRegistry: () => CommandRegistry;

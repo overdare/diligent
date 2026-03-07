@@ -2,14 +2,37 @@
 import { parseArgs } from "node:util";
 import type { ModeKind } from "@diligent/core";
 import { ensureDiligentDir, listSessions } from "@diligent/core";
+import { runAppServerStdio } from "./app-server-stdio";
 import { loadConfig } from "./config";
 import { DEFAULT_PROVIDER, type ProviderName } from "./provider-manager";
 import { App } from "./tui/app";
 import { NonInteractiveRunner } from "./tui/runner";
 
 async function main() {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  if (command === "app-server") {
+    const { values } = parseArgs({
+      args: args.slice(1),
+      options: {
+        stdio: { type: "boolean" },
+        yolo: { type: "boolean" },
+      },
+      allowPositionals: true,
+    });
+
+    if (!values.stdio) {
+      console.error("Error: app-server currently requires --stdio");
+      process.exit(1);
+    }
+
+    await runAppServerStdio({ cwd: process.cwd(), yolo: values.yolo });
+    return;
+  }
+
   const { values } = parseArgs({
-    args: process.argv.slice(2),
+    args,
     options: {
       continue: { type: "boolean", short: "c" },
       list: { type: "boolean", short: "l" },
