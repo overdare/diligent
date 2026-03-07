@@ -1,5 +1,6 @@
 // @summary Find files by glob pattern via ripgrep
 import { stat } from "node:fs/promises";
+import { relative } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
@@ -53,7 +54,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
         withMtime.sort((a, b) => b.mtime - a.mtime);
 
         const limited = withMtime.slice(0, MAX_FILES);
-        const paths = limited.map((f) => f.path);
+        const paths = limited.map((f) => relative(cwd, f.path));
         const overflow = withMtime.length - MAX_FILES;
 
         let output = paths.join("\n");
