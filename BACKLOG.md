@@ -56,6 +56,8 @@
 
 ### P3 — Low (opportunistic)
 
+- [ ] **Web UI: compaction 이전 메시지 표시 안됨** — compaction 발생 후 Web UI에서 compaction 이전의 메시지/tool call이 보이지 않는다. `hydrateFromThreadRead`가 compaction 이후 context만 로드하기 때문으로 추정. compaction entry를 시각적으로 표시하고, 이전 메시지를 접혀진 형태(collapsed history)로 보여주는 방식 검토 필요. (added: 2026-03-08)
+
 - [ ] **Sync debug-viewer shared types** — `packages/debug-viewer/src/shared/types.ts` duplicates core types by convention (DV-01). Sync with current session entry types (SESSION_VERSION 4, ModeChangeEntry, SteeringEntry, etc.). D086's serialization contract is the reference for format stability. (added: 2026-02-25)
 - [ ] **Export/import CLI (D085)** — `diligent export/import` commands for `.diligent/` data as tar.gz archive with `manifest.json`. Flags: `--sessions`, `--knowledge`, `--skills`. Import supports merge (default) and replace modes. (added: 2026-03-02)
 - [ ] **Config editing UI (D074)** — `/settings` slash command for read-modify-write config edits. Strips JSONC comments (acceptable tradeoff, warned). (added: 2026-03-02)
