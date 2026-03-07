@@ -1,10 +1,17 @@
 // @summary Unit tests for loadPlugin — dynamic import, manifest validation, tool shape checks
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
-import { loadPlugin } from "../plugin-loader";
+import { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "../plugin-loader";
 
 const CWD = "/tmp/test-cwd";
+const TEST_HOME = join(tmpdir(), `diligent-plugin-loader-home-${Date.now()}`);
+const ORIGINAL_HOME = process.env.HOME;
+
+process.env.HOME = TEST_HOME;
 
 // ── Mock modules ──────────────────────────────────────────────────────────────
 
@@ -117,12 +124,53 @@ mock.module("@test/duplicate-tool-names", () => ({
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("loadPlugin", () => {
+  afterAll(async () => {
+    await rm(TEST_HOME, { recursive: true, force: true });
+    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
+    else delete process.env.HOME;
+  });
+
+  it("resolves helper paths under the home plugin directory", () => {
+    expect(getGlobalPluginRoot()).toBe(join(TEST_HOME, ".diligent", "plugins"));
+    expect(getGlobalPluginPath("example-tool-plugin")).toBe(
+      join(TEST_HOME, ".diligent", "plugins", "example-tool-plugin"),
+    );
+  });
+
   it("returns error when package import fails", async () => {
     const result = await loadPlugin("@nonexistent/package-xyz-999", CWD);
     expect(result.tools).toEqual([]);
     expect(result.error).toContain("Could not load plugin package");
     expect(result.error).toContain("@nonexistent/package-xyz-999");
+    expect(result.error).toContain(getGlobalPluginRoot());
     expect(result.package).toBe("@nonexistent/package-xyz-999");
+  });
+
+  it("falls back to the global plugin directory when package import fails", async () => {
+    const pluginDir = getGlobalPluginPath("global-only-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "global-only-plugin", version: "0.1.0", type: "module", main: "./index.js" }, null, 2),
+    );
+    await Bun.write(
+      join(pluginDir, "index.js"),
+      [
+        "export const manifest = { name: 'global-only-plugin', apiVersion: '1.0', version: '0.1.0' };",
+        "const params = { parse(value) { return value; } };",
+        "export async function createTools() {",
+        "  return [{ name: 'global_tool', description: 'global', parameters: params, execute: async () => ({ output: 'ok' }) }];",
+        "}",
+      ].join("\n"),
+    );
+
+    const result = await loadPlugin("global-only-plugin", CWD);
+    expect(result.error).toBeUndefined();
+    expect(result.manifest).toEqual({ name: "global-only-plugin", apiVersion: "1.0", version: "0.1.0" });
+    expect(result.tools).toHaveLength(1);
+    expect(result.tools[0].name).toBe("global_tool");
+
+    await rm(pluginDir, { recursive: true, force: true });
   });
 
   it("returns error when manifest is missing", async () => {

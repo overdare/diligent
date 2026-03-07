@@ -48,13 +48,24 @@ These appear as locked in the UI and stay enabled even if config tries to disabl
 
 ## Plugin packages
 
+Assume Diligent itself is already a built binary that you run inside your project.
+
+For local custom plugins, use a fixed home-directory location such as:
+
+- `$HOME/.diligent/plugins/<plugin-name>`
+
+Diligent now resolves plugin packages in this order:
+
+1. normal package import from the running project/environment
+2. fallback to `$HOME/.diligent/plugins/<plugin-name>`
+
+That means a prebuilt `diligent` binary can load a plugin from your home plugin folder even when the project did not install that package locally.
+
 To add plugin tools:
 
-1. Install the package in the project so the app-server can resolve it.
-2. Open tool settings in Web or run `/tools` in TUI.
-3. Add the package name.
-4. Save.
-5. Start the next turn.
+1. Create or copy the plugin package under `$HOME/.diligent/plugins/<plugin-name>`.
+2. Add the package name under `.diligent/diligent.jsonc` in either global or project config.
+3. Start the next turn.
 
 Diligent does not install npm packages for you in this phase.
 
@@ -105,9 +116,11 @@ Even with `plugin_wins`, immutable built-ins still win.
 A plugin package must be importable by the running server process and export:
 
 ```ts
+import { z } from "zod";
+
 export const manifest = {
   name: "@acme/diligent-tools",
-  apiVersion: "1.x",
+  apiVersion: "1.0",
   version: "0.1.0",
 };
 
@@ -116,21 +129,50 @@ export async function createTools(ctx: { cwd: string }) {
     {
       name: "jira_comment",
       description: "Post a Jira comment",
-      parameters: {
-        type: "object",
-        properties: {
-          issueKey: { type: "string" },
-          body: { type: "string" },
-        },
-        required: ["issueKey", "body"],
-      },
+      parameters: z.object({
+        issueKey: z.string(),
+        body: z.string(),
+      }),
       async execute(input: { issueKey: string; body: string }) {
-        return `Would comment on ${input.issueKey}: ${input.body}`;
+        return {
+          output: `Would comment on ${input.issueKey}: ${input.body}`,
+        };
       },
     },
   ];
 }
 ```
+
+## External-style example plugin
+
+This repo includes a sample external plugin package at `examples/external-tool-plugin/`.
+
+Treat that folder as if it were a separate repository published independently from Diligent.
+
+- package: `example-tool-plugin`
+- tool: `example_project_snapshot`
+- behavior: read-only summary of the current project root
+
+If you want to try it with a prebuilt `diligent` binary, copy this sample to your global plugin folder first:
+
+```sh
+mkdir -p $HOME/.diligent/plugins
+cp -R /absolute/path/to/diligent/examples/external-tool-plugin $HOME/.diligent/plugins/example-tool-plugin
+```
+
+Then enable it in global config `~/.config/diligent/diligent.jsonc` or in the target project's `.diligent/diligent.jsonc`:
+
+```jsonc
+{
+  "tools": {
+    "plugins": [{ "package": "example-tool-plugin", "enabled": true }]
+  }
+}
+```
+
+If you place that entry in `~/.config/diligent/diligent.jsonc`, the plugin is available by default across projects. A project-level `.diligent/diligent.jsonc` can still override tool settings as usual.
+
+After the next turn starts, ask Diligent to use `example_project_snapshot`.
 
 ## Why a plugin may fail to load
 

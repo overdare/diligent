@@ -15,7 +15,7 @@ export { IMMUTABLE_TOOLS, isImmutableTool } from "./immutable";
 export { createLsTool } from "./ls";
 export { createPlanTool } from "./plan";
 export type { PluginLoadResult, PluginManifest } from "./plugin-loader";
-export { loadPlugin } from "./plugin-loader";
+export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-loader";
 export { createReadTool } from "./read";
 export { requestUserInputTool } from "./request-user-input";
 export { createWriteTool } from "./write";

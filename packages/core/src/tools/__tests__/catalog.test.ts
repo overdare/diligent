@@ -1,9 +1,17 @@
 // @summary Tests for buildToolCatalog — builtin toggles, immutable enforcement, state metadata
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
 import type { Tool } from "../../tool/types";
 import { buildToolCatalog } from "../catalog";
+import { getGlobalPluginPath } from "../plugin-loader";
+
+const TEST_HOME = join(tmpdir(), `diligent-catalog-home-${Date.now()}`);
+const ORIGINAL_HOME = process.env.HOME;
+process.env.HOME = TEST_HOME;
 
 function mockTool(name: string): Tool {
   return {
@@ -75,6 +83,12 @@ mock.module("@test/invalid-tool-plugin", () => ({
 }));
 
 describe("buildToolCatalog", () => {
+  afterAll(async () => {
+    await rm(TEST_HOME, { recursive: true, force: true });
+    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
+    else delete process.env.HOME;
+  });
+
   it("returns all builtins when config is undefined", async () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(builtins, undefined, "/tmp");
@@ -394,5 +408,52 @@ describe("buildToolCatalog", () => {
       "plugin_tool",
       "good_plugin_tool",
     ]);
+  });
+
+  it("loads a plugin from the global plugin directory without project installation", async () => {
+    const pluginDir = getGlobalPluginPath("global-catalog-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "global-catalog-plugin", version: "0.1.0", type: "module", main: "./index.js" }, null, 2),
+    );
+    await Bun.write(
+      join(pluginDir, "index.js"),
+      [
+        "export const manifest = { name: 'global-catalog-plugin', apiVersion: '1.0', version: '0.1.0' };",
+        "const params = { parse(value) { return value; } };",
+        "export async function createTools() {",
+        "  return [{ name: 'global_catalog_tool', description: 'global catalog tool', parameters: params, execute: async () => ({ output: 'ok' }) }];",
+        "}",
+      ].join("\n"),
+    );
+
+    const result = await buildToolCatalog(
+      standardBuiltins(),
+      { plugins: [{ package: "global-catalog-plugin", enabled: true }] },
+      "/tmp",
+    );
+
+    expect(toolNames(result.tools)).toContain("global_catalog_tool");
+    expect(result.plugins).toEqual([
+      {
+        package: "global-catalog-plugin",
+        configured: true,
+        enabled: true,
+        loaded: true,
+        toolCount: 1,
+        warnings: [],
+      },
+    ]);
+    expect(
+      result.state.find((entry) => entry.name === "global_catalog_tool" && entry.source === "plugin"),
+    ).toMatchObject({
+      pluginPackage: "global-catalog-plugin",
+      enabled: true,
+      available: true,
+      reason: "enabled",
+    });
+
+    await rm(pluginDir, { recursive: true, force: true });
   });
 });

@@ -246,6 +246,8 @@ export {
   createPlanTool,
   createReadTool,
   createWriteTool,
+  getGlobalPluginPath,
+  getGlobalPluginRoot,
   IMMUTABLE_TOOLS,
   isImmutableTool,
   loadPlugin,

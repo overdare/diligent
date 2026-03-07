@@ -37,4 +37,4 @@ Diligent supports project-local tool settings for:
 
 Use the Tool settings entry in Web or `/tools` in TUI.
 
-See [`docs/tool-settings.md`](docs/tool-settings.md) for the trust model, config format, plugin contract, and current limitations.
+See [`docs/tool-settings.md`](docs/tool-settings.md) for the trust model, config format, plugin contract, the external-style sample plugin at `examples/external-tool-plugin/`, and current limitations.
