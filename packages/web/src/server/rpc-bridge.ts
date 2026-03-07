@@ -43,7 +43,6 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
-  DILIGENT_VERSION,
   DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
   EffortSetResponseSchema,
@@ -181,16 +180,17 @@ export class RpcBridge {
       return;
     }
 
+    const request = parsed as JSONRPCRequest;
     const session = this.sessions.get(ws.data.sessionId);
     if (!session) {
       this.send(ws, {
-        id: parsed.id,
+        id: request.id,
         error: { code: -32000, message: "Session not found" },
       });
       return;
     }
 
-    await this.handleRequest(ws, session, parsed);
+    await this.handleRequest(ws, session, request);
   }
 
   private async handleRequest(
@@ -425,7 +425,11 @@ export class RpcBridge {
       }
     }
 
-    if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START && session.currentThreadId && !("result" in response)) {
+    if (
+      request.method === DILIGENT_CLIENT_REQUEST_METHODS.TURN_START &&
+      session.currentThreadId &&
+      !("result" in response)
+    ) {
       this.turnInitiators.delete(session.currentThreadId);
     }
 

@@ -50,8 +50,6 @@ export interface AppOptions {
   resume?: boolean;
 }
 
-const APP_SERVER_STDERR_PREFIX = "[app-server]";
-
 export class App {
   private terminal: Terminal;
   private renderer: TUIRenderer;
@@ -366,13 +364,9 @@ export class App {
     }
   }
 
-  private handleAppServerStderr(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return;
-    }
-    this.chatView.addLines([`  ${t.dim}${APP_SERVER_STDERR_PREFIX} ${trimmed}${t.reset}`]);
-    this.renderer.requestRender();
+  private handleAppServerStderr(_line: string): void {
+    // App-server stderr (operational logs) is intentionally suppressed in TUI.
+    // Errors surface as RPC error responses, not as raw log lines.
   }
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {

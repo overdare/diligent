@@ -1,6 +1,6 @@
 ---
 id: P036
-status: in_progress
+status: done
 created: 2026-03-07
 updated: 2026-03-07
 ---
@@ -26,12 +26,28 @@ updated: 2026-03-07
   - `packages/cli/src/tui/app.ts` and `runner.ts` now use the spawned child app-server path.
   - Config reload now restarts the child RPC client so new runtime config is applied consistently.
   - Added `packages/cli/src/tui/__tests__/rpc-client.test.ts` for request framing and server-request fallback coverage.
+- Task 4 Web raw JSON-RPC migration completed.
+  - `packages/web/src/shared/ws-protocol.ts` shrunk to a single `ModelInfo` re-export — all custom wrapper discriminators removed.
+  - `packages/web/src/server/rpc-bridge.ts` now parses and emits raw JSON-RPC messages; no more `rpc_request` / `server_notification` / `server_request` / `server_request_response` envelopes.
+  - `packages/web/src/client/lib/rpc-client.ts` (`WebRpcClient`) speaks raw JSON-RPC over WebSocket and routes response vs. request vs. notification by JSON-RPC shape only.
+  - Browser bootstrap data (cwd, mode, models) moved into the `initialize` result; `connected` wrapper eliminated.
+  - Server-initiated approval/user-input flows as plain JSON-RPC requests; browser responds with plain JSON-RPC responses.
+  - `server_request_resolved` replaced by `SERVER_REQUEST_RESOLVED` server notification (raw JSON-RPC notification) for cross-tab cleanup.
+  - Reconnect/resubscribe now triggered deterministically after successful `initialize`.
+  - Multi-subscriber routing, `turnInitiators`, and first-responder semantics all preserved in `RpcBridge`.
+- Task 5 Protocol schemas aligned.
+  - Initialize result carries `cwd`, `mode`, `currentModel`, `availableModels`, `capabilities`.
+  - `SERVER_REQUEST_RESOLVED` promoted as an explicit server notification method.
+- Task 6 Transport tests rewritten.
+  - Core tests cover transport-neutral app-server binding.
+  - CLI tests cover stdio child transport.
+  - Web tests use raw JSON-RPC assertions.
+- Task 7 Obsolete compatibility code removed and architecture documented.
+  - `LocalAppServerRpcClient` fully removed; no source reference remains.
+  - Old WS wrapper discriminators (`rpc_request`, `server_notification`, `server_request_response`) eliminated from all production source files.
+  - `ARCHITECTURE.md` updated to reflect stdio child CLI path and raw JSON-RPC WebSocket transport.
 
-### In Progress
-
-- Web raw JSON-RPC migration remains the next major unfinished slice.
-
-### Deferred / Out of Scope for This Checkpoint
+### Deferred / Out of Scope
 
 - A separately packaged/invocable app-server binary is intentionally deferred. Current direction remains a real process boundary via `diligent app-server --stdio`; packaging separation can be evaluated later as a follow-up decision if needed.
 

@@ -48,15 +48,19 @@ Inspired by codex-rs's architecture: **one protocol, multiple transports**.
 `DiligentAppServer` is the single source of truth for agent logic. All frontends — TUI, Web, Desktop — are thin protocol clients that differ only in transport and rendering.
 
 ```
-TUI                       Web                       Desktop
- │                         │                         │
- │  in-process JSON-RPC    │  WebSocket JSON-RPC     │  Tauri + Bun sidecar
- │  (LocalAppServerRpcClient)  (RpcBridge → ws://)   │  (same WebSocket as Web)
- └────────────┬────────────┴────────────┬────────────┘
-              │                         │
-    DiligentAppServer  (@diligent/core)
-    ProviderManager, SessionManager, AgentLoop, Tools
+TUI                           Web                       Desktop
+ │                             │                         │
+ │  stdio JSON-RPC             │  WebSocket JSON-RPC     │  Tauri + Bun sidecar
+ │  (StdioAppServerRpcClient   │  (RpcBridge → ws://)   │  (same WebSocket as Web)
+ │   → diligent app-server     │
+ │     --stdio child process)  │
+ └──────────────┬──────────────┴────────────┬────────────┘
+                │                           │
+      DiligentAppServer  (@diligent/core)
+      ProviderManager, SessionManager, AgentLoop, Tools
 ```
+
+Both transports use raw JSON-RPC 2.0 messages with no custom wrapper envelopes. `@diligent/core` provides transport-neutral RPC binding helpers (`packages/core/src/rpc/`) that work over any message stream.
 
 **Rules that follow from this:**
 
@@ -64,11 +68,13 @@ TUI                       Web                       Desktop
 
 2. **All flows are shared.** Provider management, auth, model resolution, system prompt construction, session lifecycle, tool building — every agent logic flow is identical for TUI and Web. This code lives in `packages/core`. When adding or changing a flow, implement it once in core and wire it through both frontends together.
 
-3. **Protocol is the boundary.** `@diligent/protocol` defines every message that crosses the frontend/backend boundary. TUI's `LocalAppServerRpcClient` and Web's `RpcBridge` are both implementations of the same protocol — not separate systems.
+3. **Protocol is the boundary.** `@diligent/protocol` defines every message that crosses the frontend/backend boundary. TUI's `StdioAppServerRpcClient` and Web's `RpcBridge` are both implementations of the same raw JSON-RPC protocol — not separate systems.
 
 4. **No frontend differentiation in the server.** If logic is only needed by Web (e.g. serving static assets), it belongs in the transport layer. If logic belongs to the agent (e.g. model selection, auth), it belongs in core.
 
 5. **Desktop = Web in a native shell.** `apps/desktop` uses Tauri v2 with a Bun sidecar. The Tauri frontend loads the same React app; the sidecar runs the same web server. No desktop-specific agent logic.
+
+6. **stdout is protocol-only in stdio mode.** When `diligent app-server --stdio` runs as a child process, stdout is reserved exclusively for NDJSON-framed JSON-RPC messages. All diagnostics go to stderr.
 
 ## Key Design Patterns
 
@@ -84,7 +90,8 @@ TUI                       Web                       Desktop
 - **Steering queue**: `steer()` injects mid-task messages; `followUp()` queues post-task messages. SteeringEntry persisted in session JSONL. Drained before/after LLM calls.
 - **Loop detection**: Tracks tool call signatures in sliding window, detects repeating patterns (length 1-3, 3 repetitions), injects warning message.
 - **Project data directory** (D080): `.diligent/` stores sessions, knowledge, and skills. Auto-generated `.gitignore` excludes sessions and knowledge.
-- **Diligent Protocol** (`@diligent/protocol`): JSON-RPC v2 protocol with Zod-validated schemas. 11 client request methods (initialize, thread/start, thread/resume, thread/list, thread/read, thread/delete, turn/start, turn/interrupt, turn/steer, mode/set, knowledge/list). 12 server notification types. 2 server request types (approval, user input). All domain models (Message, AgentEvent, ThreadItem, SessionSummary, ProviderAuthStatus) defined as Zod schemas.
+- **Diligent Protocol** (`@diligent/protocol`): JSON-RPC v2 protocol with Zod-validated schemas. 11 client request methods (initialize, thread/start, thread/resume, thread/list, thread/read, thread/delete, turn/start, turn/interrupt, turn/steer, mode/set, knowledge/list). 12 server notification types. 2 server request types (approval, user input). All domain models (Message, AgentEvent, ThreadItem, SessionSummary, ProviderAuthStatus) defined as Zod schemas. Raw JSON-RPC 2.0 messages are used on both CLI stdio and Web WebSocket transports with no custom wrapper envelopes.
+- **RPC transport layer** (`packages/core/src/rpc/`): Transport-neutral JSON-RPC helpers — `channel.ts` (RpcPeer interface), `framing.ts` (NDJSON framing for stdio), `server-binding.ts` (binds `DiligentAppServer` to any message stream), `client.ts` (request correlation and server-request handling). These primitives are reused by both CLI stdio transport and Web WebSocket bridge.
 
 ## Key Decisions Summary
 
