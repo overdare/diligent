@@ -41,9 +41,16 @@ import {
   DILIGENT_VERSION,
   DILIGENT_WEB_REQUEST_METHODS,
   DiligentServerRequestResponseSchema,
+  EffortSetResponseSchema,
   ImageUploadParamsSchema,
   JSONRPCErrorResponseSchema,
   JSONRPCResponseSchema,
+  ModeSetResponseSchema,
+  ThreadDeleteParamsSchema,
+  ThreadDeleteResponseSchema,
+  ThreadReadResponseSchema,
+  ThreadResumeResponseSchema,
+  ThreadStartResponseSchema,
   ThreadSubscribeParamsSchema,
   ThreadUnsubscribeParamsSchema,
 } from "@diligent/protocol";
@@ -443,17 +450,17 @@ export class RpcBridge {
       });
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START && "result" in response) {
-        const maybeThreadId = (response.result as { threadId?: string }).threadId;
-        if (maybeThreadId) {
+        const r = ThreadStartResponseSchema.parse(response.result);
+        if (r.threadId) {
           // Unsubscribe from all previous threads — a tab views one thread at a time
           this.removeAllSubscriptionsForSession(session.id);
-          session.currentThreadId = maybeThreadId;
-          this.addSubscription(maybeThreadId, session.id);
+          session.currentThreadId = r.threadId;
+          this.addSubscription(r.threadId, session.id);
         }
       }
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME && "result" in response) {
-        const resumed = response.result as { found: boolean; threadId?: string };
+        const resumed = ThreadResumeResponseSchema.parse(response.result);
         if (resumed.found && resumed.threadId) {
           this.removeAllSubscriptionsForSession(session.id);
           session.currentThreadId = resumed.threadId;
@@ -462,9 +469,9 @@ export class RpcBridge {
       }
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ && "result" in response) {
-        const currentEffort = (response.result as { currentEffort?: ThinkingEffort }).currentEffort;
-        if (currentEffort) {
-          session.effort = currentEffort;
+        const r = ThreadReadResponseSchema.parse(response.result);
+        if (r.currentEffort) {
+          session.effort = r.currentEffort;
         }
       }
 
@@ -478,22 +485,22 @@ export class RpcBridge {
       }
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET && "result" in response) {
-        const mode = (response.result as { mode?: Mode }).mode;
-        if (mode) {
-          session.mode = mode;
+        const r = ModeSetResponseSchema.parse(response.result);
+        if (r.mode) {
+          session.mode = r.mode;
         }
       }
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET && "result" in response) {
-        const effort = (response.result as { effort?: ThinkingEffort }).effort;
-        if (effort) {
-          session.effort = effort;
+        const r = EffortSetResponseSchema.parse(response.result);
+        if (r.effort) {
+          session.effort = r.effort;
         }
       }
 
       if (parsed.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE && "result" in response) {
-        const r = response.result as { deleted?: boolean };
-        const deletedId = (parsed.params as { threadId?: string }).threadId;
+        const r = ThreadDeleteResponseSchema.parse(response.result);
+        const deletedId = ThreadDeleteParamsSchema.parse(parsed.params).threadId;
         if (r.deleted && deletedId) {
           this.removeAllSubscriptionsForThread(deletedId);
           if (session.currentThreadId === deletedId) {
