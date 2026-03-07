@@ -41,13 +41,14 @@ import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
 import type { SpawnedAppServer } from "./rpc-client";
-import { spawnCliAppServer } from "./rpc-framed-client";
+import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
 import { createSetupWizard, type SetupWizard } from "./setup-wizard";
 import { t } from "./theme";
 import { createThreadManager, type ThreadManager } from "./thread-manager";
 
 export interface AppOptions {
   resume?: boolean;
+  rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
 }
 
 export class App {
@@ -289,7 +290,8 @@ export class App {
     this.rpcClient?.setNotificationListener(null);
     this.rpcClient?.setServerRequestHandler(null);
     await this.rpcClient?.dispose().catch(() => {});
-    this.rpcClient = await spawnCliAppServer({
+    const spawnFn = this.options?.rpcClientFactory ?? spawnCliAppServer;
+    this.rpcClient = await spawnFn({
       cwd: process.cwd(),
       yolo: this.config.diligent.yolo,
       onStderrLine: (line) => this.handleAppServerStderr(line),

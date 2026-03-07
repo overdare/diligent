@@ -15,6 +15,7 @@ import { EventStream, ensureDiligentDir } from "@diligent/core";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { App } from "../src/tui/app";
+import { createInProcessRpcClientFactory } from "./helpers/in-process-server";
 
 const TEST_MODEL: Model = {
   id: "test-model",
@@ -216,7 +217,10 @@ describe("App", () => {
     const calls: StreamContext[] = [];
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }], calls);
 
-    const app = new App(makeConfig(streamFn), workspace.paths);
+    const cfg = makeConfig(streamFn);
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
     try {
       await app.start();
       await wait(30);
@@ -245,8 +249,11 @@ describe("App", () => {
       },
     ]);
 
+    const cfg = makeConfig(streamFn);
     const { writes, restore } = captureStdout();
-    const app = new App(makeConfig(streamFn), workspace.paths);
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
     try {
       await app.start();
       await wait(30);
@@ -279,8 +286,11 @@ describe("App", () => {
       },
     ]);
 
+    const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
     const { writes, restore } = captureStdout();
-    const app = new App(makeConfig(streamFn, { diligent: { yolo: true } }), workspace.paths);
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
     try {
       await app.start();
       await wait(30);
@@ -302,8 +312,11 @@ describe("App", () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ error: new Error("something went wrong") }]);
 
+    const cfg = makeConfig(streamFn);
     const { writes, restore } = captureStdout();
-    const app = new App(makeConfig(streamFn), workspace.paths);
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
     try {
       await app.start();
       await wait(30);
@@ -324,8 +337,11 @@ describe("App", () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
 
+    const cfg = makeConfig(streamFn);
     const { writes, restore } = captureStdout();
-    const app = new App(makeConfig(streamFn), workspace.paths);
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
     try {
       await app.start();
       await wait(30);

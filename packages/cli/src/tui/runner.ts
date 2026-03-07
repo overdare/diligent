@@ -9,11 +9,13 @@ import {
   DILIGENT_VERSION,
 } from "@diligent/protocol";
 import type { AppConfig } from "../config";
-import { spawnCliAppServer } from "./rpc-framed-client";
+import type { SpawnedAppServer } from "./rpc-client";
+import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
 import { t } from "./theme";
 
 export interface RunnerOptions {
   resume?: boolean;
+  rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
 }
 
 const APP_SERVER_STDERR_PREFIX = "[app-server]";
@@ -44,7 +46,8 @@ export class NonInteractiveRunner {
       reject: (error: Error) => void;
     } | null = null;
 
-    const rpc = await spawnCliAppServer({
+    const spawnFn = this.options?.rpcClientFactory ?? spawnCliAppServer;
+    const rpc = await spawnFn({
       cwd: process.cwd(),
       yolo: this.config.diligent.yolo,
       onStderrLine: (line) => {

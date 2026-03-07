@@ -1,3 +1,9 @@
+---
+id: P039
+status: done
+created: 2026-03-07
+---
+
 # P039: Meaningful E2E Tests — Protocol-Level Coverage
 
 ## Context
