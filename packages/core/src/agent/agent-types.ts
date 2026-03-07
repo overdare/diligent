@@ -1,4 +1,5 @@
 // @summary Agent type definitions, builtin registry, and role-guidance formatters for spawn_agent
+import explorePrompt from "./templates/explore.md" with { type: "text" };
 import plannerPrompt from "./templates/planner.md" with { type: "text" };
 
 /** Built-in agent type names supported by spawn_agent. */
@@ -57,11 +58,7 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   explore: {
     name: "explore",
     description: "Read-only agent for codebase exploration and research",
-    systemPromptPrefix:
-      "You are a read-only exploration agent. " +
-      "You may only read files, search code, and explore the codebase. " +
-      "You must NOT create, edit, delete, or write any files. " +
-      "Do not run bash commands.\n",
+    systemPromptPrefix: `${explorePrompt}\n`,
     toolFilter: "readonly",
     maxTurns: 20,
     spawnGuidance: {
@@ -127,7 +124,10 @@ export function formatSpawnAgentToolDescription(): string {
     "Spawn a sub-agent in the background (non-blocking). Returns immediately with thread_id and nickname. " +
     "Use 'wait' to collect results.\n" +
     "Role selection guide:\n" +
-    roleLines
+    roleLines +
+    "\n\nDelegation rules:\n" +
+    "- Do not duplicate sub-agent work by searching the same areas yourself.\n" +
+    "- Write prompts as if briefing a colleague who just walked into the room: explain what you're trying to accomplish, what you already know, and what specifically you need them to find or do. Terse, vague prompts produce shallow results."
   );
 }
 

@@ -16,7 +16,9 @@ const MAX_LINE_LENGTH = 2000;
 export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
   return {
     name: "grep",
-    description: "Search file contents using regex. Returns matching lines with file paths and line numbers.",
+    description:
+      "Search file contents using regex. Returns matching lines with file paths and line numbers. " +
+      "Use spawn_agent with agent_type='explore' for open-ended searches requiring multiple rounds.",
     parameters: GrepParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
