@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Mode, ThinkingEffort } from "@diligent/protocol";
-import { createSimpleStream } from "./helpers/fake-stream";
+import { createSimpleStream, createToolUseStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
@@ -87,5 +87,53 @@ describe("mode-and-config", () => {
     };
 
     expect(readResult.currentEffort).toBe("max");
+  });
+
+  test("tools/list and tools/set expose state and changed availability applies on the next turn", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-tools-"));
+    const server = createTestServer({
+      cwd: tmpDir,
+      runtimeToolsConfig: { builtin: { bash: true } },
+      streamFunction: createToolUseStream([{ id: "tc-1", name: "bash", input: { command: "printf hello" } }], "done"),
+    });
+    client = createProtocolClient(server);
+
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    const listed = (await client.request("tools/list", { threadId })) as {
+      appliesOnNextTurn: boolean;
+      trustMode: string;
+      tools: Array<{ name: string; enabled: boolean }>;
+    };
+    expect(listed.appliesOnNextTurn).toBe(true);
+    expect(listed.trustMode).toBe("full_trust");
+    expect(listed.tools.find((tool) => tool.name === "bash")).toMatchObject({ enabled: true });
+
+    const saved = (await client.request("tools/set", {
+      threadId,
+      builtin: { bash: false },
+    })) as {
+      tools: Array<{ name: string; enabled: boolean; reason: string }>;
+    };
+    expect(saved.tools.find((tool) => tool.name === "bash")).toMatchObject({
+      enabled: false,
+      reason: "disabled_by_user",
+    });
+
+    const notifications = await client.sendTurnAndWait(threadId, "use the tool");
+    expect(notifications.some((notification) => notification.method === "item/started")).toBe(true);
+    expect(notifications.some((notification) => notification.method === "turn/completed")).toBe(true);
+
+    const readResult = (await client.request("thread/read", { threadId })) as {
+      messages: Array<{ role: string; output?: string; isError?: boolean }>;
+    };
+    expect(
+      readResult.messages.some(
+        (message) =>
+          message.role === "tool_result" &&
+          message.isError === true &&
+          (message.output ?? "").includes('Unknown tool "bash"'),
+      ),
+    ).toBe(true);
   });
 });

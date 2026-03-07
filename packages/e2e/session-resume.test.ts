@@ -97,7 +97,7 @@ describe("session-resume", () => {
     });
 
     const result = (await client.request("thread/resume", {
-      threadId: "99999999999999-ffffff",
+      threadId: "99999999999999999-ffffff",
     })) as { found: boolean };
 
     expect(result.found).toBe(false);

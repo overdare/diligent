@@ -21,9 +21,12 @@ import {
   JSONRPCResponseSchema,
   type Mode,
   type ModelInfo,
+  type PluginDescriptor,
   type ProviderAuthStatus,
   type SessionSummary,
   type ThinkingEffort,
+  type ToolConflictPolicy,
+  type ToolDescriptor,
   type TurnStartParams,
 } from "@diligent/protocol";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
@@ -47,6 +50,8 @@ import {
   waitForCallback,
 } from "../auth/oauth";
 import type { AgentRegistry } from "../collab/registry";
+import type { DiligentConfig } from "../config/schema";
+import { getProjectConfigPath, writeProjectToolsConfig } from "../config/writer";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { PROVIDER_NAMES, type ProviderManager } from "../provider/provider-manager";
@@ -56,12 +61,18 @@ import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
+import { buildDefaultTools } from "../tools/defaults";
 import { agentEventToNotification } from "./event-mapper";
 
 export interface ModelConfig {
   currentModelId: string | undefined;
   getAvailableModels: () => ModelInfo[];
   onModelChange: (modelId: string) => void;
+}
+
+export interface ToolConfigManager {
+  getTools: () => DiligentConfig["tools"] | undefined;
+  setTools: (tools: DiligentConfig["tools"] | undefined) => void;
 }
 
 export interface DiligentAppServerConfig {
@@ -83,6 +94,8 @@ export interface DiligentAppServerConfig {
   compaction?: SessionManagerConfig["compaction"];
   /** Config/model management — required for CONFIG_SET and AUTH_LIST */
   modelConfig?: ModelConfig;
+  /** Tool config management — required for TOOLS_LIST and TOOLS_SET */
+  toolConfig?: ToolConfigManager;
   /** Provider manager — required for AUTH_* methods */
   providerManager?: ProviderManager;
   /** Open a URL in the browser — defaults to the built-in openBrowser from @diligent/core */
@@ -360,6 +373,8 @@ export class DiligentAppServer {
       DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
       DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
       DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
+      DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST,
+      DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
     ];
 
     if (threadScoped.includes(method)) {
@@ -432,6 +447,12 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
         return this.handleThreadDelete(request.params.threadId);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST:
+        return this.handleToolsList(request.params.threadId);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET:
+        return this.handleToolsSet(request.params.threadId, request.params);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE: {
         const subscriptionId = this.subscribeToThread(connectionId, request.params.threadId);
@@ -855,6 +876,74 @@ export class DiligentAppServer {
     return { deleted };
   }
 
+  private async handleToolsList(threadId?: string): Promise<{
+    configPath: string;
+    appliesOnNextTurn: true;
+    trustMode: "full_trust";
+    conflictPolicy: ToolConflictPolicy;
+    tools: ToolDescriptor[];
+    plugins: PluginDescriptor[];
+  }> {
+    const { cwd, tools } = await this.resolveToolsContext(threadId);
+    const paths = await this.config.resolvePaths(cwd);
+    const result = await buildDefaultTools(cwd, paths, undefined, tools);
+
+    return {
+      configPath: getProjectConfigPath(cwd),
+      appliesOnNextTurn: true,
+      trustMode: "full_trust",
+      conflictPolicy: (tools?.conflictPolicy ?? "error") as ToolConflictPolicy,
+      tools: result.toolState,
+      plugins: result.pluginState.map((plugin) => ({
+        ...plugin,
+        loadError: plugin.loadError,
+      })),
+    };
+  }
+
+  private async handleToolsSet(
+    threadId: string | undefined,
+    params: {
+      builtin?: Record<string, boolean>;
+      plugins?: Array<{ package: string; enabled?: boolean; tools?: Record<string, boolean>; remove?: boolean }>;
+      conflictPolicy?: ToolConflictPolicy;
+    },
+  ): Promise<{
+    configPath: string;
+    appliesOnNextTurn: true;
+    trustMode: "full_trust";
+    conflictPolicy: ToolConflictPolicy;
+    tools: ToolDescriptor[];
+    plugins: PluginDescriptor[];
+  }> {
+    const manager = this.config.toolConfig;
+    if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
+
+    const { cwd } = await this.resolveToolsContext(threadId);
+    const writeResult = await writeProjectToolsConfig(cwd, {
+      builtin: params.builtin,
+      plugins: params.plugins,
+      conflictPolicy: params.conflictPolicy,
+    });
+
+    manager.setTools(writeResult.config.tools);
+
+    const paths = await this.config.resolvePaths(cwd);
+    const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools);
+
+    return {
+      configPath: writeResult.configPath,
+      appliesOnNextTurn: true,
+      trustMode: "full_trust",
+      conflictPolicy: (writeResult.config.tools?.conflictPolicy ?? "error") as ToolConflictPolicy,
+      tools: result.toolState,
+      plugins: result.pluginState.map((plugin) => ({
+        ...plugin,
+        loadError: plugin.loadError,
+      })),
+    };
+  }
+
   // ─── Stream consumption ─────────────────────────────────────────────────────
 
   private async consumeStream(
@@ -1248,6 +1337,28 @@ export class DiligentAppServer {
     }
 
     return "medium";
+  }
+
+  private async resolveToolsContext(
+    threadId?: string,
+  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }> {
+    const manager = this.config.toolConfig;
+    if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
+
+    if (threadId || this.activeThreadId) {
+      const runtime = await this.resolveThreadRuntime(threadId);
+      return {
+        cwd: runtime.cwd,
+        tools: manager.getTools(),
+      };
+    }
+
+    const cwd = this.config.cwd ?? process.cwd();
+    this.knownCwds.add(cwd);
+    return {
+      cwd,
+      tools: manager.getTools(),
+    };
   }
 
   // ─── Auth / config helpers ───────────────────────────────────────────────────

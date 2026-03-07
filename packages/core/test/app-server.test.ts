@@ -10,10 +10,12 @@ import {
   type JSONRPCResponse,
 } from "@diligent/protocol";
 import { z } from "zod";
-import { DiligentAppServer } from "../src/app-server";
+import { createAppServerConfig, DiligentAppServer } from "../src/app-server";
 import { createCollabTools } from "../src/collab";
 import { EventStream } from "../src/event-stream";
 import { ensureDiligentDir } from "../src/infrastructure/diligent-dir";
+import { ProviderManager } from "../src/provider/provider-manager";
+import type { Model } from "../src/provider/types";
 import { requestUserInputTool } from "../src/tools/request-user-input";
 
 function readResult(response: JSONRPCResponse): unknown {
@@ -21,6 +23,54 @@ function readResult(response: JSONRPCResponse): unknown {
     throw new Error(response.error.message);
   }
   return response.result;
+}
+
+function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown> }) {
+  const providerManager = new ProviderManager({});
+  const model: Model = {
+    id: "claude-sonnet-4-6",
+    provider: "anthropic",
+    contextWindow: 200_000,
+    maxOutputTokens: 128_000,
+  };
+
+  return {
+    model,
+    mode: "default" as const,
+    systemPrompt: [{ label: "base", content: "test" }],
+    streamFunction: () => {
+      const stream = new EventStream(
+        (event) => event.type === "done",
+        (event) => ({ message: (event as { message: unknown }).message }),
+      );
+      queueMicrotask(() => {
+        stream.push({ type: "start" });
+        stream.push({
+          type: "done",
+          stopReason: "end_turn",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "ok" }],
+            model: model.id,
+            usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+            stopReason: "end_turn",
+            timestamp: Date.now(),
+          },
+        });
+      });
+      return stream as never;
+    },
+    diligent: {
+      ...(overrides?.tools ? { tools: overrides.tools as never } : {}),
+    },
+    sources: [],
+    skills: [],
+    compaction: { enabled: true, reservePercent: 16, keepRecentTokens: 20000 },
+    permissionEngine: {
+      check: async () => ({ decision: "allow" as const }),
+    },
+    providerManager,
+  };
 }
 
 describe("DiligentAppServer", () => {
@@ -114,8 +164,8 @@ describe("DiligentAppServer", () => {
       params: { cwd: projectRoot },
     });
     const startResult = readResult(start) as { threadId: string };
-    // sessionId format: YYYYMMDDHHMMSS-xxxxxx (timestamp + 6-char random)
-    expect(startResult.threadId).toMatch(/^\d{14}-[0-9a-f]{6}$/);
+    // sessionId format: YYYYMMDDHHMMSSSSSCCC-xxxxxx (timestamp + counter + 6-char random)
+    expect(startResult.threadId).toMatch(/^\d{20}-[0-9a-f]{6}$/);
 
     const turnStart = await server.handleRequest({
       id: 3,
@@ -666,6 +716,99 @@ describe("DiligentAppServer", () => {
     } finally {
       console.log = originalLog;
     }
+  });
+
+  it("lists effective tool state and persists tool settings for next turns", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+    const runtimeConfig = makeFactoryRuntimeConfig({
+      tools: {
+        builtin: { bash: false },
+      },
+    });
+    const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
+    const server = new DiligentAppServer({
+      ...config,
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+    });
+
+    const listed = await server.handleRequest({
+      id: 200,
+      method: "tools/list",
+      params: {},
+    });
+    const listedResult = readResult(listed) as {
+      configPath: string;
+      appliesOnNextTurn: boolean;
+      trustMode: string;
+      conflictPolicy: string;
+      tools: Array<{ name: string; enabled: boolean; immutable: boolean; reason: string }>;
+      plugins: Array<{ package: string }>;
+    };
+
+    expect(listedResult.configPath).toBe(join(projectRoot, ".diligent", "diligent.jsonc"));
+    expect(listedResult.appliesOnNextTurn).toBe(true);
+    expect(listedResult.trustMode).toBe("full_trust");
+    expect(listedResult.conflictPolicy).toBe("error");
+    expect(listedResult.plugins).toEqual([]);
+    expect(listedResult.tools.find((tool) => tool.name === "bash")).toMatchObject({
+      enabled: false,
+      immutable: false,
+      reason: "disabled_by_user",
+    });
+    expect(listedResult.tools.find((tool) => tool.name === "plan")).toMatchObject({
+      enabled: true,
+      immutable: true,
+    });
+
+    const setResult = readResult(
+      await server.handleRequest({
+        id: 201,
+        method: "tools/set",
+        params: {
+          builtin: { bash: true, read: false },
+          plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
+          conflictPolicy: "plugin_wins",
+        },
+      }),
+    ) as {
+      conflictPolicy: string;
+      tools: Array<{ name: string; enabled: boolean }>;
+      plugins: Array<{ package: string; enabled: boolean; loaded: boolean }>;
+    };
+
+    expect(setResult.conflictPolicy).toBe("plugin_wins");
+    expect(setResult.tools.find((tool) => tool.name === "bash")).toMatchObject({ enabled: true });
+    expect(setResult.tools.find((tool) => tool.name === "read")).toMatchObject({ enabled: false });
+    expect(setResult.plugins).toEqual([
+      {
+        package: "@acme/diligent-tools",
+        configured: true,
+        enabled: false,
+        loaded: false,
+        toolCount: 0,
+        warnings: [],
+      },
+    ]);
+    expect(runtimeConfig.diligent.tools).toEqual({
+      builtin: { read: false },
+      plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
+      conflictPolicy: "plugin_wins",
+    });
+
+    const configText = await Bun.file(join(projectRoot, ".diligent", "diligent.jsonc")).text();
+    expect(configText).toContain('"read": false');
+    expect(configText).not.toContain('"bash": true');
+    expect(configText).toContain('"package": "@acme/diligent-tools"');
+    expect(configText).toContain('"conflictPolicy": "plugin_wins"');
+
+    const threadStart = await server.handleRequest({ id: 202, method: "thread/start", params: { cwd: projectRoot } });
+    const threadId = (readResult(threadStart) as { threadId: string }).threadId;
+    const turnStart = await server.handleRequest({
+      id: 203,
+      method: "turn/start",
+      params: { threadId, message: "hi" },
+    });
+    expect((readResult(turnStart) as { accepted: boolean }).accepted).toBe(true);
   });
 
   it("rebinds collab handler when registry instance changes between turns", async () => {

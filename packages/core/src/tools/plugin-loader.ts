@@ -8,11 +8,18 @@ export interface PluginManifest {
   version: string;
 }
 
+export interface InvalidPluginTool {
+  name: string;
+  error: string;
+}
+
 export interface PluginLoadResult {
   package: string;
   manifest?: PluginManifest;
   tools: Tool[];
   error?: string;
+  warnings?: string[];
+  invalidTools?: InvalidPluginTool[];
 }
 
 /**
@@ -20,15 +27,17 @@ export interface PluginLoadResult {
  *
  * Expected plugin module shape:
  *   export const manifest: PluginManifest;
- *   export function createTools(ctx: { cwd: string }): Tool[];
+ *   export async function createTools(ctx: { cwd: string }): Tool[];
  *
- * Never throws — returns error string on failure.
+ * Never throws — returns error string on fatal failure and warnings for partial validation issues.
  */
 export async function loadPlugin(packageName: string, cwd: string): Promise<PluginLoadResult> {
   const fail = (error: string): PluginLoadResult => ({
     package: packageName,
     tools: [],
     error,
+    warnings: [],
+    invalidTools: [],
   });
 
   let mod: Record<string, unknown>;
@@ -52,6 +61,9 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
   ) {
     return fail(`Plugin '${packageName}' manifest is missing required fields (name, apiVersion, version).`);
   }
+  if (manifest.name !== packageName) {
+    return fail(`Plugin '${packageName}' manifest.name '${manifest.name}' does not match the configured package name.`);
+  }
 
   // Check API version compatibility (major must be 1)
   const majorVersion = parseInt(manifest.apiVersion.split(".")[0], 10);
@@ -68,30 +80,48 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
 
   let rawTools: unknown[];
   try {
-    const result = mod.createTools({ cwd });
-    rawTools = Array.isArray(result) ? result : [];
+    const result = await Promise.resolve(mod.createTools({ cwd }));
+    if (!Array.isArray(result)) {
+      return fail(`Plugin '${packageName}' createTools() must return an array of tools.`);
+    }
+    rawTools = result;
   } catch (err) {
     return fail(`Plugin '${packageName}' createTools() threw: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // Validate each tool shape (duck-typing)
+  // Validate each tool shape (duck-typing) and reject duplicates.
   const validTools: Tool[] = [];
-  const errors: string[] = [];
+  const invalidTools: InvalidPluginTool[] = [];
+  const warnings: string[] = [];
+  const seenNames = new Set<string>();
 
   for (const tool of rawTools) {
     if (!isValidToolShape(tool)) {
       const name = (tool as { name?: string })?.name ?? "unknown";
-      errors.push(`Tool '${name}' from '${packageName}' has invalid shape.`);
+      const error = `Tool '${name}' from '${packageName}' has invalid shape.`;
+      invalidTools.push({ name, error });
+      warnings.push(error);
       continue;
     }
-    validTools.push(tool as Tool);
+
+    const typedTool = tool as Tool;
+    if (seenNames.has(typedTool.name)) {
+      const error = `Plugin '${packageName}' exports duplicate tool name '${typedTool.name}'. Later duplicates are ignored.`;
+      invalidTools.push({ name: typedTool.name, error });
+      warnings.push(error);
+      continue;
+    }
+
+    seenNames.add(typedTool.name);
+    validTools.push(typedTool);
   }
 
   return {
     package: packageName,
     manifest,
     tools: validTools,
-    error: errors.length > 0 ? errors.join("; ") : undefined,
+    warnings,
+    invalidTools,
   };
 }
 

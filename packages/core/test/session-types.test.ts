@@ -19,8 +19,8 @@ describe("generateEntryId", () => {
 describe("generateSessionId", () => {
   it("contains timestamp prefix", () => {
     const id = generateSessionId();
-    // Format: YYYYMMDDHHmmss-random
-    expect(id).toMatch(/^\d{14}-[0-9a-f]{6}$/);
+    // Format: YYYYMMDDHHmmssSSSCCC-random
+    expect(id).toMatch(/^\d{20}-[0-9a-f]{6}$/);
   });
 
   it("generates unique IDs", () => {

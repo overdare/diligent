@@ -87,6 +87,28 @@ describe("createAppServerConfig", () => {
     expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5-20251001");
   });
 
+  it("toolConfig.setTools updates runtimeConfig.diligent.tools", () => {
+    const runtimeConfig = makeRuntimeConfig();
+    const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+
+    config.toolConfig?.setTools({
+      builtin: { bash: false },
+      conflictPolicy: "plugin_wins",
+    });
+    expect(config.toolConfig?.getTools()).toEqual({
+      builtin: { bash: false },
+      conflictPolicy: "plugin_wins",
+    });
+    expect(runtimeConfig.diligent.tools).toEqual({
+      builtin: { bash: false },
+      conflictPolicy: "plugin_wins",
+    });
+
+    config.toolConfig?.setTools(undefined);
+    expect(config.toolConfig?.getTools()).toBeUndefined();
+    expect(runtimeConfig.diligent.tools).toBeUndefined();
+  });
+
   it("buildAgentConfig throws when model is undefined", async () => {
     const runtimeConfig = makeRuntimeConfig({ model: undefined });
     const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });

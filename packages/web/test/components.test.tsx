@@ -7,6 +7,7 @@ import { Input } from "../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
 import { Modal } from "../src/client/components/Modal";
 import { ToolBlock } from "../src/client/components/ToolBlock";
+import { ToolSettingsModal } from "../src/client/components/ToolSettingsModal";
 import { UserMessage } from "../src/client/components/UserMessage";
 
 function createClipboardFile(name: string, type: string): File {
@@ -53,6 +54,75 @@ test("modal renders dialog role", () => {
 
   expect(html).toContain('role="dialog"');
   expect(html).toContain("Approval required");
+});
+
+test("tool settings modal renders trust warning and tool/plugin rows", () => {
+  const html = renderToStaticMarkup(
+    <ToolSettingsModal
+      threadId="thread-1"
+      initialState={{
+        configPath: "/repo/.diligent/diligent.jsonc",
+        appliesOnNextTurn: true,
+        trustMode: "full_trust",
+        conflictPolicy: "error",
+        tools: [
+          {
+            name: "bash",
+            source: "builtin",
+            enabled: true,
+            immutable: false,
+            configurable: true,
+            available: true,
+            reason: "enabled",
+          },
+          {
+            name: "plan",
+            source: "builtin",
+            enabled: true,
+            immutable: true,
+            configurable: false,
+            available: true,
+            reason: "immutable_forced_on",
+          },
+          {
+            name: "jira_comment",
+            source: "plugin",
+            pluginPackage: "@acme/diligent-tools",
+            enabled: false,
+            immutable: false,
+            configurable: true,
+            available: true,
+            reason: "disabled_by_user",
+          },
+        ],
+        plugins: [
+          {
+            package: "@acme/diligent-tools",
+            configured: true,
+            enabled: true,
+            loaded: true,
+            toolCount: 1,
+            warnings: [],
+          },
+        ],
+      }}
+      onList={async () => {
+        throw new Error("unused");
+      }}
+      onSave={async () => {
+        throw new Error("unused");
+      }}
+      onClose={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Plugin packages run with full trust");
+  expect(html).toContain("Built-in tools");
+  expect(html).toContain("bash");
+  expect(html).toContain("Locked");
+  expect(html).toContain("@acme/diligent-tools");
+  expect(html).toContain("jira_comment");
+  expect(html).toContain("Changes apply on the next turn");
 });
 
 test("user message renders attached images", () => {

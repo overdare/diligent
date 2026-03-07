@@ -20,6 +20,7 @@ interface SidebarProps {
   onDeleteThread?: (threadId: string) => void;
   providers?: ProviderAuthStatus[];
   onOpenProviders?: (provider?: string) => void;
+  onOpenTools?: () => void;
 }
 
 export function Sidebar({
@@ -32,6 +33,7 @@ export function Sidebar({
   onDeleteThread,
   providers,
   onOpenProviders,
+  onOpenTools,
 }: SidebarProps) {
   const cwdShort = cwd ? cwd.split("/").slice(-2).join("/") : "-";
 
@@ -110,9 +112,19 @@ export function Sidebar({
         })}
       </div>
 
-      {/* Provider status footer */}
+      {/* Settings footer */}
       {providers && onOpenProviders ? (
-        <div className="border-t border-text/10 px-3 py-2.5">
+        <div className="space-y-2 border-t border-text/10 px-3 py-2.5">
+          {onOpenTools ? (
+            <button
+              type="button"
+              onClick={onOpenTools}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-text/20 px-3 py-1.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
+            >
+              <span>⚙</span>
+              <span>Tool settings</span>
+            </button>
+          ) : null}
           {(() => {
             const connected = providers.filter((p) => p.configured || p.oauthConnected);
             return (

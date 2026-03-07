@@ -26,3 +26,15 @@ make dev
 ```
 
 Resume the last session with `--continue`, or list past sessions with `--list`.
+
+## Tool settings
+
+Diligent supports project-local tool settings for:
+
+- enabling or disabling built-in tools
+- adding trusted JavaScript plugin packages
+- enabling or disabling whole plugin packages or individual plugin tools
+
+Use the Tool settings entry in Web or `/tools` in TUI.
+
+See [`docs/tool-settings.md`](docs/tool-settings.md) for the trust model, config format, plugin contract, and current limitations.

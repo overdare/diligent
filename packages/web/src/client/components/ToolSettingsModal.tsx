@@ -1,0 +1,441 @@
+// @summary Modal for listing and updating built-in tool/plugin settings through shared RPC methods
+
+import type { ToolsListResponse, ToolsSetParams, ToolsSetResponse } from "@diligent/protocol";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "./Button";
+import { Input } from "./Input";
+import { Modal } from "./Modal";
+
+interface ToolSettingsModalProps {
+  threadId?: string | null;
+  initialState?: ToolsListResponse;
+  onList: (threadId?: string) => Promise<ToolsListResponse>;
+  onSave: (params: ToolsSetParams) => Promise<ToolsSetResponse>;
+  onClose: () => void;
+}
+
+interface PluginDraft {
+  package: string;
+  enabled: boolean;
+  tools: Record<string, boolean>;
+}
+
+interface ToolSettingsDraft {
+  builtin: Record<string, boolean>;
+  plugins: PluginDraft[];
+  removedPackages: string[];
+}
+
+function createDraft(state: ToolsListResponse): ToolSettingsDraft {
+  return {
+    builtin: Object.fromEntries(
+      state.tools
+        .filter((tool) => tool.source === "builtin" && tool.configurable)
+        .map((tool) => [tool.name, tool.enabled]),
+    ),
+    plugins: state.plugins.map((plugin) => ({
+      package: plugin.package,
+      enabled: plugin.enabled,
+      tools: Object.fromEntries(
+        state.tools
+          .filter((tool) => tool.source === "plugin" && tool.pluginPackage === plugin.package)
+          .map((tool) => [tool.name, tool.enabled]),
+      ),
+    })),
+    removedPackages: [],
+  };
+}
+
+function buildSetParams(threadId: string | null | undefined, draft: ToolSettingsDraft): ToolsSetParams {
+  const params: ToolsSetParams = {};
+  if (threadId) {
+    params.threadId = threadId;
+  }
+  if (Object.keys(draft.builtin).length > 0) {
+    params.builtin = draft.builtin;
+  }
+  const plugins = [
+    ...draft.plugins.map((plugin) => ({
+      package: plugin.package,
+      enabled: plugin.enabled,
+      tools: plugin.tools,
+    })),
+    ...draft.removedPackages.map((pkg) => ({ package: pkg, remove: true as const })),
+  ];
+  if (plugins.length > 0) {
+    params.plugins = plugins;
+  }
+  return params;
+}
+
+function describeToolReason(tool: ToolsListResponse["tools"][number]): string {
+  switch (tool.reason) {
+    case "enabled":
+      return tool.enabled ? "Enabled" : "Unavailable";
+    case "disabled_by_user":
+      return "Disabled in settings";
+    case "immutable_forced_on":
+      return "Always enabled";
+    case "plugin_disabled":
+      return "Disabled because the package is off";
+    case "plugin_load_failed":
+      return "Unavailable because the package failed to load";
+    case "conflict_dropped":
+      return "Dropped because another tool already uses this name";
+    case "invalid_plugin_tool":
+      return "Rejected because the plugin returned an invalid tool";
+  }
+}
+
+function pluginSummary(plugin: ToolsListResponse["plugins"][number]): string {
+  if (plugin.loadError) {
+    return `Load failed: ${plugin.loadError}`;
+  }
+  if (plugin.warnings.length > 0) {
+    return plugin.warnings[0] ?? "Warnings reported";
+  }
+  if (!plugin.loaded) {
+    return "Configured. Save to attempt loading on the next refresh.";
+  }
+  if (plugin.toolCount === 0) {
+    return "Loaded with no tools.";
+  }
+  return `${plugin.toolCount} tool${plugin.toolCount === 1 ? "" : "s"}`;
+}
+
+export function ToolSettingsModal({ threadId, initialState, onList, onSave, onClose }: ToolSettingsModalProps) {
+  const [state, setState] = useState<ToolsListResponse | null>(initialState ?? null);
+  const [draft, setDraft] = useState<ToolSettingsDraft | null>(initialState ? createDraft(initialState) : null);
+  const [loading, setLoading] = useState(!initialState);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [newPackageName, setNewPackageName] = useState("");
+
+  useEffect(() => {
+    if (initialState) {
+      setState(initialState);
+      setDraft(createDraft(initialState));
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    void onList(threadId ?? undefined)
+      .then((result) => {
+        if (cancelled) return;
+        setState(result);
+        setDraft(createDraft(result));
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setError(cause instanceof Error ? cause.message : "Failed to load tool settings");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialState, onList, threadId]);
+
+  const pluginToolsByPackage = useMemo(() => {
+    if (!state) return new Map<string, ToolsListResponse["tools"]>();
+    const groups = new Map<string, ToolsListResponse["tools"]>();
+    for (const tool of state.tools) {
+      if (tool.source !== "plugin" || !tool.pluginPackage) continue;
+      const existing = groups.get(tool.pluginPackage) ?? [];
+      existing.push(tool);
+      groups.set(tool.pluginPackage, existing);
+    }
+    return groups;
+  }, [state]);
+
+  const currentPluginDrafts = draft?.plugins ?? [];
+
+  const handleBuiltinToggle = (name: string, enabled: boolean) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        builtin: {
+          ...current.builtin,
+          [name]: enabled,
+        },
+      };
+    });
+  };
+
+  const handlePluginToggle = (pkg: string, enabled: boolean) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        plugins: current.plugins.map((plugin) => (plugin.package === pkg ? { ...plugin, enabled } : plugin)),
+      };
+    });
+  };
+
+  const handlePluginToolToggle = (pkg: string, toolName: string, enabled: boolean) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        plugins: current.plugins.map((plugin) =>
+          plugin.package === pkg
+            ? {
+                ...plugin,
+                tools: {
+                  ...plugin.tools,
+                  [toolName]: enabled,
+                },
+              }
+            : plugin,
+        ),
+      };
+    });
+  };
+
+  const handleRemovePlugin = (pkg: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        plugins: current.plugins.filter((plugin) => plugin.package !== pkg),
+        removedPackages: current.removedPackages.includes(pkg)
+          ? current.removedPackages
+          : [...current.removedPackages, pkg],
+      };
+    });
+    setSavedMessage(null);
+  };
+
+  const handleAddPlugin = () => {
+    const pkg = newPackageName.trim();
+    if (!pkg || !draft) return;
+    if (draft.plugins.some((plugin) => plugin.package === pkg)) {
+      setError(`Package already exists: ${pkg}`);
+      return;
+    }
+
+    setDraft({
+      ...draft,
+      plugins: [...draft.plugins, { package: pkg, enabled: true, tools: {} }],
+      removedPackages: draft.removedPackages.filter((entry) => entry !== pkg),
+    });
+    setNewPackageName("");
+    setError(null);
+    setSavedMessage(null);
+  };
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    setSavedMessage(null);
+    try {
+      const result = await onSave(buildSetParams(threadId, draft));
+      setState(result);
+      setDraft(createDraft(result));
+      setSavedMessage("Saved. Changes apply on the next turn.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to save tool settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Tools" description="Manage built-in tools and trusted JavaScript plugin packages." onCancel={onClose}>
+      <div className="space-y-4">
+        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200">
+          Plugin packages run with full trust in the same process as Diligent. Only add packages you trust.
+        </div>
+
+        {state ? (
+          <div className="rounded-md border border-text/10 bg-bg/40 px-3 py-2 text-xs text-muted">
+            <div>Config: {state.configPath}</div>
+            <div>Conflict policy: {state.conflictPolicy}</div>
+            <div>Changes apply on the next turn.</div>
+          </div>
+        ) : null}
+
+        {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {savedMessage ? <p className="text-sm text-accent">{savedMessage}</p> : null}
+
+        {state && draft ? (
+          <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+            <section className="space-y-2">
+              <div>
+                <h3 className="text-sm font-semibold text-text">Built-in tools</h3>
+                <p className="text-xs text-muted">
+                  Immutable tools stay enabled even if config tries to turn them off.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {state.tools
+                  .filter((tool) => tool.source === "builtin")
+                  .map((tool) => {
+                    const checked = tool.configurable ? (draft.builtin[tool.name] ?? tool.enabled) : true;
+                    const disabled = !tool.configurable || tool.immutable;
+                    return (
+                      <label
+                        key={tool.name}
+                        className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={(event) => handleBuiltinToggle(tool.name, event.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-text">{tool.name}</span>
+                            {tool.immutable ? (
+                              <span className="rounded border border-text/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                                Locked
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
+                          {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-text">Plugin packages</h3>
+                <p className="text-xs text-muted">
+                  Packages must already be installed and resolvable from this project.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label="Plugin package name"
+                  placeholder="@acme/diligent-tools"
+                  value={newPackageName}
+                  onChange={(event) => setNewPackageName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddPlugin();
+                    }
+                  }}
+                />
+                <Button size="sm" intent="ghost" disabled={!newPackageName.trim()} onClick={handleAddPlugin}>
+                  Add package
+                </Button>
+              </div>
+
+              {currentPluginDrafts.length === 0 ? (
+                <div className="rounded-md border border-dashed border-text/15 px-3 py-3 text-sm text-muted">
+                  No plugin packages configured.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {currentPluginDrafts.map((pluginDraft) => {
+                    const pluginState = state.plugins.find((plugin) => plugin.package === pluginDraft.package);
+                    const pluginTools = pluginToolsByPackage.get(pluginDraft.package) ?? [];
+                    const canShowRuntimeState = Boolean(pluginState);
+                    return (
+                      <div key={pluginDraft.package} className="rounded-md border border-text/10 px-3 py-3">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={pluginDraft.enabled}
+                            onChange={(event) => handlePluginToggle(pluginDraft.package, event.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-sm font-medium text-text">{pluginDraft.package}</span>
+                              {!pluginState ? (
+                                <span className="rounded border border-accent/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                                  Pending save
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted">
+                              {pluginState
+                                ? pluginSummary(pluginState)
+                                : "New package. Save to load and inspect its tools."}
+                            </p>
+                            {pluginState?.loadError ? (
+                              <p className="mt-1 text-xs text-danger">{pluginState.loadError}</p>
+                            ) : null}
+                            {pluginState?.warnings.map((warning) => (
+                              <p key={warning} className="mt-1 text-xs text-yellow-300">
+                                {warning}
+                              </p>
+                            ))}
+                          </div>
+                          <Button size="sm" intent="ghost" onClick={() => handleRemovePlugin(pluginDraft.package)}>
+                            Remove
+                          </Button>
+                        </div>
+
+                        {canShowRuntimeState && pluginTools.length > 0 ? (
+                          <div className="mt-3 space-y-2 border-t border-text/10 pt-3">
+                            {pluginTools.map((tool) => {
+                              const checked = pluginDraft.tools[tool.name] ?? tool.enabled;
+                              const disabled = !tool.configurable || !tool.available;
+                              return (
+                                <label
+                                  key={tool.name}
+                                  className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={(event) =>
+                                      handlePluginToolToggle(pluginDraft.package, tool.name, event.target.checked)
+                                    }
+                                    className="mt-0.5"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-medium text-text">{tool.name}</div>
+                                    <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
+                                    {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button intent="ghost" size="sm" disabled={saving} onClick={onClose}>
+          Close
+        </Button>
+        <Button size="sm" disabled={loading || saving || !draft} onClick={() => void handleSave()}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+export { buildSetParams, createDraft };
+export type { ToolSettingsDraft };

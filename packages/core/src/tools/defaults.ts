@@ -6,7 +6,7 @@ import type { DiligentPaths } from "../infrastructure";
 import type { Tool } from "../tool/types";
 import { createAddKnowledgeTool } from "./add-knowledge";
 import { bashTool } from "./bash";
-import type { PluginLoadError, ToolStateEntry } from "./catalog";
+import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
 import { createEditTool } from "./edit";
 import { createGlobTool } from "./glob";
@@ -21,6 +21,7 @@ export interface BuildDefaultToolsResult {
   tools: Tool[];
   registry?: AgentRegistry;
   toolState: ToolStateEntry[];
+  pluginState: PluginStateEntry[];
   pluginErrors: PluginLoadError[];
 }
 
@@ -63,6 +64,7 @@ export async function buildDefaultTools(
       tools: catalog.tools,
       registry,
       toolState: catalog.state,
+      pluginState: catalog.plugins,
       pluginErrors: catalog.pluginErrors,
     };
   }
@@ -70,6 +72,7 @@ export async function buildDefaultTools(
   return {
     tools: catalog.tools,
     toolState: catalog.state,
+    pluginState: catalog.plugins,
     pluginErrors: catalog.pluginErrors,
   };
 }

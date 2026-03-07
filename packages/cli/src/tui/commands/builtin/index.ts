@@ -8,11 +8,13 @@ import { providerCommand } from "./provider";
 import { reloadCommand } from "./reload";
 import { deleteCommand, newCommand, resumeCommand, statusCommand } from "./session";
 import { createSkillInvokeCommand, skillsPickerCommand } from "./skills";
+import { toolsCommand } from "./tools";
 
 export function registerBuiltinCommands(registry: CommandRegistry, skills: SkillMetadata[]): void {
   registry.register(helpCommand);
   registry.register(modelCommand);
   registry.register(providerCommand);
+  registry.register(toolsCommand);
   registry.register(newCommand);
   registry.register(resumeCommand);
   registry.register(deleteCommand);

@@ -14,6 +14,8 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   EFFORT_SET: "effort/set",
   KNOWLEDGE_LIST: "knowledge/list",
   THREAD_DELETE: "thread/delete",
+  TOOLS_LIST: "tools/list",
+  TOOLS_SET: "tools/set",
   CONFIG_SET: "config/set",
   AUTH_LIST: "auth/list",
   AUTH_SET: "auth/set",

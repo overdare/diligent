@@ -124,7 +124,7 @@ describe("RPC binding", () => {
     expect(init.currentModel).toBe("fake-model");
 
     const started = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: projectRoot });
-    expect(started.threadId).toMatch(/^\d{14}-[0-9a-f]{6}$/);
+    expect(started.threadId).toMatch(/^\d{20}-[0-9a-f]{6}$/);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(

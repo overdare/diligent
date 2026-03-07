@@ -58,6 +58,18 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       };
     },
     compaction: runtimeConfig.compaction,
+    toolConfig: {
+      getTools: () => runtimeConfig.diligent.tools,
+      setTools: (tools) => {
+        runtimeConfig.diligent = {
+          ...runtimeConfig.diligent,
+          ...(tools ? { tools } : {}),
+        };
+        if (!tools) {
+          delete runtimeConfig.diligent.tools;
+        }
+      },
+    },
     modelConfig: {
       currentModelId: runtimeConfig.model?.id,
       getAvailableModels: () => {

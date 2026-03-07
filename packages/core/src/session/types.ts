@@ -10,11 +10,24 @@ export function generateEntryId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
 }
 
-/** Unique session ID — timestamp + random suffix for sorting */
+let lastSessionTimeMs = 0;
+let sameMillisecondSessionCounter = 0;
+
+/** Unique session ID — timestamp + monotonic counter + random suffix for sorting */
 export function generateSessionId(): string {
-  const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  const nowMs = Date.now();
+  if (nowMs === lastSessionTimeMs) {
+    sameMillisecondSessionCounter += 1;
+  } else {
+    lastSessionTimeMs = nowMs;
+    sameMillisecondSessionCounter = 0;
+  }
+
+  const iso = new Date(nowMs).toISOString();
+  const ts = iso.replace(/[-:TZ.]/g, "").slice(0, 17);
+  const counter = sameMillisecondSessionCounter.toString().padStart(3, "0");
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 6);
-  return `${ts}-${rand}`;
+  return `${ts}${counter}-${rand}`;
 }
 
 // --- Session Header (first line of JSONL) ---

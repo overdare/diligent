@@ -4,7 +4,7 @@ export { AgentRegistry, createCollabTools } from "../collab";
 export { createAddKnowledgeTool } from "./add-knowledge";
 export { bashTool } from "./bash";
 // Tool catalog (P032)
-export type { PluginLoadError, ToolCatalogResult, ToolStateEntry } from "./catalog";
+export type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEntry, ToolStateReason } from "./catalog";
 export { buildToolCatalog } from "./catalog";
 export type { BuildDefaultToolsResult } from "./defaults";
 export { buildDefaultTools } from "./defaults";

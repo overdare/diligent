@@ -197,6 +197,78 @@ export const ThreadDeleteResponseSchema = z.object({
 });
 export type ThreadDeleteResponse = z.infer<typeof ThreadDeleteResponseSchema>;
 
+export const ToolConflictPolicySchema = z.enum(["error", "builtin_wins", "plugin_wins"]);
+export type ToolConflictPolicy = z.infer<typeof ToolConflictPolicySchema>;
+
+export const ToolStateReasonSchema = z.enum([
+  "enabled",
+  "disabled_by_user",
+  "immutable_forced_on",
+  "plugin_disabled",
+  "plugin_load_failed",
+  "conflict_dropped",
+  "invalid_plugin_tool",
+]);
+export type ToolStateReason = z.infer<typeof ToolStateReasonSchema>;
+
+export const ToolDescriptorSchema = z.object({
+  name: z.string(),
+  source: z.enum(["builtin", "plugin"]),
+  pluginPackage: z.string().optional(),
+  enabled: z.boolean(),
+  immutable: z.boolean(),
+  configurable: z.boolean(),
+  available: z.boolean(),
+  reason: ToolStateReasonSchema,
+  error: z.string().optional(),
+});
+export type ToolDescriptor = z.infer<typeof ToolDescriptorSchema>;
+
+export const PluginDescriptorSchema = z.object({
+  package: z.string(),
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  loaded: z.boolean(),
+  toolCount: z.number().int().nonnegative(),
+  loadError: z.string().optional(),
+  warnings: z.array(z.string()),
+});
+export type PluginDescriptor = z.infer<typeof PluginDescriptorSchema>;
+
+export const ToolsListParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type ToolsListParams = z.infer<typeof ToolsListParamsSchema>;
+
+export const ToolsListResponseSchema = z.object({
+  configPath: z.string(),
+  appliesOnNextTurn: z.literal(true),
+  trustMode: z.literal("full_trust"),
+  conflictPolicy: ToolConflictPolicySchema,
+  tools: z.array(ToolDescriptorSchema),
+  plugins: z.array(PluginDescriptorSchema),
+});
+export type ToolsListResponse = z.infer<typeof ToolsListResponseSchema>;
+
+export const ToolsSetPluginPatchSchema = z.object({
+  package: z.string(),
+  enabled: z.boolean().optional(),
+  tools: z.record(z.string(), z.boolean()).optional(),
+  remove: z.boolean().optional(),
+});
+export type ToolsSetPluginPatch = z.infer<typeof ToolsSetPluginPatchSchema>;
+
+export const ToolsSetParamsSchema = z.object({
+  threadId: z.string().optional(),
+  builtin: z.record(z.string(), z.boolean()).optional(),
+  plugins: z.array(ToolsSetPluginPatchSchema).optional(),
+  conflictPolicy: ToolConflictPolicySchema.optional(),
+});
+export type ToolsSetParams = z.infer<typeof ToolsSetParamsSchema>;
+
+export const ToolsSetResponseSchema = ToolsListResponseSchema;
+export type ToolsSetResponse = z.infer<typeof ToolsSetResponseSchema>;
+
 // --- config/set ---
 export const ConfigSetParamsSchema = z.object({
   model: z.string().optional(),
@@ -304,6 +376,8 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), params: ToolsListParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), params: ToolsSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET), params: ConfigSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST), params: AuthListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET), params: AuthSetParamsSchema }),
@@ -334,6 +408,8 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), result: ToolsListResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET), result: ToolsSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET), result: ConfigSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST), result: AuthListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET), result: AuthSetResponseSchema }),

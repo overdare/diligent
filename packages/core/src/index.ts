@@ -76,16 +76,28 @@ export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab/index";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, COLLAB_TOOL_NAMES, createCollabTools } from "./collab/index";
 // Config
-export type { DiligentConfig, DiscoveredInstruction, RuntimeConfig } from "./config/index";
+export type {
+  DiligentConfig,
+  DiscoveredInstruction,
+  RuntimeConfig,
+  StoredToolsConfig,
+  ToolConfigPatch,
+  ToolPluginPatch,
+  WriteToolsConfigResult,
+} from "./config/index";
 export {
+  applyToolConfigPatch,
   buildSystemPrompt,
   buildSystemPromptWithKnowledge,
   DEFAULT_CONFIG,
   DiligentConfigSchema,
   discoverInstructions,
+  getProjectConfigPath,
   loadDiligentConfig,
   loadRuntimeConfig,
   mergeConfig,
+  normalizeStoredToolsConfig,
+  writeProjectToolsConfig,
 } from "./config/index";
 // EventStream
 export { EventStream } from "./event-stream";
@@ -217,8 +229,10 @@ export type {
   PluginLoadError,
   PluginLoadResult,
   PluginManifest,
+  PluginStateEntry,
   ToolCatalogResult,
   ToolStateEntry,
+  ToolStateReason,
 } from "./tools/index";
 export {
   bashTool,

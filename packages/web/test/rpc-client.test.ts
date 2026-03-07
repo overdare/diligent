@@ -66,6 +66,44 @@ class FakeWebSocket {
       return;
     }
 
+    if (parsed.method === "tools/list" && typeof parsed.id === "number") {
+      queueMicrotask(() => {
+        this.onmessage?.({
+          data: JSON.stringify({
+            id: parsed.id,
+            result: {
+              configPath: `${process.cwd()}/.diligent/diligent.jsonc`,
+              appliesOnNextTurn: true,
+              trustMode: "full_trust",
+              conflictPolicy: "error",
+              tools: [],
+              plugins: [],
+            },
+          }),
+        });
+      });
+      return;
+    }
+
+    if (parsed.method === "tools/set" && typeof parsed.id === "number") {
+      queueMicrotask(() => {
+        this.onmessage?.({
+          data: JSON.stringify({
+            id: parsed.id,
+            result: {
+              configPath: `${process.cwd()}/.diligent/diligent.jsonc`,
+              appliesOnNextTurn: true,
+              trustMode: "full_trust",
+              conflictPolicy: "plugin_wins",
+              tools: [],
+              plugins: [],
+            },
+          }),
+        });
+      });
+      return;
+    }
+
     if (parsed.method === "thread/subscribe" && typeof parsed.id === "number") {
       queueMicrotask(() => {
         this.onmessage?.({
@@ -130,6 +168,32 @@ test("initialize result is the bootstrap source and triggers resubscribe", async
   const sentMethods = FakeWebSocket.instances[0]!.sent.map((entry) => JSON.parse(entry).method);
   expect(sentMethods).toContain("initialize");
   expect(sentMethods).toContain("thread/subscribe");
+  client.disconnect();
+});
+
+test("tools/list and tools/set requests resolve through the shared request path", async () => {
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+  const client = new WebRpcClient("ws://example.test/rpc");
+  await client.connect();
+  await client.initialize({
+    clientName: "diligent-web",
+    clientVersion: "0.0.1",
+    protocolVersion: 1,
+  });
+
+  const listed = await client.request("tools/list", { threadId: "thread-1" });
+  const saved = await client.request("tools/set", {
+    threadId: "thread-1",
+    builtin: { bash: false },
+    plugins: [{ package: "@acme/diligent-tools", enabled: true }],
+  });
+
+  expect((listed as { trustMode: string }).trustMode).toBe("full_trust");
+  expect((saved as { conflictPolicy: string }).conflictPolicy).toBe("plugin_wins");
+  const sentMethods = FakeWebSocket.instances[0]!.sent.map((entry) => JSON.parse(entry).method);
+  expect(sentMethods).toContain("tools/list");
+  expect(sentMethods).toContain("tools/set");
   client.disconnect();
 });
 

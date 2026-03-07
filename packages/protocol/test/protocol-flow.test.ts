@@ -10,6 +10,9 @@ import {
   DiligentServerRequestResponseSchema,
   DiligentServerRequestSchema,
   InitializeResponseSchema,
+  PluginDescriptorSchema,
+  ToolDescriptorSchema,
+  ToolsListResponseSchema,
 } from "../src";
 
 describe("protocol/flow", () => {
@@ -83,6 +86,137 @@ describe("protocol/flow", () => {
         },
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts tools/list and tools/set request/response payloads", () => {
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST,
+        params: { threadId: "th-1" },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
+        params: {
+          threadId: "th-1",
+          builtin: { bash: false, read: true },
+          plugins: [
+            { package: "@acme/diligent-tools", enabled: true, tools: { jira_comment: false } },
+            { package: "@acme/old-tools", remove: true },
+          ],
+          conflictPolicy: "plugin_wins",
+        },
+      }).success,
+    ).toBe(true);
+
+    const tool = ToolDescriptorSchema.safeParse({
+      name: "plan",
+      source: "builtin",
+      enabled: true,
+      immutable: true,
+      configurable: false,
+      available: true,
+      reason: "immutable_forced_on",
+    });
+    expect(tool.success).toBe(true);
+
+    const plugin = PluginDescriptorSchema.safeParse({
+      package: "@acme/diligent-tools",
+      configured: true,
+      enabled: true,
+      loaded: true,
+      toolCount: 2,
+      warnings: ["duplicate tool name ignored"],
+    });
+    expect(plugin.success).toBe(true);
+
+    expect(
+      ToolsListResponseSchema.safeParse({
+        configPath: "/repo/.diligent/diligent.jsonc",
+        appliesOnNextTurn: true,
+        trustMode: "full_trust",
+        conflictPolicy: "error",
+        tools: [
+          {
+            name: "plan",
+            source: "builtin",
+            enabled: true,
+            immutable: true,
+            configurable: false,
+            available: true,
+            reason: "enabled",
+          },
+          {
+            name: "jira_comment",
+            source: "plugin",
+            pluginPackage: "@acme/diligent-tools",
+            enabled: false,
+            immutable: false,
+            configurable: true,
+            available: true,
+            reason: "disabled_by_user",
+          },
+        ],
+        plugins: [
+          {
+            package: "@acme/diligent-tools",
+            configured: true,
+            enabled: true,
+            loaded: true,
+            toolCount: 1,
+            warnings: [],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
+        result: {
+          configPath: "/repo/.diligent/diligent.jsonc",
+          appliesOnNextTurn: true,
+          trustMode: "full_trust",
+          conflictPolicy: "builtin_wins",
+          tools: [],
+          plugins: [],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects malformed tool protocol payloads", () => {
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
+        params: {
+          builtin: { bash: "nope" },
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      ToolsListResponseSchema.safeParse({
+        configPath: "/repo/.diligent/diligent.jsonc",
+        appliesOnNextTurn: true,
+        trustMode: "full_trust",
+        conflictPolicy: "error",
+        tools: [
+          {
+            name: "bad_tool",
+            source: "plugin",
+            enabled: true,
+            immutable: false,
+            configurable: true,
+            available: true,
+            reason: "not_a_real_reason",
+          },
+        ],
+        plugins: [],
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts server/request/resolved notification", () => {

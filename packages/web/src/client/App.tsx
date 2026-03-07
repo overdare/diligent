@@ -10,6 +10,9 @@ import type {
   SessionSummary,
   ThinkingEffort,
   ThreadReadResponse,
+  ToolsListResponse,
+  ToolsSetParams,
+  ToolsSetResponse,
 } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
@@ -29,6 +32,7 @@ import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
+import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import {
   hydrateFromThreadRead,
@@ -207,6 +211,7 @@ export function App() {
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [showToolModal, setShowToolModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
@@ -694,6 +699,27 @@ export function App() {
     setPendingImages((prev) => prev.filter((image) => image.path !== path));
   };
 
+  const listTools = useCallback(async (): Promise<ToolsListResponse> => {
+    const rpc = rpcRef.current;
+    if (!rpc) {
+      throw new Error("WebSocket is not connected");
+    }
+    return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST, {
+      threadId: state.activeThreadId ?? undefined,
+    });
+  }, [rpcRef, state.activeThreadId]);
+
+  const saveTools = useCallback(
+    async (params: ToolsSetParams): Promise<ToolsSetResponse> => {
+      const rpc = rpcRef.current;
+      if (!rpc) {
+        throw new Error("WebSocket is not connected");
+      }
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET, params);
+    },
+    [rpcRef],
+  );
+
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -725,6 +751,7 @@ export function App() {
             setFocusedProvider(p ?? null);
             setShowProviderModal(true);
           }}
+          onOpenTools={() => setShowToolModal(true)}
         />
 
         <Panel className="flex min-h-0 flex-col overflow-hidden">
@@ -841,6 +868,15 @@ export function App() {
             setFocusedProvider(null);
             setOauthError(null);
           }}
+        />
+      ) : null}
+
+      {showToolModal ? (
+        <ToolSettingsModal
+          threadId={state.activeThreadId}
+          onList={listTools}
+          onSave={saveTools}
+          onClose={() => setShowToolModal(false)}
         />
       ) : null}
 

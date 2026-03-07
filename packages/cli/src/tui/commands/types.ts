@@ -3,6 +3,7 @@ import type { Mode, SessionSummary, ThreadReadResponse } from "@diligent/protoco
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
 import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
+import type { AppServerRpcClient } from "../rpc-client";
 import type { CommandRegistry } from "./registry";
 
 export interface Command {
@@ -67,4 +68,5 @@ export interface CommandContext {
 export interface AppAccessor {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
   stop: () => void;
+  getRpcClient?: () => AppServerRpcClient | null;
 }

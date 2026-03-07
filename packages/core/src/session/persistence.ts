@@ -122,7 +122,11 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
     }
   }
 
-  return sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+  return sessions.sort((a, b) => {
+    const modifiedDelta = b.modified.getTime() - a.modified.getTime();
+    if (modifiedDelta !== 0) return modifiedDelta;
+    return b.id.localeCompare(a.id);
+  });
 }
 
 /** Hydrated child session for ThreadReadResponse */

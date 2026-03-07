@@ -126,7 +126,11 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
 
     buildCommandContext(): CommandContext {
       return {
-        app: { confirm: (o) => deps.confirm(o), stop: () => deps.shutdown() },
+        app: {
+          confirm: (o) => deps.confirm(o),
+          stop: () => deps.shutdown(),
+          getRpcClient: () => deps.getRpcClient(),
+        },
         config: deps.getConfig(),
         threadId: deps.getCurrentThreadId(),
         skills: deps.getSkills(),

@@ -44,7 +44,7 @@ describe("protocol-lifecycle", () => {
     await setup();
     const threadId = await client.initAndStartThread(tmpDir);
 
-    expect(threadId).toMatch(/^\d{14}-[0-9a-f]{6}$/);
+    expect(threadId).toMatch(/^\d{20}-[0-9a-f]{6}$/);
 
     const notif = await client.waitForNotification(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED);
     expect((notif.params as { threadId: string }).threadId).toBe(threadId);
