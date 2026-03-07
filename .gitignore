@@ -21,9 +21,6 @@ dist/
 .claude/settings.local.json
 .claude/worktrees/
 
-# Runtime data
-.diligent/
-
 # Terminal Bench job outputs
 jobs/
 
