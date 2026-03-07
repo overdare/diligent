@@ -31,7 +31,7 @@ const ParamsSchema = z.object({
 
 export const requestUserInputTool: Tool<typeof ParamsSchema> = {
   name: "request_user_input",
-  description: "Ask the user 1–3 questions and wait for their answers before proceeding.",
+  description: "Ask the user 1–3 questions in the user's language and wait for their answers before proceeding.",
   parameters: ParamsSchema,
   async execute(args, ctx) {
     if (!ctx.ask) {
