@@ -1,6 +1,5 @@
 // @summary Surgical file editing via search-and-replace
 import { readFile, writeFile } from "node:fs/promises";
-import { relative } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
@@ -10,7 +9,7 @@ const EditParams = z.object({
   new_string: z.string().describe("The replacement string"),
 });
 
-export function createEditTool(cwd: string): Tool<typeof EditParams> {
+export function createEditTool(): Tool<typeof EditParams> {
   return {
     name: "edit",
     description: "Replace an exact string in a file. The old_string must appear exactly once in the file.",
@@ -62,9 +61,8 @@ export function createEditTool(cwd: string): Tool<typeof EditParams> {
       // 5. Write file
       await writeFile(file_path, newContent, "utf-8");
 
-      // 6. Generate unified diff (use relative path in headers)
-      const relPath = relative(cwd, file_path);
-      const diff = generateUnifiedDiff(relPath, content, newContent);
+      // 6. Generate unified diff
+      const diff = generateUnifiedDiff(file_path, content, newContent);
 
       // 7. Return diff as output
       return { output: diff };

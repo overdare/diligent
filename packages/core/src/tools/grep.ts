@@ -1,5 +1,4 @@
 // @summary Content search via ripgrep with regex support
-import { relative } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
@@ -50,19 +49,25 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
         const limited = lines.slice(0, MAX_MATCHES);
         const overflow = lines.length - MAX_MATCHES;
 
+        // Truncate individual lines
+        const truncated = limited.map((line) =>
+          line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line,
+        );
+
+        let output = truncated.join("\n");
+        if (overflow > 0) {
+          output += `\n\n... (${overflow} more matches not shown)`;
+        }
+
         // Build structured render when no context lines requested (clean file:line:content format)
         let render: ToolRenderPayload | undefined;
         if (args.context === undefined) {
           // rg -n output: "path/to/file.ts:42:matching content"
-          // File paths may contain colons on some systems — split on first two colons only
+          // File paths may contain colons, so split only on the first two colons
           const rows: string[][] = [];
-          for (const line of limited) {
+          for (const line of truncated) {
             const m = line.match(/^(.+?):(\d+):(.*)$/);
-            if (m) {
-              const relPath = relative(cwd, m[1]);
-              const matchText = m[3].length > MAX_LINE_LENGTH ? `${m[3].slice(0, MAX_LINE_LENGTH)}…` : m[3];
-              rows.push([relPath, m[2], matchText]);
-            }
+            if (m) rows.push([m[1], m[2], m[3].length > MAX_LINE_LENGTH ? `${m[3].slice(0, MAX_LINE_LENGTH)}…` : m[3]]);
           }
           if (rows.length > 0) {
             render = {
@@ -80,23 +85,6 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
               ],
             };
           }
-        }
-
-        // Plain-text output also uses relative paths when no context
-        const outputLines = args.context === undefined
-          ? limited.map((line) => {
-              const m = line.match(/^(.+?):(\d+):(.*)$/);
-              return m ? `${relative(cwd, m[1])}:${m[2]}:${m[3]}` : line;
-            })
-          : limited;
-
-        const truncated = outputLines.map((line) =>
-          line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line,
-        );
-
-        let output = truncated.join("\n");
-        if (overflow > 0) {
-          output += `\n\n... (${overflow} more matches not shown)`;
         }
 
         return { output, render, truncateDirection: "head" };

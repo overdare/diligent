@@ -16,10 +16,11 @@ function makeCtx(): ToolContext {
 
 describe("edit tool", () => {
   let tmpDir: string;
-  const tool = createEditTool();
+  let tool: ReturnType<typeof createEditTool>;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "edit-test-"));
+    tool = createEditTool(tmpDir);
   });
 
   afterEach(async () => {

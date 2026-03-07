@@ -16,10 +16,11 @@ function makeCtx(): ToolContext {
 
 describe("write tool", () => {
   let tmpDir: string;
-  const tool = createWriteTool();
+  let tool: ReturnType<typeof createWriteTool>;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "write-test-"));
+    tool = createWriteTool(tmpDir);
   });
 
   afterEach(async () => {
@@ -32,7 +33,7 @@ describe("write tool", () => {
 
     expect(result.output).toContain("Wrote");
     expect(result.output).toContain("11 bytes");
-    expect(result.output).toContain(filePath);
+    expect(result.output).toContain("new.txt");
 
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("hello world");
