@@ -12,7 +12,10 @@ import {
   type DiligentPaths,
   ensureDiligentDir,
   formatNdjsonMessage,
+  KNOWN_MODELS,
   type ModeKind,
+  openBrowser,
+  resolveModel,
   type RpcPeer,
 } from "@diligent/core";
 import type { JSONRPCMessage } from "@diligent/protocol";
@@ -30,6 +33,17 @@ export async function createCliAppServer(options: AppServerStdioOptions): Promis
   const permissionEngine = config.diligent.yolo
     ? createYoloPermissionEngine()
     : createPermissionEngine(config.diligent.permissions ?? []);
+
+  const allModels = KNOWN_MODELS.map((m) => ({
+    id: m.id,
+    provider: m.provider,
+    contextWindow: m.contextWindow,
+    maxOutputTokens: m.maxOutputTokens,
+    inputCostPer1M: m.inputCostPer1M,
+    outputCostPer1M: m.outputCostPer1M,
+    supportsThinking: m.supportsThinking,
+    supportsVision: m.supportsVision,
+  }));
 
   return new DiligentAppServer({
     resolvePaths: async (cwd) => ensureDiligentDir(cwd),
@@ -58,6 +72,18 @@ export async function createCliAppServer(options: AppServerStdioOptions): Promis
       };
     },
     compaction: config.compaction,
+    modelConfig: {
+      currentModelId: config.model?.id,
+      getAvailableModels: () => {
+        const configured = config.providerManager.getConfiguredProviders() as string[];
+        return allModels.filter((m) => configured.includes(m.provider));
+      },
+      onModelChange: (modelId) => {
+        config.model = resolveModel(modelId);
+      },
+    },
+    providerManager: config.providerManager,
+    openBrowser,
   });
 }
 

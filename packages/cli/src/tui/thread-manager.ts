@@ -40,6 +40,9 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       });
       setThread(response.threadId);
       deps.updateStatusBar({ sessionId: response.threadId });
+      await rpc
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId: response.threadId })
+        .catch(() => {});
       return response.threadId;
     },
 
@@ -57,6 +60,9 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       }
       setThread(response.threadId);
       deps.updateStatusBar({ sessionId: response.threadId });
+      await rpc
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId: response.threadId })
+        .catch(() => {});
       return response.threadId;
     },
 

@@ -4,12 +4,11 @@ import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
-  DILIGENT_WEB_REQUEST_METHODS,
   DiligentClientRequestSchema,
+  DiligentClientResponseSchema,
   DiligentServerNotificationSchema,
   DiligentServerRequestResponseSchema,
   DiligentServerRequestSchema,
-  DiligentWebResponseSchema,
   InitializeResponseSchema,
 } from "../src";
 
@@ -71,8 +70,8 @@ describe("protocol/flow", () => {
 
   it("accepts web image upload responses with canonical webUrl", () => {
     expect(
-      DiligentWebResponseSchema.safeParse({
-        method: DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD,
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD,
         result: {
           attachment: {
             type: "local_image",

@@ -1,7 +1,7 @@
 // @summary React hook for provider authentication state, available models, and OAuth
 
 import type { AuthOAuthStartResponse, ModelInfo, ProviderAuthStatus } from "@diligent/protocol";
-import { DILIGENT_WEB_REQUEST_METHODS } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import { fetchProviderStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
@@ -41,7 +41,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET, { model: first.id });
+          await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: first.id });
         }
       } catch (error) {
         console.error(error);
@@ -65,7 +65,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       ) {
         setCurrentModel(sessionModel);
         currentModelRef.current = sessionModel;
-        await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET, { model: sessionModel });
+        await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: sessionModel });
       }
     },
     [rpcRef],
@@ -77,7 +77,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
       if (!rpc) return;
       setCurrentModel(modelId);
       try {
-        await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET, { model: modelId });
+        await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: modelId });
       } catch (error) {
         console.error(error);
       }
@@ -136,7 +136,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.CONFIG_SET, { model: first.id });
+          await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: first.id });
         }
       } catch {
         // Non-critical: providers already updated via notification

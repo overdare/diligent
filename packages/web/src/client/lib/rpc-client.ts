@@ -5,16 +5,14 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
-  DiligentWebRequest,
-  DiligentWebResponse,
   JSONRPCMessage,
   JSONRPCNotification,
   JSONRPCRequest,
   JSONRPCResponse,
 } from "@diligent/protocol";
 import {
+  DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
-  DILIGENT_WEB_REQUEST_METHODS,
   JSONRPCMessageSchema,
 } from "@diligent/protocol";
 
@@ -25,9 +23,17 @@ type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type RequestResult<M extends RequestMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 
-type WebMethod = DiligentWebRequest["method"];
-type WebParams<M extends WebMethod> = Extract<DiligentWebRequest, { method: M }>["params"];
-type WebResult<M extends WebMethod> = Extract<DiligentWebResponse, { method: M }>["result"];
+type WebMethod =
+  | "config/set"
+  | "auth/list"
+  | "auth/set"
+  | "auth/remove"
+  | "auth/oauth/start"
+  | "thread/subscribe"
+  | "thread/unsubscribe"
+  | "image/upload";
+type WebParams<M extends WebMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
+type WebResult<M extends WebMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -139,7 +145,7 @@ export class WebRpcClient {
   }
 
   async subscribe(threadId: string): Promise<{ subscriptionId: string }> {
-    const result = (await this.webRequest(DILIGENT_WEB_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId })) as {
+    const result = (await this.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId })) as {
       subscriptionId: string;
     };
     this.activeSubscriptions.set(result.subscriptionId, threadId);
@@ -147,7 +153,7 @@ export class WebRpcClient {
   }
 
   async unsubscribe(subscriptionId: string): Promise<{ ok: boolean }> {
-    const result = (await this.webRequest(DILIGENT_WEB_REQUEST_METHODS.THREAD_UNSUBSCRIBE, { subscriptionId })) as {
+    const result = (await this.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE, { subscriptionId })) as {
       ok: boolean;
     };
     if (result.ok) {

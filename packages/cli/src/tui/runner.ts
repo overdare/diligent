@@ -98,6 +98,10 @@ export class NonInteractiveRunner {
         threadId = started.threadId;
       }
 
+      if (threadId) {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId });
+      }
+
       const turnDone = new Promise<void>((resolve, reject) => {
         pendingTurn = { resolve, reject };
       });

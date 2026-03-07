@@ -4,7 +4,6 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
-  ImageUploadAttachment,
   InitializeResponse,
   LocalImageBlock,
   Mode,
@@ -18,7 +17,6 @@ import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_VERSION,
-  DILIGENT_WEB_REQUEST_METHODS,
 } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
@@ -675,14 +673,13 @@ export function App() {
         }
 
         const dataBase64 = await fileToBase64(file);
-        const result = await rpc.webRequest(DILIGENT_WEB_REQUEST_METHODS.IMAGE_UPLOAD, {
+        const result = await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD, {
           threadId: state.activeThreadId ?? undefined,
           fileName: normalizedFileName,
           mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
           dataBase64,
         });
-        const attachment = result.attachment as ImageUploadAttachment;
-        uploaded.push(attachment);
+        uploaded.push(result.attachment as PendingImage);
       }
 
       setPendingImages((prev) => [...prev, ...uploaded]);

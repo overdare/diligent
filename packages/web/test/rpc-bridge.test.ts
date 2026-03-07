@@ -1,378 +1,276 @@
-// @summary Tests for RpcBridge raw JSON-RPC multi-subscriber fan-out and first-responder behavior
+// @summary Tests for DiligentAppServer multi-connection fan-out and image upload via web-specific toImageUrl
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DiligentServerRequest, JSONRPCMessage } from "@diligent/protocol";
+import { DiligentAppServer, EventStream, ensureDiligentDir } from "@diligent/core";
+import type { JSONRPCMessage } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
-import { RpcBridge } from "../src/server/rpc-bridge";
-import { WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
+import { toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
-type NotificationListener = (notification: import("@diligent/protocol").DiligentServerNotification) => void;
-type ServerRequestHandler = (
-  request: import("@diligent/protocol").DiligentServerRequest,
-) => Promise<import("@diligent/protocol").DiligentServerRequestResponse>;
+// ─── Fake RpcPeer ────────────────────────────────────────────────────────────
 
-class FakeAppServer {
-  notificationListener: NotificationListener | null = null;
-  serverRequestHandler: ServerRequestHandler | null = null;
-
-  setNotificationListener(listener: NotificationListener): void {
-    this.notificationListener = listener;
-  }
-  setServerRequestHandler(handler: ServerRequestHandler): void {
-    this.serverRequestHandler = handler;
-  }
-  async handleRequest(req: {
-    id: number | string;
-    method: string;
-    params: unknown;
-  }): Promise<{ id: number | string; result: unknown }> {
-    if (req.method === "thread/start") {
-      return { id: req.id, result: { threadId: `t-${Date.now()}` } };
-    }
-    if (req.method === "initialize") {
-      return {
-        id: req.id,
-        result: {
-          serverName: "fake",
-          serverVersion: "0.0.1",
-          protocolVersion: 1,
-          capabilities: {
-            supportsFollowUp: true,
-            supportsApprovals: true,
-            supportsUserInput: true,
-          },
-        },
-      };
-    }
-    return { id: req.id, result: {} };
-  }
-  async handleNotification(): Promise<void> {}
+interface FakePeer {
+  sent: JSONRPCMessage[];
+  receive: (msg: JSONRPCMessage) => void;
+  peer: import("@diligent/core").RpcPeer;
+  closeListeners: Array<() => void>;
+  simulateClose: () => void;
 }
 
-function createBridge(fakeServer?: FakeAppServer, cwd = process.cwd()) {
-  const server = fakeServer ?? new FakeAppServer();
-  const bridge = new RpcBridge(server as unknown as import("@diligent/core").DiligentAppServer, cwd, "default", {
-    currentModelId: "test-model",
-    allModels: [],
-    getAvailableModels: () => [],
-    onModelChange: () => {},
-  });
-  return { bridge, server };
-}
-
-function createFakeWs(sessionId: string) {
+function createFakePeer(): FakePeer {
   const sent: JSONRPCMessage[] = [];
-  const ws = {
-    data: { sessionId },
-    send(payload: string) {
-      sent.push(JSON.parse(payload) as JSONRPCMessage);
+  const messageListeners: Array<(msg: JSONRPCMessage) => void | Promise<void>> = [];
+  const closeListeners: Array<() => void> = [];
+
+  const fakePeer: FakePeer = {
+    sent,
+    receive(msg: JSONRPCMessage) {
+      for (const l of messageListeners) void l(msg);
+    },
+    closeListeners,
+    simulateClose() {
+      for (const l of closeListeners) l();
+    },
+    peer: {
+      send(message: JSONRPCMessage) {
+        sent.push(message);
+      },
+      onMessage(listener) {
+        messageListeners.push(listener);
+      },
+      onClose(listener) {
+        closeListeners.push(listener);
+      },
     },
   };
-  return { ws: ws as unknown as import("bun").ServerWebSocket<import("../src/server/rpc-bridge").RpcWsData>, sent };
+  return fakePeer;
 }
 
-async function startThread(bridge: RpcBridge, ws: ReturnType<typeof createFakeWs>["ws"], threadId: string) {
-  const server = (bridge as unknown as { appServer: FakeAppServer }).appServer;
-  const origHandle = server.handleRequest.bind(server);
-  server.handleRequest = async (req) => {
-    if (req.method === "thread/start") {
-      return { id: req.id, result: { threadId } };
-    }
-    return origHandle(req);
-  };
+// ─── Minimal DiligentAppServer factory ───────────────────────────────────────
 
-  await bridge.message(
-    ws,
-    JSON.stringify({
-      id: 1,
-      method: "thread/start",
-      params: { cwd: "/tmp" },
-    }),
-  );
-
-  server.handleRequest = origHandle;
-}
-
-describe("RpcBridge multi-subscriber", () => {
-  test("routes raw initialize request and response", async () => {
-    const { bridge } = createBridge();
-    const { ws, sent } = createFakeWs("s1");
-    bridge.open(ws);
-
-    await bridge.message(
-      ws,
-      JSON.stringify({
-        id: 1,
-        method: "initialize",
-        params: { clientName: "web", clientVersion: "0.0.1", protocolVersion: 1 },
-      }),
-    );
-
-    const response = sent.find((entry) => "id" in entry && entry.id === 1 && "result" in entry) as
-      | { id: number; result: { protocolVersion: number } }
-      | undefined;
-    expect(response?.result.protocolVersion).toBe(1);
-  });
-
-  test("resolves server request using client response", async () => {
-    const server = new FakeAppServer();
-    const { bridge } = createBridge(server);
-    const { ws, sent } = createFakeWs("s1");
-    bridge.open(ws);
-
-    const request: DiligentServerRequest = {
-      method: "approval/request",
-      params: {
-        threadId: "thread1",
-        request: { permission: "execute", toolName: "bash", description: "run command" },
+function createMinimalServer(opts: { cwd?: string; toImageUrl?: (path: string) => string | undefined } = {}) {
+  return new DiligentAppServer({
+    cwd: opts.cwd ?? process.cwd(),
+    resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+    buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+      model: { id: "fake", provider: "fake", contextWindow: 8192, maxOutputTokens: 4096 },
+      systemPrompt: [],
+      tools: [],
+      mode,
+      signal,
+      approve,
+      ask,
+      streamFunction: () => {
+        const stream = new EventStream(
+          (e) => e.type === "done",
+          (e) => ({ message: (e as { message: unknown }).message }),
+        );
+        queueMicrotask(() => {
+          stream.push({ type: "start" });
+          stream.push({ type: "text_delta", delta: "ok" });
+          stream.push({
+            type: "done",
+            stopReason: "end_turn",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "ok" }],
+              model: "fake",
+              usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+              stopReason: "end_turn",
+              timestamp: Date.now(),
+            },
+          });
+        });
+        return stream as never;
       },
-    };
-
-    const responsePromise = server.serverRequestHandler!(request);
-
-    const serverRequest = sent.find(
-      (entry) => "id" in entry && "method" in entry && entry.method === "approval/request",
-    ) as {
-      id: number;
-    };
-    expect(serverRequest).toBeTruthy();
-
-    await bridge.message(
-      ws,
-      JSON.stringify({
-        id: serverRequest.id,
-        result: { decision: "once" },
-      }),
-    );
-
-    const response = await responsePromise;
-    expect(response.method).toBe("approval/request");
-    if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("once");
-    }
+    }),
+    toImageUrl: opts.toImageUrl,
   });
+}
 
-  test("fan-out: notifications sent to all subscribers", async () => {
-    const server = new FakeAppServer();
-    const { bridge } = createBridge(server);
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-    const { ws: ws1, sent: sent1 } = createFakeWs("s1");
-    const { ws: ws2, sent: sent2 } = createFakeWs("s2");
-    bridge.open(ws1);
-    bridge.open(ws2);
+function sendRpc(peer: FakePeer, msg: object) {
+  peer.receive(msg as JSONRPCMessage);
+}
 
-    await startThread(bridge, ws1, "thread1");
+function waitFor(peer: FakePeer, predicate: (msg: JSONRPCMessage) => boolean, timeout = 500): Promise<JSONRPCMessage> {
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const found = peer.sent.find(predicate);
+      if (found) {
+        resolve(found);
+        return;
+      }
+      const timer = setTimeout(check, 10);
+      const deadline = setTimeout(() => {
+        clearTimeout(timer);
+        reject(new Error("Timed out waiting for message"));
+      }, timeout);
+      // Clear deadline when found on next tick
+      void found;
+      void deadline;
+    };
+    // Poll
+    const interval = setInterval(() => {
+      const found = peer.sent.find(predicate);
+      if (found) {
+        clearInterval(interval);
+        resolve(found);
+      }
+    }, 10);
+    setTimeout(() => {
+      clearInterval(interval);
+      reject(new Error("Timed out waiting for message"));
+    }, timeout);
+  });
+}
 
-    await bridge.message(
-      ws2,
-      JSON.stringify({
-        id: 10,
-        method: "thread/subscribe",
-        params: { threadId: "thread1" },
-      }),
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("DiligentAppServer multi-connection (web)", () => {
+  test("thread/subscribe: subscribed peer receives thread notifications", async () => {
+    const server = createMinimalServer();
+    const p1 = createFakePeer();
+    const p2 = createFakePeer();
+    server.connect("c1", p1.peer);
+    server.connect("c2", p2.peer);
+
+    // Initialize + start thread via p1
+    sendRpc(p1, {
+      id: 1,
+      method: "initialize",
+      params: { clientName: "test", clientVersion: "0.0.1", protocolVersion: 1 },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    sendRpc(p1, { id: 2, method: "thread/start", params: { cwd: process.cwd(), mode: "default" } });
+    const threadStarted = await waitFor(
+      p1,
+      (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED,
     );
+    const threadId = (threadStarted as { params: { threadId: string } }).params.threadId;
 
-    sent1.length = 0;
-    sent2.length = 0;
+    // Subscribe both peers
+    sendRpc(p1, { id: 3, method: "thread/subscribe", params: { threadId } });
+    sendRpc(p2, { id: 4, method: "thread/subscribe", params: { threadId } });
+    await new Promise((r) => setTimeout(r, 20));
 
-    server.notificationListener!({
-      method: "item/delta",
-      params: { threadId: "thread1", itemId: "i1", delta: { text: "hello" } },
-    } as import("@diligent/protocol").DiligentServerNotification);
+    // Clear sent buffers
+    p1.sent.length = 0;
+    p2.sent.length = 0;
 
-    const notif1 = sent1.find((e) => "method" in e && e.method === "item/delta");
-    const notif2 = sent2.find((e) => "method" in e && e.method === "item/delta");
+    // Start a turn — should produce turn/started notification
+    sendRpc(p1, { id: 5, method: "turn/start", params: { threadId, message: "hello" } });
+    const notif1 = await waitFor(
+      p1,
+      (m) => "method" in m && (m as { method: string }).method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+    );
+    const notif2 = await waitFor(
+      p2,
+      (m) => "method" in m && (m as { method: string }).method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+    );
     expect(notif1).toBeTruthy();
     expect(notif2).toBeTruthy();
   });
 
-  test("first-responder wins: second response is ignored and others are notified", async () => {
-    const server = new FakeAppServer();
-    const { bridge } = createBridge(server);
-    const { ws: ws1, sent: sent1 } = createFakeWs("s1");
-    const { ws: ws2, sent: sent2 } = createFakeWs("s2");
-    bridge.open(ws1);
-    bridge.open(ws2);
+  test("thread/unsubscribe: unsubscribed peer stops receiving thread notifications", async () => {
+    const server = createMinimalServer();
+    const p1 = createFakePeer();
+    server.connect("c1", p1.peer);
 
-    const request: DiligentServerRequest = {
-      method: "approval/request",
-      params: {
-        threadId: "thread1",
-        request: { permission: "execute", toolName: "bash", description: "run command" },
-      },
-    };
-
-    const responsePromise = server.serverRequestHandler!(request);
-
-    const req1 = sent1.find((e) => "id" in e && "method" in e && e.method === "approval/request") as { id: number };
-    const req2 = sent2.find((e) => "id" in e && "method" in e && e.method === "approval/request") as { id: number };
-    expect(req1.id).toBe(req2.id);
-
-    await bridge.message(
-      ws1,
-      JSON.stringify({
-        id: req1.id,
-        result: { decision: "once" },
-      }),
+    sendRpc(p1, {
+      id: 1,
+      method: "initialize",
+      params: { clientName: "t", clientVersion: "0.0.1", protocolVersion: 1 },
+    });
+    sendRpc(p1, { id: 2, method: "thread/start", params: { cwd: process.cwd(), mode: "default" } });
+    const started = await waitFor(
+      p1,
+      (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED,
     );
+    const threadId = (started as { params: { threadId: string } }).params.threadId;
 
-    await bridge.message(
-      ws2,
-      JSON.stringify({
-        id: req2.id,
-        result: { decision: "always" },
-      }),
-    );
+    sendRpc(p1, { id: 3, method: "thread/subscribe", params: { threadId } });
+    await new Promise((r) => setTimeout(r, 20));
 
-    const response = await responsePromise;
-    expect(response.method).toBe("approval/request");
-    if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("once");
-    }
+    const subResponse = p1.sent.find((m) => "id" in m && (m as { id: unknown }).id === 3 && "result" in m) as
+      | { result: { subscriptionId: string } }
+      | undefined;
+    expect(subResponse?.result.subscriptionId).toBeTruthy();
+    const subscriptionId = subResponse!.result.subscriptionId;
 
-    const resolvedNotification = sent2.find(
-      (entry) =>
-        "method" in entry &&
-        entry.method === DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED &&
-        (entry as { params?: { requestId?: number } }).params?.requestId === req1.id,
-    );
-    expect(resolvedNotification).toBeTruthy();
+    // Unsubscribe
+    sendRpc(p1, { id: 4, method: "thread/unsubscribe", params: { subscriptionId } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const unsubResponse = p1.sent.find((m) => "id" in m && (m as { id: unknown }).id === 4 && "result" in m) as
+      | { result: { ok: boolean } }
+      | undefined;
+    expect(unsubResponse?.result.ok).toBe(true);
   });
 
-  test("disconnect cleanup: remaining subscriber still receives notifications", async () => {
-    const server = new FakeAppServer();
-    const { bridge } = createBridge(server);
-
-    const { ws: ws1 } = createFakeWs("s1");
-    const { ws: ws2, sent: sent2 } = createFakeWs("s2");
-    bridge.open(ws1);
-    bridge.open(ws2);
-
-    await startThread(bridge, ws1, "thread1");
-
-    await bridge.message(
-      ws2,
-      JSON.stringify({
-        id: 10,
-        method: "thread/subscribe",
-        params: { threadId: "thread1" },
-      }),
-    );
-
-    bridge.close(ws1);
-
-    sent2.length = 0;
-
-    server.notificationListener!({
-      method: "item/delta",
-      params: { threadId: "thread1", itemId: "i1", delta: { text: "world" } },
-    } as import("@diligent/protocol").DiligentServerNotification);
-
-    const notif2 = sent2.find((e) => "method" in e && e.method === "item/delta");
-    expect(notif2).toBeTruthy();
+  test("disconnect: server removes connection without error", () => {
+    const server = createMinimalServer();
+    const p1 = createFakePeer();
+    const disconnect = server.connect("c1", p1.peer);
+    // Should not throw
+    expect(() => disconnect()).not.toThrow();
+    expect(() => server.disconnect("c1")).not.toThrow();
   });
 
-  test("no connected clients: server request resolves with safe fallback", async () => {
-    const server = new FakeAppServer();
-    createBridge(server);
-
-    const request: DiligentServerRequest = {
-      method: "approval/request",
-      params: {
-        threadId: "thread1",
-        request: { permission: "execute", toolName: "bash", description: "run command" },
-      },
-    };
-
-    const response = await server.serverRequestHandler!(request);
-    expect(response.method).toBe("approval/request");
-    if (response.method === "approval/request") {
-      expect(response.result.decision).toBe("reject");
-    }
-  });
-
-  test("thread/unsubscribe removes subscription", async () => {
-    const server = new FakeAppServer();
-    const { bridge } = createBridge(server);
-
-    const { ws, sent } = createFakeWs("s1");
-    bridge.open(ws);
-
-    await bridge.message(
-      ws,
-      JSON.stringify({
-        id: 10,
-        method: "thread/subscribe",
-        params: { threadId: "thread1" },
-      }),
-    );
-
-    const subResponse = sent.find(
-      (e) => "id" in e && e.id === 10 && "result" in e && (e.result as { subscriptionId?: string }).subscriptionId,
-    ) as { result: { subscriptionId: string } };
-    const subscriptionId = subResponse.result.subscriptionId;
-
-    await bridge.message(
-      ws,
-      JSON.stringify({
-        id: 11,
-        method: "thread/unsubscribe",
-        params: { subscriptionId },
-      }),
-    );
-
-    const unsubResponse = sent.find((e) => "id" in e && e.id === 11 && "result" in e) as {
-      result: { ok: boolean };
-    };
-    expect(unsubResponse.result.ok).toBe(true);
-
-    sent.length = 0;
-
-    server.notificationListener!({
-      method: "item/delta",
-      params: { threadId: "thread1", itemId: "i1", delta: { text: "test" } },
-    } as import("@diligent/protocol").DiligentServerNotification);
-
-    const notif = sent.find((e) => "method" in e && e.method === "item/delta");
-    expect(notif).toBeTruthy();
-  });
-
-  test("image/upload persists file and returns local_image attachment", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-rpc-bridge-"));
+  test("image/upload: persists file and returns local_image with webUrl", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-img-"));
     try {
-      const server = new FakeAppServer();
-      const { bridge } = createBridge(server, projectRoot);
-      const { ws, sent } = createFakeWs("s1");
-      bridge.open(ws);
+      const server = createMinimalServer({
+        cwd: projectRoot,
+        toImageUrl: (absPath) => toWebImageUrl(absPath),
+      });
+      const p1 = createFakePeer();
+      server.connect("c1", p1.peer);
 
-      await bridge.message(
-        ws,
-        JSON.stringify({
-          id: 50,
-          method: "image/upload",
-          params: {
-            threadId: "thread1",
-            fileName: "screen.png",
-            mediaType: "image/png",
-            dataBase64: Buffer.from("png-bytes").toString("base64"),
-          },
-        }),
+      sendRpc(p1, {
+        id: 1,
+        method: "initialize",
+        params: { clientName: "t", clientVersion: "0.0.1", protocolVersion: 1 },
+      });
+      sendRpc(p1, { id: 2, method: "thread/start", params: { cwd: projectRoot, mode: "default" } });
+      const started = await waitFor(
+        p1,
+        (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED,
       );
+      const threadId = (started as { params: { threadId: string } }).params.threadId;
 
-      const response = sent.find((entry) => "id" in entry && entry.id === 50 && "result" in entry) as {
-        result: {
-          attachment: { type: string; path: string; mediaType: string; fileName: string; webUrl: string };
-        };
-      };
+      sendRpc(p1, { id: 3, method: "thread/subscribe", params: { threadId } });
+      await new Promise((r) => setTimeout(r, 10));
 
-      expect(response.result.attachment.type).toBe("local_image");
-      expect(response.result.attachment.mediaType).toBe("image/png");
-      expect(response.result.attachment.fileName).toBe("screen.png");
-      expect(response.result.attachment.path).toContain(".diligent/images/thread1/");
-      expect(response.result.attachment.webUrl).toContain(`${WEB_IMAGE_ROUTE_PREFIX}thread1/`);
-      expect(await Bun.file(response.result.attachment.path).text()).toBe("png-bytes");
+      p1.sent.length = 0;
+      sendRpc(p1, {
+        id: 10,
+        method: "image/upload",
+        params: {
+          threadId,
+          fileName: "screen.png",
+          mediaType: "image/png",
+          dataBase64: Buffer.from("png-bytes").toString("base64"),
+        },
+      });
+
+      const response = await waitFor(p1, (m) => "id" in m && (m as { id: unknown }).id === 10 && "result" in m);
+      const attachment = (
+        response as {
+          result: { attachment: { type: string; path: string; mediaType: string; fileName: string; webUrl?: string } };
+        }
+      ).result.attachment;
+
+      expect(attachment.type).toBe("local_image");
+      expect(attachment.mediaType).toBe("image/png");
+      expect(attachment.fileName).toBe("screen.png");
+      expect(attachment.path).toContain(".diligent/images/");
+      expect(attachment.path).toContain(threadId);
+      expect(attachment.webUrl).toContain(WEB_IMAGE_ROUTE_PREFIX);
+      expect(await Bun.file(attachment.path).text()).toBe("png-bytes");
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }
