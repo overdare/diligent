@@ -41,8 +41,8 @@ export async function buildDefaultTools(
   const builtinTools: Tool[] = [
     bashTool,
     createReadTool(),
-    createWriteTool(),
-    createEditTool(),
+    createWriteTool(cwd),
+    createEditTool(cwd),
     createLsTool(),
     createGlobTool(cwd),
     createGrepTool(cwd),

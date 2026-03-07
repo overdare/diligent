@@ -1,6 +1,6 @@
 // @summary Write file contents with directory auto-creation
 import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, relative } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
@@ -9,7 +9,7 @@ const WriteParams = z.object({
   content: z.string().describe("The full content to write to the file"),
 });
 
-export function createWriteTool(): Tool<typeof WriteParams> {
+export function createWriteTool(cwd: string): Tool<typeof WriteParams> {
   return {
     name: "write",
     description:
@@ -37,7 +37,7 @@ export function createWriteTool(): Tool<typeof WriteParams> {
 
         // 3. Return summary
         const bytes = new TextEncoder().encode(content).length;
-        return { output: `Wrote ${bytes} bytes to ${file_path}` };
+        return { output: `Wrote ${bytes} bytes to ${relative(cwd, file_path)}` };
       } catch (err) {
         return {
           output: `Error writing file: ${err instanceof Error ? err.message : String(err)}`,
