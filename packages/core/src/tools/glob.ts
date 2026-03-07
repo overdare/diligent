@@ -1,5 +1,6 @@
 // @summary Find files by glob pattern via ripgrep
 import { stat } from "node:fs/promises";
+import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
@@ -52,13 +53,29 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
         withMtime.sort((a, b) => b.mtime - a.mtime);
 
         const limited = withMtime.slice(0, MAX_FILES);
-        let output = limited.map((f) => f.path).join("\n");
+        const paths = limited.map((f) => f.path);
+        const overflow = withMtime.length - MAX_FILES;
 
-        if (withMtime.length > MAX_FILES) {
-          output += `\n\n... (${withMtime.length - MAX_FILES} more files not shown)`;
+        let output = paths.join("\n");
+        if (overflow > 0) {
+          output += `\n\n... (${overflow} more files not shown)`;
         }
 
-        return { output };
+        const render: ToolRenderPayload = {
+          version: 1,
+          blocks: [
+            {
+              type: "list",
+              title: `Files matching ${args.pattern}${args.path ? ` in ${args.path}` : ""}`,
+              items: paths,
+            },
+            ...(overflow > 0
+              ? [{ type: "summary" as const, text: `${overflow} more files not shown`, tone: "info" as const }]
+              : []),
+          ],
+        };
+
+        return { output, render };
       } catch (err) {
         return {
           output: `Error running glob: ${err instanceof Error ? err.message : String(err)}`,

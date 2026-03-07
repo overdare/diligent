@@ -1,4 +1,5 @@
 // @summary Content search via ripgrep with regex support
+import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
@@ -46,6 +47,7 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
         // Parse and limit output
         const lines = stdout.trim().split("\n");
         const limited = lines.slice(0, MAX_MATCHES);
+        const overflow = lines.length - MAX_MATCHES;
 
         // Truncate individual lines
         const truncated = limited.map((line) =>
@@ -53,12 +55,39 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
         );
 
         let output = truncated.join("\n");
-
-        if (lines.length > MAX_MATCHES) {
-          output += `\n\n... (${lines.length - MAX_MATCHES} more matches not shown)`;
+        if (overflow > 0) {
+          output += `\n\n... (${overflow} more matches not shown)`;
         }
 
-        return { output, truncateDirection: "head" };
+        // Build structured render when no context lines requested (clean file:line:content format)
+        let render: ToolRenderPayload | undefined;
+        if (args.context === undefined) {
+          // rg -n output: "path/to/file.ts:42:matching content"
+          // File paths may contain colons, so split only on the first two colons
+          const rows: string[][] = [];
+          for (const line of truncated) {
+            const m = line.match(/^(.+?):(\d+):(.*)$/);
+            if (m) rows.push([m[1], m[2], m[3].length > MAX_LINE_LENGTH ? `${m[3].slice(0, MAX_LINE_LENGTH)}…` : m[3]]);
+          }
+          if (rows.length > 0) {
+            render = {
+              version: 1,
+              blocks: [
+                {
+                  type: "table",
+                  title: `Matches for ${args.pattern}${args.include ? ` (${args.include})` : ""}`,
+                  columns: ["File", "Line", "Match"],
+                  rows,
+                },
+                ...(overflow > 0
+                  ? [{ type: "summary" as const, text: `${overflow} more matches not shown`, tone: "info" as const }]
+                  : []),
+              ],
+            };
+          }
+        }
+
+        return { output, render, truncateDirection: "head" };
       } catch (err) {
         return {
           output: `Error running grep: ${err instanceof Error ? err.message : String(err)}`,

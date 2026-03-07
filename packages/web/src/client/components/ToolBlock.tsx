@@ -12,10 +12,9 @@ import {
 } from "../lib/tool-info";
 import { ContentBash } from "./ContentBash";
 import { ContentEdit } from "./ContentEdit";
-import { ContentGrep } from "./ContentGrep";
-import { ContentList } from "./ContentList";
 import { ContentRead } from "./ContentRead";
 import { ContentText } from "./ContentText";
+import { ToolRenderBlocks } from "./ToolRenderBlocks";
 import { StatusDot } from "./StatusDot";
 
 interface ToolBlockProps {
@@ -43,6 +42,17 @@ function num(v: unknown): number | undefined {
 /* ── Tool-specific expanded content ───────────────────────────────── */
 
 function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) {
+  // P040: Structured render payload takes priority for any tool (built-in or plugin).
+  // Tools that return `render` explicitly opt into block-based rendering.
+  // Tools without `render` fall through to name-based specialized renderers below.
+  if (item.render) {
+    return (
+      <div className="space-y-3">
+        <ToolRenderBlocks payload={item.render} />
+      </div>
+    );
+  }
+
   const name = item.toolName.toLowerCase();
   const parsed = safeParse(item.inputText);
 
@@ -85,32 +95,6 @@ function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) 
         filePath={str(parsed?.file_path)}
         mode="write"
         content={str(parsed?.content)}
-        output={item.outputText || undefined}
-        isError={item.isError}
-      />
-    );
-  }
-
-  // Grep → search results
-  if (name === "grep") {
-    return (
-      <ContentGrep
-        pattern={str(parsed?.pattern)}
-        include={str(parsed?.include)}
-        path={str(parsed?.path)}
-        output={item.outputText || undefined}
-        isError={item.isError}
-      />
-    );
-  }
-
-  // Glob / Ls → file listing
-  if (name === "glob" || name === "ls") {
-    return (
-      <ContentList
-        mode={name as "glob" | "ls"}
-        pattern={str(parsed?.pattern)}
-        path={str(parsed?.path)}
         output={item.outputText || undefined}
         isError={item.isError}
       />

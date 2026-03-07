@@ -12,6 +12,8 @@ import {
   InitializeResponseSchema,
   PluginDescriptorSchema,
   ToolDescriptorSchema,
+  ToolResultMessageSchema,
+  ToolRenderPayloadSchema,
   ToolsListResponseSchema,
 } from "../src";
 
@@ -309,6 +311,57 @@ describe("protocol/flow", () => {
       },
     });
     expect(userInputReq.success).toBe(true);
+  });
+
+  it("accepts and validates ToolRenderPayload with all block kinds", () => {
+    const payload = ToolRenderPayloadSchema.safeParse({
+      version: 1,
+      blocks: [
+        { type: "summary", text: "Done", tone: "success" },
+        { type: "key_value", title: "Info", items: [{ key: "Count", value: "42" }] },
+        { type: "list", title: "Files", ordered: false, items: ["a.ts", "b.ts"] },
+        { type: "table", title: "Results", columns: ["Name", "Status"], rows: [["foo", "ok"]] },
+        { type: "tree", nodes: [{ label: "root", children: [{ label: "child" }] }] },
+        { type: "status_badges", items: [{ label: "passing", tone: "success" }, { label: "skipped" }] },
+      ],
+    });
+    expect(payload.success).toBe(true);
+  });
+
+  it("rejects ToolRenderPayload with unknown block type (discriminated union)", () => {
+    const bad = ToolRenderPayloadSchema.safeParse({
+      version: 1,
+      blocks: [{ type: "chart", data: [] }],
+    });
+    expect(bad.success).toBe(false);
+  });
+
+  it("accepts ToolResultMessage with render payload", () => {
+    const msg = ToolResultMessageSchema.safeParse({
+      role: "tool_result",
+      toolCallId: "tc-1",
+      toolName: "my_tool",
+      output: "plain text fallback",
+      isError: false,
+      timestamp: 1000,
+      render: {
+        version: 1,
+        blocks: [{ type: "summary", text: "2 files changed" }],
+      },
+    });
+    expect(msg.success).toBe(true);
+  });
+
+  it("accepts ToolResultMessage without render (backwards compat)", () => {
+    const msg = ToolResultMessageSchema.safeParse({
+      role: "tool_result",
+      toolCallId: "tc-1",
+      toolName: "bash",
+      output: "hello",
+      isError: false,
+      timestamp: 1000,
+    });
+    expect(msg.success).toBe(true);
   });
 
   it("rejects malformed flow payloads", () => {

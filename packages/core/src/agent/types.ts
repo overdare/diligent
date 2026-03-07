@@ -72,6 +72,7 @@ export type AgentEvent =
       toolName: string;
       output: string;
       isError: boolean;
+      render?: import("@diligent/protocol").ToolRenderPayload;
       childThreadId?: string;
       nickname?: string;
     }

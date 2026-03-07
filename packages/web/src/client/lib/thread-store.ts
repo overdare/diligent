@@ -72,6 +72,8 @@ export type RenderItem =
       toolCallId: string;
       startedAt: number;
       durationMs?: number;
+      /** P040: optional structured render payload for richer presentation */
+      render?: import("@diligent/protocol").ToolRenderPayload;
     }
   | {
       id: string;
@@ -456,6 +458,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 isError: event.isError,
                 status: "done" as const,
                 durationMs: Date.now() - current.startedAt,
+                render: event.render ?? current.render,
               }
             : current,
         ),
@@ -1133,6 +1136,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       (item) => item.kind === "tool" && item.toolCallId === message.toolCallId,
     );
 
+    const msgRender = (message as { render?: import("@diligent/protocol").ToolRenderPayload }).render;
+
     if (existingToolItem?.kind === "tool") {
       current = updateItem(current, existingToolItem.id, (item) =>
         item.kind === "tool"
@@ -1143,6 +1148,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
               status: "done",
               timestamp: message.timestamp,
               durationMs: Math.max(0, message.timestamp - item.startedAt),
+              render: msgRender ?? item.render,
             }
           : item,
       );
@@ -1161,6 +1167,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       toolCallId: message.toolCallId,
       startedAt: message.timestamp,
       durationMs: 0,
+      render: msgRender,
     });
   }
 

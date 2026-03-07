@@ -54,6 +54,8 @@ export interface ToolResultMessage {
   output: string;
   isError: boolean;
   timestamp: number;
+  /** P040: Optional structured render payload for richer client presentation. */
+  render?: import("@diligent/protocol").ToolRenderPayload;
 }
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;

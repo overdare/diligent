@@ -86,6 +86,83 @@ export const AssistantMessageSchema = z.object({
 });
 export type AssistantMessage = z.infer<typeof AssistantMessageSchema>;
 
+// ── Structured render blocks for tool results (P040) ─────────────────────────
+
+export const RenderToneSchema = z.enum(["default", "success", "warning", "danger", "info"]);
+export type RenderTone = z.infer<typeof RenderToneSchema>;
+
+export const SummaryBlockSchema = z.object({
+  type: z.literal("summary"),
+  text: z.string(),
+  tone: RenderToneSchema.optional(),
+});
+export type SummaryBlock = z.infer<typeof SummaryBlockSchema>;
+
+export const KeyValueBlockSchema = z.object({
+  type: z.literal("key_value"),
+  title: z.string().optional(),
+  items: z.array(z.object({ key: z.string(), value: z.string() })),
+});
+export type KeyValueBlock = z.infer<typeof KeyValueBlockSchema>;
+
+export const ListBlockSchema = z.object({
+  type: z.literal("list"),
+  title: z.string().optional(),
+  ordered: z.boolean().optional(),
+  items: z.array(z.string()),
+});
+export type ListBlock = z.infer<typeof ListBlockSchema>;
+
+export const TableBlockSchema = z.object({
+  type: z.literal("table"),
+  title: z.string().optional(),
+  columns: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+export type TableBlock = z.infer<typeof TableBlockSchema>;
+
+// TreeNode uses lazy recursion to allow nested children
+const TreeNodeSchema: z.ZodType<{ label: string; children?: { label: string; children?: unknown[] }[] }> = z.lazy(
+  () =>
+    z.object({
+      label: z.string(),
+      children: z.array(TreeNodeSchema).optional(),
+    }),
+);
+export type TreeNode = { label: string; children?: TreeNode[] };
+
+export const TreeBlockSchema = z.object({
+  type: z.literal("tree"),
+  title: z.string().optional(),
+  nodes: z.array(TreeNodeSchema),
+});
+export type TreeBlock = z.infer<typeof TreeBlockSchema>;
+
+export const StatusBadgesBlockSchema = z.object({
+  type: z.literal("status_badges"),
+  title: z.string().optional(),
+  items: z.array(z.object({ label: z.string(), tone: RenderToneSchema.optional() })),
+});
+export type StatusBadgesBlock = z.infer<typeof StatusBadgesBlockSchema>;
+
+export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
+  SummaryBlockSchema,
+  KeyValueBlockSchema,
+  ListBlockSchema,
+  TableBlockSchema,
+  TreeBlockSchema,
+  StatusBadgesBlockSchema,
+]);
+export type ToolRenderBlock = z.infer<typeof ToolRenderBlockSchema>;
+
+export const ToolRenderPayloadSchema = z.object({
+  version: z.literal(1),
+  blocks: z.array(ToolRenderBlockSchema),
+});
+export type ToolRenderPayload = z.infer<typeof ToolRenderPayloadSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const ToolResultMessageSchema = z.object({
   role: z.literal("tool_result"),
   toolCallId: z.string(),
@@ -93,6 +170,7 @@ export const ToolResultMessageSchema = z.object({
   output: z.string(),
   isError: z.boolean(),
   timestamp: z.number().int(),
+  render: ToolRenderPayloadSchema.optional(),
 });
 export type ToolResultMessage = z.infer<typeof ToolResultMessageSchema>;
 
@@ -179,6 +257,7 @@ export const AgentEventSchema = z.union([
     toolName: z.string(),
     output: z.string(),
     isError: z.boolean(),
+    render: ToolRenderPayloadSchema.optional(),
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
   }),
@@ -292,6 +371,7 @@ export const ThreadItemSchema = z.union([
     input: z.unknown(),
     output: z.string().optional(),
     isError: z.boolean().optional(),
+    render: ToolRenderPayloadSchema.optional(),
   }),
   z.object({
     type: z.literal("compaction"),

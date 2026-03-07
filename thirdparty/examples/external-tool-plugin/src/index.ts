@@ -1,6 +1,7 @@
 // @summary Example custom tool plugin package that exposes one safe read-only project summary tool
 import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 
 export const manifest = {
@@ -44,6 +45,27 @@ export async function createTools(ctx: { cwd: string }) {
             }),
           );
 
+          const render: ToolRenderPayload = {
+            version: 1,
+            blocks: [
+              {
+                type: "key_value",
+                title: "Project",
+                items: [
+                  { key: "name", value: basename(ctx.cwd) || ctx.cwd },
+                  { key: "plugin", value: manifest.name },
+                  { key: "package.json", value: packageJsonExists ? "present" : "missing" },
+                  { key: ".diligent/diligent.jsonc", value: diligentConfigExists ? "present" : "missing" },
+                ],
+              },
+              {
+                type: "list",
+                title: `Top-level entries (${formattedEntries.length}/${visibleEntries.length})`,
+                items: formattedEntries,
+              },
+            ],
+          };
+
           return {
             output: [
               "Plugin example loaded successfully.",
@@ -56,6 +78,7 @@ export async function createTools(ctx: { cwd: string }) {
               `top-level entries shown (${formattedEntries.length}/${visibleEntries.length}):`,
               ...formattedEntries.map((entry) => `- ${entry}`),
             ].join("\n"),
+            render,
           };
         } catch (error) {
           return {
