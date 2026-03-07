@@ -1,6 +1,6 @@
 ---
 id: P033
-status: pending
+status: done
 created: 2026-03-06
 decisions: [D095]
 ---
