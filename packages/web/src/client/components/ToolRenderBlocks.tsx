@@ -1,6 +1,4 @@
-// @summary Renders structured P040 ToolRenderPayload blocks (summary, key_value, list, table, tree, status_badges)
-
-import { cn } from "../lib/cn";
+// @summary Renders structured P040 ToolRenderPayload blocks matching the existing Content* component style
 import type {
   KeyValueBlock,
   ListBlock,
@@ -12,16 +10,26 @@ import type {
   TreeBlock,
   TreeNode,
 } from "@diligent/protocol";
+import { cn } from "../lib/cn";
+import { CopyButton } from "./CopyButton";
 
-/* ── Tone → Tailwind class maps ──────────────────────────────────── */
+/* ── Shared wrapper ───────────────────────────────────────────────── */
 
-const TONE_BG: Record<string, string> = {
-  default: "bg-text/5 text-text/80",
-  success: "bg-success/10 text-success",
-  warning: "bg-warn/10 text-warn",
-  danger: "bg-danger/10 text-danger",
-  info: "bg-accent/10 text-accent",
-};
+function BlockShell({ title, copyText, children }: { title?: string; copyText?: string; children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/40">
+      {title && (
+        <div className="flex items-center justify-between border-b border-text/10 bg-surface/60 px-3 py-1.5">
+          <span className="font-mono text-2xs uppercase tracking-wider text-muted">{title}</span>
+          {copyText && <CopyButton text={copyText} />}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/* ── Tone helpers ─────────────────────────────────────────────────── */
 
 const TONE_TEXT: Record<string, string> = {
   default: "text-text/80",
@@ -35,22 +43,11 @@ function toneText(tone?: string) {
   return TONE_TEXT[tone ?? "default"] ?? TONE_TEXT.default;
 }
 
-function toneBg(tone?: string) {
-  return TONE_BG[tone ?? "default"] ?? TONE_BG.default;
-}
-
-/* ── Block title shared element ──────────────────────────────────── */
-
-function BlockTitle({ title }: { title?: string }) {
-  if (!title) return null;
-  return <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>;
-}
-
 /* ── SummaryBlock ─────────────────────────────────────────────────── */
 
 function RenderSummary({ block }: { block: SummaryBlock }) {
   return (
-    <div className={cn("rounded-md px-3 py-2 text-sm font-medium", toneBg(block.tone))}>
+    <div className={cn("px-3 py-2 font-mono text-xs", toneText(block.tone))}>
       {block.text}
     </div>
   );
@@ -59,134 +56,147 @@ function RenderSummary({ block }: { block: SummaryBlock }) {
 /* ── KeyValueBlock ────────────────────────────────────────────────── */
 
 function RenderKeyValue({ block }: { block: KeyValueBlock }) {
+  const copyText = block.items.map((i) => `${i.key}: ${i.value}`).join("\n");
+  const maxKeyLen = block.items.reduce((m, i) => Math.max(m, i.key.length), 0);
+
   return (
-    <div>
-      <BlockTitle title={block.title} />
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+    <BlockShell title={block.title ?? "key / value"} copyText={copyText}>
+      <dl className="px-3 py-2 font-mono text-xs">
         {block.items.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static list from tool result
-          <div key={i} className="contents">
-            <dt className="text-xs font-medium text-muted">{item.key}</dt>
-            <dd className="font-mono text-xs text-text/80">{item.value}</dd>
+          // biome-ignore lint/suspicious/noArrayIndexKey: static list
+          <div key={i} className="flex gap-3 leading-relaxed">
+            <dt className="shrink-0 text-muted" style={{ width: `${maxKeyLen}ch` }}>{item.key}</dt>
+            <dd className="min-w-0 truncate text-text/80">{item.value}</dd>
           </div>
         ))}
       </dl>
-    </div>
+    </BlockShell>
   );
 }
 
 /* ── ListBlock ────────────────────────────────────────────────────── */
 
 function RenderList({ block }: { block: ListBlock }) {
-  const Tag = block.ordered ? "ol" : "ul";
+  const copyText = block.items.join("\n");
+
   return (
-    <div>
-      <BlockTitle title={block.title} />
-      <Tag className={cn("space-y-0.5 pl-4 text-xs text-text/80", block.ordered ? "list-decimal" : "list-disc")}>
+    <BlockShell title={block.title} copyText={copyText}>
+      <ul className="px-3 py-2 font-mono text-xs leading-relaxed text-text/80">
         {block.items.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static list from tool result
-          <li key={i}>{item}</li>
+          // biome-ignore lint/suspicious/noArrayIndexKey: static list
+          <li key={i} className="flex items-baseline gap-2">
+            <span className="shrink-0 text-muted">{block.ordered ? `${i + 1}.` : "·"}</span>
+            <span>{item}</span>
+          </li>
         ))}
-      </Tag>
-    </div>
+      </ul>
+    </BlockShell>
   );
 }
 
 /* ── TableBlock ───────────────────────────────────────────────────── */
 
 function RenderTable({ block }: { block: TableBlock }) {
+  const copyText = [
+    block.columns.join("\t"),
+    ...block.rows.map((r) => r.join("\t")),
+  ].join("\n");
+
   return (
-    <div className="overflow-x-auto">
-      <BlockTitle title={block.title} />
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-text/10">
-            {block.columns.map((col, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: static columns from tool result
-              <th key={i} className="pb-1 pr-4 text-left font-semibold text-muted last:pr-0">
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {block.rows.map((row, ri) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static rows from tool result
-            <tr key={ri} className="border-b border-text/5 last:border-0">
-              {row.map((cell, ci) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static cells from tool result
-                <td key={ci} className="py-0.5 pr-4 font-mono text-text/80 last:pr-0">
-                  {cell}
-                </td>
+    <BlockShell title={block.title} copyText={copyText}>
+      <div className="overflow-x-auto px-3 py-2">
+        <table className="w-full font-mono text-xs">
+          <thead>
+            <tr>
+              {block.columns.map((col, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static columns
+                <th key={i} className="pb-1 pr-4 text-left font-medium text-muted last:pr-0">
+                  {col}
+                </th>
               ))}
-              {/* Fill missing cells if row is shorter than columns */}
-              {row.length < block.columns.length &&
-                Array.from({ length: block.columns.length - row.length }).map((_, ci) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: fill cells
-                  <td key={`fill-${ci}`} className="py-0.5 pr-4 last:pr-0" />
-                ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {block.rows.map((row, ri) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: static rows
+              <tr key={ri} className="border-t border-text/5">
+                {block.columns.map((_, ci) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static cells
+                  <td key={ci} className="py-0.5 pr-4 text-text/80 last:pr-0">
+                    {row[ci] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
   );
 }
 
 /* ── TreeBlock ────────────────────────────────────────────────────── */
 
-function TreeNodeItem({ node, depth }: { node: TreeNode; depth: number }) {
-  const indent = depth * 12;
+function TreeNodeRow({ node, prefix, isLast }: { node: TreeNode; prefix: string; isLast: boolean }) {
   const children = node.children as TreeNode[] | undefined;
-  const hasChildren = children && children.length > 0;
+  const connector = isLast ? "└─ " : "├─ ";
+  const childPrefix = prefix + (isLast ? "   " : "│  ");
+
   return (
     <>
-      <div className="flex items-center gap-1 py-px font-mono text-xs text-text/80" style={{ paddingLeft: indent }}>
-        <span className="text-muted">{hasChildren ? "▾" : "·"}</span>
-        <span>{node.label}</span>
-      </div>
+      <li className="leading-relaxed text-text/80">
+        <span className="text-muted">{prefix}{connector}</span>
+        {node.label}
+      </li>
       {children?.map((child, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static tree from tool result
-        <TreeNodeItem key={i} node={child} depth={depth + 1} />
+        // biome-ignore lint/suspicious/noArrayIndexKey: static tree
+        <TreeNodeRow key={i} node={child} prefix={childPrefix} isLast={i === children.length - 1} />
       ))}
     </>
   );
 }
 
 function RenderTree({ block }: { block: TreeBlock }) {
-  // Cast nodes to TreeNode[] — z.lazy() inference makes children: unknown[]
   const nodes = block.nodes as TreeNode[];
+
   return (
-    <div>
-      <BlockTitle title={block.title} />
-      <div className="rounded-md border border-text/10 bg-bg/40 px-2 py-1">
+    <BlockShell title={block.title}>
+      <ul className="px-3 py-2 font-mono text-xs">
         {nodes.map((node, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static nodes from tool result
-          <TreeNodeItem key={i} node={node} depth={0} />
+          // biome-ignore lint/suspicious/noArrayIndexKey: static nodes
+          <TreeNodeRow key={i} node={node} prefix="" isLast={i === nodes.length - 1} />
         ))}
-      </div>
-    </div>
+      </ul>
+    </BlockShell>
   );
 }
 
 /* ── StatusBadgesBlock ────────────────────────────────────────────── */
 
+const TONE_BADGE: Record<string, string> = {
+  default: "bg-text/10 text-text/70",
+  success: "bg-success/15 text-success",
+  warning: "bg-warn/15 text-warn",
+  danger: "bg-danger/15 text-danger",
+  info: "bg-accent/15 text-accent",
+};
+
+function toneBadge(tone?: string) {
+  return TONE_BADGE[tone ?? "default"] ?? TONE_BADGE.default;
+}
+
 function RenderStatusBadges({ block }: { block: StatusBadgesBlock }) {
   return (
-    <div>
-      <BlockTitle title={block.title} />
-      <div className="flex flex-wrap gap-1.5">
+    <BlockShell title={block.title}>
+      <div className="flex flex-wrap gap-1.5 px-3 py-2">
         {block.items.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static badges from tool result
-          <span
-            key={i}
-            className={cn("rounded px-2 py-0.5 text-xs font-medium", toneBg(item.tone))}
-          >
+          // biome-ignore lint/suspicious/noArrayIndexKey: static badges
+          <span key={i} className={cn("rounded px-2 py-0.5 font-mono text-xs font-medium", toneBadge(item.tone))}>
             {item.label}
           </span>
         ))}
       </div>
-    </div>
+    </BlockShell>
   );
 }
 
@@ -207,7 +217,7 @@ function RenderBlock({ block }: { block: ToolRenderBlock }) {
     case "status_badges":
       return <RenderStatusBadges block={block} />;
     default:
-      // Unknown block kind — graceful fallback (unknown future block types)
+      // Unknown block kind — graceful fallback
       return null;
   }
 }
@@ -223,9 +233,9 @@ export function ToolRenderBlocks({ payload, className }: ToolRenderBlocksProps) 
   if (!payload.blocks || payload.blocks.length === 0) return null;
 
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-2", className)}>
       {payload.blocks.map((block, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: ordered blocks from tool result
+        // biome-ignore lint/suspicious/noArrayIndexKey: ordered blocks
         <RenderBlock key={i} block={block} />
       ))}
     </div>
