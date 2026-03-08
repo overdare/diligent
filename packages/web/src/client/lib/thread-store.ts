@@ -108,7 +108,7 @@ export interface ThreadState {
   seenKeys: Record<string, true>;
   itemSlots: Record<string, string>;
   pendingApproval: { requestId: number; request: ApprovalRequest } | null;
-  pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string> } | null;
+  pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string | string[]> } | null;
   toast: ToastState | null;
   usage: UsageState;
   currentContextTokens: number; // latest turn's inputTokens (not cumulative)

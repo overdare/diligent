@@ -25,6 +25,8 @@ export interface UserInputQuestion {
   header: string;
   question: string;
   options: UserInputOption[];
+  allow_multiple?: boolean;
+  is_other?: boolean;
   is_secret?: boolean;
 }
 
@@ -40,7 +42,7 @@ export interface UserInputRequest {
 }
 
 export interface UserInputResponse {
-  answers: Record<string, string>;
+  answers: Record<string, string | string[]>;
 }
 
 // D016: Tool context — D086: approve returns ApprovalResponse, D088: ask for user input

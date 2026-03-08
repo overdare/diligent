@@ -306,11 +306,26 @@ describe("protocol/flow", () => {
       params: {
         threadId: "th-1",
         request: {
-          questions: [{ id: "q1", header: "Need path", question: "file path?", options: [] }],
+          questions: [
+            {
+              id: "q1",
+              header: "Need path",
+              question: "file path?",
+              options: [{ label: "Current", description: "Use current directory" }],
+              allow_multiple: true,
+              is_other: true,
+            },
+          ],
         },
       },
     });
     expect(userInputReq.success).toBe(true);
+
+    const userInputRes = DiligentServerRequestResponseSchema.safeParse({
+      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+      result: { answers: { q1: ["Current", "Custom path"] } },
+    });
+    expect(userInputRes.success).toBe(true);
   });
 
   it("accepts and validates ToolRenderPayload with all block kinds", () => {

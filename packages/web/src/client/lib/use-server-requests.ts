@@ -28,7 +28,7 @@ export function useServerRequests(
     requestId: number;
     request: UserInputRequest;
   } | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
 
   const approvalRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
   const questionRef = useRef<{ requestId: number; request: DiligentServerRequest } | null>(null);
@@ -128,7 +128,7 @@ export function useServerRequests(
   );
 
   const resolveQuestion = useCallback(
-    (respondAnswers: Record<string, string>): void => {
+    (respondAnswers: Record<string, string | string[]>): void => {
       const current = questionRef.current;
       if (!current) return;
       rpcRef.current?.respondServerRequest(current.requestId, {

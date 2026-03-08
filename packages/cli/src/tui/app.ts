@@ -442,7 +442,7 @@ export class App {
 
   /** ask callback — show TextInput overlay for each question sequentially */
   private async handleAsk(request: UserInputRequest): Promise<import("@diligent/core").UserInputResponse> {
-    const answers: Record<string, string> = {};
+    const answers: Record<string, string | string[]> = {};
     for (const question of request.questions) {
       answers[question.id] = await this.showTextInputOverlay(question);
     }
@@ -476,19 +476,25 @@ export class App {
   }
 
   /** Show question input inline in the chat stream */
-  private showTextInputOverlay(question: import("@diligent/core").UserInputQuestion): Promise<string> {
+  private showTextInputOverlay(question: import("@diligent/core").UserInputQuestion): Promise<string | string[]> {
     return new Promise((resolve) => {
       const input = new QuestionInput(
         {
           header: question.header,
           question: question.question,
           options: question.options,
+          allowMultiple: question.allow_multiple,
+          allowOther: question.is_other,
           masked: question.is_secret,
           placeholder: question.is_secret ? "enter value\u2026" : undefined,
         },
         (value) => {
           this.chatView.setActiveQuestion(null);
           this.renderer.requestRender();
+          if (Array.isArray(value)) {
+            resolve(value);
+            return;
+          }
           resolve(value ?? "");
         },
       );

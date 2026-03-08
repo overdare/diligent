@@ -449,7 +449,9 @@ export const UserInputQuestionSchema = z.object({
   id: z.string(),
   header: z.string(),
   question: z.string(),
-  options: z.array(UserInputOptionSchema),
+  options: z.array(UserInputOptionSchema).min(1),
+  allow_multiple: z.boolean().optional(),
+  is_other: z.boolean().optional(),
   is_secret: z.boolean().optional(),
 });
 export type UserInputQuestion = z.infer<typeof UserInputQuestionSchema>;
@@ -467,8 +469,11 @@ export const UserInputRequestSchema = z.object({
 });
 export type UserInputRequest = z.infer<typeof UserInputRequestSchema>;
 
+export const UserInputAnswerSchema = z.union([z.string(), z.array(z.string())]);
+export type UserInputAnswer = z.infer<typeof UserInputAnswerSchema>;
+
 export const UserInputResponseSchema = z.object({
-  answers: z.record(z.string()),
+  answers: z.record(UserInputAnswerSchema),
 });
 export type UserInputResponse = z.infer<typeof UserInputResponseSchema>;
 

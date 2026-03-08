@@ -21,8 +21,8 @@ interface MessageListProps {
   approvalPrompt?: { request: ApprovalRequest; onDecide: (decision: "once" | "always" | "reject") => void } | null;
   questionPrompt?: {
     request: UserInputRequest;
-    answers: Record<string, string>;
-    onAnswerChange: (id: string, value: string) => void;
+    answers: Record<string, string | string[]>;
+    onAnswerChange: (id: string, value: string | string[]) => void;
     onSubmit: () => void;
     onCancel: () => void;
   } | null;

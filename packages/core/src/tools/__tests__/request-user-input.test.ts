@@ -82,30 +82,55 @@ describe("requestUserInputTool", () => {
     expect(result.output).toContain("[Cancelled by user]");
   });
 
-  it("rejects call when options array has fewer than 2 items", () => {
-    const parsed = requestUserInputTool.parameters.safeParse({
-      questions: [
-        { id: "q1", header: "bad", question: "One option only?", options: [{ label: "A", description: "only one" }] },
-      ],
-    });
-    expect(parsed.success).toBe(false);
+  it("formats multi-select answers by joining selected values", async () => {
+    const ctx = makeCtx(async () => ({ answers: { q1: ["A", "C"] } }));
+    const result = await requestUserInputTool.execute(
+      {
+        questions: [
+          {
+            id: "q1",
+            header: "choices",
+            question: "Pick options",
+            allow_multiple: true,
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+              { label: "C", description: "Option C" },
+            ],
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(result.output).toBe("[choices] Pick options\nAnswer: A, C");
   });
 
-  it("rejects call when options array has more than 3 items", async () => {
+  it("returns abortRequested when multi-select answer is empty", async () => {
+    const ctx = makeCtx(async () => ({ answers: { q1: [] } }));
+    const result = await requestUserInputTool.execute(
+      {
+        questions: [
+          {
+            id: "q1",
+            header: "choices",
+            question: "Pick options",
+            allow_multiple: true,
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(result.abortRequested).toBe(true);
+    expect(result.output).toContain("[Cancelled by user]");
+  });
+
+  it("rejects call when options array is empty", () => {
     const parsed = requestUserInputTool.parameters.safeParse({
-      questions: [
-        {
-          id: "q1",
-          header: "too many",
-          question: "Pick one?",
-          options: [
-            { label: "A", description: "a" },
-            { label: "B", description: "b" },
-            { label: "C", description: "c" },
-            { label: "D", description: "d" },
-          ],
-        },
-      ],
+      questions: [{ id: "q1", header: "bad", question: "No options?", options: [] }],
     });
     expect(parsed.success).toBe(false);
   });

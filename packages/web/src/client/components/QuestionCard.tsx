@@ -1,4 +1,4 @@
-// @summary Inline chat card for agent user-input questions with text/password fields
+// @summary Inline chat card for agent user-input questions with text/password fields and optional multi-select checkboxes
 
 import type { UserInputRequest } from "@diligent/protocol";
 import { Button } from "./Button";
@@ -7,10 +7,16 @@ import { SystemCard } from "./SystemCard";
 
 interface QuestionCardProps {
   request: UserInputRequest;
-  answers: Record<string, string>;
-  onAnswerChange: (id: string, value: string) => void;
+  answers: Record<string, string | string[]>;
+  onAnswerChange: (id: string, value: string | string[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
+}
+
+function toStringArray(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) return [value];
+  return [];
 }
 
 export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCancel }: QuestionCardProps) {
@@ -19,57 +25,76 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
       <SectionLabel>Input required</SectionLabel>
       <div className="space-y-4">
         {request.questions.map((question) => {
-          const selected = answers[question.id] ?? "";
+          const rawSelected = answers[question.id];
+          const selected = toStringArray(rawSelected);
           const hasOptions = question.options.length > 0;
-          const selectedIsOption = hasOptions && question.options.some((o) => o.label === selected);
+          const allowMultiple = Boolean(question.allow_multiple);
+          const allowOther = question.is_other === true;
+          const selectedSet = new Set(selected);
+          const customValue = selected.find((value) => !question.options.some((o) => o.label === value)) ?? "";
 
           return (
             <div key={question.id}>
               <p className="mb-2 text-sm font-semibold text-text">{question.question}</p>
 
-              {/* Numbered option rows */}
               {hasOptions
-                ? question.options.map((opt, i) => (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => onAnswerChange(question.id, opt.label)}
-                      className={`flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm transition ${
-                        selected === opt.label
-                          ? "bg-accent/10 text-text"
-                          : "text-muted hover:bg-surface/60 hover:text-text"
-                      }`}
-                    >
-                      <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>
-                      <span className="flex-1">{opt.label}</span>
-                      {opt.description ? <span className="shrink-0 text-xs opacity-40">{opt.description}</span> : null}
-                    </button>
-                  ))
+                ? question.options.map((opt, i) => {
+                    const checked = selectedSet.has(opt.label);
+                    return (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        onClick={() => {
+                          if (allowMultiple) {
+                          const next = checked ? selected.filter((v) => v !== opt.label) : [...selected, opt.label];
+                          onAnswerChange(question.id, next);
+                          return;
+                        }
+                          onAnswerChange(question.id, opt.label);
+                        }}
+                        className={`flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm transition ${
+                          checked ? "bg-accent/10 text-text" : "text-muted hover:bg-surface/60 hover:text-text"
+                        }`}
+                      >
+                        <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>
+                        <span className="shrink-0 font-mono text-xs">{allowMultiple ? (checked ? "[x]" : "[ ]") : checked ? "(●)" : "( )"}</span>
+                        <span className="flex-1">{opt.label}</span>
+                        {opt.description ? <span className="shrink-0 text-xs opacity-40">{opt.description}</span> : null}
+                      </button>
+                    );
+                  })
                 : null}
 
-              {/* Custom / free-text input row */}
-              <div className="flex items-center gap-3 px-2 py-1">
-                {hasOptions ? (
-                  <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">
-                    {question.options.length + 1}
-                  </span>
-                ) : null}
-                <div className="flex flex-1 flex-col">
-                  <input
-                    id={question.id}
-                    aria-label={question.header}
-                    type={question.is_secret ? "password" : "text"}
-                    placeholder={hasOptions ? "or type a custom answer…" : "Type your answer…"}
-                    value={selectedIsOption ? "" : selected}
-                    onChange={(e) => onAnswerChange(question.id, e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") onSubmit();
-                    }}
-                    className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
-                  />
-                  <div className="border-b border-text/10" />
+              {allowOther ? (
+                <div className="flex items-center gap-3 px-2 py-1">
+                  {hasOptions ? (
+                    <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{question.options.length + 1}</span>
+                  ) : null}
+                  <div className="flex flex-1 flex-col">
+                    <input
+                      id={question.id}
+                      aria-label={question.header}
+                      type={question.is_secret ? "password" : "text"}
+                      placeholder={hasOptions ? "or type a custom answer…" : "Type your answer…"}
+                      value={customValue}
+                      onChange={(e) => {
+                        const typed = e.target.value;
+                        const optionSelected = selected.filter((value) => question.options.some((o) => o.label === value));
+                        if (typed.length === 0) {
+                          onAnswerChange(question.id, allowMultiple ? optionSelected : optionSelected[0] ?? "");
+                          return;
+                        }
+                        onAnswerChange(question.id, allowMultiple ? [...optionSelected, typed] : typed);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") onSubmit();
+                      }}
+                      className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
+                    />
+                    <div className="border-b border-text/10" />
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           );
         })}
