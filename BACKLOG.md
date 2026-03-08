@@ -7,6 +7,7 @@
 - [ ] **Implement per-tool output limits** — Different char limits per tool (read_file: 50k, shell: 30k, grep: 20k, glob: 20k, edit: 10k, write: 1k) instead of current uniform 50KB/2000 lines for all tools. Configurable via SessionConfig. Reference: attractor spec §5.2. (added: 2026-02-27)
 - [ ] **Plan mode bash allowlist/denylist (D087a)** — Regex-based allowlist/denylist for bash tool in plan mode (git status ok, git push blocked). pi-agent's approach: concrete, testable regex patterns, not instruction-only. Stored as `planMode.bashAllowlist` / `planMode.bashDenylist` in config schema. (added: 2026-03-02)
 - [ ] **`request_user_input` tool (D088)** — Available in all modes (not plan-only). Blocks execution and surfaces a question to the user via TUI TextInput overlay. Returns user's text response. Supports multiple questions, options list, secret masking. See phase-5a plan. (updated: 2026-03-02)
+- [ ] **Show sub-agent tool call errors in UI** — When a tool call fails inside a sub-agent (spawn_agent), the error is currently invisible to the user in both Web and TUI. Surface tool call failure messages from child agent sessions so the parent thread's UI can display them (e.g., inline error badge or expandable error detail in the sub-agent result). (added: 2026-03-08)
 
 ### P2 — Medium (future capabilities)
 
