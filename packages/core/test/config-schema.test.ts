@@ -26,7 +26,7 @@ describe("DiligentConfigSchema", () => {
       systemPrompt: "You are helpful.",
       instructions: ["Use TypeScript", "Run tests"],
       session: { autoResume: true },
-      knowledge: { enabled: true, nudgeInterval: 5, injectionBudget: 4096 },
+      knowledge: { enabled: true, nudgeInterval: 5, injectionBudget: 4096, maxItems: 50 },
       compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 2048 },
     };
     const result = DiligentConfigSchema.safeParse(full);

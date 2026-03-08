@@ -7,11 +7,12 @@ import { readKnowledge } from "../src/knowledge/store";
 import type { ToolContext } from "../src/tool/types";
 import { createAddKnowledgeTool } from "../src/tools/add-knowledge";
 
-function makeCtx(): ToolContext {
+function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     toolCallId: "test-tc-1",
     signal: new AbortController().signal,
-    approve: async () => "once" as const,
+    approve: async () => "reject" as const,
+    ...overrides,
   };
 }
 
@@ -69,5 +70,23 @@ describe("add_knowledge tool", () => {
 
     const entries = await readKnowledge(tmpDir);
     expect(entries[0].tags).toEqual(["validation", "schema"]);
+  });
+
+  it("does not request approval", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
+    const tool = createAddKnowledgeTool(tmpDir);
+
+    const result = await tool.execute(
+      { type: "pattern", content: "No approval required", confidence: 0.9 },
+      makeCtx({
+        approve: async () => {
+          throw new Error("approval should not be called");
+        },
+      }),
+    );
+
+    expect(result.output).toContain("Knowledge saved");
+    const entries = await readKnowledge(tmpDir);
+    expect(entries).toHaveLength(1);
   });
 });

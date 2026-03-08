@@ -55,6 +55,7 @@ describe("Knowledge Store", () => {
     expect(entries[0].content).toBe("first");
     expect(entries[2].content).toBe("third");
   });
+
 });
 
 describe("Knowledge Ranker", () => {
@@ -71,26 +72,15 @@ describe("Knowledge Ranker", () => {
     expect(ranked[0].id).toBe("new1");
   });
 
-  it("applies type weights — corrections rank higher", () => {
-    const now = new Date().toISOString();
-    const pattern = makeEntry({
-      id: "p1",
-      type: "pattern",
-      confidence: 1.0,
-      timestamp: now,
-    });
-    const correction = makeEntry({
-      id: "c1",
-      type: "correction",
-      confidence: 1.0,
-      timestamp: now,
-    });
+  it("ranks by confidence only", () => {
+    const low = makeEntry({ id: "low", type: "correction", confidence: 0.2 });
+    const high = makeEntry({ id: "high", type: "discovery", confidence: 0.9 });
 
-    const ranked = rankKnowledge([pattern, correction]);
-    expect(ranked[0].id).toBe("c1"); // correction weight 1.5 > pattern weight 1.0
+    const ranked = rankKnowledge([low, high]);
+    expect(ranked[0].id).toBe("high");
   });
 
-  it("applies time decay — recent entries rank higher", () => {
+  it("ignores recency and ranks by confidence only", () => {
     const recent = makeEntry({
       id: "r1",
       confidence: 0.8,
@@ -103,7 +93,7 @@ describe("Knowledge Ranker", () => {
     });
 
     const ranked = rankKnowledge([old, recent]);
-    expect(ranked[0].id).toBe("r1");
+    expect(ranked.map((entry) => entry.id).sort()).toEqual(["o1", "r1"]);
   });
 
   it("returns empty for empty input", () => {
@@ -137,5 +127,36 @@ describe("Knowledge Injector", () => {
     // Should have header + only a few entries
     const lines = section.split("\n").filter(Boolean);
     expect(lines.length).toBeLessThan(10);
+  });
+
+  it("caps injected knowledge items to default top 50 by confidence", () => {
+    const entries = Array.from({ length: 70 }, (_, i) =>
+      makeEntry({ id: `k-${i}`, confidence: (70 - i) / 70, content: `Knowledge item ${i}` }),
+    );
+
+    const section = buildKnowledgeSection(entries, 20_000);
+    const lines = section
+      .split("\n")
+      .filter((line) => line.startsWith("- ["));
+
+    expect(lines).toHaveLength(50);
+    expect(lines[0]).toContain("Knowledge item 0");
+    expect(lines[49]).toContain("Knowledge item 49");
+    expect(section).not.toContain("Knowledge item 50");
+  });
+
+  it("uses configured maxItems when provided", () => {
+    const entries = Array.from({ length: 10 }, (_, i) =>
+      makeEntry({ id: `m-${i}`, confidence: (10 - i) / 10, content: `Configured item ${i}` }),
+    );
+
+    const section = buildKnowledgeSection(entries, 8192, 5);
+    const lines = section
+      .split("\n")
+      .filter((line) => line.startsWith("- ["));
+
+    expect(lines).toHaveLength(5);
+    expect(lines[4]).toContain("Configured item 4");
+    expect(section).not.toContain("Configured item 5");
   });
 });

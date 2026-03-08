@@ -65,7 +65,8 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   if (knowledgeEnabled) {
     const knowledgeEntries = await readKnowledge(paths.knowledge);
     const injectionBudget = config.knowledge?.injectionBudget ?? 8192;
-    knowledgeSection = buildKnowledgeSection(knowledgeEntries, injectionBudget);
+    const maxItems = config.knowledge?.maxItems;
+    knowledgeSection = buildKnowledgeSection(knowledgeEntries, injectionBudget, maxItems);
   }
 
   // Load skills

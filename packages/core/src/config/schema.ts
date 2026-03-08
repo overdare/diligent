@@ -53,6 +53,7 @@ export const DiligentConfigSchema = z
         enabled: z.boolean().optional(),
         nudgeInterval: z.number().int().positive().optional(),
         injectionBudget: z.number().int().positive().optional(),
+        maxItems: z.number().int().positive().optional(),
       })
       .optional(),
 
