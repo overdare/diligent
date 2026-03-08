@@ -1,19 +1,13 @@
 // @summary JSON-RPC app server mapping SessionManager/AgentEvent to shared protocol requests and notifications
 
-import { randomBytes } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
-  DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_VERSION,
   type DiligentClientRequest,
   DiligentClientRequestSchema,
   type DiligentServerNotification,
-  type DiligentServerRequestResponse,
-  DiligentServerRequestResponseSchema,
   type JSONRPCErrorResponse,
   JSONRPCErrorResponseSchema,
   JSONRPCRequestSchema,
@@ -21,48 +15,50 @@ import {
   JSONRPCResponseSchema,
   type Mode,
   type ModelInfo,
-  type PluginDescriptor,
-  type ProviderAuthStatus,
-  type SessionSummary,
   type ThinkingEffort,
   type ToolConflictPolicy,
-  type ToolDescriptor,
   type TurnStartParams,
 } from "@diligent/protocol";
-import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
-import {
-  loadAuthStore,
-  loadOAuthTokens,
-  removeAuthKey,
-  removeOAuthTokens,
-  saveAuthKey,
-  saveOAuthTokens,
-} from "../auth/auth-store";
-import {
-  buildOAuthTokens,
-  CHATGPT_AUTH_URL,
-  CHATGPT_CLIENT_ID,
-  CHATGPT_REDIRECT_URI,
-  CHATGPT_SCOPES,
-  openBrowser as defaultOpenBrowser,
-  exchangeCodeForTokens,
-  generatePKCE,
-  waitForCallback,
-} from "../auth/oauth";
+import type { AgentEvent, AgentLoopConfig } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
-import { getProjectConfigPath, writeProjectToolsConfig } from "../config/writer";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
-import { readKnowledge } from "../knowledge/store";
-import { PROVIDER_NAMES, type ProviderManager } from "../provider/provider-manager";
+import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
-import { buildSessionContext } from "../session/context-builder";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
-import { generateSessionId } from "../session/types";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
-import { buildDefaultTools } from "../tools/defaults";
+import {
+  buildProviderList,
+  handleAuthOAuthStart,
+  handleAuthRemove,
+  handleAuthSet,
+  handleConfigSet,
+  handleImageUpload,
+} from "./config-handlers";
 import { agentEventToNotification } from "./event-mapper";
+import {
+  type PendingServerRequest,
+  handleServerResponseMessage,
+  requestApprovalFromConnections,
+  requestUserInputFromConnections,
+} from "./server-requests";
+import {
+  type ThreadRuntime,
+  getLatestEffortFromSessions,
+  handleEffortSet,
+  handleKnowledgeList,
+  handleModeSet,
+  handleThreadDelete,
+  handleThreadList,
+  handleThreadRead,
+  handleThreadResume,
+  handleThreadStart,
+  handleToolsList,
+  handleToolsSet,
+  handleTurnInterrupt,
+  handleTurnStart,
+  handleTurnSteer,
+} from "./thread-handlers";
 
 export interface ModelConfig {
   currentModelId: string | undefined;
@@ -120,25 +116,6 @@ interface ConnectedPeer {
   effort: ThinkingEffort;
 }
 
-interface PendingServerRequest {
-  method: string;
-  resolve: (response: DiligentServerRequestResponse | null) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-  sentTo: Set<string>;
-}
-
-interface ThreadRuntime {
-  id: string;
-  cwd: string;
-  mode: Mode;
-  effort: ThinkingEffort;
-  manager: SessionManager;
-  abortController: AbortController | null;
-  currentTurnId: string | null;
-  isRunning: boolean;
-  registry?: AgentRegistry;
-}
-
 export class DiligentAppServer {
   private readonly serverName: string;
   private readonly serverVersion: string;
@@ -193,37 +170,12 @@ export class DiligentAppServer {
       }
 
       if (isRpcResponse(message)) {
-        const reqId = typeof message.id === "number" ? message.id : parseInt(String(message.id), 10);
-        if (Number.isNaN(reqId)) return;
-
-        const pending = this.pendingServerRequests.get(reqId);
-        if (!pending) return;
-
-        clearTimeout(pending.timeoutId);
-        this.pendingServerRequests.delete(reqId);
-
-        // Notify other connections that this request was resolved
-        for (const otherId of pending.sentTo) {
-          if (otherId === connectionId) continue;
-          const other = this.connections.get(otherId);
-          if (other) {
-            void other.peer.send({
-              method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
-              params: { requestId: reqId },
-            });
-          }
-        }
-
-        if ("error" in message) {
-          pending.resolve(null);
-          return;
-        }
-
-        const parsed = DiligentServerRequestResponseSchema.safeParse({
-          method: pending.method,
-          result: message.result,
+        await handleServerResponseMessage({
+          connectionId,
+          message,
+          pendingServerRequests: this.pendingServerRequests,
+          getConnectionById: (id) => this.connections.get(id),
         });
-        pending.resolve(parsed.success ? parsed.data : null);
       }
     });
 
@@ -440,110 +392,45 @@ export class DiligentAppServer {
       }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
-        const { model } = request.params;
-        if (!model) return { model: this.currentModelId };
-        const mc = this.config.modelConfig;
-        if (!mc) throw Object.assign(new Error("Model config not available"), { code: -32601 });
-        const valid = mc.getAvailableModels().find((m) => m.id === model);
-        if (!valid) throw Object.assign(new Error(`Unknown model: ${model}`), { code: -32602 });
-        this.currentModelId = model;
-        mc.onModelChange(model);
-        return { model };
+        const result = await handleConfigSet(this.config.modelConfig, this.currentModelId, request.params.model);
+        this.currentModelId = result.model;
+        return result;
       }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
         const pm = this.config.providerManager;
         const mc = this.config.modelConfig;
         if (!pm || !mc) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-        const providers = await this.buildProviderList();
+        const providers = await buildProviderList();
         return { providers, availableModels: mc.getAvailableModels() };
       }
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET: {
-        const pm = this.config.providerManager;
-        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-        await saveAuthKey(request.params.provider, request.params.apiKey);
-        pm.setApiKey(request.params.provider, request.params.apiKey);
-        const providers = await this.buildProviderList();
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
-          params: { providers },
-        });
-        return { ok: true as const };
-      }
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET:
+        return handleAuthSet(this.config.providerManager, request.params, (notification) => this.emit(notification));
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE: {
-        const pm = this.config.providerManager;
-        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-        await removeAuthKey(request.params.provider);
-        pm.removeApiKey(request.params.provider);
-        if (request.params.provider === "openai") {
-          await removeOAuthTokens();
-          pm.removeOAuthTokens();
-        }
-        const providers = await this.buildProviderList();
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
-          params: { providers },
-        });
-        return { ok: true as const };
-      }
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE:
+        return handleAuthRemove(this.config.providerManager, request.params, (notification) => this.emit(notification));
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START: {
-        const pm = this.config.providerManager;
-        if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-        if (this.oauthPending) throw Object.assign(new Error("OAuth flow already in progress"), { code: -32000 });
-        const { codeVerifier, codeChallenge } = generatePKCE();
-        const state = randomBytes(16).toString("hex");
-        const params = new URLSearchParams({
-          response_type: "code",
-          client_id: CHATGPT_CLIENT_ID,
-          redirect_uri: CHATGPT_REDIRECT_URI,
-          scope: CHATGPT_SCOPES,
-          code_challenge: codeChallenge,
-          code_challenge_method: "S256",
-          id_token_add_organizations: "true",
-          codex_cli_simplified_flow: "true",
-          originator: "diligent",
-          state,
+      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START:
+        return handleAuthOAuthStart({
+          providerManager: this.config.providerManager,
+          oauthPending: this.oauthPending,
+          setOAuthPending: (value) => {
+            this.oauthPending = value;
+          },
+          openBrowser: this.config.openBrowser,
+          emit: (notification) => this.emit(notification),
         });
-        const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
-        const loginId = state;
-        const browser = this.config.openBrowser ?? defaultOpenBrowser;
-        browser(authUrl);
-        this.oauthPending = (async () => {
-          try {
-            const { code } = await waitForCallback(state, 5 * 60 * 1000);
-            const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
-            const tokens = buildOAuthTokens(rawTokens);
-            await saveOAuthTokens(tokens);
-            pm.setOAuthTokens(tokens);
-            await this.emit({
-              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
-              params: { loginId, success: true, error: null },
-            });
-            const providers = await this.buildProviderList();
-            await this.emit({
-              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
-              params: { providers },
-            });
-          } catch (e) {
-            const error = e instanceof Error ? e.message : "OAuth flow failed";
-            await this.emit({
-              method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
-              params: { loginId, success: false, error },
-            });
-          } finally {
-            this.oauthPending = null;
-          }
-        })();
-        return { authUrl };
-      }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
         const conn = this.connections.get(connectionId);
         const effectiveThreadId = request.params.threadId ?? conn?.currentThreadId ?? undefined;
-        const attachment = await this.handleImageUpload(request.params, effectiveThreadId, conn?.cwd);
+        const attachment = await handleImageUpload({
+          params: request.params,
+          threadId: effectiveThreadId,
+          cwd: conn?.cwd ?? this.config.cwd ?? process.cwd(),
+          toImageUrl: this.config.toImageUrl,
+        });
         return { attachment };
       }
     }
@@ -552,205 +439,30 @@ export class DiligentAppServer {
   // ─── Thread management handlers ─────────────────────────────────────────────
 
   private async handleThreadStart(params: { cwd: string; mode?: Mode }): Promise<{ threadId: string }> {
-    const mode = params.mode ?? "default";
-    const tempId = generateSessionId();
-    const effort = await this.getLatestEffortForCwd(params.cwd);
-    const runtime = await this.createThreadRuntime(tempId, params.cwd, mode, true, effort);
-    // Use manager's sessionId as canonical threadId so it matches on resume
-    const threadId = runtime.manager.sessionId;
-    runtime.id = threadId;
-
-    this.threads.set(threadId, runtime);
-    this.activeThreadId = threadId;
-    this.knownCwds.add(params.cwd);
-
-    await this.emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED, params: { threadId } });
-    return { threadId };
+    return handleThreadStart(this.buildThreadHandlersContext(), params);
   }
 
   private async handleThreadResume(params: {
     threadId?: string;
     mostRecent?: boolean;
   }): Promise<{ found: boolean; threadId?: string; context?: unknown[] }> {
-    // If the thread is already loaded in memory (possibly running), return it directly.
-    // Creating a new runtime would overwrite isRunning=true with isRunning=false.
-    if (params.threadId) {
-      const existing = this.threads.get(params.threadId);
-      if (existing) {
-        const context = existing.manager.getContext();
-        this.activeThreadId = params.threadId;
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
-          params: { threadId: params.threadId, restoredMessages: context.length },
-        });
-        return { found: true, threadId: params.threadId, context };
-      }
-    }
-
-    const candidateCwds = Array.from(this.knownCwds);
-
-    for (const cwd of candidateCwds) {
-      const placeholderId = params.threadId ?? generateSessionId();
-      const runtime = await this.createThreadRuntime(
-        placeholderId,
-        cwd,
-        "default",
-        false,
-        await this.getLatestEffortForCwd(cwd),
-      );
-
-      const resumed = await runtime.manager.resume({
-        sessionId: params.threadId,
-        mostRecent: params.mostRecent,
-      });
-      if (!resumed) continue;
-
-      // After resume, the manager's sessionId reflects the actual session file.
-      // Use that as the canonical thread ID (= session ID).
-      const threadId = runtime.manager.sessionId;
-      runtime.id = threadId;
-
-      const context = runtime.manager.getContext();
-      runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
-      this.threads.set(threadId, runtime);
-      this.activeThreadId = threadId;
-
-      await this.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
-        params: { threadId, restoredMessages: context.length },
-      });
-
-      return { found: true, threadId, context };
-    }
-
-    return { found: false };
+    return handleThreadResume(this.buildThreadHandlersContext(), params);
   }
 
-  private async handleThreadList(limit?: number, includeChildren?: boolean): Promise<{ data: SessionSummary[] }> {
-    const result: SessionSummary[] = [];
-
-    for (const cwd of this.knownCwds) {
-      const paths = await this.config.resolvePaths(cwd);
-      const sessions = await listSessions(paths.sessions);
-      for (const session of sessions) {
-        result.push({
-          id: session.id,
-          path: session.path,
-          cwd: session.cwd,
-          name: session.name,
-          created: session.created.toISOString(),
-          modified: session.modified.toISOString(),
-          messageCount: session.messageCount,
-          firstUserMessage: session.firstUserMessage,
-          parentSession: session.parentSession,
-        });
-      }
-    }
-
-    const filtered = includeChildren ? result : result.filter((s) => !s.parentSession);
-    filtered.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-
-    return { data: filtered.slice(0, limit ?? 100) };
+  private async handleThreadList(limit?: number, includeChildren?: boolean) {
+    return handleThreadList(this.buildThreadHandlersContext(), limit, includeChildren);
   }
 
-  private async handleThreadRead(threadId?: string): Promise<{
-    messages: unknown[];
-    childSessions?: unknown[];
-    hasFollowUp: boolean;
-    entryCount: number;
-    isRunning: boolean;
-    currentEffort: ThinkingEffort;
-  }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    const paths = await this.config.resolvePaths(runtime.cwd);
-    const sessionId = runtime.manager.sessionId;
-
-    // Read child sessions (sub-agents spawned by this thread)
-    const children = await readChildSessions(paths.sessions, sessionId);
-
-    return {
-      messages: runtime.manager.getContext(),
-      childSessions: children.length > 0 ? children : undefined,
-      hasFollowUp: runtime.manager.hasPendingMessages(),
-      entryCount: runtime.manager.entryCount,
-      isRunning: runtime.isRunning,
-      currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
-    };
+  private async handleThreadRead(threadId?: string) {
+    return handleThreadRead(this.buildThreadHandlersContext(), threadId);
   }
 
   private async handleTurnStart(params: TurnStartParams, connectionId?: string): Promise<{ accepted: true }> {
-    const runtime = await this.resolveThreadRuntime(params.threadId);
-    if (runtime.isRunning) throw new Error("A turn is already running for this thread");
-
-    // Track which connection initiated this turn (for userMessage notification skip)
-    if (connectionId) {
-      this.turnInitiators.set(runtime.id, connectionId);
-    }
-
-    runtime.abortController = new AbortController();
-    runtime.isRunning = true;
-    const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
-    runtime.currentTurnId = turnId;
-
-    await this.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-      params: { threadId: runtime.id, status: "busy" },
-    });
-    await this.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
-      params: { threadId: runtime.id, turnId },
-    });
-
-    const timestamp = Date.now();
-    const content =
-      params.content && params.content.length > 0
-        ? params.content
-        : params.attachments && params.attachments.length > 0
-          ? [
-              ...((params.message.trim().length > 0 ? [{ type: "text", text: params.message }] : []) as Array<{
-                type: "text";
-                text: string;
-              }>),
-              ...params.attachments,
-            ]
-          : params.message;
-    const userMessage = {
-      role: "user" as const,
-      content,
-      timestamp,
-    };
-
-    const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
-    const userItem = { type: "userMessage" as const, itemId: userItemId, message: userMessage };
-    await this.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED,
-      params: { threadId: runtime.id, turnId, item: userItem },
-    });
-    await this.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED,
-      params: { threadId: runtime.id, turnId, item: userItem },
-    });
-
-    const stream = runtime.manager.run(userMessage);
-    void this.consumeStream(runtime, stream, turnId);
-
-    return { accepted: true };
+    return handleTurnStart(this.buildThreadHandlersContext(), params, connectionId, this.turnInitiators);
   }
 
   private async handleTurnInterrupt(threadId?: string): Promise<{ interrupted: boolean }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    if (!runtime.isRunning || !runtime.abortController) {
-      console.log(
-        "[AppServer] turn/interrupt: no running turn for thread %s (isRunning=%s)",
-        threadId,
-        runtime.isRunning,
-      );
-      return { interrupted: false };
-    }
-
-    console.log("[AppServer] turn/interrupt: aborting thread %s", runtime.id);
-    runtime.abortController.abort();
-    return { interrupted: true };
+    return handleTurnInterrupt(this.buildThreadHandlersContext(), threadId);
   }
 
   private async handleTurnSteer(
@@ -758,88 +470,30 @@ export class DiligentAppServer {
     content: string,
     _followUp: boolean,
   ): Promise<{ queued: true }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    // Unified queue — followUp and steer are now the same operation
-    runtime.manager.steer(content);
-    return { queued: true };
+    return handleTurnSteer(this.buildThreadHandlersContext(), threadId, content);
   }
 
   private async handleModeSet(threadId: string | undefined, mode: Mode): Promise<{ mode: Mode }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    runtime.mode = mode;
-    runtime.manager.appendModeChange(mode as ModeKind, "command");
-    return { mode };
+    return handleModeSet(this.buildThreadHandlersContext(), threadId, mode);
   }
 
   private async handleEffortSet(
     threadId: string | undefined,
     effort: ThinkingEffort,
   ): Promise<{ effort: ThinkingEffort }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    runtime.effort = effort;
-    runtime.manager.appendEffortChange(effort, "command");
-    return { effort };
+    return handleEffortSet(this.buildThreadHandlersContext(), threadId, effort);
   }
 
   private async handleKnowledgeList(threadId: string | undefined, limit?: number): Promise<{ data: unknown[] }> {
-    const runtime = await this.resolveThreadRuntime(threadId);
-    const paths = await this.config.resolvePaths(runtime.cwd);
-    const entries = await readKnowledge(paths.knowledge);
-    return { data: entries.slice(0, limit ?? entries.length) };
+    return handleKnowledgeList(this.buildThreadHandlersContext(), threadId, limit);
   }
 
   private async handleThreadDelete(threadId: string): Promise<{ deleted: boolean }> {
-    const existing = this.threads.get(threadId);
-    if (existing?.isRunning) {
-      throw new Error("Cannot delete a thread that is currently running");
-    }
-
-    const knownInMemory = this.threads.has(threadId);
-
-    let deletedFromDisk = false;
-    for (const cwd of this.knownCwds) {
-      const paths = await this.config.resolvePaths(cwd);
-      const result = await deleteSession(paths.sessions, threadId);
-      if (result) {
-        deletedFromDisk = true;
-        break;
-      }
-    }
-
-    const deleted = deletedFromDisk || knownInMemory;
-    if (deleted) {
-      this.threads.delete(threadId);
-      if (this.activeThreadId === threadId) {
-        this.activeThreadId = null;
-      }
-    }
-
-    return { deleted };
+    return handleThreadDelete(this.buildThreadHandlersContext(), threadId);
   }
 
-  private async handleToolsList(threadId?: string): Promise<{
-    configPath: string;
-    appliesOnNextTurn: true;
-    trustMode: "full_trust";
-    conflictPolicy: ToolConflictPolicy;
-    tools: ToolDescriptor[];
-    plugins: PluginDescriptor[];
-  }> {
-    const { cwd, tools } = await this.resolveToolsContext(threadId);
-    const paths = await this.config.resolvePaths(cwd);
-    const result = await buildDefaultTools(cwd, paths, undefined, tools);
-
-    return {
-      configPath: getProjectConfigPath(cwd),
-      appliesOnNextTurn: true,
-      trustMode: "full_trust",
-      conflictPolicy: (tools?.conflictPolicy ?? "error") as ToolConflictPolicy,
-      tools: result.toolState,
-      plugins: result.pluginState.map((plugin) => ({
-        ...plugin,
-        loadError: plugin.loadError,
-      })),
-    };
+  private async handleToolsList(threadId?: string) {
+    return handleToolsList(this.buildThreadHandlersContext(), threadId);
   }
 
   private async handleToolsSet(
@@ -849,40 +503,10 @@ export class DiligentAppServer {
       plugins?: Array<{ package: string; enabled?: boolean; tools?: Record<string, boolean>; remove?: boolean }>;
       conflictPolicy?: ToolConflictPolicy;
     },
-  ): Promise<{
-    configPath: string;
-    appliesOnNextTurn: true;
-    trustMode: "full_trust";
-    conflictPolicy: ToolConflictPolicy;
-    tools: ToolDescriptor[];
-    plugins: PluginDescriptor[];
-  }> {
+  ) {
     const manager = this.config.toolConfig;
     if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
-
-    const { cwd } = await this.resolveToolsContext(threadId);
-    const writeResult = await writeProjectToolsConfig(cwd, {
-      builtin: params.builtin,
-      plugins: params.plugins,
-      conflictPolicy: params.conflictPolicy,
-    });
-
-    manager.setTools(writeResult.config.tools);
-
-    const paths = await this.config.resolvePaths(cwd);
-    const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools);
-
-    return {
-      configPath: writeResult.configPath,
-      appliesOnNextTurn: true,
-      trustMode: "full_trust",
-      conflictPolicy: (writeResult.config.tools?.conflictPolicy ?? "error") as ToolConflictPolicy,
-      tools: result.toolState,
-      plugins: result.pluginState.map((plugin) => ({
-        ...plugin,
-        loadError: plugin.loadError,
-      })),
-    };
+    return handleToolsSet(this.buildThreadHandlersContext(), manager, threadId, params);
   }
 
   // ─── Stream consumption ─────────────────────────────────────────────────────
@@ -1078,61 +702,29 @@ export class DiligentAppServer {
 
   // ─── Server request broadcasting ────────────────────────────────────────────
 
-  private async broadcastServerRequest(method: string, params: unknown): Promise<DiligentServerRequestResponse | null> {
-    if (this.connections.size === 0) return null;
-
-    const id = ++this.serverRequestSeq;
-    const sentTo = new Set<string>();
-
-    return new Promise<DiligentServerRequestResponse | null>((resolve) => {
-      const timeoutId = setTimeout(
-        () => {
-          this.pendingServerRequests.delete(id);
-          resolve(null);
-        },
-        5 * 60 * 1000,
-      );
-
-      this.pendingServerRequests.set(id, { method, resolve, timeoutId, sentTo });
-
-      for (const conn of this.connections.values()) {
-        sentTo.add(conn.id);
-        void conn.peer.send({ id, method, params });
-      }
-    });
+  private allocateServerRequestId(): number {
+    this.serverRequestSeq += 1;
+    return this.serverRequestSeq;
   }
 
   private async requestApproval(threadId: string, request: ApprovalRequest): Promise<ApprovalResponse> {
-    // New: broadcast to connections if any exist
-    if (this.connections.size > 0) {
-      const response = await this.broadcastServerRequest(DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST, {
-        threadId,
-        request,
-      });
-      if (!response) return "once";
-      const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-      if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) return "reject";
-      return parsed.data.result.decision;
-    }
-
-    return "once";
+    return requestApprovalFromConnections({
+      threadId,
+      request,
+      connections: this.connections,
+      pendingServerRequests: this.pendingServerRequests,
+      allocateServerRequestId: () => this.allocateServerRequestId(),
+    });
   }
 
   private async requestUserInput(threadId: string, request: UserInputRequest): Promise<UserInputResponse> {
-    // New: broadcast to connections if any exist
-    if (this.connections.size > 0) {
-      const response = await this.broadcastServerRequest(DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST, {
-        threadId,
-        request,
-      });
-      if (!response) return { answers: {} };
-      const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-      if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST)
-        return { answers: {} };
-      return parsed.data.result;
-    }
-
-    return { answers: {} };
+    return requestUserInputFromConnections({
+      threadId,
+      request,
+      connections: this.connections,
+      pendingServerRequests: this.pendingServerRequests,
+      allocateServerRequestId: () => this.allocateServerRequestId(),
+    });
   }
 
   // ─── Thread runtime utilities ────────────────────────────────────────────────
@@ -1169,17 +761,12 @@ export class DiligentAppServer {
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),
           getSessionId: () => runtime.manager.sessionId,
-          // Pass the thread's existing registry so it can be reused rather than
-          // recreated. This preserves live child-agent entries across turns, ensuring
-          // that wait() in turn N can see agents spawned in turn N-1.
           existingRegistry: runtime.registry,
         });
         result.debugThreadId = runtime.id;
         result.debugTurnId = runtime.currentTurnId ?? undefined;
         if (result.registry) {
           runtime.registry = result.registry;
-          // Restore thread IDs from session history so collab tools work after server restart.
-          // restoreAgent() is a no-op for IDs already in the registry (live agents stay intact).
           for (const agent of runtime.manager.getHistoricalCollabAgents()) {
             result.registry.restoreAgent(agent.threadId, agent.nickname);
           }
@@ -1199,14 +786,10 @@ export class DiligentAppServer {
 
   private async resolveThreadRuntime(threadId?: string): Promise<ThreadRuntime> {
     const id = threadId ?? this.activeThreadId;
-    if (!id) {
-      throw new Error("No active thread");
-    }
+    if (!id) throw new Error("No active thread");
 
     const existing = this.threads.get(id);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     for (const cwd of this.knownCwds) {
       const runtime = await this.createThreadRuntime(id, cwd, "default", false, await this.getLatestEffortForCwd(cwd));
@@ -1223,45 +806,7 @@ export class DiligentAppServer {
   }
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
-    const paths = await this.config.resolvePaths(cwd);
-    const ordered = (await listSessions(paths.sessions))
-      .filter((session) => session.cwd === cwd)
-      .map<SessionSummary>((session) => ({
-        id: session.id,
-        path: session.path,
-        cwd: session.cwd,
-        name: session.name,
-        created: session.created.toISOString(),
-        modified: session.modified.toISOString(),
-        messageCount: session.messageCount,
-        firstUserMessage: session.firstUserMessage,
-        parentSession: session.parentSession,
-      }));
-
-    for (const summary of ordered) {
-      const runtime = this.threads.get(summary.id);
-      const runtimeEffort = runtime?.manager.getCurrentEffort() ?? runtime?.effort;
-      if (runtimeEffort) {
-        return runtimeEffort;
-      }
-
-      if (!summary.path) {
-        continue;
-      }
-
-      try {
-        const { entries } = await readSessionFile(summary.path);
-        const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
-        const effort = buildSessionContext(entries, leafId).currentEffort;
-        if (effort) {
-          return effort;
-        }
-      } catch {
-        // Ignore unreadable session files and continue to older candidates.
-      }
-    }
-
-    return "medium";
+    return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd);
   }
 
   private async resolveToolsContext(
@@ -1272,65 +817,32 @@ export class DiligentAppServer {
 
     if (threadId || this.activeThreadId) {
       const runtime = await this.resolveThreadRuntime(threadId);
-      return {
-        cwd: runtime.cwd,
-        tools: manager.getTools(),
-      };
+      return { cwd: runtime.cwd, tools: manager.getTools() };
     }
 
     const cwd = this.config.cwd ?? process.cwd();
     this.knownCwds.add(cwd);
+    return { cwd, tools: manager.getTools() };
+  }
+
+  private buildThreadHandlersContext() {
     return {
-      cwd,
-      tools: manager.getTools(),
+      activeThreadId: this.activeThreadId,
+      threads: this.threads,
+      knownCwds: this.knownCwds,
+      resolvePaths: this.config.resolvePaths,
+      createThreadRuntime: (threadId: string, cwd: string, mode: Mode, createNew: boolean, effort?: ThinkingEffort) =>
+        this.createThreadRuntime(threadId, cwd, mode, createNew, effort),
+      resolveThreadRuntime: (threadId?: string) => this.resolveThreadRuntime(threadId),
+      getLatestEffortForCwd: (cwd: string) => this.getLatestEffortForCwd(cwd),
+      emit: (notification: DiligentServerNotification) => this.emit(notification),
+      consumeStream: (runtime: ThreadRuntime, stream: ReturnType<SessionManager["run"]>, turnId: string) =>
+        this.consumeStream(runtime, stream, turnId),
+      resolveToolsContext: (threadId?: string) => this.resolveToolsContext(threadId),
+      setActiveThreadId: (threadId: string | null) => {
+        this.activeThreadId = threadId;
+      },
     };
-  }
-
-  // ─── Auth / config helpers ───────────────────────────────────────────────────
-
-  private async buildProviderList(): Promise<ProviderAuthStatus[]> {
-    const keys = await loadAuthStore();
-    const oauthTokens = await loadOAuthTokens();
-    return PROVIDER_NAMES.map((p) => ({
-      provider: p,
-      configured: Boolean(keys[p]),
-      maskedKey: keys[p] ? maskKey(keys[p] as string) : undefined,
-      oauthConnected: p === "openai" ? Boolean(oauthTokens) : undefined,
-    }));
-  }
-
-  // ─── Image upload helper ─────────────────────────────────────────────────────
-
-  private async handleImageUpload(
-    params: { fileName: string; mediaType: string; dataBase64: string },
-    threadId?: string,
-    cwd?: string,
-  ): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string; webUrl?: string }> {
-    const baseCwd = cwd ?? this.config.cwd ?? process.cwd();
-    const root = threadId
-      ? join(baseCwd, ".diligent", "images", threadId)
-      : join(baseCwd, ".diligent", "images", "drafts");
-    await mkdir(root, { recursive: true });
-
-    const ext = extname(params.fileName) || mediaTypeToExtension(params.mediaType);
-    const safeBase = sanitizeFileStem(basename(params.fileName, ext));
-    const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}-${safeBase}${ext}`;
-    const absPath = join(root, fileName);
-
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(params.dataBase64, "base64");
-    } catch {
-      throw new Error("Invalid image payload");
-    }
-
-    if (buffer.length === 0) throw new Error("Empty image payload");
-    if (buffer.length > 10 * 1024 * 1024) throw new Error("Image exceeds 10 MB limit");
-
-    await Bun.write(absPath, buffer);
-
-    const webUrl = this.config.toImageUrl?.(absPath);
-    return { type: "local_image", path: absPath, mediaType: params.mediaType, fileName: params.fileName, webUrl };
   }
 
   private errorResponse(
@@ -1346,11 +858,6 @@ export class DiligentAppServer {
   }
 }
 
-function maskKey(key: string): string {
-  if (key.length <= 11) return "***";
-  return `${key.slice(0, 7)}...${key.slice(-4)}`;
-}
-
 function summarizeSessionTail(messages: ReturnType<SessionManager["getContext"]>): string {
   const last = messages[messages.length - 1];
   if (!last) return "none";
@@ -1360,27 +867,4 @@ function summarizeSessionTail(messages: ReturnType<SessionManager["getContext"]>
     return `assistant:stop=${last.stopReason}:blocks=${blockTypes}`;
   }
   return last.role;
-}
-
-function sanitizeFileStem(input: string): string {
-  const cleaned = input
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return cleaned || "image";
-}
-
-function mediaTypeToExtension(mediaType: string): string {
-  switch (mediaType) {
-    case "image/png":
-      return ".png";
-    case "image/jpeg":
-      return ".jpg";
-    case "image/webp":
-      return ".webp";
-    case "image/gif":
-      return ".gif";
-    default:
-      return ".img";
-  }
 }
