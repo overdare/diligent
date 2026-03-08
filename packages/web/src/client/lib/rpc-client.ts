@@ -23,15 +23,15 @@ type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type RequestResult<M extends RequestMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 
-type WebMethod =
-  | "config/set"
-  | "auth/list"
-  | "auth/set"
-  | "auth/remove"
-  | "auth/oauth/start"
-  | "thread/subscribe"
-  | "thread/unsubscribe"
-  | "image/upload";
+type WebMethod = (typeof DILIGENT_CLIENT_REQUEST_METHODS)[
+  | "CONFIG_SET"
+  | "AUTH_LIST"
+  | "AUTH_SET"
+  | "AUTH_REMOVE"
+  | "AUTH_OAUTH_START"
+  | "THREAD_SUBSCRIBE"
+  | "THREAD_UNSUBSCRIBE"
+  | "IMAGE_UPLOAD"];
 type WebParams<M extends WebMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type WebResult<M extends WebMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 
