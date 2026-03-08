@@ -1,5 +1,6 @@
 // @summary ChatGPT subscription stream — raw fetch to chatgpt.com/backend-api/codex/responses (no SDK)
 import { arch, platform, release } from "node:os";
+import { DILIGENT_VERSION } from "@diligent/protocol";
 import type { OpenAIOAuthTokens } from "../auth/types";
 import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
@@ -9,7 +10,7 @@ import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunctio
 import { ProviderError } from "./types";
 
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
-const USER_AGENT = `diligent/0.0.1 (${platform()} ${release()}; ${arch()})`;
+const USER_AGENT = `diligent/${DILIGENT_VERSION} (${platform()} ${release()}; ${arch()})`;
 
 /**
  * Create a StreamFunction for ChatGPT subscription (OAuth).
