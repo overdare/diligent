@@ -37,8 +37,9 @@ export function createInProcessRpcClientFactory(
     });
 
     let notificationListener: ((notification: DiligentServerNotification) => void | Promise<void>) | null = null;
-    let serverRequestHandler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null =
-      null;
+    let serverRequestHandler:
+      | ((requestId: number | string, request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>)
+      | null = null;
 
     // Server-side message listener — captured during connect()
     let serverMessageListener: ((msg: JSONRPCMessage) => void | Promise<void>) | null = null;
@@ -58,7 +59,7 @@ export function createInProcessRpcClientFactory(
         },
         async onServerRequest(request: DiligentServerRequest) {
           if (serverRequestHandler) {
-            return serverRequestHandler(request);
+            return serverRequestHandler(0, request);
           }
           if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
             return {

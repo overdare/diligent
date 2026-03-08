@@ -16,19 +16,21 @@ export async function spawnCliAppServer(options: SpawnRpcClientOptions): Promise
   const child = spawnCliAppServerProcess(options);
   const client = new StdioAppServerRpcClient(child, options.onStderrLine);
 
-  client.setServerRequestHandler(async (request: DiligentServerRequest): Promise<DiligentServerRequestResponse> => {
-    if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
-      return {
-        method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
-        result: { decision: "once" },
-      };
-    }
+  client.setServerRequestHandler(
+    async (_requestId, request: DiligentServerRequest): Promise<DiligentServerRequestResponse> => {
+      if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+        return {
+          method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+          result: { decision: "once" },
+        };
+      }
 
-    return {
-      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
-      result: { answers: {} },
-    };
-  });
+      return {
+        method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+        result: { answers: {} },
+      };
+    },
+  );
 
   return client;
 }

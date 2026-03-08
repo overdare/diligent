@@ -13,6 +13,7 @@ import type {
   DiligentServerRequest,
   DiligentServerRequestResponse,
   Mode as ProtocolMode,
+  RequestId,
 } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
@@ -79,6 +80,10 @@ export class App {
     resolve: () => void;
     reject: (error: Error) => void;
   } | null = null;
+  private activeQuestionCancel: (() => void) | null = null;
+  private activeUserInputResolved = false;
+  private activeUserInputRequestId: RequestId | null = null;
+  private pendingUserInputRequestIds = new Set<RequestId>();
   private currentMode: ProtocolMode;
 
   // Extracted modules
@@ -297,7 +302,7 @@ export class App {
       onStderrLine: (line) => this.handleAppServerStderr(line),
     });
     this.rpcClient.setNotificationListener((notification) => this.handleServerNotification(notification));
-    this.rpcClient.setServerRequestHandler((request) => this.handleServerRequest(request));
+    this.rpcClient.setServerRequestHandler((requestId, request) => this.handleServerRequest(requestId, request));
   }
 
   private handleInput(data: string): void {
@@ -398,10 +403,24 @@ export class App {
       this.pendingTurn.reject(new Error(notification.params.error.message));
     }
 
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED) {
+      const requestId = notification.params.requestId;
+      if (this.pendingUserInputRequestIds.has(requestId)) {
+        this.activeUserInputResolved = true;
+        this.pendingUserInputRequestIds.delete(requestId);
+        if (this.activeUserInputRequestId === requestId) {
+          this.activeQuestionCancel?.();
+        }
+      }
+    }
+
     this.renderer.requestRender();
   }
 
-  private async handleServerRequest(request: DiligentServerRequest): Promise<DiligentServerRequestResponse> {
+  private async handleServerRequest(
+    requestId: RequestId,
+    request: DiligentServerRequest,
+  ): Promise<DiligentServerRequestResponse> {
     if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
       const decision = await this.handleApprove(request.params.request);
       return {
@@ -410,11 +429,22 @@ export class App {
       };
     }
 
-    const result = await this.handleAsk(request.params.request);
-    return {
-      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
-      result,
-    };
+    this.pendingUserInputRequestIds.add(requestId);
+    this.activeUserInputRequestId = requestId;
+    this.activeUserInputResolved = false;
+    try {
+      const result = await this.handleAsk(request.params.request);
+      return {
+        method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+        result,
+      };
+    } finally {
+      this.pendingUserInputRequestIds.delete(requestId);
+      if (this.activeUserInputRequestId === requestId) {
+        this.activeUserInputRequestId = null;
+      }
+      this.activeUserInputResolved = false;
+    }
   }
 
   /** Show a confirmation dialog overlay */
@@ -444,6 +474,10 @@ export class App {
   private async handleAsk(request: UserInputRequest): Promise<import("@diligent/core").UserInputResponse> {
     const answers: Record<string, string | string[]> = {};
     for (const question of request.questions) {
+      if (this.activeUserInputResolved) {
+        answers[question.id] = "";
+        continue;
+      }
       answers[question.id] = await this.showTextInputOverlay(question);
     }
     return { answers };
@@ -478,6 +512,20 @@ export class App {
   /** Show question input inline in the chat stream */
   private showTextInputOverlay(question: import("@diligent/core").UserInputQuestion): Promise<string | string[]> {
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: string | string[] | null) => {
+        if (settled) return;
+        settled = true;
+        this.chatView.setActiveQuestion(null);
+        this.activeQuestionCancel = null;
+        this.renderer.requestRender();
+        if (Array.isArray(value)) {
+          resolve(value);
+          return;
+        }
+        resolve(value ?? "");
+      };
+
       const input = new QuestionInput(
         {
           header: question.header,
@@ -488,16 +536,9 @@ export class App {
           masked: question.is_secret,
           placeholder: question.is_secret ? "enter value\u2026" : undefined,
         },
-        (value) => {
-          this.chatView.setActiveQuestion(null);
-          this.renderer.requestRender();
-          if (Array.isArray(value)) {
-            resolve(value);
-            return;
-          }
-          resolve(value ?? "");
-        },
+        (value) => finish(value),
       );
+      this.activeQuestionCancel = () => finish(null);
       this.chatView.setActiveQuestion(input);
       this.renderer.requestRender();
     });

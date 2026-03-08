@@ -67,6 +67,7 @@ interface BroadcastServerRequestArgs {
   connections: Map<string, ServerRequestPeer>;
   pendingServerRequests: Map<number, PendingServerRequest>;
   allocateServerRequestId: () => number;
+  timeoutMs?: number;
 }
 
 export async function broadcastServerRequest(
@@ -76,12 +77,21 @@ export async function broadcastServerRequest(
 
   const id = args.allocateServerRequestId();
   const sentTo = new Set<string>();
+  const timeoutMs = args.timeoutMs ?? 5 * 60 * 1000;
 
   return new Promise<DiligentServerRequestResponse | null>((resolve) => {
     const timeoutId = setTimeout(() => {
       args.pendingServerRequests.delete(id);
+      for (const connectionId of sentTo) {
+        const connection = args.connections.get(connectionId);
+        if (!connection) continue;
+        void connection.peer.send({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+          params: { requestId: id },
+        } as DiligentServerNotification);
+      }
       resolve(null);
-    }, 5 * 60 * 1000);
+    }, timeoutMs);
 
     args.pendingServerRequests.set(id, {
       method: args.method,

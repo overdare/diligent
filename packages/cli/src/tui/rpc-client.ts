@@ -23,7 +23,7 @@ export interface AppServerRpcClient {
   notify(method: string, params?: unknown): Promise<void> | void;
   setNotificationListener(listener: ((notification: DiligentServerNotification) => void | Promise<void>) | null): void;
   setServerRequestHandler(
-    handler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null,
+    handler: ((requestId: RequestId, request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null,
   ): void;
   dispose(): Promise<void>;
 }
@@ -63,8 +63,9 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
   private readonly stderrReader: ReadableStreamDefaultReader<Uint8Array> | null;
   private readonly fatalErrorPrefix: string;
   private notificationListener: ((notification: DiligentServerNotification) => void | Promise<void>) | null = null;
-  private serverRequestHandler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null =
-    null;
+  private serverRequestHandler:
+    | ((requestId: RequestId, request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>)
+    | null = null;
   private nextRequestId = 1;
   private readonly pending = new Map<RequestId, PendingRequest>();
   private closed = false;
@@ -104,7 +105,7 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
   }
 
   setServerRequestHandler(
-    handler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null,
+    handler: ((requestId: RequestId, request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null,
   ): void {
     this.serverRequestHandler = handler;
   }
@@ -246,7 +247,7 @@ export class StdioAppServerRpcClient implements SpawnedAppServer {
   private async handleServerRequest(id: RequestId, request: DiligentServerRequest): Promise<JSONRPCResponse> {
     try {
       const response = this.serverRequestHandler
-        ? await this.serverRequestHandler(request)
+        ? await this.serverRequestHandler(id, request)
         : request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
           ? DEFAULT_FATAL_APPROVAL
           : DEFAULT_FATAL_USER_INPUT;
