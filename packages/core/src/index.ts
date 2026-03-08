@@ -20,7 +20,6 @@ export {
   createTurnRuntime,
   drainSteering,
   executeToolCalls,
-  extractLatestPlanState,
   filterAllowedTools,
   LoopDetector,
   MODE_SYSTEM_PROMPT_SUFFIXES,
@@ -29,7 +28,6 @@ export {
   toolPermission,
   toolToDefinition,
   toSerializableError,
-  withPlanStateInjected,
 } from "./agent/index";
 // App server (JSON-RPC)
 export type { CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";

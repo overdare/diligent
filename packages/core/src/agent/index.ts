@@ -7,13 +7,11 @@ export {
   createTurnRuntime,
   drainSteering,
   executeToolCalls,
-  extractLatestPlanState,
   filterAllowedTools,
   streamAssistantResponse,
   toolPermission,
   toolToDefinition,
   toSerializableError,
-  withPlanStateInjected,
 } from "./loop";
 export type { LoopDetectionResult } from "./loop-detector";
 export { LoopDetector } from "./loop-detector";
