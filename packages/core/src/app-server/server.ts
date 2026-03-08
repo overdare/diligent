@@ -4,11 +4,11 @@ import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import {
-  DILIGENT_VERSION,
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
+  DILIGENT_VERSION,
   type DiligentClientRequest,
   DiligentClientRequestSchema,
   type DiligentServerNotification,
@@ -281,7 +281,6 @@ export class DiligentAppServer {
   // ─── Request handling ───────────────────────────────────────────────────────
 
   async handleRequest(connectionId: string, raw: unknown): Promise<JSONRPCResponse> {
-
     const request = JSONRPCRequestSchema.safeParse(raw);
     if (!request.success) {
       return this.errorResponse("unknown", -32600, "Invalid Request", request.error.message);

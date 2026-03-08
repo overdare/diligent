@@ -53,7 +53,6 @@ export function filterAllowedTools(
   });
 }
 
-
 // D086: Convert Error to serializable representation
 export function toSerializableError(err: unknown): SerializableError {
   if (err instanceof Error) {
