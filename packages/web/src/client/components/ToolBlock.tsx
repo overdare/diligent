@@ -39,6 +39,121 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
+type PatchFileChange = {
+  action: "Add" | "Update" | "Delete";
+  filePath: string;
+  movedTo?: string;
+  hunks: string[];
+  added: number;
+  removed: number;
+  preview: string[];
+};
+
+function parsePatchChanges(patch: string): PatchFileChange[] {
+  const lines = patch.split("\n");
+  const changes: PatchFileChange[] = [];
+  let current: PatchFileChange | null = null;
+  let inHunk = false;
+
+  const pushCurrent = () => {
+    if (current) changes.push(current);
+    current = null;
+    inHunk = false;
+  };
+
+  for (const line of lines) {
+    const fileMatch = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+    if (fileMatch) {
+      pushCurrent();
+      current = {
+        action: fileMatch[1] as PatchFileChange["action"],
+        filePath: fileMatch[2].trim(),
+        hunks: [],
+        added: 0,
+        removed: 0,
+        preview: [],
+      };
+      continue;
+    }
+
+    if (!current) continue;
+
+    const moveMatch = line.match(/^\*\*\* Move to: (.+)$/);
+    if (moveMatch) {
+      current.movedTo = moveMatch[1].trim();
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      current.hunks.push(line);
+      continue;
+    }
+
+    if (!inHunk) continue;
+
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      current.added += 1;
+      if (current.preview.length < 12) current.preview.push(line);
+      continue;
+    }
+
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      current.removed += 1;
+      if (current.preview.length < 12) current.preview.push(line);
+    }
+  }
+
+  pushCurrent();
+  return changes;
+}
+
+function ContentPatch({ patch, output, isError }: { patch?: string; output?: string; isError: boolean }) {
+  if (!patch) {
+    return output ? <ContentText text={output} label="Output" compact isError={isError} /> : null;
+  }
+
+  const changes = parsePatchChanges(patch);
+  if (changes.length === 0) {
+    return <ContentText text={patch} label="Patch" compact isError={isError} />;
+  }
+
+  return (
+    <div className="space-y-2">
+      {changes.map((change, idx) => {
+        const pathLabel = change.movedTo ? `${change.filePath} → ${change.movedTo}` : change.filePath;
+        return (
+          <div
+            key={`${change.action}:${pathLabel}:${idx}`}
+            className="overflow-hidden rounded-lg border border-text/10 bg-bg/40"
+          >
+            <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2 font-mono text-xs">
+              <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-2xs text-accent/80">
+                {change.action}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-text/80">{pathLabel}</span>
+              <span className="shrink-0 text-2xs text-emerald-400/80">+{change.added}</span>
+              <span className="shrink-0 text-2xs text-danger/80">-{change.removed}</span>
+            </div>
+            {change.hunks.length > 0 ? (
+              <div className="border-b border-text/10 px-3 py-1.5 font-mono text-2xs text-muted">
+                {change.hunks.slice(0, 2).join(" · ")}
+                {change.hunks.length > 2 ? ` · +${change.hunks.length - 2} more hunks` : ""}
+              </div>
+            ) : null}
+            {change.preview.length > 0 ? (
+              <pre className="overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-text/80">
+                {change.preview.join("\n")}
+              </pre>
+            ) : null}
+          </div>
+        );
+      })}
+      {output ? <ContentText text={output} label="Output" compact isError={isError} /> : null}
+    </div>
+  );
+}
+
 /* ── Tool-specific expanded content ───────────────────────────────── */
 
 function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) {
@@ -99,6 +214,10 @@ function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) 
         isError={item.isError}
       />
     );
+  }
+
+  if (name === "apply_patch") {
+    return <ContentPatch patch={str(parsed?.patch)} output={item.outputText || undefined} isError={item.isError} />;
   }
 
   // Fallback: generic input/output

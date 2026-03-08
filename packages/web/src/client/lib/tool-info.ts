@@ -9,8 +9,8 @@ export interface ToolInfo {
 // Keys are lowercase for case-insensitive matching
 const TOOL_MAP: Record<string, ToolInfo> = {
   read: { displayName: "Read", icon: "↗", category: "context" },
-  grep: { displayName: "Search", icon: "⌕", category: "context" },
-  glob: { displayName: "Find", icon: "⌕", category: "context" },
+  grep: { displayName: "Grep", icon: "⌕", category: "context" },
+  glob: { displayName: "Glob", icon: "⌕", category: "context" },
   ls: { displayName: "List", icon: "≡", category: "context" },
   bash: { displayName: "Shell", icon: ">_", category: "action" },
   write: { displayName: "Write", icon: "✎", category: "action" },
@@ -54,6 +54,24 @@ function readStringField(parsed: Record<string, unknown>, keys: string[]): strin
   for (const key of keys) {
     const value = parsed[key];
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function summarizePathForUi(value: string): string {
+  const path = value.trim();
+  if (!path) return path;
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return "/";
+  if (parts.length === 1) return parts[0];
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
+function extractPatchTargetPath(patch: string): string | undefined {
+  const lines = patch.split("\n");
+  for (const line of lines) {
+    const m = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
+    if (m?.[1]?.trim()) return m[1].trim();
   }
   return undefined;
 }
@@ -156,17 +174,30 @@ export function summarizeOutput(toolName: string, outputText: string): string {
 export function summarizeInput(toolName: string, inputText: string): string {
   if (!inputText.trim()) return "";
   const _toolName = toolName;
+  const normalizedName = _toolName.toLowerCase();
 
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
 
-    if (_toolName.toLowerCase() === "request_user_input") {
+    if (normalizedName === "request_user_input") {
       const title = parseRequestUserInputTitle(parsed);
       if (title) return clip(title, 80);
     }
 
     // Plan: headerTitle already carries all useful info
-    if (_toolName.toLowerCase() === "plan") return "";
+    if (normalizedName === "plan") return "";
+
+    if (normalizedName === "read") {
+      const filePath = readStringField(parsed, ["file_path"]);
+      return filePath ? `Read ${clip(summarizePathForUi(filePath), 72)}` : "";
+    }
+
+    if (normalizedName === "apply_patch") {
+      const patchText = readStringField(parsed, ["patch"]);
+      if (!patchText) return "";
+      const target = extractPatchTargetPath(patchText);
+      return target ? `Patch ${clip(summarizePathForUi(target), 72)}` : "";
+    }
 
     const intent = readStringField(parsed, [
       "intent",
@@ -179,7 +210,7 @@ export function summarizeInput(toolName: string, inputText: string): string {
       "command",
       "path",
     ]);
-    if (intent) return clip(intent, _toolName.toLowerCase() === "bash" ? 120 : 80);
+    if (intent) return clip(intent, normalizedName === "bash" ? 120 : 80);
   } catch {
     // Ignore JSON parse errors and fall back to raw text
   }
@@ -189,5 +220,5 @@ export function summarizeInput(toolName: string, inputText: string): string {
     .map((line) => line.trim())
     .find(Boolean);
   if (!firstLine) return "";
-  return clip(firstLine, _toolName.toLowerCase() === "bash" ? 120 : 80);
+  return clip(firstLine, normalizedName === "bash" ? 120 : 80);
 }

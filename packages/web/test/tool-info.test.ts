@@ -55,3 +55,15 @@ test("plan header uses status-based progress for modern plan payloads", () => {
   });
   expect(getToolHeaderTitle("plan", input)).toBe("Plan Updated 1/3 — Ship fix");
 });
+
+test("summarizeInput shows read target path", () => {
+  const input = JSON.stringify({ file_path: "/Users/devbv-mini4/git/diligent/packages/web/src/client/App.tsx" });
+  expect(summarizeInput("read", input)).toBe("Read client/App.tsx");
+});
+
+test("summarizeInput shows patch target path", () => {
+  const input = JSON.stringify({
+    patch: "*** Begin Patch\n*** Update File: packages/web/src/client/lib/tool-info.ts\n*** End Patch",
+  });
+  expect(summarizeInput("apply_patch", input)).toBe("Patch lib/tool-info.ts");
+});

@@ -8,7 +8,12 @@ import type { Tool, ToolResult } from "../tool/types";
 
 const GlobParams = z.object({
   pattern: z.string().describe("Glob pattern to match files (e.g., '**/*.ts', 'src/**/*.test.ts')"),
-  path: z.string().optional().describe("Absolute directory to search in. Default: current working directory"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Absolute directory to search in (relative paths like '.' are not allowed). Default: current working directory",
+    ),
 });
 
 const MAX_FILES = 100;
@@ -17,7 +22,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
   return {
     name: "glob",
     description:
-      "Find files matching a glob pattern. Returns file paths sorted by modification time (newest first). " +
+      "Find files matching a glob pattern. The optional path must be absolute (relative paths like '.' are rejected). Returns file paths sorted by modification time (newest first). " +
       "When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use spawn_agent with agent_type='explore' instead.",
     parameters: GlobParams,
     supportParallel: true,
