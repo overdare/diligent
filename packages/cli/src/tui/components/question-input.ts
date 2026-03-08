@@ -35,7 +35,7 @@ export class QuestionInput implements Component {
   ) {
     this.opts = options.options ?? [];
     this.allowMultiple = Boolean(options.allowMultiple);
-    this.allowOther = options.allowOther === true;
+    this.allowOther = true;
   }
 
   private get hasInputRow(): boolean {
@@ -77,11 +77,14 @@ export class QuestionInput implements Component {
       const before = displayValue.slice(0, this.cursorPos);
       const cursorChar = displayValue[this.cursorPos] ?? " ";
       const after = displayValue.slice(this.cursorPos + 1);
-      const placeholder = this.options.placeholder ?? (this.opts.length > 0 ? "or type a custom answer…" : "type your answer…");
+      const placeholder =
+        this.options.placeholder ?? (this.opts.length > 0 ? "or type a custom answer…" : "type your answer…");
 
       if (this.onInputRow) {
         const field =
-          this.value.length === 0 ? `${t.dim}${placeholder}${t.reset}` : `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
+          this.value.length === 0
+            ? `${t.dim}${placeholder}${t.reset}`
+            : `${before}${t.inverse}${cursorChar}${t.reset}${after}`;
         const marker = `${t.accent}▸${t.reset}`;
         rows.push(`    ${marker} ${field}`);
       } else {
@@ -93,7 +96,9 @@ export class QuestionInput implements Component {
     }
 
     if (this.allowMultiple) {
-      rows.push(`    ${t.dim}Tip: Space/Enter to toggle, then move to custom input and press Enter to submit.${t.reset}`);
+      rows.push(
+        `    ${t.dim}Tip: Space/Enter to toggle, then move to custom input and press Enter to submit.${t.reset}`,
+      );
     }
 
     return [headerLine, ...rows];
@@ -194,7 +199,10 @@ export class QuestionInput implements Component {
   private submit(): void {
     if (this.onInputRow) {
       if (this.allowMultiple) {
-        const labels = [...this.selected].sort((a, b) => a - b).map((idx) => this.opts[idx]?.label).filter(Boolean);
+        const labels = [...this.selected]
+          .sort((a, b) => a - b)
+          .map((idx) => this.opts[idx]?.label)
+          .filter(Boolean);
         if (this.value.length > 0) labels.push(this.value);
         this.onResult(labels.length > 0 ? labels : null);
         return;

@@ -11,29 +11,32 @@ const QuestionSchema = z.object({
   id: z.string().describe("Stable identifier for mapping answers (snake_case)."),
   header: z.string().max(12).describe("Short header label shown in the UI (12 or fewer chars)."),
   question: z.string().describe("Single-sentence prompt shown to the user."),
-  options: z
-    .array(OptionSchema)
-    .min(1)
-    .describe("Provide one or more selectable options."),
+  options: z.array(OptionSchema).min(1).describe("Provide one or more selectable options."),
   allow_multiple: z
     .boolean()
     .optional()
-    .describe("If true, present checkboxes and allow selecting multiple options. If false or omitted, only one listed option should be selected."),
+    .describe(
+      "If true, present checkboxes and allow selecting multiple options. If false or omitted, only one listed option should be selected.",
+    ),
   is_other: z
     .boolean()
     .optional()
-    .describe("Set explicitly. true allows a custom free-form answer in addition to listed options; false restricts answers to listed options only."),
+    .describe("Compatibility flag (currently ignored by clients; custom free-form input is always available)."),
   is_secret: z.boolean().optional().describe("If true, mask the input (e.g. passwords)."),
 });
 
 const ParamsSchema = z.object({
-  questions: z.array(QuestionSchema).min(1).max(3).describe("Questions to show the user. Prefer 1 and do not exceed 3."),
+  questions: z
+    .array(QuestionSchema)
+    .min(1)
+    .max(3)
+    .describe("Questions to show the user. Prefer 1 and do not exceed 3."),
 });
 
 export const requestUserInputTool: Tool<typeof ParamsSchema> = {
   name: "request_user_input",
   description:
-    "Ask the user 1–3 questions in the user's language and wait for their answers. Use allow_multiple for checkbox-style multi-select, and set is_other explicitly (true when custom answers are helpful, false when only listed options must be allowed).",
+    "Ask the user 1–3 questions in the user's language and wait for their answers. Use allow_multiple for checkbox-style multi-select. Clients always provide a custom free-form input row in addition to listed options.",
   parameters: ParamsSchema,
   async execute(args, ctx) {
     if (!ctx.ask) {

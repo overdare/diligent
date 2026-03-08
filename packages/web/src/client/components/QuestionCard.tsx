@@ -29,7 +29,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
           const selected = toStringArray(rawSelected);
           const hasOptions = question.options.length > 0;
           const allowMultiple = Boolean(question.allow_multiple);
-          const allowOther = question.is_other === true;
+          const allowOther = true;
           const selectedSet = new Set(selected);
           const customValue = selected.find((value) => !question.options.some((o) => o.label === value)) ?? "";
 
@@ -46,10 +46,10 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                         type="button"
                         onClick={() => {
                           if (allowMultiple) {
-                          const next = checked ? selected.filter((v) => v !== opt.label) : [...selected, opt.label];
-                          onAnswerChange(question.id, next);
-                          return;
-                        }
+                            const next = checked ? selected.filter((v) => v !== opt.label) : [...selected, opt.label];
+                            onAnswerChange(question.id, next);
+                            return;
+                          }
                           onAnswerChange(question.id, opt.label);
                         }}
                         className={`flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm transition ${
@@ -57,9 +57,13 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                         }`}
                       >
                         <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>
-                        <span className="shrink-0 font-mono text-xs">{allowMultiple ? (checked ? "[x]" : "[ ]") : checked ? "(●)" : "( )"}</span>
+                        <span className="shrink-0 font-mono text-xs">
+                          {allowMultiple ? (checked ? "[x]" : "[ ]") : checked ? "(●)" : "( )"}
+                        </span>
                         <span className="flex-1">{opt.label}</span>
-                        {opt.description ? <span className="shrink-0 text-xs opacity-40">{opt.description}</span> : null}
+                        {opt.description ? (
+                          <span className="shrink-0 text-xs opacity-40">{opt.description}</span>
+                        ) : null}
                       </button>
                     );
                   })
@@ -68,7 +72,9 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
               {allowOther ? (
                 <div className="flex items-center gap-3 px-2 py-1">
                   {hasOptions ? (
-                    <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{question.options.length + 1}</span>
+                    <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">
+                      {question.options.length + 1}
+                    </span>
                   ) : null}
                   <div className="flex flex-1 flex-col">
                     <input
@@ -79,9 +85,11 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                       value={customValue}
                       onChange={(e) => {
                         const typed = e.target.value;
-                        const optionSelected = selected.filter((value) => question.options.some((o) => o.label === value));
+                        const optionSelected = selected.filter((value) =>
+                          question.options.some((o) => o.label === value),
+                        );
                         if (typed.length === 0) {
-                          onAnswerChange(question.id, allowMultiple ? optionSelected : optionSelected[0] ?? "");
+                          onAnswerChange(question.id, allowMultiple ? optionSelected : (optionSelected[0] ?? ""));
                           return;
                         }
                         onAnswerChange(question.id, allowMultiple ? [...optionSelected, typed] : typed);
