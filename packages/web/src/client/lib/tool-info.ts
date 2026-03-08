@@ -14,7 +14,7 @@ const TOOL_MAP: Record<string, ToolInfo> = {
   ls: { displayName: "List", icon: "≡", category: "context" },
   bash: { displayName: "Shell", icon: ">_", category: "action" },
   write: { displayName: "Write", icon: "✎", category: "action" },
-  edit: { displayName: "Edit", icon: "✎", category: "action" },
+  apply_patch: { displayName: "Patch", icon: "✎", category: "action" },
   multiedit: { displayName: "Edit", icon: "✎", category: "action" },
   agent: { displayName: "Agent", icon: "◈", category: "action" },
   webfetch: { displayName: "Fetch", icon: "↓", category: "context" },
@@ -155,8 +155,8 @@ export function summarizeOutput(toolName: string, outputText: string): string {
     return `${contentLines.length} lines`;
   }
 
-  // write / edit: show line count or written confirmation
-  if (name === "write" || name === "edit" || name === "multiedit") {
+  // write / apply_patch: show line count or written confirmation
+  if (name === "write" || name === "apply_patch" || name === "multiedit") {
     const lineMatch = outputText.match(/(\d+)\s*line/i);
     if (lineMatch) return `${lineMatch[1]} lines`;
     const firstLine = outputText.split("\n")[0]?.trim();

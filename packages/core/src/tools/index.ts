@@ -8,7 +8,7 @@ export type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEnt
 export { buildToolCatalog } from "./catalog";
 export type { BuildDefaultToolsResult } from "./defaults";
 export { buildDefaultTools } from "./defaults";
-export { createEditTool } from "./edit";
+export { createApplyPatchTool } from "./apply-patch";
 export { createGlobTool } from "./glob";
 export { createGrepTool } from "./grep";
 export { IMMUTABLE_TOOLS, isImmutableTool } from "./immutable";

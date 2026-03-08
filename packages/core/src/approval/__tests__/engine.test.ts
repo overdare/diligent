@@ -113,8 +113,8 @@ describe("generatePattern", () => {
     expect(
       generatePattern({
         permission: "write",
-        toolName: "edit",
-        description: "edit",
+        toolName: "apply_patch",
+        description: "apply patch",
         details: { file_path: "/a/b.ts", command: "echo hi" },
       }),
     ).toBe("/a/**");
@@ -214,7 +214,7 @@ describe("PermissionEngine.evaluate", () => {
     expect(engine.evaluate({ permission: "read", toolName: "glob", description: "glob" })).toBe("prompt");
   });
 
-  it("matches file_path for write/edit tools (not just path)", () => {
+  it("matches file_path for write/apply_patch tools (not just path)", () => {
     const rules: PermissionRule[] = [{ permission: "write", pattern: "src/**", action: "allow" }];
     const engine = createPermissionEngine(rules);
     expect(
@@ -228,8 +228,8 @@ describe("PermissionEngine.evaluate", () => {
     expect(
       engine.evaluate({
         permission: "write",
-        toolName: "edit",
-        description: "edit file",
+        toolName: "apply_patch",
+        description: "apply patch",
         details: { file_path: "lib/other.ts" },
       }),
     ).toBe("prompt");

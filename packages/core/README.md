@@ -20,7 +20,7 @@ src/
   session/        JSONL session persistence, compaction, steering
   skills/         Skill discovery + frontmatter + system prompt injection
   tool/           Tool interface + execution harness
-  tools/          10 built-in tools (bash, read, write, edit, glob, grep, ls, plan, add_knowledge, request_user_input)
+  tools/          10 built-in tools (bash, read, write, apply_patch, glob, grep, ls, plan, add_knowledge, request_user_input)
 ```
 
 ## Key Patterns

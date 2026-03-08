@@ -239,7 +239,7 @@ export function extractFileOperations(messages: Message[], previousDetails?: Com
 
     if (call.name === "read") {
       readFiles.add(filePath);
-    } else if (call.name === "write" || call.name === "edit") {
+    } else if (call.name === "write" || call.name === "apply_patch") {
       modifiedFiles.add(filePath);
     }
   }

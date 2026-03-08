@@ -32,7 +32,7 @@ export interface ToolExecutionBatch {
 // D070: Map tool name to permission category for deny-filtering
 export function toolPermission(toolName: string): "read" | "write" | "execute" {
   if (toolName === "bash") return "execute";
-  if (toolName === "write" || toolName === "edit") return "write";
+  if (toolName === "write" || toolName === "apply_patch") return "write";
   return "read";
 }
 

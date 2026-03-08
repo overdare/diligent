@@ -273,7 +273,7 @@ describe("agentLoop", () => {
     try {
       const msg = makeAssistant([
         { type: "text", text: "Hello!" },
-        { type: "tool_call", id: "tc_1", name: "edit", input: { file_path: "a.ts" } },
+        { type: "tool_call", id: "tc_1", name: "apply_patch", input: { file_path: "a.ts" } },
       ]);
       const streamFn = createMockStreamFunction([msg]);
       const config: AgentLoopConfig = {
@@ -308,7 +308,7 @@ describe("agentLoop", () => {
       expect(responseCall?.[2]).toBe("end_turn");
       expect(typeof responseCall?.[3]).toBe("number");
       expect((responseCall?.[3] as number) >= 0).toBe(true);
-      expect(responseCall?.slice(4)).toEqual([6, 0, 1, "edit"]);
+      expect(responseCall?.slice(4)).toEqual([6, 0, 1, "apply_patch"]);
     } finally {
       console.log = originalLog;
     }

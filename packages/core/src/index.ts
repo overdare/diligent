@@ -232,7 +232,7 @@ export {
   buildDefaultTools,
   buildToolCatalog,
   createAddKnowledgeTool,
-  createEditTool,
+  createApplyPatchTool,
   createGlobTool,
   createGrepTool,
   createLsTool,

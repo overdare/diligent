@@ -307,10 +307,10 @@ describe("extractFileOperations", () => {
     expect(details.modifiedFiles).toEqual(["/src/new.ts"]);
   });
 
-  it("extracts edit operations", () => {
+  it("extracts apply_patch operations", () => {
     const messages: Message[] = [
-      assistantWithToolCall("Editing", "tc1", "edit", { file_path: "/src/mod.ts" }),
-      toolResultMsg("tc1", "edit", "File edited"),
+      assistantWithToolCall("Patching", "tc1", "apply_patch", { file_path: "/src/mod.ts" }),
+      toolResultMsg("tc1", "apply_patch", "File patched"),
     ];
     const details = extractFileOperations(messages);
     expect(details.modifiedFiles).toEqual(["/src/mod.ts"]);

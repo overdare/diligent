@@ -8,7 +8,7 @@ import { createAddKnowledgeTool } from "./add-knowledge";
 import { bashTool } from "./bash";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
-import { createEditTool } from "./edit";
+import { createApplyPatchTool } from "./apply-patch";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
 import { createLsTool } from "./ls";
@@ -42,7 +42,7 @@ export async function buildDefaultTools(
     bashTool,
     createReadTool(),
     createWriteTool(),
-    createEditTool(),
+    createApplyPatchTool(cwd),
     createLsTool(),
     createGlobTool(cwd),
     createGrepTool(cwd),
