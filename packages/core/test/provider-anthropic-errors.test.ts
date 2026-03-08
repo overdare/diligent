@@ -9,7 +9,15 @@ function makeAPIError(
   message: string,
   headers?: Record<string, string | null | undefined>,
 ): Anthropic.APIError {
-  return new Anthropic.APIError(status, { message }, message, headers);
+  const sdkHeaders = new Headers();
+  if (headers) {
+    for (const [key, value] of Object.entries(headers)) {
+      if (typeof value === "string") {
+        sdkHeaders.set(key, value);
+      }
+    }
+  }
+  return new Anthropic.APIError(status, { message }, message, sdkHeaders);
 }
 
 describe("classifyAnthropicError", () => {

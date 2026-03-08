@@ -268,7 +268,7 @@ export function classifyAnthropicError(err: unknown): ProviderError {
   if (err instanceof Anthropic.APIError) {
     const status = err.status;
     if (status === 429) {
-      const retryAfter = parseRetryAfter(err.headers as Record<string, string> | undefined);
+      const retryAfter = parseRetryAfter(err.headers);
       return new ProviderError(err.message, "rate_limit", true, retryAfter, status, err);
     }
     if (status === 529) {
@@ -295,11 +295,28 @@ export function classifyAnthropicError(err: unknown): ProviderError {
   );
 }
 
-function parseRetryAfter(headers?: Record<string, string>): number | undefined {
+function parseRetryAfter(headers?: Headers | Record<string, string | null | undefined>): number | undefined {
   if (!headers) return undefined;
-  const ms = headers["retry-after-ms"];
-  if (ms) return parseInt(ms, 10);
-  const s = headers["retry-after"];
-  if (s) return parseInt(s, 10) * 1000;
+
+  const getHeader = (name: string): string | undefined => {
+    if (headers instanceof Headers) {
+      return headers.get(name) ?? undefined;
+    }
+    const value = headers[name];
+    return typeof value === "string" ? value : undefined;
+  };
+
+  const ms = getHeader("retry-after-ms");
+  if (ms) {
+    const parsedMs = Number.parseInt(ms, 10);
+    if (Number.isFinite(parsedMs)) return parsedMs;
+  }
+
+  const s = getHeader("retry-after");
+  if (s) {
+    const parsedSeconds = Number.parseInt(s, 10);
+    if (Number.isFinite(parsedSeconds)) return parsedSeconds * 1000;
+  }
+
   return undefined;
 }
