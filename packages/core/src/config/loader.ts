@@ -24,6 +24,13 @@ export async function loadDiligentConfig(cwd: string): Promise<{ config: Diligen
   if (globalConfig) merged = mergeConfig(merged, globalConfig);
   if (projectConfig) merged = mergeConfig(merged, projectConfig);
 
+  // Tool settings are global-only: ignore project-level tools overrides.
+  if (globalConfig?.tools) {
+    merged.tools = globalConfig.tools;
+  } else {
+    delete merged.tools;
+  }
+
   return { config: merged, sources };
 }
 

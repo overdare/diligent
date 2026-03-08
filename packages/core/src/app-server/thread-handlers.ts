@@ -13,7 +13,7 @@ import {
 } from "@diligent/protocol";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
-import { getProjectConfigPath, writeProjectToolsConfig } from "../config/writer";
+import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { buildSessionContext } from "../session/context-builder";
@@ -348,7 +348,7 @@ export async function handleToolsList(
   const result = await buildDefaultTools(cwd, paths, undefined, tools);
 
   return {
-    configPath: getProjectConfigPath(cwd),
+    configPath: getGlobalConfigPath(),
     appliesOnNextTurn: true,
     trustMode: "full_trust",
     conflictPolicy: (tools?.conflictPolicy ?? "error") as ToolConflictPolicy,
@@ -378,7 +378,7 @@ export async function handleToolsSet(
   plugins: PluginDescriptor[];
 }> {
   const { cwd } = await ctx.resolveToolsContext(threadId);
-  const writeResult = await writeProjectToolsConfig(cwd, {
+  const writeResult = await writeGlobalToolsConfig({
     builtin: params.builtin,
     plugins: params.plugins,
     conflictPolicy: params.conflictPolicy,

@@ -8,7 +8,9 @@ export { DEFAULT_CONFIG, DiligentConfigSchema } from "./schema";
 export type { StoredToolsConfig, ToolConfigPatch, ToolPluginPatch, WriteToolsConfigResult } from "./writer";
 export {
   applyToolConfigPatch,
+  getGlobalConfigPath,
   getProjectConfigPath,
   normalizeStoredToolsConfig,
+  writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "./writer";

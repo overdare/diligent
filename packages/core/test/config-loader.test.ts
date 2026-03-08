@@ -79,7 +79,40 @@ describe("loadDiligentConfig", () => {
     const { config, sources } = await loadDiligentConfig(TEST_ROOT);
     expect(config.model).toBe("claude-opus-4-20250514");
     expect(config.maxTurns).toBe(50);
+    expect(config.tools).toBeUndefined();
     expect(sources).toHaveLength(1);
+  });
+
+  it("uses tool settings from global config only", async () => {
+    const globalConfigFile = join(TEST_ROOT, ".config", "diligent", "diligent.jsonc");
+    const projectConfigFile = projectConfigPath(TEST_ROOT);
+    await mkdir(join(TEST_ROOT, ".config", "diligent"), { recursive: true });
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+
+    await Bun.write(
+      globalConfigFile,
+      JSON.stringify({
+        tools: {
+          builtin: { bash: false },
+          plugins: [{ package: "@acme/global-tools", tools: { global_tool: false } }],
+        },
+      }),
+    );
+    await Bun.write(
+      projectConfigFile,
+      JSON.stringify({
+        tools: {
+          builtin: { read: false },
+          plugins: [{ package: "@acme/project-tools", tools: { project_tool: false } }],
+        },
+      }),
+    );
+
+    const { config } = await loadDiligentConfig(TEST_ROOT);
+    expect(config.tools).toEqual({
+      builtin: { bash: false },
+      plugins: [{ package: "@acme/global-tools", enabled: true, tools: { global_tool: false } }],
+    });
   });
 
   it("template substitution replaces {env:VAR}", async () => {

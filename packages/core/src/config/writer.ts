@@ -1,5 +1,6 @@
 // @summary JSONC-preserving writer helpers for project-local diligent.jsonc tool settings
 import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyEdits, format, modify, parse as parseJsonc } from "jsonc-parser";
 
@@ -8,6 +9,8 @@ import { DiligentConfigSchema } from "./schema";
 
 const PROJECT_CONFIG_DIR = ".diligent";
 const PROJECT_CONFIG_FILE = "diligent.jsonc";
+const GLOBAL_CONFIG_DIR = ".config/diligent";
+const GLOBAL_CONFIG_FILE = "diligent.jsonc";
 const JSONC_FORMAT_OPTIONS = {
   tabSize: 2,
   insertSpaces: true,
@@ -54,6 +57,11 @@ export function getProjectConfigPath(cwd: string): string {
   return join(cwd, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILE);
 }
 
+export function getGlobalConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  return join(home, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE);
+}
+
 export function normalizeStoredToolsConfig(
   tools: DiligentConfig["tools"] | ToolConfigPatch | undefined,
 ): StoredToolsConfig | undefined {
@@ -90,7 +98,14 @@ export function applyToolConfigPatch(
 }
 
 export async function writeProjectToolsConfig(cwd: string, patch: ToolConfigPatch): Promise<WriteToolsConfigResult> {
-  const configPath = getProjectConfigPath(cwd);
+  return writeToolsConfigAtPath(getProjectConfigPath(cwd), patch);
+}
+
+export async function writeGlobalToolsConfig(patch: ToolConfigPatch): Promise<WriteToolsConfigResult> {
+  return writeToolsConfigAtPath(getGlobalConfigPath(), patch);
+}
+
+async function writeToolsConfigAtPath(configPath: string, patch: ToolConfigPatch): Promise<WriteToolsConfigResult> {
   await mkdir(dirname(configPath), { recursive: true });
 
   let content = "{}\n";

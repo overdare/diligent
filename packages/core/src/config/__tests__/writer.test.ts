@@ -5,8 +5,10 @@ import { join } from "node:path";
 
 import {
   applyToolConfigPatch,
+  getGlobalConfigPath,
   getProjectConfigPath,
   normalizeStoredToolsConfig,
+  writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "../writer";
 
@@ -234,5 +236,29 @@ describe("writeProjectToolsConfig", () => {
       builtin: { bash: false },
       conflictPolicy: "builtin_wins",
     });
+  });
+});
+
+describe("writeGlobalToolsConfig", () => {
+  it("writes tools config to ~/.config/diligent/diligent.jsonc", async () => {
+    const cwd = await makeTempProject();
+    const originalHome = process.env.HOME;
+    process.env.HOME = cwd;
+
+    try {
+      const result = await writeGlobalToolsConfig({
+        plugins: [{ package: "@acme/diligent-tools", tools: { jira_comment: false } }],
+      });
+
+      const configPath = getGlobalConfigPath();
+      const text = await Bun.file(configPath).text();
+      expect(result.configPath).toBe(configPath);
+      expect(text).toContain('"tools"');
+      expect(text).toContain('"package": "@acme/diligent-tools"');
+      expect(text).toContain('"jira_comment": false');
+    } finally {
+      if (originalHome !== undefined) process.env.HOME = originalHome;
+      else delete process.env.HOME;
+    }
   });
 });

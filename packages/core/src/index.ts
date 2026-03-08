@@ -85,11 +85,13 @@ export {
   DEFAULT_CONFIG,
   DiligentConfigSchema,
   discoverInstructions,
+  getGlobalConfigPath,
   getProjectConfigPath,
   loadDiligentConfig,
   loadRuntimeConfig,
   mergeConfig,
   normalizeStoredToolsConfig,
+  writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "./config/index";
 // EventStream

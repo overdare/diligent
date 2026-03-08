@@ -1,7 +1,8 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   DiligentServerNotification,
@@ -1102,102 +1103,151 @@ describe("DiligentAppServer", () => {
 
   it("lists effective tool state and persists tool settings for next turns", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
-    const runtimeConfig = makeFactoryRuntimeConfig({
-      tools: {
-        builtin: { bash: false },
-      },
-    });
-
-    const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
-    const server = new DiligentAppServer({
-      ...config,
-      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-    });
-
-    connectTestPeer(server);
-
-    const listed = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 200,
-      method: "tools/list",
-      params: {},
-    });
-    const listedResult = readResult(listed) as {
-      configPath: string;
-      appliesOnNextTurn: boolean;
-      trustMode: string;
-      conflictPolicy: string;
-      tools: Array<{ name: string; enabled: boolean; immutable: boolean; reason: string }>;
-      plugins: Array<{ package: string }>;
-    };
-
-    expect(listedResult.configPath).toBe(join(projectRoot, ".diligent", "diligent.jsonc"));
-    expect(listedResult.appliesOnNextTurn).toBe(true);
-    expect(listedResult.trustMode).toBe("full_trust");
-    expect(listedResult.conflictPolicy).toBe("error");
-    expect(listedResult.plugins).toEqual([]);
-    expect(listedResult.tools.find((tool) => tool.name === "bash")).toMatchObject({
-      enabled: false,
-      immutable: false,
-      reason: "disabled_by_user",
-    });
-    expect(listedResult.tools.find((tool) => tool.name === "plan")).toMatchObject({
-      enabled: true,
-      immutable: true,
-    });
-
-    const setResult = readResult(
-      await server.handleRequest(TEST_CONNECTION_ID, {
-        id: 201,
-        method: "tools/set",
-        params: {
-          builtin: { bash: true, read: false },
-          plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
-          conflictPolicy: "plugin_wins",
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+    try {
+      const runtimeConfig = makeFactoryRuntimeConfig({
+        tools: {
+          builtin: { bash: false },
         },
-      }),
-    ) as {
-      conflictPolicy: string;
-      tools: Array<{ name: string; enabled: boolean }>;
-      plugins: Array<{ package: string; enabled: boolean; loaded: boolean }>;
-    };
+      });
 
-    expect(setResult.conflictPolicy).toBe("plugin_wins");
-    expect(setResult.tools.find((tool) => tool.name === "bash")).toMatchObject({ enabled: true });
-    expect(setResult.tools.find((tool) => tool.name === "read")).toMatchObject({ enabled: false });
-    expect(setResult.plugins).toEqual([
-      {
-        package: "@acme/diligent-tools",
-        configured: true,
+      const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
+      const server = new DiligentAppServer({
+        ...config,
+        resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      });
+
+      connectTestPeer(server);
+
+      const listed = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 200,
+        method: "tools/list",
+        params: {},
+      });
+      const listedResult = readResult(listed) as {
+        configPath: string;
+        appliesOnNextTurn: boolean;
+        trustMode: string;
+        conflictPolicy: string;
+        tools: Array<{ name: string; enabled: boolean; immutable: boolean; reason: string }>;
+        plugins: Array<{ package: string }>;
+      };
+
+      const expectedGlobalPath = join(fakeHome, ".config", "diligent", "diligent.jsonc");
+      expect(listedResult.configPath).toBe(expectedGlobalPath);
+      expect(listedResult.appliesOnNextTurn).toBe(true);
+      expect(listedResult.trustMode).toBe("full_trust");
+      expect(listedResult.conflictPolicy).toBe("error");
+      expect(listedResult.plugins).toEqual([]);
+      expect(listedResult.tools.find((tool) => tool.name === "bash")).toMatchObject({
         enabled: false,
-        loaded: false,
-        toolCount: 0,
-        warnings: [],
-      },
-    ]);
-    expect(runtimeConfig.diligent.tools).toEqual({
-      builtin: { read: false },
-      plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
-      conflictPolicy: "plugin_wins",
-    });
+        immutable: false,
+        reason: "disabled_by_user",
+      });
+      expect(listedResult.tools.find((tool) => tool.name === "plan")).toMatchObject({
+        enabled: true,
+        immutable: true,
+      });
 
-    const configText = await Bun.file(join(projectRoot, ".diligent", "diligent.jsonc")).text();
-    expect(configText).toContain('"read": false');
-    expect(configText).not.toContain('"bash": true');
-    expect(configText).toContain('"package": "@acme/diligent-tools"');
-    expect(configText).toContain('"conflictPolicy": "plugin_wins"');
+      const setResult = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 201,
+          method: "tools/set",
+          params: {
+            builtin: { bash: true, read: false },
+            plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
+            conflictPolicy: "plugin_wins",
+          },
+        }),
+      ) as {
+        conflictPolicy: string;
+        tools: Array<{ name: string; enabled: boolean }>;
+        plugins: Array<{ package: string; enabled: boolean; loaded: boolean }>;
+      };
 
-    const threadStart = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 202,
-      method: "thread/start",
-      params: { cwd: projectRoot },
-    });
-    const threadId = (readResult(threadStart) as { threadId: string }).threadId;
-    const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
-      id: 203,
-      method: "turn/start",
-      params: { threadId, message: "hi" },
-    });
-    expect((readResult(turnStart) as { accepted: boolean }).accepted).toBe(true);
+      expect(setResult.conflictPolicy).toBe("plugin_wins");
+      expect(setResult.tools.find((tool) => tool.name === "bash")).toMatchObject({ enabled: true });
+      expect(setResult.tools.find((tool) => tool.name === "read")).toMatchObject({ enabled: false });
+      expect(setResult.plugins).toEqual([
+        {
+          package: "@acme/diligent-tools",
+          configured: true,
+          enabled: false,
+          loaded: false,
+          toolCount: 0,
+          warnings: [],
+        },
+      ]);
+      expect(runtimeConfig.diligent.tools).toEqual({
+        builtin: { read: false },
+        plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
+        conflictPolicy: "plugin_wins",
+      });
+
+      const configText = await Bun.file(expectedGlobalPath).text();
+      expect(configText).toContain('"read": false');
+      expect(configText).not.toContain('"bash": true');
+      expect(configText).toContain('"package": "@acme/diligent-tools"');
+      expect(configText).toContain('"conflictPolicy": "plugin_wins"');
+
+      const threadStart = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 202,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const threadId = (readResult(threadStart) as { threadId: string }).threadId;
+      const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 203,
+        method: "turn/start",
+        params: { threadId, message: "hi" },
+      });
+      expect((readResult(turnStart) as { accepted: boolean }).accepted).toBe(true);
+    } finally {
+      if (originalHome !== undefined) process.env.HOME = originalHome;
+      else delete process.env.HOME;
+      await rm(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("tools/set writes to global config path", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+
+    try {
+      const runtimeConfig = makeFactoryRuntimeConfig();
+      const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
+      const server = new DiligentAppServer({
+        ...config,
+        resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      });
+
+      connectTestPeer(server);
+
+      const setResult = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: 204,
+          method: "tools/set",
+          params: {
+            plugins: [{ package: "@acme/diligent-tools", tools: { jira_comment: false } }],
+          },
+        }),
+      ) as {
+        configPath: string;
+      };
+
+      const expectedGlobalPath = join(fakeHome, ".config", "diligent", "diligent.jsonc");
+      expect(setResult.configPath).toBe(expectedGlobalPath);
+      const configText = await Bun.file(expectedGlobalPath).text();
+      expect(configText).toContain('"jira_comment": false');
+    } finally {
+      if (originalHome !== undefined) process.env.HOME = originalHome;
+      else delete process.env.HOME;
+      await rm(fakeHome, { recursive: true, force: true });
+    }
   });
 
   it("rebinds collab handler when registry instance changes between turns", async () => {
