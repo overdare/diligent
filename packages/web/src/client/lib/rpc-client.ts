@@ -23,15 +23,19 @@ type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type RequestResult<M extends RequestMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 
-type WebMethod = (typeof DILIGENT_CLIENT_REQUEST_METHODS)[
-  | "CONFIG_SET"
-  | "AUTH_LIST"
-  | "AUTH_SET"
-  | "AUTH_REMOVE"
-  | "AUTH_OAUTH_START"
-  | "THREAD_SUBSCRIBE"
-  | "THREAD_UNSUBSCRIBE"
-  | "IMAGE_UPLOAD"];
+const WEB_REQUEST_METHOD_KEYS = [
+  "CONFIG_SET",
+  "AUTH_LIST",
+  "AUTH_SET",
+  "AUTH_REMOVE",
+  "AUTH_OAUTH_START",
+  "THREAD_SUBSCRIBE",
+  "THREAD_UNSUBSCRIBE",
+  "IMAGE_UPLOAD",
+] as const satisfies readonly (keyof typeof DILIGENT_CLIENT_REQUEST_METHODS)[];
+
+type WebRequestMethodKey = (typeof WEB_REQUEST_METHOD_KEYS)[number];
+type WebMethod = (typeof DILIGENT_CLIENT_REQUEST_METHODS)[WebRequestMethodKey];
 type WebParams<M extends WebMethod> = Extract<DiligentClientRequest, { method: M }>["params"];
 type WebResult<M extends WebMethod> = Extract<DiligentClientResponse, { method: M }>["result"];
 

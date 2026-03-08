@@ -32,12 +32,7 @@ export {
   withPlanStateInjected,
 } from "./agent/index";
 // App server (JSON-RPC)
-export type {
-  CreateAppServerConfigOptions,
-  DiligentAppServerConfig,
-  NotificationListener,
-  ServerRequestHandler,
-} from "./app-server";
+export type { CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
 export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
 // Approval (Phase 5a)

@@ -3,7 +3,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
-import type { DiligentServerNotification } from "@diligent/protocol";
+import type {
+  DiligentServerNotification,
+  DiligentServerRequest,
+  DiligentServerRequestResponse,
+  JSONRPCMessage,
+} from "@diligent/protocol";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
@@ -23,6 +28,87 @@ function readResult(response: JSONRPCResponse): unknown {
     throw new Error(response.error.message);
   }
   return response.result;
+}
+
+const TEST_CONNECTION_ID = "test";
+
+interface TestPeer {
+  send(message: JSONRPCMessage): void;
+  onMessage(listener: (message: JSONRPCMessage) => void | Promise<void>): void;
+  onClose?(listener: (error?: Error) => void): void;
+}
+
+interface ConnectedTestServer {
+  peer: TestPeer;
+  notifications: DiligentServerNotification[];
+  setNotificationListener: (
+    listener: ((notification: DiligentServerNotification) => void | Promise<void>) | null,
+  ) => void;
+  setServerRequestHandler: (
+    handler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null,
+  ) => void;
+  disconnect: () => void;
+}
+
+function connectTestPeer(server: DiligentAppServer, connectionId = TEST_CONNECTION_ID): ConnectedTestServer {
+  const notifications: DiligentServerNotification[] = [];
+  let notificationListener: ((notification: DiligentServerNotification) => void | Promise<void>) | null = null;
+  let serverRequestHandler: ((request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>) | null = null;
+  let serverMessageListener: ((message: JSONRPCMessage) => void | Promise<void>) | null = null;
+
+  const peer: TestPeer = {
+    async send(message: JSONRPCMessage) {
+      if (!("method" in message)) return;
+      if (!("id" in message)) {
+        const notification = message as DiligentServerNotification;
+        notifications.push(notification);
+        await notificationListener?.(notification);
+        return;
+      }
+      if (typeof message.id !== "number") return;
+
+      const request = {
+        method: message.method as DiligentServerRequest["method"],
+        params: message.params,
+      } as DiligentServerRequest;
+
+      const response = serverRequestHandler
+        ? await serverRequestHandler(request)
+        : defaultServerRequestResponse(message.method);
+      await serverMessageListener?.({ id: message.id, result: response.result });
+    },
+    onMessage(listener) {
+      serverMessageListener = listener;
+    },
+  };
+
+  const disconnect = server.connect(connectionId, peer);
+
+  return {
+    peer,
+    notifications,
+    setNotificationListener(listener) {
+      notificationListener = listener;
+    },
+    setServerRequestHandler(handler) {
+      serverRequestHandler = handler;
+    },
+    disconnect,
+  };
+}
+
+function defaultServerRequestResponse(method: DiligentServerRequest["method"]): DiligentServerRequestResponse {
+  if (method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
+    return {
+      method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
+      result: { decision: "once" },
+    };
+  }
+
+  return {
+    method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+    result: { answers: {} },
+  };
 }
 
 function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown> }) {
@@ -127,20 +213,21 @@ describe("DiligentAppServer", () => {
       }),
     });
 
+    const connection = connectTestPeer(server);
     const notifications: DiligentServerNotification[] = [];
     let resolveTurnCompleted: (() => void) | null = null;
     const turnCompleted = new Promise<void>((resolve) => {
       resolveTurnCompleted = resolve;
     });
 
-    server.setNotificationListener((notification) => {
+    connection.setNotificationListener((notification) => {
       notifications.push(notification);
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
         resolveTurnCompleted?.();
       }
     });
 
-    const init = await server.handleRequest({
+    const init = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 1,
       method: "initialize",
       params: { clientName: "tui", clientVersion: "0.0.1", protocolVersion: 1 },
@@ -158,7 +245,7 @@ describe("DiligentAppServer", () => {
     expect(initResult.effort).toBe("medium");
     expect(initResult.currentModel).toBe("fake-model");
 
-    const start = await server.handleRequest({
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 2,
       method: "thread/start",
       params: { cwd: projectRoot },
@@ -167,7 +254,7 @@ describe("DiligentAppServer", () => {
     // sessionId format: YYYYMMDDHHMMSSSSSCCC-xxxxxx (timestamp + counter + 6-char random)
     expect(startResult.threadId).toMatch(/^\d{20}-[0-9a-f]{6}$/);
 
-    const turnStart = await server.handleRequest({
+    const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 3,
       method: "turn/start",
       params: { threadId: startResult.threadId, message: "hi" },
@@ -230,27 +317,29 @@ describe("DiligentAppServer", () => {
       }),
     });
 
+    const connection = connectTestPeer(server, "observer");
+
     const notifications: DiligentServerNotification[] = [];
     let resolveTurnCompleted: (() => void) | null = null;
     const turnCompleted = new Promise<void>((resolve) => {
       resolveTurnCompleted = resolve;
     });
 
-    server.setNotificationListener((notification) => {
+    connection.setNotificationListener((notification) => {
       notifications.push(notification);
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
         resolveTurnCompleted?.();
       }
     });
 
-    const start = await server.handleRequest({
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 100,
       method: "thread/start",
       params: { cwd: projectRoot },
     });
     const startResult = readResult(start) as { threadId: string };
 
-    const turnStart = await server.handleRequest({
+    const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 101,
       method: "turn/start",
       params: {
@@ -328,17 +417,23 @@ describe("DiligentAppServer", () => {
       }),
     });
 
-    const started = await server.handleRequest({ id: 120, method: "thread/start", params: { cwd: projectRoot } });
+    const connection = connectTestPeer(server);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 120,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
     const originalThreadId = (readResult(started) as { threadId: string }).threadId;
 
-    const initialRead = await server.handleRequest({
+    const initialRead = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 121,
       method: "thread/read",
       params: { threadId: originalThreadId },
     });
     expect((readResult(initialRead) as { currentEffort: string }).currentEffort).toBe("medium");
 
-    await server.handleRequest({
+    await server.handleRequest(TEST_CONNECTION_ID, {
       id: 122,
       method: "effort/set",
       params: { threadId: originalThreadId, effort: "max" },
@@ -348,13 +443,13 @@ describe("DiligentAppServer", () => {
     const turnCompleted = new Promise<void>((resolve) => {
       resolveTurnCompleted = resolve;
     });
-    server.setNotificationListener((notification) => {
+    connection.setNotificationListener((notification) => {
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
         resolveTurnCompleted?.();
       }
     });
 
-    await server.handleRequest({
+    await server.handleRequest(TEST_CONNECTION_ID, {
       id: 123,
       method: "turn/start",
       params: { threadId: originalThreadId, message: "remember this effort" },
@@ -403,27 +498,27 @@ describe("DiligentAppServer", () => {
       }),
     });
 
-    const resumed = await resumedServer.handleRequest({
+    const resumed = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
       id: 124,
       method: "thread/resume",
       params: { threadId: originalThreadId },
     });
     expect((readResult(resumed) as { found: boolean }).found).toBe(true);
 
-    const resumedRead = await resumedServer.handleRequest({
+    const resumedRead = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
       id: 125,
       method: "thread/read",
       params: { threadId: originalThreadId },
     });
     expect((readResult(resumedRead) as { currentEffort: string }).currentEffort).toBe("max");
 
-    const newThread = await resumedServer.handleRequest({
+    const newThread = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
       id: 126,
       method: "thread/start",
       params: { cwd: projectRoot },
     });
     const newThreadId = (readResult(newThread) as { threadId: string }).threadId;
-    const newThreadRead = await resumedServer.handleRequest({
+    const newThreadRead = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
       id: 127,
       method: "thread/read",
       params: { threadId: newThreadId },
@@ -474,10 +569,20 @@ describe("DiligentAppServer", () => {
       }),
     });
 
-    const start = await server.handleRequest({ id: 110, method: "thread/start", params: { cwd: projectRoot } });
+    connectTestPeer(server);
+
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 110,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
     const threadId = (readResult(start) as { threadId: string }).threadId;
 
-    const list = await server.handleRequest({ id: 111, method: "thread/list", params: { limit: 10 } });
+    const list = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 111,
+      method: "thread/list",
+      params: { limit: 10 },
+    });
     const result = readResult(list) as { data: Array<{ id: string; messageCount: number }> };
     expect(result.data.find((item) => item.id === threadId)).toMatchObject({ id: threadId, messageCount: 0 });
   });
@@ -525,19 +630,25 @@ describe("DiligentAppServer", () => {
       }),
     });
 
-    const start = await server.handleRequest({ id: 110, method: "thread/start", params: { cwd: projectRoot } });
+    const connection = connectTestPeer(server);
+
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 110,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
     const threadId = (readResult(start) as { threadId: string }).threadId;
     let resolveTurnCompleted: (() => void) | null = null;
     const turnCompleted = new Promise<void>((resolve) => {
       resolveTurnCompleted = resolve;
     });
-    server.setNotificationListener((notification) => {
+    connection.setNotificationListener((notification) => {
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
         resolveTurnCompleted?.();
       }
     });
 
-    await server.handleRequest({
+    await server.handleRequest(TEST_CONNECTION_ID, {
       id: 111,
       method: "turn/start",
       params: {
@@ -549,7 +660,11 @@ describe("DiligentAppServer", () => {
 
     await turnCompleted;
 
-    const list = await server.handleRequest({ id: 112, method: "thread/list", params: { limit: 10 } });
+    const list = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 112,
+      method: "thread/list",
+      params: { limit: 10 },
+    });
     const result = readResult(list) as { data: Array<{ id: string; firstUserMessage?: string }> };
     expect(result.data.find((item) => item.id === threadId)?.firstUserMessage).toBe("[image]");
   });
@@ -618,13 +733,15 @@ describe("DiligentAppServer", () => {
       }),
     });
 
+    const connection = connectTestPeer(server);
+
     const notifications: DiligentServerNotification[] = [];
     let resolveTurnDone: (() => void) | null = null;
     const turnDone = new Promise<void>((resolve) => {
       resolveTurnDone = resolve;
     });
 
-    server.setNotificationListener((notification) => {
+    connection.setNotificationListener((notification) => {
       notifications.push(notification);
       if (
         notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
@@ -634,7 +751,7 @@ describe("DiligentAppServer", () => {
       }
     });
 
-    server.setServerRequestHandler(async (request) => {
+    connection.setServerRequestHandler(async (request) => {
       if (request.method === DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST) {
         return {
           method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
@@ -647,14 +764,14 @@ describe("DiligentAppServer", () => {
       };
     });
 
-    const start = await server.handleRequest({
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 20,
       method: "thread/start",
       params: { cwd: projectRoot },
     });
     const startResult = readResult(start) as { threadId: string };
 
-    const turnStart = await server.handleRequest({
+    const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 21,
       method: "turn/start",
       params: { threadId: startResult.threadId, message: "hi" },
@@ -721,9 +838,11 @@ describe("DiligentAppServer", () => {
         }),
       });
 
+      const connection = connectTestPeer(server);
+
       let completedTurnId: string | undefined;
       const turnDone = new Promise<void>((resolve) => {
-        server.setNotificationListener((notification) => {
+        connection.setNotificationListener((notification) => {
           if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
             completedTurnId = notification.params.turnId;
           }
@@ -733,14 +852,14 @@ describe("DiligentAppServer", () => {
         });
       });
 
-      const start = await server.handleRequest({
+      const start = await server.handleRequest(TEST_CONNECTION_ID, {
         id: 30,
         method: "thread/start",
         params: { cwd: projectRoot },
       });
       const startResult = readResult(start) as { threadId: string };
 
-      await server.handleRequest({
+      await server.handleRequest(TEST_CONNECTION_ID, {
         id: 31,
         method: "turn/start",
         params: { threadId: startResult.threadId, message: "hi" },
@@ -821,9 +940,11 @@ describe("DiligentAppServer", () => {
         }),
       });
 
+      const connection = connectTestPeer(server);
+
       let completedTurnId: string | undefined;
       const turnDone = new Promise<void>((resolve) => {
-        server.setNotificationListener((notification) => {
+        connection.setNotificationListener((notification) => {
           if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
             completedTurnId = notification.params.turnId;
           }
@@ -833,14 +954,14 @@ describe("DiligentAppServer", () => {
         });
       });
 
-      const start = await server.handleRequest({
+      const start = await server.handleRequest(TEST_CONNECTION_ID, {
         id: 300,
         method: "thread/start",
         params: { cwd: projectRoot },
       });
       const startResult = readResult(start) as { threadId: string };
 
-      await server.handleRequest({
+      await server.handleRequest(TEST_CONNECTION_ID, {
         id: 301,
         method: "turn/start",
         params: { threadId: startResult.threadId, message: "hi" },
@@ -866,13 +987,16 @@ describe("DiligentAppServer", () => {
         builtin: { bash: false },
       },
     });
+
     const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
     const server = new DiligentAppServer({
       ...config,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
     });
 
-    const listed = await server.handleRequest({
+    connectTestPeer(server);
+
+    const listed = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 200,
       method: "tools/list",
       params: {},
@@ -902,7 +1026,7 @@ describe("DiligentAppServer", () => {
     });
 
     const setResult = readResult(
-      await server.handleRequest({
+      await server.handleRequest(TEST_CONNECTION_ID, {
         id: 201,
         method: "tools/set",
         params: {
@@ -942,9 +1066,13 @@ describe("DiligentAppServer", () => {
     expect(configText).toContain('"package": "@acme/diligent-tools"');
     expect(configText).toContain('"conflictPolicy": "plugin_wins"');
 
-    const threadStart = await server.handleRequest({ id: 202, method: "thread/start", params: { cwd: projectRoot } });
+    const threadStart = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 202,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
     const threadId = (readResult(threadStart) as { threadId: string }).threadId;
-    const turnStart = await server.handleRequest({
+    const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 203,
       method: "turn/start",
       params: { threadId, message: "hi" },
@@ -1134,9 +1262,11 @@ describe("DiligentAppServer", () => {
       },
     });
 
+    const connection = connectTestPeer(server);
+
     const notifications: DiligentServerNotification[] = [];
     const turnDone = new Promise<void>((resolve) => {
-      server.setNotificationListener((notification) => {
+      connection.setNotificationListener((notification) => {
         notifications.push(notification);
         if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
           resolve();
@@ -1144,14 +1274,14 @@ describe("DiligentAppServer", () => {
       });
     });
 
-    const start = await server.handleRequest({
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 30,
       method: "thread/start",
       params: { cwd: projectRoot },
     });
     const startResult = readResult(start) as { threadId: string };
 
-    await server.handleRequest({
+    await server.handleRequest(TEST_CONNECTION_ID, {
       id: 31,
       method: "turn/start",
       params: { threadId: startResult.threadId, message: "hi" },

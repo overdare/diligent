@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import {
+  DILIGENT_VERSION,
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -11,7 +12,6 @@ import {
   type DiligentClientRequest,
   DiligentClientRequestSchema,
   type DiligentServerNotification,
-  type DiligentServerRequest,
   type DiligentServerRequestResponse,
   DiligentServerRequestResponseSchema,
   type JSONRPCErrorResponse,
@@ -110,11 +110,6 @@ export interface DiligentAppServerConfig {
   toImageUrl?: (absPath: string) => string | undefined;
 }
 
-/** @deprecated Use connect() instead */
-export type NotificationListener = (notification: DiligentServerNotification) => void | Promise<void>;
-/** @deprecated Use connect() instead */
-export type ServerRequestHandler = (request: DiligentServerRequest) => Promise<DiligentServerRequestResponse>;
-
 interface ConnectedPeer {
   id: string;
   peer: RpcPeer;
@@ -158,17 +153,13 @@ export class DiligentAppServer {
   private readonly pendingServerRequests = new Map<number, PendingServerRequest>();
   private serverRequestSeq = 0;
 
-  // Deprecated backward-compat fields (used by rpc-bridge.ts and old tests)
-  private notificationListener: NotificationListener | null = null;
-  private serverRequestHandler: ServerRequestHandler | null = null;
-
   // Config/auth state
   private currentModelId: string | undefined;
   private oauthPending: Promise<void> | null = null;
 
   constructor(private readonly config: DiligentAppServerConfig) {
     this.serverName = config.serverName ?? "diligent-app-server";
-    this.serverVersion = config.serverVersion ?? "0.0.1";
+    this.serverVersion = config.serverVersion ?? DILIGENT_VERSION;
     this.knownCwds.add(config.cwd ?? process.cwd());
     this.currentModelId = config.modelConfig?.currentModelId;
   }
@@ -287,28 +278,9 @@ export class DiligentAppServer {
     return true;
   }
 
-  // ─── Deprecated backward-compat API ────────────────────────────────────────
-
-  /** @deprecated Use connect() instead */
-  setNotificationListener(listener: NotificationListener | null): void {
-    this.notificationListener = listener;
-  }
-
-  /** @deprecated Use connect() instead */
-  setServerRequestHandler(handler: ServerRequestHandler | null): void {
-    this.serverRequestHandler = handler;
-  }
-
   // ─── Request handling ───────────────────────────────────────────────────────
 
-  async handleRequest(connectionId: string, raw: unknown): Promise<JSONRPCResponse>;
-  /** @deprecated Pass connectionId as first argument */
-  async handleRequest(raw: unknown): Promise<JSONRPCResponse>;
-  async handleRequest(connectionIdOrRaw: string | unknown, rawArg?: unknown): Promise<JSONRPCResponse> {
-    const [connectionId, raw] =
-      typeof connectionIdOrRaw === "string" && rawArg !== undefined
-        ? [connectionIdOrRaw, rawArg]
-        : ["_legacy", connectionIdOrRaw];
+  async handleRequest(connectionId: string, raw: unknown): Promise<JSONRPCResponse> {
 
     const request = JSONRPCRequestSchema.safeParse(raw);
     if (!request.success) {
@@ -1073,11 +1045,6 @@ export class DiligentAppServer {
       if (params.threadId) this.turnInitiators.delete(params.threadId);
     }
 
-    // Deprecated: backward-compat single listener (used by rpc-bridge.ts and old tests)
-    if (this.notificationListener) {
-      await this.notificationListener(notification);
-    }
-
     // New: multi-connection routing
     if (this.connections.size === 0) return;
 
@@ -1149,15 +1116,7 @@ export class DiligentAppServer {
       return parsed.data.result.decision;
     }
 
-    // Deprecated fallback: old single-handler approach
-    if (!this.serverRequestHandler) return "once";
-    const response = await this.serverRequestHandler({
-      method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
-      params: { threadId, request },
-    });
-    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) return "reject";
-    return parsed.data.result.decision;
+    return "once";
   }
 
   private async requestUserInput(threadId: string, request: UserInputRequest): Promise<UserInputResponse> {
@@ -1174,16 +1133,7 @@ export class DiligentAppServer {
       return parsed.data.result;
     }
 
-    // Deprecated fallback: old single-handler approach
-    if (!this.serverRequestHandler) return { answers: {} };
-    const response = await this.serverRequestHandler({
-      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
-      params: { threadId, request },
-    });
-    const parsed = DiligentServerRequestResponseSchema.safeParse(response);
-    if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST)
-      return { answers: {} };
-    return parsed.data.result;
+    return { answers: {} };
   }
 
   // ─── Thread runtime utilities ────────────────────────────────────────────────
