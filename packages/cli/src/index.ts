@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import type { ModeKind } from "@diligent/core";
 import { ensureDiligentDir, listSessions } from "@diligent/core";
+import { DILIGENT_VERSION } from "@diligent/protocol";
 import { runAppServerStdio } from "./app-server-stdio";
 import { loadConfig } from "./config";
 import { DEFAULT_PROVIDER, type ProviderName } from "./provider-manager";
@@ -44,7 +45,7 @@ async function main() {
   });
 
   if (values.version) {
-    console.log("diligent 0.0.1");
+    console.log(`diligent ${DILIGENT_VERSION}`);
     return;
   }
 
