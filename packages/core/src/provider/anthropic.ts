@@ -39,10 +39,9 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
         const budgetTokens = useThinking ? (model.thinkingBudgets?.[effort] ?? model.defaultBudgetTokens ?? 8_000) : 0;
 
-        // SDK types lag behind Anthropic's adaptive thinking fields — keep payload assembly local.
         const thinkingConfig = useAdaptive
           ? {
-              thinking: { type: "adaptive" } as unknown as Anthropic.ThinkingConfigParam,
+              thinking: { type: "adaptive" } as Anthropic.ThinkingConfigParam,
               output_config: { effort },
               temperature: 1,
             }
@@ -188,11 +187,14 @@ function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
     case "local_image":
       throw new Error("local_image blocks must be materialized before Anthropic conversion");
     case "thinking":
+      if (!block.signature) {
+        throw new Error("Anthropic thinking blocks require signature");
+      }
       return {
         type: "thinking",
         thinking: block.thinking,
         signature: block.signature,
-      } as unknown as Anthropic.ContentBlockParam;
+      };
     case "tool_call":
       return {
         type: "tool_use",
@@ -234,8 +236,8 @@ function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantM
   const usage: Usage = {
     inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,
-    cacheReadTokens: (msg.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0,
-    cacheWriteTokens: (msg.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0,
+    cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
   };
 
   const stopReason = mapStopReason(msg.stop_reason);
