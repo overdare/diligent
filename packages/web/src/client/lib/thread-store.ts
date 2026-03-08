@@ -244,13 +244,22 @@ function updateCollabSpawnStatus(
   );
 }
 
+function normalizeSpawnStatusFromWait(status: string, timedOut: boolean): string {
+  // wait() timeout can snapshot a just-spawned agent as "pending" due to race timing.
+  // For spawn rows, that means "still running" from the user's perspective.
+  if (status === "pending") return "running";
+  // When wait timed out, any non-final status should remain running in the spawn row.
+  if (timedOut && status === "running") return "running";
+  return status;
+}
+
 /** Returns null when the plan output signals closure ({closed:true}), otherwise parses PlanState. */
 function parsePlanOutput(output: string): PlanState | null | "closed" {
   try {
     const parsed = JSON.parse(output) as {
       closed?: boolean;
       title?: string;
-      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done"; done?: boolean }>;
+      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done" }>;
     };
     if (parsed?.closed) return "closed";
     if (parsed && Array.isArray(parsed.steps)) {
@@ -258,8 +267,7 @@ function parsePlanOutput(output: string): PlanState | null | "closed" {
         title: parsed.title ?? "Plan",
         steps: parsed.steps.map((s) => ({
           text: s.text,
-          // backwards compat: old `done: boolean` format
-          status: s.status ?? (s.done ? "done" : "pending"),
+          status: s.status ?? "pending",
         })),
       };
     }
@@ -655,7 +663,12 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       });
 
       for (const agent of event.agentStatuses) {
-        next = updateCollabSpawnStatus(next, agent.threadId, agent.status, agent.message);
+        next = updateCollabSpawnStatus(
+          next,
+          agent.threadId,
+          normalizeSpawnStatusFromWait(agent.status, event.timedOut),
+          agent.message,
+        );
       }
       return next;
     }

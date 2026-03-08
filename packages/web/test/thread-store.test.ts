@@ -892,6 +892,55 @@ test("collab_spawn_end updates same spawn item to errored status", () => {
   expect(spawn && spawn.kind === "collab" ? spawn.message : "").toContain("does not exist");
 });
 
+test("collab_wait_end keeps spawn status running when timed out snapshot reports pending", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-pending-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "long task",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Moss",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/wait/end",
+    params: {
+      threadId,
+      callId: "wait-1",
+      agentStatuses: [
+        {
+          threadId: childThreadId,
+          nickname: "Moss",
+          status: "pending",
+          message: undefined,
+        },
+      ],
+      timedOut: true,
+    },
+  });
+
+  const spawn = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
+});
+
 test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [
@@ -932,6 +981,66 @@ test("hydrateFromThreadRead keeps sub-agent running until wait/close settles sta
     isRunning: false,
     hasFollowUp: false,
     entryCount: 2,
+    currentEffort: "medium",
+  });
+
+  const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(collab).toBeDefined();
+  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
+});
+
+test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pending snapshot", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-wait-1",
+        toolName: "wait",
+        output: JSON.stringify({
+          status: {
+            "ses-child-1": { kind: "pending" },
+          },
+          timed_out: true,
+        }),
+        isError: false,
+        timestamp: 102,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 3,
     currentEffort: "medium",
   });
 

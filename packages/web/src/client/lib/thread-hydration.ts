@@ -87,7 +87,7 @@ function parsePlanOutput(output: string): PlanState | null | "closed" {
     const parsed = JSON.parse(output) as {
       closed?: boolean;
       title?: string;
-      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done"; done?: boolean }>;
+      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done" }>;
     };
     if (parsed?.closed) return "closed";
     if (parsed && Array.isArray(parsed.steps)) {
@@ -95,7 +95,7 @@ function parsePlanOutput(output: string): PlanState | null | "closed" {
         title: parsed.title ?? "Plan",
         steps: parsed.steps.map((s) => ({
           text: s.text,
-          status: s.status ?? (s.done ? "done" : "pending"),
+          status: s.status ?? "pending",
         })),
       };
     }
@@ -193,6 +193,10 @@ function parseWaitOutput(
   }
 }
 
+function isFinalCollabStatus(status: string | undefined): status is "completed" | "errored" | "shutdown" {
+  return status === "completed" || status === "errored" || status === "shutdown";
+}
+
 function parseCloseOutput(output: string): { threadId?: string; nickname?: string; status?: string } {
   try {
     const parsed = JSON.parse(output) as { thread_id?: string; nickname?: string; final_status?: { kind?: string } };
@@ -234,8 +238,12 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       const waitData = parseWaitOutput(message.output);
       if (waitData) {
         for (const a of waitData.agents) {
-          settledThreadIds.add(a.threadId);
-          if (a.status) finalStatusByThreadId.set(a.threadId, a.status);
+          // wait() timeout can report non-final snapshots (pending/running).
+          // Only final statuses should settle spawn rows during hydration.
+          if (isFinalCollabStatus(a.status)) {
+            settledThreadIds.add(a.threadId);
+            finalStatusByThreadId.set(a.threadId, a.status);
+          }
         }
       }
     }
