@@ -2,6 +2,7 @@
 id: P041
 status: proposed
 created: 2026-03-07
+updated: 2026-03-08
 ---
 
 # P041: Branded Distribution Packaging
@@ -43,6 +44,25 @@ The desired product behavior is roughly:
 
 The current codebase lacks the abstractions needed for that. Product identity, storage paths, and packaging inputs are mixed together with implementation details.
 
+## Refresh Notes (2026-03-08)
+
+This refresh updates P041 from a mostly forward-looking concept document into an execution-oriented plan grounded in the current repo state.
+
+Important corrections and new facts:
+
+- P036 groundwork is already landed.
+  - CLI now supports `diligent app-server --stdio`.
+  - Web now uses raw JSON-RPC and receives bootstrap metadata from `initialize`.
+  - `DiligentAppServer` already has a concrete `getInitializeResult()` injection point that can carry product identity.
+- Packaging groundwork already exists.
+  - root `package.json` already ships compiled CLI build targets
+  - `packages/web` already has a standalone build pipeline
+  - `apps/desktop` already packages a Tauri app with a compiled Bun sidecar and post-build artifact copy step
+- Tool settings behavior in the repo is currently global-first, not project-local.
+  - `loadDiligentConfig()` ignores project-level `tools` overrides
+  - app-server `TOOLS_LIST`/`TOOLS_SET` currently read and write the global config path
+- Because of that, P041 should reuse the current transport and build entry points where possible instead of inventing parallel bootstrap or packaging flows.
+
 ## Current Checkpoint in Repo
 
 ### Product identity is hardcoded in visible surfaces
@@ -57,10 +77,20 @@ Examples already present in the repo:
   - visible TUI text includes `Exit diligent` and `diligent v...`
 - `packages/web/src/client/components/Sidebar.tsx`
   - sidebar title shows `diligent`
+- `packages/web/index.html`
+  - document title is hardcoded to `Diligent`
+- `packages/web/src/client/App.tsx`
+  - initialize call currently sends hardcoded `clientName: "diligent-web"`
 - `apps/desktop/src-tauri/src/lib.rs`
   - desktop window title is `Diligent`
 - `apps/desktop/src-tauri/tauri.conf.json`
   - desktop identifier is `app.diligent.desktop`
+- `apps/desktop/scripts/copy-dist.ts`
+  - packaged app and binary output names are hardcoded to `Diligent.app` and `diligent-desktop...`
+- `apps/desktop/scripts/build-sidecar.ts`
+  - sidecar output name is hardcoded to `diligent-web-server-<target>`
+- root `package.json`
+  - compiled CLI artifact names are hardcoded to `dist/diligent*`
 
 ### Storage and config namespaces are tied to `diligent`
 
@@ -71,8 +101,11 @@ Examples already present in the repo:
 - `packages/core/src/config/loader.ts`
   - global config path uses `~/.config/diligent/diligent.jsonc`
   - project config path uses `.diligent/diligent.jsonc`
+  - current merge behavior explicitly ignores project-level `tools` overrides
 - `packages/core/src/config/writer.ts`
-  - project tool settings write to `.diligent/diligent.jsonc`
+  - exposes both project and global config path helpers under the diligent namespace
+- `packages/core/src/app-server/thread-handlers.ts`
+  - tool settings UI currently reports `getGlobalConfigPath()` and persists via `writeGlobalToolsConfig()`
 - `packages/core/src/auth/auth-store.ts`
   - auth path uses `~/.config/diligent/auth.json`
 - `packages/core/src/skills/discovery.ts`
@@ -93,13 +126,49 @@ Relevant files:
 - `packages/core/src/tools/catalog.ts`
   - merges built-ins and configured plugin packages
 - `packages/core/src/config/writer.ts`
-  - persists project tool config including plugin package entries
+  - provides JSONC-preserving tool config persistence helpers used by runtime settings flows
 - `packages/core/src/app-server/server.ts`
   - exposes protocol-backed tool settings list and set operations
 - `packages/web/src/client/components/ToolSettingsModal.tsx`
 - `packages/cli/src/tui/commands/builtin/tools.ts`
 
 This is useful groundwork, but it is not yet a release-bundling mechanism.
+
+### Transport and bootstrap groundwork already exists
+
+Relevant files:
+
+- `packages/core/src/app-server/factory.ts`
+  - centralizes runtime-to-app-server wiring for CLI and Web
+- `packages/core/src/app-server/server.ts`
+  - `initialize` already merges a `getInitializeResult()` payload into the protocol response
+- `packages/protocol/src/client-requests.ts`
+  - initialize response schema already carries shared bootstrap metadata such as `cwd`, `mode`, `effort`, `currentModel`, and `availableModels`
+- `packages/cli/src/app-server-stdio.ts`
+  - CLI child app-server path already builds `DiligentAppServer` through `createAppServerConfig()`
+- `packages/web/src/server/index.ts`
+  - Web server already builds initialize metadata through `createAppServerConfig({ overrides: { getInitializeResult } })`
+- `packages/web/src/client/App.tsx`
+  - Web client already treats `initialize` as the bootstrap source of truth
+
+This means P041 does not need a new bootstrap channel. It should extend the existing initialize/bootstrap path with product metadata.
+
+### Build and packaging groundwork already exists
+
+Relevant files:
+
+- root `package.json`
+  - compiled CLI build targets already exist for darwin, linux, and windows
+- `packages/web/package.json`
+  - standalone Web build already exists via `vite build`
+- `apps/desktop/package.json`
+  - desktop build already orchestrates frontend build, Bun sidecar build, and Tauri packaging
+- `apps/desktop/scripts/build-sidecar.ts`
+  - compiles the Web server into Tauri sidecar binaries per target triple
+- `apps/desktop/scripts/copy-dist.ts`
+  - copies packaged desktop artifacts into repo-root `dist/`
+
+This means the MVP packaging plan should wrap and parameterize existing build flows first, then replace individual hardcoded names only where needed.
 
 ## Goals
 
@@ -267,6 +336,15 @@ Recommended precedence:
 
 This keeps official release defaults immutable and upgrade-friendly while preserving user control.
 
+### Current runtime nuance to preserve during rollout
+
+In the current repo, tool settings are effectively global-first:
+
+- `loadDiligentConfig()` ignores project-level `tools` overrides
+- app-server tool settings endpoints return and persist the global config path
+
+P041 should not accidentally regress that behavior while introducing distribution defaults. If tool-scope policy changes (global vs project) are desired later, that should be an explicit follow-up decision.
+
 ### Why this matters
 
 If release defaults are copied directly into user config on first run, upgrades become awkward:
@@ -391,6 +469,27 @@ This should be implemented as a repeatable release process, not as one-off repo 
 
 ## Detailed Implementation Direction
 
+Note:
+
+- The phase sections below group work by concern. Actual delivery priority is defined later in "Suggested Delivery Order" and "Suggested MVP Cut Line."
+
+## Phase 0: Reuse the existing runtime and packaging spine
+
+### Scope
+
+Before adding new abstraction modules, anchor implementation to already landed entry points.
+
+### Required anchor points
+
+- app-server bootstrap path via `createAppServerConfig()`
+- initialize metadata extension via `getInitializeResult()`
+- CLI child runtime via `diligent app-server --stdio`
+- existing root/Web/Desktop build scripts as packaging primitives
+
+### Expected outcome
+
+P041 lands as an incremental extension of current architecture instead of introducing parallel runtime or build paths.
+
 ## Phase 1: Product identity abstraction
 
 ### Scope
@@ -399,12 +498,20 @@ Replace hardcoded visible product strings with runtime or build-time identity va
 
 ### Example touch points
 
+- `packages/core/src/app-server/factory.ts`
+- `packages/core/src/app-server/server.ts`
+- `packages/protocol/src/client-requests.ts`
 - `packages/cli/package.json`
 - `packages/cli/src/index.ts`
+- `packages/cli/src/tui/runner.ts`
 - `packages/cli/src/tui/commands/builtin/misc.ts`
 - `packages/web/src/client/components/Sidebar.tsx`
+- `packages/web/src/client/App.tsx`
+- `packages/web/index.html`
 - `apps/desktop/src-tauri/src/lib.rs`
 - `apps/desktop/src-tauri/tauri.conf.json`
+- `apps/desktop/scripts/build-sidecar.ts`
+- `apps/desktop/scripts/copy-dist.ts`
 
 ### Expected outcome
 
@@ -503,11 +610,12 @@ Recommended change:
 
 Current role:
 
-- writes project-local tool settings to `.diligent/diligent.jsonc`
+- exposes JSONC-preserving helpers for both project and global diligent config paths
+- app-server tool settings currently use global write semantics
 
 Recommended change:
 
-- resolve project config path through storage policy
+- resolve both project and global config paths through storage policy
 - preserve the existing JSONC patch semantics
 
 ### `packages/core/src/auth/auth-store.ts`
@@ -594,6 +702,7 @@ Recommended change:
 Recommended change:
 
 - ensure product identity reaches the client through shared bootstrap rather than duplicated constants
+- include `packages/web/index.html` title handling in the branding path
 
 ## Desktop
 
@@ -616,6 +725,17 @@ Current role:
 Recommended change:
 
 - support templating or build-time generation from a distribution spec
+
+### `apps/desktop/scripts/build-sidecar.ts` and `apps/desktop/scripts/copy-dist.ts`
+
+Current role:
+
+- hardcode sidecar and packaged artifact naming conventions under diligent branding
+
+Recommended change:
+
+- parameterize artifact naming and copy targets from distribution metadata
+- preserve current naming as default behavior when no distribution spec is provided
 
 ## Recommended MVP
 
@@ -708,6 +828,10 @@ This section turns the plan into execution-oriented work items. The tasks are gr
 
 Goal: remove hardcoded visible product strings from shared runtime and frontends while preserving current default behavior.
 
+Implementation note:
+
+- This milestone should extend the existing initialize/bootstrap path and existing client boot flows, not add a separate branding transport.
+
 ### Task 1. Add product identity types and defaults in core
 
 Deliverables:
@@ -739,6 +863,8 @@ Likely files:
 - `packages/core/src/app-server/server.ts`
 - `packages/core/src/app-server/factory.ts`
 - protocol types if additional bootstrap metadata is required
+- `packages/cli/src/tui/runner.ts` (replace hardcoded `clientName`)
+- `packages/web/src/client/App.tsx` (replace hardcoded `clientName`)
 
 Verification:
 
@@ -774,6 +900,7 @@ Likely files:
 
 - `packages/web/src/client/components/Sidebar.tsx`
 - `packages/web/src/client/App.tsx`
+- `packages/web/index.html`
 - Web RPC/bootstrap handling modules
 
 Verification:
@@ -792,6 +919,8 @@ Likely files:
 - `apps/desktop/src-tauri/src/lib.rs`
 - `apps/desktop/src-tauri/tauri.conf.json`
 - desktop build scripts that can inject metadata
+- `apps/desktop/scripts/build-sidecar.ts`
+- `apps/desktop/scripts/copy-dist.ts`
 
 Verification:
 
@@ -937,6 +1066,7 @@ Likely files:
 
 - script under `scripts/` or a dedicated packaging module
 - root `package.json` scripts
+- `apps/desktop/package.json` (wire branded build path if desktop packaging is in MVP scope)
 
 Verification:
 
@@ -954,6 +1084,7 @@ Likely files:
 - root build scripts in `package.json`
 - packaging script
 - CLI compile/build output configuration
+- optionally `packages/cli/package.json` bin metadata if distribution flow requires generated wrapper metadata
 
 Verification:
 
@@ -988,6 +1119,7 @@ Likely files:
 - Web build config
 - server-side bootstrap wiring
 - packaging assembly script
+- `packages/web/index.html`
 
 Verification:
 
@@ -1020,6 +1152,7 @@ Deliverables:
 
 - replace remaining literal path assumptions in core and relevant clients
 - cover project config, global config, auth, skills, image storage, and global plugin lookup
+- explicitly preserve current tool-settings semantics unless changed by a separate product decision
 
 Likely files:
 
@@ -1184,7 +1317,7 @@ The recommended execution order is:
 
 1. product identity abstraction
 2. distribution defaults and bundled plugin roots
-3. storage policy abstraction
-4. packaging command and release pipeline
+3. packaging command and release pipeline
+4. storage policy abstraction (after MVP)
 
 This preserves Diligent as the internal core while making branded official releases such as `OVERCODE` practical, repeatable, and maintainable.

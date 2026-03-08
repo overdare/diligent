@@ -195,6 +195,12 @@ export class ChatView implements Component {
           }
 
           this.items.push(lines);
+        } else if (event.toolName === "skill") {
+          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+          const match = event.output.match(/<skill_content\s+name="([^"]+)"/);
+          const skillName = match?.[1];
+          const label = skillName ? `Loaded skill: ${skillName}` : "Loaded skill";
+          this.items.push([`${icon} ${label}${elapsed}`]);
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           this.collabState.delete(event.toolCallId);

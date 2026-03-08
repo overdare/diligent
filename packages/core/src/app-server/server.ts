@@ -104,6 +104,8 @@ export interface DiligentAppServerConfig {
   openBrowser?: (url: string) => void;
   /** Convert an absolute image path to a URL for web clients (omit if not needed) */
   toImageUrl?: (absPath: string) => string | undefined;
+  /** Loaded skill names for slash-command disambiguation in turn/start. */
+  skillNames?: string[];
 }
 
 interface ConnectedPeer {
@@ -547,6 +549,9 @@ export class DiligentAppServer {
         runtime.id,
       );
       await stream.result();
+      // Ensure all session entries are durably persisted before signaling
+      // turn completion to clients.
+      await runtime.manager.waitForWrites();
       console.log("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
@@ -839,10 +844,15 @@ export class DiligentAppServer {
       consumeStream: (runtime: ThreadRuntime, stream: ReturnType<SessionManager["run"]>, turnId: string) =>
         this.consumeStream(runtime, stream, turnId),
       resolveToolsContext: (threadId?: string) => this.resolveToolsContext(threadId),
+      getSkillNames: () => this.getSkillNames(),
       setActiveThreadId: (threadId: string | null) => {
         this.activeThreadId = threadId;
       },
     };
+  }
+
+  private getSkillNames(): string[] {
+    return this.config.skillNames ?? [];
   }
 
   private errorResponse(

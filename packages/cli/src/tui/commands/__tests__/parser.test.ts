@@ -19,21 +19,21 @@ describe("parseCommand", () => {
     });
   });
 
-  it("parses a colon-namespaced command with no args", () => {
-    const result = parseCommand("/skill:review");
+  it("parses a direct skill command with no args", () => {
+    const result = parseCommand("/review");
     expect(result).toEqual({
-      name: "skill:review",
+      name: "review",
       args: undefined,
-      raw: "/skill:review",
+      raw: "/review",
     });
   });
 
-  it("parses a colon-namespaced command with args", () => {
-    const result = parseCommand("/skill:review check PR");
+  it("parses a direct skill command with args", () => {
+    const result = parseCommand("/review check PR");
     expect(result).toEqual({
-      name: "skill:review",
+      name: "review",
       args: "check PR",
-      raw: "/skill:review check PR",
+      raw: "/review check PR",
     });
   });
 

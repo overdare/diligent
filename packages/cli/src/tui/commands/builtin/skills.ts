@@ -1,32 +1,27 @@
 // @summary Skills command - displays available skills and their documentation
 import type { SkillMetadata } from "@diligent/core";
-import { extractBody } from "@diligent/core";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
 
 /**
- * /skill:name — Invoke a skill by name.
+ * /name — Invoke a skill by name.
  */
 export function createSkillInvokeCommand(skillName: string, skill: SkillMetadata): Command {
   return {
-    name: `skill:${skillName}`,
+    name: skillName,
     description: skill.description,
     hidden: true,
     handler: async (args, ctx) => {
-      // Read SKILL.md body from disk
-      const content = await Bun.file(skill.path).text();
-      const body = extractBody(content);
-
-      ctx.displayLines([`  ${t.dim}Skill loaded: ${skill.name}${t.reset}`]);
-
-      // Inject as user message with skill prefix and run agent
-      const message = `[Using skill: ${skill.name}]\n\n${body}`;
-      if (args) {
-        await ctx.runAgent(`${message}\n\n${args}`);
-      } else {
-        await ctx.runAgent(message);
-      }
+      ctx.displayLines([`  ${t.dim}Requesting skill tool: ${skill.name}${t.reset}`]);
+      const message = [
+        `The user invoked /${skill.name}.`,
+        `Before any other action, call the "skill" tool with {"name":"${skill.name}"}.`,
+        args
+          ? `After loading the skill, continue with this additional user instruction:\n${args}`
+          : "After loading the skill, continue with the user's request.",
+      ].join("\n\n");
+      await ctx.runAgent(message);
     },
   };
 }

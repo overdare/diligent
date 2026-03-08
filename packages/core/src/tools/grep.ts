@@ -6,7 +6,10 @@ import type { Tool, ToolResult } from "../tool/types";
 
 const GrepParams = z.object({
   pattern: z.string().describe("Regex pattern to search for in file contents"),
-  path: z.string().optional().describe("File or directory path to search in. Defaults to the current working directory"),
+  path: z
+    .string()
+    .optional()
+    .describe("File or directory path to search in. Defaults to the current working directory"),
   include: z.string().optional().describe("Glob pattern to filter files (e.g., '*.ts')"),
   ignore_case: z.boolean().optional().describe("Case-insensitive search. Default: false"),
   context: z.number().int().min(0).optional().describe("Lines of context before and after each match"),

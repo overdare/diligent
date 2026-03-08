@@ -42,20 +42,46 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         throw new Error("No AI provider configured. Please add an API key in the provider settings.");
       }
 
+      const rawPrompt = runtimeConfig.systemPrompt;
+      const hasSkillSection = rawPrompt.some((section) => section.label === "skills");
+      const hasSkills = runtimeConfig.skills.length > 0;
+      const systemPromptWithSkillGuard = hasSkillSection
+        ? rawPrompt
+        : hasSkills
+          ? [
+              ...rawPrompt,
+              {
+                label: "skill_usage_guardrail",
+                content: [
+                  "Skills must be loaded through the skill tool.",
+                  "Do not use read to open SKILL.md directly.",
+                  "When the user mentions a skill by name or requests a skill-like workflow, call skill first.",
+                ].join("\n"),
+              },
+            ]
+          : rawPrompt;
+
       const paths = await getPaths();
       const deps = {
         model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
+        systemPrompt: systemPromptWithSkillGuard,
         streamFunction: runtimeConfig.streamFunction,
         getParentSessionId: getSessionId,
         ask,
       };
-      const result = await buildDefaultTools(requestCwd, paths, deps, runtimeConfig.diligent.tools, existingRegistry);
+      const resultWithSkills = await buildDefaultTools(
+        requestCwd,
+        paths,
+        deps,
+        runtimeConfig.diligent.tools,
+        runtimeConfig.skills,
+        existingRegistry,
+      );
 
       return {
         model: runtimeConfig.model,
-        systemPrompt: runtimeConfig.systemPrompt,
-        tools: result.tools,
+        systemPrompt: systemPromptWithSkillGuard,
+        tools: resultWithSkills.tools,
         streamFunction: runtimeConfig.streamFunction,
         mode: mode as ModeKind,
         effort,
@@ -63,7 +89,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         approve,
         ask,
         permissionEngine: runtimeConfig.permissionEngine,
-        registry: result.registry,
+        registry: resultWithSkills.registry,
       };
     },
     compaction: runtimeConfig.compaction,
@@ -90,6 +116,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       },
     },
     providerManager: runtimeConfig.providerManager,
+    skillNames: runtimeConfig.skills.map((skill) => skill.name),
     ...overrides,
   };
 

@@ -18,4 +18,5 @@ export type { PluginLoadResult, PluginManifest } from "./plugin-loader";
 export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-loader";
 export { createReadTool } from "./read";
 export { requestUserInputTool } from "./request-user-input";
+export { createSkillTool, registerSkillTool } from "./skill";
 export { createWriteTool } from "./write";

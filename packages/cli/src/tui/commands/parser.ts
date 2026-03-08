@@ -12,7 +12,7 @@ export interface ParsedCommand {
  * Supports:
  *   /help           → { name: "help", args: undefined }
  *   /model gpt-4o   → { name: "model", args: "gpt-4o" }
- *   /skill:review   → { name: "skill:review", args: undefined }
+ *   /review         → { name: "review", args: undefined }
  *   //escaped        → null (double-slash escape)
  */
 export function parseCommand(text: string): ParsedCommand | null {

@@ -57,17 +57,20 @@ function makeCaptureStreamFn(): { fn: StreamFunction; capturedContexts: StreamCo
   return { fn, capturedContexts };
 }
 
-const ALL_TOOLS = ["bash", "read_file", "write_file", "edit_file", "glob", "grep", "ls", "add_knowledge"].map(makeTool);
+const ALL_TOOLS = ["bash", "read", "write", "apply_patch", "glob", "grep", "ls", "add_knowledge", "skill"].map(
+  makeTool,
+);
 
 describe("PLAN_MODE_ALLOWED_TOOLS", () => {
   test("contains only read-only tools", () => {
-    expect(PLAN_MODE_ALLOWED_TOOLS.has("read_file")).toBe(true);
+    expect(PLAN_MODE_ALLOWED_TOOLS.has("read")).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("glob")).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("grep")).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("ls")).toBe(true);
+    expect(PLAN_MODE_ALLOWED_TOOLS.has("skill")).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("bash")).toBe(false);
-    expect(PLAN_MODE_ALLOWED_TOOLS.has("write_file")).toBe(false);
-    expect(PLAN_MODE_ALLOWED_TOOLS.has("edit_file")).toBe(false);
+    expect(PLAN_MODE_ALLOWED_TOOLS.has("write")).toBe(false);
+    expect(PLAN_MODE_ALLOWED_TOOLS.has("apply_patch")).toBe(false);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("add_knowledge")).toBe(false);
   });
 });
@@ -90,8 +93,8 @@ describe("agentLoop mode filtering", () => {
     expect(capturedContexts).toHaveLength(1);
     const toolNames = capturedContexts[0].tools.map((t) => t.name);
     expect(toolNames).toContain("bash");
-    expect(toolNames).toContain("write_file");
-    expect(toolNames).toContain("edit_file");
+    expect(toolNames).toContain("write");
+    expect(toolNames).toContain("apply_patch");
     expect(toolNames).toContain("add_knowledge");
   });
 
@@ -111,13 +114,14 @@ describe("agentLoop mode filtering", () => {
 
     expect(capturedContexts).toHaveLength(1);
     const toolNames = capturedContexts[0].tools.map((t) => t.name);
-    expect(toolNames).toContain("read_file");
+    expect(toolNames).toContain("read");
     expect(toolNames).toContain("glob");
     expect(toolNames).toContain("grep");
     expect(toolNames).toContain("ls");
+    expect(toolNames).toContain("skill");
     expect(toolNames).not.toContain("bash");
-    expect(toolNames).not.toContain("write_file");
-    expect(toolNames).not.toContain("edit_file");
+    expect(toolNames).not.toContain("write");
+    expect(toolNames).not.toContain("apply_patch");
     expect(toolNames).not.toContain("add_knowledge");
   });
 
@@ -138,7 +142,7 @@ describe("agentLoop mode filtering", () => {
     expect(capturedContexts).toHaveLength(1);
     const toolNames = capturedContexts[0].tools.map((t) => t.name);
     expect(toolNames).toContain("bash");
-    expect(toolNames).toContain("write_file");
+    expect(toolNames).toContain("write");
   });
 
   test("mode undefined defaults to default behavior", async () => {

@@ -29,8 +29,13 @@ export function registerBuiltinCommands(registry: CommandRegistry, skills: Skill
   registry.register(reloadCommand);
   registry.register(skillsPickerCommand);
 
-  // Register dynamic skill commands
+  const builtinNames = new Set(registry.list().map((command) => command.name));
+
+  // Register dynamic skill commands (/skill-name). Builtin commands win on collision.
   for (const skill of skills) {
+    if (builtinNames.has(skill.name)) {
+      continue;
+    }
     registry.register(createSkillInvokeCommand(skill.name, skill));
   }
 }

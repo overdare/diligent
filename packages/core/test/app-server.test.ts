@@ -22,6 +22,7 @@ import { EventStream } from "../src/event-stream";
 import { ensureDiligentDir } from "../src/infrastructure/diligent-dir";
 import { ProviderManager } from "../src/provider/provider-manager";
 import type { Model } from "../src/provider/types";
+import { SessionWriter } from "../src/session/persistence";
 import { requestUserInputTool } from "../src/tools/request-user-input";
 
 function readResult(response: JSONRPCResponse): unknown {
@@ -706,6 +707,19 @@ describe("DiligentAppServer", () => {
     };
     expect(lastMessage.role).toBe("assistant");
     expect(lastMessage.content.find((b) => b.type === "text")?.text).toBe("from-disk");
+
+    // Also validate equal-count/equal-leaf fingerprints are present and stable on next read.
+    const secondRead = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 904,
+      method: "thread/read",
+      params: { threadId },
+    });
+    const second = readResult(secondRead) as { messages: Array<{ role: string; content: unknown[] }> };
+    const secondLast = second.messages[second.messages.length - 1] as {
+      role: string;
+      content: Array<{ type: string; text?: string }>;
+    };
+    expect(secondLast.content.find((b) => b.type === "text")?.text).toBe("from-disk");
   });
 
   it("reads image fallback preview from persisted thread list data when first turn is image-only", async () => {
@@ -1101,6 +1115,92 @@ describe("DiligentAppServer", () => {
     }
   });
 
+  it("emits turn/completed only after session writes are flushed", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+    const paths = await ensureDiligentDir(projectRoot);
+
+    const originalWrite = SessionWriter.prototype.write;
+    SessionWriter.prototype.write = async function delayedWrite(entry) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      await originalWrite.call(this, entry);
+    };
+
+    try {
+      const server = new DiligentAppServer({
+        resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+        buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+          model: {
+            id: "fake-model",
+            provider: "fake",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+          },
+          systemPrompt: [{ label: "base", content: "test" }],
+          tools: [],
+          mode,
+          signal,
+          approve,
+          ask,
+          streamFunction: () => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({ type: "text_delta", delta: "persist-check" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "persist-check" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+            return stream as never;
+          },
+        }),
+      });
+
+      const connection = connectTestPeer(server);
+      const start = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 970,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const threadId = (readResult(start) as { threadId: string }).threadId;
+      const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+
+      const turnCompleted = new Promise<void>((resolve, reject) => {
+        connection.setNotificationListener(async (notification) => {
+          if (notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) return;
+          try {
+            const text = await readFile(sessionPath, "utf8");
+            expect(text).toContain("persist-check");
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 971,
+        method: "turn/start",
+        params: { threadId, message: "hi" },
+      });
+
+      await turnCompleted;
+    } finally {
+      SessionWriter.prototype.write = originalWrite;
+    }
+  });
+
   it("lists effective tool state and persists tool settings for next turns", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const fakeHome = await mkdtemp(join(tmpdir(), "diligent-home-"));
@@ -1147,6 +1247,10 @@ describe("DiligentAppServer", () => {
         reason: "disabled_by_user",
       });
       expect(listedResult.tools.find((tool) => tool.name === "plan")).toMatchObject({
+        enabled: true,
+        immutable: true,
+      });
+      expect(listedResult.tools.find((tool) => tool.name === "skill")).toMatchObject({
         enabled: true,
         immutable: true,
       });

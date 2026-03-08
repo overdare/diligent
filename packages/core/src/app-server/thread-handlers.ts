@@ -34,6 +34,44 @@ export interface ThreadRuntime {
   registry?: AgentRegistry;
 }
 
+const BUILTIN_COMMAND_NAMES = new Set([
+  "help",
+  "model",
+  "provider",
+  "tools",
+  "new",
+  "resume",
+  "delete",
+  "status",
+  "compact",
+  "clear",
+  "exit",
+  "version",
+  "config",
+  "cost",
+  "bug",
+  "reload",
+  "skills",
+]);
+
+function parseSlashSkillInvocation(
+  message: string,
+  skillNames: Set<string>,
+): { skillName: string; args: string } | null {
+  const trimmed = message.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+
+  const withoutSlash = trimmed.slice(1);
+  if (!withoutSlash) return null;
+
+  const spaceIdx = withoutSlash.indexOf(" ");
+  const commandName = (spaceIdx === -1 ? withoutSlash : withoutSlash.slice(0, spaceIdx)).trim();
+  if (!commandName || BUILTIN_COMMAND_NAMES.has(commandName) || !skillNames.has(commandName)) return null;
+
+  const args = spaceIdx === -1 ? "" : withoutSlash.slice(spaceIdx + 1).trim();
+  return { skillName: commandName, args };
+}
+
 interface ThreadHandlersContext {
   activeThreadId: string | null;
   threads: Map<string, ThreadRuntime>;
@@ -51,6 +89,7 @@ interface ThreadHandlersContext {
   emit: (notification: DiligentServerNotification) => Promise<void>;
   consumeStream: (runtime: ThreadRuntime, stream: ReturnType<SessionManager["run"]>, turnId: string) => Promise<void>;
   resolveToolsContext: (threadId?: string) => Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }>;
+  getSkillNames: () => string[];
   setActiveThreadId: (threadId: string | null) => void;
 }
 
@@ -222,18 +261,29 @@ export async function handleTurnStart(
   });
 
   const timestamp = Date.now();
+  const slashSkill = parseSlashSkillInvocation(params.message, new Set(ctx.getSkillNames()));
+  const messageForTurn = slashSkill
+    ? [
+        `The user invoked /${slashSkill.skillName}.`,
+        `Before any other action, call the "skill" tool with {"name":"${slashSkill.skillName}"}.`,
+        slashSkill.args
+          ? `After loading the skill, continue with this additional user instruction:\n${slashSkill.args}`
+          : "After loading the skill, continue with the user's request.",
+      ].join("\n\n")
+    : params.message;
+
   const content =
     params.content && params.content.length > 0
       ? params.content
       : params.attachments && params.attachments.length > 0
         ? [
-            ...((params.message.trim().length > 0 ? [{ type: "text", text: params.message }] : []) as Array<{
+            ...((messageForTurn.trim().length > 0 ? [{ type: "text", text: messageForTurn }] : []) as Array<{
               type: "text";
               text: string;
             }>),
             ...params.attachments,
           ]
-        : params.message;
+        : messageForTurn;
   const userMessage = { role: "user" as const, content, timestamp };
 
   const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
@@ -345,7 +395,7 @@ export async function handleToolsList(
 }> {
   const { cwd, tools } = await ctx.resolveToolsContext(threadId);
   const paths = await ctx.resolvePaths(cwd);
-  const result = await buildDefaultTools(cwd, paths, undefined, tools);
+  const result = await buildDefaultTools(cwd, paths, undefined, tools, []);
 
   return {
     configPath: getGlobalConfigPath(),
@@ -387,7 +437,7 @@ export async function handleToolsSet(
   toolConfig.setTools(writeResult.config.tools);
 
   const paths = await ctx.resolvePaths(cwd);
-  const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools);
+  const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools, []);
 
   return {
     configPath: writeResult.configPath,

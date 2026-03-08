@@ -47,6 +47,24 @@ describe("createAppServerConfig", () => {
     expect(config.providerManager).toBe(runtimeConfig.providerManager);
     expect(config.modelConfig).toBeDefined();
     expect(config.modelConfig?.currentModelId).toBe("claude-sonnet-4-6");
+    expect(config.skillNames).toEqual([]);
+  });
+
+  it("passes skill names for slash disambiguation", () => {
+    const runtimeConfig = makeRuntimeConfig({
+      skills: [
+        {
+          name: "tidy-plan",
+          description: "desc",
+          path: "/tmp/skills/tidy-plan/SKILL.md",
+          baseDir: "/tmp/skills/tidy-plan",
+          source: "project",
+          disableModelInvocation: false,
+        },
+      ],
+    });
+    const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+    expect(config.skillNames).toEqual(["tidy-plan"]);
   });
 
   it("merges overrides for toImageUrl and openBrowser", () => {

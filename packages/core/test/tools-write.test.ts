@@ -63,7 +63,6 @@ describe("write tool", () => {
   test("writes empty content", async () => {
     const result = await tool.execute({ file_path: "empty.txt", content: "" }, makeCtx());
 
-    const filePath = join(tmpDir, "empty.txt");
     expect(result.output).toContain("Wrote 0 bytes");
   });
 

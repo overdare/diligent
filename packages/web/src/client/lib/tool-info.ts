@@ -105,14 +105,16 @@ export function getToolHeaderTitle(toolName: string, inputText: string, outputTe
   return displayName;
 }
 
+type PlanHeaderStep = { text: string; status?: "pending" | "in_progress" | "done" };
+
 function parsePlanHeaderTitle(inputText: string): string {
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
     if (parsed.close === true) return "Plan — Closed";
-    const steps = parsed.steps as Array<{ text: string; done?: boolean }> | undefined;
+    const steps = parsed.steps as PlanHeaderStep[] | undefined;
     const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
     if (!steps || !Array.isArray(steps)) return title ? `Plan — ${clip(title, 50)}` : "Plan";
-    const doneCount = steps.filter((s) => s.done).length;
+    const doneCount = steps.filter((step) => step.status === "done").length;
     const totalCount = steps.length;
     const progress = `${doneCount}/${totalCount}`;
     const label = doneCount === 0 ? "Created" : doneCount === totalCount ? "Done" : "Updated";
@@ -136,117 +138,56 @@ export function summarizeOutput(toolName: string, outputText: string): string {
   if (!outputText.trim()) return "";
   const name = toolName.toLowerCase();
 
-  // bash / shell: show first non-empty line of stdout
-  if (name === "bash") {
-    const firstLine = outputText
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.length > 0);
-    return firstLine ? clip(firstLine) : "";
+  if (name === "request_user_input") {
+    const title = parseRequestUserInputTitleFromOutput(outputText);
+    return title ? clip(title, 80) : "";
   }
 
-  // read: show line count from "(showing lines X-Y of Z total)" or count content lines
-  if (name === "read") {
-    // Look for the standard footer: "(showing lines 1-50 of 200 total)"
-    const showingMatch = outputText.match(/\(showing lines \d+-\d+ of (\d+) total\)/);
-    if (showingMatch) return `${showingMatch[1]} lines`;
-    // Count non-empty content lines (output has "  N\t..." format)
-    const contentLines = outputText.split("\n").filter((l) => l.trim().length > 0);
-    return `${contentLines.length} lines`;
-  }
-
-  // write / apply_patch: show line count or written confirmation
-  if (name === "write" || name === "apply_patch" || name === "multiedit") {
-    const lineMatch = outputText.match(/(\d+)\s*line/i);
-    if (lineMatch) return `${lineMatch[1]} lines`;
-    const firstLine = outputText.split("\n")[0]?.trim();
-    return firstLine ? clip(firstLine) : "";
-  }
-
-  // grep: count actual match lines (file:line:content pattern)
-  if (name === "grep") {
-    const allLines = outputText.split("\n").filter((l) => l.trim().length > 0);
-    // Match lines have "path:number:content" format; context lines have "path-number-content"
-    const matchLines = allLines.filter((l) => /^.+?:\d+:/.test(l));
-    const count = matchLines.length || allLines.length;
-    if (count === 0) return "no matches";
-    return count === 1 ? clip(matchLines[0] ?? allLines[0] ?? "") : `${count} matches`;
-  }
-
-  // glob / ls: show item count
-  if (name === "glob" || name === "ls") {
-    const lines = outputText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    if (lines.length === 0) return "empty";
-    return lines.length === 1 ? clip(lines[0]) : `${lines.length} items`;
-  }
-
-  // spawn_agent / wait / send_input / close_agent: first line
-  if (["spawn_agent", "wait", "send_input", "close_agent"].includes(name)) {
-    const firstLine = outputText.split("\n")[0]?.trim();
-    return firstLine ? clip(firstLine) : "";
-  }
-
-  // add_knowledge / plan / todowrite / taskwrite: first non-empty line
   const firstLine = outputText
     .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  return firstLine ? clip(firstLine) : "";
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return "";
+
+  return clip(firstLine, name === "bash" ? 120 : 80);
 }
 
-/** Extract a short human-readable summary from tool input JSON */
-export function summarizeInput(_toolName: string, inputText: string): string {
+/** Extract a short human-readable summary from tool input text */
+export function summarizeInput(toolName: string, inputText: string): string {
+  if (!inputText.trim()) return "";
+  const _toolName = toolName;
+
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
 
     if (_toolName.toLowerCase() === "request_user_input") {
       const title = parseRequestUserInputTitle(parsed);
-      return title ? clip(title, 60) : "";
+      if (title) return clip(title, 80);
     }
 
     // Plan: headerTitle already carries all useful info
     if (_toolName.toLowerCase() === "plan") return "";
 
     const intent = readStringField(parsed, [
-      "description",
+      "intent",
       "prompt",
-      "message",
+      "description",
+      "explanation",
       "query",
-      "reason",
-      "title",
-      "summary",
-      "goal",
-      "objective",
+      "question",
+      "message",
+      "command",
+      "path",
     ]);
-    if (intent) return clip(intent);
-
-    const path =
-      (parsed.file_path as string | undefined) ??
-      (parsed.path as string | undefined) ??
-      (parsed.notebook_path as string | undefined);
-
-    if (path) {
-      const segments = path.split("/");
-      return segments.slice(-2).join("/");
-    }
-
-    const pattern = parsed.pattern as string | undefined;
-    if (pattern) return `"${pattern}"`;
-
-    const command = parsed.command as string | undefined;
-    if (command) return command.length > 60 ? `${command.slice(0, 57)}…` : command;
-
-    const query = parsed.query as string | undefined;
-    if (query) return `"${clip(query)}"`;
-
-    const description = parsed.description as string | undefined;
-    if (description) return clip(description);
-
-    return "";
+    if (intent) return clip(intent, _toolName.toLowerCase() === "bash" ? 120 : 80);
   } catch {
-    return clip(inputText);
+    // Ignore JSON parse errors and fall back to raw text
   }
+
+  const firstLine = inputText
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return "";
+  return clip(firstLine, _toolName.toLowerCase() === "bash" ? 120 : 80);
 }

@@ -77,7 +77,8 @@ describe("renderSkillsSection", () => {
     const skills = [makeSkill()];
     const result = renderSkillsSection(skills);
     expect(result).toContain("### How to use skills");
-    expect(result).toContain("read its SKILL.md file");
-    expect(result).toContain("Resolve relative paths against the skill's directory");
+    expect(result).toContain("call the skill tool");
+    expect(result).toContain("Never use read to open SKILL.md directly");
+    expect(result).toContain("Resolve relative paths against the skill's base directory");
   });
 });

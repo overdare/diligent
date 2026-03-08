@@ -13,7 +13,7 @@ export type ModeKind = "default" | "plan" | "execute";
  * Bash, write, apply_patch, add_knowledge are excluded.
  * D088: request_user_input is allowed in all modes.
  */
-export const PLAN_MODE_ALLOWED_TOOLS = new Set(["read_file", "glob", "grep", "ls", "request_user_input"]);
+export const PLAN_MODE_ALLOWED_TOOLS = new Set(["read", "glob", "grep", "ls", "request_user_input", "skill"]);
 
 /**
  * System prompt suffixes injected per mode.

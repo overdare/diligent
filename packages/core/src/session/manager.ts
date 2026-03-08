@@ -199,51 +199,75 @@ export class SessionManager {
   async reconcileFromDisk(): Promise<{
     changed: boolean;
     reason: "no_session_path" | "memory_newer" | "already_equal" | "updated_from_disk";
+    sessionPath: string | null;
     memoryEntries: number;
     diskEntries: number;
     memoryLeafId: string | null;
     diskLeafId: string | null;
+    memoryTailEntryIds: string;
+    diskTailEntryIds: string;
+    memoryTailMessage: string;
+    diskTailMessage: string;
   }> {
     const sessionPath = this.writer.path;
+    const memoryEntries = this.entries.length;
+    const memoryLeafId = this.leafId;
+    const memoryTailEntryIds = summarizeTailEntryIds(this.entries);
+    const memoryTailMessage = summarizeLastPersistedMessage(this.entries);
+
     if (!sessionPath) {
       return {
         changed: false,
         reason: "no_session_path",
-        memoryEntries: this.entries.length,
+        sessionPath: null,
+        memoryEntries,
         diskEntries: 0,
-        memoryLeafId: this.leafId,
+        memoryLeafId,
         diskLeafId: null,
+        memoryTailEntryIds,
+        diskTailEntryIds: "-",
+        memoryTailMessage,
+        diskTailMessage: "-",
       };
     }
 
     // Ensure this manager's queued writes are settled before comparing snapshots.
     await this.writeQueue.catch(() => {});
 
-    const memoryEntries = this.entries.length;
-    const memoryLeafId = this.leafId;
-
     const { entries } = await readSessionFile(sessionPath);
     const diskLeafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+    const diskTailEntryIds = summarizeTailEntryIds(entries);
+    const diskTailMessage = summarizeLastPersistedMessage(entries);
 
     // Keep current in-memory state if it is already newer than disk.
     if (entries.length < this.entries.length) {
       return {
         changed: false,
         reason: "memory_newer",
+        sessionPath,
         memoryEntries,
         diskEntries: entries.length,
         memoryLeafId,
         diskLeafId,
+        memoryTailEntryIds,
+        diskTailEntryIds,
+        memoryTailMessage,
+        diskTailMessage,
       };
     }
     if (entries.length === this.entries.length && diskLeafId === this.leafId) {
       return {
         changed: false,
         reason: "already_equal",
+        sessionPath,
         memoryEntries,
         diskEntries: entries.length,
         memoryLeafId,
         diskLeafId,
+        memoryTailEntryIds,
+        diskTailEntryIds,
+        memoryTailMessage,
+        diskTailMessage,
       };
     }
 
@@ -256,10 +280,15 @@ export class SessionManager {
     return {
       changed: true,
       reason: "updated_from_disk",
+      sessionPath,
       memoryEntries,
       diskEntries: entries.length,
       memoryLeafId,
       diskLeafId,
+      memoryTailEntryIds,
+      diskTailEntryIds,
+      memoryTailMessage,
+      diskTailMessage,
     };
   }
 
@@ -776,4 +805,12 @@ function summarizeLastPersistedMessage(entries: SessionEntry[]): string {
     }
   }
   return "none";
+}
+
+function summarizeTailEntryIds(entries: SessionEntry[], count = 3): string {
+  if (entries.length === 0) return "-";
+  return entries
+    .slice(Math.max(0, entries.length - count))
+    .map((entry) => entry.id)
+    .join(",");
 }

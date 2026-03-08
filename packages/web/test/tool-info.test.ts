@@ -1,6 +1,7 @@
 // @summary Tests for tool header and summary generation in tool-info helpers
 import { expect, test } from "bun:test";
 import {
+  getToolHeaderTitle,
   parseRequestUserInputTitle,
   parseRequestUserInputTitleFromOutput,
   summarizeInput,
@@ -41,4 +42,16 @@ test("summary prefers explicit intent fields for non-request tools", () => {
     path: "/tmp/ignored.txt",
   });
   expect(summarizeInput("spawn_agent", input)).toContain("Refactor the sidebar");
+});
+
+test("plan header uses status-based progress for modern plan payloads", () => {
+  const input = JSON.stringify({
+    title: "Ship fix",
+    steps: [
+      { text: "Investigate", status: "done" },
+      { text: "Implement", status: "in_progress" },
+      { text: "Verify", status: "pending" },
+    ],
+  });
+  expect(getToolHeaderTitle("plan", input)).toBe("Plan Updated 1/3 — Ship fix");
 });

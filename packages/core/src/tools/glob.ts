@@ -1,6 +1,7 @@
 // @summary Find files by glob pattern via ripgrep
-import { isAbsolute } from "node:path";
+
 import { stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";

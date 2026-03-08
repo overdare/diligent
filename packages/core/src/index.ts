@@ -240,12 +240,14 @@ export {
   createLsTool,
   createPlanTool,
   createReadTool,
+  createSkillTool,
   createWriteTool,
   getGlobalPluginPath,
   getGlobalPluginRoot,
   IMMUTABLE_TOOLS,
   isImmutableTool,
   loadPlugin,
+  registerSkillTool,
   requestUserInputTool,
 } from "./tools/index";
 export type {
