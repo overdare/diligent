@@ -287,6 +287,9 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     planState: null,
     pendingSteers: [],
     activeTurnId: null,
+    activeTurnStartedAt: null,
+    activeReasoningStartedAt: null,
+    activeReasoningDurationMs: 0,
     threadStatus: payload.isRunning ? "busy" : "idle",
   };
 

@@ -666,8 +666,12 @@ test("turn/interrupted settles in-flight thinking and streaming tool items", () 
   expect(Object.keys(after.itemSlots).length).toBe(0);
 });
 
-test("turn/completed attaches final loop and reasoning duration to latest assistant item", () => {
+test("turn/completed locally computes final loop and reasoning duration on latest assistant item", () => {
   resetAdapter();
+
+  const realNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
 
   const started: DiligentServerNotification = {
     method: "item/started",
@@ -714,18 +718,48 @@ test("turn/completed attaches final loop and reasoning duration to latest assist
     params: {
       threadId: "t1",
       turnId: "turn1",
-      durationMs: 4200,
-      reasoningDurationMs: 1800,
     },
   };
 
-  let state = reduce({ ...initialThreadState, activeThreadId: "t1" }, started);
-  state = reduce(state, completedMessage);
-  state = reduce(state, turnCompleted);
+  try {
+    let state = reduce(
+      { ...initialThreadState, activeThreadId: "t1" },
+      {
+        method: "turn/started",
+        params: { threadId: "t1", turnId: "turn1" },
+      },
+    );
+    state = reduce(state, started);
+    now = 1_400;
+    state = reduce(state, {
+      method: "item/delta",
+      params: {
+        threadId: "t1",
+        turnId: "turn1",
+        itemId: "msg1",
+        delta: { type: "messageThinking", itemId: "msg1", delta: "thinking..." },
+      },
+    });
+    now = 2_000;
+    state = reduce(state, {
+      method: "item/delta",
+      params: {
+        threadId: "t1",
+        turnId: "turn1",
+        itemId: "msg1",
+        delta: { type: "messageText", itemId: "msg1", delta: "done" },
+      },
+    });
+    state = reduce(state, completedMessage);
+    now = 3_500;
+    state = reduce(state, turnCompleted);
 
-  const assistant = state.items.find((item) => item.kind === "assistant");
-  expect(assistant && assistant.kind === "assistant" ? assistant.turnDurationMs : undefined).toBe(4200);
-  expect(assistant && assistant.kind === "assistant" ? assistant.reasoningDurationMs : undefined).toBe(1800);
+    const assistant = state.items.find((item) => item.kind === "assistant");
+    expect(assistant && assistant.kind === "assistant" ? assistant.turnDurationMs : undefined).toBe(2500);
+    expect(assistant && assistant.kind === "assistant" ? assistant.reasoningDurationMs : undefined).toBe(600);
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("collab_spawn_begin creates spawn item so child events stream in real-time", () => {

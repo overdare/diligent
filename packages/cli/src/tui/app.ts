@@ -85,6 +85,9 @@ export class App {
   private activeUserInputRequestId: RequestId | null = null;
   private pendingUserInputRequestIds = new Set<RequestId>();
   private currentMode: ProtocolMode;
+  private turnStartedAtMs: number | null = null;
+  private reasoningStartedAtMs: number | null = null;
+  private reasoningAccumulatedMs = 0;
 
   // Extracted modules
   private threadManager: ThreadManager;
@@ -348,6 +351,26 @@ export class App {
   private handleAgentEvent(event: AgentEvent): void {
     this.chatView.handleEvent(event);
 
+    if (event.type === "turn_start" && !event.childThreadId) {
+      this.turnStartedAtMs = Date.now();
+      this.reasoningStartedAtMs = null;
+      this.reasoningAccumulatedMs = 0;
+    }
+
+    if (event.type === "message_delta") {
+      if (event.delta.type === "thinking_delta") {
+        if (this.reasoningStartedAtMs === null) this.reasoningStartedAtMs = Date.now();
+      } else if (this.reasoningStartedAtMs !== null) {
+        this.reasoningAccumulatedMs += Date.now() - this.reasoningStartedAtMs;
+        this.reasoningStartedAtMs = null;
+      }
+    }
+
+    if (event.type === "message_end" && this.reasoningStartedAtMs !== null) {
+      this.reasoningAccumulatedMs += Date.now() - this.reasoningStartedAtMs;
+      this.reasoningStartedAtMs = null;
+    }
+
     // Update status bar with usage info
     if (event.type === "usage") {
       this.statusBar.update({
@@ -392,7 +415,16 @@ export class App {
       this.currentThreadId &&
       notification.params.threadId === this.currentThreadId
     ) {
+      this.appendLocalTurnTimingLine();
       this.pendingTurn?.resolve();
+    }
+
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
+      this.currentThreadId &&
+      notification.params.threadId === this.currentThreadId
+    ) {
+      this.appendLocalTurnTimingLine();
     }
 
     if (
@@ -445,6 +477,37 @@ export class App {
       }
       this.activeUserInputResolved = false;
     }
+  }
+
+  private appendLocalTurnTimingLine(): void {
+    const now = Date.now();
+    const loopMs = this.turnStartedAtMs !== null ? Math.max(0, now - this.turnStartedAtMs) : null;
+    const thinkingMs =
+      this.reasoningStartedAtMs !== null
+        ? this.reasoningAccumulatedMs + (now - this.reasoningStartedAtMs)
+        : this.reasoningAccumulatedMs;
+    const loopLabel = this.formatDuration(loopMs ?? undefined);
+    const thinkingLabel = this.formatDuration(thinkingMs);
+
+    if (loopLabel || thinkingLabel) {
+      this.chatView.addLines([
+        `  ${t.dim}⏱ ${loopLabel ? `Loop ${loopLabel}` : ""}${loopLabel && thinkingLabel ? " · " : ""}${thinkingLabel ? `Thinking ${thinkingLabel}` : ""}${t.reset}`,
+      ]);
+    }
+
+    this.turnStartedAtMs = null;
+    this.reasoningStartedAtMs = null;
+    this.reasoningAccumulatedMs = 0;
+  }
+
+  private formatDuration(ms?: number): string | null {
+    if (ms === undefined || ms < 0) return null;
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1).replace(/\.0$/, "")}s`;
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}m ${s.toString().padStart(2, "0")}s`;
   }
 
   /** Show a confirmation dialog overlay */

@@ -117,6 +117,9 @@ export interface ThreadState {
   planState: PlanState | null;
   pendingSteers: string[];
   activeTurnId: string | null;
+  activeTurnStartedAt: number | null;
+  activeReasoningStartedAt: number | null;
+  activeReasoningDurationMs: number;
 }
 
 const zeroUsage: UsageState = {
@@ -143,6 +146,9 @@ export const initialThreadState: ThreadState = {
   planState: null,
   pendingSteers: [],
   activeTurnId: null,
+  activeTurnStartedAt: null,
+  activeReasoningStartedAt: null,
+  activeReasoningDurationMs: 0,
 };
 
 function addSeen(state: ThreadState, key: string): ThreadState {
@@ -312,13 +318,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       if (!renderId) return state;
 
       if (event.delta.type === "text_delta") {
-        return updateItem(state, renderId, (item) =>
+        const nextState =
+          state.activeReasoningStartedAt !== null
+            ? {
+                ...state,
+                activeReasoningDurationMs:
+                  state.activeReasoningDurationMs + (Date.now() - state.activeReasoningStartedAt),
+                activeReasoningStartedAt: null,
+              }
+            : state;
+        return updateItem(nextState, renderId, (item) =>
           item.kind === "assistant" ? { ...item, text: item.text + event.delta.delta, thinkingDone: true } : item,
         );
       }
 
       if (event.delta.type === "thinking_delta") {
-        return updateItem(state, renderId, (item) =>
+        const nextState =
+          state.activeReasoningStartedAt === null ? { ...state, activeReasoningStartedAt: Date.now() } : state;
+        return updateItem(nextState, renderId, (item) =>
           item.kind === "assistant" ? { ...item, thinking: item.thinking + event.delta.delta } : item,
         );
       }
@@ -330,10 +347,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
       const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
+      const nextState =
+        state.activeReasoningStartedAt !== null
+          ? {
+              ...state,
+              activeReasoningDurationMs:
+                state.activeReasoningDurationMs + (Date.now() - state.activeReasoningStartedAt),
+              activeReasoningStartedAt: null,
+            }
+          : state;
       return {
-        ...updateItem(state, renderId, (current) =>
+        ...updateItem(nextState, renderId, (current) =>
           current.kind === "assistant"
-            ? { ...current, thinkingDone: true, timestamp: event.message.timestamp }
+            ? {
+                ...current,
+                thinkingDone: true,
+                timestamp: event.message.timestamp,
+                reasoningDurationMs: nextState.activeReasoningDurationMs,
+              }
             : current,
         ),
         itemSlots: remainingSlots,
@@ -734,6 +765,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       return {
         ...state,
         activeTurnId: event.turnId,
+        activeTurnStartedAt: Date.now(),
+        activeReasoningStartedAt: null,
+        activeReasoningDurationMs: 0,
       };
     }
 
@@ -805,42 +839,54 @@ export function reduceServerNotification(
   // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
     console.log("[ThreadStore] turn/interrupted received for thread", notification.params.threadId);
-    let next = settleInFlightItems({ ...state, threadStatus: "idle", activeTurnId: null });
-    const { turnId, durationMs, reasoningDurationMs } = notification.params as {
-      turnId: string;
-      durationMs?: number;
-      reasoningDurationMs?: number;
-    };
-    if (turnId && (durationMs !== undefined || reasoningDurationMs !== undefined)) {
-      for (let i = next.items.length - 1; i >= 0; i--) {
-        const item = next.items[i];
-        if (item.kind !== "assistant") continue;
-        next = updateItem(next, item.id, (current) =>
-          current.kind === "assistant"
-            ? {
-                ...current,
-                ...(durationMs !== undefined ? { turnDurationMs: durationMs } : {}),
-                ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
-              }
-            : current,
-        );
-        break;
-      }
+    const now = Date.now();
+    const turnDurationMs =
+      state.activeTurnStartedAt !== null ? Math.max(0, now - state.activeTurnStartedAt) : undefined;
+    const reasoningDurationMs =
+      state.activeReasoningStartedAt !== null
+        ? state.activeReasoningDurationMs + (now - state.activeReasoningStartedAt)
+        : state.activeReasoningDurationMs;
+    let next = settleInFlightItems({
+      ...state,
+      threadStatus: "idle",
+      activeTurnId: null,
+      activeTurnStartedAt: null,
+      activeReasoningStartedAt: null,
+      activeReasoningDurationMs: 0,
+    });
+    for (let i = next.items.length - 1; i >= 0; i--) {
+      const item = next.items[i];
+      if (item.kind !== "assistant") continue;
+      next = updateItem(next, item.id, (current) =>
+        current.kind === "assistant"
+          ? {
+              ...current,
+              ...(turnDurationMs !== undefined ? { turnDurationMs } : {}),
+              reasoningDurationMs,
+            }
+          : current,
+      );
+      break;
     }
     return next;
   }
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
-    const { turnId, durationMs, reasoningDurationMs } = notification.params as {
-      turnId: string;
-      durationMs?: number;
-      reasoningDurationMs?: number;
-    };
+    const { turnId } = notification.params;
+    const now = Date.now();
+    const turnDurationMs =
+      state.activeTurnStartedAt !== null ? Math.max(0, now - state.activeTurnStartedAt) : undefined;
+    const reasoningDurationMs =
+      state.activeReasoningStartedAt !== null
+        ? state.activeReasoningDurationMs + (now - state.activeReasoningStartedAt)
+        : state.activeReasoningDurationMs;
     let next: ThreadState = {
       ...state,
       activeTurnId: state.activeTurnId === turnId ? null : state.activeTurnId,
+      activeTurnStartedAt: state.activeTurnId === turnId ? null : state.activeTurnStartedAt,
+      activeReasoningStartedAt: null,
+      activeReasoningDurationMs: 0,
     };
-    if (durationMs === undefined && reasoningDurationMs === undefined) return next;
 
     for (let i = next.items.length - 1; i >= 0; i--) {
       const item = next.items[i];
@@ -849,8 +895,8 @@ export function reduceServerNotification(
         current.kind === "assistant"
           ? {
               ...current,
-              ...(durationMs !== undefined ? { turnDurationMs: durationMs } : {}),
-              ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+              ...(turnDurationMs !== undefined ? { turnDurationMs } : {}),
+              reasoningDurationMs,
             }
           : current,
       );
