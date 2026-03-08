@@ -83,8 +83,8 @@ describe("createAppServerConfig", () => {
     const runtimeConfig = makeRuntimeConfig();
     const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
 
-    config.modelConfig?.onModelChange("claude-haiku-4-5-20251001");
-    expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5-20251001");
+    config.modelConfig?.onModelChange("claude-haiku-4-5");
+    expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5");
   });
 
   it("toolConfig.setTools updates runtimeConfig.diligent.tools", () => {

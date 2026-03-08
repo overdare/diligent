@@ -80,7 +80,7 @@ describe("createAnthropicStream", () => {
   test("uses budget_tokens for non-adaptive thinking models", async () => {
     const request = await collectRequest(
       baseModel({
-        id: "claude-haiku-4-5-20251001",
+        id: "claude-haiku-4-5",
         supportsAdaptiveThinking: false,
         thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
       }),

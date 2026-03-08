@@ -64,7 +64,7 @@ describe("model class annotations", () => {
   it("anthropic classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "claude-opus-4-6")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "claude-sonnet-4-6")?.modelClass).toBe("general");
-    expect(KNOWN_MODELS.find((m) => m.id === "claude-haiku-4-5-20251001")?.modelClass).toBe("lite");
+    expect(KNOWN_MODELS.find((m) => m.id === "claude-haiku-4-5")?.modelClass).toBe("lite");
   });
 
   it("openai classes map correctly", () => {
@@ -88,7 +88,7 @@ describe("getModelClass", () => {
     const opus = resolveModel("claude-opus-4-6");
     expect(getModelClass(opus)).toBe("pro");
 
-    const haiku = resolveModel("claude-haiku-4-5-20251001");
+    const haiku = resolveModel("claude-haiku-4-5");
     expect(getModelClass(haiku)).toBe("lite");
   });
 
@@ -120,7 +120,7 @@ describe("resolveModelForClass", () => {
   it("resolves anthropic lite → haiku", () => {
     const sonnet = resolveModel("claude-sonnet-4-6");
     const lite = resolveModelForClass(sonnet, "lite");
-    expect(lite.id).toBe("claude-haiku-4-5-20251001");
+    expect(lite.id).toBe("claude-haiku-4-5");
     expect(lite.provider).toBe("anthropic");
   });
 
@@ -179,7 +179,7 @@ describe("agentTypeToModelClass", () => {
   });
 
   it("maps general → same class as parent (lite)", () => {
-    const haiku = resolveModel("claude-haiku-4-5-20251001");
+    const haiku = resolveModel("claude-haiku-4-5");
     expect(agentTypeToModelClass("general", haiku)).toBe("lite");
   });
 

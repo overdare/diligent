@@ -49,7 +49,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     modelClass: "general",
   },
   {
-    id: "claude-haiku-4-5-20251001",
+    id: "claude-haiku-4-5",
     provider: "anthropic",
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
