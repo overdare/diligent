@@ -13,18 +13,18 @@ function summarize(text: string): string {
 
 export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {
   if (streaming) {
-    return <div className="opacity-30 font-mono text-sm leading-relaxed whitespace-pre-wrap">{text}</div>;
+    return <div className="opacity-30 font-mono text-xs leading-relaxed whitespace-pre-wrap">{text}</div>;
   }
 
   const summary = summarize(text);
 
   return (
     <details className="opacity-40 hover:opacity-60 transition-opacity">
-      <summary className="cursor-pointer select-none font-mono text-sm list-none inline-flex items-center gap-1.5">
+      <summary className="cursor-pointer select-none font-mono text-xs list-none inline-flex items-center gap-1.5">
         <span className="text-muted">Thought</span>
         {summary && <span className="text-muted/70 truncate max-w-[40ch]">{summary}</span>}
       </summary>
-      <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-relaxed">{text}</pre>
+      <pre className="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed">{text}</pre>
     </details>
   );
 }
