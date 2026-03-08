@@ -1,5 +1,6 @@
 // @summary Read file with binary detection and line numbers
 import { z } from "zod";
+import { isAbsolute } from "node:path";
 import type { Tool, ToolResult } from "../tool/types";
 
 const ReadParams = z.object({
@@ -89,6 +90,9 @@ export function createReadTool(): Tool<typeof ReadParams> {
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const { file_path, offset, limit } = args;
+      if (!isAbsolute(file_path)) {
+        return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };
+      }
 
       // 1. Check file exists
       const file = Bun.file(file_path);

@@ -107,4 +107,15 @@ describe("apply_patch tool", () => {
     expect(result.output).toContain("Failed to find expected lines");
     expect(await readFile(target, "utf-8")).toBe("a\nb\nc\n");
   });
+
+  test("rejects absolute paths in patch headers", async () => {
+    const target = join(tmpDir, "target.txt");
+    await writeFile(target, "a\n", "utf-8");
+
+    const patch = ["*** Begin Patch", `*** Update File: ${target}`, "@@", "-a", "+b", "*** End Patch"].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain("Patch paths must be relative");
+  });
 });

@@ -85,4 +85,13 @@ describe("glob tool", () => {
     expect(result.output).toContain("index.ts");
     expect(result.output).toContain("Button.ts");
   });
+
+  test("returns error for relative path", async () => {
+    if (!rgAvailable) return;
+
+    const tool = createGlobTool(tmpDir);
+    const result = await tool.execute({ pattern: "*.ts", path: "." }, makeCtx());
+    expect(result.output).toContain("path must be absolute");
+    expect(result.metadata?.error).toBe(true);
+  });
 });

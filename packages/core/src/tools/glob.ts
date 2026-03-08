@@ -1,4 +1,5 @@
 // @summary Find files by glob pattern via ripgrep
+import { isAbsolute } from "node:path";
 import { stat } from "node:fs/promises";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
@@ -6,7 +7,7 @@ import type { Tool, ToolResult } from "../tool/types";
 
 const GlobParams = z.object({
   pattern: z.string().describe("Glob pattern to match files (e.g., '**/*.ts', 'src/**/*.test.ts')"),
-  path: z.string().optional().describe("Directory to search in. Default: current working directory"),
+  path: z.string().optional().describe("Absolute directory to search in. Default: current working directory"),
 });
 
 const MAX_FILES = 100;
@@ -21,6 +22,9 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const searchPath = args.path ?? cwd;
+      if (!isAbsolute(searchPath)) {
+        return { output: `Error: path must be absolute: ${searchPath}`, metadata: { error: true } };
+      }
 
       try {
         const proc = Bun.spawn(["rg", "--files", "--glob", args.pattern, searchPath], {

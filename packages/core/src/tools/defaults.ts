@@ -3,6 +3,7 @@ import type { AgentRegistry, CollabToolDeps } from "../collab";
 import { createCollabTools } from "../collab";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
+import type { SkillMetadata } from "../skills";
 import type { Tool } from "../tool/types";
 import { createAddKnowledgeTool } from "./add-knowledge";
 import { createApplyPatchTool } from "./apply-patch";
@@ -15,6 +16,7 @@ import { createLsTool } from "./ls";
 import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { requestUserInputTool } from "./request-user-input";
+import { createSkillTool } from "./skill";
 import { createWriteTool } from "./write";
 
 export interface BuildDefaultToolsResult {
@@ -30,6 +32,7 @@ export async function buildDefaultTools(
   paths?: DiligentPaths,
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
   toolsConfig?: DiligentConfig["tools"],
+  skills: SkillMetadata[] = [],
   /**
    * Existing registry to reuse across turns.
    * When provided, the registry's mutable deps are updated but live child-agent
@@ -40,8 +43,9 @@ export async function buildDefaultTools(
   // 1. Assemble all built-in tools
   const builtinTools: Tool[] = [
     bashTool,
+    createSkillTool(skills),
     createReadTool(),
-    createWriteTool(),
+    createWriteTool(cwd),
     createApplyPatchTool(cwd),
     createLsTool(),
     createGlobTool(cwd),

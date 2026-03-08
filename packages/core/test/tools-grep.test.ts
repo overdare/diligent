@@ -95,4 +95,13 @@ describe("grep tool", () => {
     const result = await tool.execute({ pattern: "nonexistent" }, makeCtx());
     expect(result.output).toContain("No matches found");
   });
+
+  test("resolves relative path against cwd", async () => {
+    if (!rgAvailable) return;
+
+    await writeFile(join(tmpDir, "relative.ts"), "const marker = 1;\n");
+    const tool = createGrepTool(tmpDir);
+    const result = await tool.execute({ pattern: "marker", path: "." }, makeCtx());
+    expect(result.output).toContain("relative.ts");
+  });
 });

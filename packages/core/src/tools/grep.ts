@@ -1,11 +1,12 @@
 // @summary Content search via ripgrep with regex support
+import { isAbsolute, resolve } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
 const GrepParams = z.object({
   pattern: z.string().describe("Regex pattern to search for in file contents"),
-  path: z.string().optional().describe("File or directory to search in. Default: current working directory"),
+  path: z.string().optional().describe("File or directory path to search in. Defaults to the current working directory"),
   include: z.string().optional().describe("Glob pattern to filter files (e.g., '*.ts')"),
   ignore_case: z.boolean().optional().describe("Case-insensitive search. Default: false"),
   context: z.number().int().min(0).optional().describe("Lines of context before and after each match"),
@@ -23,7 +24,7 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     parameters: GrepParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const searchPath = args.path ?? cwd;
+      const searchPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
 
       const rgArgs: string[] = ["rg", "-n"];
 

@@ -59,6 +59,12 @@ describe("ls tool", () => {
     expect(result.metadata?.error).toBe(true);
   });
 
+  test("returns error for relative path", async () => {
+    const result = await tool.execute({ path: "." }, makeCtx());
+    expect(result.output).toContain("path must be absolute");
+    expect(result.metadata?.error).toBe(true);
+  });
+
   test("caps at 500 entries", async () => {
     // Create 510 files
     for (let i = 0; i < 510; i++) {

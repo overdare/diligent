@@ -28,9 +28,9 @@ describe("write tool", () => {
   });
 
   test("creates a new file", async () => {
-    const filePath = join(tmpDir, "new.txt");
-    const result = await tool.execute({ file_path: filePath, content: "hello world" }, makeCtx());
+    const result = await tool.execute({ file_path: "new.txt", content: "hello world" }, makeCtx());
 
+    const filePath = join(tmpDir, "new.txt");
     expect(result.output).toContain("Wrote");
     expect(result.output).toContain("11 bytes");
     expect(result.output).toContain("new.txt");
@@ -43,7 +43,7 @@ describe("write tool", () => {
     const filePath = join(tmpDir, "existing.txt");
     await Bun.write(filePath, "old content");
 
-    const result = await tool.execute({ file_path: filePath, content: "new content" }, makeCtx());
+    const result = await tool.execute({ file_path: "existing.txt", content: "new content" }, makeCtx());
     expect(result.output).toContain("Wrote");
 
     const content = await readFile(filePath, "utf-8");
@@ -52,7 +52,7 @@ describe("write tool", () => {
 
   test("creates parent directories", async () => {
     const filePath = join(tmpDir, "deep", "nested", "dir", "file.txt");
-    const result = await tool.execute({ file_path: filePath, content: "nested content" }, makeCtx());
+    const result = await tool.execute({ file_path: "deep/nested/dir/file.txt", content: "nested content" }, makeCtx());
 
     expect(result.output).toContain("Wrote");
 
@@ -61,9 +61,15 @@ describe("write tool", () => {
   });
 
   test("writes empty content", async () => {
-    const filePath = join(tmpDir, "empty.txt");
-    const result = await tool.execute({ file_path: filePath, content: "" }, makeCtx());
+    const result = await tool.execute({ file_path: "empty.txt", content: "" }, makeCtx());
 
+    const filePath = join(tmpDir, "empty.txt");
     expect(result.output).toContain("Wrote 0 bytes");
+  });
+
+  test("returns error for absolute file_path", async () => {
+    const result = await tool.execute({ file_path: join(tmpDir, "absolute.txt"), content: "hello" }, makeCtx());
+    expect(result.output).toContain("file_path must be relative");
+    expect(result.metadata?.error).toBe(true);
   });
 });

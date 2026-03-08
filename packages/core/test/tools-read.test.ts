@@ -65,6 +65,19 @@ describe("read tool", () => {
     expect(result.metadata?.error).toBe(true);
   });
 
+  test("returns error for relative file_path", async () => {
+    const result = await tool.execute({ file_path: "relative.txt" }, makeCtx());
+    expect(result.output).toContain("file_path must be absolute");
+    expect(result.metadata?.error).toBe(true);
+  });
+
+  test("accepts absolute file_path", async () => {
+    const filePath = join(tmpDir, "absolute.txt");
+    await writeFile(filePath, "ok\n");
+    const result = await tool.execute({ file_path: filePath }, makeCtx());
+    expect(result.output).toContain("1\tok");
+  });
+
   test("detects binary file by extension", async () => {
     const filePath = join(tmpDir, "image.png");
     await writeFile(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));

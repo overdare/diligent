@@ -231,7 +231,10 @@ function parsePatch(rawPatch: string): PatchHunk[] {
 }
 
 function resolvePatchPath(cwd: string, patchPath: string): string {
-  return isAbsolute(patchPath) ? resolve(patchPath) : resolve(cwd, patchPath);
+  if (isAbsolute(patchPath)) {
+    throw new Error(`Patch paths must be relative, got absolute path: ${patchPath}`);
+  }
+  return resolve(cwd, patchPath);
 }
 
 async function verifyAndPlanChanges(hunks: PatchHunk[], cwd: string): Promise<FileChange[]> {

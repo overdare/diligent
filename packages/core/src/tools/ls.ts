@@ -1,11 +1,12 @@
 // @summary List directory contents with type indicators
 import { readdir } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
 const LsParams = z.object({
-  path: z.string().describe("The directory path to list"),
+  path: z.string().describe("The absolute directory path to list"),
 });
 
 const MAX_ENTRIES = 500;
@@ -18,6 +19,9 @@ export function createLsTool(): Tool<typeof LsParams> {
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const { path } = args;
+      if (!isAbsolute(path)) {
+        return { output: `Error: path must be absolute: ${path}`, metadata: { error: true } };
+      }
 
       try {
         const entries = await readdir(path, { withFileTypes: true });
