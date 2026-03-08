@@ -58,6 +58,8 @@ export type RenderItem =
       thinking: string;
       thinkingDone: boolean;
       timestamp: number;
+      reasoningDurationMs?: number;
+      turnDurationMs?: number;
     }
   | {
       id: string;
@@ -81,6 +83,7 @@ export type RenderItem =
       childThreadId?: string;
       nickname?: string;
       description?: string;
+      prompt?: string;
       status?: string;
       message?: string;
       agents?: Array<{ threadId: string; nickname?: string; status?: string; message?: string }>;
@@ -113,6 +116,7 @@ export interface ThreadState {
   currentContextTokens: number; // latest turn's inputTokens (not cumulative)
   planState: PlanState | null;
   pendingSteers: string[];
+  activeTurnId: string | null;
 }
 
 const zeroUsage: UsageState = {
@@ -138,6 +142,7 @@ export const initialThreadState: ThreadState = {
   currentContextTokens: 0,
   planState: null,
   pendingSteers: [],
+  activeTurnId: null,
 };
 
 function addSeen(state: ThreadState, key: string): ThreadState {
@@ -296,6 +301,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             thinking: "",
             thinkingDone: false,
             timestamp: event.message.timestamp,
+            reasoningDurationMs: 0,
           },
         ],
       };
@@ -587,6 +593,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         kind: "collab",
         eventType: "spawn",
         childThreadId: event.callId,
+        prompt: event.prompt,
         status: "running",
         childTools: [],
         timestamp: Date.now(),
@@ -611,6 +618,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 childThreadId: event.childThreadId,
                 nickname: event.nickname,
                 description: event.description,
+                prompt: event.prompt,
                 status: event.status,
                 message: event.message,
               }
@@ -625,6 +633,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         childThreadId: event.childThreadId,
         nickname: event.nickname,
         description: event.description,
+        prompt: event.prompt,
         status: event.status,
         message: event.message,
         childTools: [],
@@ -722,7 +731,10 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
           );
         }
       }
-      return state;
+      return {
+        ...state,
+        activeTurnId: event.turnId,
+      };
     }
 
     default:
@@ -793,7 +805,58 @@ export function reduceServerNotification(
   // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
     console.log("[ThreadStore] turn/interrupted received for thread", notification.params.threadId);
-    return settleInFlightItems({ ...state, threadStatus: "idle" });
+    let next = settleInFlightItems({ ...state, threadStatus: "idle", activeTurnId: null });
+    const { turnId, durationMs, reasoningDurationMs } = notification.params as {
+      turnId: string;
+      durationMs?: number;
+      reasoningDurationMs?: number;
+    };
+    if (turnId && (durationMs !== undefined || reasoningDurationMs !== undefined)) {
+      for (let i = next.items.length - 1; i >= 0; i--) {
+        const item = next.items[i];
+        if (item.kind !== "assistant") continue;
+        next = updateItem(next, item.id, (current) =>
+          current.kind === "assistant"
+            ? {
+                ...current,
+                ...(durationMs !== undefined ? { turnDurationMs: durationMs } : {}),
+                ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+              }
+            : current,
+        );
+        break;
+      }
+    }
+    return next;
+  }
+
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+    const { turnId, durationMs, reasoningDurationMs } = notification.params as {
+      turnId: string;
+      durationMs?: number;
+      reasoningDurationMs?: number;
+    };
+    let next: ThreadState = {
+      ...state,
+      activeTurnId: state.activeTurnId === turnId ? null : state.activeTurnId,
+    };
+    if (durationMs === undefined && reasoningDurationMs === undefined) return next;
+
+    for (let i = next.items.length - 1; i >= 0; i--) {
+      const item = next.items[i];
+      if (item.kind !== "assistant") continue;
+      next = updateItem(next, item.id, (current) =>
+        current.kind === "assistant"
+          ? {
+              ...current,
+              ...(durationMs !== undefined ? { turnDurationMs: durationMs } : {}),
+              ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+            }
+          : current,
+      );
+      break;
+    }
+    return next;
   }
 
   // Handle userMessage items from other subscribers (not converted to AgentEvent by adapter)

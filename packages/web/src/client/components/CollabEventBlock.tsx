@@ -71,7 +71,7 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
   const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
 
   // Count expandable detail items
-  const detailCount = item.childTools.length + (item.childMessages?.length ?? 0);
+  const detailCount = item.childTools.length + (item.childMessages?.length ?? 0) + (item.prompt ? 1 : 0);
 
   return (
     <div className="pb-4">
@@ -143,6 +143,13 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                     <span className="text-text/40">▾</span>
                     <span>{detailCount} items</span>
                   </button>
+                  {item.prompt ? (
+                    <div className="flex items-start gap-1.5 text-xs">
+                      <span className="w-3 shrink-0 text-right text-text/25">├</span>
+                      <span className="shrink-0 text-text/40">📝</span>
+                      <span className="max-w-[80ch] whitespace-pre-wrap text-text/45">{item.prompt}</span>
+                    </div>
+                  ) : null}
                   {/* Child messages (assistant text from sub-agent) */}
                   {item.childMessages?.map((msg) => (
                     <div key={msg} className="flex items-start gap-1.5 text-xs">

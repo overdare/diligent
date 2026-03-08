@@ -79,7 +79,7 @@ export class ChatView implements Component {
   private thinkingText = "";
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
-  private collabState = new Map<string, { toolName: string; label: string }>();
+  private collabState = new Map<string, { toolName: string; label: string; prompt?: string }>();
   private planCallCount = 0;
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
 
@@ -135,10 +135,20 @@ export class ChatView implements Component {
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const inp = event.input as Record<string, unknown> | null;
           let spinnerLabel = event.toolName;
+          let prompt: string | undefined;
           if (event.toolName === "spawn_agent") {
             const agentType = (inp?.agent_type as string | undefined) ?? "general";
             const desc = (inp?.description as string | undefined) ?? "";
-            spinnerLabel = desc ? `Spawning [${agentType}] ${desc}…` : `Spawning [${agentType}]…`;
+            const promptText = typeof inp?.message === "string" ? inp.message : "";
+            const promptSummary = prompt
+              ? promptText.split("\n")[0].trim().slice(0, 72) + (promptText.length > 72 ? "…" : "")
+              : "";
+            spinnerLabel = desc
+              ? `Spawning [${agentType}] ${desc}…`
+              : promptSummary
+                ? `Spawning [${agentType}] ${promptSummary}`
+                : `Spawning [${agentType}]…`;
+            prompt = promptText || undefined;
           } else if (event.toolName === "wait") {
             const ids = inp?.ids;
             spinnerLabel = `Waiting for ${Array.isArray(ids) ? ids.join(", ") : "agents"}…`;
@@ -147,7 +157,7 @@ export class ChatView implements Component {
           } else if (event.toolName === "close_agent") {
             spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
           }
-          this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel });
+          this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel, prompt });
           this.activeSpinner.start(spinnerLabel);
         } else {
           this.activeSpinner.start(event.toolName);
@@ -214,6 +224,17 @@ export class ChatView implements Component {
             const typeMatch = inp.match(/\[(\w+)\]/);
             const agentType = typeMatch ? typeMatch[1] : "general";
             lines.push(`${icon} Spawned ${t.bold}${nickname}${t.reset} [${agentType}]${elapsed}`);
+            const prompt = state?.prompt;
+            if (typeof prompt === "string" && prompt.trim()) {
+              const promptLines = truncateMiddle(prompt.trim().split("\n"), TOOL_MAX_LINES);
+              for (let i = 0; i < promptLines.length; i++) {
+                if (i === 0) {
+                  lines.push(`${t.dim}  └ prompt: ${promptLines[i]}${t.reset}`);
+                } else {
+                  lines.push(`${t.dim}    ${promptLines[i]}${t.reset}`);
+                }
+              }
+            }
           } else if (event.toolName === "wait") {
             lines.push(`${icon} Finished waiting${elapsed}`);
             if (parsed?.summary && Array.isArray(parsed.summary)) {
@@ -309,6 +330,9 @@ export class ChatView implements Component {
         this.thinkingText = "";
         this.items.push([`${t.error}✗ ${event.error.message}${t.reset}`]);
         this.options.requestRender();
+        break;
+
+      case "turn_start":
         break;
 
       case "turn_end":

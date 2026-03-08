@@ -286,6 +286,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     currentContextTokens: lastInputTokens,
     planState: null,
     pendingSteers: [],
+    activeTurnId: null,
     threadStatus: payload.isRunning ? "busy" : "idle",
   };
 
@@ -329,6 +330,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         thinking,
         thinkingDone: true,
         timestamp: message.timestamp,
+        reasoningDurationMs: undefined,
+        turnDurationMs: undefined,
       });
 
       for (const block of message.content) {
@@ -346,6 +349,10 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
             childThreadId,
             nickname: spawnInfo?.nickname ?? child?.nickname,
             description: child?.description ?? (block.input as { description?: string })?.description,
+            prompt:
+              typeof (block.input as { message?: unknown })?.message === "string"
+                ? (block.input as { message: string }).message
+                : undefined,
             status: isSettled ? spawnStatus : "running",
             childTools: child ? extractChildTools(child) : [],
             childMessages: child ? extractChildMessages(child) : undefined,

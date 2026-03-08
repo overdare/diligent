@@ -666,6 +666,68 @@ test("turn/interrupted settles in-flight thinking and streaming tool items", () 
   expect(Object.keys(after.itemSlots).length).toBe(0);
 });
 
+test("turn/completed attaches final loop and reasoning duration to latest assistant item", () => {
+  resetAdapter();
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+
+  const completedMessage: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 2,
+        },
+      },
+    },
+  };
+
+  const turnCompleted: DiligentServerNotification = {
+    method: "turn/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      durationMs: 4200,
+      reasoningDurationMs: 1800,
+    },
+  };
+
+  let state = reduce({ ...initialThreadState, activeThreadId: "t1" }, started);
+  state = reduce(state, completedMessage);
+  state = reduce(state, turnCompleted);
+
+  const assistant = state.items.find((item) => item.kind === "assistant");
+  expect(assistant && assistant.kind === "assistant" ? assistant.turnDurationMs : undefined).toBe(4200);
+  expect(assistant && assistant.kind === "assistant" ? assistant.reasoningDurationMs : undefined).toBe(1800);
+});
+
 test("collab_spawn_begin creates spawn item so child events stream in real-time", () => {
   resetAdapter();
   const threadId = "t1";
@@ -733,6 +795,7 @@ test("collab_spawn_begin creates spawn item so child events stream in real-time"
       childThreadId,
       nickname: "Fern",
       description: "worker",
+      prompt: "do something",
       status: "running",
     },
   };
@@ -869,6 +932,7 @@ test("collab_spawn_end updates same spawn item to errored status", () => {
       callId: childThreadId,
       childThreadId,
       nickname: "Broom",
+      prompt: "read 3 markdown files",
       status: "running",
     },
   });
@@ -880,6 +944,7 @@ test("collab_spawn_end updates same spawn item to errored status", () => {
       callId: childThreadId,
       childThreadId,
       nickname: "Broom",
+      prompt: "read 3 markdown files",
       status: "errored",
       message: "400 The requested model 'codex-mini-latest' does not exist.",
     },
@@ -890,6 +955,40 @@ test("collab_spawn_end updates same spawn item to errored status", () => {
   const spawn = collabItems[0];
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("errored");
   expect(spawn && spawn.kind === "collab" ? spawn.message : "").toContain("does not exist");
+});
+
+test("collab spawn item keeps original spawn prompt for detail display", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-prompt-1";
+  const prompt = "check auth flow\nthen summarize issues";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt,
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Fern",
+      prompt,
+      status: "running",
+    },
+  });
+
+  const spawn = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawn && spawn.kind === "collab" ? spawn.prompt : "").toBe(prompt);
 });
 
 test("collab_wait_end keeps spawn status running when timed out snapshot reports pending", () => {
@@ -916,6 +1015,7 @@ test("collab_wait_end keeps spawn status running when timed out snapshot reports
       callId: childThreadId,
       childThreadId,
       nickname: "Moss",
+      prompt: "long task",
       status: "running",
     },
   });
