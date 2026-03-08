@@ -55,7 +55,6 @@ describe("Knowledge Store", () => {
     expect(entries[0].content).toBe("first");
     expect(entries[2].content).toBe("third");
   });
-
 });
 
 describe("Knowledge Ranker", () => {
@@ -135,9 +134,7 @@ describe("Knowledge Injector", () => {
     );
 
     const section = buildKnowledgeSection(entries, 20_000);
-    const lines = section
-      .split("\n")
-      .filter((line) => line.startsWith("- ["));
+    const lines = section.split("\n").filter((line) => line.startsWith("- ["));
 
     expect(lines).toHaveLength(50);
     expect(lines[0]).toContain("Knowledge item 0");
@@ -151,9 +148,7 @@ describe("Knowledge Injector", () => {
     );
 
     const section = buildKnowledgeSection(entries, 8192, 5);
-    const lines = section
-      .split("\n")
-      .filter((line) => line.startsWith("- ["));
+    const lines = section.split("\n").filter((line) => line.startsWith("- ["));
 
     expect(lines).toHaveLength(5);
     expect(lines[4]).toContain("Configured item 4");

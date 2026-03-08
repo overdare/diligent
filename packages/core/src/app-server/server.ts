@@ -37,13 +37,12 @@ import {
 } from "./config-handlers";
 import { agentEventToNotification } from "./event-mapper";
 import {
-  type PendingServerRequest,
   handleServerResponseMessage,
+  type PendingServerRequest,
   requestApprovalFromConnections,
   requestUserInputFromConnections,
 } from "./server-requests";
 import {
-  type ThreadRuntime,
   getLatestEffortFromSessions,
   handleEffortSet,
   handleKnowledgeList,
@@ -58,6 +57,7 @@ import {
   handleTurnInterrupt,
   handleTurnStart,
   handleTurnSteer,
+  type ThreadRuntime,
 } from "./thread-handlers";
 
 export interface ModelConfig {

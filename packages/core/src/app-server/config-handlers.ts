@@ -30,15 +30,15 @@ import {
 } from "../auth/oauth";
 import { PROVIDER_NAMES, type ProviderManager } from "../provider/provider-manager";
 
-interface EmitFn {
-  (notification: DiligentServerNotification): Promise<void>;
-}
+type EmitFn = (notification: DiligentServerNotification) => Promise<void>;
 
 export async function handleConfigSet(
-  modelConfig: {
-    getAvailableModels: () => Array<{ id: string }>;
-    onModelChange: (modelId: string) => void;
-  } | undefined,
+  modelConfig:
+    | {
+        getAvailableModels: () => Array<{ id: string }>;
+        onModelChange: (modelId: string) => void;
+      }
+    | undefined,
   currentModelId: string | undefined,
   model: string | undefined,
 ): Promise<{ model: string | undefined }> {
