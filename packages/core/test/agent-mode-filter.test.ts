@@ -222,4 +222,15 @@ describe("agentLoop mode prompt injection", () => {
     expect(modeSection).toBeDefined();
     expect(modeSection!.content).toBe(MODE_SYSTEM_PROMPT_SUFFIXES.execute);
   });
+
+  test("execute mode prompt instructs agents to wait for running sub-agents before yielding", () => {
+    expect(MODE_SYSTEM_PROMPT_SUFFIXES.execute).toContain("wait for them before yielding");
+    expect(MODE_SYSTEM_PROMPT_SUFFIXES.execute).toContain(
+      "your primary role becomes coordinating them until they finish",
+    );
+  });
+
+  test("plan mode prompt instructs agents to wait for running explore agents before yielding", () => {
+    expect(MODE_SYSTEM_PROMPT_SUFFIXES.plan).toContain("wait for them before yielding");
+  });
 });

@@ -60,6 +60,8 @@ describe("spawn_agent tool", () => {
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
     expect(spawnTool.description).toBe(formatSpawnAgentToolDescription());
     expect(spawnTool.description).toContain("Role selection guide:");
+    expect(spawnTool.description).toContain("wait for them before yielding");
+    expect(spawnTool.description).toContain("your primary role becomes coordinating them until they finish");
     expect(spawnTool.description).toContain("'general':");
     expect(spawnTool.description).toContain("'explore':");
     expect(spawnTool.description).toContain("'planner':");
