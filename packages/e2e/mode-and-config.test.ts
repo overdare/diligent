@@ -10,10 +10,17 @@ import { createTestServer } from "./helpers/server-factory";
 
 let tmpDir: string;
 let client: ProtocolTestClient;
+let fakeHome: string | undefined;
+let originalHome: string | undefined;
 
 afterEach(async () => {
   client?.close();
   if (tmpDir) await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  if (originalHome !== undefined) process.env.HOME = originalHome;
+  else delete process.env.HOME;
+  originalHome = undefined;
+  if (fakeHome) await rm(fakeHome, { recursive: true, force: true }).catch(() => {});
+  fakeHome = undefined;
 });
 
 describe("mode-and-config", () => {
@@ -91,6 +98,10 @@ describe("mode-and-config", () => {
 
   test("tools/list and tools/set expose state and changed availability applies on the next turn", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-tools-"));
+    fakeHome = await mkdtemp(join(tmpdir(), "diligent-e2e-home-"));
+    originalHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+
     const server = createTestServer({
       cwd: tmpDir,
       runtimeToolsConfig: { builtin: { bash: true } },
