@@ -189,6 +189,21 @@ If a file with today's date already exists, overwrite it. Do NOT just print the 
 [Evidence: specific interface, type, or assumption]
 [What the fix looks like now vs. later]
 
+## Novel Perspective
+
+Find and articulate at least one perspective that has never been explicitly raised anywhere — not in previous reviews, not in decision documents, not in the backlog, not in code comments.
+
+Repackaging an existing finding is not allowed. "This relates to what was mentioned earlier..." does not qualify. The perspective must stand entirely on its own.
+
+If it's hard to find, that difficulty is itself a clue. Which part of the project is invisible? What is taken for granted? What assumption has quietly permeated the entire codebase?
+
+### [Perspective name]
+- **Why no one has seen this**: [structural reason this angle has been overlooked]
+- **Evidence**: [specific files, lines, commits, patterns]
+- **Implication**: [if this perspective is correct, what should be done differently]
+
+---
+
 ## Persistent Issues
 
 After completing the review above, read the 3 most recent previous assessments from `docs/review/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
@@ -228,3 +243,5 @@ Each action should reference specific decision IDs and file paths.
 - **The developer is solo + AI-assisted.** Recommendations must be achievable by one person. Heavy process, extensive documentation requirements, or "you need a team to review this" are counterproductive. The right unit of work is something that fits in a single focused session.
 
 - **Catch compounding problems.** A small issue that compounds with every new package, provider, or feature is more dangerous than a large isolated issue. Prioritize by compounding rate, not current severity.
+
+- **Find the invisible angle.** Every assessment must include at least one perspective that has never appeared in any previous review, decision document, backlog, or code comment. If every finding could have been predicted from the last review, the assessment hasn't earned its place. The Novel Perspective section is not optional — it is the bar that separates a good review from a rote checklist.
