@@ -1,7 +1,7 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   DiligentServerNotification,
@@ -585,6 +585,126 @@ describe("DiligentAppServer", () => {
     });
     const result = readResult(list) as { data: Array<{ id: string; messageCount: number }> };
     expect(result.data.find((item) => item.id === threadId)).toMatchObject({ id: threadId, messageCount: 0 });
+  });
+
+  it("reconciles idle thread/read from disk when runtime memory is stale", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "original" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const connection = connectTestPeer(server);
+    let resolveTurnCompleted: (() => void) | null = null;
+    const turnCompleted = new Promise<void>((resolve) => {
+      resolveTurnCompleted = resolve;
+    });
+    connection.setNotificationListener((notification) => {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+        resolveTurnCompleted?.();
+      }
+    });
+
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 901,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(start) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 902,
+      method: "turn/start",
+      params: { threadId, message: "hello" },
+    });
+    await turnCompleted;
+
+    const paths = await ensureDiligentDir(projectRoot);
+    const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+    const fileText = await readFile(sessionPath, "utf8");
+    const lines = fileText.trim().split("\n");
+    const last = JSON.parse(lines[lines.length - 1]) as {
+      type: string;
+      message?: {
+        role?: string;
+        content?: unknown[];
+        model?: string;
+        usage?: unknown;
+        stopReason?: string;
+        timestamp?: number;
+      };
+      timestamp?: string;
+      id?: string;
+      parentId?: string | null;
+    };
+    expect(last.type).toBe("message");
+    expect(last.message?.role).toBe("assistant");
+
+    const appendedEntry = {
+      type: "message",
+      id: "deadbeef",
+      parentId: last.id ?? null,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "from-disk" }],
+        model: last.message?.model ?? "fake-model",
+        usage: last.message?.usage ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: last.message?.stopReason ?? "end_turn",
+        timestamp: Date.now(),
+      },
+    };
+
+    await writeFile(sessionPath, `${fileText}${JSON.stringify(appendedEntry)}\n`, "utf8");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 903,
+      method: "thread/read",
+      params: { threadId },
+    });
+    const result = readResult(read) as { messages: Array<{ role: string; content: unknown[] }> };
+    const lastMessage = result.messages[result.messages.length - 1] as {
+      role: string;
+      content: Array<{ type: string; text?: string }>;
+    };
+    expect(lastMessage.role).toBe("assistant");
+    expect(lastMessage.content.find((b) => b.type === "text")?.text).toBe("from-disk");
   });
 
   it("reads image fallback preview from persisted thread list data when first turn is image-only", async () => {

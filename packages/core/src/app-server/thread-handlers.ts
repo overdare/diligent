@@ -3,22 +3,22 @@
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   type DiligentServerNotification,
+  type Mode,
   type PluginDescriptor,
   type SessionSummary,
   type ThinkingEffort,
   type ToolConflictPolicy,
   type ToolDescriptor,
   type TurnStartParams,
-  type Mode,
 } from "@diligent/protocol";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
-import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { getProjectConfigPath, writeProjectToolsConfig } from "../config/writer";
+import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
 import { buildSessionContext } from "../session/context-builder";
-import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import type { SessionManager } from "../session/manager";
+import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
 
@@ -167,6 +167,21 @@ export async function handleThreadRead(
   currentEffort: ThinkingEffort;
 }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
+  // Do this only when idle to avoid mutating active turn state mid-stream.
+  if (!runtime.isRunning) {
+    const reconcile = await runtime.manager.reconcileFromDisk();
+    console.log(
+      "[AppServer] thread/read reconcile thread=%s changed=%s reason=%s memoryEntries=%d diskEntries=%d memoryLeaf=%s diskLeaf=%s",
+      runtime.id,
+      reconcile.changed,
+      reconcile.reason,
+      reconcile.memoryEntries,
+      reconcile.diskEntries,
+      reconcile.memoryLeafId ?? "-",
+      reconcile.diskLeafId ?? "-",
+    );
+  }
   const paths = await ctx.resolvePaths(runtime.cwd);
   const sessionId = runtime.manager.sessionId;
   const children = await readChildSessions(paths.sessions, sessionId);
@@ -291,10 +306,7 @@ export async function handleKnowledgeList(
   return { data: entries.slice(0, limit ?? entries.length) };
 }
 
-export async function handleThreadDelete(
-  ctx: ThreadHandlersContext,
-  threadId: string,
-): Promise<{ deleted: boolean }> {
+export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: string): Promise<{ deleted: boolean }> {
   const existing = ctx.threads.get(threadId);
   if (existing?.isRunning) throw new Error("Cannot delete a thread that is currently running");
 
@@ -347,7 +359,10 @@ export async function handleToolsList(
 
 export async function handleToolsSet(
   ctx: ThreadHandlersContext,
-  toolConfig: { getTools: () => DiligentConfig["tools"] | undefined; setTools: (tools: DiligentConfig["tools"] | undefined) => void },
+  toolConfig: {
+    getTools: () => DiligentConfig["tools"] | undefined;
+    setTools: (tools: DiligentConfig["tools"] | undefined) => void;
+  },
   threadId: string | undefined,
   params: {
     builtin?: Record<string, boolean>;

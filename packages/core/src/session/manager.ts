@@ -189,6 +189,80 @@ export class SessionManager {
     return context.messages;
   }
 
+  /**
+   * Reconcile in-memory entries with the persisted session file.
+   *
+   * This protects long-lived runtimes from stale in-memory state (for example,
+   * if a runtime instance got out-of-sync while the canonical JSONL on disk has
+   * newer entries). Existing in-memory state wins when it is already newer.
+   */
+  async reconcileFromDisk(): Promise<{
+    changed: boolean;
+    reason: "no_session_path" | "memory_newer" | "already_equal" | "updated_from_disk";
+    memoryEntries: number;
+    diskEntries: number;
+    memoryLeafId: string | null;
+    diskLeafId: string | null;
+  }> {
+    const sessionPath = this.writer.path;
+    if (!sessionPath) {
+      return {
+        changed: false,
+        reason: "no_session_path",
+        memoryEntries: this.entries.length,
+        diskEntries: 0,
+        memoryLeafId: this.leafId,
+        diskLeafId: null,
+      };
+    }
+
+    // Ensure this manager's queued writes are settled before comparing snapshots.
+    await this.writeQueue.catch(() => {});
+
+    const memoryEntries = this.entries.length;
+    const memoryLeafId = this.leafId;
+
+    const { entries } = await readSessionFile(sessionPath);
+    const diskLeafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+
+    // Keep current in-memory state if it is already newer than disk.
+    if (entries.length < this.entries.length) {
+      return {
+        changed: false,
+        reason: "memory_newer",
+        memoryEntries,
+        diskEntries: entries.length,
+        memoryLeafId,
+        diskLeafId,
+      };
+    }
+    if (entries.length === this.entries.length && diskLeafId === this.leafId) {
+      return {
+        changed: false,
+        reason: "already_equal",
+        memoryEntries,
+        diskEntries: entries.length,
+        memoryLeafId,
+        diskLeafId,
+      };
+    }
+
+    this.entries = entries;
+    this.byId.clear();
+    for (const entry of entries) {
+      this.byId.set(entry.id, entry);
+    }
+    this.leafId = diskLeafId;
+    return {
+      changed: true,
+      reason: "updated_from_disk",
+      memoryEntries,
+      diskEntries: entries.length,
+      memoryLeafId,
+      diskLeafId,
+    };
+  }
+
   getCurrentEffort(): "low" | "medium" | "high" | "max" | undefined {
     return buildSessionContext(this.entries, this.leafId).currentEffort;
   }
