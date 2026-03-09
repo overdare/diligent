@@ -7,7 +7,7 @@ import type { SkillMetadata } from "../skills";
 import type { Tool } from "../tool/types";
 import { createAddKnowledgeTool } from "./add-knowledge";
 import { createApplyPatchTool } from "./apply-patch";
-import { bashTool } from "./bash";
+import { createBashTool } from "./bash";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
 import { createGlobTool } from "./glob";
@@ -42,7 +42,7 @@ export async function buildDefaultTools(
 ): Promise<BuildDefaultToolsResult> {
   // 1. Assemble all built-in tools
   const builtinTools: Tool[] = [
-    bashTool,
+    createBashTool(cwd),
     createSkillTool(skills),
     createReadTool(),
     createWriteTool(cwd),

@@ -235,6 +235,7 @@ export {
   buildToolCatalog,
   createAddKnowledgeTool,
   createApplyPatchTool,
+  createBashTool,
   createGlobTool,
   createGrepTool,
   createLsTool,

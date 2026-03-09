@@ -3,7 +3,7 @@ export type { CollabToolDeps } from "../collab";
 export { AgentRegistry, createCollabTools } from "../collab";
 export { createAddKnowledgeTool } from "./add-knowledge";
 export { createApplyPatchTool } from "./apply-patch";
-export { bashTool } from "./bash";
+export { bashTool, createBashTool } from "./bash";
 // Tool catalog (P032)
 export type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEntry, ToolStateReason } from "./catalog";
 export { buildToolCatalog } from "./catalog";
