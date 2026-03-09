@@ -1,0 +1,13 @@
+{
+  // Diligent project config for the url-fetch-workspace example.
+  // Run `bun install` in this directory first, then launch diligent from here.
+
+  "tools": {
+    "plugins": [
+      {
+        "package": "url-fetch-plugin",
+        "enabled": true
+      }
+    ]
+  }
+}

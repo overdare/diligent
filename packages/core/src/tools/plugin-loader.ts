@@ -1,6 +1,6 @@
 // @summary Dynamic plugin package loader — imports npm packages and validates tool exports
 
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -45,6 +45,23 @@ export function getGlobalPluginPath(packageName: string): string {
 }
 
 /**
+ * Scan the global plugin directory and return the names of all plugin folders found.
+ *
+ * Only immediate subdirectories are returned (non-recursive).
+ * Returns an empty array if the directory does not exist or cannot be read.
+ */
+export async function discoverGlobalPlugins(): Promise<string[]> {
+  const root = getGlobalPluginRoot();
+  try {
+    const entries = await readdir(root, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>;
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    // Directory doesn't exist or can't be read — no auto-discovered plugins
+    return [];
+  }
+}
+
+/**
  * Load a plugin package by name and extract its tools.
  *
  * Resolution order:
@@ -68,7 +85,7 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
 
   let mod: Record<string, unknown>;
   try {
-    mod = await importPluginModule(packageName);
+    mod = await importPluginModule(packageName, cwd);
   } catch (err) {
     return fail(String(err));
   }
@@ -149,19 +166,42 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
   };
 }
 
-async function importPluginModule(packageName: string): Promise<Record<string, unknown>> {
+async function importPluginModule(
+  packageName: string,
+  cwd?: string,
+): Promise<Record<string, unknown>> {
+  // Resolution order:
+  //   1. Regular package import (installed in the running process's environment)
+  //   2. cwd/node_modules/<packageName>  (project-local bun/npm install)
+  //   3. ~/.diligent/plugins/<packageName>  (global plugin directory)
   try {
     return (await import(packageName)) as Record<string, unknown>;
   } catch (packageError) {
+    // 2. Try project-local node_modules when cwd is provided
+    if (cwd) {
+      const localPath = join(cwd, "node_modules", packageName);
+      try {
+        await stat(localPath);
+        return (await import(pathToFileURL(localPath).href)) as Record<string, unknown>;
+      } catch {
+        // not found locally — fall through to global
+      }
+    }
+
+    // 3. Global plugin directory
     const globalPath = getGlobalPluginPath(packageName);
     const globalImportUrl = pathToFileURL(globalPath).href;
 
     try {
       await stat(globalPath);
     } catch {
+      const triedPaths = [
+        ...(cwd ? [`${cwd}/node_modules/${packageName}`] : []),
+        globalPath,
+      ].join(", ");
       throw new Error(
-        `Could not load plugin package '${packageName}'. Tried installed package resolution and global plugin directory '${globalPath}'. ` +
-          `Is it installed in the project, or present under ${getGlobalPluginRoot()}? ` +
+        `Could not load plugin package '${packageName}'. Tried: ${triedPaths}. ` +
+          `Install it in the project ('bun add ${packageName}') or place it under ${getGlobalPluginRoot()}. ` +
           `Package import error: ${packageError instanceof Error ? packageError.message : String(packageError)}`,
       );
     }
@@ -170,7 +210,7 @@ async function importPluginModule(packageName: string): Promise<Record<string, u
       return (await import(globalImportUrl)) as Record<string, unknown>;
     } catch (globalError) {
       throw new Error(
-        `Could not load plugin package '${packageName}'. Tried installed package resolution and global plugin directory '${globalPath}'. ` +
+        `Could not load plugin package '${packageName}'. ` +
           `Package import error: ${packageError instanceof Error ? packageError.message : String(packageError)}. ` +
           `Global import error: ${globalError instanceof Error ? globalError.message : String(globalError)}`,
       );

@@ -1,6 +1,7 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+
 import {
   type AgentRegistry,
   createAppServerConfig,
@@ -256,25 +257,27 @@ function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: str
 const isDirect = import.meta.main;
 
 if (isDirect) {
-  const args = parseArgs(process.argv.slice(2));
-  const cwd = process.cwd();
+  (async () => {
+    const args = parseArgs(process.argv.slice(2));
+    const cwd = process.cwd();
 
-  createWebServer({
-    port: args.port,
-    dev: args.dev,
-    cwd: args.cwd ?? cwd,
-    distDir: args.distDir,
-  })
-    .then(({ server }) => {
-      console.log(`DILIGENT_PORT=${server.port}`);
-      console.log(`Diligent Web CLI server running at http://localhost:${server.port}`);
-      console.log(`RPC endpoint: ws://localhost:${server.port}/rpc`);
+    createWebServer({
+      port: args.port,
+      dev: args.dev,
+      cwd: args.cwd ?? cwd,
+      distDir: args.distDir,
     })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to start web server: ${message}`);
-      process.exit(1);
-    });
+      .then(({ server }) => {
+        console.log(`DILIGENT_PORT=${server.port}`);
+        console.log(`Diligent Web CLI server running at http://localhost:${server.port}`);
+        console.log(`RPC endpoint: ws://localhost:${server.port}/rpc`);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Failed to start web server: ${message}`);
+        process.exit(1);
+      });
+  })();
 }
 
 export type { DiligentPaths };

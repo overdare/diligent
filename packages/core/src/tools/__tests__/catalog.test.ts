@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import type { Tool } from "../../tool/types";
 import { buildToolCatalog } from "../catalog";
-import { getGlobalPluginPath } from "../plugin-loader";
+import { getGlobalPluginPath, getGlobalPluginRoot } from "../plugin-loader";
 
 const TEST_HOME = join(tmpdir(), `diligent-catalog-home-${Date.now()}`);
 const ORIGINAL_HOME = process.env.HOME;
@@ -436,6 +436,134 @@ describe("buildToolCatalog", () => {
       "good_plugin_tool",
     ]);
   });
+
+  // ── Auto-discovery tests ────────────────────────────────────────────────────
+
+  it("auto-discovers plugins present in ~/.diligent/plugins without any config entry", async () => {
+    const pluginDir = getGlobalPluginPath("auto-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "auto-plugin", version: "0.1.0", type: "module", main: "./index.js" }, null, 2),
+    );
+    await Bun.write(
+      join(pluginDir, "index.js"),
+      [
+        "export const manifest = { name: 'auto-plugin', apiVersion: '1.0', version: '0.1.0' };",
+        "const params = { parse(value) { return value; } };",
+        "export async function createTools() {",
+        "  return [{ name: 'auto_tool', description: 'auto-discovered tool', parameters: params, execute: async () => ({ output: 'ok' }) }];",
+        "}",
+      ].join("\n"),
+    );
+
+    // No plugins in config — should still load the auto-discovered plugin.
+    const result = await buildToolCatalog(standardBuiltins(), {}, "/tmp");
+
+    expect(toolNames(result.tools)).toContain("auto_tool");
+    const pluginState = result.plugins.find((p) => p.package === "auto-plugin");
+    expect(pluginState).toMatchObject({
+      package: "auto-plugin",
+      configured: true,
+      enabled: true,
+      loaded: true,
+      toolCount: 1,
+    });
+    const toolState = result.state.find((s) => s.name === "auto_tool");
+    expect(toolState).toMatchObject({
+      source: "plugin",
+      pluginPackage: "auto-plugin",
+      enabled: true,
+      available: true,
+      reason: "enabled",
+    });
+
+    await rm(pluginDir, { recursive: true, force: true });
+  });
+
+  it("explicit config entry overrides auto-discovery for the same package", async () => {
+    const pluginDir = getGlobalPluginPath("override-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "override-plugin", version: "0.1.0", type: "module", main: "./index.js" }, null, 2),
+    );
+    await Bun.write(
+      join(pluginDir, "index.js"),
+      [
+        "export const manifest = { name: 'override-plugin', apiVersion: '1.0', version: '0.1.0' };",
+        "const params = { parse(value) { return value; } };",
+        "export async function createTools() {",
+        "  return [{ name: 'override_tool', description: 'override tool', parameters: params, execute: async () => ({ output: 'ok' }) }];",
+        "}",
+      ].join("\n"),
+    );
+
+    // Explicitly disabled in config — should NOT be auto-loaded.
+    const result = await buildToolCatalog(
+      standardBuiltins(),
+      { plugins: [{ package: "override-plugin", enabled: false }] },
+      "/tmp",
+    );
+
+    expect(toolNames(result.tools)).not.toContain("override_tool");
+    const pluginState = result.plugins.find((p) => p.package === "override-plugin");
+    expect(pluginState).toMatchObject({
+      package: "override-plugin",
+      configured: true,
+      enabled: false,
+      loaded: false,
+    });
+
+    await rm(pluginDir, { recursive: true, force: true });
+  });
+
+  it("explicit config entry with per-tool override is respected for auto-discovered plugin", async () => {
+    const pluginDir = getGlobalPluginPath("partial-plugin");
+    await mkdir(pluginDir, { recursive: true });
+    await Bun.write(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "partial-plugin", version: "0.1.0", type: "module", main: "./index.js" }, null, 2),
+    );
+    await Bun.write(
+      join(pluginDir, "index.js"),
+      [
+        "export const manifest = { name: 'partial-plugin', apiVersion: '1.0', version: '0.1.0' };",
+        "const params = { parse(value) { return value; } };",
+        "export async function createTools() {",
+        "  return [",
+        "    { name: 'tool_a', description: 'tool a', parameters: params, execute: async () => ({ output: 'ok' }) },",
+        "    { name: 'tool_b', description: 'tool b', parameters: params, execute: async () => ({ output: 'ok' }) },",
+        "  ];",
+        "}",
+      ].join("\n"),
+    );
+
+    // Only disable tool_b via explicit config; tool_a should still load.
+    const result = await buildToolCatalog(
+      standardBuiltins(),
+      { plugins: [{ package: "partial-plugin", enabled: true, tools: { tool_b: false } }] },
+      "/tmp",
+    );
+
+    expect(toolNames(result.tools)).toContain("tool_a");
+    expect(toolNames(result.tools)).not.toContain("tool_b");
+    const pluginState = result.plugins.find((p) => p.package === "partial-plugin");
+    expect(pluginState).toMatchObject({ configured: true, enabled: true });
+
+    await rm(pluginDir, { recursive: true, force: true });
+  });
+
+  it("returns empty plugins array when ~/.diligent/plugins does not exist", async () => {
+    // TEST_HOME is set but plugins subdir was never created for this test.
+    await rm(getGlobalPluginRoot(), { recursive: true, force: true });
+
+    const result = await buildToolCatalog(standardBuiltins(), {}, "/tmp");
+    expect(result.plugins).toEqual([]);
+    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "write"]);
+  });
+
+  // ── Existing global-dir test (kept for regression) ─────────────────────────
 
   it("loads a plugin from the global plugin directory without project installation", async () => {
     const pluginDir = getGlobalPluginPath("global-catalog-plugin");

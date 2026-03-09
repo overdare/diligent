@@ -1,4 +1,5 @@
 // @summary Tauri app builder: registers plugins, exposes pick_directory/launch_server commands
+mod init;
 mod sidecar;
 
 use sidecar::{start_sidecar, stop_sidecar, SidecarState};
@@ -64,6 +65,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState(Mutex::new(None)))
+        .setup(|app| {
+            init::run(app);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![pick_directory, launch_server])
         .on_window_event(|window, event| {
             // Kill sidecar only when the main app window closes, not the loading splash.

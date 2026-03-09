@@ -1,3 +1,5 @@
 src-tauri/target/
 src-tauri/binaries/diligent-web-server*
+src-tauri/binaries/init*
 src-tauri/resources/dist/
+src-tauri/resources/defaults/

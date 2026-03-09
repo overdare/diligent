@@ -4,7 +4,7 @@ import { COLLAB_TOOL_NAMES } from "../collab";
 import type { DiligentConfig } from "../config/schema";
 import type { Tool } from "../tool/types";
 import { isImmutableTool } from "./immutable";
-import { loadPlugin } from "./plugin-loader";
+import { discoverGlobalPlugins, loadPlugin } from "./plugin-loader";
 
 export type ToolStateReason =
   | "enabled"
@@ -84,7 +84,18 @@ export async function buildToolCatalog(
   const config = toolsConfig ?? {};
   const conflictPolicy = config.conflictPolicy ?? "error";
   const builtinToggles = config.builtin ?? {};
-  const pluginConfigs = config.plugins ?? [];
+  const explicitPlugins = config.plugins ?? [];
+
+  // Auto-discover plugins from ~/.diligent/plugins/ and merge with explicit config.
+  // Explicit config entries always take precedence (for enable/disable, per-tool toggles, etc.).
+  const discoveredNames = await discoverGlobalPlugins();
+  const explicitPackageNames = new Set(explicitPlugins.map((p) => p.package));
+  const autoPlugins = discoveredNames
+    .filter((name) => !explicitPackageNames.has(name))
+    .map((name) => ({ package: name, enabled: true as const, tools: undefined as Record<string, boolean> | undefined }));
+
+  // Explicit entries first (preserving user-defined order), then auto-discovered ones.
+  const pluginConfigs = [...explicitPlugins, ...autoPlugins];
 
   // 1. Build built-in catalog with stable order and exclude collab tools from configurable state.
   const toolMap = new Map<string, ToolMapEntry>();
