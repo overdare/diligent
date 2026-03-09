@@ -10,7 +10,7 @@ const TEST_ROOT = join(tmpdir(), `diligent-config-test-${Date.now()}`);
 let origHome: string | undefined;
 
 /** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
-const projectConfigPath = (root: string) => join(root, ".diligent", "diligent.jsonc");
+const projectConfigPath = (root: string) => join(root, ".diligent", "config.jsonc");
 
 beforeEach(() => {
   origHome = process.env.HOME;
@@ -64,7 +64,7 @@ describe("loadDiligentConfig", () => {
     expect(sources).toEqual([]);
   });
 
-  it("loads project config from .diligent/diligent.jsonc", async () => {
+  it("loads project config from .diligent/config.jsonc", async () => {
     const configFile = projectConfigPath(TEST_ROOT);
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
     await Bun.write(
@@ -84,9 +84,9 @@ describe("loadDiligentConfig", () => {
   });
 
   it("uses tool settings from global config only", async () => {
-    const globalConfigFile = join(TEST_ROOT, ".config", "diligent", "diligent.jsonc");
+    const globalConfigFile = join(TEST_ROOT, ".diligent", "config.jsonc");
     const projectConfigFile = projectConfigPath(TEST_ROOT);
-    await mkdir(join(TEST_ROOT, ".config", "diligent"), { recursive: true });
+    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
 
     await Bun.write(

@@ -182,7 +182,7 @@ function promptSaveOAuthTokens(tokens: OpenAIOAuthTokens, ctx: CommandContext): 
     const dialog = new ConfirmDialog(
       {
         title: "Save Auth?",
-        message: "Save ChatGPT session to ~/.config/diligent/auth.json?",
+        message: "Save ChatGPT session to ~/.diligent/auth.jsonc?",
       },
       async (confirmed) => {
         handle.hide();
@@ -281,7 +281,7 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
     const dialog = new ConfirmDialog(
       {
         title: "Save API Key?",
-        message: `Save ${provider} key to ~/.config/diligent/auth.json?`,
+        message: `Save ${provider} key to ~/.diligent/auth.jsonc?`,
       },
       async (confirmed) => {
         handle.hide();

@@ -1380,7 +1380,7 @@ describe("DiligentAppServer", () => {
         plugins: Array<{ package: string }>;
       };
 
-      const expectedGlobalPath = join(fakeHome, ".config", "diligent", "diligent.jsonc");
+      const expectedGlobalPath = join(fakeHome, ".diligent", "config.jsonc");
       expect(listedResult.configPath).toBe(expectedGlobalPath);
       expect(listedResult.appliesOnNextTurn).toBe(true);
       expect(listedResult.trustMode).toBe("full_trust");
@@ -1489,7 +1489,7 @@ describe("DiligentAppServer", () => {
         configPath: string;
       };
 
-      const expectedGlobalPath = join(fakeHome, ".config", "diligent", "diligent.jsonc");
+      const expectedGlobalPath = join(fakeHome, ".diligent", "config.jsonc");
       expect(setResult.configPath).toBe(expectedGlobalPath);
       const configText = await Bun.file(expectedGlobalPath).text();
       expect(configText).toContain('"jira_comment": false');

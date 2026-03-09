@@ -6,7 +6,7 @@ Diligent lets you control which built-in tools are available in a project and ad
 
 Tool settings are project-local in:
 
-- `.diligent/diligent.jsonc`
+- `.diligent/config.jsonc`
 
 Changes are applied on the next turn. Diligent does not hot-swap tool availability in the middle of a running turn.
 
@@ -64,7 +64,7 @@ That means a prebuilt `diligent` binary can load a plugin from your home plugin 
 To add plugin tools:
 
 1. Create or copy the plugin package under `$HOME/.diligent/plugins/<plugin-name>`.
-2. Add the package name under `.diligent/diligent.jsonc` in either global or project config.
+2. Add the package name under `.diligent/config.jsonc` in either global or project config.
 3. Start the next turn.
 
 Diligent does not install npm packages for you in this phase.
@@ -160,7 +160,7 @@ mkdir -p $HOME/.diligent/plugins
 cp -R /absolute/path/to/diligent/examples/external-tool-plugin $HOME/.diligent/plugins/example-tool-plugin
 ```
 
-Then enable it in global config `~/.config/diligent/diligent.jsonc` or in the target project's `.diligent/diligent.jsonc`:
+Then enable it in global config `~/.diligent/config.jsonc` or in the target project's `.diligent/config.jsonc`:
 
 ```jsonc
 {
@@ -170,7 +170,7 @@ Then enable it in global config `~/.config/diligent/diligent.jsonc` or in the ta
 }
 ```
 
-If you place that entry in `~/.config/diligent/diligent.jsonc`, the plugin is available by default across projects. A project-level `.diligent/diligent.jsonc` can still override tool settings as usual.
+If you place that entry in `~/.diligent/config.jsonc`, the plugin is available by default across projects. A project-level `.diligent/config.jsonc` can still override tool settings as usual.
 
 After the next turn starts, ask Diligent to use `example_project_snapshot`.
 

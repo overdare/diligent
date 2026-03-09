@@ -4,10 +4,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyEdits, type Edit, format, modify } from "jsonc-parser";
 
-const GLOBAL_CONFIG_PATH = join(homedir(), ".config", "diligent", "diligent.jsonc");
+const GLOBAL_CONFIG_PATH = join(homedir(), ".diligent", "config.jsonc");
 
 /**
- * Save an API key to the global config file (~/.config/diligent/diligent.jsonc).
+ * Save an API key to the global config file (~/.diligent/config.jsonc).
  * Uses jsonc-parser to preserve existing comments and formatting.
  */
 export async function saveApiKey(

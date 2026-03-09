@@ -27,21 +27,21 @@ afterEach(async () => {
 });
 
 describe("getAuthFilePath", () => {
-  test("returns path under ~/.config/diligent/", () => {
+  test("returns path under ~/.diligent/", () => {
     const path = getAuthFilePath();
     expect(path).toContain("diligent");
-    expect(path).toEndWith("auth.json");
+    expect(path).toEndWith("auth.jsonc");
   });
 });
 
 describe("loadAuthStore", () => {
   test("returns {} when file does not exist", async () => {
-    const result = await loadAuthStore(join(TEST_ROOT, "nonexistent.json"));
+    const result = await loadAuthStore(join(TEST_ROOT, "nonexistent.jsonc"));
     expect(result).toEqual({});
   });
 
   test("loads valid auth keys", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai: "sk-456" }));
 
     const result = await loadAuthStore(path);
@@ -51,7 +51,7 @@ describe("loadAuthStore", () => {
   });
 
   test("loads openai_oauth tokens", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadAuthStore(path);
@@ -59,7 +59,7 @@ describe("loadAuthStore", () => {
   });
 
   test("loads both plain key and openai_oauth simultaneously", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadAuthStore(path);
@@ -68,7 +68,7 @@ describe("loadAuthStore", () => {
   });
 
   test("returns {} for invalid JSON", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, "not json");
 
     const result = await loadAuthStore(path);
@@ -76,7 +76,7 @@ describe("loadAuthStore", () => {
   });
 
   test("substitutes {env:VAR} in values", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     process.env.TEST_ANTHROPIC_KEY = "sk-from-env";
     await Bun.write(path, JSON.stringify({ anthropic: "{env:TEST_ANTHROPIC_KEY}" }));
 
@@ -86,7 +86,7 @@ describe("loadAuthStore", () => {
   });
 
   test("{env:VAR} resolves to empty string when var is unset", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     delete process.env.NONEXISTENT_AUTH_VAR;
     await Bun.write(path, JSON.stringify({ anthropic: "{env:NONEXISTENT_AUTH_VAR}" }));
 
@@ -95,7 +95,7 @@ describe("loadAuthStore", () => {
   });
 
   test("returns {} for schema-invalid content (extra fields)", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "key", unknown_provider: "bad" }));
 
     const result = await loadAuthStore(path);
@@ -104,8 +104,8 @@ describe("loadAuthStore", () => {
 });
 
 describe("saveAuthKey", () => {
-  test("creates auth.json with single key", async () => {
-    const path = join(TEST_ROOT, "new-auth.json");
+  test("creates auth.jsonc with single key", async () => {
+    const path = join(TEST_ROOT, "new-auth.jsonc");
 
     await saveAuthKey("anthropic", "sk-ant-new", path);
 
@@ -114,7 +114,7 @@ describe("saveAuthKey", () => {
   });
 
   test("preserves existing keys when adding new one", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-existing" }));
 
     await saveAuthKey("openai", "sk-openai-new", path);
@@ -125,7 +125,7 @@ describe("saveAuthKey", () => {
   });
 
   test("preserves openai_oauth when saving plain key", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
 
     await saveAuthKey("anthropic", "sk-ant-new", path);
@@ -136,7 +136,7 @@ describe("saveAuthKey", () => {
   });
 
   test("overwrites existing key for same provider", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "old-key" }));
 
     await saveAuthKey("anthropic", "new-key", path);
@@ -146,7 +146,7 @@ describe("saveAuthKey", () => {
   });
 
   test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
 
     await saveAuthKey("gemini", "AIza-test", path);
 
@@ -156,7 +156,7 @@ describe("saveAuthKey", () => {
   });
 
   test("creates parent directories if needed", async () => {
-    const path = join(TEST_ROOT, "nested", "dir", "auth.json");
+    const path = join(TEST_ROOT, "nested", "dir", "auth.jsonc");
 
     await saveAuthKey("anthropic", "sk-deep", path);
 
@@ -167,7 +167,7 @@ describe("saveAuthKey", () => {
 
 describe("saveOAuthTokens", () => {
   test("saves openai_oauth to new file", async () => {
-    const path = join(TEST_ROOT, "oauth-auth.json");
+    const path = join(TEST_ROOT, "oauth-auth.jsonc");
 
     await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
 
@@ -176,7 +176,7 @@ describe("saveOAuthTokens", () => {
   });
 
   test("preserves plain API keys when saving OAuth tokens", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await saveAuthKey("anthropic", "sk-ant-test", path);
 
     await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
@@ -187,7 +187,7 @@ describe("saveOAuthTokens", () => {
   });
 
   test("overwrites existing openai_oauth", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     const oldTokens: OpenAIOAuthTokens = { ...TEST_OAUTH_TOKENS, account_id: "acc-old" };
     await Bun.write(path, JSON.stringify({ openai_oauth: oldTokens }));
 
@@ -199,7 +199,7 @@ describe("saveOAuthTokens", () => {
   });
 
   test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
-    const path = join(TEST_ROOT, "oauth.json");
+    const path = join(TEST_ROOT, "oauth.jsonc");
 
     await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
 
@@ -210,7 +210,7 @@ describe("saveOAuthTokens", () => {
 
 describe("loadOAuthTokens", () => {
   test("returns undefined when no openai_oauth in file", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant" }));
 
     const result = await loadOAuthTokens(path);
@@ -218,7 +218,7 @@ describe("loadOAuthTokens", () => {
   });
 
   test("returns OAuth tokens when present", async () => {
-    const path = join(TEST_ROOT, "auth.json");
+    const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadOAuthTokens(path);
@@ -226,7 +226,7 @@ describe("loadOAuthTokens", () => {
   });
 
   test("returns undefined when file does not exist", async () => {
-    const result = await loadOAuthTokens(join(TEST_ROOT, "missing.json"));
+    const result = await loadOAuthTokens(join(TEST_ROOT, "missing.jsonc"));
     expect(result).toBeUndefined();
   });
 });

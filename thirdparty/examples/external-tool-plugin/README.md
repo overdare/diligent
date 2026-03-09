@@ -48,7 +48,7 @@ A prebuilt `diligent` binary can load it directly from that folder without a per
 
 ## Enable it
 
-Add the package to global config `~/.config/diligent/diligent.jsonc` or to `.diligent/diligent.jsonc` in a project:
+Add the package to global config `~/.diligent/config.jsonc` or to `.diligent/config.jsonc` in a project:
 
 ```jsonc
 {
@@ -58,6 +58,6 @@ Add the package to global config `~/.config/diligent/diligent.jsonc` or to `.dil
 }
 ```
 
-If you put that entry in `~/.config/diligent/diligent.jsonc`, the plugin becomes available across projects by default.
+If you put that entry in `~/.diligent/config.jsonc`, the plugin becomes available across projects by default.
 
 Then start the next turn and ask Diligent to use `example_project_snapshot`.

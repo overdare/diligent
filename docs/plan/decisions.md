@@ -177,12 +177,12 @@ Decisions made during synthesis reviews, with rationale.
 - **Date**: 2026-02-23
 
 ### D032: Config format — JSONC with Zod validation
-- **Decision**: Use JSONC (JSON with Comments) for configuration files. Validate with Zod schemas (consistent with D012). Config file: `diligent.jsonc` (or `diligent.json`).
+- **Decision**: Use JSONC (JSON with Comments) for configuration files. Validate with Zod schemas (consistent with D012). Config file: `config.jsonc` (or `diligent.json`).
 - **Rationale**: JSONC allows comments (user-friendly for config files) while being trivially parseable. Zod validation (D012) provides type-safe config with helpful error messages. TOML (codex-rs) is less natural for a TS project. Plain JSON (pi-agent) lacks comments. `jsonc-parser` library handles parsing.
 - **Date**: 2026-02-23
 
 ### D033: Config hierarchy — 3 layers (global, project, CLI)
-- **Decision**: Three config layers with clear precedence: global (`~/.config/diligent/diligent.jsonc`) < project (`diligent.jsonc` in project root) < CLI arguments. Enterprise/managed layer deferred.
+- **Decision**: Three config layers with clear precedence: global (`~/.diligent/config.jsonc`) < project (`config.jsonc` in project root) < CLI arguments. Enterprise/managed layer deferred.
 - **Rationale**: pi-agent's 2-layer approach is too minimal (no CLI overrides as a concept). opencode's 7+ layers is over-engineered for MVP. Three layers cover the essential use cases: user defaults (global), project customization (project), and one-off overrides (CLI). Enterprise managed config can be added later as a 4th layer.
 - **Alternatives considered**: 2 layers (pi-agent, too few), 7+ layers (opencode, too many), TOML with layer stack (codex-rs, wrong format)
 - **Date**: 2026-02-23
@@ -193,12 +193,12 @@ Decisions made during synthesis reviews, with rationale.
 - **Date**: 2026-02-23
 
 ### D035: Project instructions — CLAUDE.md discovery via findUp
-- **Decision**: Discover `CLAUDE.md` and `AGENTS.md` files by searching up from cwd. Support both project-root and global (`~/.config/diligent/CLAUDE.md`) locations. Truncate to 32 KiB (codex-rs's limit).
+- **Decision**: Discover `CLAUDE.md` and `AGENTS.md` files by searching up from cwd. Support both project-root and global (`~/.diligent/CLAUDE.md`) locations. Truncate to 32 KiB (codex-rs's limit).
 - **Rationale**: opencode's instruction file discovery pattern is well-established. codex-rs also supports AGENTS.md with the same truncation limit. This is critical for usability — users expect their CLAUDE.md to be respected. `findUp` is standard and handles monorepo structures.
 - **Date**: 2026-02-23
 
 ### D036: Session persistence — JSONL with tree structure (confirming D006)
-- **Decision**: Confirm D006. Sessions persisted as JSONL append-only files with pi-agent's tree structure (id/parentId on every entry). Session directory: `~/.config/diligent/sessions/<project-hash>/<session-id>.jsonl`.
+- **Decision**: Confirm D006. Sessions persisted as JSONL append-only files with pi-agent's tree structure (id/parentId on every entry). Session directory: `~/.diligent/sessions/<project-hash>/<session-id>.jsonl`.
 - **Rationale**: Round 2 deep-dive confirms JSONL+tree is the right approach. pi-agent's implementation is proven and supports branching, compaction entries, version migration, and session listing. Tree structure enables non-destructive branching without creating new files. Path includes project hash for per-project organization.
 - **Date**: 2026-02-23
 - **REVISED by D036-REV** (2026-02-24): Session directory changed to `.diligent/sessions/<session-id>.jsonl` (project-local). See D036-REV in Memory System Decisions section.
@@ -293,7 +293,7 @@ Decisions made during synthesis reviews, with rationale.
 - **Date**: 2026-02-23
 
 ### D052: Skills — SKILL.md with frontmatter, progressive disclosure
-- **Decision**: Adopt the SKILL.md format with YAML frontmatter (`name`, `description`). Skills discovered from `~/.config/diligent/skills/`, project `.diligent/skills/`, and `.agents/skills/` (for cross-tool compatibility). Progressive disclosure: metadata always in system prompt, body loaded on invocation. Resolves D044 deferred item for markdown-based definitions.
+- **Decision**: Adopt the SKILL.md format with YAML frontmatter (`name`, `description`). Skills discovered from `~/.diligent/skills/`, project `.diligent/skills/`, and `.agents/skills/` (for cross-tool compatibility). Progressive disclosure: metadata always in system prompt, body loaded on invocation. Resolves D044 deferred item for markdown-based definitions.
 - **Rationale**: All three projects converge on the SKILL.md with YAML frontmatter format — this is a de facto standard emerging across coding agents. Progressive disclosure (metadata always loaded, ~100 tokens; body loaded on demand) is critical for context efficiency. Cross-compatibility with `.agents/skills/` directory enables shared skills across tools.
 - **Date**: 2026-02-23
 
@@ -331,7 +331,7 @@ Decisions made during synthesis reviews, with rationale.
 - **Date**: 2026-02-23
 
 ### D058: MCP config — Discriminated union (local/remote) in JSONC
-- **Decision**: MCP servers configured in `diligent.jsonc` under an `mcp` key. Config uses a discriminated union on `type`: `local` (command + environment) or `remote` (url + headers). Each server has optional `enabled` and `timeout` fields.
+- **Decision**: MCP servers configured in `config.jsonc` under an `mcp` key. Config uses a discriminated union on `type`: `local` (command + environment) or `remote` (url + headers). Each server has optional `enabled` and `timeout` fields.
 - **Rationale**: opencode's discriminated union pattern is clean and type-safe with Zod (D012). The two types map directly to the two transport types (D057). Configuration follows D032 (JSONC) and D033 (3-layer hierarchy) — MCP servers can be defined at global, project, or CLI level. codex-rs's TOML format doesn't apply since we chose JSONC.
 - **Date**: 2026-02-23
 
@@ -487,13 +487,13 @@ Decisions made during synthesis reviews, with rationale.
 ## Memory System Decisions (L6 Extension)
 
 ### D036-REV: Session storage location → project-local `.diligent/sessions/`
-- **Decision**: Revise D036. Session directory changed from `~/.config/diligent/sessions/<project-hash>/` to `.diligent/sessions/<session-id>.jsonl` (project-local). All other aspects of D036 (JSONL format, tree structure, entry types) remain unchanged.
+- **Decision**: Revise D036. Session directory changed from `~/.diligent/sessions/<project-hash>/` to `.diligent/sessions/<session-id>.jsonl` (project-local). All other aspects of D036 (JSONL format, tree structure, entry types) remain unchanged.
 - **Rationale**: Global path (`~/.config/`) prevents portability (project migration loses sessions), sharing (team knowledge transfer), and easy backup. Project-local storage aligns with Claude Code's `.claude/` pattern. Compatible with D040 (session listing — path change only), D042 (deferred persistence — location-agnostic), and D052 (skill paths already include `.diligent/skills/`).
 - **Revises**: D036
 - **Date**: 2026-02-24
 
 ### D080: Project data directory `.diligent/` convention
-- **Decision**: Store project runtime data in `.diligent/` directory. Layout: `sessions/`, `knowledge/`, `skills/`. Auto-generate `.diligent/.gitignore` excluding `sessions/` and `knowledge/` (skills are git-tracked per D052). Global config (`~/.config/diligent/`) remains settings-only (D033).
+- **Decision**: Store project runtime data in `.diligent/` directory. Layout: `sessions/`, `knowledge/`, `skills/`. Auto-generate `.diligent/.gitignore` excluding `sessions/` and `knowledge/` (skills are git-tracked per D052). Global config (`~/.diligent/`) remains settings-only (D033).
 - **Rationale**: Separates config (global `~/.config/`) from data (project-local `.diligent/`), following XDG Base Directory Specification principles. Claude Code's `.claude/` provides precedent for project-local agent data. Auto-generated `.gitignore` prevents accidental commit of session/knowledge data.
 - **Date**: 2026-02-24
 
@@ -567,7 +567,7 @@ Decisions made during synthesis reviews, with rationale.
 - **Mode switching**:
   - CLI flag: `--mode plan`, `--mode execute`
   - Slash command: `/mode plan`, `/mode` (picker)
-  - Config default: `diligent.jsonc` → `"mode": "default"`
+  - Config default: `config.jsonc` → `"mode": "default"`
   - **Mode persists across turns** — user messages alone don't change mode (codex-rs principle)
   - Mode change recorded as `ModelChangeEntry`-style event in session JSONL
 - **Architecture mapping**:

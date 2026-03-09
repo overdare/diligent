@@ -80,7 +80,7 @@ This feature must preserve a few important architectural properties:
 These decisions meaningfully affect implementation shape. This plan assumes the following defaults:
 
 1. **Tool settings are project-local in MVP**
-   - Write to `.diligent/diligent.jsonc` for the active project.
+   - Write to `.diligent/config.jsonc` for the active project.
    - Rationale: tool availability is strongly tied to project context and local package resolution.
    - Follow-up work can add global/shared tool profiles later if desired.
 
@@ -197,7 +197,7 @@ Recommended behavior:
 
 - update only the `tools` section in project config
 - preserve unrelated config sections and comments
-- create `.diligent/diligent.jsonc` if missing
+- create `.diligent/config.jsonc` if missing
 - return normalized effective state after write
 
 ## Resolution Semantics
@@ -584,7 +584,7 @@ Done on 2026-03-07.
 Implemented in repo:
 
 - new `packages/core/src/config/writer.ts`
-  - adds project-local config path helper for `.diligent/diligent.jsonc`
+  - adds project-local config path helper for `.diligent/config.jsonc`
   - patches only the `tools` subtree via `jsonc-parser` `modify()`/`applyEdits()`
   - creates config file/directories when missing
   - supports builtin toggle updates plus plugin add/update/remove patch semantics
@@ -603,7 +603,7 @@ Implemented in repo:
 
 ### Subtasks
 
-1. add writer helper that can create `.diligent/diligent.jsonc`
+1. add writer helper that can create `.diligent/config.jsonc`
 2. patch only the `tools` subtree
 3. support add/update/remove plugin package operations
 4. normalize stored config to minimal user-intent form

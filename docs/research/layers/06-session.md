@@ -846,7 +846,7 @@ Session persistence (all sections above) preserves conversation within a **singl
 
 ### D036-REV: Session Storage → Project-Local
 
-Move session directory from D036's `~/.config/diligent/sessions/<project-hash>/` to `.diligent/sessions/`. Motivation: portability (machine migration), sharing (team knowledge transfer), and backup (unified with project directory).
+Move session directory from D036's `~/.diligent/sessions/<project-hash>/` to `.diligent/sessions/`. Motivation: portability (machine migration), sharing (team knowledge transfer), and backup (unified with project directory).
 
 ### `.diligent/` Directory Layout (D080)
 
@@ -859,7 +859,7 @@ Move session directory from D036's `~/.config/diligent/sessions/<project-hash>/`
 └── skills/                 # project skills (git tracked, D052)
 ```
 
-Global `~/.config/diligent/` remains settings-only (D033). Runtime data goes to project-local `.diligent/`.
+Global `~/.diligent/` remains settings-only (D033). Runtime data goes to project-local `.diligent/`.
 
 ### Two Components
 
@@ -875,9 +875,9 @@ Global `~/.config/diligent/` remains settings-only (D033). Runtime data goes to 
 
 | Path | Purpose | Examples |
 |------|---------|---------|
-| `~/.config/diligent/` | Global settings | `diligent.jsonc`, global skills |
+| `~/.diligent/` | Global settings | `config.jsonc`, global skills |
 | `.diligent/` | Project runtime data | sessions, knowledge, project skills |
-| `diligent.jsonc` (project root) | Project settings | Existing D033 |
+| `config.jsonc` (project root) | Project settings | Existing D033 |
 
 This separation follows XDG Base Directory Specification principles (config vs data vs state).
 

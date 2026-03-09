@@ -99,17 +99,17 @@ Examples already present in the repo:
 - `packages/core/src/infrastructure/diligent-dir.ts`
   - project-local directory is `.diligent`
 - `packages/core/src/config/loader.ts`
-  - global config path uses `~/.config/diligent/diligent.jsonc`
-  - project config path uses `.diligent/diligent.jsonc`
+  - global config path uses `~/.diligent/config.jsonc`
+  - project config path uses `.diligent/config.jsonc`
   - current merge behavior explicitly ignores project-level `tools` overrides
 - `packages/core/src/config/writer.ts`
   - exposes both project and global config path helpers under the diligent namespace
 - `packages/core/src/app-server/thread-handlers.ts`
   - tool settings UI currently reports `getGlobalConfigPath()` and persists via `writeGlobalToolsConfig()`
 - `packages/core/src/auth/auth-store.ts`
-  - auth path uses `~/.config/diligent/auth.json`
+  - auth path uses `~/.diligent/auth.jsonc`
 - `packages/core/src/skills/discovery.ts`
-  - global skill path uses `~/.config/diligent/skills`
+  - global skill path uses `~/.diligent/skills`
   - project skill path uses `.diligent/skills`
 - `packages/web/src/shared/image-routes.ts`
   - image routes assume `.diligent/images`
@@ -622,7 +622,7 @@ Recommended change:
 
 Current role:
 
-- uses `~/.config/diligent/auth.json`
+- uses `~/.diligent/auth.jsonc`
 
 Recommended change:
 
@@ -645,7 +645,7 @@ Recommended change:
 
 Current role:
 
-- searches `.diligent/skills` and `~/.config/diligent/skills`
+- searches `.diligent/skills` and `~/.diligent/skills`
 
 Recommended change:
 

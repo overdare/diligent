@@ -9,7 +9,7 @@ import type { SkillLoadError, SkillLoadResult, SkillMetadata } from "./types";
 export interface DiscoveryOptions {
   /** Project root (cwd) */
   cwd: string;
-  /** Global config directory (default: ~/.config/diligent) */
+  /** Global config directory (default: ~/.diligent) */
   globalConfigDir?: string;
   /** Additional skill paths from config */
   additionalPaths?: string[];
@@ -20,8 +20,8 @@ export interface DiscoveryOptions {
  *
  * Discovery order (first-loaded wins for name collisions):
  * 1. Project: .diligent/skills/
- * 2. Global: ~/.config/diligent/skills/
- * 3. Config paths: skills.paths[] from diligent.jsonc
+ * 2. Global: ~/.diligent/skills/
+ * 3. Config paths: skills.paths[] from config.jsonc
  */
 export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLoadResult> {
   const skills: SkillMetadata[] = [];
@@ -42,7 +42,7 @@ function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; sour
   roots.push({ dir: join(options.cwd, ".diligent", "skills"), source: "project" });
 
   // 2. Global
-  const globalDir = options.globalConfigDir ?? join(homedir(), ".config", "diligent");
+  const globalDir = options.globalConfigDir ?? join(homedir(), ".diligent");
   roots.push({ dir: join(globalDir, "skills"), source: "global" });
 
   // 3. Additional config paths

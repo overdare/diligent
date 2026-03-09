@@ -15,7 +15,7 @@ afterEach(async () => {
 
 describe("saveApiKey", () => {
   test("creates file when it does not exist", async () => {
-    const configPath = join(TEST_ROOT, "new-dir", "diligent.jsonc");
+    const configPath = join(TEST_ROOT, "new-dir", "config.jsonc");
 
     await saveApiKey("anthropic", "sk-ant-test-key", configPath);
 
@@ -27,7 +27,7 @@ describe("saveApiKey", () => {
   test("updates existing file", async () => {
     const dir = join(TEST_ROOT, "existing");
     await mkdir(dir, { recursive: true });
-    const configPath = join(dir, "diligent.jsonc");
+    const configPath = join(dir, "config.jsonc");
 
     // Write initial content with a comment
     await Bun.write(
@@ -51,7 +51,7 @@ describe("saveApiKey", () => {
   test("saves anthropic key under correct path", async () => {
     const dir = join(TEST_ROOT, "anthropic");
     await mkdir(dir, { recursive: true });
-    const configPath = join(dir, "diligent.jsonc");
+    const configPath = join(dir, "config.jsonc");
 
     await saveApiKey("anthropic", "sk-ant-12345", configPath);
 
@@ -66,7 +66,7 @@ describe("saveApiKey", () => {
   test("saves openai key under correct path", async () => {
     const dir = join(TEST_ROOT, "openai");
     await mkdir(dir, { recursive: true });
-    const configPath = join(dir, "diligent.jsonc");
+    const configPath = join(dir, "config.jsonc");
 
     await saveApiKey("openai", "sk-openai-67890", configPath);
 
@@ -79,7 +79,7 @@ describe("saveApiKey", () => {
   test("can save keys for both providers", async () => {
     const dir = join(TEST_ROOT, "both");
     await mkdir(dir, { recursive: true });
-    const configPath = join(dir, "diligent.jsonc");
+    const configPath = join(dir, "config.jsonc");
 
     await saveApiKey("anthropic", "sk-ant-aaa", configPath);
     await saveApiKey("openai", "sk-openai-bbb", configPath);

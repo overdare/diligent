@@ -178,7 +178,7 @@ Split into two sub-phases to manage complexity:
 **Goal**: JSONC config, CLAUDE.md discovery, SessionManager, JSONL session persistence.
 
 ```
-User → creates diligent.jsonc with custom model/instructions
+User → creates config.jsonc with custom model/instructions
 User → creates CLAUDE.md with project context
 User → starts agent, agent respects both configs
 User → exits, --continue → conversation resumes from persisted session
@@ -197,7 +197,7 @@ User → exits, --continue → conversation resumes from persisted session
 
 **Artifact**: Configurable, persistent agent. Sessions survive restarts. Protocol-layer-ready architecture.
 
-**Testing milestone**: Start session, chat, exit, resume (`--continue`) — verify conversation history intact. Verify `diligent.jsonc` and CLAUDE.md respected.
+**Testing milestone**: Start session, chat, exit, resume (`--continue`) — verify conversation history intact. Verify `config.jsonc` and CLAUDE.md respected.
 
 **Implementation notes**:
 - Detailed spec: `plan/impl/phase-3a-config-persistence.md`

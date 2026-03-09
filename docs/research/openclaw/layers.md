@@ -71,7 +71,7 @@ type ResolvedProviderAuth = {
   mode: "api-key" | "oauth" | "token" | "aws-sdk";
 };
 
-// Auth profile store (auth.json):
+// Auth profile store (auth.jsonc):
 // - Multiple credentials per provider
 // - lastGood tracking for sticky routing
 // - Cooldown periods after auth failures

@@ -92,15 +92,15 @@ class DiligentAgent(BaseInstalledAgent):
 
         output_dir = EnvironmentPaths.agent_dir
 
-        # Build config setup command — create auth.json + diligent.jsonc in container
-        setup_parts = ["mkdir -p ~/.config/diligent"]
+        # Build config setup command — create auth.jsonc + config.jsonc in container
+        setup_parts = ["mkdir -p ~/.diligent"]
         if auth_keys:
             auth_json = shlex.quote(json.dumps(auth_keys))
-            setup_parts.append(f"echo {auth_json} > ~/.config/diligent/auth.json")
-            setup_parts.append("chmod 600 ~/.config/diligent/auth.json")
+            setup_parts.append(f"echo {auth_json} > ~/.diligent/auth.jsonc")
+            setup_parts.append("chmod 600 ~/.diligent/auth.jsonc")
         if model_id:
             config_json = shlex.quote(json.dumps({"model": model_id}))
-            setup_parts.append(f"echo {config_json} > ~/.config/diligent/diligent.jsonc")
+            setup_parts.append(f"echo {config_json} > ~/.diligent/config.jsonc")
 
         return [
             # Write config files from host-side env vars

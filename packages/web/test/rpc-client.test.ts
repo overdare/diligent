@@ -72,7 +72,7 @@ class FakeWebSocket {
           data: JSON.stringify({
             id: parsed.id,
             result: {
-              configPath: `${process.cwd()}/.diligent/diligent.jsonc`,
+              configPath: `${process.cwd()}/.diligent/config.jsonc`,
               appliesOnNextTurn: true,
               trustMode: "full_trust",
               conflictPolicy: "error",
@@ -91,7 +91,7 @@ class FakeWebSocket {
           data: JSON.stringify({
             id: parsed.id,
             result: {
-              configPath: `${process.cwd()}/.diligent/diligent.jsonc`,
+              configPath: `${process.cwd()}/.diligent/config.jsonc`,
               appliesOnNextTurn: true,
               trustMode: "full_trust",
               conflictPolicy: "plugin_wins",

@@ -89,7 +89,7 @@ async function main() {
     if (!config.providerManager.hasKeyFor(provider)) {
       console.error(
         `Error: No API key for ${provider}.\n` +
-          `Save a key to ~/.config/diligent/auth.json, or run diligent interactively to configure.`,
+          `Save a key to ~/.diligent/auth.jsonc, or run diligent interactively to configure.`,
       );
       process.exit(1);
     }

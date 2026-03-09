@@ -41,11 +41,11 @@ describe("loadConfig", () => {
     expect(config.model.provider).toBe("anthropic");
   });
 
-  test("loads config from diligent.jsonc", async () => {
+  test("loads config from config.jsonc", async () => {
     const dir = join(TEST_ROOT, "jsonc");
     await mkdir(join(dir, ".diligent"), { recursive: true });
     await Bun.write(
-      join(dir, ".diligent", "diligent.jsonc"),
+      join(dir, ".diligent", "config.jsonc"),
       `{
         // Project config
         "model": "claude-haiku-3-20250307",
@@ -85,39 +85,39 @@ describe("loadConfig", () => {
     const dir = join(TEST_ROOT, "config-ignored");
     await mkdir(dir, { recursive: true });
 
-    // diligent.jsonc has apiKey but it should be ignored
+    // config.jsonc has apiKey but it should be ignored
     await mkdir(join(dir, ".diligent"), { recursive: true });
     await Bun.write(
-      join(dir, ".diligent", "diligent.jsonc"),
+      join(dir, ".diligent", "config.jsonc"),
       `{ "provider": { "anthropic": { "apiKey": "config-key" } } }`,
     );
 
     const config = await loadConfig(dir);
-    // Config apiKey is not read — no auth.json means no key
+    // Config apiKey is not read — no auth.jsonc means no key
     expect(config.providerManager.hasKeyFor("anthropic")).toBe(false);
   });
 
-  test("auth.json is the sole source of API keys", async () => {
+  test("auth.jsonc is the sole source of API keys", async () => {
     const dir = join(TEST_ROOT, "auth-sole");
     await mkdir(dir, { recursive: true });
 
-    // auth.json provides the key
-    const authDir = join(TEST_ROOT, ".config", "diligent");
+    // auth.jsonc provides the key
+    const authDir = join(TEST_ROOT, ".diligent");
     await mkdir(authDir, { recursive: true });
-    await Bun.write(join(authDir, "auth.json"), JSON.stringify({ anthropic: "auth-key" }));
+    await Bun.write(join(authDir, "auth.jsonc"), JSON.stringify({ anthropic: "auth-key" }));
 
     const config = await loadConfig(dir);
     expect(config.providerManager.getApiKey("anthropic")).toBe("auth-key");
   });
 
-  test("auth.json adds keys not present in config", async () => {
+  test("auth.jsonc adds keys not present in config", async () => {
     const dir = join(TEST_ROOT, "auth-add");
     await mkdir(dir, { recursive: true });
 
-    // No diligent.jsonc — no keys in config
-    const authDir = join(TEST_ROOT, ".config", "diligent");
+    // No config.jsonc — no keys in config
+    const authDir = join(TEST_ROOT, ".diligent");
     await mkdir(authDir, { recursive: true });
-    await Bun.write(join(authDir, "auth.json"), JSON.stringify({ openai: "sk-openai-from-auth" }));
+    await Bun.write(join(authDir, "auth.jsonc"), JSON.stringify({ openai: "sk-openai-from-auth" }));
 
     const config = await loadConfig(dir);
     expect(config.providerManager.hasKeyFor("openai")).toBe(true);

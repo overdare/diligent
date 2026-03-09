@@ -160,5 +160,5 @@ config:
 	@echo ""
 	@echo "=== Config Files ==="
 	@if [ -f .env ]; then echo "  .env: exists"; else echo "  .env: missing (run: make setup)"; fi
-	@if [ -f diligent.jsonc ]; then echo "  diligent.jsonc (project): exists"; else echo "  diligent.jsonc (project): none"; fi
-	@if [ -f "$$HOME/.config/diligent/diligent.jsonc" ]; then echo "  ~/.config/diligent/diligent.jsonc (global): exists"; else echo "  ~/.config/diligent/diligent.jsonc (global): none"; fi
+	@if [ -f .diligent/config.jsonc ]; then echo "  .diligent/config.jsonc (project): exists"; else echo "  .diligent/config.jsonc (project): none"; fi
+	@if [ -f "$HOME/.diligent/config.jsonc" ]; then echo "  ~/.diligent/config.jsonc (global): exists"; else echo "  ~/.diligent/config.jsonc (global): none"; fi

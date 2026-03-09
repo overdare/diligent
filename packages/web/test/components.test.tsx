@@ -62,7 +62,7 @@ test("tool settings modal renders trust warning and tool/plugin rows", () => {
     <ToolSettingsModal
       threadId="thread-1"
       initialState={{
-        configPath: "/repo/.diligent/diligent.jsonc",
+        configPath: "/repo/.diligent/config.jsonc",
         appliesOnNextTurn: true,
         trustMode: "full_trust",
         conflictPolicy: "error",

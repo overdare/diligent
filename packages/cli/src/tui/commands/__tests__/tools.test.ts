@@ -8,7 +8,7 @@ import type { Command } from "../types";
 describe("tools command", () => {
   it("creates draft state from tool and plugin descriptors", () => {
     const draft = createDraft({
-      configPath: "/repo/.diligent/diligent.jsonc",
+      configPath: "/repo/.diligent/config.jsonc",
       appliesOnNextTurn: true,
       trustMode: "full_trust",
       conflictPolicy: "error",

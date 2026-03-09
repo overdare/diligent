@@ -20,13 +20,13 @@ function makeTmpEnv(base: string) {
   };
 }
 
-test("loads model from diligent.jsonc and returns required fields", async () => {
+test("loads model from config.jsonc and returns required fields", async () => {
   const base = join(tmpdir(), `diligent-web-test-${Date.now()}`);
   mkdirSync(base, { recursive: true });
   const paths = makeTmpEnv(base);
 
-  // Write an explicit config so the test is not affected by global ~/.config/diligent/diligent.jsonc
-  await Bun.write(join(base, ".diligent", "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
+  // Write an explicit config so the test is not affected by global ~/.diligent/config.jsonc
+  await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
     const config = await loadRuntimeConfig(base, paths);
@@ -45,7 +45,7 @@ test("compaction defaults when not configured", async () => {
   mkdirSync(base, { recursive: true });
   const paths = makeTmpEnv(base);
 
-  await Bun.write(join(base, ".diligent", "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
+  await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
     const config = await loadRuntimeConfig(base, paths);
@@ -63,7 +63,7 @@ test("mode defaults to default when not configured", async () => {
   mkdirSync(base, { recursive: true });
   const paths = makeTmpEnv(base);
 
-  await Bun.write(join(base, ".diligent", "diligent.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
+  await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
     const config = await loadRuntimeConfig(base, paths);

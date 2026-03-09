@@ -19,7 +19,7 @@ Add a standalone `InputHistory` class that wraps file-based persistence, then in
 
 ### Storage Location
 
-`~/.config/diligent/history` — follows the existing global config pattern (`~/.config/diligent/diligent.jsonc`).
+`~/.diligent/history` — follows the existing global config pattern (`~/.diligent/config.jsonc`).
 
 ### Format
 
@@ -60,7 +60,7 @@ export class InputHistory {
 
 - Import `InputHistory`
 - In `App.start()` (before creating InputEditor, or call `loadHistory` in start):
-  - Create `InputHistory` with path `~/.config/diligent/history`
+  - Create `InputHistory` with path `~/.diligent/history`
   - Call `await history.load()`
   - Pass to InputEditor options
 

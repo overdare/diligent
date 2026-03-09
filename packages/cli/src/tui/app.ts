@@ -118,7 +118,7 @@ export class App {
 
     // Input history (loaded async in start())
     const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-    this.inputHistory = new InputHistory(join(home, ".config", "diligent", "history"));
+    this.inputHistory = new InputHistory(join(home, ".diligent", "history"));
 
     // Build component tree
     this.chatView = new ChatView({ requestRender });

@@ -111,7 +111,7 @@ describe("applyToolConfigPatch", () => {
 });
 
 describe("writeProjectToolsConfig", () => {
-  it("creates .diligent/diligent.jsonc when missing", async () => {
+  it("creates .diligent/config.jsonc when missing", async () => {
     const cwd = await makeTempProject();
 
     const result = await writeProjectToolsConfig(cwd, {
@@ -240,7 +240,7 @@ describe("writeProjectToolsConfig", () => {
 });
 
 describe("writeGlobalToolsConfig", () => {
-  it("writes tools config to ~/.config/diligent/diligent.jsonc", async () => {
+  it("writes tools config to ~/.diligent/config.jsonc", async () => {
     const cwd = await makeTempProject();
     const originalHome = process.env.HOME;
     process.env.HOME = cwd;

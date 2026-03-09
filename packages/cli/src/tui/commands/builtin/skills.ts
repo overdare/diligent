@@ -36,7 +36,7 @@ export const skillsPickerCommand: Command = {
     if (ctx.skills.length === 0) {
       ctx.displayLines([
         `  ${t.dim}No skills found.${t.reset}`,
-        "  Add skills to .diligent/skills/ or ~/.config/diligent/skills/",
+        "  Add skills to .diligent/skills/ or ~/.diligent/skills/",
       ]);
       return;
     }

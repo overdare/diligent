@@ -1,4 +1,4 @@
-// @summary Loads and saves API keys and OAuth tokens from auth.json
+// @summary Loads and saves API keys and OAuth tokens from auth.jsonc
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -32,10 +32,10 @@ const AuthKeysSchema = z
   })
   .strict();
 
-/** Default path: ~/.config/diligent/auth.json */
+/** Default path: ~/.diligent/auth.jsonc */
 export function getAuthFilePath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, ".config", "diligent", "auth.json");
+  return join(home, ".diligent", "auth.jsonc");
 }
 
 /** Substitute {env:VAR_NAME} → process.env[VAR_NAME] in string values. */
@@ -47,7 +47,7 @@ function substituteEnv(obj: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-/** Load auth keys from auth.json. Returns {} if file missing or invalid. */
+/** Load auth keys from auth.jsonc. Returns {} if file missing or invalid. */
 export async function loadAuthStore(path?: string): Promise<AuthKeys> {
   const filePath = path ?? getAuthFilePath();
   try {
@@ -58,7 +58,7 @@ export async function loadAuthStore(path?: string): Promise<AuthKeys> {
     const substituted = substituteEnv(parsed);
     const result = AuthKeysSchema.safeParse(substituted);
     if (!result.success) {
-      console.warn(`auth.json warning: ${filePath}\n${result.error.message}`);
+      console.warn(`auth.jsonc warning: ${filePath}\n${result.error.message}`);
       return {};
     }
     return result.data;
@@ -67,7 +67,7 @@ export async function loadAuthStore(path?: string): Promise<AuthKeys> {
   }
 }
 
-/** Save a single provider key to auth.json (read-modify-write + chmod 0o600). */
+/** Save a single provider key to auth.jsonc (read-modify-write + chmod 0o600). */
 export async function saveAuthKey(provider: ProviderName, apiKey: string, path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
 
@@ -101,7 +101,7 @@ export async function saveAuthKey(provider: ProviderName, apiKey: string, path?:
   await chmod(filePath, 0o600);
 }
 
-/** Save OpenAI OAuth tokens to auth.json (read-modify-write + chmod 0o600). */
+/** Save OpenAI OAuth tokens to auth.jsonc (read-modify-write + chmod 0o600). */
 export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
 
@@ -135,7 +135,7 @@ export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string):
   await chmod(filePath, 0o600);
 }
 
-/** Remove a single provider key from auth.json (read-modify-write + chmod 0o600). */
+/** Remove a single provider key from auth.jsonc (read-modify-write + chmod 0o600). */
 export async function removeAuthKey(provider: ProviderName, path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
 
@@ -169,7 +169,7 @@ export async function removeAuthKey(provider: ProviderName, path?: string): Prom
   await chmod(filePath, 0o600);
 }
 
-/** Remove OpenAI OAuth tokens from auth.json (read-modify-write + chmod 0o600). */
+/** Remove OpenAI OAuth tokens from auth.jsonc (read-modify-write + chmod 0o600). */
 export async function removeOAuthTokens(path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
 
@@ -198,7 +198,7 @@ export async function removeOAuthTokens(path?: string): Promise<void> {
   await chmod(filePath, 0o600);
 }
 
-/** Load OpenAI OAuth tokens from auth.json. Returns undefined if not present. */
+/** Load OpenAI OAuth tokens from auth.jsonc. Returns undefined if not present. */
 export async function loadOAuthTokens(path?: string): Promise<OpenAIOAuthTokens | undefined> {
   const keys = await loadAuthStore(path);
   return keys.openai_oauth;

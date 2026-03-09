@@ -2,7 +2,7 @@
 
 ## Goal
 
-The agent can be configured per-project via `diligent.jsonc` and `CLAUDE.md`. Sessions persist to disk in `.diligent/sessions/` and survive process restarts. The `SessionManager` mediator class (D086) owns session lifecycle, preparing the architecture for a future web UI protocol layer.
+The agent can be configured per-project via `config.jsonc` and `CLAUDE.md`. Sessions persist to disk in `.diligent/sessions/` and survive process restarts. The `SessionManager` mediator class (D086) owns session lifecycle, preparing the architecture for a future web UI protocol layer.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ Configurable, persistent agent. Sessions survive restarts. Config hierarchy (glo
 
 **Demo 1 — Config + CLAUDE.md:**
 ```
-$ cat diligent.jsonc
+$ cat config.jsonc
 {
   // Project-level config
   "model": "claude-sonnet-4-20250514"
@@ -422,8 +422,8 @@ import { homedir } from "node:os";
 
 /** 3-layer config hierarchy (D033) */
 export interface ConfigSources {
-  global?: string;   // ~/.config/diligent/diligent.jsonc
-  project?: string;  // <cwd>/diligent.jsonc
+  global?: string;   // ~/.diligent/config.jsonc
+  project?: string;  // <cwd>/config.jsonc
   env?: Record<string, string | undefined>; // process.env overrides
 }
 
@@ -435,12 +435,12 @@ export async function loadDiligentConfig(
   const sources: string[] = [];
 
   // Layer 1: Global config
-  const globalPath = join(homedir(), ".config", "diligent", "diligent.jsonc");
+  const globalPath = join(homedir(), ".config", "diligent", "config.jsonc");
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
   // Layer 2: Project config
-  const projectPath = join(cwd, "diligent.jsonc");
+  const projectPath = join(cwd, "config.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
 
@@ -1343,7 +1343,7 @@ class App {
 
 **Verify:** `bun test config` (cli) — JSONC config loaded, CLAUDE.md discovered, system prompt includes instructions.
 
-Manual verification: `bunx diligent` with a `diligent.jsonc` + `CLAUDE.md` in project root.
+Manual verification: `bunx diligent` with a `config.jsonc` + `CLAUDE.md` in project root.
 
 ---
 
@@ -1366,7 +1366,7 @@ Phase 2 stubs and placeholders replaced in Phase 3a:
 
 1. `bun install` — resolves all dependencies including `jsonc-parser`
 2. `bun test` — all unit tests pass (Phase 1 + Phase 2 + Phase 3a)
-3. **Config loading** — `diligent.jsonc` parsed with Zod validation, unknown keys rejected
+3. **Config loading** — `config.jsonc` parsed with Zod validation, unknown keys rejected
 4. **Config hierarchy** — global < project < env. `ANTHROPIC_API_KEY` env var still works
 5. **CLAUDE.md** — discovered via findUp, injected into system prompt
 6. **Template substitution** — `{env:VAR}` in config values replaced
@@ -1405,7 +1405,7 @@ Phase 2 stubs and placeholders replaced in Phase 3a:
 | Unit | D086 approval types | `bun test` — ApprovalResponse type, auto-returns "once" |
 | Integration | Config + instructions | `bun test` — full system prompt with config + CLAUDE.md |
 | Integration | Session lifecycle | `bun test` — create → run → persist → resume → verify history |
-| Manual | Config respected | Run CLI with `diligent.jsonc` → verify model/instructions honored |
+| Manual | Config respected | Run CLI with `config.jsonc` → verify model/instructions honored |
 | Manual | CLAUDE.md injection | Create CLAUDE.md → run CLI → verify prompt includes instructions |
 | Manual | Session resume | Start session → exit → `--continue` → verify conversation continues |
 | Manual | Session listing | Run several sessions → `--list` → verify sorted listing |

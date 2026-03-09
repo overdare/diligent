@@ -34,7 +34,7 @@ export async function createTools(ctx: { cwd: string }) {
           const visibleEntries = entries.filter((entry) => args.include_hidden || !entry.name.startsWith("."));
           const sampledEntries = visibleEntries.slice(0, args.max_entries);
           const packageJsonExists = await Bun.file(join(ctx.cwd, "package.json")).exists();
-          const diligentConfigExists = await Bun.file(join(ctx.cwd, ".diligent", "diligent.jsonc")).exists();
+          const diligentConfigExists = await Bun.file(join(ctx.cwd, ".diligent", "config.jsonc")).exists();
 
           const formattedEntries = await Promise.all(
             sampledEntries.map(async (entry) => {
@@ -55,7 +55,7 @@ export async function createTools(ctx: { cwd: string }) {
                   { key: "name", value: basename(ctx.cwd) || ctx.cwd },
                   { key: "plugin", value: manifest.name },
                   { key: "package.json", value: packageJsonExists ? "present" : "missing" },
-                  { key: ".diligent/diligent.jsonc", value: diligentConfigExists ? "present" : "missing" },
+                  { key: ".diligent/config.jsonc", value: diligentConfigExists ? "present" : "missing" },
                 ],
               },
               {
@@ -74,7 +74,7 @@ export async function createTools(ctx: { cwd: string }) {
               `cwd: ${ctx.cwd}`,
               `project: ${basename(ctx.cwd) || ctx.cwd}`,
               `package.json: ${packageJsonExists ? "present" : "missing"}`,
-              `.diligent/diligent.jsonc: ${diligentConfigExists ? "present" : "missing"}`,
+              `.diligent/config.jsonc: ${diligentConfigExists ? "present" : "missing"}`,
               `top-level entries shown (${formattedEntries.length}/${visibleEntries.length}):`,
               ...formattedEntries.map((entry) => `- ${entry}`),
             ].join("\n"),

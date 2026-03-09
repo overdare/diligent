@@ -117,7 +117,7 @@ jobs/2026-03-02__10-50-03/
     result.json            # Trial result (reward, tokens, timing)
     trial.log
     agent/
-      command-0/           # Config setup (auth.json + diligent.jsonc creation)
+      command-0/           # Config setup (auth.jsonc + config.jsonc creation)
       command-1/           # Diligent execution
       command-2/           # Session log collection
       sessions/            # Copied .diligent session JSONL files
@@ -136,13 +136,13 @@ Host                          Container
 ────                          ─────────
 1. Copy binary to /logs/      → /installed-agent/diligent
 2. apt-get install ripgrep    → required by diligent's grep tool
-3. Write auth.json from env   → ~/.config/diligent/auth.json
-   Write model config         → ~/.config/diligent/diligent.jsonc
+3. Write auth.jsonc from env  → ~/.diligent/auth.jsonc
+   Write model config         → ~/.diligent/config.jsonc
 4. diligent --prompt ...      → Session logs in .diligent/sessions/
 5. Copy *.jsonl to output     → Token usage extracted post-run
 ```
 
-The adapter creates `auth.json` and `diligent.jsonc` in the container from host-side environment variables at command generation time. API keys go to `auth.json`, model selection goes to `diligent.jsonc`.
+The adapter creates `auth.jsonc` and `config.jsonc` in the container from host-side environment variables at command generation time. API keys go to `auth.jsonc`, model selection goes to `config.jsonc`.
 
 ## Environment variables
 

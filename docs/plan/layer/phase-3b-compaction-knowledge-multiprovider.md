@@ -48,7 +48,7 @@ diligent> run the tests
 
 **Demo 3 — OpenAI provider:**
 ```
-$ cat diligent.jsonc
+$ cat config.jsonc
 { "model": "gpt-4o" }
 $ OPENAI_API_KEY=sk-... bunx diligent
 

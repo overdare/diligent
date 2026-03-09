@@ -1,4 +1,4 @@
-// @summary Loads and merges DiligentConfig from global, project, and environment layers
+// @summary Loads and merges DiligentConfig from global (~/.diligent/config.jsonc), project (.diligent/config.jsonc), and environment layers
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
@@ -10,12 +10,12 @@ export async function loadDiligentConfig(cwd: string): Promise<{ config: Diligen
 
   // Layer 1: Global config
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  const globalPath = join(home, ".config", "diligent", "diligent.jsonc");
+  const globalPath = join(home, ".diligent", "config.jsonc");
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
   // Layer 2: Project config (inside .diligent/ alongside sessions, knowledge, skills)
-  const projectPath = join(cwd, ".diligent", "diligent.jsonc");
+  const projectPath = join(cwd, ".diligent", "config.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
 

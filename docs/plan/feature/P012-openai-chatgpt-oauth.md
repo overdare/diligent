@@ -24,7 +24,7 @@ Anthropic과 Gemini는 이 방식이 없다 — API 키만 지원한다.
 
 ## Prerequisites
 
-- Phase 4c 완료 (✅): TUI overlay system, provider command, auth.json, ProviderManager 모두 구현됨
+- Phase 4c 완료 (✅): TUI overlay system, provider command, auth.jsonc, ProviderManager 모두 구현됨
 - `packages/core/src/auth/auth-store.ts`: `loadAuthStore()`, `saveAuthKey()` 존재
 - `packages/cli/src/provider-manager.ts`: `ProviderManager` 클래스 존재
 - `packages/cli/src/tui/commands/builtin/provider.ts`: `promptApiKey()`, `promptSaveKey()` 존재
@@ -42,12 +42,12 @@ User → ChatGPT로 로그인
 TUI  → "Authenticated! Exchanging token..."
 [token exchange: id_token → sk-... API key]
 TUI  → "OpenAI configured via ChatGPT subscription."
-TUI  → "Save to auth.json? [Y/N]"
+TUI  → "Save to auth.jsonc? [Y/N]"
 User → Y
 TUI  → "Saved. Model: gpt-5.3-codex"
 ```
 
-이후 실행 시: auth.json의 `openai_oauth`를 로드하고, 만료 5분 전 자동 갱신.
+이후 실행 시: auth.jsonc의 `openai_oauth`를 로드하고, 만료 5분 전 자동 갱신.
 
 ## Layer Touchpoints
 
@@ -55,7 +55,7 @@ TUI  → "Saved. Model: gpt-5.3-codex"
 |-------|-------|-------------|
 | L0 (Provider) | +oauth-auth | 모델 레지스트리에 Codex OAuth 모델 추가. OpenAI 스트림 생성자는 변화 없음 (api_key는 동일) |
 | L5 (Config) | — | 변화 없음 |
-| Auth (core) | +oauth-store | auth.json 스키마 확장: `openai_oauth` 필드 추가. `saveOAuthTokens()`, `loadOAuthTokens()` 추가 |
+| Auth (core) | +oauth-store | auth.jsonc 스키마 확장: `openai_oauth` 필드 추가. `saveOAuthTokens()`, `loadOAuthTokens()` 추가 |
 | Auth/OAuth (core) | CREATE | 새 모듈: PKCE, callback server, token exchange, refresh |
 | ProviderManager (cli) | +oauth-dispatch | 시작 시 oauth 토큰 로드. OpenAI 디스패치 전 만료 확인 후 자동 갱신 |
 | Provider Command (cli) | +oauth-ui | OpenAI 선택 시 "API 키 입력" / "ChatGPT 로그인" 선택지 추가 |
@@ -64,9 +64,9 @@ TUI  → "Saved. Model: gpt-5.3-codex"
 
 ## Decisions
 
-### D088: auth.json 스키마 — OAuth 토큰 저장
+### D088: auth.jsonc 스키마 — OAuth 토큰 저장
 
-**결정**: `openai_oauth` 필드를 auth.json에 추가. 기존 `openai` (plain API key) 필드와 공존 가능하지만, `openai_oauth`가 존재하면 우선 사용한다.
+**결정**: `openai_oauth` 필드를 auth.jsonc에 추가. 기존 `openai` (plain API key) 필드와 공존 가능하지만, `openai_oauth`가 존재하면 우선 사용한다.
 
 ```json
 {
@@ -103,7 +103,7 @@ Scopes:       openid profile email offline_access
 
 ### D090: 토큰 갱신 — 만료 5분 전 자동 갱신
 
-**결정**: ProviderManager가 OpenAI API 호출 전 `expires_at - 300_000 < Date.now()` 확인. 만족하면 refresh_token으로 갱신 후 auth.json 업데이트.
+**결정**: ProviderManager가 OpenAI API 호출 전 `expires_at - 300_000 < Date.now()` 확인. 만족하면 refresh_token으로 갱신 후 auth.jsonc 업데이트.
 
 **주의**: Refresh token은 단일 사용(single-use with rotation). 갱신 후 응답의 새 refresh_token을 반드시 저장해야 함. 동시 갱신 방지를 위해 갱신 중 lock (Promise) 사용.
 
@@ -217,14 +217,14 @@ export type AuthKeys = {
 `saveOAuthTokens()` 추가:
 
 ```typescript
-/** Save OpenAI OAuth tokens to auth.json (read-modify-write). */
+/** Save OpenAI OAuth tokens to auth.jsonc (read-modify-write). */
 export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string): Promise<void> {
   // same read-modify-write pattern as saveAuthKey()
   // sets existing.openai_oauth = tokens
   // chmod 0o600
 }
 
-/** Load OpenAI OAuth tokens from auth.json. Returns undefined if not present. */
+/** Load OpenAI OAuth tokens from auth.jsonc. Returns undefined if not present. */
 export async function loadOAuthTokens(path?: string): Promise<OpenAIOAuthTokens | undefined> {
   const keys = await loadAuthStore(path);
   return keys.openai_oauth;
@@ -597,7 +597,7 @@ export class ProviderManager {
           const newTokens = await refreshOAuthTokens(this.oauthTokens!);
           this.oauthTokens = newTokens;
           this.setApiKey("openai", newTokens.api_key);
-          // Persist to auth.json (best-effort, don't throw)
+          // Persist to auth.jsonc (best-effort, don't throw)
           await saveOAuthTokens(newTokens).catch(() => {});
         } finally {
           this.refreshLock = undefined;
@@ -725,14 +725,14 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
 function promptSaveOAuthTokens(tokens: OpenAIOAuthTokens, ctx: CommandContext): Promise<void> {
   return new Promise((resolve) => {
     const dialog = new ConfirmDialog(
-      { title: "Save Auth?", message: "Save ChatGPT session to ~/.config/diligent/auth.json?" },
+      { title: "Save Auth?", message: "Save ChatGPT session to ~/.diligent/auth.jsonc?" },
       async (confirmed) => {
         handle.hide();
         ctx.requestRender();
         if (confirmed) {
           try {
             await saveOAuthTokens(tokens);
-            ctx.displayLines(["  Saved to auth.json."]);
+            ctx.displayLines(["  Saved to auth.jsonc."]);
           } catch (err) {
             ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
           }
@@ -808,7 +808,7 @@ test("challenge is SHA-256 of verifier, base64url", () => {
 });
 
 // auth-store.test.ts
-test("loads openai_oauth tokens from auth.json", async () => {
+test("loads openai_oauth tokens from auth.jsonc", async () => {
   const tokens: OpenAIOAuthTokens = {
     access_token: "at", refresh_token: "rt", id_token: "it",
     expires_at: 9999999999000, api_key: "sk-test",
@@ -841,8 +841,8 @@ Mock fetch로 token exchange 테스트 (실제 네트워크 호출 없이).
 2. `bun run typecheck` — 타입 오류 없음
 3. `/provider openai` 실행 시 "Enter API key" / "Login with ChatGPT" 두 옵션 표시
 4. ChatGPT OAuth 플로우: 브라우저 열림 → 로그인 → TUI에 성공 메시지
-5. OAuth 완료 후 auth.json에 `openai_oauth` 필드 저장 (chmod 0o600)
-6. 재시작 시 auth.json의 `openai_oauth`에서 자동 로드
+5. OAuth 완료 후 auth.jsonc에 `openai_oauth` 필드 저장 (chmod 0o600)
+6. 재시작 시 auth.jsonc의 `openai_oauth`에서 자동 로드
 7. `shouldRefresh()`: `expires_at - 5min < now`일 때 true 반환
 8. 기존 plain API key (`openai: "sk-..."`) 사용자에게 영향 없음
 9. Anthropic, Gemini provider는 변화 없음
@@ -852,7 +852,7 @@ Mock fetch로 token exchange 테스트 (실제 네트워크 호출 없이).
 | Category | What to Test | How |
 |----------|-------------|-----|
 | Unit | PKCE verifier/challenge 생성 정확성 | `pkce.test.ts` — 길이, 인코딩, SHA-256 검증 |
-| Unit | auth.json `openai_oauth` 로드/저장/보존 | `auth-store.test.ts` 확장 |
+| Unit | auth.jsonc `openai_oauth` 로드/저장/보존 | `auth-store.test.ts` 확장 |
 | Unit | `shouldRefresh()` 경계값 | 만료 6분 전 (false), 4분 전 (true) |
 | Unit | `refreshOAuthTokens()` | Mock fetch — 새 토큰 반환, refresh_token 교체 확인 |
 | Unit | `exchangeCodeForTokens()` + `exchangeIdTokenForApiKey()` | Mock fetch — 성공/실패 케이스 |
@@ -873,7 +873,7 @@ Mock fetch로 token exchange 테스트 (실제 네트워크 호출 없이).
 
 | ID | Summary | Where Used |
 |----|---------|------------|
-| D088 | auth.json 스키마 확장 — `openai_oauth` 필드 | auth-store.ts, types.ts |
+| D088 | auth.jsonc 스키마 확장 — `openai_oauth` 필드 | auth-store.ts, types.ts |
 | D089 | ChatGPT OAuth 플로우 — PKCE + 로컬 서버 | chatgpt-oauth.ts, callback-server.ts, token-exchange.ts |
 | D090 | 토큰 갱신 — 만료 5분 전 자동 갱신, refreshLock | refresh.ts, provider-manager.ts |
 

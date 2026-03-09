@@ -1,4 +1,4 @@
-// @summary JSONC-preserving writer helpers for project-local diligent.jsonc tool settings
+// @summary JSONC-preserving writer helpers for config.jsonc tool settings (global: ~/.diligent/config.jsonc, project: .diligent/config.jsonc)
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,9 +8,9 @@ import type { DiligentConfig } from "./schema";
 import { DiligentConfigSchema } from "./schema";
 
 const PROJECT_CONFIG_DIR = ".diligent";
-const PROJECT_CONFIG_FILE = "diligent.jsonc";
-const GLOBAL_CONFIG_DIR = ".config/diligent";
-const GLOBAL_CONFIG_FILE = "diligent.jsonc";
+const PROJECT_CONFIG_FILE = "config.jsonc";
+const GLOBAL_CONFIG_DIR = ".diligent";
+const GLOBAL_CONFIG_FILE = "config.jsonc";
 const JSONC_FORMAT_OPTIONS = {
   tabSize: 2,
   insertSpaces: true,

@@ -64,7 +64,7 @@ diligent [plan]> explore auth and propose a refactor
 
 **Demo 3 — config-based allow rule (no dialog):**
 ```jsonc
-// diligent.jsonc
+// config.jsonc
 {
   "permissions": [
     { "permission": "read", "pattern": "*", "action": "allow" },
@@ -521,7 +521,7 @@ Test: mock overlay callbacks in app unit test.
 - OS-level sandboxing (macOS seatbelt, Linux seccomp) — deferred post-MVP (D030)
 - Doom loop detection integration with approval (D031) — separate backlog item
 - Cascading "reject" canceling all session-pending approvals (D029 full spec) — MVP: single-request reject only
-- Persistent permission rules (written back to `diligent.jsonc`) — session-scoped only at MVP
+- Persistent permission rules (written back to `config.jsonc`) — session-scoped only at MVP
 - Multi-question dialog for `request_user_input` — sequential single-input only at MVP
 - Plan mode bash allowlist/denylist (D087a) — separate backlog item
 - MCP tools through permission system — comes with L9 phase

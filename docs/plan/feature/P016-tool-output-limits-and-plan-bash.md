@@ -558,7 +558,7 @@ return {
 };
 ```
 
-**Verify:** `bun run typecheck`. Full config chain: `diligent.jsonc` → schema → runtime → agent loop → executor.
+**Verify:** `bun run typecheck`. Full config chain: `config.jsonc` → schema → runtime → agent loop → executor.
 
 ---
 
@@ -732,7 +732,7 @@ describe("bash tool plan mode filtering", () => {
 | Integration | Bash tool in plan mode (safe + blocked) | `bun test` |
 | Manual | Bash 30KB limit in default mode | Run with large output command |
 | Manual | Plan mode `git status` vs `git push` | `diligent --mode plan` |
-| Manual | Config `tools.bash.maxOutputLines: 10` override | Edit `diligent.jsonc`, run bash |
+| Manual | Config `tools.bash.maxOutputLines: 10` override | Edit `config.jsonc`, run bash |
 
 ## Risk Areas
 

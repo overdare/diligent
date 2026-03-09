@@ -33,7 +33,7 @@ diligent> /model
 diligent> /status
   Session: abc123 · 47 entries · 12.3k tokens
   Model: claude-sonnet-4-20250514 (Anthropic)
-  Config: diligent.jsonc, CLAUDE.md
+  Config: config.jsonc, CLAUDE.md
 ```
 
 **Demo 2 — Skills:**
@@ -426,8 +426,8 @@ export interface DiscoveryOptions {
  * Discovery order (first-loaded wins for name collisions):
  * 1. Project: .diligent/skills/
  * 2. Agents: .agents/skills/ (cross-tool compat)
- * 3. Global: ~/.config/diligent/skills/
- * 4. Config paths: skills.paths[] from diligent.jsonc
+ * 3. Global: ~/.diligent/skills/
+ * 4. Config paths: skills.paths[] from config.jsonc
  */
 export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLoadResult> {
   const skills: SkillMetadata[] = [];
@@ -822,7 +822,7 @@ export const skillsPickerCommand: Command = {
   description: "Browse and invoke skills",
   handler: async (args, ctx) => {
     if (ctx.skills.length === 0) {
-      ctx.displayLines(["  \x1b[2mNo skills found.\x1b[0m", "  Add skills to .diligent/skills/ or ~/.config/diligent/skills/"]);
+      ctx.displayLines(["  \x1b[2mNo skills found.\x1b[0m", "  Add skills to .diligent/skills/ or ~/.diligent/skills/"]);
       return;
     }
 
@@ -1073,7 +1073,7 @@ export { discoverSkills, renderSkillsSection } from "./skills/index";
 9. `/clear` clears chat view
 10. `/exit` exits cleanly
 11. `/reload` re-discovers skills and reloads config
-12. Skills discovered from `.diligent/skills/`, `~/.config/diligent/skills/`, `.agents/skills/`
+12. Skills discovered from `.diligent/skills/`, `~/.diligent/skills/`, `.agents/skills/`
 13. Skill metadata injected into system prompt (implicit invocation works)
 14. `/skill:name` reads SKILL.md body and injects into conversation
 15. `/skills` shows picker overlay, selection invokes the skill

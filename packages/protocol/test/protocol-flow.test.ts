@@ -136,7 +136,7 @@ describe("protocol/flow", () => {
 
     expect(
       ToolsListResponseSchema.safeParse({
-        configPath: "/repo/.diligent/diligent.jsonc",
+        configPath: "/repo/.diligent/config.jsonc",
         appliesOnNextTurn: true,
         trustMode: "full_trust",
         conflictPolicy: "error",
@@ -178,7 +178,7 @@ describe("protocol/flow", () => {
       DiligentClientResponseSchema.safeParse({
         method: DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
         result: {
-          configPath: "/repo/.diligent/diligent.jsonc",
+          configPath: "/repo/.diligent/config.jsonc",
           appliesOnNextTurn: true,
           trustMode: "full_trust",
           conflictPolicy: "builtin_wins",
@@ -201,7 +201,7 @@ describe("protocol/flow", () => {
 
     expect(
       ToolsListResponseSchema.safeParse({
-        configPath: "/repo/.diligent/diligent.jsonc",
+        configPath: "/repo/.diligent/config.jsonc",
         appliesOnNextTurn: true,
         trustMode: "full_trust",
         conflictPolicy: "error",

@@ -316,7 +316,7 @@ export const toolsCommand: Command = {
           description: `${Math.max(state.plugins.length, draft.plugins.length)} configured`,
           value: "__plugins",
         },
-        { label: "Save", description: "Persist to .diligent/diligent.jsonc", value: "__save" },
+        { label: "Save", description: "Persist to .diligent/config.jsonc", value: "__save" },
         { label: "Close", description: "Exit without saving more changes", value: "__close" },
       ];
 
