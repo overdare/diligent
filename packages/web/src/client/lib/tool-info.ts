@@ -50,6 +50,15 @@ function clip(value: string, max = 60): string {
   return value.length > max ? `${value.slice(0, max - 3)}…` : value;
 }
 
+function stringifySingleLineJson(value: unknown): string | undefined {
+  try {
+    const text = JSON.stringify(value);
+    return typeof text === "string" && text.length > 0 ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function readStringField(parsed: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = parsed[key];
@@ -211,6 +220,9 @@ export function summarizeInput(toolName: string, inputText: string): string {
       "path",
     ]);
     if (intent) return clip(intent, normalizedName === "bash" ? 120 : 80);
+
+    const jsonPreview = stringifySingleLineJson(parsed);
+    if (jsonPreview) return clip(jsonPreview, normalizedName === "bash" ? 120 : 80);
   } catch {
     // Ignore JSON parse errors and fall back to raw text
   }

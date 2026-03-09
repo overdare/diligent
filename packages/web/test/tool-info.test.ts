@@ -67,3 +67,15 @@ test("summarizeInput shows patch target path", () => {
   });
   expect(summarizeInput("apply_patch", input)).toBe("Patch lib/tool-info.ts");
 });
+
+test("summarizeInput falls back to compact single-line JSON for generic tools", () => {
+  const input = JSON.stringify(
+    {
+      alpha: 1,
+      nested: { beta: true },
+    },
+    null,
+    2,
+  );
+  expect(summarizeInput("custom_tool", input)).toBe('{"alpha":1,"nested":{"beta":true}}');
+});
