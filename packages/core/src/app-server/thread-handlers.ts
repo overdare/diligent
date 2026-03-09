@@ -463,6 +463,7 @@ export async function getLatestEffortFromSessions(
   resolvePaths: (cwd: string) => Promise<{ sessions: string }>,
   threads: Map<string, ThreadRuntime>,
   cwd: string,
+  fallback: ThinkingEffort = "medium",
 ): Promise<ThinkingEffort> {
   const paths = await resolvePaths(cwd);
   const ordered = (await listSessions(paths.sessions))
@@ -495,5 +496,5 @@ export async function getLatestEffortFromSessions(
     }
   }
 
-  return "medium";
+  return fallback;
 }

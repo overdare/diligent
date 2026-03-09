@@ -1,6 +1,6 @@
 // @summary Known models registry with resolution logic for aliases, inference, and model classes
 import type { ModelInfo } from "@diligent/protocol";
-import type { Model } from "./types";
+import type { Model, ThinkingEffort } from "./types";
 
 /**
  * Model class tiers — abstract capability levels independent of provider.
@@ -189,6 +189,16 @@ export function agentTypeToModelClass(agentType: string, parentModel: Model): Mo
   if (agentType === "planner") return "pro";
   // general: keep the same class as parent
   return getModelClass(parentModel);
+}
+
+/**
+ * Return the default thinking effort for a given model class.
+ * pro → high, general → medium, lite → low
+ */
+export function getDefaultEffortForClass(modelClass: ModelClass): ThinkingEffort {
+  if (modelClass === "pro") return "high";
+  if (modelClass === "lite") return "low";
+  return "medium";
 }
 
 /**

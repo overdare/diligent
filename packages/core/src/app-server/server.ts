@@ -23,7 +23,7 @@ import type { AgentEvent, AgentLoopConfig } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
-import { resolveModel } from "../provider/models";
+import { getDefaultEffortForClass, getModelClass, resolveModel } from "../provider/models";
 import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
@@ -841,7 +841,11 @@ export class DiligentAppServer {
   }
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
-    return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd);
+    const modelId = this.currentModelId;
+    const fallback = modelId
+      ? getDefaultEffortForClass(getModelClass(resolveModel(modelId)))
+      : "medium";
+    return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
   }
 
   private async resolveToolsContext(
