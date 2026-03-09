@@ -6,6 +6,7 @@ import { Button } from "../src/client/components/Button";
 import { Input } from "../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
 import { Modal } from "../src/client/components/Modal";
+import { SlashMenu } from "../src/client/components/SlashMenu";
 import { ToolBlock } from "../src/client/components/ToolBlock";
 import { ToolSettingsModal } from "../src/client/components/ToolSettingsModal";
 import { UserMessage } from "../src/client/components/UserMessage";
@@ -322,4 +323,95 @@ test("normalizeImageFileName generates PNG fallback names for empty clipboard fi
 test("normalizeImageFileName generates JPEG fallback names for blank clipboard file names", () => {
   const file = createClipboardFile("   ", "image/jpeg");
   expect(normalizeImageFileName(file, 1, 222)).toBe("pasted-image-222-1.jpg");
+});
+
+test("slash menu renders command list with listbox role", () => {
+  const commands = [
+    { name: "help", description: "Show available commands" },
+    { name: "new", description: "Start a new conversation" },
+    { name: "mode", description: "Set collaboration mode", options: [{ label: "Plan", value: "plan" }] },
+  ];
+
+  const html = renderToStaticMarkup(
+    <SlashMenu
+      commands={commands}
+      selectedIndex={0}
+      expandedCommand={null}
+      subSelectedIndex={0}
+      onSelect={() => {}}
+      onSelectOption={() => {}}
+    />,
+  );
+
+  expect(html).toContain('role="listbox"');
+  expect(html).toContain("/help");
+  expect(html).toContain("/new");
+  expect(html).toContain("/mode");
+  expect(html).toContain("Show available commands");
+});
+
+test("slash menu highlights selected command with accent class", () => {
+  const commands = [
+    { name: "help", description: "Show available commands" },
+    { name: "new", description: "Start a new conversation" },
+  ];
+
+  const html = renderToStaticMarkup(
+    <SlashMenu
+      commands={commands}
+      selectedIndex={1}
+      expandedCommand={null}
+      subSelectedIndex={0}
+      onSelect={() => {}}
+      onSelectOption={() => {}}
+    />,
+  );
+
+  // The second item (index 1) should have accent highlight and aria-selected
+  expect(html).toContain('aria-selected="true"');
+  // Both items have role="option"
+  const optionCount = (html.match(/role="option"/g) ?? []).length;
+  expect(optionCount).toBe(2);
+});
+
+test("slash menu renders expanded sub-options", () => {
+  const modeCmd = {
+    name: "mode",
+    description: "Set collaboration mode",
+    options: [
+      { label: "Default", value: "default", description: "Normal conversation" },
+      { label: "Plan", value: "plan", description: "Plan before acting" },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <SlashMenu
+      commands={[modeCmd]}
+      selectedIndex={0}
+      expandedCommand={modeCmd}
+      subSelectedIndex={0}
+      onSelect={() => {}}
+      onSelectOption={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Default");
+  expect(html).toContain("Normal conversation");
+  expect(html).toContain("Plan");
+  expect(html).toContain("Plan before acting");
+});
+
+test("slash menu returns null for empty commands", () => {
+  const html = renderToStaticMarkup(
+    <SlashMenu
+      commands={[]}
+      selectedIndex={0}
+      expandedCommand={null}
+      subSelectedIndex={0}
+      onSelect={() => {}}
+      onSelectOption={() => {}}
+    />,
+  );
+
+  expect(html).toBe("");
 });

@@ -4,10 +4,13 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
+  ThinkingEffort as EffortType,
   InitializeResponse,
   LocalImageBlock,
   Mode,
+  Mode as ModeType,
   SessionSummary,
+  SkillInfo,
   ThinkingEffort,
   ThreadReadResponse,
   ToolsListResponse,
@@ -34,6 +37,8 @@ import { StatusDot } from "./components/StatusDot";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
+import type { SlashCommand } from "./lib/slash-commands";
+import { buildCommandList, parseSlashCommand } from "./lib/slash-commands";
 import {
   hydrateFromThreadRead,
   initialThreadState,
@@ -218,6 +223,10 @@ export function App() {
   const [oauthError, setOauthError] = useState<string | null>(null);
   // Threads needing attention (turn completed, approval/user-input buffered while user is elsewhere)
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
+  // Skills received from server at init
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  // Build full slash command list (builtins + skills)
+  const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
   const markAttention = useCallback((threadId: string) => {
     setAttentionThreadIds((prev) => {
@@ -339,6 +348,7 @@ export function App() {
 
         setCwd(meta.cwd ?? "");
         setEffortState(meta.effort ?? "medium");
+        setSkills(meta.skills ?? []);
         adapterRef.current.reset();
         providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
@@ -699,6 +709,76 @@ export function App() {
     setPendingImages((prev) => prev.filter((image) => image.path !== path));
   };
 
+  // ---------------------------------------------------------------------------
+  // Slash command handling
+  // ---------------------------------------------------------------------------
+
+  const handleSlashCommand = useCallback(
+    (name: string, arg?: string) => {
+      const rpc = rpcRef.current;
+      switch (name) {
+        case "help": {
+          const names = slashCommands.map((c) => `/${c.name}`).join(", ");
+          dispatch({ type: "show_info_toast", payload: `Commands: ${names}` });
+          break;
+        }
+        case "new":
+          void startNewThread();
+          break;
+        case "mode":
+          if (arg && ["default", "plan", "execute"].includes(arg)) {
+            void setMode(arg as ModeType);
+            dispatch({ type: "show_info_toast", payload: `Mode set to ${arg}` });
+          }
+          break;
+        case "effort":
+          if (arg && ["low", "medium", "high", "max"].includes(arg)) {
+            void setEffort(arg as EffortType);
+            dispatch({ type: "show_info_toast", payload: `Effort set to ${arg}` });
+          }
+          break;
+        case "model":
+          // Show info toast — user can use the model selector in the dock
+          dispatch({ type: "show_info_toast", payload: "Use the model selector in the input dock." });
+          break;
+        default: {
+          // Check if it's a skill command — send as message for server-side skill invocation
+          const isSkill = slashCommands.some((c) => c.name === name && c.isSkill);
+          if (isSkill && rpc && state.activeThreadId) {
+            const message = arg ? `/${name} ${arg}` : `/${name}`;
+            setInput("");
+            dispatch({ type: "local_user", payload: { text: message, images: [] } });
+            void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+              threadId: state.activeThreadId,
+              message,
+              content: [{ type: "text" as const, text: message }],
+            });
+            return;
+          }
+          dispatch({ type: "show_info_toast", payload: `Unknown command: /${name}` });
+          break;
+        }
+      }
+      setInput("");
+    },
+    // biome-ignore lint/correctness/useExhaustiveDependencies: startNewThread is stable enough
+    [rpcRef, slashCommands, state.activeThreadId, startNewThread, setMode, setEffort],
+  );
+
+  // Intercept slash commands on send
+  const handleSend = useCallback(() => {
+    const parsed = parseSlashCommand(input);
+    if (parsed) {
+      const cmd = slashCommands.find((c) => c.name === parsed.name);
+      if (cmd) {
+        handleSlashCommand(parsed.name, parsed.args);
+        return;
+      }
+    }
+    void sendMessage();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is stable enough
+  }, [input, slashCommands, handleSlashCommand, sendMessage]);
+
   const listTools = useCallback(async (): Promise<ToolsListResponse> => {
     const rpc = rpcRef.current;
     if (!rpc) {
@@ -802,7 +882,7 @@ export function App() {
           <InputDock
             input={input}
             onInputChange={setInput}
-            onSend={() => void sendMessage()}
+            onSend={handleSend}
             onSteer={() => void steerMessage()}
             onInterrupt={() => void interruptTurn()}
             onCompactionClick={handleCompactionClick}
@@ -832,6 +912,8 @@ export function App() {
             isUploadingImages={isUploadingImages}
             onAddImages={(files) => void handleAddImages(files)}
             onRemoveImage={handleRemovePendingImage}
+            onSlashCommand={handleSlashCommand}
+            slashCommands={slashCommands}
           />
         </Panel>
       </div>

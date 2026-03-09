@@ -34,6 +34,12 @@ export const ModelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
+export const SkillInfoSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+export type SkillInfo = z.infer<typeof SkillInfoSchema>;
+
 export const InitializeResponseSchema = z.object({
   serverName: z.string(),
   serverVersion: z.string(),
@@ -44,6 +50,7 @@ export const InitializeResponseSchema = z.object({
   effort: ThinkingEffortSchema.optional(),
   currentModel: z.string().optional(),
   availableModels: z.array(ModelInfoSchema).optional(),
+  skills: z.array(SkillInfoSchema).optional(),
 });
 export type InitializeResponse = z.infer<typeof InitializeResponseSchema>;
 

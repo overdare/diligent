@@ -56,6 +56,10 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
             .getConfiguredProviders()
             .includes(m.provider as (typeof PROVIDER_NAMES)[number]),
         ),
+        skills: runtimeConfig.skills.map((s) => ({
+          name: s.name,
+          description: s.description,
+        })),
       }),
     },
   });
