@@ -313,7 +313,7 @@ export function InputDock({
   return (
     <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
       <div
-        className={`rounded-3xl border px-3 py-2.5 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}`}
+        className={`rounded-3xl border px-3 py-2.5 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}${isBusy ? " input-dock-glow" : ""}`}
       >
         {!hasProvider ? (
           <button
@@ -358,30 +358,32 @@ export function InputDock({
             ) : null}
 
             {/* Slash command autocomplete — positioned relative to the textarea area */}
-            <div className="relative">
+            <div className="relative flex items-start gap-2">
               {slashMenuOpen ? (
                 <div ref={slashMenuRef}>
                   <SlashMenu commands={slashFiltered} selectedIndex={slashSelectedIndex} onSelect={handleSlashSelect} />
                 </div>
               ) : null}
 
-              <TextArea
-                className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
-                aria-label={isBusy ? "Steering input" : "Message input"}
-                placeholder={
-                  isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
-                }
-                value={input}
-                onChange={(e) => handleInputChange(e.target.value)}
-                onCompositionStart={() => {
-                  composingRef.current = true;
-                }}
-                onCompositionEnd={() => {
-                  composingRef.current = false;
-                }}
-                onPaste={handlePaste}
-                onKeyDown={handleKeyDown}
-              />
+              <div className="min-w-0 flex-1">
+                <TextArea
+                  className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+                  aria-label={isBusy ? "Steering input" : "Message input"}
+                  placeholder={
+                    isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
+                  }
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onCompositionStart={() => {
+                    composingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    composingRef.current = false;
+                  }}
+                  onPaste={handlePaste}
+                  onKeyDown={handleKeyDown}
+                />
+              </div>
             </div>
           </>
         )}

@@ -41,6 +41,7 @@ import { matchesKey } from "./framework/keys";
 import { OverlayStack } from "./framework/overlay";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
+import { displayWidth } from "./framework/string-width";
 import { Terminal } from "./framework/terminal";
 import { InputHistory } from "./input-history";
 import type { SpawnedAppServer } from "./rpc-client";
@@ -194,6 +195,7 @@ export class App {
       getIsProcessing: () => this.isProcessing,
       setIsProcessing: (val) => {
         this.isProcessing = val;
+        this.inputEditor.setBusy(val);
       },
       setPendingTurn: (turn) => {
         this.pendingTurn = turn;
@@ -625,8 +627,8 @@ export class App {
     const boxWidth = Math.min(54, Math.max(44, this.terminal.columns - 2));
     const inner = boxWidth - 4; // 2 borders + 2 spaces padding
 
-    const pad = (s: string) => s + " ".repeat(Math.max(0, inner - s.length));
-    const truncate = (s: string) => (s.length > inner ? `${s.slice(0, inner - 1)}\u2026` : s);
+    const pad = (s: string) => s + " ".repeat(Math.max(0, inner - displayWidth(s)));
+    const truncate = (s: string) => (displayWidth(s) > inner ? `${s.slice(0, inner - 1)}\u2026` : s);
 
     const title = `>_ diligent (v${pkgVersion})`;
     const modelLine = truncate(`model:     ${this.config.model.id}`);

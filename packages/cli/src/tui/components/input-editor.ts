@@ -9,6 +9,8 @@ import { t } from "../theme";
 
 const MAX_HISTORY_SIZE = 100;
 const MAX_VISIBLE_COMPLETIONS = 8;
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL = 80;
 
 export interface InputEditorOptions {
   prompt?: string;
@@ -25,6 +27,9 @@ export interface InputEditorOptions {
 
 export class InputEditor implements Component, Focusable {
   focused = false;
+  busy = false;
+  private spinnerIndex = 0;
+  private spinnerTimer: ReturnType<typeof setInterval> | null = null;
   private text = "";
   private cursorPos = 0;
   private history: string[] = [];
@@ -48,6 +53,24 @@ export class InputEditor implements Component, Focusable {
     }
   }
 
+  /** Set busy state and manage prompt spinner */
+  setBusy(val: boolean): void {
+    if (this.busy === val) return;
+    this.busy = val;
+    if (val) {
+      this.spinnerIndex = 0;
+      this.spinnerTimer = setInterval(() => {
+        this.spinnerIndex = (this.spinnerIndex + 1) % SPINNER_FRAMES.length;
+        this.requestRender();
+      }, SPINNER_INTERVAL);
+    } else {
+      if (this.spinnerTimer) {
+        clearInterval(this.spinnerTimer);
+        this.spinnerTimer = null;
+      }
+    }
+    this.requestRender();
+  }
   /** Re-sync in-memory history from the persistent store (call after load). */
   reloadHistory(): void {
     if (this.persistentHistory) {
@@ -57,12 +80,24 @@ export class InputEditor implements Component, Focusable {
 
   render(width: number): string[] {
     const sep = `${t.dim}${"─".repeat(Math.max(0, width))}${t.reset}`;
-    const prompt = this.options.prompt ?? "› ";
+    const prompt = this.busy
+      ? `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset} `
+      : (this.options.prompt ?? "› ");
     const promptWidth = displayWidth(prompt);
     const maxTextWidth = width - promptWidth;
 
     if (!this.focused) {
       return ["", sep, `${t.bold}${t.dim}${prompt}${t.reset}${this.text}`, sep];
+    }
+
+    // Show steering hint when busy and input is empty
+    if (this.busy && this.text.length === 0) {
+      return [
+        "",
+        sep,
+        `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset} ${t.dim}Steer the agent…${t.reset}${CURSOR_MARKER}`,
+        sep,
+      ];
     }
 
     // Build line with cursor marker embedded

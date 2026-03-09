@@ -135,6 +135,40 @@
   animation: toast-in 0.2s ease-out;
 }
 
+/* Sweeping glow along top border of InputDock when thread is busy */
+@keyframes border-glow-sweep {
+  0% {
+    background-position: -50% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
+}
+.input-dock-glow {
+  position: relative;
+  overflow: hidden;
+}
+.input-dock-glow::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 9999px 9999px 0 0;
+  background: radial-gradient(
+    ellipse 25% 100% at 50% 50%,
+    rgba(90, 217, 184, 0.8),
+    rgba(90, 217, 184, 0.15) 50%,
+    transparent 80%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: border-glow-sweep 2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
 html,
 body,
 #root {
