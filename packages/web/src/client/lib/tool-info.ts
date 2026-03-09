@@ -268,6 +268,10 @@ export function summarizeInput(toolName: string, inputText: string): string {
 /**
  * Derive a ToolRenderPayload from tool name + raw input/output text.
  * Used as fallback when item.render is absent (e.g. hydrated from session history).
+ *
+ * FROZEN: Do not add new tool-specific branches. New tools should produce
+ * ToolRenderPayload at execution time. This function exists only for
+ * pre-ToolRenderPayload historical sessions.
  */
 export function deriveRenderPayload(
   toolName: string,
