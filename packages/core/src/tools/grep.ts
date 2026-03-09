@@ -3,6 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { spawnCollect } from "../util/process";
 
 const GrepParams = z.object({
   pattern: z.string().describe("Regex pattern to search for in file contents"),
@@ -40,13 +41,9 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
       rgArgs.push(args.pattern, searchPath);
 
       try {
-        const proc = Bun.spawn(rgArgs, { stdout: "pipe", stderr: "pipe" });
+        const [stdout, , exitCode] = await spawnCollect(rgArgs);
 
-        const stdout = await new Response(proc.stdout).text();
-        await new Response(proc.stderr).text(); // drain stderr to avoid pipe stall
-        await proc.exited;
-
-        if (proc.exitCode !== 0 && !stdout.trim()) {
+        if (exitCode !== 0 && !stdout.trim()) {
           return { output: "No matches found." };
         }
 

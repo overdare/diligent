@@ -265,55 +265,6 @@ describe("agentLoop", () => {
     expect(turnStarts).toHaveLength(2);
   });
 
-  test("logs request and response summaries with debug identifiers", async () => {
-    const originalLog = console.log;
-    const logSpy = mock(() => {});
-    console.log = logSpy as typeof console.log;
-
-    try {
-      const msg = makeAssistant([
-        { type: "text", text: "Hello!" },
-        { type: "tool_call", id: "tc_1", name: "apply_patch", input: { file_path: "a.ts" } },
-      ]);
-      const streamFn = createMockStreamFunction([msg]);
-      const config: AgentLoopConfig = {
-        model: TEST_MODEL,
-        systemPrompt: [{ label: "test", content: "test" }],
-        tools: [],
-        streamFunction: streamFn,
-        maxTurns: 1,
-        effort: "max",
-        debugThreadId: "thread-123",
-        debugTurnId: "turn-abc",
-      };
-
-      const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
-      const loop = agentLoop(messages, config);
-      for await (const _event of loop) {
-      }
-
-      expect(logSpy).toHaveBeenCalled();
-      const requestCall = logSpy.mock.calls.find(
-        (args) => args[0] === "[AgentLoop]%s Sending %d messages to %s, last 5: %s",
-      );
-      expect(requestCall).toBeDefined();
-      expect(requestCall?.[1]).toBe(" thread=thread-123 turn=turn-abc effort=max");
-
-      const responseCall = logSpy.mock.calls.find(
-        (args) =>
-          args[0] === "[AgentLoop]%s Response summary: stop=%s elapsed=%dms text=%d thinking=%d toolCalls=%d tools=%s",
-      );
-      expect(responseCall).toBeDefined();
-      expect(responseCall?.[1]).toBe(" thread=thread-123 turn=turn-abc effort=max");
-      expect(responseCall?.[2]).toBe("end_turn");
-      expect(typeof responseCall?.[3]).toBe("number");
-      expect((responseCall?.[3] as number) >= 0).toBe(true);
-      expect(responseCall?.slice(4)).toEqual([6, 0, 1, "apply_patch"]);
-    } finally {
-      console.log = originalLog;
-    }
-  });
-
   test("tool schemas: Zod types converted to valid JSON Schema in StreamContext", async () => {
     const complexTool: Tool = {
       name: "complex",

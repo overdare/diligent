@@ -37,6 +37,7 @@ import {
   handleImageUpload,
 } from "./config-handlers";
 import { agentEventToNotification } from "./event-mapper";
+import { debug } from "../util/debug";
 import {
   handleServerResponseMessage,
   type PendingServerRequest,
@@ -561,7 +562,7 @@ export class DiligentAppServer {
         wireCollabHandler();
         await this.emitFromAgentEvent(runtime.id, turnId, event);
       }
-      console.log(
+      debug(
         "[AppServer] consumeStream: iterator drained for turn %s thread %s; awaiting final result",
         turnId,
         runtime.id,
@@ -570,7 +571,7 @@ export class DiligentAppServer {
       // Ensure all session entries are durably persisted before signaling
       // turn completion to clients.
       await runtime.manager.waitForWrites();
-      console.log("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
+      debug("[AppServer] consumeStream: turn %s completed normally for thread %s", turnId, runtime.id);
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
         params: { threadId: runtime.id, turnId },
@@ -582,7 +583,7 @@ export class DiligentAppServer {
 
       if (isAbort) {
         wasAborted = true;
-        console.log(
+        debug(
           "[AppServer] consumeStream: turn %s interrupted (aborted) for thread %s; session=%s lastPersisted=%s",
           turnId,
           runtime.id,
@@ -629,7 +630,7 @@ export class DiligentAppServer {
         runtime.runningModelIdSnapshot = undefined;
         runtime.currentTurnId = null;
         runtime.isRunning = false;
-        console.log("[AppServer] consumeStream: thread %s now idle (aborted)", runtime.id);
+        debug("[AppServer] consumeStream: thread %s now idle (aborted)", runtime.id);
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
           params: { threadId: runtime.id, status: "idle" },
@@ -644,7 +645,7 @@ export class DiligentAppServer {
         runtime.runningModelIdSnapshot = undefined;
         runtime.currentTurnId = null;
         runtime.isRunning = false;
-        console.log("[AppServer] consumeStream: thread %s now idle (normal)", runtime.id);
+        debug("[AppServer] consumeStream: thread %s now idle (normal)", runtime.id);
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
           params: { threadId: runtime.id, status: "idle" },
@@ -683,7 +684,7 @@ export class DiligentAppServer {
         safeParams.prompt = `${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
         safeParams.promptLength = prompt.length;
       }
-      console.log("[AppServer][collab] → client notification", {
+      debug("[AppServer][collab] → client notification", {
         method: notification.method,
         params: safeParams,
       });

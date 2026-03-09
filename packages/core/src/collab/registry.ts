@@ -6,6 +6,7 @@ import { agentTypeToModelClass, resolveModelForClass } from "../provider/models"
 import { SessionManager } from "../session/manager";
 import type { TextBlock } from "../types";
 import { NicknamePool } from "./nicknames";
+import { debug } from "../util/debug";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
 
@@ -78,7 +79,7 @@ export class AgentRegistry {
       receiverThreadId: (event as { receiverThreadId?: string }).receiverThreadId,
     };
     const hasHandler = Boolean(this.collabEventHandler);
-    console.log("[CollabRegistry] emit", { ...base, hasHandler });
+    debug("[CollabRegistry] emit", { ...base, hasHandler });
 
     this.collabEventHandler?.(event);
   }

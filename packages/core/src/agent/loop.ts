@@ -10,6 +10,7 @@ import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage
 import { LoopDetector } from "./loop-detector";
 import type { AgentEvent, AgentLoopConfig, SerializableError } from "./types";
 import { MODE_SYSTEM_PROMPT_SUFFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
+import { debug } from "../util/debug";
 
 export interface AgentTurnRuntime {
   activeTools: AgentLoopConfig["tools"];
@@ -156,7 +157,7 @@ async function runLoop(
 
   while (maxTurns === undefined || turnCount < maxTurns) {
     if (config.signal?.aborted) {
-      console.log("[AgentLoop] signal aborted at top-of-loop, breaking after %d turns", turnCount);
+      debug("[AgentLoop] signal aborted at top-of-loop, breaking after %d turns", turnCount);
       break;
     }
     turnCount++;
@@ -249,7 +250,7 @@ export async function streamAssistantResponse(
   // Debug: log last 5 messages before every LLM call
   const tail = messages.slice(-5);
   const debugScope = buildDebugScope(config);
-  console.log(
+  debug(
     "[AgentLoop]%s Sending %d messages to %s, last 5: %s",
     debugScope ? ` ${debugScope}` : "",
     messages.length,
@@ -321,7 +322,7 @@ export async function streamAssistantResponse(
 
   if (!currentMessage) {
     if (config.signal?.aborted) {
-      console.log("[AgentLoop] provider stream ended without message (aborted)");
+      debug("[AgentLoop] provider stream ended without message (aborted)");
       throw new Error("Aborted");
     }
     throw new Error("Provider stream ended without producing a message");
@@ -434,7 +435,7 @@ export async function executeToolCalls(
 
   for (const toolCall of toolCalls) {
     if (config.signal?.aborted) {
-      console.log("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
+      debug("[AgentLoop] signal aborted before tool %s, breaking tool loop", toolCall.name);
       break;
     }
 
@@ -504,7 +505,7 @@ function logAssistantResponseSummary(config: AgentLoopConfig, message: Assistant
   );
   const toolCalls = message.content.filter((block): block is ToolCallBlock => block.type === "tool_call");
 
-  console.log(
+  debug(
     "[AgentLoop]%s Response summary: stop=%s elapsed=%dms text=%d thinking=%d toolCalls=%d tools=%s",
     debugScope ? ` ${debugScope}` : "",
     message.stopReason,

@@ -13,6 +13,7 @@ import { EventStream } from "../event-stream";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { ProviderError } from "../provider/types";
 import type { AssistantMessage, Message, ToolCallBlock } from "../types";
+import { debug } from "../util/debug";
 import {
   estimateTokens,
   extractFileOperations,
@@ -407,7 +408,7 @@ export class SessionManager {
       }
 
       if (currentConfig.signal?.aborted) {
-        console.log("[SessionManager] signal aborted at top-of-loop, breaking after %d turns", turnCount);
+        debug("[SessionManager] signal aborted at top-of-loop, breaking after %d turns", turnCount);
         return;
       }
 
@@ -482,7 +483,7 @@ export class SessionManager {
             const abortingTools = executions
               .filter((execution) => !execution.includeInConversation)
               .map((execution) => execution.toolCall.name);
-            console.log(
+            debug(
               "[SessionManager]%s Ending run after tool-requested stop; session may legitimately end on tool_result (abortingTools=%s toolResults=%d)",
               buildSessionDebugScope(currentConfig, turnId, this.writer.id),
               abortingTools.length > 0 ? abortingTools.join(",") : "-",
@@ -533,7 +534,7 @@ export class SessionManager {
         }
 
         if (isAbort) {
-          console.log(
+          debug(
             "[SessionManager]%s Run aborted after last persisted message=%s",
             buildSessionDebugScope(currentConfig, turnId, this.writer.id),
             summarizeLastPersistedMessage(this.entries),
@@ -647,7 +648,7 @@ export class SessionManager {
       return { role: (m as { role: string }).role, preview: "" };
     });
 
-    console.log(
+    debug(
       "[Compaction] Rebuilt %d messages (%dk → %dk), last 5: %s",
       newContext.messages.length,
       Math.round(tokensBefore / 1000),
@@ -787,7 +788,7 @@ export class SessionManager {
       .then(async () => {
         await this.writer.write(entry);
         if (message.role === "tool_result") {
-          console.log(
+          debug(
             "[SessionManager] Persisted tool_result session=%s tool=%s callId=%s isError=%s",
             this.writer.id,
             message.toolName,

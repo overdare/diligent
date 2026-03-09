@@ -1,6 +1,8 @@
 // @summary Regression tests: Windows backslash paths are normalized before being passed to ripgrep
 
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import * as childProcess from "node:child_process";
 import { createGlobTool } from "../glob";
 import { createGrepTool } from "../grep";
 
@@ -15,18 +17,27 @@ const mockCtx = {
 };
 
 function mockProc(stdoutText = "", exitCode = 0) {
-  return {
-    stdout: new Response(stdoutText).body as ReadableStream<Uint8Array>,
-    stderr: new Response("").body as ReadableStream<Uint8Array>,
-    exited: Promise.resolve(exitCode),
-    exitCode,
-  } as ReturnType<typeof Bun.spawn>;
+  const stdout = new EventEmitter() as NodeJS.ReadableStream;
+  const stderr = new EventEmitter() as NodeJS.ReadableStream;
+  const proc = new EventEmitter() as ReturnType<typeof childProcess.spawn>;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stdout = stdout;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stderr = stderr;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).exitCode = exitCode;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).signalCode = null;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).pid = 99999;
+  (proc as unknown as { kill: () => void }).kill = () => {};
+  setImmediate(() => {
+    stdout.emit("data", Buffer.from(stdoutText));
+    proc.emit("exit", exitCode, null);
+  });
+  return proc;
 }
 
-// Extracts the last element of the rg command args (the search path)
+// With child_process.spawn(cmd, args, opts): calls[0][0]=cmd, calls[0][1]=args[]
+// The search path is the last element of args
 function capturedSearchPath(spy: ReturnType<typeof spyOn>): string {
-  const cmdArgs = spy.mock.calls[0][0] as string[];
-  return cmdArgs[cmdArgs.length - 1];
+  const args = spy.mock.calls[0][1] as string[];
+  return args[args.length - 1];
 }
 
 describe("glob - Windows path normalization", () => {
@@ -35,7 +46,7 @@ describe("glob - Windows path normalization", () => {
   afterEach(() => spy?.mockRestore());
 
   it("normalizes backslash path to forward slashes", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc("file.ts\n"));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts\n"));
     const tool = createGlobTool(UNIX_CWD);
 
     await tool.execute({ pattern: "**/*.ts", path: WIN_CWD_BACKSLASH }, mockCtx);
@@ -44,7 +55,7 @@ describe("glob - Windows path normalization", () => {
   });
 
   it("normalizes backslash cwd when no path arg", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc("file.ts\n"));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts\n"));
     const tool = createGlobTool(WIN_CWD_BACKSLASH);
 
     await tool.execute({ pattern: "**/*.ts" }, mockCtx);
@@ -53,7 +64,7 @@ describe("glob - Windows path normalization", () => {
   });
 
   it("normalizes nested backslash paths", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
     await tool.execute({ pattern: "*.ts", path: "C:\\Users\\devbv\\git\\diligent\\packages\\core\\src" }, mockCtx);
@@ -62,7 +73,7 @@ describe("glob - Windows path normalization", () => {
   });
 
   it("leaves forward-slash paths unchanged", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
     await tool.execute({ pattern: "**/*.ts", path: WIN_CWD_FORWARD }, mockCtx);
@@ -71,7 +82,7 @@ describe("glob - Windows path normalization", () => {
   });
 
   it("leaves Unix paths unchanged", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
     await tool.execute({ pattern: "**/*.ts", path: "/home/user/project/src" }, mockCtx);
@@ -80,7 +91,7 @@ describe("glob - Windows path normalization", () => {
   });
 
   it("normalizes double backslash path (literal \\\\) to single forward slashes", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
     // Double backslash: C:\\Users\\devbv (two backslash chars between segments)
@@ -105,7 +116,7 @@ describe("grep - Windows path normalization", () => {
   afterEach(() => spy?.mockRestore());
 
   it("normalizes backslash path to forward slashes", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc("file.ts:1:match\n"));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts:1:match\n"));
     const tool = createGrepTool(UNIX_CWD);
 
     await tool.execute({ pattern: "foo", path: WIN_CWD_BACKSLASH }, mockCtx);
@@ -114,7 +125,7 @@ describe("grep - Windows path normalization", () => {
   });
 
   it("normalizes backslash cwd when no path arg", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(WIN_CWD_BACKSLASH);
 
     await tool.execute({ pattern: "foo" }, mockCtx);
@@ -123,7 +134,7 @@ describe("grep - Windows path normalization", () => {
   });
 
   it("normalizes resolved path when relative path given against backslash cwd", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(WIN_CWD_BACKSLASH);
 
     await tool.execute({ pattern: "foo", path: "packages/core" }, mockCtx);
@@ -132,7 +143,7 @@ describe("grep - Windows path normalization", () => {
   });
 
   it("normalizes nested backslash paths", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(UNIX_CWD);
 
     await tool.execute({ pattern: "foo", path: "C:\\Users\\devbv\\git\\diligent\\packages\\core\\src" }, mockCtx);
@@ -141,7 +152,7 @@ describe("grep - Windows path normalization", () => {
   });
 
   it("leaves forward-slash paths unchanged", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(UNIX_CWD);
 
     await tool.execute({ pattern: "foo", path: WIN_CWD_FORWARD }, mockCtx);
@@ -150,7 +161,7 @@ describe("grep - Windows path normalization", () => {
   });
 
   it("leaves Unix paths unchanged", async () => {
-    spy = spyOn(Bun, "spawn").mockReturnValue(mockProc(""));
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(UNIX_CWD);
 
     await tool.execute({ pattern: "foo", path: "/home/user/project/src" }, mockCtx);

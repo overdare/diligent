@@ -5,6 +5,7 @@ import { isAbsolute } from "node:path";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { spawnCollect } from "../util/process";
 
 const GlobParams = z.object({
   pattern: z.string().describe("Glob pattern to match files (e.g., '**/*.ts', 'src/**/*.test.ts')"),
@@ -34,16 +35,9 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
 
       try {
         const rgBin = process.env.DILIGENT_RG_PATH ?? "rg";
-        const proc = Bun.spawn([rgBin, "--files", "--glob", args.pattern, searchPath], {
-          stdout: "pipe",
-          stderr: "pipe",
-        });
+        const [stdout, , exitCode] = await spawnCollect([rgBin, "--files", "--glob", args.pattern, searchPath]);
 
-        const stdout = await new Response(proc.stdout).text();
-        await new Response(proc.stderr).text(); // drain stderr to avoid pipe stall
-        await proc.exited;
-
-        if (proc.exitCode !== 0 && !stdout.trim()) {
+        if (exitCode !== 0 && !stdout.trim()) {
           return { output: "No files found matching pattern." };
         }
 

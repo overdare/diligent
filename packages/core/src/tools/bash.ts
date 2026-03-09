@@ -1,7 +1,9 @@
 // @summary Shell command execution with timeout and output truncation
+import { existsSync } from "fs";
 import { z } from "zod";
 import { MAX_OUTPUT_BYTES } from "../tool/truncation";
 import type { Tool, ToolResult } from "../tool/types";
+import { spawnProcess } from "../util/process";
 
 const BashParams = z.object({
   command: z.string().min(1).describe("The shell command to execute"),
@@ -13,6 +15,29 @@ const DEFAULT_TIMEOUT = 120_000;
 
 const SENSITIVE_PATTERNS = [/(_API_KEY|_TOKEN|_PASSWORD)$/, /_SECRET/, /^(API_KEY|SECRET_KEY|TOKEN|PASSWORD)$/];
 
+/**
+ * Convert Windows-style backslash paths to forward slashes so bash doesn't
+ * strip them as escape sequences. e.g. C:\Users\foo → C:/Users/foo
+ */
+function normalizePathSeparators(command: string): string {
+  return command.replace(/([A-Za-z]):\\([\w\\. -]*)/g, (_, drive, rest) => `${drive}:/${rest.replace(/\\/g, "/")}`);
+}
+
+/** On Windows, prefer bash (Git Bash / WSL / MSYS2) over cmd.exe to avoid metacharacter issues. */
+function resolveWindowsShell(command: string): string[] {
+  const normalized = normalizePathSeparators(command);
+  if (process.env.SHELL) return [process.env.SHELL, "-c", normalized];
+  const candidates = [
+    "C:\\Program Files\\Git\\bin\\bash.exe",
+    "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+    "C:\\msys64\\usr\\bin\\bash.exe",
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return [candidate, "-c", normalized];
+  }
+  return [process.env.ComSpec || "cmd.exe", "/C", command];
+}
+
 export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
   const filtered: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -21,20 +46,6 @@ export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, strin
     }
   }
   return filtered;
-}
-
-async function readStream(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
-  const chunks: Uint8Array[] = [];
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
-  } catch {
-    // reader was cancelled
-  }
-  return Buffer.concat(chunks).toString();
 }
 
 export function createBashTool(cwd: string): Tool<typeof BashParams> {
@@ -58,51 +69,50 @@ export function createBashTool(cwd: string): Tool<typeof BashParams> {
 
       const isWindows = process.platform === "win32";
       const shellArgs = isWindows
-        ? [process.env.SHELL || process.env.ComSpec || "cmd.exe", process.env.SHELL ? "-c" : "/C", args.command]
+        ? resolveWindowsShell(args.command)
         : [process.env.SHELL || "bash", "-c", args.command];
-      const proc = Bun.spawn(shellArgs, {
-        cwd,
-        stdout: "pipe",
-        stderr: "pipe",
-        env: filterSensitiveEnv(process.env),
-      });
-
-      const stdoutReader = proc.stdout.getReader();
-      const stderrReader = proc.stderr.getReader();
 
       let timedOut = false;
       let aborted = false;
 
-      const killProc = () => {
-        proc.kill(9);
-        // Cancel readers to unblock pending reads — on Windows, child processes can
-        // outlive the shell and keep the pipe handles open after proc.kill().
-        stdoutReader.cancel().catch(() => {});
-        stderrReader.cancel().catch(() => {});
-      };
+      const ac = new AbortController();
 
       const timer = setTimeout(() => {
         timedOut = true;
-        killProc();
+        ac.abort();
       }, timeout);
 
       const onAbort = () => {
         aborted = true;
-        killProc();
+        ac.abort();
       };
       ctx.signal.addEventListener("abort", onAbort, { once: true });
 
-      let stdout = "";
-      let stderr = "";
+      const proc = spawnProcess(shellArgs, {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: filterSensitiveEnv(process.env) as NodeJS.ProcessEnv,
+        signal: ac.signal,
+      });
+
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
+      proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
+
+      let exitCode: number | null = null;
       try {
-        [stdout, stderr] = await Promise.all([readStream(stdoutReader), readStream(stderrReader)]);
-        await proc.exited;
+        exitCode = await proc.exited;
+      } catch {
+        // process killed — exitCode stays null
       } finally {
         clearTimeout(timer);
         ctx.signal.removeEventListener("abort", onAbort);
       }
 
-      const exitCode = proc.exitCode;
+      const stdout = Buffer.concat(stdoutChunks).toString();
+      const stderr = Buffer.concat(stderrChunks).toString();
 
       let output = stdout;
       let truncated = false;
