@@ -78,6 +78,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         runtimeConfig.diligent.tools,
         runtimeConfig.skills,
         existingRegistry,
+        resolvedModel.provider,
       );
 
       return {

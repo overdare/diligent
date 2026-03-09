@@ -10,6 +10,7 @@ import { createApplyPatchTool } from "./apply-patch";
 import { createBashTool } from "./bash";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
+import { createEditTool, createMultiEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
 import { createLsTool } from "./ls";
@@ -17,7 +18,7 @@ import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { requestUserInputTool } from "./request-user-input";
 import { createSkillTool } from "./skill";
-import { createWriteTool } from "./write";
+import { createWriteAbsoluteTool } from "./write";
 
 export interface BuildDefaultToolsResult {
   tools: Tool[];
@@ -25,6 +26,15 @@ export interface BuildDefaultToolsResult {
   toolState: ToolStateEntry[];
   pluginState: PluginStateEntry[];
   pluginErrors: PluginLoadError[];
+}
+
+/**
+ * Returns true when the model's provider is OpenAI.
+ * OpenAI models use `apply_patch` + relative-path `write`;
+ * all other providers use `edit` + `multi_edit` + absolute-path `write`.
+ */
+function isOpenAIProvider(provider?: string): boolean {
+  return provider === "openai";
 }
 
 export async function buildDefaultTools(
@@ -39,14 +49,19 @@ export async function buildDefaultTools(
    * entries are preserved so cross-turn spawn→wait works correctly.
    */
   existingRegistry?: AgentRegistry,
+  /** Provider name of the resolved model (e.g. "openai", "anthropic", "gemini"). */
+  provider?: string,
 ): Promise<BuildDefaultToolsResult> {
-  // 1. Assemble all built-in tools
+  // 1. Assemble all built-in tools — file-editing tools vary by provider
+  const fileEditTools: Tool[] = isOpenAIProvider(provider)
+    ? [createApplyPatchTool(cwd)]
+    : [createWriteAbsoluteTool(), createEditTool(), createMultiEditTool()];
+
   const builtinTools: Tool[] = [
     createBashTool(cwd),
     createSkillTool(skills),
     createReadTool(),
-    createWriteTool(cwd),
-    createApplyPatchTool(cwd),
+    ...fileEditTools,
     createLsTool(),
     createGlobTool(cwd),
     createGrepTool(cwd),

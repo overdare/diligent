@@ -51,3 +51,53 @@ export function createWriteTool(cwd: string): Tool<typeof WriteParams> {
     },
   };
 }
+
+const WriteAbsoluteParams = z.object({
+  file_path: z.string().describe("The absolute path to the file to write (must be absolute, not relative)"),
+  content: z.string().describe("The content to write to the file"),
+});
+
+/**
+ * Write tool variant for non-OpenAI models — accepts absolute paths.
+ */
+export function createWriteAbsoluteTool(): Tool<typeof WriteAbsoluteParams> {
+  return {
+    name: "write",
+    description: `Writes a file to the local filesystem.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.`,
+    parameters: WriteAbsoluteParams,
+    async execute(args, ctx): Promise<ToolResult> {
+      const { file_path, content } = args;
+      if (!isAbsolute(file_path)) {
+        return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };
+      }
+
+      const approval = await ctx.approve({
+        permission: "write",
+        toolName: "write",
+        description: `Write to ${file_path}`,
+        details: { file_path },
+      });
+      if (approval === "reject") {
+        return { output: "[Rejected by user]", metadata: { error: true }, abortRequested: true };
+      }
+
+      try {
+        await mkdir(dirname(file_path), { recursive: true });
+        await Bun.write(file_path, content);
+        const bytes = new TextEncoder().encode(content).length;
+        return { output: `Wrote ${bytes} bytes to ${file_path}` };
+      } catch (err) {
+        return {
+          output: `Error writing file: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { error: true },
+        };
+      }
+    },
+  };
+}
