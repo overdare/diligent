@@ -28,9 +28,10 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const rawPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
-      const searchPath = rawPath.replace(/\\/g, "/");
+      const searchPath = rawPath.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
 
-      const rgArgs: string[] = ["rg", "-n"];
+      const rgBin = process.env.DILIGENT_RG_PATH ?? "rg";
+      const rgArgs: string[] = [rgBin, "-n"];
 
       if (args.ignore_case) rgArgs.push("--ignore-case");
       if (args.include) rgArgs.push("--glob", args.include);

@@ -23,13 +23,25 @@ fn resolve_dist_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(exe_dir.join("dist").join("client"))
 }
 
+/// Resolve bundled rg binary path. Returns None if not found (fall back to system PATH).
+fn resolve_rg_bin() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let rg = if cfg!(windows) {
+        exe_dir.join("rg.exe")
+    } else {
+        exe_dir.join("rg")
+    };
+    if rg.exists() { Some(rg) } else { None }
+}
+
 /// Spawn the Bun web server sidecar and return the port it is listening on.
 pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
     let dist_dir = resolve_dist_dir(app)?;
     let dist_dir_str = dist_dir.to_string_lossy().to_string();
 
     // Spawn the sidecar with port=0 so the OS picks a free port
-    let sidecar_cmd = app
+    let mut sidecar_cmd = app
         .shell()
         .sidecar("diligent-web-server")
         .map_err(|e| format!("Cannot create sidecar command: {e}"))?
@@ -38,6 +50,10 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
             &format!("--dist-dir={}", dist_dir_str),
             &format!("--cwd={}", cwd),
         ]);
+
+    if let Some(rg_path) = resolve_rg_bin() {
+        sidecar_cmd = sidecar_cmd.env("DILIGENT_RG_PATH", rg_path.to_string_lossy().as_ref());
+    }
 
     let (mut rx, child) = sidecar_cmd
         .spawn()

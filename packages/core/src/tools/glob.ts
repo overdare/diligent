@@ -27,13 +27,14 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     parameters: GlobParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const searchPath = (args.path ?? cwd).replace(/\\/g, "/");
+      const searchPath = (args.path ?? cwd).replace(/\\/g, "/").replace(/\/{2,}/g, "/");
       if (!isAbsolute(searchPath)) {
         return { output: `Error: path must be absolute: ${searchPath}`, metadata: { error: true } };
       }
 
       try {
-        const proc = Bun.spawn(["rg", "--files", "--glob", args.pattern, searchPath], {
+        const rgBin = process.env.DILIGENT_RG_PATH ?? "rg";
+        const proc = Bun.spawn([rgBin, "--files", "--glob", args.pattern, searchPath], {
           stdout: "pipe",
           stderr: "pipe",
         });
