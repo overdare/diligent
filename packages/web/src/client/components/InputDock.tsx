@@ -531,6 +531,7 @@ export function InputDock({
                 onChange={onModelChange}
                 openDirection="up"
                 className="w-[180px]"
+                disabled={isBusy}
               />
             ) : null}
 
@@ -541,6 +542,7 @@ export function InputDock({
               onChange={(value) => onEffortChange(value as ThinkingEffort)}
               openDirection="up"
               className="w-[90px]"
+              disabled={isBusy}
             />
           </div>
 

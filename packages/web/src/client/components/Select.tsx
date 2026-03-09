@@ -19,6 +19,7 @@ interface SelectProps {
   triggerClassName?: string;
   menuClassName?: string;
   openDirection?: "up" | "down";
+  disabled?: boolean;
 }
 
 interface OptionGroup {
@@ -36,6 +37,7 @@ export function Select({
   triggerClassName,
   menuClassName,
   openDirection = "down",
+  disabled = false,
 }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -87,9 +89,11 @@ export function Select({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((open) => !open)}
+        disabled={disabled}
+        onClick={() => !disabled && setIsOpen((open) => !open)}
         className={cn(
           "inline-flex h-7 w-full items-center justify-between gap-1 rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+          disabled && "cursor-not-allowed opacity-40",
           triggerClassName,
         )}
       >
