@@ -159,6 +159,7 @@ export class AgentRegistry {
       type: "collab_spawn_begin",
       callId,
       prompt: params.prompt,
+      agentType: params.agentType,
     });
 
     const entry: AgentEntry = {
@@ -180,6 +181,7 @@ export class AgentRegistry {
         callId,
         childThreadId: threadId,
         nickname,
+        agentType: params.agentType,
         description: params.description || undefined,
         prompt: params.prompt,
         status: "errored",
@@ -268,6 +270,7 @@ export class AgentRegistry {
       callId,
       childThreadId: threadId,
       nickname,
+      agentType: params.agentType,
       description: params.description || undefined,
       prompt: params.prompt,
       status: "running",

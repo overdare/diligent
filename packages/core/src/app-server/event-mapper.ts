@@ -145,7 +145,7 @@ export function agentEventToNotification(
     case "collab_spawn_begin":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN,
-        params: { threadId, callId: event.callId, prompt: event.prompt },
+        params: { threadId, callId: event.callId, prompt: event.prompt, agentType: event.agentType },
       };
 
     case "collab_spawn_end":
@@ -156,6 +156,7 @@ export function agentEventToNotification(
           callId: event.callId,
           childThreadId: event.childThreadId,
           nickname: event.nickname,
+          agentType: event.agentType,
           description: event.description,
           prompt: event.prompt,
           status: event.status,

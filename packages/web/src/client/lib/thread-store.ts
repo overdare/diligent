@@ -82,6 +82,7 @@ export type RenderItem =
       eventType: "spawn" | "wait" | "close" | "interaction";
       childThreadId?: string;
       nickname?: string;
+      agentType?: string;
       description?: string;
       prompt?: string;
       status?: string;
@@ -624,6 +625,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         kind: "collab",
         eventType: "spawn",
         childThreadId: event.callId,
+        agentType: event.agentType,
         prompt: event.prompt,
         status: "running",
         childTools: [],
@@ -648,6 +650,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 ...item,
                 childThreadId: event.childThreadId,
                 nickname: event.nickname,
+                agentType: event.agentType ?? item.agentType,
                 description: event.description,
                 prompt: event.prompt,
                 status: event.status,
@@ -663,6 +666,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         eventType: "spawn",
         childThreadId: event.childThreadId,
         nickname: event.nickname,
+        agentType: event.agentType,
         description: event.description,
         prompt: event.prompt,
         status: event.status,

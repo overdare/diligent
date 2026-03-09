@@ -101,7 +101,14 @@ export class ProtocolNotificationAdapter {
 
       // Collab — sub-agent orchestration boundary events
       case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN:
-        return [{ type: "collab_spawn_begin", callId: notification.params.callId, prompt: notification.params.prompt }];
+        return [
+          {
+            type: "collab_spawn_begin",
+            callId: notification.params.callId,
+            prompt: notification.params.prompt,
+            agentType: notification.params.agentType,
+          },
+        ];
 
       case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_END:
         return [
@@ -110,6 +117,7 @@ export class ProtocolNotificationAdapter {
             callId: notification.params.callId,
             childThreadId: notification.params.childThreadId,
             nickname: notification.params.nickname,
+            agentType: notification.params.agentType,
             description: notification.params.description,
             prompt: notification.params.prompt,
             status: notification.params.status,

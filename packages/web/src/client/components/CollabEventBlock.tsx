@@ -14,6 +14,11 @@ function agentLabel(nickname?: string, threadId?: string): string {
   return nickname ?? threadId ?? "agent";
 }
 
+function formatAgentType(agentType?: string): string | null {
+  if (!agentType) return null;
+  return `[${agentType}]`;
+}
+
 function statusBadge(status?: string): { text: string; className: string } | null {
   switch (status) {
     case "completed":
@@ -39,10 +44,11 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
 
   let title = "";
   let details: string | null = null;
+  const agentTypeLabel = item.eventType === "spawn" ? formatAgentType(item.agentType) : null;
 
   switch (item.eventType) {
     case "spawn":
-      title = `Spawned ${agentLabel(item.nickname, item.childThreadId)}`;
+      title = `Spawned ${agentLabel(item.nickname, item.childThreadId)}${agentTypeLabel ? ` ${agentTypeLabel}` : ""}`;
       if (item.description) details = item.description;
       break;
     case "wait": {

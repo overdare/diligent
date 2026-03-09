@@ -30,7 +30,11 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
     <div>
       {hasThinking && (
         <div className="pb-4">
-          <ThinkingBlock text={item.thinking} streaming={!item.thinkingDone} />
+          <ThinkingBlock
+            text={item.thinking}
+            streaming={!item.thinkingDone}
+            duration={item.thinkingDone ? reasoningDuration : null}
+          />
         </div>
       )}
       {hasText && (
@@ -38,13 +42,7 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
           <MarkdownContent text={item.text} />
         </div>
       )}
-      {(turnDuration || reasoningDuration) && (
-        <div className="pb-6 pt-1 text-xs text-muted">
-          {turnDuration ? `Loop: ${turnDuration}` : null}
-          {turnDuration && reasoningDuration ? " · " : null}
-          {reasoningDuration ? `Thinking: ${reasoningDuration}` : null}
-        </div>
-      )}
+      {turnDuration && <div className="pb-6 pt-1 text-xs text-muted">{`Loop: ${turnDuration}`}</div>}
     </div>
   );
 }

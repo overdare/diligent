@@ -211,7 +211,7 @@ export function App() {
   const [cwd, setCwd] = useState<string>("");
   const cwdRef = useRef<string>("");
   cwdRef.current = cwd;
-  const [input, setInput] = useState("");
+  const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
@@ -522,17 +522,39 @@ export function App() {
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
-  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
-  const canSteer = input.trim().length > 0 && isBusy;
+  const activeInput = state.activeThreadId ? (threadInputs[state.activeThreadId] ?? "") : "";
+  const setActiveInput = useCallback(
+    (value: string) => {
+      const threadId = state.activeThreadId;
+      if (!threadId) return;
+      setThreadInputs((prev) => {
+        const next = value.length > 0 ? { ...prev, [threadId]: value } : { ...prev };
+        if (value.length === 0) delete next[threadId];
+        return next;
+      });
+    },
+    [state.activeThreadId],
+  );
+  const clearThreadInput = useCallback((threadId: string) => {
+    setThreadInputs((prev) => {
+      if (!(threadId in prev)) return prev;
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+  }, []);
+  const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
+  const canSteer = activeInput.trim().length > 0 && isBusy;
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
   const supportsVision = currentModelInfo?.supportsVision === true;
 
   const sendMessage = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId || !canSend) return;
-    const message = input.trim();
+    const threadId = state.activeThreadId;
+    const message = activeInput.trim();
     const images = pendingImages;
-    setInput("");
+    clearThreadInput(threadId);
     setPendingImages([]);
     dispatch({ type: "local_user", payload: { text: message, images } });
     // If this is the first message in the thread, immediately add an optimistic sidebar entry
@@ -571,8 +593,9 @@ export function App() {
   const steerMessage = async () => {
     const rpc = rpcRef.current;
     if (!rpc || !state.activeThreadId || !canSteer) return;
-    const content = input.trim();
-    setInput("");
+    const threadId = state.activeThreadId;
+    const content = activeInput.trim();
+    clearThreadInput(threadId);
     dispatch({ type: "local_steer", payload: content });
     try {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
@@ -746,7 +769,7 @@ export function App() {
           const isSkill = slashCommands.some((c) => c.name === name && c.isSkill);
           if (isSkill && rpc && state.activeThreadId) {
             const message = arg ? `/${name} ${arg}` : `/${name}`;
-            setInput("");
+            clearThreadInput(state.activeThreadId);
             dispatch({ type: "local_user", payload: { text: message, images: [] } });
             void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
               threadId: state.activeThreadId,
@@ -759,15 +782,15 @@ export function App() {
           break;
         }
       }
-      setInput("");
+      if (state.activeThreadId) clearThreadInput(state.activeThreadId);
     },
     // biome-ignore lint/correctness/useExhaustiveDependencies: startNewThread is stable enough
-    [rpcRef, slashCommands, state.activeThreadId, startNewThread, setMode, setEffort],
+    [rpcRef, slashCommands, state.activeThreadId, startNewThread, setMode, setEffort, clearThreadInput],
   );
 
   // Intercept slash commands on send
   const handleSend = useCallback(() => {
-    const parsed = parseSlashCommand(input);
+    const parsed = parseSlashCommand(activeInput);
     if (parsed) {
       const cmd = slashCommands.find((c) => c.name === parsed.name);
       if (cmd) {
@@ -777,7 +800,7 @@ export function App() {
     }
     void sendMessage();
     // biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is stable enough
-  }, [input, slashCommands, handleSlashCommand, sendMessage]);
+  }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
 
   const listTools = useCallback(async (): Promise<ToolsListResponse> => {
     const rpc = rpcRef.current;
@@ -853,7 +876,7 @@ export function App() {
           <MessageList
             items={state.items}
             threadStatus={state.threadStatus}
-            onSelectPrompt={(p) => setInput(p)}
+            onSelectPrompt={(p) => setActiveInput(p)}
             approvalPrompt={
               serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
                 ? {
@@ -880,8 +903,8 @@ export function App() {
           <SteeringQueuePanel pendingSteers={state.pendingSteers} />
 
           <InputDock
-            input={input}
-            onInputChange={setInput}
+            input={activeInput}
+            onInputChange={setActiveInput}
             onSend={handleSend}
             onSteer={() => void steerMessage()}
             onInterrupt={() => void interruptTurn()}

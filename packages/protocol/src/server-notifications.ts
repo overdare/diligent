@@ -188,6 +188,7 @@ export const CollabSpawnBeginNotificationSchema = z.object({
     threadId: z.string(),
     callId: z.string(),
     prompt: z.string(),
+    agentType: z.string(),
   }),
 });
 export type CollabSpawnBeginNotification = z.infer<typeof CollabSpawnBeginNotificationSchema>;
@@ -199,6 +200,7 @@ export const CollabSpawnEndNotificationSchema = z.object({
     callId: z.string(),
     childThreadId: z.string(),
     nickname: z.string().optional(),
+    agentType: z.string().optional(),
     description: z.string().optional(),
     prompt: z.string(),
     status: CollabAgentStatusSchema,

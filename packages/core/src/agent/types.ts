@@ -98,12 +98,13 @@ export type AgentEvent =
   // Steering (1) — P1
   | { type: "steering_injected"; messageCount: number; messages: Message[] }
   // Collab — sub-agent orchestration boundary events (3 begin/end pairs)
-  | { type: "collab_spawn_begin"; callId: string; prompt: string }
+  | { type: "collab_spawn_begin"; callId: string; prompt: string; agentType: string }
   | {
       type: "collab_spawn_end";
       callId: string;
       childThreadId: string;
       nickname?: string;
+      agentType?: string;
       description?: string;
       prompt: string;
       status: "pending" | "running" | "completed" | "errored" | "shutdown";

@@ -351,6 +351,10 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
             eventType: "spawn",
             childThreadId,
             nickname: spawnInfo?.nickname ?? child?.nickname,
+            agentType:
+              typeof (block.input as { agent_type?: unknown })?.agent_type === "string"
+                ? (block.input as { agent_type: string }).agent_type
+                : undefined,
             description: child?.description ?? (block.input as { description?: string })?.description,
             prompt:
               typeof (block.input as { message?: unknown })?.message === "string"
