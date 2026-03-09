@@ -842,9 +842,7 @@ export class DiligentAppServer {
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
     const modelId = this.currentModelId;
-    const fallback = modelId
-      ? getDefaultEffortForClass(getModelClass(resolveModel(modelId)))
-      : "medium";
+    const fallback = modelId ? getDefaultEffortForClass(getModelClass(resolveModel(modelId))) : "medium";
     return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
   }
 
