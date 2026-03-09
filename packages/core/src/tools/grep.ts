@@ -27,7 +27,8 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     parameters: GrepParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const searchPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
+      const rawPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
+      const searchPath = rawPath.replace(/\\/g, "/");
 
       const rgArgs: string[] = ["rg", "-n"];
 

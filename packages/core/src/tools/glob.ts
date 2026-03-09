@@ -27,7 +27,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     parameters: GlobParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const searchPath = args.path ?? cwd;
+      const searchPath = (args.path ?? cwd).replace(/\\/g, "/");
       if (!isAbsolute(searchPath)) {
         return { output: `Error: path must be absolute: ${searchPath}`, metadata: { error: true } };
       }
