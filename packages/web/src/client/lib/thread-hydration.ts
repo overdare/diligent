@@ -295,6 +295,18 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
 
   let current = base;
 
+  for (const error of payload.errors ?? []) {
+    current = withItem(current, `history:error:${error.id}`, {
+      id: `history:error:${error.id}`,
+      kind: "error",
+      message: error.error.message,
+      name: error.error.name,
+      fatal: error.fatal,
+      turnId: error.turnId,
+      timestamp: Date.parse(error.timestamp),
+    });
+  }
+
   for (const message of payload.messages) {
     if (message.role === "user") {
       if (isSummaryMessage(message)) {

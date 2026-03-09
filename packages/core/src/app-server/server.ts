@@ -23,6 +23,7 @@ import type { AgentEvent, AgentLoopConfig } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import { resolveModel } from "../provider/models";
 import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
@@ -63,7 +64,7 @@ import {
 export interface ModelConfig {
   currentModelId: string | undefined;
   getAvailableModels: () => ModelInfo[];
-  onModelChange: (modelId: string) => void;
+  onModelChange: (modelId: string, threadId?: string) => void;
 }
 
 export interface ToolConfigManager {
@@ -81,6 +82,7 @@ export interface DiligentAppServerConfig {
     cwd: string;
     mode: Mode;
     effort: ThinkingEffort;
+    modelId?: string;
     signal: AbortSignal;
     approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
     ask: (request: UserInputRequest) => Promise<UserInputResponse>;
@@ -394,8 +396,24 @@ export class DiligentAppServer {
       }
 
       case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
-        const result = await handleConfigSet(this.config.modelConfig, this.currentModelId, request.params.model);
-        this.currentModelId = result.model;
+        const connectionThreadId = this.connections.get(connectionId)?.currentThreadId ?? undefined;
+        const targetThreadId = request.params.threadId ?? connectionThreadId;
+        const result = await handleConfigSet(
+          this.config.modelConfig,
+          this.currentModelId,
+          request.params.model,
+          targetThreadId,
+        );
+        if (targetThreadId && result.model) {
+          const runtime = await this.resolveThreadRuntime(targetThreadId);
+          if (runtime.modelId !== result.model) {
+            runtime.modelId = result.model;
+            const model = resolveModel(result.model);
+            runtime.manager.appendModelChange(model.provider, model.id);
+          }
+        } else {
+          this.currentModelId = result.model;
+        }
         return result;
       }
 
@@ -622,6 +640,8 @@ export class DiligentAppServer {
         // Normal path: wait for innerWork before clearing state
         await stream.waitForInnerWork(undefined).catch(() => {});
         runtime.abortController = null;
+        runtime.runningEffortSnapshot = undefined;
+        runtime.runningModelIdSnapshot = undefined;
         runtime.currentTurnId = null;
         runtime.isRunning = false;
         console.log("[AppServer] consumeStream: thread %s now idle (normal)", runtime.id);
@@ -641,7 +661,10 @@ export class DiligentAppServer {
   }
 
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
-    const notification = agentEventToNotification(threadId, turnId, event);
+    const runtime = this.threads.get(threadId);
+    const notification = agentEventToNotification(threadId, turnId, event, {
+      threadStatus: runtime?.isRunning === true ? "busy" : undefined,
+    });
     if (notification) {
       await this.emit(notification);
     }
@@ -748,6 +771,9 @@ export class DiligentAppServer {
       cwd,
       mode,
       effort,
+      modelId: this.currentModelId,
+      runningEffortSnapshot: undefined,
+      runningModelIdSnapshot: undefined,
       manager: null as unknown as SessionManager,
       abortController: null,
       currentTurnId: null,
@@ -763,7 +789,8 @@ export class DiligentAppServer {
         const result = await this.config.buildAgentConfig({
           cwd,
           mode: runtime.mode,
-          effort: runtime.effort,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          modelId: runtime.runningModelIdSnapshot ?? runtime.modelId,
           signal,
           approve: (request) => this.requestApproval(runtime.id, request),
           ask: (request) => this.requestUserInput(runtime.id, request),
@@ -804,6 +831,7 @@ export class DiligentAppServer {
       if (!resumed) continue;
 
       runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+      runtime.modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
       this.threads.set(id, runtime);
       this.activeThreadId = id;
       return runtime;

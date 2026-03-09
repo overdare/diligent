@@ -41,7 +41,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: first.id });
+          currentModelRef.current = first.id;
         }
       } catch (error) {
         console.error(error);
@@ -52,32 +52,25 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
 
   // Finds the last assistant model in history and applies it if valid and different from current.
   // Caller must ensure availableModelsRef is populated before calling (via setInitialModel).
-  const applySessionModel = useCallback(
-    async (messages: { role: string; model?: string }[]): Promise<void> => {
-      const rpc = rpcRef.current;
-      if (!rpc) return;
-      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-      const sessionModel = lastAssistant?.model;
-      if (
-        sessionModel &&
-        sessionModel !== currentModelRef.current &&
-        availableModelsRef.current.some((m) => m.id === sessionModel)
-      ) {
-        setCurrentModel(sessionModel);
-        currentModelRef.current = sessionModel;
-        await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: sessionModel });
-      }
-    },
-    [rpcRef],
-  );
+  const applySessionModel = useCallback(async (sessionModel?: string): Promise<void> => {
+    if (
+      sessionModel &&
+      sessionModel !== currentModelRef.current &&
+      availableModelsRef.current.some((m) => m.id === sessionModel)
+    ) {
+      setCurrentModel(sessionModel);
+      currentModelRef.current = sessionModel;
+    }
+  }, []);
 
   const changeModel = useCallback(
-    async (modelId: string): Promise<void> => {
+    async (modelId: string, threadId?: string): Promise<void> => {
       const rpc = rpcRef.current;
       if (!rpc) return;
       setCurrentModel(modelId);
+      currentModelRef.current = modelId;
       try {
-        await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: modelId });
+        await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: modelId, threadId });
       } catch (error) {
         console.error(error);
       }
@@ -136,7 +129,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         if (modelInvalid) {
           const first = result.availableModels[0];
           setCurrentModel(first.id);
-          await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { model: first.id });
+          currentModelRef.current = first.id;
         }
       } catch {
         // Non-critical: providers already updated via notification

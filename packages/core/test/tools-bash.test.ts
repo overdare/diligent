@@ -68,8 +68,15 @@ describe("bash tool", () => {
   });
 
   test("preserves non-sensitive env variables", async () => {
-    const result = await bashTool.execute({ command: "echo $HOME" }, makeCtx());
-    expect(result.output.trim()).toBe(process.env.HOME);
+    const original = process.env.TEST_NON_SENSITIVE_VAR;
+    process.env.TEST_NON_SENSITIVE_VAR = "visible-value";
+    try {
+      const result = await bashTool.execute({ command: "echo $TEST_NON_SENSITIVE_VAR" }, makeCtx());
+      expect(result.output.trim()).toBe("visible-value");
+    } finally {
+      if (original === undefined) delete process.env.TEST_NON_SENSITIVE_VAR;
+      else process.env.TEST_NON_SENSITIVE_VAR = original;
+    }
   });
 });
 

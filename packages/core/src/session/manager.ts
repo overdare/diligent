@@ -26,7 +26,9 @@ import type {
   CollabSessionMeta,
   CompactionEntry,
   EffortChangeEntry,
+  ErrorEntry,
   ModeChangeEntry,
+  ModelChangeEntry,
   SessionEntry,
   SessionInfo,
 } from "./types";
@@ -189,6 +191,14 @@ export class SessionManager {
     return context.messages;
   }
 
+  getErrors(): ErrorEntry[] {
+    return buildSessionContext(this.entries, this.leafId).errors;
+  }
+
+  getCurrentModel(): { provider: string; modelId: string } | undefined {
+    return buildSessionContext(this.entries, this.leafId).currentModel;
+  }
+
   /**
    * Reconcile in-memory entries with the persisted session file.
    *
@@ -296,6 +306,21 @@ export class SessionManager {
     return buildSessionContext(this.entries, this.leafId).currentEffort;
   }
 
+  appendModelChange(provider: string, modelId: string): void {
+    const entry: ModelChangeEntry = {
+      type: "model_change",
+      id: generateEntryId(),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      provider,
+      modelId,
+    };
+    this.entries.push(entry);
+    this.byId.set(entry.id, entry);
+    this.leafId = entry.id;
+    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+  }
+
   /**
    * Run the agent loop with the current session context.
    * Persists user message and agent response to session.
@@ -332,9 +357,18 @@ export class SessionManager {
     const innerWork = (
       configResult instanceof Promise ? configResult.then(startSession) : startSession(configResult)
     ).catch((err) => {
+      const serializable = toSerializableError(err);
+      console.error(
+        "[SessionManager] Failed before session loop start session=%s name=%s message=%s lastPersisted=%s",
+        this.writer.id,
+        serializable.name,
+        serializable.message,
+        summarizeLastPersistedMessage(this.entries),
+      );
+      this.appendError(serializable, { fatal: true });
       outerStream.push({
         type: "error",
-        error: { message: String(err), name: err?.name ?? "Error" },
+        error: serializable,
         fatal: true,
       });
       outerStream.push({ type: "agent_end", messages: context.messages });
@@ -508,6 +542,14 @@ export class SessionManager {
           return;
         }
 
+        console.error(
+          "[SessionManager]%s Ending turn due to error name=%s message=%s lastPersisted=%s",
+          buildSessionDebugScope(currentConfig, turnId, this.writer.id),
+          serializable.name,
+          serializable.message,
+          summarizeLastPersistedMessage(this.entries),
+        );
+        this.appendError(serializable, { fatal: true, turnId });
         outerStream.push({ type: "error", error: serializable, fatal: true });
         outerStream.push({ type: "agent_end", messages: currentMessages });
         outerStream.end(currentMessages);
@@ -704,6 +746,22 @@ export class SessionManager {
       timestamp: new Date().toISOString(),
       effort,
       changedBy,
+    };
+    this.entries.push(entry);
+    this.byId.set(entry.id, entry);
+    this.leafId = entry.id;
+    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+  }
+
+  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string }): void {
+    const entry: ErrorEntry = {
+      type: "error",
+      id: generateEntryId(),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      turnId: options?.turnId,
+      fatal: options?.fatal ?? false,
+      error,
     };
     this.entries.push(entry);
     this.byId.set(entry.id, entry);

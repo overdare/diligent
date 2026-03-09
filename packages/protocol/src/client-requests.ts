@@ -10,6 +10,7 @@ import {
   ProtocolVersionSchema,
   ProviderAuthStatusSchema,
   ProviderNameSchema,
+  SerializableErrorSchema,
   SessionSummarySchema,
   ThinkingEffortSchema,
 } from "./data-model";
@@ -110,11 +111,23 @@ export type ChildSession = z.infer<typeof ChildSessionSchema>;
 
 export const ThreadReadResponseSchema = z.object({
   messages: z.array(MessageSchema),
+  errors: z
+    .array(
+      z.object({
+        id: z.string(),
+        timestamp: z.string(),
+        turnId: z.string().optional(),
+        fatal: z.boolean(),
+        error: SerializableErrorSchema,
+      }),
+    )
+    .optional(),
   childSessions: z.array(ChildSessionSchema).optional(),
   hasFollowUp: z.boolean(),
   entryCount: z.number().int().nonnegative(),
   isRunning: z.boolean(),
   currentEffort: ThinkingEffortSchema,
+  currentModel: z.string().optional(),
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
 
@@ -278,6 +291,7 @@ export type ToolsSetResponse = z.infer<typeof ToolsSetResponseSchema>;
 
 // --- config/set ---
 export const ConfigSetParamsSchema = z.object({
+  threadId: z.string().optional(),
   model: z.string().optional(),
 });
 export type ConfigSetParams = z.infer<typeof ConfigSetParamsSchema>;

@@ -39,13 +39,16 @@ export function agentEventToNotification(
       if (!event.childThreadId) return null;
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
-        params: withThreadStatus({
-          threadId,
-          turnId: event.turnId,
-          childThreadId: event.childThreadId,
-          nickname: event.nickname,
-          turnNumber: event.turnNumber,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            turnId: event.turnId,
+            childThreadId: event.childThreadId,
+            nickname: event.nickname,
+            turnNumber: event.turnNumber,
+          },
+          context,
+        ),
       };
 
     case "turn_end":
@@ -63,16 +66,19 @@ export function agentEventToNotification(
     case "message_delta":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA,
-        params: withThreadStatus({
-          threadId,
-          turnId,
-          itemId: event.itemId,
-          delta: {
-            type: event.delta.type === "text_delta" ? "messageText" : "messageThinking",
+        params: withThreadStatus(
+          {
+            threadId,
+            turnId,
             itemId: event.itemId,
-            delta: event.delta.delta,
+            delta: {
+              type: event.delta.type === "text_delta" ? "messageText" : "messageThinking",
+              itemId: event.itemId,
+              delta: event.delta.delta,
+            },
           },
-        }, context),
+          context,
+        ),
       };
 
     case "message_end":
@@ -87,50 +93,59 @@ export function agentEventToNotification(
     case "tool_start":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED,
-        params: withThreadStatus({
-          threadId,
-          turnId,
-          item: {
-            type: "toolCall",
-            itemId: event.itemId,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: event.input,
+        params: withThreadStatus(
+          {
+            threadId,
+            turnId,
+            item: {
+              type: "toolCall",
+              itemId: event.itemId,
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              input: event.input,
+            },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
-          ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
-        }, context),
+          context,
+        ),
       };
 
     case "tool_update":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA,
-        params: withThreadStatus({
-          threadId,
-          turnId,
-          itemId: event.itemId,
-          delta: { type: "toolOutput", itemId: event.itemId, delta: event.partialResult },
-          ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            turnId,
+            itemId: event.itemId,
+            delta: { type: "toolOutput", itemId: event.itemId, delta: event.partialResult },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
+          },
+          context,
+        ),
       };
 
     case "tool_end":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED,
-        params: withThreadStatus({
-          threadId,
-          turnId,
-          item: {
-            type: "toolCall",
-            itemId: event.itemId,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: {},
-            output: event.output,
-            isError: event.isError,
-            render: event.render,
+        params: withThreadStatus(
+          {
+            threadId,
+            turnId,
+            item: {
+              type: "toolCall",
+              itemId: event.itemId,
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              input: {},
+              output: event.output,
+              isError: event.isError,
+              render: event.render,
+            },
+            ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
-          ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
-        }, context),
+          context,
+        ),
       };
 
     case "status_change":
@@ -182,17 +197,20 @@ export function agentEventToNotification(
     case "collab_spawn_end":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_END,
-        params: withThreadStatus({
-          threadId,
-          callId: event.callId,
-          childThreadId: event.childThreadId,
-          nickname: event.nickname,
-          agentType: event.agentType,
-          description: event.description,
-          prompt: event.prompt,
-          status: event.status,
-          message: event.message,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            callId: event.callId,
+            childThreadId: event.childThreadId,
+            nickname: event.nickname,
+            agentType: event.agentType,
+            description: event.description,
+            prompt: event.prompt,
+            status: event.status,
+            message: event.message,
+          },
+          context,
+        ),
       };
 
     case "collab_wait_begin":
@@ -204,12 +222,15 @@ export function agentEventToNotification(
     case "collab_wait_end":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_WAIT_END,
-        params: withThreadStatus({
-          threadId,
-          callId: event.callId,
-          agentStatuses: event.agentStatuses,
-          timedOut: event.timedOut,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            callId: event.callId,
+            agentStatuses: event.agentStatuses,
+            timedOut: event.timedOut,
+          },
+          context,
+        ),
       };
 
     case "collab_close_begin":
@@ -224,39 +245,48 @@ export function agentEventToNotification(
     case "collab_close_end":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_CLOSE_END,
-        params: withThreadStatus({
-          threadId,
-          callId: event.callId,
-          childThreadId: event.childThreadId,
-          nickname: event.nickname,
-          status: event.status,
-          message: event.message,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            callId: event.callId,
+            childThreadId: event.childThreadId,
+            nickname: event.nickname,
+            status: event.status,
+            message: event.message,
+          },
+          context,
+        ),
       };
 
     case "collab_interaction_begin":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_BEGIN,
-        params: withThreadStatus({
-          threadId,
-          callId: event.callId,
-          receiverThreadId: event.receiverThreadId,
-          receiverNickname: event.receiverNickname,
-          prompt: event.prompt,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            callId: event.callId,
+            receiverThreadId: event.receiverThreadId,
+            receiverNickname: event.receiverNickname,
+            prompt: event.prompt,
+          },
+          context,
+        ),
       };
 
     case "collab_interaction_end":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_INTERACTION_END,
-        params: withThreadStatus({
-          threadId,
-          callId: event.callId,
-          receiverThreadId: event.receiverThreadId,
-          receiverNickname: event.receiverNickname,
-          prompt: event.prompt,
-          status: event.status,
-        }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            callId: event.callId,
+            receiverThreadId: event.receiverThreadId,
+            receiverNickname: event.receiverNickname,
+            prompt: event.prompt,
+            status: event.status,
+          },
+          context,
+        ),
       };
 
     default:

@@ -361,11 +361,7 @@ export function InputDock({
             <div className="relative">
               {slashMenuOpen ? (
                 <div ref={slashMenuRef}>
-                  <SlashMenu
-                    commands={slashFiltered}
-                    selectedIndex={slashSelectedIndex}
-                    onSelect={handleSlashSelect}
-                  />
+                  <SlashMenu commands={slashFiltered} selectedIndex={slashSelectedIndex} onSelect={handleSlashSelect} />
                 </div>
               ) : null}
 

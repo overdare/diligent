@@ -32,13 +32,15 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       cwd: requestCwd,
       mode,
       effort,
+      modelId,
       signal,
       approve,
       ask,
       getSessionId,
       existingRegistry,
     }) => {
-      if (!runtimeConfig.model) {
+      const resolvedModel = modelId ? resolveModel(modelId) : runtimeConfig.model;
+      if (!resolvedModel) {
         throw new Error("No AI provider configured. Please add an API key in the provider settings.");
       }
 
@@ -63,7 +65,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
 
       const paths = await getPaths();
       const deps = {
-        model: runtimeConfig.model,
+        model: resolvedModel,
         systemPrompt: systemPromptWithSkillGuard,
         streamFunction: runtimeConfig.streamFunction,
         getParentSessionId: getSessionId,
@@ -79,7 +81,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       );
 
       return {
-        model: runtimeConfig.model,
+        model: resolvedModel,
         systemPrompt: systemPromptWithSkillGuard,
         tools: resultWithSkills.tools,
         streamFunction: runtimeConfig.streamFunction,
@@ -111,8 +113,10 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
         const configured = runtimeConfig.providerManager.getConfiguredProviders() as string[];
         return modelInfoList.filter((m) => configured.includes(m.provider));
       },
-      onModelChange: (modelId) => {
-        runtimeConfig.model = resolveModel(modelId);
+      onModelChange: (modelId, threadId) => {
+        if (!threadId) {
+          runtimeConfig.model = resolveModel(modelId);
+        }
       },
     },
     providerManager: runtimeConfig.providerManager,

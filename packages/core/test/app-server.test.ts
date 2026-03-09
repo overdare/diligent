@@ -115,6 +115,8 @@ function defaultServerRequestResponse(method: DiligentServerRequest["method"]): 
 
 function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown> }) {
   const providerManager = new ProviderManager({});
+  providerManager.setApiKey("anthropic", "test-key");
+  providerManager.setApiKey("openai", "test-key");
   const model: Model = {
     id: "claude-sonnet-4-6",
     provider: "anthropic",
@@ -528,6 +530,75 @@ describe("DiligentAppServer", () => {
       params: { threadId: newThreadId },
     });
     expect((readResult(newThreadRead) as { currentEffort: string }).currentEffort).toBe("max");
+  });
+
+  it("keeps model changes thread-scoped and restores them on resume", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig(),
+      }),
+    );
+
+    connectTestPeer(server);
+
+    const startedA = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 600,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadA = (readResult(startedA) as { threadId: string }).threadId;
+
+    const startedB = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 601,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadB = (readResult(startedB) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 602,
+      method: "config/set",
+      params: { threadId: threadA, model: "gpt-5.4" },
+    });
+
+    const readA = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 603,
+      method: "thread/read",
+      params: { threadId: threadA },
+    });
+    expect((readResult(readA) as { currentModel?: string }).currentModel).toBe("gpt-5.4");
+
+    const readB = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 604,
+      method: "thread/read",
+      params: { threadId: threadB },
+    });
+    expect((readResult(readB) as { currentModel?: string }).currentModel).toBe("claude-sonnet-4-6");
+
+    const resumedServer = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig(),
+      }),
+    );
+    connectTestPeer(resumedServer);
+
+    const resumed = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
+      id: 605,
+      method: "thread/resume",
+      params: { threadId: threadA },
+    });
+    expect((readResult(resumed) as { found: boolean }).found).toBe(true);
+
+    const resumedRead = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
+      id: 606,
+      method: "thread/read",
+      params: { threadId: threadA },
+    });
+    expect((readResult(resumedRead) as { currentModel?: string }).currentModel).toBe("gpt-5.4");
   });
 
   it("lists a newly started thread before the first turn", async () => {
@@ -1121,6 +1192,70 @@ describe("DiligentAppServer", () => {
     } finally {
       console.log = originalLog;
     }
+  });
+
+  it("persists turn-ending errors to thread history and emits error notification", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+    const notifications: DiligentServerNotification[] = [];
+
+    const server = new DiligentAppServer({
+      cwd: projectRoot,
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          throw new Error("invalid model for provider");
+        },
+      }),
+    });
+
+    const connection = connectTestPeer(server);
+    connection.setNotificationListener((notification) => {
+      notifications.push(notification);
+    });
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 700,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 701,
+      method: "turn/start",
+      params: { threadId, message: "hi" },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const errorNotification = notifications.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR);
+    expect(errorNotification).toBeDefined();
+    expect(errorNotification?.params.error.message).toContain("invalid model for provider");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 702,
+      method: "thread/read",
+      params: { threadId },
+    });
+    const result = readResult(read) as {
+      errors?: Array<{ error: { message: string; name: string }; fatal: boolean; turnId?: string }>;
+    };
+    expect(result.errors?.length).toBe(1);
+    expect(result.errors?.[0]?.error.message).toContain("invalid model for provider");
+    expect(result.errors?.[0]?.fatal).toBe(true);
+    expect(result.errors?.[0]?.turnId).toBeDefined();
   });
 
   it("emits turn/completed only after session writes are flushed", async () => {

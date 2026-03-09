@@ -14,6 +14,17 @@ import { StreamingIndicator } from "./StreamingIndicator";
 import { ToolBlock } from "./ToolBlock";
 import { UserMessage } from "./UserMessage";
 
+function ErrorMessage({ item }: { item: Extract<RenderItem, { kind: "error" }> }) {
+  return (
+    <div className="py-1">
+      <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+        <div className="font-medium">{item.name ? `${item.name}: ${item.message}` : item.message}</div>
+        {item.turnId ? <div className="mt-1 text-xs text-red-200/80">Turn: {item.turnId}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 interface MessageListProps {
   items: RenderItem[];
   threadStatus: ThreadStatus;
@@ -51,11 +62,13 @@ function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
     flushCollab();
     if (item.kind === "context") {
       result.push(<ContextMessage key={item.id} summary={item.summary} />);
+    } else if (item.kind === "error") {
+      result.push(<ErrorMessage key={item.id} item={item} />);
     } else if (item.kind === "tool") {
       result.push(<ToolBlock key={item.id} item={item} />);
     } else if (item.kind === "user") {
       result.push(<UserMessage key={item.id} text={item.text} images={item.images} />);
-    } else {
+    } else if (item.kind === "assistant") {
       const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
       const nextItem = items[idx + 1];
       const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";

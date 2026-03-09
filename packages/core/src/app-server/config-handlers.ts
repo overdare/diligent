@@ -36,11 +36,12 @@ export async function handleConfigSet(
   modelConfig:
     | {
         getAvailableModels: () => Array<{ id: string }>;
-        onModelChange: (modelId: string) => void;
+        onModelChange: (modelId: string, threadId?: string) => void;
       }
     | undefined,
   currentModelId: string | undefined,
   model: string | undefined,
+  threadId?: string,
 ): Promise<{ model: string | undefined }> {
   if (!model) return { model: currentModelId };
   if (!modelConfig) throw Object.assign(new Error("Model config not available"), { code: -32601 });
@@ -48,7 +49,7 @@ export async function handleConfigSet(
   const valid = modelConfig.getAvailableModels().find((entry) => entry.id === model);
   if (!valid) throw Object.assign(new Error(`Unknown model: ${model}`), { code: -32602 });
 
-  modelConfig.onModelChange(model);
+  modelConfig.onModelChange(model, threadId);
   return { model };
 }
 

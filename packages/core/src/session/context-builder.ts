@@ -1,10 +1,11 @@
 // @summary Builds linear message context from tree-structured session entries with compaction support
 import type { Message } from "../types";
 import { formatFileOperations, SUMMARY_PREFIX } from "./compaction";
-import type { CompactionEntry, SessionEntry } from "./types";
+import type { CompactionEntry, ErrorEntry, SessionEntry } from "./types";
 
 export interface SessionContext {
   messages: Message[];
+  errors: ErrorEntry[];
   currentModel?: { provider: string; modelId: string };
   currentEffort?: "low" | "medium" | "high" | "max";
 }
@@ -21,7 +22,7 @@ export interface SessionContext {
  */
 export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
   if (entries.length === 0) {
-    return { messages: [] };
+    return { messages: [], errors: [] };
   }
 
   const byId = new Map<string, SessionEntry>();
@@ -33,7 +34,7 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
   const leaf = leafId ? byId.get(leafId) : entries[entries.length - 1];
 
   if (!leaf) {
-    return { messages: [] };
+    return { messages: [], errors: [] };
   }
 
   // Walk from leaf to root
@@ -57,6 +58,7 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
   }
 
   const messages: Message[] = [];
+  const errors: ErrorEntry[] = [];
   let currentModel: { provider: string; modelId: string } | undefined;
   let currentEffort: "low" | "medium" | "high" | "max" | undefined;
 
@@ -89,6 +91,9 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
         case "effort_change":
           currentEffort = entry.effort;
           break;
+        case "error":
+          errors.push(entry);
+          break;
       }
     }
   } else {
@@ -104,12 +109,16 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
         case "effort_change":
           currentEffort = entry.effort;
           break;
+        case "error":
+          errors.push(entry);
+          break;
       }
     }
   }
 
   return {
     messages,
+    errors,
     currentModel,
     currentEffort,
   };

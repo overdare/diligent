@@ -27,6 +27,9 @@ export interface ThreadRuntime {
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
+  modelId?: string;
+  runningEffortSnapshot?: ThinkingEffort;
+  runningModelIdSnapshot?: string;
   manager: SessionManager;
   abortController: AbortController | null;
   currentTurnId: string | null;
@@ -150,6 +153,7 @@ export async function handleThreadResume(
 
     const context = runtime.manager.getContext();
     runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+    runtime.modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
     ctx.threads.set(threadId, runtime);
     ctx.setActiveThreadId(threadId);
 
@@ -199,11 +203,13 @@ export async function handleThreadRead(
   threadId?: string,
 ): Promise<{
   messages: unknown[];
+  errors: unknown[];
   childSessions?: unknown[];
   hasFollowUp: boolean;
   entryCount: number;
   isRunning: boolean;
   currentEffort: ThinkingEffort;
+  currentModel?: string;
 }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
@@ -227,11 +233,13 @@ export async function handleThreadRead(
 
   return {
     messages: runtime.manager.getContext(),
+    errors: runtime.manager.getErrors(),
     childSessions: children.length > 0 ? children : undefined,
     hasFollowUp: runtime.manager.hasPendingMessages(),
     entryCount: runtime.manager.entryCount,
     isRunning: runtime.isRunning,
     currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
+    currentModel: runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId,
   };
 }
 
@@ -248,6 +256,8 @@ export async function handleTurnStart(
 
   runtime.abortController = new AbortController();
   runtime.isRunning = true;
+  runtime.runningEffortSnapshot = runtime.effort;
+  runtime.runningModelIdSnapshot = runtime.modelId;
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
 

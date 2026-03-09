@@ -1,9 +1,9 @@
-import type { ModeKind } from "../agent/types";
+import type { ModeKind, SerializableError } from "../agent/types";
 import type { ThinkingEffort } from "../provider/types";
 import type { Message } from "../types";
 
 /** Session file format version. Increment when entry schema changes. */
-export const SESSION_VERSION = 6;
+export const SESSION_VERSION = 7;
 
 /** Unique entry ID — 8-char hex */
 export function generateEntryId(): string {
@@ -108,13 +108,24 @@ export interface EffortChangeEntry {
   changedBy: "cli" | "command" | "config";
 }
 
+export interface ErrorEntry {
+  type: "error";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  turnId?: string;
+  fatal: boolean;
+  error: SerializableError;
+}
+
 export type SessionEntry =
   | SessionMessageEntry
   | ModelChangeEntry
   | SessionInfoEntry
   | CompactionEntry
   | ModeChangeEntry
-  | EffortChangeEntry;
+  | EffortChangeEntry
+  | ErrorEntry;
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;

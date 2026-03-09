@@ -350,24 +350,15 @@ test("slash menu renders command list with listbox role", () => {
   const commands = [
     { name: "help", description: "Show available commands" },
     { name: "new", description: "Start a new conversation" },
-    { name: "mode", description: "Set collaboration mode", options: [{ label: "Plan", value: "plan" }] },
+    { name: "model", description: "Switch model" },
   ];
 
-  const html = renderToStaticMarkup(
-    <SlashMenu
-      commands={commands}
-      selectedIndex={0}
-      expandedCommand={null}
-      subSelectedIndex={0}
-      onSelect={() => {}}
-      onSelectOption={() => {}}
-    />,
-  );
+  const html = renderToStaticMarkup(<SlashMenu commands={commands} selectedIndex={0} onSelect={() => {}} />);
 
   expect(html).toContain('role="listbox"');
   expect(html).toContain("/help");
   expect(html).toContain("/new");
-  expect(html).toContain("/mode");
+  expect(html).toContain("/model");
   expect(html).toContain("Show available commands");
 });
 
@@ -377,16 +368,7 @@ test("slash menu highlights selected command with accent class", () => {
     { name: "new", description: "Start a new conversation" },
   ];
 
-  const html = renderToStaticMarkup(
-    <SlashMenu
-      commands={commands}
-      selectedIndex={1}
-      expandedCommand={null}
-      subSelectedIndex={0}
-      onSelect={() => {}}
-      onSelectOption={() => {}}
-    />,
-  );
+  const html = renderToStaticMarkup(<SlashMenu commands={commands} selectedIndex={1} onSelect={() => {}} />);
 
   // The second item (index 1) should have accent highlight and aria-selected
   expect(html).toContain('aria-selected="true"');
@@ -395,44 +377,8 @@ test("slash menu highlights selected command with accent class", () => {
   expect(optionCount).toBe(2);
 });
 
-test("slash menu renders expanded sub-options", () => {
-  const modeCmd = {
-    name: "mode",
-    description: "Set collaboration mode",
-    options: [
-      { label: "Default", value: "default", description: "Normal conversation" },
-      { label: "Plan", value: "plan", description: "Plan before acting" },
-    ],
-  };
-
-  const html = renderToStaticMarkup(
-    <SlashMenu
-      commands={[modeCmd]}
-      selectedIndex={0}
-      expandedCommand={modeCmd}
-      subSelectedIndex={0}
-      onSelect={() => {}}
-      onSelectOption={() => {}}
-    />,
-  );
-
-  expect(html).toContain("Default");
-  expect(html).toContain("Normal conversation");
-  expect(html).toContain("Plan");
-  expect(html).toContain("Plan before acting");
-});
-
 test("slash menu returns null for empty commands", () => {
-  const html = renderToStaticMarkup(
-    <SlashMenu
-      commands={[]}
-      selectedIndex={0}
-      expandedCommand={null}
-      subSelectedIndex={0}
-      onSelect={() => {}}
-      onSelectOption={() => {}}
-    />,
-  );
+  const html = renderToStaticMarkup(<SlashMenu commands={[]} selectedIndex={0} onSelect={() => {}} />);
 
   expect(html).toBe("");
 });

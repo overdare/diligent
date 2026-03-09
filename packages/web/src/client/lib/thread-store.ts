@@ -63,6 +63,15 @@ export type RenderItem =
     }
   | {
       id: string;
+      kind: "error";
+      message: string;
+      name?: string;
+      fatal: boolean;
+      turnId?: string;
+      timestamp: number;
+    }
+  | {
+      id: string;
       kind: "tool";
       toolName: string;
       inputText: string;
