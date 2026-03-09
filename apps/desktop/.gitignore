@@ -3,3 +3,4 @@ src-tauri/binaries/diligent-web-server*
 src-tauri/binaries/init*
 src-tauri/resources/dist/
 src-tauri/resources/defaults/
+src-tauri/.rust-build-hash

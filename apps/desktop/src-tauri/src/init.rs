@@ -58,15 +58,21 @@ pub fn run(app: &tauri::App) {
         return;
     }
 
-    // --- config.jsonc ---
-    let config_path = global.join("config.jsonc");
-    if !config_path.exists() {
-        if let Some(ref defaults) = defaults_dir {
-            let src = defaults.join("config.jsonc");
-            if src.exists() {
-                match fs::copy(&src, &config_path) {
-                    Ok(_) => eprintln!("[init] Created {}", config_path.display()),
-                    Err(e) => eprintln!("[init] Failed to copy config.jsonc: {e}"),
+    // --- *.jsonc configs (config.jsonc, @package.jsonc, ...) ---
+    if let Some(ref defaults) = defaults_dir {
+        if let Ok(entries) = fs::read_dir(defaults) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if !name_str.ends_with(".jsonc") {
+                    continue;
+                }
+                let dest = global.join(&name);
+                if !dest.exists() {
+                    match fs::copy(&entry.path(), &dest) {
+                        Ok(_) => eprintln!("[init] Created {}", dest.display()),
+                        Err(e) => eprintln!("[init] Failed to copy {name_str}: {e}"),
+                    }
                 }
             }
         }

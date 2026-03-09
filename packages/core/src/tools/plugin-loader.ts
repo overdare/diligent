@@ -54,7 +54,25 @@ export async function discoverGlobalPlugins(): Promise<string[]> {
   const root = getGlobalPluginRoot();
   try {
     const entries = await readdir(root, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>;
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const plugins: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith("@")) {
+        // Scoped package: scan one level deeper → "@scope/package"
+        const scopeDir = join(root, entry.name);
+        try {
+          const scopedEntries = await readdir(scopeDir, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>;
+          for (const sub of scopedEntries) {
+            if (sub.isDirectory()) plugins.push(`${entry.name}/${sub.name}`);
+          }
+        } catch {
+          // ignore unreadable scope dirs
+        }
+      } else {
+        plugins.push(entry.name);
+      }
+    }
+    return plugins;
   } catch {
     // Directory doesn't exist or can't be read — no auto-discovered plugins
     return [];

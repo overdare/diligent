@@ -8,14 +8,4 @@
 
   // Skip permission prompts for tool calls (use with caution)
   // "yolo": false,
-
-  "tools": {
-    "plugins": [
-      {
-        // url_fetch: fetches a URL and returns its readable text content
-        "package": "url-fetch-plugin",
-        "enabled": true
-      }
-    ]
-  }
 }
