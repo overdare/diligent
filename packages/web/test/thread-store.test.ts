@@ -1075,6 +1075,40 @@ test("collab_wait_end keeps spawn status running when timed out snapshot reports
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
 });
 
+test("authoritative thread status from item notifications updates header state", () => {
+  resetAdapter();
+  const threadId = "t1";
+
+  let state = {
+    ...initialThreadState,
+    activeThreadId: threadId,
+    threadStatus: "idle" as const,
+  };
+
+  state = reduce(state, {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      threadStatus: "busy",
+      item: {
+        type: "agentMessage",
+        itemId: "assistant-1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp: 10,
+        },
+      },
+    },
+  });
+
+  expect(state.threadStatus).toBe("busy");
+});
+
 test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

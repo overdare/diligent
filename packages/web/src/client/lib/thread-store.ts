@@ -832,12 +832,18 @@ export function reduceServerNotification(
     return state;
   }
 
+  const authoritativeStatus =
+    "threadStatus" in notification.params && typeof notification.params.threadStatus === "string"
+      ? notification.params.threadStatus
+      : undefined;
+  const stateWithAuthoritativeStatus = authoritativeStatus ? { ...state, threadStatus: authoritativeStatus } : state;
+
   // Thread-level notifications handled directly
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
-    return { ...state, activeThreadId: notification.params.threadId };
+    return { ...stateWithAuthoritativeStatus, activeThreadId: notification.params.threadId };
   }
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
-    return { ...state, activeThreadId: notification.params.threadId };
+    return { ...stateWithAuthoritativeStatus, activeThreadId: notification.params.threadId };
   }
 
   // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
@@ -845,13 +851,16 @@ export function reduceServerNotification(
     console.log("[ThreadStore] turn/interrupted received for thread", notification.params.threadId);
     const now = Date.now();
     const turnDurationMs =
-      state.activeTurnStartedAt !== null ? Math.max(0, now - state.activeTurnStartedAt) : undefined;
+      stateWithAuthoritativeStatus.activeTurnStartedAt !== null
+        ? Math.max(0, now - stateWithAuthoritativeStatus.activeTurnStartedAt)
+        : undefined;
     const reasoningDurationMs =
-      state.activeReasoningStartedAt !== null
-        ? state.activeReasoningDurationMs + (now - state.activeReasoningStartedAt)
-        : state.activeReasoningDurationMs;
+      stateWithAuthoritativeStatus.activeReasoningStartedAt !== null
+        ? stateWithAuthoritativeStatus.activeReasoningDurationMs +
+          (now - stateWithAuthoritativeStatus.activeReasoningStartedAt)
+        : stateWithAuthoritativeStatus.activeReasoningDurationMs;
     let next = settleInFlightItems({
-      ...state,
+      ...stateWithAuthoritativeStatus,
       threadStatus: "idle",
       activeTurnId: null,
       activeTurnStartedAt: null,
@@ -879,15 +888,20 @@ export function reduceServerNotification(
     const { turnId } = notification.params;
     const now = Date.now();
     const turnDurationMs =
-      state.activeTurnStartedAt !== null ? Math.max(0, now - state.activeTurnStartedAt) : undefined;
+      stateWithAuthoritativeStatus.activeTurnStartedAt !== null
+        ? Math.max(0, now - stateWithAuthoritativeStatus.activeTurnStartedAt)
+        : undefined;
     const reasoningDurationMs =
-      state.activeReasoningStartedAt !== null
-        ? state.activeReasoningDurationMs + (now - state.activeReasoningStartedAt)
-        : state.activeReasoningDurationMs;
+      stateWithAuthoritativeStatus.activeReasoningStartedAt !== null
+        ? stateWithAuthoritativeStatus.activeReasoningDurationMs +
+          (now - stateWithAuthoritativeStatus.activeReasoningStartedAt)
+        : stateWithAuthoritativeStatus.activeReasoningDurationMs;
     let next: ThreadState = {
-      ...state,
-      activeTurnId: state.activeTurnId === turnId ? null : state.activeTurnId,
-      activeTurnStartedAt: state.activeTurnId === turnId ? null : state.activeTurnStartedAt,
+      ...stateWithAuthoritativeStatus,
+      activeTurnId:
+        stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnId,
+      activeTurnStartedAt:
+        stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnStartedAt,
       activeReasoningStartedAt: null,
       activeReasoningDurationMs: 0,
     };
@@ -918,7 +932,7 @@ export function reduceServerNotification(
     ).item;
     if (item?.type === "userMessage" && item.message) {
       const { text, images } = extractUserTextAndImages(item.message.content);
-      return withItem(state, `remote-user-${item.itemId}`, {
+      return withItem(stateWithAuthoritativeStatus, `remote-user-${item.itemId}`, {
         id: `remote-user-${item.itemId}`,
         kind: "user",
         text,
@@ -929,7 +943,7 @@ export function reduceServerNotification(
   }
 
   // Delegate all item lifecycle, status, usage, error, knowledge, loop, steering to AgentEvent reducer
-  let current = state;
+  let current = stateWithAuthoritativeStatus;
   for (const event of events) {
     current = reduceAgentEvent(current, event);
   }

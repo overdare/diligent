@@ -607,6 +607,8 @@ export class DiligentAppServer {
         // The abort signal prevents runSession from doing meaningful work,
         // so the zombie-loop risk is negligible.
         runtime.abortController = null;
+        runtime.runningEffortSnapshot = undefined;
+        runtime.runningModelIdSnapshot = undefined;
         runtime.currentTurnId = null;
         runtime.isRunning = false;
         console.log("[AppServer] consumeStream: thread %s now idle (aborted)", runtime.id);

@@ -31,6 +31,11 @@ export const ThreadResumedNotificationSchema = z.object({
 });
 export type ThreadResumedNotification = z.infer<typeof ThreadResumedNotificationSchema>;
 
+const ThreadStatusSnapshotFields = {
+  threadStatus: ThreadStatusSchema.optional(),
+  threadStatusRetry: ThreadStatusRetrySchema.optional(),
+};
+
 export const ThreadStatusChangedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED),
   params: z.object({
@@ -49,6 +54,7 @@ export const TurnStartedNotificationSchema = z.object({
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
     turnNumber: z.number().int().positive().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type TurnStartedNotification = z.infer<typeof TurnStartedNotificationSchema>;
@@ -61,6 +67,7 @@ export const ItemStartedNotificationSchema = z.object({
     item: ThreadItemSchema,
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type ItemStartedNotification = z.infer<typeof ItemStartedNotificationSchema>;
@@ -74,6 +81,7 @@ export const ItemDeltaNotificationSchema = z.object({
     delta: ThreadItemDeltaSchema,
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type ItemDeltaNotification = z.infer<typeof ItemDeltaNotificationSchema>;
@@ -86,6 +94,7 @@ export const ItemCompletedNotificationSchema = z.object({
     item: ThreadItemSchema,
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type ItemCompletedNotification = z.infer<typeof ItemCompletedNotificationSchema>;
@@ -95,6 +104,7 @@ export const TurnCompletedNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     turnId: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type TurnCompletedNotification = z.infer<typeof TurnCompletedNotificationSchema>;
@@ -104,6 +114,7 @@ export const TurnInterruptedNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     turnId: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type TurnInterruptedNotification = z.infer<typeof TurnInterruptedNotificationSchema>;
@@ -122,6 +133,7 @@ export const KnowledgeSavedNotificationSchema = z.object({
     threadId: z.string(),
     knowledgeId: z.string(),
     content: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type KnowledgeSavedNotification = z.infer<typeof KnowledgeSavedNotificationSchema>;
@@ -132,6 +144,7 @@ export const LoopDetectedNotificationSchema = z.object({
     threadId: z.string(),
     patternLength: z.number().int().positive(),
     toolName: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type LoopDetectedNotification = z.infer<typeof LoopDetectedNotificationSchema>;
@@ -152,6 +165,7 @@ export const UsageUpdatedNotificationSchema = z.object({
     threadId: z.string(),
     usage: UsageSchema,
     cost: z.number(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type UsageUpdatedNotification = z.infer<typeof UsageUpdatedNotificationSchema>;
@@ -176,7 +190,7 @@ export type AccountUpdatedNotification = z.infer<typeof AccountUpdatedNotificati
 
 export const SteeringInjectedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED),
-  params: z.object({ threadId: z.string(), messageCount: z.number().int() }),
+  params: z.object({ threadId: z.string(), messageCount: z.number().int(), ...ThreadStatusSnapshotFields }),
 });
 export type SteeringInjectedNotification = z.infer<typeof SteeringInjectedNotificationSchema>;
 
@@ -189,6 +203,7 @@ export const CollabSpawnBeginNotificationSchema = z.object({
     callId: z.string(),
     prompt: z.string(),
     agentType: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabSpawnBeginNotification = z.infer<typeof CollabSpawnBeginNotificationSchema>;
@@ -205,6 +220,7 @@ export const CollabSpawnEndNotificationSchema = z.object({
     prompt: z.string(),
     status: CollabAgentStatusSchema,
     message: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabSpawnEndNotification = z.infer<typeof CollabSpawnEndNotificationSchema>;
@@ -215,6 +231,7 @@ export const CollabWaitBeginNotificationSchema = z.object({
     threadId: z.string(),
     callId: z.string(),
     agents: z.array(CollabAgentRefSchema),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabWaitBeginNotification = z.infer<typeof CollabWaitBeginNotificationSchema>;
@@ -226,6 +243,7 @@ export const CollabWaitEndNotificationSchema = z.object({
     callId: z.string(),
     agentStatuses: z.array(CollabAgentStatusEntrySchema),
     timedOut: z.boolean(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabWaitEndNotification = z.infer<typeof CollabWaitEndNotificationSchema>;
@@ -237,6 +255,7 @@ export const CollabCloseBeginNotificationSchema = z.object({
     callId: z.string(),
     childThreadId: z.string(),
     nickname: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabCloseBeginNotification = z.infer<typeof CollabCloseBeginNotificationSchema>;
@@ -250,6 +269,7 @@ export const CollabCloseEndNotificationSchema = z.object({
     nickname: z.string().optional(),
     status: CollabAgentStatusSchema,
     message: z.string().optional(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabCloseEndNotification = z.infer<typeof CollabCloseEndNotificationSchema>;
@@ -262,6 +282,7 @@ export const CollabInteractionBeginNotificationSchema = z.object({
     receiverThreadId: z.string(),
     receiverNickname: z.string().optional(),
     prompt: z.string(),
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabInteractionBeginNotification = z.infer<typeof CollabInteractionBeginNotificationSchema>;
@@ -275,6 +296,7 @@ export const CollabInteractionEndNotificationSchema = z.object({
     receiverNickname: z.string().optional(),
     prompt: z.string(),
     status: CollabAgentStatusSchema,
+    ...ThreadStatusSnapshotFields,
   }),
 });
 export type CollabInteractionEndNotification = z.infer<typeof CollabInteractionEndNotificationSchema>;
