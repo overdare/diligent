@@ -1,7 +1,7 @@
 // @summary Rust build cache — skip recompilation when sources are unchanged
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const HASH_FILE = ".rust-build-hash";
@@ -30,11 +30,7 @@ function collectFiles(dir: string): string[] {
  *   - src-tauri/capabilities/**  (Tauri capability JSON files)
  */
 export function computeRustHash(tauriDir: string): string {
-  const candidates: string[] = [
-    join(tauriDir, "Cargo.toml"),
-    join(tauriDir, "Cargo.lock"),
-    join(tauriDir, "build.rs"),
-  ];
+  const candidates: string[] = [join(tauriDir, "Cargo.toml"), join(tauriDir, "Cargo.lock"), join(tauriDir, "build.rs")];
 
   for (const sub of ["src", "capabilities"]) {
     const dir = join(tauriDir, sub);
@@ -69,5 +65,5 @@ export function rustSourcesChanged(tauriDir: string): boolean {
 /** Persist the current hash after a successful Rust build. */
 export function saveRustHash(tauriDir: string): void {
   const hashFile = join(tauriDir, HASH_FILE);
-  writeFileSync(hashFile, computeRustHash(tauriDir) + "\n");
+  writeFileSync(hashFile, `${computeRustHash(tauriDir)}\n`);
 }

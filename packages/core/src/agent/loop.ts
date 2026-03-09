@@ -7,10 +7,10 @@ import { resolveMaxTokens } from "../provider/types";
 import { executeTool } from "../tool/executor";
 import type { Tool, ToolContext, ToolRegistry } from "../tool/types";
 import type { AssistantMessage, Message, ToolCallBlock, ToolResultMessage, Usage } from "../types";
+import { debug } from "../util/debug";
 import { LoopDetector } from "./loop-detector";
 import type { AgentEvent, AgentLoopConfig, SerializableError } from "./types";
 import { MODE_SYSTEM_PROMPT_SUFFIXES, PLAN_MODE_ALLOWED_TOOLS } from "./types";
-import { debug } from "../util/debug";
 
 export interface AgentTurnRuntime {
   activeTools: AgentLoopConfig["tools"];

@@ -1,6 +1,6 @@
 // @summary Cross-platform child process spawn with abort, timeout, and Windows process-tree kill
 
-import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn as nodeSpawn } from "node:child_process";
 
 export type Stdio = "inherit" | "pipe" | "ignore";
 
@@ -61,7 +61,10 @@ export function spawnProcess(cmd: string[], opts: SpawnOptions = {}): Child {
 }
 
 /** Spawn and collect full stdout/stderr. Returns [stdout, stderr, exitCode]. */
-export function spawnCollect(cmd: string[], opts: Omit<SpawnOptions, "stdout" | "stderr"> = {}): Promise<[string, string, number]> {
+export function spawnCollect(
+  cmd: string[],
+  opts: Omit<SpawnOptions, "stdout" | "stderr"> = {},
+): Promise<[string, string, number]> {
   return new Promise((resolve, reject) => {
     const proc = spawnProcess(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
 
@@ -72,9 +75,7 @@ export function spawnCollect(cmd: string[], opts: Omit<SpawnOptions, "stdout" | 
     proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
 
     proc.exited
-      .then((code) =>
-        resolve([Buffer.concat(stdoutChunks).toString(), Buffer.concat(stderrChunks).toString(), code]),
-      )
+      .then((code) => resolve([Buffer.concat(stdoutChunks).toString(), Buffer.concat(stderrChunks).toString(), code]))
       .catch(reject);
   });
 }

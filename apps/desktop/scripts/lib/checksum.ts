@@ -1,7 +1,7 @@
 // @summary SHA256 checksum generation for release artifacts
 
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 function collectFiles(dir: string): string[] {
@@ -26,5 +26,5 @@ export function generateChecksums(distDir: string): void {
     const hash = createHash("sha256").update(readFileSync(file)).digest("hex");
     lines.push(`${hash}  ${relative(distDir, file)}`);
   }
-  writeFileSync(join(distDir, "checksums.sha256"), lines.join("\n") + "\n");
+  writeFileSync(join(distDir, "checksums.sha256"), `${lines.join("\n")}\n`);
 }

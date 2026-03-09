@@ -1,22 +1,13 @@
 // @summary Desktop packaging orchestrator — builds Tauri desktop app and assembles dist/
 
-import { parseArgs } from "node:util";
-import {
-  mkdirSync,
-  rmSync,
-  cpSync,
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  readdirSync,
-  statSync,
-} from "node:fs";
-import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
-import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
+import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
 import { rustSourcesChanged, saveRustHash } from "./lib/rust-cache";
+import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
 
 const ROOT = join(import.meta.dir, "../../..");
 const DESKTOP = join(import.meta.dir, "..");
@@ -38,9 +29,7 @@ const { values } = parseArgs({
 });
 
 if (!values.version) {
-  console.error(
-    "Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--package <dir>]",
-  );
+  console.error("Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--package <dir>]");
   process.exit(1);
 }
 
@@ -106,7 +95,7 @@ function bundlePlugin(pluginDir: string, pluginName: string): void {
     type: "module",
     main: "index.js",
   };
-  writeFileSync(join(outDir, "package.json"), JSON.stringify(pkgJson, null, 2) + "\n");
+  writeFileSync(join(outDir, "package.json"), `${JSON.stringify(pkgJson, null, 2)}\n`);
   console.log(`   Bundled plugin: ${pluginName} → ${outFile}`);
 
   // Copy asset files from plugin root (binaries, type defs, etc.) — skip source/config files
@@ -215,11 +204,7 @@ function copyArtifact(src: string, destDir: string, destName: string, list: stri
   list.push(destName);
 }
 
-function collectDesktopArtifacts(
-  plat: PlatformTarget,
-  platDir: string,
-  list: string[],
-): void {
+function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: string[]): void {
   const bundleDir = join(DESKTOP, "src-tauri/target/release/bundle");
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
 
@@ -285,11 +270,7 @@ function getGitCommit(): string {
   }
 }
 
-function writeReleaseMeta(
-  distDir: string,
-  plats: PlatformTarget[],
-  artifacts: Record<string, string[]>,
-): void {
+function writeReleaseMeta(distDir: string, plats: PlatformTarget[], artifacts: Record<string, string[]>): void {
   const meta: ReleaseMeta = {
     version,
     buildDate: new Date().toISOString(),
@@ -297,7 +278,7 @@ function writeReleaseMeta(
     platforms: plats.map((p) => p.id),
     artifacts,
   };
-  writeFileSync(join(distDir, "release-meta.json"), JSON.stringify(meta, null, 2) + "\n");
+  writeFileSync(join(distDir, "release-meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -355,9 +336,7 @@ try {
     mkdirSync(platDir, { recursive: true });
 
     if (plat.os !== currentOs()) {
-      console.log(
-        `\n⚠️  Skipping ${plat.id} — Tauri requires native build (current OS: ${currentOs()})`,
-      );
+      console.log(`\n⚠️  Skipping ${plat.id} — Tauri requires native build (current OS: ${currentOs()})`);
       continue;
     }
 

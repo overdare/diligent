@@ -1,5 +1,5 @@
 // @summary Tests for core agent loop execution and tool calling
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { agentLoop } from "../src/agent/loop";
 import type { AgentEvent, AgentLoopConfig } from "../src/agent/types";

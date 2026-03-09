@@ -5,8 +5,8 @@ import type { ModelClass } from "../provider/models";
 import { agentTypeToModelClass, resolveModelForClass } from "../provider/models";
 import { SessionManager } from "../session/manager";
 import type { TextBlock } from "../types";
-import { NicknamePool } from "./nicknames";
 import { debug } from "../util/debug";
+import { NicknamePool } from "./nicknames";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
 

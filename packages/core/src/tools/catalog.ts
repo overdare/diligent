@@ -92,7 +92,11 @@ export async function buildToolCatalog(
   const explicitPackageNames = new Set(explicitPlugins.map((p) => p.package));
   const autoPlugins = discoveredNames
     .filter((name) => !explicitPackageNames.has(name))
-    .map((name) => ({ package: name, enabled: true as const, tools: undefined as Record<string, boolean> | undefined }));
+    .map((name) => ({
+      package: name,
+      enabled: true as const,
+      tools: undefined as Record<string, boolean> | undefined,
+    }));
 
   // Explicit entries first (preserving user-defined order), then auto-discovered ones.
   const pluginConfigs = [...explicitPlugins, ...autoPlugins];

@@ -1,6 +1,6 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

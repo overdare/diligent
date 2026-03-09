@@ -1,8 +1,8 @@
-import { z } from "zod"
+import { z } from "zod";
 
-export const method = "instance.part.add"
+export const method = "instance.part.add";
 
-export const description = "Add a Part instance under a parent."
+export const description = "Add a Part instance under a parent.";
 
 export const params = z.object({
   class: z.literal("Part"),
@@ -17,14 +17,8 @@ export const params = z.object({
           Orientation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
         })
         .optional(),
-      Size: z
-        .object({ x: z.number(), y: z.number(), z: z.number() })
-        .describe("units in cm")
-        .optional(),
-      Color: z
-        .object({ r: z.number(), g: z.number(), b: z.number() })
-        .describe("Part color (RGB)")
-        .optional(),
+      Size: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("units in cm").optional(),
+      Color: z.object({ r: z.number(), g: z.number(), b: z.number() }).describe("Part color (RGB)").optional(),
       Material: z
         .enum([
           "Enum.Material.Basic",
@@ -47,4 +41,4 @@ export const params = z.object({
         .optional(),
     })
     .describe("Part properties"),
-})
+});

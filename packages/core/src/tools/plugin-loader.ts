@@ -53,7 +53,10 @@ export function getGlobalPluginPath(packageName: string): string {
 export async function discoverGlobalPlugins(): Promise<string[]> {
   const root = getGlobalPluginRoot();
   try {
-    const entries = await readdir(root, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>;
+    const entries = (await readdir(root, { withFileTypes: true })) as unknown as Array<{
+      isDirectory(): boolean;
+      name: string;
+    }>;
     const plugins: string[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -61,7 +64,10 @@ export async function discoverGlobalPlugins(): Promise<string[]> {
         // Scoped package: scan one level deeper → "@scope/package"
         const scopeDir = join(root, entry.name);
         try {
-          const scopedEntries = await readdir(scopeDir, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>;
+          const scopedEntries = (await readdir(scopeDir, { withFileTypes: true })) as unknown as Array<{
+            isDirectory(): boolean;
+            name: string;
+          }>;
           for (const sub of scopedEntries) {
             if (sub.isDirectory()) plugins.push(`${entry.name}/${sub.name}`);
           }
@@ -184,10 +190,7 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
   };
 }
 
-async function importPluginModule(
-  packageName: string,
-  cwd?: string,
-): Promise<Record<string, unknown>> {
+async function importPluginModule(packageName: string, cwd?: string): Promise<Record<string, unknown>> {
   // Resolution order:
   //   1. Regular package import (installed in the running process's environment)
   //   2. cwd/node_modules/<packageName>  (project-local bun/npm install)
@@ -213,10 +216,7 @@ async function importPluginModule(
     try {
       await stat(globalPath);
     } catch {
-      const triedPaths = [
-        ...(cwd ? [`${cwd}/node_modules/${packageName}`] : []),
-        globalPath,
-      ].join(", ");
+      const triedPaths = [...(cwd ? [`${cwd}/node_modules/${packageName}`] : []), globalPath].join(", ");
       throw new Error(
         `Could not load plugin package '${packageName}'. Tried: ${triedPaths}. ` +
           `Install it in the project ('bun add ${packageName}') or place it under ${getGlobalPluginRoot()}. ` +

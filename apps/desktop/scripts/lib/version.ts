@@ -39,7 +39,7 @@ export function injectVersion(version: string): VersionBackup {
   // Patch Tauri version — MSI/NSIS only accept numeric X.Y.Z, strip pre-release
   const tauriConf = JSON.parse(tauriOriginal);
   tauriConf.version = toTauriVersion(version);
-  writeFileSync(TAURI_CONF_PATH, JSON.stringify(tauriConf, null, 2) + "\n");
+  writeFileSync(TAURI_CONF_PATH, `${JSON.stringify(tauriConf, null, 2)}\n`);
 
   return { protocolOriginal, tauriOriginal };
 }

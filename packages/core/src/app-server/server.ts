@@ -28,6 +28,7 @@ import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
+import { debug } from "../util/debug";
 import {
   buildProviderList,
   handleAuthOAuthStart,
@@ -37,7 +38,6 @@ import {
   handleImageUpload,
 } from "./config-handlers";
 import { agentEventToNotification } from "./event-mapper";
-import { debug } from "../util/debug";
 import {
   handleServerResponseMessage,
   type PendingServerRequest,

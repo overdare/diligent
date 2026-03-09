@@ -2,10 +2,8 @@
   // Diligent configuration — auto-generated on first run.
   // Edit this file to customize your setup.
   // Full reference: https://github.com/your-org/diligent
-
   // AI model to use. Examples: "claude-sonnet-4-5", "gpt-4o", "gemini-2.0-flash"
   // "model": "claude-sonnet-4-5",
-
   // Skip permission prompts for tool calls (use with caution)
   // "yolo": false,
 }

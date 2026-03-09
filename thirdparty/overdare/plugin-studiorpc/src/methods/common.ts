@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod";
 
 /** Shared GUI object properties spread into Frame / TextLabel / ImageLabel / etc. */
 export const guiObjectProperties = {
@@ -7,10 +7,7 @@ export const guiObjectProperties = {
     .object({ r: z.number(), g: z.number(), b: z.number() })
     .describe("Background color (RGB)")
     .optional(),
-  BackgroundTransparency: z
-    .number()
-    .describe("Background transparency (0~1)")
-    .optional(),
+  BackgroundTransparency: z.number().describe("Background transparency (0~1)").optional(),
   LayoutOrder: z.number().describe("Layout order").optional(),
   Position: z
     .object({
@@ -33,4 +30,4 @@ export const guiObjectProperties = {
     .optional(),
   Visible: z.boolean().describe("Visibility").optional(),
   ZIndex: z.number().describe("Rendering order").optional(),
-}
+};
