@@ -127,9 +127,9 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     modelClass: "pro",
   },
   {
-    id: "gpt-5.3-chat",
+    id: "gpt-5.3-chat-latest",
     provider: "openai",
-    contextWindow: 128_000,
+    contextWindow: 400_000,
     maxOutputTokens: 16_384,
     inputCostPer1M: 1.75,
     outputCostPer1M: 14.0,
