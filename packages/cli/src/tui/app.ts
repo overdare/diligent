@@ -1,5 +1,6 @@
 // @summary Main TUI application component managing the agent loop and interface
 
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
   AgentEvent,
@@ -116,7 +117,7 @@ export class App {
     const requestRender = () => this.renderer.requestRender();
 
     // Input history (loaded async in start())
-    const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
     this.inputHistory = new InputHistory(join(home, ".config", "diligent", "history"));
 
     // Build component tree

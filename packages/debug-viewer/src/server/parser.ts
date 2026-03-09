@@ -1,4 +1,5 @@
 // @summary JSONL parser and tree builder for session data
+import { basename } from "node:path";
 import type {
   AssistantMessageEntry,
   CompactionEntry,
@@ -290,7 +291,7 @@ export function extractSessionMeta(filePath: string, entries: SessionEntry[]): S
   }
 
   return {
-    id: header?.id ?? filePath.split("/").pop()?.replace(".jsonl", "") ?? "unknown",
+    id: header?.id ?? basename(filePath, ".jsonl"),
     filePath,
     timestamp: header?.timestamp ?? lastActivity,
     messageCount,

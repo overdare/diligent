@@ -9,14 +9,23 @@ use tauri_plugin_shell::ShellExt;
 
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 
+/// Resolve dist/client: prefer bundle resource_dir, fall back to directory next to the exe.
+fn resolve_dist_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let candidate = resource_dir.join("dist").join("client");
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    // Portable / dev fallback: look next to the executable
+    let exe = std::env::current_exe().map_err(|e| format!("Cannot resolve exe path: {e}"))?;
+    let exe_dir = exe.parent().ok_or("Cannot resolve exe directory")?;
+    Ok(exe_dir.join("dist").join("client"))
+}
+
 /// Spawn the Bun web server sidecar and return the port it is listening on.
 pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
-    // Resolve dist/client path from bundle resources
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Cannot resolve resource dir: {e}"))?;
-    let dist_dir = resource_dir.join("dist").join("client");
+    let dist_dir = resolve_dist_dir(app)?;
     let dist_dir_str = dist_dir.to_string_lossy().to_string();
 
     // Spawn the sidecar with port=0 so the OS picks a free port

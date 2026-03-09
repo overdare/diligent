@@ -23,7 +23,7 @@ const PLATFORMS: TargetPlatform[] = [
 ];
 
 async function run(): Promise<void> {
-  const singleTarget = process.env.TAURI_TARGET_TRIPLE;
+  const singleTarget = process.env.TAURI_TARGET_TRIPLE?.trim();
 
   // Step 1: Build React SPA if not already built
   const clientDist = resolve(WEB, "dist/client");

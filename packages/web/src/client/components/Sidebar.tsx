@@ -35,7 +35,7 @@ export function Sidebar({
   onOpenProviders,
   onOpenTools,
 }: SidebarProps) {
-  const cwdShort = cwd ? cwd.split("/").slice(-2).join("/") : "-";
+  const cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
 
   return (
     <Panel className="flex min-h-0 flex-col overflow-hidden">

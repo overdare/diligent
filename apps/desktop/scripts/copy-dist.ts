@@ -12,6 +12,12 @@ type CopyEntry = {
   dest: string;
 };
 
+function getSidecarTriple(): string {
+  if (process.platform === "darwin") return "aarch64-apple-darwin";
+  if (process.platform === "win32") return "x86_64-pc-windows-msvc";
+  return "x86_64-unknown-linux-gnu";
+}
+
 function getEntries(): CopyEntry[] {
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
   const bundleDir = join(releaseDir, "bundle");
@@ -24,6 +30,18 @@ function getEntries(): CopyEntry[] {
   entries.push({
     src: join(releaseDir, binaryName),
     dest: join(DIST, `diligent-desktop${binarySuffix}${process.platform === "win32" ? ".exe" : ""}`),
+  });
+
+  // Portable bundle: sidecar + dist/client next to the raw exe so it runs without installation
+  // Tauri runtime resolves sidecar by name without triple (e.g. diligent-web-server.exe)
+  const triple = getSidecarTriple();
+  const sidecarExt = process.platform === "win32" ? ".exe" : "";
+  const sidecarSrc = join(DESKTOP, `src-tauri/binaries/diligent-web-server-${triple}${sidecarExt}`);
+  entries.push({ src: sidecarSrc, dest: join(DIST, `diligent-web-server-${triple}${sidecarExt}`) });
+  entries.push({ src: sidecarSrc, dest: join(DIST, `diligent-web-server${sidecarExt}`) });
+  entries.push({
+    src: join(DESKTOP, "src-tauri/resources/dist/client"),
+    dest: join(DIST, "dist/client"),
   });
 
   // Bundle

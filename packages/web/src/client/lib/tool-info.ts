@@ -70,7 +70,7 @@ function readStringField(parsed: Record<string, unknown>, keys: string[]): strin
 function summarizePathForUi(value: string): string {
   const path = value.trim();
   if (!path) return path;
-  const parts = path.split("/").filter(Boolean);
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
   if (parts.length === 0) return "/";
   if (parts.length === 1) return parts[0];
   return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;

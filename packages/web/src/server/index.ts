@@ -253,7 +253,7 @@ function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: str
   return { port: Number.isFinite(port) ? port : undefined, dev, distDir, cwd };
 }
 
-const isDirect = process.argv[1] && import.meta.path.endsWith(process.argv[1]);
+const isDirect = import.meta.main;
 
 if (isDirect) {
   const args = parseArgs(process.argv.slice(2));
