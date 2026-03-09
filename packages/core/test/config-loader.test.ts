@@ -7,19 +7,27 @@ import { loadDiligentConfig, mergeConfig } from "../src/config/loader";
 import type { DiligentConfig } from "../src/config/schema";
 
 const TEST_ROOT = join(tmpdir(), `diligent-config-test-${Date.now()}`);
+/** Separate HOME dir so global (~/.diligent/config.jsonc) != project (.diligent/config.jsonc) */
+const TEST_HOME = join(TEST_ROOT, "home");
 let origHome: string | undefined;
 
 /** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
 const projectConfigPath = (root: string) => join(root, ".diligent", "config.jsonc");
 
 beforeEach(() => {
-  origHome = process.env.HOME;
-  process.env.HOME = TEST_ROOT;
+  origHome = process.env.HOME ?? process.env.USERPROFILE;
+  process.env.HOME = TEST_HOME;
+  process.env.USERPROFILE = TEST_HOME;
 });
 
 afterEach(async () => {
-  if (origHome !== undefined) process.env.HOME = origHome;
-  else delete process.env.HOME;
+  if (origHome !== undefined) {
+    process.env.HOME = origHome;
+    process.env.USERPROFILE = origHome;
+  } else {
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+  }
   try {
     await rm(TEST_ROOT, { recursive: true, force: true });
   } catch {}
@@ -67,6 +75,7 @@ describe("loadDiligentConfig", () => {
   it("loads project config from .diligent/config.jsonc", async () => {
     const configFile = projectConfigPath(TEST_ROOT);
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await mkdir(join(TEST_HOME, ".diligent"), { recursive: true }); // ensure global dir exists but no config file
     await Bun.write(
       configFile,
       `{
@@ -84,9 +93,9 @@ describe("loadDiligentConfig", () => {
   });
 
   it("uses tool settings from global config only", async () => {
-    const globalConfigFile = join(TEST_ROOT, ".diligent", "config.jsonc");
+    const globalConfigFile = join(TEST_HOME, ".diligent", "config.jsonc");
     const projectConfigFile = projectConfigPath(TEST_ROOT);
-    await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
+    await mkdir(join(TEST_HOME, ".diligent"), { recursive: true });
     await mkdir(join(TEST_ROOT, ".diligent"), { recursive: true });
 
     await Bun.write(
