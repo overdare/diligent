@@ -637,6 +637,13 @@ export class DiligentAppServer {
         });
         // Let innerWork settle in the background — don't block new turns
         stream.waitForInnerWork(5_000).catch(() => {});
+        // Auto-submit any pending steer messages after abort, same as the normal completion path.
+        // This ensures that steer messages sent before stop is pressed carry over to the next turn.
+        const pendingAfterAbort = runtime.manager.popPendingMessages();
+        if (pendingAfterAbort && pendingAfterAbort.length > 0) {
+          const message = pendingAfterAbort.join("\n");
+          await this.handleTurnStart({ threadId: runtime.id, message });
+        }
       } else {
         // Normal path: wait for innerWork before clearing state
         await stream.waitForInnerWork(undefined).catch(() => {});

@@ -844,7 +844,16 @@ export function reduceServerNotification(
     ).item;
     if (item?.type === "userMessage" && item.message) {
       const { text, images } = extractUserTextAndImages(item.message.content);
-      return withItem(stateWithAuthoritativeStatus, `remote-user-${item.itemId}`, {
+      // If the incoming user message matches pending steer chips (auto-submitted after interrupt),
+      // drain those chips so they are not shown alongside the conversation item.
+      let baseState = stateWithAuthoritativeStatus;
+      if (baseState.pendingSteers.length > 0) {
+        const joinedSteers = baseState.pendingSteers.join("\n");
+        if (text === joinedSteers) {
+          baseState = { ...baseState, pendingSteers: [] };
+        }
+      }
+      return withItem(baseState, `remote-user-${item.itemId}`, {
         id: `remote-user-${item.itemId}`,
         kind: "user",
         text,
