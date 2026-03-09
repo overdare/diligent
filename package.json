@@ -6,7 +6,7 @@
     "apps/*"
   ],
   "scripts": {
-    "postinstall": "lefthook install --force",
+    "postinstall": "lefthook install --force && bash scripts/patch-hooks.sh",
     "test": "NO_COLOR=1 FORCE_COLOR=0 bun test",
     "test:e2e": "bun test packages/e2e/",
     "web:dev": "bun run packages/web/src/server/index.ts --dev",
