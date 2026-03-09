@@ -645,15 +645,12 @@ Decisions made during synthesis reviews, with rationale.
 - **References**: P028, D040
 - **Date**: 2026-03-05
 
-### D093: Fine-grained streaming delta types
-- **Decision**: Replace the unified `item/delta` notification with 6 type-specific delta notifications: `item/agentMessage/delta`, `item/reasoning/summaryTextDelta`, `item/plan/delta`, `item/toolExecution/outputDelta`, `item/fileChange/outputDelta`, `item/reasoning/textDelta`. The old `item/delta` is kept as deprecated, coexisting with new types during migration via capability negotiation (D094).
-- **Rationale**: Codex-RS separates 8 delta types, enabling clients to render reasoning, plans, and output with different UI treatments. Our current unified delta loses semantic meaning at the protocol boundary — the client has to inspect sub-types to decide rendering. Type-specific methods let clients subscribe to what they need.
-- **Key mapping**: `message_delta(text_delta)` → `agentMessage/delta`, `message_delta(thinking_delta)` → `reasoning/summaryTextDelta`, `tool_update(plan)` → `plan/delta`, `tool_update(bash/read/grep)` → `toolExecution/outputDelta`, `tool_update(write/edit)` → `fileChange/outputDelta`.
-- **References**: P028, D004, D086
-- **Date**: 2026-03-05
+### ~~D093: Fine-grained streaming delta types~~ (CANCELLED)
+- **Decision**: Cancelled. Keep the unified `item/delta` notification with `ThreadItemDelta` union (`messageText`, `messageThinking`, `toolOutput`).
+- **Reason for cancellation**: The existing `item/delta` union discriminator is sufficient. Clients already know tool type from `item/started`’s `toolName` field, and `tool_end` carries `ToolRenderPayload` for render-type distinction. Splitting into 6 method names just moves the branch from `delta.type` to method name with no structural benefit.
+- **Date**: 2026-03-05 (cancelled 2026-03-09)
 
-### D094: Streaming capability negotiation
-- **Decision**: Clients declare `streamingDeltaVersion: 1 | 2` in `InitializeParams.capabilities`. Version 1 = legacy unified `item/delta`, version 2 = type-specific deltas. Server matches the requested version. Default is v1 for backward compatibility.
-- **Rationale**: Additive protocol evolution without breaking existing clients. TUI and Web can migrate independently. No protocol version bump needed — these are purely additive notification methods.
-- **References**: P028, D086
-- **Date**: 2026-03-05
+### ~~D094: Streaming capability negotiation~~ (CANCELLED)
+- **Decision**: Cancelled. No capability negotiation needed since D093 is cancelled.
+- **Reason for cancellation**: D094 existed solely to support gradual migration to D093’s fine-grained deltas. With D093 cancelled, D094 has no purpose.
+- **Date**: 2026-03-05 (cancelled 2026-03-09)
