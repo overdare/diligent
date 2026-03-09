@@ -144,6 +144,46 @@ export const StatusBadgesBlockSchema = z.object({
 });
 export type StatusBadgesBlock = z.infer<typeof StatusBadgesBlockSchema>;
 
+export const FileBlockSchema = z.object({
+  type: z.literal("file"),
+  filePath: z.string(),
+  content: z.string().optional(),
+  offset: z.number().int().optional(),
+  limit: z.number().int().optional(),
+  isError: z.boolean().optional(),
+});
+export type FileBlock = z.infer<typeof FileBlockSchema>;
+
+export const CommandBlockSchema = z.object({
+  type: z.literal("command"),
+  command: z.string(),
+  output: z.string().optional(),
+  isError: z.boolean().optional(),
+});
+export type CommandBlock = z.infer<typeof CommandBlockSchema>;
+
+export const DiffHunkSchema = z.object({
+  oldString: z.string().optional(),
+  newString: z.string().optional(),
+});
+export type DiffHunk = z.infer<typeof DiffHunkSchema>;
+
+export const DiffFileSchema = z.object({
+  filePath: z.string(),
+  action: z.enum(["Add", "Update", "Delete", "Move"]).optional(),
+  movedTo: z.string().optional(),
+  hunks: z.array(DiffHunkSchema),
+});
+export type DiffFile = z.infer<typeof DiffFileSchema>;
+
+export const DiffBlockSchema = z.object({
+  type: z.literal("diff"),
+  files: z.array(DiffFileSchema),
+  output: z.string().optional(),
+  isError: z.boolean().optional(),
+});
+export type DiffBlock = z.infer<typeof DiffBlockSchema>;
+
 export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
   SummaryBlockSchema,
   KeyValueBlockSchema,
@@ -151,6 +191,9 @@ export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
   TableBlockSchema,
   TreeBlockSchema,
   StatusBadgesBlockSchema,
+  FileBlockSchema,
+  CommandBlockSchema,
+  DiffBlockSchema,
 ]);
 export type ToolRenderBlock = z.infer<typeof ToolRenderBlockSchema>;
 

@@ -18,9 +18,7 @@ export function createSendInputTool(registry: AgentRegistry): Tool<typeof SendIn
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       const nickname = registry.getNickname(args.id) ?? args.id;
       await registry.sendInput(args.id, args.message);
-      return {
-        output: JSON.stringify({ ok: true, nickname, message: args.message }),
-      };
+      return { output: JSON.stringify({ ok: true, nickname, message: args.message }) };
     },
   };
 }

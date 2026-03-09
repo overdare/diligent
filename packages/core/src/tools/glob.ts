@@ -2,7 +2,6 @@
 
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 import { spawnCollect } from "../util/process";
@@ -66,21 +65,7 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
           output += `\n\n... (${overflow} more files not shown)`;
         }
 
-        const render: ToolRenderPayload = {
-          version: 1,
-          blocks: [
-            {
-              type: "list",
-              title: `Files matching ${args.pattern}${args.path ? ` in ${args.path}` : ""}`,
-              items: paths,
-            },
-            ...(overflow > 0
-              ? [{ type: "summary" as const, text: `${overflow} more files not shown`, tone: "info" as const }]
-              : []),
-          ],
-        };
-
-        return { output, render };
+        return { output };
       } catch (err) {
         return {
           output: `Error running glob: ${err instanceof Error ? err.message : String(err)}`,

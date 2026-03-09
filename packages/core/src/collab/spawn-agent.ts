@@ -48,9 +48,7 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
         resumeId: args.resume_id,
         modelClass: args.model_class,
       });
-      return {
-        output: JSON.stringify({ thread_id: threadId, nickname }),
-      };
+      return { output: JSON.stringify({ thread_id: threadId, nickname }) };
     },
   };
 }

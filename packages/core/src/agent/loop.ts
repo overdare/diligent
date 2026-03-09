@@ -405,7 +405,6 @@ export async function executeToolCalls(
         output: result.output,
         isError: !!result.metadata?.error,
         timestamp: Date.now(),
-        render: result.render,
       };
 
       stream.push({
@@ -415,7 +414,6 @@ export async function executeToolCalls(
         toolName: toolCall.name,
         output: result.output,
         isError: toolResult.isError,
-        render: result.render,
       });
 
       executions.push({
@@ -457,7 +455,6 @@ export async function executeToolCalls(
       output: result.output,
       isError: !!result.metadata?.error,
       timestamp: Date.now(),
-      render: result.render,
     };
 
     stream.push({
@@ -467,7 +464,6 @@ export async function executeToolCalls(
       toolName: toolCall.name,
       output: result.output,
       isError: toolResult.isError,
-      render: result.render,
     });
 
     executions.push({

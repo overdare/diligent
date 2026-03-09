@@ -147,7 +147,6 @@ export function createReadTool(): Tool<typeof ReadParams> {
         output += `\n\n... (showing lines ${startLine + 1}-${startLine + selectedLines.length} of ${totalLines} total)`;
       }
 
-      // 7. Return with truncateDirection: "head" (beginning is most relevant for files)
       return { output, truncateDirection: "head" };
     },
   };

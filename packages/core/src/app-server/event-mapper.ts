@@ -140,7 +140,6 @@ export function agentEventToNotification(
               input: {},
               output: event.output,
               isError: event.isError,
-              render: event.render,
             },
             ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },

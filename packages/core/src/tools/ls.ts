@@ -1,7 +1,6 @@
 // @summary List directory contents with type indicators
 import { readdir } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { ToolRenderPayload } from "@diligent/protocol";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
 
@@ -39,21 +38,7 @@ export function createLsTool(): Tool<typeof LsParams> {
           output += `\n\n... (${overflow} more entries not shown)`;
         }
 
-        const render: ToolRenderPayload = {
-          version: 1,
-          blocks: [
-            {
-              type: "list",
-              title: path,
-              items: lines,
-            },
-            ...(overflow > 0
-              ? [{ type: "summary" as const, text: `${overflow} more entries not shown`, tone: "info" as const }]
-              : []),
-          ],
-        };
-
-        return { output, render };
+        return { output };
       } catch (err) {
         return {
           output: `Error listing directory: ${err instanceof Error ? err.message : String(err)}`,

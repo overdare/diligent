@@ -1,5 +1,10 @@
 // @summary Renders structured P040 ToolRenderPayload blocks matching the existing Content* component style
+
 import type {
+  CommandBlock,
+  DiffBlock,
+  DiffFile,
+  FileBlock,
   KeyValueBlock,
   ListBlock,
   StatusBadgesBlock,
@@ -10,8 +15,10 @@ import type {
   TreeBlock,
   TreeNode,
 } from "@diligent/protocol";
+import { useState } from "react";
 import { cn } from "../lib/cn";
 import { CopyButton } from "./CopyButton";
+import { ExpandButton } from "./ExpandButton";
 
 /* ── Shared wrapper ───────────────────────────────────────────────── */
 
@@ -198,6 +205,211 @@ function RenderStatusBadges({ block }: { block: StatusBadgesBlock }) {
   );
 }
 
+/* ── FileBlock ───────────────────────────────────────────────────── */
+
+const FILE_PREVIEW_LINES = 15;
+
+function RenderFile({ block }: { block: FileBlock }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = block.content?.split("\n") ?? [];
+  const isLong = lines.length > FILE_PREVIEW_LINES;
+  const visibleContent = !expanded && isLong ? lines.slice(0, FILE_PREVIEW_LINES).join("\n") : block.content;
+
+  const rangeLabel =
+    block.offset && block.limit
+      ? `L${block.offset}–${block.offset + block.limit - 1}`
+      : block.offset
+        ? `from L${block.offset}`
+        : block.limit
+          ? `${block.limit} lines`
+          : "";
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
+        <span className="shrink-0 text-accent/70">↗</span>
+        <span className="min-w-0 flex-1 truncate text-text/80">{block.filePath}</span>
+        {rangeLabel ? <span className="shrink-0 text-muted/70">{rangeLabel}</span> : null}
+        {block.content ? <CopyButton text={block.content} /> : null}
+      </div>
+      {block.content ? (
+        <div>
+          <pre
+            className={cn(
+              "overflow-x-auto whitespace-pre-wrap px-3 py-2 leading-relaxed",
+              block.isError ? "text-danger/90" : "text-text/70",
+            )}
+          >
+            {visibleContent}
+          </pre>
+          {isLong ? (
+            <ExpandButton
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              detail={`${lines.length} lines`}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── CommandBlock ────────────────────────────────────────────────── */
+
+const CMD_PREVIEW_LINES = 15;
+
+function RenderCommand({ block }: { block: CommandBlock }) {
+  const [expanded, setExpanded] = useState(false);
+  const outputLines = block.output?.split("\n") ?? [];
+  const isLong = outputLines.length > CMD_PREVIEW_LINES;
+  const visibleOutput = !expanded && isLong ? outputLines.slice(0, CMD_PREVIEW_LINES).join("\n") : block.output;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
+        <span className="shrink-0 text-muted">$</span>
+        <pre className="min-w-0 flex-1 whitespace-pre-wrap text-text">{block.command}</pre>
+        <CopyButton text={block.command} />
+      </div>
+      {block.output !== undefined && block.output !== "" && (
+        <div>
+          <pre
+            className={cn(
+              "overflow-x-auto whitespace-pre-wrap px-3 py-2 leading-relaxed",
+              block.isError ? "text-danger/90" : "text-text/80",
+            )}
+          >
+            {visibleOutput}
+          </pre>
+          {isLong && (
+            <ExpandButton
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              detail={`${outputLines.length} lines`}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── DiffBlock ────────────────────────────────────────────────────── */
+
+const DIFF_PREVIEW_LINES = 12;
+
+function DiffHunkView({ oldString, newString }: { oldString?: string; newString?: string }) {
+  const [oldExpanded, setOldExpanded] = useState(false);
+  const [newExpanded, setNewExpanded] = useState(false);
+
+  function HalfBlock({
+    label,
+    text,
+    color,
+    expanded,
+    onToggle,
+  }: {
+    label: string;
+    text: string;
+    color: "danger" | "success";
+    expanded: boolean;
+    onToggle: () => void;
+  }) {
+    const lines = text.split("\n");
+    const isLong = lines.length > DIFF_PREVIEW_LINES;
+    const visible = !expanded && isLong ? lines.slice(0, DIFF_PREVIEW_LINES).join("\n") : text;
+    const prefix = color === "danger" ? "−" : "+";
+    const borderCls = color === "danger" ? "border-danger/20" : "border-emerald-400/30";
+    const bgCls = color === "danger" ? "bg-danger/10" : "bg-emerald-400/10";
+    const textCls = color === "danger" ? "text-danger/80" : "text-emerald-400";
+    const labelCls = color === "danger" ? "text-danger/70" : "text-emerald-400";
+    return (
+      <div className={cn("overflow-hidden rounded border", borderCls, bgCls)}>
+        <div className="flex items-center justify-between border-b border-text/10 px-2 py-1">
+          <span className={cn("font-mono text-2xs uppercase tracking-wider", labelCls)}>
+            {prefix} {label}
+          </span>
+          <CopyButton text={text} />
+        </div>
+        <pre className={cn("overflow-x-auto whitespace-pre-wrap px-3 py-2 leading-relaxed", textCls)}>{visible}</pre>
+        {isLong && <ExpandButton expanded={expanded} onToggle={onToggle} detail={`${lines.length} lines`} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {oldString ? (
+        <HalfBlock
+          label="old"
+          text={oldString}
+          color="danger"
+          expanded={oldExpanded}
+          onToggle={() => setOldExpanded((v) => !v)}
+        />
+      ) : null}
+      {newString !== undefined ? (
+        <HalfBlock
+          label="new"
+          text={newString}
+          color="success"
+          expanded={newExpanded}
+          onToggle={() => setNewExpanded((v) => !v)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+const ACTION_BADGE: Record<string, string> = {
+  Add: "bg-emerald-400/15 text-emerald-400",
+  Update: "bg-accent/10 text-accent/80",
+  Delete: "bg-danger/15 text-danger",
+  Move: "bg-warn/15 text-warn",
+};
+
+function DiffFileView({ file }: { file: DiffFile }) {
+  const badgeCls = ACTION_BADGE[file.action ?? "Update"] ?? ACTION_BADGE.Update;
+  const displayPath = file.action === "Move" && file.movedTo ? `${file.filePath} → ${file.movedTo}` : file.filePath;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
+        <span className="shrink-0 text-accent/70">✎</span>
+        <span className="min-w-0 flex-1 truncate text-text/80">{displayPath}</span>
+        {file.action ? (
+          <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium", badgeCls)}>{file.action}</span>
+        ) : null}
+      </div>
+      {file.hunks.length > 0 && (
+        <div className="space-y-1 p-2">
+          {file.hunks.map((hunk, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: ordered hunks
+            <DiffHunkView key={i} oldString={hunk.oldString} newString={hunk.newString} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RenderDiff({ block }: { block: DiffBlock }) {
+  return (
+    <div className="space-y-2">
+      {block.files.map((file, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: ordered files
+        <DiffFileView key={i} file={file} />
+      ))}
+      {block.output ? (
+        <div className={cn("px-1 font-mono text-xs", block.isError ? "text-danger/70" : "text-muted/70")}>
+          {block.output.split("\n")[0]}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ── Single block dispatcher ──────────────────────────────────────── */
 
 function RenderBlock({ block }: { block: ToolRenderBlock }) {
@@ -214,6 +426,12 @@ function RenderBlock({ block }: { block: ToolRenderBlock }) {
       return <RenderTree block={block} />;
     case "status_badges":
       return <RenderStatusBadges block={block} />;
+    case "file":
+      return <RenderFile block={block} />;
+    case "command":
+      return <RenderCommand block={block} />;
+    case "diff":
+      return <RenderDiff block={block} />;
     default:
       // Unknown block kind — graceful fallback
       return null;

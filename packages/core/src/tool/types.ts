@@ -1,4 +1,3 @@
-import type { ToolRenderPayload } from "@diligent/protocol";
 import type { z } from "zod";
 
 // D013: Tool definition
@@ -65,9 +64,6 @@ export interface ApprovalRequest {
 // D020: Tool result
 export interface ToolResult {
   output: string;
-  /** P040: Optional structured render payload for richer client presentation.
-   *  Plain `output` remains the canonical LLM-facing text; `render` is for UI only. */
-  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
   truncateDirection?: "head" | "tail" | "head_tail"; // D025: hint for auto-truncation. Default: "tail"
   /** When true, the tool result is persisted to the session but NOT sent to the LLM.

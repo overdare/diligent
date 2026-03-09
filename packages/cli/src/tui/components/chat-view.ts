@@ -3,7 +3,6 @@ import type { AgentEvent } from "@diligent/core";
 import { debugLogger } from "../framework/debug-logger";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
-import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
 import { SpinnerComponent } from "./spinner";
@@ -255,15 +254,6 @@ export class ChatView implements Component {
             lines.push(`${icon} ${event.toolName}${elapsed}`);
           }
 
-          this.items.push(lines);
-        } else if (event.render) {
-          // P040: structured render payload — use block text renderer
-          const renderLines = renderToolPayload(event.render);
-          const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
-          const lines: string[] = [`${icon} ${event.toolName}${elapsed}`];
-          for (const line of renderLines) {
-            lines.push(`  ${line}`);
-          }
           this.items.push(lines);
         } else if (event.output) {
           const rawLines = event.output.split("\n");

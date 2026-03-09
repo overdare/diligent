@@ -47,7 +47,6 @@ export async function executeTool(
         truncated.output +
         TRUNCATION_WARNING +
         `\n(truncated from ${truncated.originalLines} lines / ${truncated.originalBytes} bytes. Full output at: ${savedPath})`,
-      render: result.render,
       metadata: {
         ...result.metadata,
         truncated: true,

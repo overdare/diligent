@@ -1,4 +1,5 @@
 // @summary Tool display name, icon, and category mapping for compact ToolCallRow rendering
+import type { ToolRenderPayload } from "@diligent/protocol";
 
 export interface ToolInfo {
   displayName: string;
@@ -128,6 +129,20 @@ export function getToolHeaderTitle(toolName: string, inputText: string, outputTe
   if (normalizedName === "plan") {
     return parsePlanHeaderTitle(inputText);
   }
+  if (
+    normalizedName === "edit" ||
+    normalizedName === "multiedit" ||
+    normalizedName === "multi_edit" ||
+    normalizedName === "write"
+  ) {
+    try {
+      const parsed = JSON.parse(inputText) as Record<string, unknown>;
+      const filePath = readStringField(parsed, ["file_path"]);
+      if (filePath) return `${displayName} — ${clip(summarizePathForUi(filePath), 60)}`;
+    } catch {
+      // fall through
+    }
+  }
   void inputText;
   return displayName;
 }
@@ -201,6 +216,21 @@ export function summarizeInput(toolName: string, inputText: string): string {
       return filePath ? `Read ${clip(summarizePathForUi(filePath), 72)}` : "";
     }
 
+    if (normalizedName === "write") {
+      const filePath = readStringField(parsed, ["file_path"]);
+      return filePath ? `Write ${clip(summarizePathForUi(filePath), 72)}` : "";
+    }
+
+    if (normalizedName === "edit") {
+      const filePath = readStringField(parsed, ["file_path"]);
+      return filePath ? `Edit ${clip(summarizePathForUi(filePath), 72)}` : "";
+    }
+
+    if (normalizedName === "multiedit" || normalizedName === "multi_edit") {
+      const filePath = readStringField(parsed, ["file_path"]);
+      return filePath ? `Edit ${clip(summarizePathForUi(filePath), 72)}` : "";
+    }
+
     if (normalizedName === "apply_patch") {
       const patchText = readStringField(parsed, ["patch"]);
       if (!patchText) return "";
@@ -233,4 +263,247 @@ export function summarizeInput(toolName: string, inputText: string): string {
     .find(Boolean);
   if (!firstLine) return "";
   return clip(firstLine, normalizedName === "bash" ? 120 : 80);
+}
+
+/**
+ * Derive a ToolRenderPayload from tool name + raw input/output text.
+ * Used as fallback when item.render is absent (e.g. hydrated from session history).
+ */
+export function deriveRenderPayload(
+  toolName: string,
+  inputText: string,
+  outputText: string,
+): ToolRenderPayload | undefined {
+  const name = toolName.toLowerCase();
+  let parsed: Record<string, unknown> | undefined;
+  try {
+    parsed = JSON.parse(inputText) as Record<string, unknown>;
+  } catch {
+    // not JSON — only bash fallback below will work
+  }
+
+  // bash → command block
+  if (name === "bash" && parsed) {
+    const command = typeof parsed.command === "string" ? parsed.command : undefined;
+    if (command) {
+      return {
+        version: 1,
+        blocks: [{ type: "command", command, output: outputText || undefined, isError: false }],
+      };
+    }
+  }
+
+  // read → file block (outputText has line numbers; strip them for display)
+  if (name === "read" && parsed) {
+    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
+    if (filePath) {
+      const rawContent = outputText
+        .split("\n")
+        .map((line) => line.replace(/^\s*\d+\t/, ""))
+        .join("\n");
+      return {
+        version: 1,
+        blocks: [
+          {
+            type: "file",
+            filePath,
+            content: rawContent || undefined,
+            offset: typeof parsed.offset === "number" ? parsed.offset : undefined,
+            limit: typeof parsed.limit === "number" ? parsed.limit : undefined,
+          },
+        ],
+      };
+    }
+  }
+
+  // write → file block
+  if (name === "write" && parsed) {
+    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
+    const content = typeof parsed.content === "string" ? parsed.content : undefined;
+    if (filePath) {
+      return { version: 1, blocks: [{ type: "file", filePath, content }] };
+    }
+  }
+
+  // edit → diff block
+  if (name === "edit" && parsed) {
+    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
+    const oldString = typeof parsed.old_string === "string" ? parsed.old_string : undefined;
+    const newString = typeof parsed.new_string === "string" ? parsed.new_string : undefined;
+    if (filePath) {
+      const action = oldString === "" ? ("Add" as const) : undefined;
+      return {
+        version: 1,
+        blocks: [
+          {
+            type: "diff",
+            files: [{ filePath, action, hunks: [{ oldString: oldString || undefined, newString }] }],
+            output: outputText.split("\n")[0] || undefined,
+          },
+        ],
+      };
+    }
+  }
+
+  // multi_edit → diff block
+  if ((name === "multi_edit" || name === "multiedit") && parsed) {
+    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
+    const edits = Array.isArray(parsed.edits) ? parsed.edits : undefined;
+    if (filePath && edits) {
+      const hunks = edits.map((e: Record<string, unknown>) => ({
+        oldString: typeof e.old_string === "string" ? e.old_string : undefined,
+        newString: typeof e.new_string === "string" ? e.new_string : undefined,
+      }));
+      return {
+        version: 1,
+        blocks: [
+          {
+            type: "diff",
+            files: [{ filePath, hunks }],
+            output: outputText.split("\n")[0] || undefined,
+          },
+        ],
+      };
+    }
+  }
+
+  // apply_patch → diff block (parse the patch text client-side)
+  if (name === "apply_patch" && parsed) {
+    const patch = typeof parsed.patch === "string" ? parsed.patch : undefined;
+    if (patch) {
+      const files = parsePatchForRender(patch);
+      if (files.length > 0) {
+        return {
+          version: 1,
+          blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
+        };
+      }
+    }
+  }
+
+  // glob → list (output: file paths one per line)
+  if (name === "glob") {
+    const lines = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length > 0) {
+      return { version: 1, blocks: [{ type: "list", title: "Files", items: lines }] };
+    }
+  }
+
+  // ls → list
+  if (name === "ls") {
+    const lines = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((l) => !l.startsWith("...")); // exclude truncation notes
+    if (lines.length > 0) {
+      return { version: 1, blocks: [{ type: "list", items: lines }] };
+    }
+  }
+
+  // grep → list (output: path:line:content format)
+  if (name === "grep") {
+    const lines = outputText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((l) => !l.startsWith("..."));
+    if (lines.length > 0) {
+      return { version: 1, blocks: [{ type: "list", items: lines }] };
+    }
+  }
+
+  // add_knowledge → key_value
+  if (name === "add_knowledge" && parsed) {
+    const type_ = typeof parsed.type === "string" ? parsed.type : "";
+    const content = typeof parsed.content === "string" ? parsed.content : "";
+    const confidence = typeof parsed.confidence === "number" ? String(parsed.confidence) : "";
+    const tags = Array.isArray(parsed.tags) ? (parsed.tags as string[]).join(", ") : "";
+    const items = [
+      { key: "type", value: type_ },
+      { key: "content", value: content },
+      ...(confidence ? [{ key: "confidence", value: confidence }] : []),
+      ...(tags ? [{ key: "tags", value: tags }] : []),
+    ].filter((i) => i.value);
+    if (items.length > 0) {
+      return { version: 1, blocks: [{ type: "key_value", items }] };
+    }
+  }
+
+  // spawn_agent, wait, close_agent, send_input → summary
+  if (["spawn_agent", "wait", "close_agent", "send_input"].includes(name)) {
+    const firstLine = outputText.split("\n")[0]?.trim();
+    if (firstLine) {
+      return { version: 1, blocks: [{ type: "summary", text: firstLine, tone: "info" }] };
+    }
+  }
+
+  return undefined;
+}
+
+function parsePatchForRender(patch: string): import("@diligent/protocol").DiffFile[] {
+  const lines = patch.split("\n");
+  const files: import("@diligent/protocol").DiffFile[] = [];
+  let current: import("@diligent/protocol").DiffFile | null = null;
+  let oldLines: string[] = [];
+  let newLines: string[] = [];
+
+  const flushHunk = () => {
+    if (!current) return;
+    if (oldLines.length > 0 || newLines.length > 0) {
+      current.hunks.push({ oldString: oldLines.join("\n") || undefined, newString: newLines.join("\n") });
+      oldLines = [];
+      newLines = [];
+    }
+  };
+
+  const flushFile = () => {
+    flushHunk();
+    if (current) files.push(current);
+    current = null;
+  };
+
+  for (const line of lines) {
+    const addMatch = line.match(/^\*\*\* Add File: (.+)$/);
+    if (addMatch) {
+      flushFile();
+      current = { filePath: addMatch[1].trim(), action: "Add", hunks: [] };
+      continue;
+    }
+    const delMatch = line.match(/^\*\*\* Delete File: (.+)$/);
+    if (delMatch) {
+      flushFile();
+      current = { filePath: delMatch[1].trim(), action: "Delete", hunks: [] };
+      continue;
+    }
+    const updMatch = line.match(/^\*\*\* Update File: (.+)$/);
+    if (updMatch) {
+      flushFile();
+      current = { filePath: updMatch[1].trim(), action: "Update", hunks: [] };
+      continue;
+    }
+    const moveMatch = line.match(/^\*\*\* Move to: (.+)$/);
+    if (moveMatch && current) {
+      current.movedTo = moveMatch[1].trim();
+      current.action = "Move";
+      continue;
+    }
+    if (!current) continue;
+    if (line.startsWith("@@")) {
+      flushHunk();
+      continue;
+    }
+    if (line.startsWith("+")) newLines.push(line.slice(1));
+    else if (line.startsWith("-")) oldLines.push(line.slice(1));
+    // context lines ( ) contribute to both sides
+    else if (line.startsWith(" ")) {
+      oldLines.push(line.slice(1));
+      newLines.push(line.slice(1));
+    }
+  }
+  flushFile();
+  return files;
 }
