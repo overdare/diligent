@@ -6,7 +6,8 @@
     "build:frontend": "bun run --cwd ../../packages/web build",
     "build:sidecar": "bun run scripts/build-sidecar.ts",
     "dev": "bun run build:sidecar && bunx tauri dev",
-    "build": "bun run build:frontend && bun run build:sidecar && bunx tauri build && bun run scripts/copy-dist.ts"
+    "build": "bun run build:frontend && bun run build:sidecar && bunx tauri build && bun run scripts/copy-dist.ts",
+    "build:portable": "bun run build:frontend && bun run build:sidecar && bunx tauri build --no-bundle && bun run scripts/copy-dist.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
