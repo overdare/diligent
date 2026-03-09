@@ -207,6 +207,8 @@ export class AgentRegistry {
       };
 
       const stream = childManager.run(userMessage);
+      // Consume stream result to prevent unhandled rejection when aborted
+      stream.result().catch(() => {});
       let output: string | null = null;
       let turnNumber = 0;
 
