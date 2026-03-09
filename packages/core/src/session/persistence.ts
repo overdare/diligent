@@ -1,6 +1,6 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { buildSessionContext } from "./context-builder";
 import type {
   CollabSessionMeta,
@@ -205,7 +205,7 @@ export class SessionWriter {
   ) {
     if (existingPath) {
       this.sessionPath = existingPath;
-      this.preAssignedId = existingPath.split("/").pop()!.replace(".jsonl", "");
+      this.preAssignedId = basename(existingPath).replace(".jsonl", "");
     } else {
       this.preAssignedId = preAssignedId ?? generateSessionId();
     }

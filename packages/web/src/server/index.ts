@@ -1,6 +1,6 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import {
   type AgentRegistry,
   createAppServerConfig,
@@ -205,7 +205,7 @@ function resolvePersistedImage(pathname: string, paths: DiligentPaths): { path: 
 
   const fullPath = resolve(paths.root, "images", ...segments);
   const imageRoot = resolve(paths.root, "images");
-  const expectedPrefix = `${imageRoot}/`;
+  const expectedPrefix = `${imageRoot}${sep}`;
   if (fullPath !== imageRoot && !fullPath.startsWith(expectedPrefix)) {
     return null;
   }
@@ -222,7 +222,7 @@ function resolvePersistedImage(pathname: string, paths: DiligentPaths): { path: 
     return null;
   }
 
-  const resolvedPrefix = `${resolvedRoot}/`;
+  const resolvedPrefix = `${resolvedRoot}${sep}`;
   if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedPrefix)) {
     return null;
   }

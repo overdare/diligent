@@ -46,7 +46,7 @@ describe("bash tool", () => {
 
   test("large output → truncated", async () => {
     // Generate output larger than 50KB
-    const result = await bashTool.execute({ command: "python3 -c \"print('x' * 60000)\"" }, makeCtx());
+    const result = await bashTool.execute({ command: "bun --eval \"process.stdout.write('x'.repeat(60001))\"" }, makeCtx());
     expect(result.metadata?.truncated).toBe(true);
   });
 

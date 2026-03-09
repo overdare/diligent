@@ -251,7 +251,7 @@ describe("DiligentAppServer multi-connection (web)", () => {
       expect(attachment.type).toBe("local_image");
       expect(attachment.mediaType).toBe("image/png");
       expect(attachment.fileName).toBe("screen.png");
-      expect(attachment.path).toContain(".diligent/images/");
+      expect(attachment.path.replaceAll("\\", "/")).toContain(".diligent/images/");
       expect(attachment.path).toContain(threadId);
       expect(attachment.webUrl).toContain(WEB_IMAGE_ROUTE_PREFIX);
       expect(await Bun.file(attachment.path).text()).toBe("png-bytes");

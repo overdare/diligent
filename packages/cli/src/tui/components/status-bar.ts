@@ -1,4 +1,6 @@
 // @summary Footer status bar displaying mode and connection information
+
+import { sep } from "node:path";
 import type { Mode } from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
@@ -20,11 +22,11 @@ function formatTokensCompact(n: number): string {
 }
 
 function shortenPath(cwd: string): string {
-  const home = process.env.HOME ?? "";
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   const p = home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
-  const parts = p.split("/").filter(Boolean);
+  const parts = p.split(sep).filter(Boolean);
   if (parts.length > 3) {
-    return `…/${parts.slice(-2).join("/")}`;
+    return `…${sep}${parts.slice(-2).join(sep)}`;
   }
   return p;
 }

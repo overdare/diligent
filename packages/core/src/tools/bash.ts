@@ -23,6 +23,20 @@ export function filterSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, strin
   return filtered;
 }
 
+async function readStream(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+  } catch {
+    // reader was cancelled
+  }
+  return Buffer.concat(chunks).toString();
+}
+
 export function createBashTool(cwd: string): Tool<typeof BashParams> {
   return {
     name: "bash",
@@ -42,38 +56,46 @@ export function createBashTool(cwd: string): Tool<typeof BashParams> {
 
       const timeout = args.timeout ?? DEFAULT_TIMEOUT;
 
-      const shell = process.env.SHELL || "bash";
-      const proc = Bun.spawn([shell, "-c", args.command], {
+      const isWindows = process.platform === "win32";
+      const shellArgs = isWindows
+        ? [process.env.SHELL || process.env.ComSpec || "cmd.exe", process.env.SHELL ? "-c" : "/C", args.command]
+        : [process.env.SHELL || "bash", "-c", args.command];
+      const proc = Bun.spawn(shellArgs, {
         cwd,
         stdout: "pipe",
         stderr: "pipe",
         env: filterSensitiveEnv(process.env),
       });
 
-      let stdout = "";
-      let stderr = "";
+      const stdoutReader = proc.stdout.getReader();
+      const stderrReader = proc.stderr.getReader();
+
       let timedOut = false;
       let aborted = false;
 
+      const killProc = () => {
+        proc.kill(9);
+        // Cancel readers to unblock pending reads — on Windows, child processes can
+        // outlive the shell and keep the pipe handles open after proc.kill().
+        stdoutReader.cancel().catch(() => {});
+        stderrReader.cancel().catch(() => {});
+      };
+
       const timer = setTimeout(() => {
         timedOut = true;
-        proc.kill("SIGKILL");
+        killProc();
       }, timeout);
 
       const onAbort = () => {
         aborted = true;
-        proc.kill("SIGKILL");
+        killProc();
       };
       ctx.signal.addEventListener("abort", onAbort, { once: true });
 
+      let stdout = "";
+      let stderr = "";
       try {
-        const [stdoutText, stderrText] = await Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-        ]);
-        stdout = stdoutText;
-        stderr = stderrText;
-
+        [stdout, stderr] = await Promise.all([readStream(stdoutReader), readStream(stderrReader)]);
         await proc.exited;
       } finally {
         clearTimeout(timer);

@@ -1,4 +1,6 @@
 // @summary Main TUI application component managing the agent loop and interface
+
+import { join } from "node:path";
 import type {
   AgentEvent,
   ApprovalRequest,
@@ -114,7 +116,7 @@ export class App {
 
     // Input history (loaded async in start())
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-    this.inputHistory = new InputHistory(`${home}/.config/diligent/history`);
+    this.inputHistory = new InputHistory(join(home, ".config", "diligent", "history"));
 
     // Build component tree
     this.chatView = new ChatView({ requestRender });
@@ -617,7 +619,7 @@ export class App {
 
   private buildWelcomeBanner(): string[] {
     const cwd = process.cwd();
-    const home = process.env.HOME ?? "";
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     const dir = home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
 
     const boxWidth = Math.min(54, Math.max(44, this.terminal.columns - 2));

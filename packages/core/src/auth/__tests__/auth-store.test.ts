@@ -145,7 +145,7 @@ describe("saveAuthKey", () => {
     expect(content.anthropic).toBe("new-key");
   });
 
-  test("sets file permissions to 0o600", async () => {
+  test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
     const path = join(TEST_ROOT, "auth.json");
 
     await saveAuthKey("gemini", "AIza-test", path);
@@ -198,7 +198,7 @@ describe("saveOAuthTokens", () => {
     expect(content.openai_oauth.account_id).toBe("acc-new");
   });
 
-  test("sets file permissions to 0o600", async () => {
+  test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
     const path = join(TEST_ROOT, "oauth.json");
 
     await saveOAuthTokens(TEST_OAUTH_TOKENS, path);

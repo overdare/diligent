@@ -15,12 +15,13 @@ afterEach(async () => {
 
 describe("resolvePaths", () => {
   it("returns correct subdirectory paths", () => {
+    const base = join("/project", ".diligent");
     const paths = resolvePaths("/project");
-    expect(paths.root).toBe("/project/.diligent");
-    expect(paths.sessions).toBe("/project/.diligent/sessions");
-    expect(paths.knowledge).toBe("/project/.diligent/knowledge");
-    expect(paths.skills).toBe("/project/.diligent/skills");
-    expect(paths.images).toBe("/project/.diligent/images");
+    expect(paths.root).toBe(base);
+    expect(paths.sessions).toBe(join(base, "sessions"));
+    expect(paths.knowledge).toBe(join(base, "knowledge"));
+    expect(paths.skills).toBe(join(base, "skills"));
+    expect(paths.images).toBe(join(base, "images"));
   });
 });
 
