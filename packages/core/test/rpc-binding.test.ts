@@ -181,6 +181,7 @@ describe("RPC binding", () => {
     } as never;
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {

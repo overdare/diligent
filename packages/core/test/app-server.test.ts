@@ -278,6 +278,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -379,6 +380,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
         model: {
@@ -532,6 +534,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -593,6 +596,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -726,6 +730,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -808,6 +813,7 @@ describe("DiligentAppServer", () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask }) => ({
         model: {
@@ -930,6 +936,7 @@ describe("DiligentAppServer", () => {
 
     try {
       const server = new DiligentAppServer({
+        cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
         buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
           model: {
@@ -1032,6 +1039,7 @@ describe("DiligentAppServer", () => {
 
     try {
       const server = new DiligentAppServer({
+        cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
         buildAgentConfig: ({ mode, effort, signal, approve, ask }) => ({
           model: {
@@ -1127,6 +1135,7 @@ describe("DiligentAppServer", () => {
 
     try {
       const server = new DiligentAppServer({
+        cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
         buildAgentConfig: ({ mode, signal, approve, ask }) => ({
           model: {
@@ -1216,6 +1225,7 @@ describe("DiligentAppServer", () => {
       const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
       const server = new DiligentAppServer({
         ...config,
+        cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       });
 
@@ -1326,6 +1336,7 @@ describe("DiligentAppServer", () => {
       const config = createAppServerConfig({ cwd: projectRoot, runtimeConfig: runtimeConfig as never });
       const server = new DiligentAppServer({
         ...config,
+        cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       });
 
@@ -1427,6 +1438,7 @@ describe("DiligentAppServer", () => {
     };
 
     const server = new DiligentAppServer({
+      cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       buildAgentConfig: ({ mode, signal, approve, ask, getSessionId }) => {
         const { tools: collabTools, registry } = createCollabTools({
