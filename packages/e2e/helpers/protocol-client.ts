@@ -1,10 +1,11 @@
 // @summary RpcClientSession-based test client with direct bidirectional message channel
 import { type DiligentAppServer, RpcClientSession } from "@diligent/core";
-import type {
-  DiligentServerNotification,
-  DiligentServerRequest,
-  DiligentServerRequestResponse,
-  JSONRPCMessage,
+import {
+  DILIGENT_VERSION,
+  type DiligentServerNotification,
+  type DiligentServerRequest,
+  type DiligentServerRequestResponse,
+  type JSONRPCMessage,
 } from "@diligent/protocol";
 
 export interface ProtocolTestClient {
@@ -141,7 +142,7 @@ export function createProtocolClient(server: DiligentAppServer): ProtocolTestCli
         "initialize" as never,
         {
           clientName: "test",
-          clientVersion: "0.0.1",
+          clientVersion: DILIGENT_VERSION,
           protocolVersion: 1,
         } as never,
       );
