@@ -1,16 +1,12 @@
 // @summary Slash command definitions, parser, and filter logic for web UI autocomplete
 
-export interface SlashCommandOption {
-  label: string;
-  value: string;
-  description?: string;
-}
-
 export interface SlashCommand {
   name: string;
   description: string;
-  /** Sub-options for commands like /mode, /effort */
-  options?: SlashCommandOption[];
+  /** Usage string shown when args are required */
+  usage?: string;
+  /** Whether this command requires a string argument */
+  requiresArgs?: boolean;
   /** Whether this is a dynamically registered skill command */
   isSkill?: boolean;
 }
@@ -22,30 +18,19 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   },
   {
     name: "new",
-    description: "Start a new conversation",
+    description: "Start a new session",
   },
   {
-    name: "mode",
-    description: "Set collaboration mode",
-    options: [
-      { label: "Default", value: "default", description: "Normal conversation" },
-      { label: "Plan", value: "plan", description: "Plan before acting" },
-      { label: "Execute", value: "execute", description: "Execute without asking" },
-    ],
-  },
-  {
-    name: "effort",
-    description: "Set thinking effort",
-    options: [
-      { label: "Low", value: "low" },
-      { label: "Medium", value: "medium" },
-      { label: "High", value: "high" },
-      { label: "Max", value: "max" },
-    ],
+    name: "resume",
+    description: "Resume thread",
+    usage: "/resume <thread-id>",
+    requiresArgs: true,
   },
   {
     name: "model",
-    description: "Change the model",
+    description: "Switch model",
+    usage: "/model <model-id>",
+    requiresArgs: true,
   },
 ];
 

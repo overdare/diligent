@@ -228,6 +228,27 @@ test("input dock shows uploading state and disables send affordance", () => {
   expect(html).toContain("disabled");
 });
 
+test("slash menu renders a flat command list without submenu affordances", () => {
+  const html = renderToStaticMarkup(
+    <SlashMenu
+      commands={[
+        { name: "help", description: "Show available commands" },
+        { name: "resume", description: "Resume thread", usage: "/resume <thread-id>", requiresArgs: true },
+      ]}
+      selectedIndex={1}
+      onSelect={() => {}}
+    />,
+  );
+
+  expect(html).toContain('role="listbox"');
+  expect(html).toContain("/help");
+  expect(html).toContain("/resume");
+  expect(html).toContain("Resume thread");
+  expect(html).not.toContain("›");
+  expect(html).not.toContain("Default");
+  expect(html).not.toContain("Execute");
+});
+
 test("tool block renders completed duration in header", () => {
   const html = renderToStaticMarkup(
     <ToolBlock

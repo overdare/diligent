@@ -15,7 +15,7 @@ describe("parseSlashCommand", () => {
   });
 
   test("parses command with args", () => {
-    expect(parseSlashCommand("/mode plan")).toEqual({ name: "mode", args: "plan" });
+    expect(parseSlashCommand("/resume thread-1")).toEqual({ name: "resume", args: "thread-1" });
   });
 
   test("trims whitespace", () => {
@@ -23,7 +23,10 @@ describe("parseSlashCommand", () => {
   });
 
   test("trims arg whitespace", () => {
-    expect(parseSlashCommand("/effort   high  ")).toEqual({ name: "effort", args: "high" });
+    expect(parseSlashCommand("/model   claude-sonnet-4-6  ")).toEqual({
+      name: "model",
+      args: "claude-sonnet-4-6",
+    });
   });
 
   test("returns null for non-command text", () => {
@@ -54,7 +57,7 @@ describe("filterCommands", () => {
 
   test("filters by prefix", () => {
     const result = filterCommands(BUILTIN_COMMANDS, "mo");
-    expect(result.map((c) => c.name)).toEqual(["mode", "model"]);
+    expect(result.map((c) => c.name)).toEqual(["model"]);
   });
 
   test("exact match returns single command", () => {
@@ -91,12 +94,12 @@ describe("isSlashPrefix", () => {
     expect(isSlashPrefix("/m")).toBe(true);
   });
 
-  test("returns true for /mode", () => {
-    expect(isSlashPrefix("/mode")).toBe(true);
+  test("returns true for /resume", () => {
+    expect(isSlashPrefix("/resume")).toBe(true);
   });
 
-  test("returns false for /mode plan (has space)", () => {
-    expect(isSlashPrefix("/mode plan")).toBe(false);
+  test("returns false for /resume thread-1 (has space)", () => {
+    expect(isSlashPrefix("/resume thread-1")).toBe(false);
   });
 
   test("returns false for // (escape)", () => {
@@ -115,28 +118,25 @@ describe("isSlashPrefix", () => {
 describe("BUILTIN_COMMANDS", () => {
   test("has expected core commands", () => {
     const names = BUILTIN_COMMANDS.map((c) => c.name);
-    expect(names).toContain("help");
-    expect(names).toContain("new");
-    expect(names).toContain("mode");
-    expect(names).toContain("effort");
-    expect(names).toContain("model");
+    expect(names).toEqual(["help", "new", "resume", "model"]);
   });
 
-  test("mode has options", () => {
-    const mode = BUILTIN_COMMANDS.find((c) => c.name === "mode");
-    expect(mode?.options).toBeDefined();
-    expect(mode?.options?.map((o) => o.value)).toEqual(["default", "plan", "execute"]);
+  test("resume requires args and exposes usage", () => {
+    const resume = BUILTIN_COMMANDS.find((c) => c.name === "resume");
+    expect(resume?.requiresArgs).toBe(true);
+    expect(resume?.usage).toBe("/resume <thread-id>");
   });
 
-  test("effort has options", () => {
-    const effort = BUILTIN_COMMANDS.find((c) => c.name === "effort");
-    expect(effort?.options).toBeDefined();
-    expect(effort?.options?.map((o) => o.value)).toEqual(["low", "medium", "high", "max"]);
+  test("model requires args and exposes usage", () => {
+    const model = BUILTIN_COMMANDS.find((c) => c.name === "model");
+    expect(model?.requiresArgs).toBe(true);
+    expect(model?.usage).toBe("/model <model-id>");
   });
 
-  test("help has no options", () => {
+  test("help has no usage metadata", () => {
     const help = BUILTIN_COMMANDS.find((c) => c.name === "help");
-    expect(help?.options).toBeUndefined();
+    expect(help?.requiresArgs).toBeUndefined();
+    expect(help?.usage).toBeUndefined();
   });
 });
 
@@ -169,9 +169,19 @@ describe("buildCommandList", () => {
     expect(help?.isSkill).toBeUndefined();
   });
 
-  test("skill commands have no options", () => {
+  test("skill commands have no usage metadata", () => {
     const commands = buildCommandList([{ name: "deploy", description: "Deploy app" }]);
     const deploy = commands.find((c) => c.name === "deploy");
-    expect(deploy?.options).toBeUndefined();
+    expect(deploy?.usage).toBeUndefined();
+    expect(deploy?.requiresArgs).toBeUndefined();
+  });
+
+  test("skills can use previously web-only names now that they are not builtins", () => {
+    const commands = buildCommandList([
+      { name: "mode", description: "Skill named mode" },
+      { name: "effort", description: "Skill named effort" },
+    ]);
+    expect(commands.find((c) => c.name === "mode")?.isSkill).toBe(true);
+    expect(commands.find((c) => c.name === "effort")?.isSkill).toBe(true);
   });
 });

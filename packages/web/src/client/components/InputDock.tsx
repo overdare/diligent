@@ -1,9 +1,9 @@
-// @summary Input dock with auto-resize textarea, slash command autocomplete, hover submenus, model/effort controls, and usage tray
+// @summary Input dock with auto-resize textarea, slash command autocomplete, model/effort controls, and usage tray
 
 import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SlashCommand, SlashCommandOption } from "../lib/slash-commands";
+import type { SlashCommand } from "../lib/slash-commands";
 import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix } from "../lib/slash-commands";
 import type { UsageState } from "../lib/thread-store";
 import { Select, type SelectOption } from "./Select";
@@ -154,8 +154,6 @@ export function InputDock({
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashFiltered, setSlashFiltered] = useState<SlashCommand[]>([]);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
-  const [slashExpandedCommand, setSlashExpandedCommand] = useState<SlashCommand | null>(null);
-  const [slashSubSelectedIndex, setSlashSubSelectedIndex] = useState(0);
 
   const isBusy = threadStatus === "busy";
   const totalTokens = usage.inputTokens + usage.outputTokens;
@@ -177,12 +175,9 @@ export function InputDock({
         setSlashFiltered(filtered);
         setSlashMenuOpen(filtered.length > 0);
         setSlashSelectedIndex(0);
-        setSlashExpandedCommand(null);
-        setSlashSubSelectedIndex(0);
       } else {
         setSlashMenuOpen(false);
         setSlashFiltered([]);
-        setSlashExpandedCommand(null);
       }
     },
     [slashCommands],
@@ -191,29 +186,13 @@ export function InputDock({
   const closeSlashMenu = useCallback(() => {
     setSlashMenuOpen(false);
     setSlashFiltered([]);
-    setSlashExpandedCommand(null);
-    setSlashSubSelectedIndex(0);
   }, []);
 
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
-      if (cmd.options) {
-        setSlashExpandedCommand(cmd);
-        setSlashSubSelectedIndex(0);
-      } else {
-        closeSlashMenu();
-        onInputChange("");
-        onSlashCommand?.(cmd.name);
-      }
-    },
-    [onSlashCommand, onInputChange, closeSlashMenu],
-  );
-
-  const handleSlashOptionSelect = useCallback(
-    (cmd: SlashCommand, option: SlashCommandOption) => {
       closeSlashMenu();
       onInputChange("");
-      onSlashCommand?.(cmd.name, option.value);
+      onSlashCommand?.(cmd.name);
     },
     [onSlashCommand, onInputChange, closeSlashMenu],
   );
@@ -291,66 +270,35 @@ export function InputDock({
     if (composingRef.current || e.nativeEvent.isComposing) return;
 
     if (slashMenuOpen) {
-      if (slashExpandedCommand) {
-        // Sub-option navigation
-        const optCount = slashExpandedCommand.options?.length ?? 0;
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashSubSelectedIndex((prev) => Math.min(prev + 1, optCount - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          if (slashSubSelectedIndex === 0) {
-            setSlashExpandedCommand(null);
-          } else {
-            setSlashSubSelectedIndex((prev) => prev - 1);
-          }
-          return;
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const opt = slashExpandedCommand.options?.[slashSubSelectedIndex];
-          if (opt) handleSlashOptionSelect(slashExpandedCommand, opt);
-          return;
-        }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setSlashExpandedCommand(null);
-          return;
-        }
-      } else {
-        // Command list navigation
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashSelectedIndex((prev) => Math.min(prev + 1, slashFiltered.length - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSlashSelectedIndex((prev) => Math.max(prev - 1, 0));
-          return;
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const cmd = slashFiltered[slashSelectedIndex];
-          if (cmd) handleSlashSelect(cmd);
-          return;
-        }
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const cmd = slashFiltered[slashSelectedIndex];
-          if (cmd) {
-            onInputChange(`/${cmd.name} `);
-            closeSlashMenu();
-          }
-          return;
-        }
-        if (e.key === "Escape") {
-          e.preventDefault();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelectedIndex((prev) => Math.min(prev + 1, slashFiltered.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelectedIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const cmd = slashFiltered[slashSelectedIndex];
+        if (cmd) handleSlashSelect(cmd);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const cmd = slashFiltered[slashSelectedIndex];
+        if (cmd) {
+          onInputChange(`/${cmd.name} `);
           closeSlashMenu();
-          return;
         }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeSlashMenu();
+        return;
       }
     }
 
@@ -416,10 +364,7 @@ export function InputDock({
                   <SlashMenu
                     commands={slashFiltered}
                     selectedIndex={slashSelectedIndex}
-                    expandedCommand={slashExpandedCommand}
-                    subSelectedIndex={slashSubSelectedIndex}
                     onSelect={handleSlashSelect}
-                    onSelectOption={handleSlashOptionSelect}
                   />
                 </div>
               ) : null}

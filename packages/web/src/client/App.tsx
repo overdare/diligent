@@ -4,11 +4,9 @@ import type { AgentEvent } from "@diligent/core/client";
 import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
-  ThinkingEffort as EffortType,
   InitializeResponse,
   LocalImageBlock,
   Mode,
-  Mode as ModeType,
   SessionSummary,
   SkillInfo,
   ThinkingEffort,
@@ -366,7 +364,7 @@ export function App() {
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
             setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+            await providerMgr.applySessionModel(history.currentModel);
             await refreshThreadList(rpc);
             return;
           }
@@ -383,7 +381,7 @@ export function App() {
             dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
             setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+            await providerMgr.applySessionModel(history.currentModel);
             await refreshThreadList(rpc);
             return;
           }
@@ -398,7 +396,7 @@ export function App() {
           dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode, history } });
           setEffortState(history.currentEffort);
           replaceThreadUrl(mostRecent.threadId);
-          await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+          await providerMgr.applySessionModel(history.currentModel);
           await refreshThreadList(rpc);
           return;
         }
@@ -470,7 +468,7 @@ export function App() {
         setEffortState(history.currentEffort);
         pushThreadUrl(resumedId);
         await refreshThreadList(rpc);
-        await providerMgr.applySessionModel(history.messages as { role: string; model?: string }[]);
+        await providerMgr.applySessionModel(history.currentModel);
 
         // Clear attention marker for this thread
         setAttentionThreadIds((prev) => {
@@ -739,53 +737,65 @@ export function App() {
   const handleSlashCommand = useCallback(
     (name: string, arg?: string) => {
       const rpc = rpcRef.current;
+      const activeThreadId = state.activeThreadId;
+
+      if (activeThreadId) {
+        clearThreadInput(activeThreadId);
+      }
+
       switch (name) {
         case "help": {
           const names = slashCommands.map((c) => `/${c.name}`).join(", ");
           dispatch({ type: "show_info_toast", payload: `Commands: ${names}` });
-          break;
+          return;
         }
         case "new":
           void startNewThread();
-          break;
-        case "mode":
-          if (arg && ["default", "plan", "execute"].includes(arg)) {
-            void setMode(arg as ModeType);
-            dispatch({ type: "show_info_toast", payload: `Mode set to ${arg}` });
+          return;
+        case "resume":
+          if (!arg) {
+            dispatch({ type: "show_info_toast", payload: "Usage: /resume <thread-id>" });
+            return;
           }
-          break;
-        case "effort":
-          if (arg && ["low", "medium", "high", "max"].includes(arg)) {
-            void setEffort(arg as EffortType);
-            dispatch({ type: "show_info_toast", payload: `Effort set to ${arg}` });
+          void openThread(arg);
+          return;
+        case "model": {
+          if (!arg) {
+            dispatch({ type: "show_info_toast", payload: "Usage: /model <model-id>" });
+            return;
           }
-          break;
-        case "model":
-          // Show info toast — user can use the model selector in the dock
-          dispatch({ type: "show_info_toast", payload: "Use the model selector in the input dock." });
-          break;
+
+          const exists = providerMgr.availableModels.some((model) => model.id === arg);
+          if (!exists) {
+            dispatch({ type: "show_info_toast", payload: `Unknown model: ${arg}` });
+            return;
+          }
+
+          void providerMgr.changeModel(arg).then(() => {
+            dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}` });
+          });
+          return;
+        }
         default: {
           // Check if it's a skill command — send as message for server-side skill invocation
           const isSkill = slashCommands.some((c) => c.name === name && c.isSkill);
-          if (isSkill && rpc && state.activeThreadId) {
+          if (isSkill && rpc && activeThreadId) {
             const message = arg ? `/${name} ${arg}` : `/${name}`;
-            clearThreadInput(state.activeThreadId);
             dispatch({ type: "local_user", payload: { text: message, images: [] } });
             void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-              threadId: state.activeThreadId,
+              threadId: activeThreadId,
               message,
               content: [{ type: "text" as const, text: message }],
             });
             return;
           }
           dispatch({ type: "show_info_toast", payload: `Unknown command: /${name}` });
-          break;
+          return;
         }
       }
-      if (state.activeThreadId) clearThreadInput(state.activeThreadId);
     },
     // biome-ignore lint/correctness/useExhaustiveDependencies: startNewThread is stable enough
-    [rpcRef, slashCommands, state.activeThreadId, startNewThread, setMode, setEffort, clearThreadInput],
+    [rpcRef, slashCommands, state.activeThreadId, startNewThread, openThread, providerMgr, clearThreadInput],
   );
 
   // Intercept slash commands on send
