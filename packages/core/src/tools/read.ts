@@ -1,8 +1,8 @@
 // @summary Read file with binary detection and line numbers
 
-import { isAbsolute } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 
 const ReadParams = z.object({
   file_path: z.string().describe("The absolute path to the file to read"),

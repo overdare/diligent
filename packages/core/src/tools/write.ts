@@ -1,8 +1,9 @@
 // @summary Write file contents with directory auto-creation
 import { mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 
 const WriteParams = z.object({
   file_path: z.string().describe("The relative path to the file to write"),

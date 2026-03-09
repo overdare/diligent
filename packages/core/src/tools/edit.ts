@@ -1,8 +1,9 @@
 // @summary Edit file contents via exact string replacement
 import { mkdir, stat } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { dirname } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 
 // ---------------------------------------------------------------------------
 // Schemas

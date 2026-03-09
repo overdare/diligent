@@ -1,8 +1,9 @@
 // @summary Applies codex-style Begin/End patch envelopes with strict verification
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 
 const ApplyPatchParams = z.object({
   patch: z.string().describe("The full patch text to apply, including *** Begin Patch and *** End Patch markers"),

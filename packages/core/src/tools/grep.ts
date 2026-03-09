@@ -1,7 +1,8 @@
 // @summary Content search via ripgrep with regex support
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 import { spawnCollect } from "../util/process";
 
 const GrepParams = z.object({

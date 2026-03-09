@@ -1,8 +1,8 @@
 // @summary List directory contents with type indicators
 import { readdir } from "node:fs/promises";
-import { isAbsolute } from "node:path";
 import { z } from "zod";
 import type { Tool, ToolResult } from "../tool/types";
+import { isAbsolute } from "../util/path";
 
 const LsParams = z.object({
   path: z.string().describe("The absolute directory path to list"),

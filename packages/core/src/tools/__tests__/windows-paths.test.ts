@@ -1,8 +1,8 @@
 // @summary Regression tests: Windows backslash paths are normalized before being passed to ripgrep
 
-import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
 import { createGlobTool } from "../glob";
 import { createGrepTool } from "../grep";
 
@@ -20,11 +20,17 @@ function mockProc(stdoutText = "", exitCode = 0) {
   const stdout = new EventEmitter() as NodeJS.ReadableStream;
   const stderr = new EventEmitter() as NodeJS.ReadableStream;
   const proc = new EventEmitter() as ReturnType<typeof childProcess.spawn>;
-  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stdout = stdout;
-  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stderr = stderr;
-  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).exitCode = exitCode;
-  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).signalCode = null;
-  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).pid = 99999;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stdout =
+    stdout;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).stderr =
+    stderr;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).exitCode =
+    exitCode;
+  (
+    proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }
+  ).signalCode = null;
+  (proc as unknown as { stdout: unknown; stderr: unknown; exitCode: number; signalCode: null; pid: number }).pid =
+    99999;
   (proc as unknown as { kill: () => void }).kill = () => {};
   setImmediate(() => {
     stdout.emit("data", Buffer.from(stdoutText));
