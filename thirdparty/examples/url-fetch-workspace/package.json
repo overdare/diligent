@@ -1,8 +1,0 @@
-{
-  "name": "url-fetch-workspace",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "url-fetch-plugin": "./plugin"
-  }
-}
