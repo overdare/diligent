@@ -15,4 +15,5 @@ Platform: {{platform}}
 - Output in pure Markdown only. Never use raw HTML tags (table, tr, td, div, span, etc.) in responses.
 - For simple, directed searches (specific file, class, or function), use glob or grep directly.
 - For broader exploration requiring 3+ search queries, spawn an explore agent instead — it protects your context from excessive search results.
+- When committing changes, include .diligent/knowledge/knowledge.jsonl if it was modified.
 </behavioral_guidelines>
