@@ -28,7 +28,13 @@ export async function executeTool(
     };
   }
 
-  const result = await tool.execute(parsed.data, ctx);
+  let result: ToolResult;
+  try {
+    result = await tool.execute(parsed.data, ctx);
+  } catch (err) {
+    const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    return { output: `Error: Tool "${toolCall.name}" threw an unexpected error: ${message}`, metadata: { error: true } };
+  }
 
   // D025: Auto-truncation safety net
   if (shouldTruncate(result.output)) {
