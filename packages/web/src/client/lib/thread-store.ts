@@ -128,7 +128,7 @@ export interface ThreadState {
   pendingUserInput: { requestId: number; request: UserInputRequest; answers: Record<string, string | string[]> } | null;
   toast: ToastState | null;
   usage: UsageState;
-  currentContextTokens: number; // latest turn's inputTokens (not cumulative)
+  currentContextTokens: number; // latest turn's total input tokens including cache (not cumulative)
   planState: PlanState | null;
   pendingSteers: string[];
   activeTurnId: string | null;
@@ -447,7 +447,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
           cacheWriteTokens: state.usage.cacheWriteTokens + event.usage.cacheWriteTokens,
           totalCost: state.usage.totalCost + event.cost,
         },
-        currentContextTokens: event.usage.inputTokens,
+        currentContextTokens: event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
       };
 
     case "error":

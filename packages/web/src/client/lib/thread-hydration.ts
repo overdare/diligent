@@ -180,7 +180,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         hydratedUsage.outputTokens += u.outputTokens;
         hydratedUsage.cacheReadTokens += u.cacheReadTokens;
         hydratedUsage.cacheWriteTokens += u.cacheWriteTokens;
-        if (u.inputTokens > 0) lastInputTokens = u.inputTokens;
+        const turnContextTokens = u.inputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+        if (turnContextTokens > 0) lastInputTokens = turnContextTokens;
       }
     }
   }

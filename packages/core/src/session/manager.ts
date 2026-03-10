@@ -442,8 +442,9 @@ export class SessionManager {
 
         currentMessages.push(assistantMessage);
         this.appendMessageEntry(assistantMessage);
-        if (assistantMessage.usage.inputTokens > 0) {
-          this.lastApiInputTokens = assistantMessage.usage.inputTokens;
+        const totalInputTokens = assistantMessage.usage.inputTokens + assistantMessage.usage.cacheReadTokens + assistantMessage.usage.cacheWriteTokens;
+        if (totalInputTokens > 0) {
+          this.lastApiInputTokens = totalInputTokens;
         }
 
         outerStream.push({

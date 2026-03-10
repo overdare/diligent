@@ -379,7 +379,7 @@ export class App {
     // Update status bar with usage info
     if (event.type === "usage") {
       this.statusBar.update({
-        tokensUsed: event.usage.inputTokens,
+        tokensUsed: event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
       });
     } else if (event.type === "status_change") {
       this.statusBar.update({ status: event.status });
