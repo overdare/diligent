@@ -324,6 +324,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
 const isDirect = import.meta.main;
 
 if (isDirect) {
+  // Global safety net: plugins or internal code may throw uncaught errors or
+  // unhandled promise rejections (e.g. Bun happy-eyeballs socket errors that
+  // bypass user-level handlers).  Log and swallow — never crash the server.
+  process.on("uncaughtException", (err) => {
+    console.error("[Server] Uncaught exception (swallowed to keep server alive):", err?.message ?? err);
+  });
+  process.on("unhandledRejection", (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    console.error("[Server] Unhandled promise rejection (swallowed to keep server alive):", message);
+  });
+
   (async () => {
     const args = parseArgs(process.argv.slice(2));
     const cwd = process.cwd();

@@ -45,6 +45,7 @@ interface MethodModule {
   description: string;
   params: z.ZodType;
   resolveMethod?: (args: Record<string, unknown>) => string;
+  normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
 }
 
 // ── Plugin manifest ───────────────────────────────────────────────────────────
@@ -104,7 +105,8 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
             metadata: { error: true, method: rpcMethod },
           };
         }
-        const result = await call(rpcMethod, args as Record<string, unknown>);
+        const normalizedArgs = mod.normalizeArgs ? mod.normalizeArgs(args as Record<string, unknown>) : (args as Record<string, unknown>);
+        const result = await call(rpcMethod, normalizedArgs);
         const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
         return {

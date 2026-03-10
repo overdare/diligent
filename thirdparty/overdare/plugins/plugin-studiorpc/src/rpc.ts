@@ -4,7 +4,7 @@ import { loadOverdareConfig } from "./config.ts";
 
 const DEFAULT_HOST = "localhost";
 const DEFAULT_PORT = 13377;
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 30_000;
 
 interface JsonRpcResponse {
   jsonrpc: string;
@@ -60,22 +60,40 @@ export async function call(method: string, params?: Record<string, unknown>): Pr
       ...(params !== undefined && Object.keys(params).length > 0 && { params }),
     };
 
-    const socket = net.createConnection({ host, port }, () => {
+    // Guard against double-settlement: on Windows, Bun's happy-eyeballs
+    // dual-stack (::1 then 127.0.0.1) can emit two consecutive error events
+    // on the same socket.  Without this flag the second error escapes all
+    // handlers and crashes the process.
+    let settled = false;
+    function settle(fn: () => void) {
+      if (settled) return;
+      settled = true;
+      fn();
+    }
+
+    // On Windows, Bun resolves "localhost" via happy-eyeballs (tries ::1 and
+    // 127.0.0.1 simultaneously).  When both fail the error events bypass
+    // user-space handlers and crash the process.  Force IPv4 to use a single
+    // connection attempt so our error handler is reliably invoked.
+    const connectHost = host === "localhost" ? "127.0.0.1" : host;
+    const socket = net.createConnection({ host: connectHost, port }, () => {
       socket.write(`${JSON.stringify(request)}\n`);
     });
 
     const rl = readline.createInterface({ input: socket });
 
     const timer = setTimeout(() => {
-      cleanup();
-      reject(
-        new Error(
-          `Studio RPC request timed out after ${TIMEOUT_MS / 1000}s.\n` +
-            `Method: ${method}\n` +
-            `Server: ${host}:${port}\n` +
-            `Make sure OVERDARE Studio is running with the RPC server enabled.`,
-        ),
-      );
+      settle(() => {
+        cleanup();
+        reject(
+          new Error(
+            `Studio RPC request timed out after ${TIMEOUT_MS / 1000}s.\n` +
+              `Method: ${method}\n` +
+              `Server: ${host}:${port}\n` +
+              `Make sure OVERDARE Studio is running with the RPC server enabled.`,
+          ),
+        );
+      });
     }, TIMEOUT_MS);
 
     function cleanup() {
@@ -85,44 +103,48 @@ export async function call(method: string, params?: Record<string, unknown>): Pr
     }
 
     rl.once("line", (line) => {
-      cleanup();
-      try {
-        const response = JSON.parse(line) as JsonRpcResponse;
-        if (response.error) {
-          let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;
-          if (response.error.message?.toLowerCase().includes("guid")) {
-            errorMsg += `\n\nTip: Use studiorpc_level_browse first to get valid GUIDs.`;
+      settle(() => {
+        cleanup();
+        try {
+          const response = JSON.parse(line) as JsonRpcResponse;
+          if (response.error) {
+            let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;
+            if (response.error.message?.toLowerCase().includes("guid")) {
+              errorMsg += `\n\nTip: Use studiorpc_level_browse first to get valid GUIDs.`;
+            }
+            reject(new Error(errorMsg));
+          } else {
+            resolve(response.result);
           }
-          reject(new Error(errorMsg));
-        } else {
-          resolve(response.result);
+        } catch {
+          reject(
+            new Error(
+              `Failed to parse Studio RPC response.\n` +
+                `Received: ${line.substring(0, 200)}\n` +
+                `This may indicate a protocol mismatch or server error.`,
+            ),
+          );
         }
-      } catch {
-        reject(
-          new Error(
-            `Failed to parse Studio RPC response.\n` +
-              `Received: ${line.substring(0, 200)}\n` +
-              `This may indicate a protocol mismatch or server error.`,
-          ),
-        );
-      }
+      });
     });
 
     socket.on("error", (err: Error & { code?: string }) => {
-      cleanup();
-      let errorMsg = `Could not connect to Studio RPC server at ${host}:${port}.`;
-      if (err.code === "ECONNREFUSED") {
-        errorMsg +=
-          `\n\nMake sure OVERDARE Studio is running with the RPC server enabled.` +
-          `\n\nTo use a custom host/port, set environment variables:` +
-          `\n  STUDIO_HOST=${host}` +
-          `\n  STUDIO_PORT=${port}`;
-      } else if (err.code === "ETIMEDOUT") {
-        errorMsg += `\n\nConnection timed out. Check your network or firewall settings.`;
-      } else {
-        errorMsg += `\n\nError: ${err.message}`;
-      }
-      reject(new Error(errorMsg));
+      settle(() => {
+        cleanup();
+        let errorMsg = `Could not connect to Studio RPC server at ${host}:${port}.`;
+        if (err.code === "ECONNREFUSED") {
+          errorMsg +=
+            `\n\nMake sure OVERDARE Studio is running with the RPC server enabled.` +
+            `\n\nTo use a custom host/port, set environment variables:` +
+            `\n  STUDIO_HOST=${host}` +
+            `\n  STUDIO_PORT=${port}`;
+        } else if (err.code === "ETIMEDOUT") {
+          errorMsg += `\n\nConnection timed out. Check your network or firewall settings.`;
+        } else {
+          errorMsg += `\n\nError: ${err.message}`;
+        }
+        reject(new Error(errorMsg));
+      });
     });
   });
 }
