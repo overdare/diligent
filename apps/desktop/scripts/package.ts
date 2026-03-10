@@ -350,9 +350,9 @@ try {
   console.log(`⚙️  Injecting version ${version}...`);
   backup = injectVersion(version);
 
-  // Inject custom system prompt if --package provides systemprompt.txt
+  // Inject custom system prompt if --package provides system-prompt.txt
   if (extraPackageDir) {
-    const customPrompt = join(extraPackageDir, "systemprompt.txt");
+    const customPrompt = join(extraPackageDir, "system-prompt.txt");
     if (existsSync(customPrompt)) {
       promptBackup = readFileSync(SYSTEM_PROMPT_PATH, "utf-8");
       cpSync(customPrompt, SYSTEM_PROMPT_PATH);
