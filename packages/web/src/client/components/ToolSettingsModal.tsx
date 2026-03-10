@@ -4,7 +4,6 @@ import type { ToolsListResponse, ToolsSetParams, ToolsSetResponse } from "@dilig
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
-import { Modal } from "./Modal";
 
 interface ToolSettingsModalProps {
   threadId?: string | null;
@@ -12,6 +11,7 @@ interface ToolSettingsModalProps {
   onList: (threadId?: string) => Promise<ToolsListResponse>;
   onSave: (params: ToolsSetParams) => Promise<ToolsSetResponse>;
   onClose: () => void;
+  className?: string;
 }
 
 interface PluginDraft {
@@ -103,7 +103,14 @@ function pluginSummary(plugin: ToolsListResponse["plugins"][number]): string {
   return `${plugin.toolCount} tool${plugin.toolCount === 1 ? "" : "s"}`;
 }
 
-export function ToolSettingsModal({ threadId, initialState, onList, onSave, onClose }: ToolSettingsModalProps) {
+export function ToolSettingsModal({
+  threadId,
+  initialState,
+  onList,
+  onSave,
+  onClose,
+  className,
+}: ToolSettingsModalProps) {
   const [state, setState] = useState<ToolsListResponse | null>(initialState ?? null);
   const [draft, setDraft] = useState<ToolSettingsDraft | null>(initialState ? createDraft(initialState) : null);
   const [loading, setLoading] = useState(!initialState);
@@ -250,26 +257,48 @@ export function ToolSettingsModal({ threadId, initialState, onList, onSave, onCl
   };
 
   return (
-    <Modal title="Tools" description="Manage built-in tools and trusted JavaScript plugin packages." onCancel={onClose}>
-      <div className="space-y-4">
-        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200">
-          Plugin packages run with full trust in the same process as Diligent. Only add packages you trust.
+    <div className={className ?? "fixed inset-0 z-50 bg-black/35"} role="presentation" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Config"
+        className="absolute inset-0 z-10 rounded-lg border border-text/20 bg-surface p-4 shadow-panel"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-text">Config</h2>
+            <p className="mt-1 text-sm text-muted">Manage built-in tools and trusted JavaScript plugin packages.</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close tools panel"
+            onClick={onClose}
+            className="rounded-md border border-text/15 px-2 py-1 text-xs text-muted transition hover:border-accent/40 hover:text-accent"
+          >
+            ✕
+          </button>
         </div>
 
-        {state ? (
-          <div className="rounded-md border border-text/10 bg-bg/40 px-3 py-2 text-xs text-muted">
-            <div>Config: {state.configPath}</div>
-            <div>Conflict policy: {state.conflictPolicy}</div>
-            <div>Changes apply on the next turn.</div>
+        <div className="space-y-4">
+          <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200">
+            Plugin packages run with full trust in the same process as Diligent. Only add packages you trust.
           </div>
-        ) : null}
 
-        {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
-        {savedMessage ? <p className="text-sm text-accent">{savedMessage}</p> : null}
+          {state ? (
+            <div className="rounded-md border border-text/10 bg-bg/40 px-3 py-2 text-xs text-muted">
+              <div>Config: {state.configPath}</div>
+              <div>Conflict policy: {state.conflictPolicy}</div>
+              <div>Changes apply on the next turn.</div>
+            </div>
+          ) : null}
 
-        {state && draft ? (
-          <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+          {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
+          {error ? <p className="text-sm text-danger">{error}</p> : null}
+          {savedMessage ? <p className="text-sm text-accent">{savedMessage}</p> : null}
+
+          {state && draft ? (
+            <div className="max-h-[calc(100vh-11rem)] space-y-4 overflow-y-auto pr-1">
             <section className="space-y-2">
               <div>
                 <h3 className="text-sm font-semibold text-text">Built-in tools</h3>
@@ -421,19 +450,20 @@ export function ToolSettingsModal({ threadId, initialState, onList, onSave, onCl
                 </div>
               )}
             </section>
-          </div>
-        ) : null}
-      </div>
+            </div>
+          ) : null}
+        </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2">
-        <Button intent="ghost" size="sm" disabled={saving} onClick={onClose}>
-          Close
-        </Button>
-        <Button size="sm" disabled={loading || saving || !draft} onClick={() => void handleSave()}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <Button intent="ghost" size="sm" disabled={saving} onClick={onClose}>
+            Close
+          </Button>
+          <Button size="sm" disabled={loading || saving || !draft} onClick={() => void handleSave()}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 

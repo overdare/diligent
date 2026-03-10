@@ -41,8 +41,19 @@ export function Sidebar({
     <Panel className="flex min-h-0 flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-text/10 px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-sm font-bold text-accent">diligent</span>
+          {onOpenTools ? (
+            <button
+              type="button"
+              onClick={onOpenTools}
+              aria-label="Open config"
+              title="Config"
+              className="rounded-md border border-text/15 px-2 py-1 text-xs text-muted transition hover:border-accent/40 hover:text-accent"
+            >
+              ⚙
+            </button>
+          ) : null}
         </div>
         <p className="mt-1 truncate font-mono text-xs- text-muted" title={cwd}>
           {cwdShort}
@@ -115,16 +126,6 @@ export function Sidebar({
       {/* Settings footer */}
       {providers && onOpenProviders ? (
         <div className="space-y-2 border-t border-text/10 px-3 py-2.5">
-          {onOpenTools ? (
-            <button
-              type="button"
-              onClick={onOpenTools}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-text/20 px-3 py-1.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
-            >
-              <span>⚙</span>
-              <span>Tool settings</span>
-            </button>
-          ) : null}
           {(() => {
             const connected = providers.filter((p) => p.configured || p.oauthConnected);
             return (

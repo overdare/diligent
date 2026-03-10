@@ -868,7 +868,7 @@ export function App() {
           onOpenTools={() => setShowToolModal(true)}
         />
 
-        <Panel className="flex min-h-0 flex-col overflow-hidden">
+        <Panel className="relative flex min-h-0 flex-col overflow-hidden">
           {/* Thread title bar */}
           <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
             <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
@@ -949,6 +949,16 @@ export function App() {
             onSlashCommand={handleSlashCommand}
             slashCommands={slashCommands}
           />
+
+          {showToolModal ? (
+            <ToolSettingsModal
+              threadId={state.activeThreadId}
+              onList={listTools}
+              onSave={saveTools}
+              onClose={() => setShowToolModal(false)}
+              className="absolute inset-0 z-40 bg-black/35"
+            />
+          ) : null}
         </Panel>
       </div>
 
@@ -984,15 +994,6 @@ export function App() {
             setFocusedProvider(null);
             setOauthError(null);
           }}
-        />
-      ) : null}
-
-      {showToolModal ? (
-        <ToolSettingsModal
-          threadId={state.activeThreadId}
-          onList={listTools}
-          onSave={saveTools}
-          onClose={() => setShowToolModal(false)}
         />
       ) : null}
 
@@ -1035,6 +1036,7 @@ export function App() {
           )}
         </Modal>
       ) : null}
+
     </div>
   );
 }
