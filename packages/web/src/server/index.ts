@@ -276,7 +276,11 @@ function enableProcessLogFile(logFile: string, baseDir: string): () => void {
     if (!mirrorEnabled) return;
     try {
       if (typeof chunk === "string") {
-        stream.write(chunk, typeof encoding === "string" ? encoding : undefined);
+        if (typeof encoding === "string") {
+          stream.write(chunk, encoding as BufferEncoding);
+        } else {
+          stream.write(chunk);
+        }
         return;
       }
       if (chunk instanceof Uint8Array) {

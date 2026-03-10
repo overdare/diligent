@@ -54,11 +54,12 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
               ? { temperature: options.temperature }
               : {};
 
+        const systemBlocks = toAnthropicBlocks(context.systemPrompt);
         const sdkStream = client.messages.stream(
           {
             model: model.id,
             max_tokens: options.maxTokens ?? model.maxOutputTokens,
-            system: toAnthropicBlocks(context.systemPrompt),
+            system: systemBlocks,
             messages: await convertMessages(context.messages),
             ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
             ...thinkingConfig,
@@ -168,6 +169,14 @@ async function convertMessages(messages: Message[]): Promise<Anthropic.MessagePa
     }
   }
 
+  // Add cache breakpoint on the last assistant message so all prior context is cached.
+  // The current (last) user message is intentionally excluded — it changes every turn.
+  const lastAssistant = [...result].reverse().find((m) => m.role === "assistant");
+  if (lastAssistant && Array.isArray(lastAssistant.content) && lastAssistant.content.length > 0) {
+    const lastBlock = lastAssistant.content[lastAssistant.content.length - 1] as unknown as Record<string, unknown>;
+    lastBlock.cache_control = { type: "ephemeral" };
+  }
+
   return result;
 }
 
@@ -239,6 +248,7 @@ function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantM
     cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
     cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
   };
+
 
   const stopReason = mapStopReason(msg.stop_reason);
 
