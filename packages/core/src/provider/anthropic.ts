@@ -137,14 +137,11 @@ async function convertMessages(messages: Message[]): Promise<Anthropic.MessagePa
 
   for (const msg of messages) {
     if (msg.role === "user") {
-      if (typeof msg.content === "string") {
-        result.push({ role: "user", content: msg.content });
-      } else {
-        result.push({
-          role: "user",
-          content: (await materializeUserContentBlocks(msg.content)).map(convertContentBlock),
-        });
-      }
+      const blocks =
+        typeof msg.content === "string"
+          ? [{ type: "text" as const, text: msg.content }]
+          : (await materializeUserContentBlocks(msg.content)).map(convertContentBlock);
+      result.push({ role: "user", content: blocks });
     } else if (msg.role === "assistant") {
       result.push({
         role: "assistant",
@@ -169,12 +166,13 @@ async function convertMessages(messages: Message[]): Promise<Anthropic.MessagePa
     }
   }
 
-  // Add cache breakpoint on the last assistant message so all prior context is cached.
-  // The current (last) user message is intentionally excluded — it changes every turn.
-  const lastAssistant = [...result].reverse().find((m) => m.role === "assistant");
-  if (lastAssistant && Array.isArray(lastAssistant.content) && lastAssistant.content.length > 0) {
-    const lastBlock = lastAssistant.content[lastAssistant.content.length - 1] as unknown as Record<string, unknown>;
-    lastBlock.cache_control = { type: "ephemeral" };
+  // Cache breakpoint on last user message (text or tool_result) so the entire
+  // conversation prefix is cached and any fork from this point gets a cache hit.
+  for (let i = result.length - 1; i >= 0; i--) {
+    const msg = result[i];
+    if (msg.role !== "user" || !Array.isArray(msg.content) || msg.content.length === 0) continue;
+    (msg.content[msg.content.length - 1] as unknown as Record<string, unknown>).cache_control = { type: "ephemeral" };
+    break;
   }
 
   return result;
