@@ -987,7 +987,9 @@ export function App() {
           onOAuthStart={async () => {
             setOauthPending(true);
             setOauthError(null);
-            return providerMgr.handleOAuthStart();
+            const result = await providerMgr.handleOAuthStart();
+            window.open(result.authUrl, "_blank");
+            return result;
           }}
           onClose={() => {
             setShowProviderModal(false);

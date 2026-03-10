@@ -109,7 +109,7 @@ export async function handleAuthOAuthStart(args: {
   if (args.oauthPending) throw Object.assign(new Error("OAuth flow already in progress"), { code: -32000 });
 
   const { codeVerifier, codeChallenge } = generatePKCE();
-  const state = randomBytes(16).toString("hex");
+  const state = randomBytes(32).toString("base64url");
   const query = new URLSearchParams({
     response_type: "code",
     client_id: CHATGPT_CLIENT_ID,
@@ -125,8 +125,11 @@ export async function handleAuthOAuthStart(args: {
 
   const authUrl = `${CHATGPT_AUTH_URL}?${query}`;
   const loginId = state;
-  const browser = args.openBrowser ?? defaultOpenBrowser;
-  browser(authUrl);
+  // Only open browser server-side if caller provides openBrowser (e.g. TUI).
+  // Web frontend receives authUrl in the response and opens it via window.open().
+  if (args.openBrowser) {
+    args.openBrowser(authUrl);
+  }
 
   const pending = (async () => {
     try {

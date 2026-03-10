@@ -24,7 +24,7 @@ export interface OAuthFlowOptions {
  */
 export async function runChatGPTOAuth(options: OAuthFlowOptions = {}): Promise<OpenAIOAuthTokens> {
   const { codeVerifier, codeChallenge } = generatePKCE();
-  const state = randomBytes(16).toString("hex");
+  const state = randomBytes(32).toString("base64url");
 
   const params = new URLSearchParams({
     response_type: "code",
