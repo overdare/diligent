@@ -1,20 +1,8 @@
 import type { z } from "zod";
 import * as gamePlay from "./methods/game.play.ts";
 import * as gameStop from "./methods/game.stop.ts";
-import * as instanceAngularVelocityAdd from "./methods/instance.angular_velocity.add.ts";
+import * as instanceAdd from "./methods/instance.add.ts";
 import * as instanceDelete from "./methods/instance.delete.ts";
-import * as instanceFrameAdd from "./methods/instance.frame.add.ts";
-import * as instanceImageButtonAdd from "./methods/instance.image_button.add.ts";
-import * as instanceImageLabelAdd from "./methods/instance.image_label.add.ts";
-import * as instanceLinearVelocityAdd from "./methods/instance.linear_velocity.add.ts";
-import * as instancePartAdd from "./methods/instance.part.add.ts";
-import * as instanceRemoteEventAdd from "./methods/instance.remote_event.add.ts";
-import * as instanceSoundAdd from "./methods/instance.sound.add.ts";
-import * as instanceTextButtonAdd from "./methods/instance.text_button.add.ts";
-import * as instanceTextLabelAdd from "./methods/instance.text_label.add.ts";
-import * as instanceToolAdd from "./methods/instance.tool.add.ts";
-import * as instanceVectorForceAdd from "./methods/instance.vector_force.add.ts";
-import * as instanceVfxPresetAdd from "./methods/instance.vfx_preset.add.ts";
 // ── Method modules ────────────────────────────────────────────────────────────
 import * as levelBrowse from "./methods/level.browse.ts";
 import * as scriptAdd from "./methods/script.add.ts";
@@ -56,6 +44,7 @@ interface MethodModule {
   method: string;
   description: string;
   params: z.ZodType;
+  resolveMethod?: (args: Record<string, unknown>) => string;
 }
 
 // ── Plugin manifest ───────────────────────────────────────────────────────────
@@ -73,19 +62,7 @@ const methodModules: MethodModule[] = [
   scriptAdd,
   scriptDelete,
   instanceDelete,
-  instancePartAdd,
-  instanceFrameAdd,
-  instanceTextLabelAdd,
-  instanceImageLabelAdd,
-  instanceImageButtonAdd,
-  instanceTextButtonAdd,
-  instanceRemoteEventAdd,
-  instanceSoundAdd,
-  instanceToolAdd,
-  instanceVfxPresetAdd,
-  instanceAngularVelocityAdd,
-  instanceLinearVelocityAdd,
-  instanceVectorForceAdd,
+  instanceAdd,
   gamePlay,
   gameStop,
 ];
@@ -112,26 +89,27 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
       description,
       parameters: params,
       async execute(args, ctx) {
+        const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
+
         const approval = await ctx.approve({
           permission: "execute",
           toolName,
-          description: `Studio RPC: ${method}`,
-          details: { method, params: args },
+          description: `Studio RPC: ${rpcMethod}`,
+          details: { method: rpcMethod, params: args },
         });
 
         if (approval === "reject") {
           return {
             output: "[Rejected by user]",
-            metadata: { error: true, method },
+            metadata: { error: true, method: rpcMethod },
           };
         }
-
-        const result = await call(method, args as Record<string, unknown>);
+        const result = await call(rpcMethod, args as Record<string, unknown>);
         const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
         return {
           output,
-          metadata: { method, result },
+          metadata: { method: rpcMethod, result },
         };
       },
     });
