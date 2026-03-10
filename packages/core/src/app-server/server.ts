@@ -459,7 +459,7 @@ export class DiligentAppServer {
 
   // ─── Thread management handlers ─────────────────────────────────────────────
 
-  private async handleThreadStart(params: { cwd: string; mode?: Mode }): Promise<{ threadId: string }> {
+  private async handleThreadStart(params: { cwd: string; mode?: Mode; model?: string }): Promise<{ threadId: string }> {
     return handleThreadStart(this.buildThreadHandlersContext(), params);
   }
 
@@ -773,13 +773,14 @@ export class DiligentAppServer {
     mode: Mode,
     createNew: boolean,
     effort: ThinkingEffort = "medium",
+    modelId?: string,
   ): Promise<ThreadRuntime> {
     const runtime: ThreadRuntime = {
       id: threadId,
       cwd,
       mode,
       effort,
-      modelId: this.currentModelId,
+      modelId: modelId ?? this.currentModelId,
       runningEffortSnapshot: undefined,
       runningModelIdSnapshot: undefined,
       manager: null as unknown as SessionManager,
@@ -876,8 +877,8 @@ export class DiligentAppServer {
       threads: this.threads,
       knownCwds: this.knownCwds,
       resolvePaths: this.config.resolvePaths,
-      createThreadRuntime: (threadId: string, cwd: string, mode: Mode, createNew: boolean, effort?: ThinkingEffort) =>
-        this.createThreadRuntime(threadId, cwd, mode, createNew, effort),
+      createThreadRuntime: (threadId: string, cwd: string, mode: Mode, createNew: boolean, effort?: ThinkingEffort, modelId?: string) =>
+        this.createThreadRuntime(threadId, cwd, mode, createNew, effort, modelId),
       resolveThreadRuntime: (threadId?: string) => this.resolveThreadRuntime(threadId),
       getLatestEffortForCwd: (cwd: string) => this.getLatestEffortForCwd(cwd),
       emit: (notification: DiligentServerNotification) => this.emit(notification),

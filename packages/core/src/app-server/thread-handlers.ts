@@ -88,6 +88,7 @@ interface ThreadHandlersContext {
     mode: Mode,
     createNew: boolean,
     effort?: ThinkingEffort,
+    modelId?: string,
   ) => Promise<ThreadRuntime>;
   resolveThreadRuntime: (threadId?: string) => Promise<ThreadRuntime>;
   getLatestEffortForCwd: (cwd: string) => Promise<ThinkingEffort>;
@@ -100,12 +101,12 @@ interface ThreadHandlersContext {
 
 export async function handleThreadStart(
   ctx: ThreadHandlersContext,
-  params: { cwd: string; mode?: Mode },
+  params: { cwd: string; mode?: Mode; model?: string },
 ): Promise<{ threadId: string }> {
   const mode = params.mode ?? "default";
   const tempId = generateSessionId();
   const effort = await ctx.getLatestEffortForCwd(params.cwd);
-  const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort);
+  const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, params.model);
   const threadId = runtime.manager.sessionId;
   runtime.id = threadId;
 

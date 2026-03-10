@@ -441,6 +441,7 @@ export function App() {
       const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
         cwd: cwd || "/",
         mode: state.mode,
+        model: providerMgr.currentModelRef.current || undefined,
       });
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
