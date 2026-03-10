@@ -7,7 +7,7 @@ export interface PlatformTarget {
   ext: string; // ".exe" for windows, "" otherwise
   os: "darwin" | "linux" | "windows";
   arch: "arm64" | "x64";
-  desktopBundleTypes: ("app" | "dmg" | "AppImage" | "deb" | "msi")[]; // ["dmg"] for macOS, ["AppImage", "deb"] for linux, ["msi"] for windows
+  desktopBundleTypes: ("app" | "dmg" | "AppImage" | "deb" | "msi")[]; // [] for macOS (bin only), ["AppImage", "deb"] for linux, ["msi"] for windows
 }
 
 export const ALL_PLATFORMS: PlatformTarget[] = [
@@ -18,7 +18,7 @@ export const ALL_PLATFORMS: PlatformTarget[] = [
     ext: "",
     os: "darwin",
     arch: "arm64",
-    desktopBundleTypes: ["dmg"],
+    desktopBundleTypes: [],
   },
   {
     id: "darwin-x64",
@@ -27,7 +27,7 @@ export const ALL_PLATFORMS: PlatformTarget[] = [
     ext: "",
     os: "darwin",
     arch: "x64",
-    desktopBundleTypes: ["dmg"],
+    desktopBundleTypes: [],
   },
   {
     id: "linux-x64",
