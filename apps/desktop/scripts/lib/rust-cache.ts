@@ -27,10 +27,16 @@ function collectFiles(dir: string): string[] {
  *   - src-tauri/src/**  (Rust source)
  *   - src-tauri/Cargo.toml / Cargo.lock
  *   - src-tauri/build.rs
+ *   - src-tauri/tauri.conf.json
  *   - src-tauri/capabilities/**  (Tauri capability JSON files)
  */
 export function computeRustHash(tauriDir: string): string {
-  const candidates: string[] = [join(tauriDir, "Cargo.toml"), join(tauriDir, "Cargo.lock"), join(tauriDir, "build.rs")];
+  const candidates: string[] = [
+    join(tauriDir, "Cargo.toml"),
+    join(tauriDir, "Cargo.lock"),
+    join(tauriDir, "build.rs"),
+    join(tauriDir, "tauri.conf.json"),
+  ];
 
   for (const sub of ["src", "capabilities"]) {
     const dir = join(tauriDir, sub);
