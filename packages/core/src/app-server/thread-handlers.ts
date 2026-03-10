@@ -20,6 +20,8 @@ import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
+import { calculateCost } from "../agent/loop";
+import { resolveModel } from "../provider/models";
 import { buildDefaultTools } from "../tools/defaults";
 
 export interface ThreadRuntime {
@@ -210,6 +212,7 @@ export async function handleThreadRead(
   isRunning: boolean;
   currentEffort: ThinkingEffort;
   currentModel?: string;
+  totalCost?: number;
 }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
@@ -231,8 +234,18 @@ export async function handleThreadRead(
   const sessionId = runtime.manager.sessionId;
   const children = await readChildSessions(paths.sessions, sessionId);
 
+  const messages = runtime.manager.getContext();
+
+  let totalCost = 0;
+  for (const msg of messages) {
+    const m = msg as { role?: string; model?: string; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } };
+    if (m.role === "assistant" && m.usage && m.model) {
+      totalCost += calculateCost(resolveModel(m.model), m.usage);
+    }
+  }
+
   return {
-    messages: runtime.manager.getContext(),
+    messages,
     errors: runtime.manager.getErrors(),
     childSessions: children.length > 0 ? children : undefined,
     hasFollowUp: runtime.manager.hasPendingMessages(),
@@ -240,6 +253,7 @@ export async function handleThreadRead(
     isRunning: runtime.isRunning,
     currentEffort: runtime.manager.getCurrentEffort() ?? runtime.effort,
     currentModel: runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId,
+    totalCost,
   };
 }
 

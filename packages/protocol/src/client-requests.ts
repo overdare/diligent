@@ -128,6 +128,7 @@ export const ThreadReadResponseSchema = z.object({
   isRunning: z.boolean(),
   currentEffort: ThinkingEffortSchema,
   currentModel: z.string().optional(),
+  totalCost: z.number().nonnegative().optional(),
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
 

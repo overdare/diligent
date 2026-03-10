@@ -18,6 +18,8 @@ export interface Model {
   maxOutputTokens: number;
   inputCostPer1M?: number; // cost per 1M input tokens in USD
   outputCostPer1M?: number; // cost per 1M output tokens in USD
+  cacheReadCostPer1M?: number; // cost per 1M cache-read tokens in USD
+  cacheWriteCostPer1M?: number; // cost per 1M cache-write tokens in USD
   supportsThinking?: boolean;
   supportsVision?: boolean;
   defaultBudgetTokens?: number; // fallback when thinkingBudgets absent

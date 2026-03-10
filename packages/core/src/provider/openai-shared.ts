@@ -111,11 +111,21 @@ export function isContextOverflow(message: string): boolean {
   return patterns.some((p) => p.test(message));
 }
 
-export function mapUsage(usage: { input_tokens: number; output_tokens: number } | undefined): Usage {
+export function mapUsage(
+  usage:
+    | {
+        input_tokens: number;
+        output_tokens: number;
+        input_tokens_details?: { cached_tokens?: number };
+        output_tokens_details?: { reasoning_tokens?: number };
+      }
+    | undefined,
+): Usage {
+  const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
   return {
-    inputTokens: usage?.input_tokens ?? 0,
+    inputTokens: (usage?.input_tokens ?? 0) - cachedTokens,
     outputTokens: usage?.output_tokens ?? 0,
-    cacheReadTokens: 0,
+    cacheReadTokens: cachedTokens,
     cacheWriteTokens: 0,
   };
 }

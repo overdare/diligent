@@ -184,6 +184,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
       }
     }
   }
+  hydratedUsage.totalCost = payload.totalCost ?? 0;
 
   const base: ThreadState = {
     ...state,
