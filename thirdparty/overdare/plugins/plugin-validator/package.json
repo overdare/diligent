@@ -6,6 +6,12 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src",
+    "luau-lsp",
+    "luau-lsp.exe",
+    "overdare-types.d.lua"
+  ],
   "dependencies": {
     "zod": "^3.24.0"
   },

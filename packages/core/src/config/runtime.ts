@@ -1,5 +1,7 @@
 // @summary Shared runtime config loader — single init path for both CLI and Web
 
+import { readFile } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import type { ModeKind } from "../agent/index";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
@@ -83,13 +85,22 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   }
 
   // Build system prompt with knowledge AND skills
-  const basePrompt =
-    config.systemPrompt ??
-    buildBaseSystemPrompt({
+  let basePrompt: string;
+  if (config.systemPrompt) {
+    basePrompt = config.systemPrompt;
+  } else if (config.systemPromptFile) {
+    const filePath = isAbsolute(config.systemPromptFile) ? config.systemPromptFile : resolve(cwd, config.systemPromptFile);
+    basePrompt = (await readFile(filePath, "utf-8"))
+      .replace(/\{\{currentDate\}\}/g, new Date().toISOString().split("T")[0])
+      .replace(/\{\{cwd\}\}/g, cwd)
+      .replace(/\{\{platform\}\}/g, process.platform);
+  } else {
+    basePrompt = buildBaseSystemPrompt({
       currentDate: new Date().toISOString().split("T")[0],
       cwd,
       platform: process.platform,
     });
+  }
   const systemPrompt = buildSystemPromptWithKnowledge(
     basePrompt,
     instructions,

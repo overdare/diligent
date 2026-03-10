@@ -36,6 +36,7 @@ export const DiligentConfigSchema = z
     maxTurns: z.number().int().positive().optional(),
     maxRetries: z.number().int().positive().optional(),
     systemPrompt: z.string().optional(),
+    systemPromptFile: z.string().optional(),
 
     // Instructions (D034: concatenated across layers)
     instructions: z.array(z.string()).optional(),

@@ -37,8 +37,8 @@ const version = values.version;
 const platformIds = values.platforms!.split(",").map((s) => s.trim());
 const platforms = filterPlatforms(platformIds);
 
-// Optional extra package directory passed via --package (resolved relative to cwd)
-const extraPackageDir: string | undefined = values.package ? resolve(process.cwd(), values.package) : undefined;
+// Optional extra package directory passed via --package (resolved relative to repo root)
+const extraPackageDir: string | undefined = values.package ? resolve(ROOT, values.package) : undefined;
 
 // ---------------------------------------------------------------------------
 // OS detection — Tauri can only produce native bundles for the current OS
@@ -115,6 +115,9 @@ function assembleDefaults(packageDir: string | undefined): void {
   }
   mkdirSync(DEFAULTS_RESOURCES, { recursive: true });
 
+  // Ensure plugins/ directory always exists (required by tauri.conf.json resources)
+  mkdirSync(join(DEFAULTS_RESOURCES, "plugins"), { recursive: true });
+
   // Copy default config template
   const configSrc = join(DEFAULTS_SRC, "config.jsonc");
   if (existsSync(configSrc)) {
@@ -127,22 +130,38 @@ function assembleDefaults(packageDir: string | undefined): void {
     if (!existsSync(packageDir)) {
       console.warn(`⚠️  --package dir not found, skipping: ${packageDir}`);
     } else {
-      // Copy all .jsonc files from package root as-is
+      const scopeName = packageDir.split(/[\\/]/).at(-1)!; // e.g. "overdare"
+
+      // Copy .jsonc config files from package root
       for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".jsonc")) continue;
         cpSync(join(packageDir, entry.name), join(DEFAULTS_RESOURCES, entry.name));
-        console.log(`   Copied config:   ${entry.name}`);
+        console.log(`   Copied file:     ${entry.name}`);
       }
 
-      // Bundle plugin subdirectories
+      // Bundle plugins from plugins/ subdirectory (new structure)
+      const pluginsSubDir = join(packageDir, "plugins");
+      if (existsSync(pluginsSubDir)) {
+        for (const entry of readdirSync(pluginsSubDir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const subDir = join(pluginsSubDir, entry.name);
+          const pkgJsonPath = join(subDir, "package.json");
+          if (existsSync(join(subDir, "src/index.ts")) && existsSync(pkgJsonPath)) {
+            const pluginName = (JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as { name: string }).name;
+            bundlePlugin(subDir, pluginName);
+          }
+        }
+      }
+
+      // Copy plain subdirectories (docs, assets, etc.) directly under defaults/
       for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        const pluginDir = join(packageDir, entry.name);
-        if (!existsSync(join(pluginDir, "src/index.ts"))) continue;
-        const pkgJsonPath = join(pluginDir, "package.json");
-        if (!existsSync(pkgJsonPath)) continue;
-        const pluginName = (JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as { name: string }).name;
-        bundlePlugin(pluginDir, pluginName);
+        if (entry.name === "plugins") continue; // already handled above
+        if (entry.name === "node_modules") continue;
+        const dest = join(DEFAULTS_RESOURCES, entry.name);
+        mkdirSync(dest, { recursive: true });
+        cpSync(join(packageDir, entry.name), dest, { recursive: true });
+        console.log(`   Copied dir:      ${entry.name}/`);
       }
     }
   }
@@ -319,11 +338,23 @@ mkdirSync(DIST, { recursive: true });
 
 const allArtifacts: Record<string, string[]> = {};
 let backup: VersionBackup | undefined;
+let promptBackup: string | undefined;
+const SYSTEM_PROMPT_PATH = join(ROOT, "packages/core/src/agent/templates/system-prompt.txt");
 
 try {
   // Inject version into protocol + tauri.conf.json
   console.log(`⚙️  Injecting version ${version}...`);
   backup = injectVersion(version);
+
+  // Inject custom system prompt if --package provides systemprompt.txt
+  if (extraPackageDir) {
+    const customPrompt = join(extraPackageDir, "systemprompt.txt");
+    if (existsSync(customPrompt)) {
+      promptBackup = readFileSync(SYSTEM_PROMPT_PATH, "utf-8");
+      cpSync(customPrompt, SYSTEM_PROMPT_PATH);
+      console.log("📝 Injected custom system prompt");
+    }
+  }
 
   // Build web frontend once (embedded in desktop)
   console.log("\n🌐 Building web frontend...");
@@ -356,9 +387,13 @@ try {
   console.log("🔐 Generating checksums.sha256...");
   generateChecksums(DIST);
 } finally {
-  // Always restore version files even on failure
+  // Always restore original files even on failure
+  if (promptBackup !== undefined) {
+    writeFileSync(SYSTEM_PROMPT_PATH, promptBackup);
+    console.log("♻️  Restored system-prompt.txt");
+  }
   if (backup) {
-    console.log("\n♻️  Restoring version files...");
+    console.log("♻️  Restoring version files...");
     restoreVersion(backup);
   }
 }
