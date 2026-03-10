@@ -3,6 +3,17 @@ import { describe, expect, it } from "bun:test";
 import { DiligentConfigSchema } from "../schema.js";
 
 describe("DiligentConfigSchema — tools section", () => {
+  it("accepts valid effort values", () => {
+    for (const effort of ["low", "medium", "high", "max"] as const) {
+      const result = DiligentConfigSchema.parse({ effort });
+      expect(result.effort).toBe(effort);
+    }
+  });
+
+  it("rejects invalid effort values", () => {
+    expect(() => DiligentConfigSchema.parse({ effort: "ultra" })).toThrow();
+  });
+
   it("accepts a valid tools section with all fields", () => {
     const result = DiligentConfigSchema.parse({
       tools: {

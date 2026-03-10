@@ -113,7 +113,7 @@ function defaultServerRequestResponse(method: DiligentServerRequest["method"]): 
   };
 }
 
-function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown> }) {
+function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown>; effort?: "low" | "medium" | "high" | "max" }) {
   const providerManager = new ProviderManager({});
   providerManager.setApiKey("anthropic", "test-key");
   providerManager.setApiKey("openai", "test-key");
@@ -127,6 +127,7 @@ function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown> 
   return {
     model,
     mode: "default" as const,
+    effort: overrides?.effort ?? ("medium" as const),
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       const stream = new EventStream(
@@ -599,6 +600,34 @@ describe("DiligentAppServer", () => {
       params: { threadId: threadA },
     });
     expect((readResult(resumedRead) as { currentModel?: string }).currentModel).toBe("gpt-5.4");
+  });
+
+  it("uses runtime config default effort for new threads", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig({ effort: "high" }),
+      }),
+    );
+
+    connectTestPeer(server);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1500,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1501,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("high");
   });
 
   it("lists a newly started thread before the first turn", async () => {

@@ -21,6 +21,7 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
   return {
     model,
     mode: "default",
+    effort: "medium",
     systemPrompt: [{ label: "base", content: "test" }],
     streamFunction: () => {
       throw new Error("not implemented");
@@ -47,7 +48,14 @@ describe("createAppServerConfig", () => {
     expect(config.providerManager).toBe(runtimeConfig.providerManager);
     expect(config.modelConfig).toBeDefined();
     expect(config.modelConfig?.currentModelId).toBe("claude-sonnet-4-6");
+    expect(config.defaultEffort).toBe("medium");
     expect(config.skillNames).toEqual([]);
+  });
+
+  it("uses runtimeConfig.effort as defaultEffort", () => {
+    const runtimeConfig = makeRuntimeConfig({ effort: "high" });
+    const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+    expect(config.defaultEffort).toBe("high");
   });
 
   it("passes skill names for slash disambiguation", () => {

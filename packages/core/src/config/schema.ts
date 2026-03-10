@@ -2,6 +2,7 @@
 import { z } from "zod";
 
 export const ModelId = z.string().describe("Model identifier, e.g. 'claude-sonnet-4-6', 'gpt-4o', 'gemini-2.5-flash'");
+const ThinkingEffortSchema = z.enum(["low", "medium", "high", "max"]);
 
 export const DiligentConfigSchema = z
   .object({
@@ -77,6 +78,7 @@ export const DiligentConfigSchema = z
 
     // Collaboration mode (Phase 4c)
     mode: z.enum(["default", "plan", "execute"]).optional(),
+    effort: ThinkingEffortSchema.optional(),
 
     // Permission rules (Phase 5a — D027, D032)
     permissions: z
@@ -115,4 +117,5 @@ export type DiligentConfig = z.infer<typeof DiligentConfigSchema>;
 
 export const DEFAULT_CONFIG: DiligentConfig = {
   model: "claude-sonnet-4-6",
+  effort: "medium",
 };

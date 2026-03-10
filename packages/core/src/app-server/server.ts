@@ -156,7 +156,7 @@ export class DiligentAppServer {
       currentThreadId: null,
       cwd: options?.cwd ?? this.config.cwd ?? process.cwd(),
       mode: options?.mode ?? "default",
-      effort: "medium",
+      effort: this.config.defaultEffort ?? "medium",
     };
     this.connections.set(connectionId, conn);
 
@@ -772,7 +772,7 @@ export class DiligentAppServer {
     cwd: string,
     mode: Mode,
     createNew: boolean,
-    effort: ThinkingEffort = "medium",
+    effort: ThinkingEffort = this.config.defaultEffort ?? "medium",
     modelId?: string,
   ): Promise<ThreadRuntime> {
     const runtime: ThreadRuntime = {
@@ -851,7 +851,7 @@ export class DiligentAppServer {
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
     const modelId = this.currentModelId;
-    const fallback = modelId ? getDefaultEffortForClass(getModelClass(resolveModel(modelId))) : "medium";
+    const fallback = this.config.defaultEffort ?? (modelId ? getDefaultEffortForClass(getModelClass(resolveModel(modelId))) : "medium");
     return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
   }
 

@@ -11,7 +11,7 @@ import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import { KNOWN_MODELS, resolveModel } from "../provider/models";
 import { ProviderManager } from "../provider/provider-manager";
-import type { Model, StreamFunction, SystemSection } from "../provider/types";
+import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../provider/types";
 import type { SkillMetadata } from "../skills/index";
 import { discoverSkills, renderSkillsSection } from "../skills/index";
 import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
@@ -20,6 +20,7 @@ import type { DiligentConfig } from "./schema";
 
 export interface RuntimeConfig {
   model: Model | undefined;
+  effort: ThinkingEffort;
   mode: ModeKind;
   systemPrompt: SystemSection[];
   streamFunction: StreamFunction;
@@ -112,6 +113,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   return {
     model,
     mode: (config.mode ?? "default") as ModeKind,
+    effort: (config.effort ?? "medium") as ThinkingEffort,
     systemPrompt,
     streamFunction,
     diligent: config,
