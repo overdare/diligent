@@ -19,6 +19,12 @@ const USER_AGENT = `diligent/${DILIGENT_VERSION} (${platform()} ${release()}; ${
  * chatgpt.com/backend-api/codex/responses using the Responses API format.
  * This avoids SDK-specific headers that the ChatGPT endpoint rejects.
  *
+ * ChatGPT subscriber endpoint limitations (store: false enforced):
+ * - store: true → 400 "Store must be set to false"
+ * - previous_response_id → 400 (WebSocket-only, per codex-rs)
+ * - item_reference → requires store: true → impossible
+ * Only prompt_cache_key is accepted for server-side prefix caching.
+ *
  * @param getTokens - Called per-request to get the current (possibly refreshed) tokens
  */
 export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamFunction {
@@ -45,6 +51,10 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
         if (tokens.account_id) {
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
+        if (context.sessionId) {
+          headers["session_id"] = context.sessionId;
+          headers["conversation_id"] = context.sessionId;
+        }
 
         const effort = options.effort ?? "medium";
         const useReasoning = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);
@@ -54,6 +64,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           model: model.id,
           stream: true,
           store: false,
+          ...(context.sessionId && { prompt_cache_key: context.sessionId }),
         };
         if (context.systemPrompt.length > 0) {
           body.instructions = flattenSections(context.systemPrompt);
@@ -61,9 +72,6 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
         body.input = await convertMessages(context.messages);
         if (context.tools.length > 0) {
           body.tools = buildTools(context.tools);
-        }
-        if (options.maxTokens !== undefined) {
-          body.max_output_tokens = options.maxTokens;
         }
         if (useReasoning) {
           body.reasoning = { effort: effort === "max" ? "high" : effort, summary: "auto" };
