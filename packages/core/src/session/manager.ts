@@ -144,15 +144,15 @@ export class SessionManager {
       }
     }
 
-    // Inject synthetic results for orphaned tool_calls
+    // Inject synthetic cancel results for orphaned tool_calls
     for (const id of toolCallIds) {
       const block = toolCalls.find((b) => (b as { id: string }).id === id);
       this.appendMessageEntry({
         role: "tool_result",
         toolCallId: id,
         toolName: (block as { name: string })?.name ?? "unknown",
-        output: "Session interrupted before tool execution completed.",
-        isError: true,
+        output: "[Cancelled]",
+        isError: false,
         timestamp: assistantMsg.timestamp,
       });
     }
@@ -328,6 +328,9 @@ export class SessionManager {
    * Handles proactive and reactive compaction.
    */
   run(userMessage: Message): EventStream<AgentEvent, Message[]> {
+    // 0. Repair orphaned tool_calls from a previous abort (same process, no restart needed)
+    this.repairEntries();
+
     // 1. Add user message to entries (queued persistence)
     this.appendMessageEntry(userMessage);
 
