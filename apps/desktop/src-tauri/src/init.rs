@@ -68,6 +68,53 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Deploy plugins directory: delete and re-copy each bundled package individually.
+/// Supports scoped packages (@scope/plugin-name) by iterating one level deeper.
+/// Packages not present in the bundle (e.g. user-added plugins) are left untouched.
+fn deploy_plugins(src: &Path, dest: &Path, log: &mut String) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let src_child = entry.path();
+        let dest_child = dest.join(&name);
+
+        if !src_child.is_dir() {
+            continue;
+        }
+
+        if name_str.starts_with('@') {
+            // Scoped package directory (@scope/): iterate individual plugin dirs inside
+            fs::create_dir_all(&dest_child)?;
+            for plugin_entry in fs::read_dir(&src_child)? {
+                let plugin_entry = plugin_entry?;
+                let plugin_name = plugin_entry.file_name();
+                let src_plugin = plugin_entry.path();
+                let dest_plugin = dest_child.join(&plugin_name);
+                if !src_plugin.is_dir() {
+                    continue;
+                }
+                if dest_plugin.exists() {
+                    fs::remove_dir_all(&dest_plugin)?;
+                    let _ = writeln!(log, "[init] Removed stale plugins/{}/{}/", name_str, plugin_name.to_string_lossy());
+                }
+                copy_dir_recursive(&src_plugin, &dest_plugin)?;
+                let _ = writeln!(log, "[init] Deployed plugins/{}/{}/", name_str, plugin_name.to_string_lossy());
+            }
+        } else {
+            // Non-scoped plugin: delete dest package dir and replace
+            if dest_child.exists() {
+                fs::remove_dir_all(&dest_child)?;
+                let _ = writeln!(log, "[init] Removed stale plugins/{}/", name_str);
+            }
+            copy_dir_recursive(&src_child, &dest_child)?;
+            let _ = writeln!(log, "[init] Deployed plugins/{}/", name_str);
+        }
+    }
+    Ok(())
+}
+
 /// Run first-time setup. Non-fatal: logs errors but never blocks the app.
 pub fn run(app: &tauri::App) {
     let mut log = String::new();
@@ -109,13 +156,21 @@ pub fn run(app: &tauri::App) {
                             let _ = writeln!(log, "[init] Skipped (exists) {}", dest.display());
                         }
                     } else if src.is_dir() {
-                        if let Err(e) = fs::create_dir_all(&dest) {
-                            let _ = writeln!(log, "[init] Cannot create {}: {e}", dest.display());
-                            continue;
-                        }
-                        match copy_dir_recursive(&src, &dest) {
-                            Ok(_) => { let _ = writeln!(log, "[init] Deployed {}/", name.to_string_lossy()); }
-                            Err(e) => { let _ = writeln!(log, "[init] Failed to deploy {}/: {e}", name.to_string_lossy()); }
+                        if name.to_string_lossy() == "plugins" {
+                            // Plugins: delete and re-copy each bundled package individually
+                            match deploy_plugins(&src, &dest, &mut log) {
+                                Ok(_) => { let _ = writeln!(log, "[init] Deployed plugins/"); }
+                                Err(e) => { let _ = writeln!(log, "[init] Failed to deploy plugins/: {e}"); }
+                            }
+                        } else {
+                            if let Err(e) = fs::create_dir_all(&dest) {
+                                let _ = writeln!(log, "[init] Cannot create {}: {e}", dest.display());
+                                continue;
+                            }
+                            match copy_dir_recursive(&src, &dest) {
+                                Ok(_) => { let _ = writeln!(log, "[init] Deployed {}/", name.to_string_lossy()); }
+                                Err(e) => { let _ = writeln!(log, "[init] Failed to deploy {}/: {e}", name.to_string_lossy()); }
+                            }
                         }
                     }
                 }
