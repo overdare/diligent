@@ -1,5 +1,5 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
-import { existsSync, realpathSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
 import {
@@ -27,6 +27,14 @@ interface CreateServerOptions {
   dev?: boolean;
   cwd?: string;
   distDir?: string;
+}
+
+interface ParsedArgs {
+  port?: number;
+  dev: boolean;
+  distDir?: string;
+  cwd?: string;
+  logFile?: string;
 }
 
 export async function createWebServer(options: CreateServerOptions = {}): Promise<{
@@ -243,7 +251,64 @@ function inferImageMediaType(path: string): string {
   return "application/octet-stream";
 }
 
-function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: string; cwd?: string } {
+function enableProcessLogFile(logFile: string, baseDir: string): () => void {
+  const resolvedPath = resolve(baseDir, logFile);
+  mkdirSync(dirname(resolvedPath), { recursive: true });
+
+  const stream = createWriteStream(resolvedPath, { flags: "a" });
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  const originalStderrWrite = process.stderr.write.bind(process.stderr) as typeof process.stderr.write;
+
+  let mirrorEnabled = true;
+  let reportedStreamError = false;
+
+  const reportStreamError = (error: unknown): void => {
+    if (reportedStreamError) return;
+    reportedStreamError = true;
+    mirrorEnabled = false;
+    const message = error instanceof Error ? error.message : String(error);
+    originalStderrWrite(`[webserver-log] Failed to write log file ${resolvedPath}: ${message}\n`);
+  };
+
+  stream.on("error", reportStreamError);
+
+  const mirrorWrite = (chunk: unknown, encoding?: unknown): void => {
+    if (!mirrorEnabled) return;
+    try {
+      if (typeof chunk === "string") {
+        stream.write(chunk, typeof encoding === "string" ? encoding : undefined);
+        return;
+      }
+      if (chunk instanceof Uint8Array) {
+        stream.write(chunk);
+        return;
+      }
+      stream.write(String(chunk));
+    } catch (error) {
+      reportStreamError(error);
+    }
+  };
+
+  process.stdout.write = ((chunk: unknown, encoding?: unknown, cb?: unknown) => {
+    mirrorWrite(chunk, typeof encoding === "function" ? undefined : encoding);
+    return originalStdoutWrite(chunk as never, encoding as never, cb as never);
+  }) as typeof process.stdout.write;
+
+  process.stderr.write = ((chunk: unknown, encoding?: unknown, cb?: unknown) => {
+    mirrorWrite(chunk, typeof encoding === "function" ? undefined : encoding);
+    return originalStderrWrite(chunk as never, encoding as never, cb as never);
+  }) as typeof process.stderr.write;
+
+  originalStdoutWrite(`[webserver-log] Mirroring stdout/stderr to ${resolvedPath}\n`);
+
+  return () => {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    stream.end();
+  };
+}
+
+export function parseArgs(argv: string[]): ParsedArgs {
   const portArg = argv.find((arg) => arg.startsWith("--port="));
   const port = portArg ? Number.parseInt(portArg.split("=")[1], 10) : undefined;
   const dev = argv.includes("--dev");
@@ -251,7 +316,9 @@ function parseArgs(argv: string[]): { port?: number; dev: boolean; distDir?: str
   const distDir = distArg ? distArg.split("=")[1] : undefined;
   const cwdArg = argv.find((arg) => arg.startsWith("--cwd="));
   const cwd = cwdArg ? cwdArg.split("=")[1] : undefined;
-  return { port: Number.isFinite(port) ? port : undefined, dev, distDir, cwd };
+  const logFileArg = argv.find((arg) => arg.startsWith("--log-file="));
+  const logFile = logFileArg ? logFileArg.slice("--log-file=".length) : undefined;
+  return { port: Number.isFinite(port) ? port : undefined, dev, distDir, cwd, logFile };
 }
 
 const isDirect = import.meta.main;
@@ -260,11 +327,14 @@ if (isDirect) {
   (async () => {
     const args = parseArgs(process.argv.slice(2));
     const cwd = process.cwd();
+    const serverCwd = args.cwd ?? cwd;
+    const logFile = args.logFile ?? process.env.DILIGENT_WEB_LOG_FILE;
+    const cleanupLogFile = logFile ? enableProcessLogFile(logFile, serverCwd) : null;
 
     createWebServer({
       port: args.port,
       dev: args.dev,
-      cwd: args.cwd ?? cwd,
+      cwd: serverCwd,
       distDir: args.distDir,
     })
       .then(({ server }) => {
@@ -273,6 +343,7 @@ if (isDirect) {
         console.log(`RPC endpoint: ws://localhost:${server.port}/rpc`);
       })
       .catch((error) => {
+        cleanupLogFile?.();
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Failed to start web server: ${message}`);
         process.exit(1);
