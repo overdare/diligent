@@ -243,6 +243,9 @@ function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: st
     } else if (bundleType === "deb") {
       const src = findFirst(join(bundleDir, "deb"), ".deb");
       if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.deb`, list);
+    } else if (bundleType === "dmg") {
+      const src = findFirst(join(bundleDir, "dmg"), ".dmg");
+      if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.dmg`, list);
     } else if (bundleType === "msi") {
       const src = findFirst(join(bundleDir, "msi"), ".msi");
       if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.msi`, list);
