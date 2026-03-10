@@ -65,6 +65,7 @@ export class SessionManager {
   private writeQueue: Promise<void> = Promise.resolve();
   private pendingMessages: Message[] = [];
   private lastApiInputTokens = 0;
+  private memoryErrors: ErrorEntry[] = [];
 
   constructor(private config: SessionManagerConfig) {
     this.writer = new SessionWriter(
@@ -193,7 +194,7 @@ export class SessionManager {
   }
 
   getErrors(): ErrorEntry[] {
-    return buildSessionContext(this.entries, this.leafId).errors;
+    return this.memoryErrors;
   }
 
   getCurrentModel(): { provider: string; modelId: string } | undefined {
@@ -768,10 +769,7 @@ export class SessionManager {
       fatal: options?.fatal ?? false,
       error,
     };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.memoryErrors.push(entry);
   }
 
   private appendMessageEntry(message: Message): SessionEntry {

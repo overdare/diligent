@@ -124,8 +124,7 @@ export type SessionEntry =
   | SessionInfoEntry
   | CompactionEntry
   | ModeChangeEntry
-  | EffortChangeEntry
-  | ErrorEntry;
+  | EffortChangeEntry;
 
 /** Any line in a session file */
 export type SessionFileLine = SessionHeader | SessionEntry;
