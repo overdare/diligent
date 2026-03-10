@@ -245,10 +245,8 @@ export function ToolSettingsModal({
     setError(null);
     setSavedMessage(null);
     try {
-      const result = await onSave(buildSetParams(threadId, draft));
-      setState(result);
-      setDraft(createDraft(result));
-      setSavedMessage("Saved. Changes apply on the next turn.");
+      await onSave(buildSetParams(threadId, draft));
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to save tool settings");
     } finally {
