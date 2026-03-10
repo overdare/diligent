@@ -2,7 +2,7 @@ import { z } from "zod";
 import { loadOverdareConfig } from "./config.ts";
 
 const BASE_URL = "https://aiguide.overdare.com";
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 5_000;
 
 const LUA_BUCKET = "https://storage.googleapis.com/lua-script-bucket/";
 const DOCS_BUCKET = "https://storage.googleapis.com/ovdr-docs-bucket/";

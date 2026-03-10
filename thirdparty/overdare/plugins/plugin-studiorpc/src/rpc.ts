@@ -4,7 +4,7 @@ import { loadOverdareConfig } from "./config.ts";
 
 const DEFAULT_HOST = "localhost";
 const DEFAULT_PORT = 13377;
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 5_000;
 
 interface JsonRpcResponse {
   jsonrpc: string;

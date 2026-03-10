@@ -1,4 +1,9 @@
 {
   "model": "gpt-5.4",
-  "yolo": true
+  "yolo": true,
+  "tools": {
+    "builtin": {
+      "bash": false
+    }
+  }
 }
