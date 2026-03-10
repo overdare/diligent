@@ -109,7 +109,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "gpt-5.4",
     provider: "openai",
-    contextWindow: 600_000,
+    contextWindow: 400_000,
     maxOutputTokens: 128_000,
     inputCostPer1M: 2.5,
     outputCostPer1M: 15.0,
@@ -151,18 +151,18 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   },
 
   {
-    id: "gpt-5-mini",
+    id: "gpt-5.1-codex-mini",
     provider: "openai",
     contextWindow: 400_000,
-    maxOutputTokens: 100_000,
+    maxOutputTokens: 128_000,
     inputCostPer1M: 0.25,
     outputCostPer1M: 2.0,
-    cacheReadCostPer1M: 0.125,
+    cacheReadCostPer1M: 0.025,
     cacheWriteCostPer1M: 0,
     supportsThinking: true,
     supportsVision: true,
     accessLevel: "standard",
-    aliases: ["gpt-mini"],
+    aliases: ["codex-mini"],
     modelClass: "lite",
   },
 ];

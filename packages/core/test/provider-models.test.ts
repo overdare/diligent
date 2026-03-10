@@ -70,7 +70,7 @@ describe("model class annotations", () => {
   it("openai classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.4")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.3-codex")?.modelClass).toBe("general");
-    expect(KNOWN_MODELS.find((m) => m.id === "gpt-5-mini")?.modelClass).toBe("lite");
+    expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.1-codex-mini")?.modelClass).toBe("lite");
   });
 
   it("gemini classes map correctly", () => {
@@ -127,7 +127,7 @@ describe("resolveModelForClass", () => {
   it("resolves openai general → lite", () => {
     const codex = resolveModel("gpt-5.3-codex");
     const lite = resolveModelForClass(codex, "lite");
-    expect(lite.id).toBe("gpt-5-mini");
+    expect(lite.id).toBe("gpt-5.1-codex-mini");
     expect(lite.provider).toBe("openai");
   });
 
