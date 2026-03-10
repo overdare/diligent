@@ -1,9 +1,8 @@
 // @summary Agent type definitions, builtin registry, and role-guidance formatters for spawn_agent
 import explorePrompt from "./templates/explore.md" with { type: "text" };
-import plannerPrompt from "./templates/planner.md" with { type: "text" };
 
 /** Built-in agent type names supported by spawn_agent. */
-export const BUILTIN_AGENT_TYPE_NAMES = ["general", "explore", "planner"] as const;
+export const BUILTIN_AGENT_TYPE_NAMES = ["general", "explore"] as const;
 
 export type BuiltinAgentTypeName = (typeof BUILTIN_AGENT_TYPE_NAMES)[number];
 
@@ -72,26 +71,6 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
         "Trust explorer results without re-verification",
       ],
       defaultModelClass: "lite",
-    },
-  },
-  planner: {
-    name: "planner",
-    description:
-      "Planning agent that explores the codebase and writes a decision-complete plan document to .diligent/plans/",
-    systemPromptPrefix: `${plannerPrompt}\n`,
-    toolFilter: "all",
-    spawnGuidance: {
-      summary: "Planning-focused agent that writes structured plan documents",
-      whenToUse: [
-        "Breaking down multi-step work before implementation",
-        "Producing a decision-complete plan in .diligent/plans/",
-        "Clarifying scope, risks, and execution order",
-      ],
-      rules: [
-        "Favor concrete, executable steps over vague ideas",
-        "Keep plan output actionable and tied to repository paths",
-      ],
-      defaultModelClass: "pro",
     },
   },
 };

@@ -19,7 +19,7 @@ const SpawnAgentParams = z.object({
     .describe(
       "Override the model class for this sub-agent. " +
         "'pro' for complex reasoning, 'general' for balanced tasks, 'lite' for simple/read-only. " +
-        "Defaults by role: general→same as parent, explore→lite, planner→pro.",
+        "Defaults by role: general→same as parent, explore→lite.",
     ),
   thoroughness: z
     .enum(["quick", "thorough"])
