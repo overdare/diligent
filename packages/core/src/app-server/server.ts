@@ -109,6 +109,8 @@ export interface DiligentAppServerConfig {
   toImageUrl?: (absPath: string) => string | undefined;
   /** Loaded skill names for slash-command disambiguation in turn/start. */
   skillNames?: string[];
+  /** Default effort from config — used as fallback when no session effort is set */
+  defaultEffort?: ThinkingEffort;
 }
 
 interface ConnectedPeer {

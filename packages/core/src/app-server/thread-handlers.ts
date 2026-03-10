@@ -272,7 +272,7 @@ export async function handleTurnStart(
   runtime.abortController = new AbortController();
   runtime.isRunning = true;
   runtime.runningEffortSnapshot = runtime.effort;
-  runtime.runningModelIdSnapshot = runtime.modelId;
+  runtime.runningModelIdSnapshot = params.model ?? runtime.modelId;
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
 

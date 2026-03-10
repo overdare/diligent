@@ -583,6 +583,7 @@ export function App() {
           fileName: image.fileName,
         })),
         content,
+        model: providerMgr.currentModelRef.current || undefined,
       });
     } catch (error) {
       console.error(error);

@@ -145,6 +145,7 @@ export const TurnStartParamsSchema = z.object({
   message: z.string(),
   attachments: z.array(TurnAttachmentSchema).max(4).optional(),
   content: z.array(ContentBlockSchema).optional(),
+  model: z.string().optional(),
 });
 export type TurnStartParams = z.infer<typeof TurnStartParamsSchema>;
 
