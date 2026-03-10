@@ -820,6 +820,7 @@ export class SessionManager {
       typeof this.config.agentConfig === "function" ? this.config.agentConfig() : this.config.agentConfig;
     const wrap = (base: AgentLoopConfig): AgentLoopConfig => ({
       ...base,
+      sessionId: base.sessionId ?? this.writer.id,
       reservePercent: base.reservePercent ?? this.config.compaction?.reservePercent ?? 16,
       getSteeringMessages: () => this.drainPendingMessages(),
       hasPendingMessages: () => this.pendingMessages.length > 0,

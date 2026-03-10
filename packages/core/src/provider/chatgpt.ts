@@ -129,7 +129,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           }
         }
 
-        await handleResponsesAPIEvents(parseSse(), stream, model, options.signal);
+        await handleResponsesAPIEvents(parseSse(), stream, model, options.signal, context.messages.length);
       } catch (err) {
         if (err instanceof ProviderError) {
           stream.push({ type: "error", error: err });

@@ -134,11 +134,14 @@ export function mapUsage(
  * Process OpenAI Responses API SSE events from an async iterable.
  * Works for both SDK streams (openai.ts) and raw-parsed objects (chatgpt.ts).
  */
+let prevCacheRead = 0;
+
 export async function handleResponsesAPIEvents(
   iter: AsyncIterable<Record<string, unknown>>,
   stream: EventStream<ProviderEvent, ProviderResult>,
   model: Model,
   signal?: AbortSignal,
+  turnIndex?: number,
 ): Promise<void> {
   const contentBlocks: ContentBlock[] = [];
   let currentText = "";
@@ -244,6 +247,11 @@ export async function handleResponsesAPIEvents(
           const u = resp.usage as Record<string, number> | undefined;
           usage = mapUsage(u as { input_tokens: number; output_tokens: number } | undefined);
           stopReason = mapStopReason(resp.status as string);
+          const turn = turnIndex !== undefined ? ` (turn ${turnIndex})` : "";
+          if (usage.cacheReadTokens < prevCacheRead) {
+            console.warn(`Cache drop${turn}: ${prevCacheRead} → ${usage.cacheReadTokens}`);
+          }
+          prevCacheRead = usage.cacheReadTokens;
         }
         break;
       }

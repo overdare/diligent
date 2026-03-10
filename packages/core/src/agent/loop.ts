@@ -271,6 +271,7 @@ export async function streamAssistantResponse(
     systemPrompt: turnRuntime.effectiveSystemPrompt,
     messages,
     tools: turnRuntime.activeTools.map(toolToDefinition),
+    sessionId: config.sessionId,
   };
 
   const requestStartedAt = Date.now();

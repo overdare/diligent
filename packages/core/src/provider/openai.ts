@@ -31,6 +31,8 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
             model: model.id,
             instructions: flattenSections(context.systemPrompt),
             input: await convertMessages(context.messages),
+            prompt_cache_retention: "24h",
+            ...(context.sessionId && { prompt_cache_key: context.sessionId }),
             ...(context.tools.length > 0 && {
               tools: buildTools(context.tools, false) as unknown as Array<{
                 type: "function";
@@ -58,6 +60,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
           stream,
           model,
           options.signal,
+          context.messages.length,
         );
       } catch (err) {
         stream.push({ type: "error", error: classifyOpenAIError(err) });

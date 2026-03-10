@@ -50,6 +50,7 @@ export interface StreamContext {
   systemPrompt: SystemSection[];
   messages: Message[];
   tools: ToolDefinition[];
+  sessionId?: string;
 }
 
 export interface StreamOptions {

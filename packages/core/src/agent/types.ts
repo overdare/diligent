@@ -159,6 +159,8 @@ export interface AgentLoopConfig {
   streamFunction: StreamFunction;
   signal?: AbortSignal;
   reservePercent?: number;
+  /** Session ID used as prompt_cache_key for routing hint on supporting providers. */
+  sessionId?: string;
   /** Optional debug identifiers for correlating AgentLoop logs with outer thread/turn logs. */
   debugThreadId?: string;
   debugTurnId?: string;
