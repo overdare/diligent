@@ -85,6 +85,7 @@ function bundlePlugin(pluginDir: string, pluginName: string): void {
   mkdirSync(outDir, { recursive: true });
 
   const outFile = join(outDir, "index.js");
+  run(`bun install`, pluginDir);
   run(`bun build --target bun --outfile ${outFile} ${pluginEntry}`);
 
   // Write minimal package.json so import(dirUrl) resolves to index.js
