@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { loadOverdareConfig } from "./config.ts";
+import { buildOriginFileRender } from "./render.ts";
+
+type ToolRenderPayload = {
+  version: 1;
+  blocks: Array<Record<string, unknown>>;
+};
 
 const BASE_URL = "https://aiguide.overdare.com";
 const TIMEOUT_MS = 5_000;
@@ -55,6 +61,7 @@ interface ToolContext {
 
 interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
 }
 
@@ -63,7 +70,7 @@ function resolveAuthToken(): string {
   if (!token) {
     throw new Error(
       "Missing OVERDARE RAG auth token.\n" +
-        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/@overdare.jsonc",
+        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/overdare.jsonc",
     );
   }
   return token;
@@ -87,6 +94,7 @@ function buildResult(action: string, files: unknown[], totalCount: number): Tool
     output: files.length
       ? JSON.stringify(files, null, 2)
       : `No ${action === "origin-file" ? "files returned" : "related metadata found"}.`,
+    render: buildOriginFileRender(action, [], files as OriginFileResult[]),
     metadata: { action, totalCount, loadedCount: loaded.length, files },
   };
 }
@@ -101,7 +109,10 @@ async function originFile(urls: string[], signal: AbortSignal, token: string): P
   const params = urls.map((u) => `originFileUrl=${encodeURIComponent(u)}`).join("&");
   const data = (await fetcher(`${BASE_URL}/api/chat/rag/origin-file?${params}`, signal, token)) as OriginFileResponse;
 
-  return buildResult("origin-file", data.files ?? [], data.totalCount);
+  return {
+    ...buildResult("origin-file", data.files ?? [], data.totalCount),
+    render: buildOriginFileRender("origin-file", urls, data.files ?? []),
+  };
 }
 
 export async function execute(args: Params, ctx: ToolContext): Promise<ToolResult> {

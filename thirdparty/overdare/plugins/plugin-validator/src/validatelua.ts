@@ -6,6 +6,12 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { loadOverdareConfig } from "./config.ts";
+import { buildValidateLuaRender } from "./render.ts";
+
+type ToolRenderPayload = {
+  version: 1;
+  blocks: Array<Record<string, unknown>>;
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -78,7 +84,7 @@ function getPluginDir(): string {
  *
  * Priority:
  *   1. LUAU_LSP_PATH env var
- *   2. config.luauLspPath  (~/.diligent/@overdare.jsonc)
+ *   2. config.luauLspPath  (~/.diligent/overdare.jsonc)
  *   3. <pluginDir>/luaulsp[.exe]  (bundled alongside plugin)
  *   4. "luau-lsp" (PATH lookup)
  */
@@ -98,7 +104,7 @@ function resolveLuauLspPath(): string {
  *
  * Priority:
  *   1. OVERDARE_TYPES_PATH env var
- *   2. config.typesPath  (~/.diligent/@overdare.jsonc)
+ *   2. config.typesPath  (~/.diligent/overdare.jsonc)
  *   3. <pluginDir>/overdare-types.d.lua  (bundled alongside plugin)
  *   4. undefined (run without types)
  */
@@ -150,6 +156,7 @@ interface ToolContext {
 
 interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
 }
 
@@ -209,6 +216,7 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     if (luaFiles.length === 0) {
       return {
         output: "No .lua / .luau files found in the specified directory.",
+        render: buildValidateLuaRender(args.filePath, "No .lua / .luau files found in the specified directory."),
         metadata: { fileCount: 0, issueCount: 0 },
       };
     }
@@ -246,6 +254,7 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
   if (!isDirectory || luaFiles.length === 1) {
     return {
       output: rawOutput || "No issues found. Code is valid.",
+      render: buildValidateLuaRender(args.filePath, rawOutput || "No issues found. Code is valid."),
       metadata: { fileCount: 1, issueCount: rawOutput ? 1 : 0 },
     };
   }
@@ -284,6 +293,7 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
 
   return {
     output: sections.join("\n\n"),
+    render: buildValidateLuaRender(args.filePath, sections.join("\n\n")),
     metadata: { fileCount: luaFiles.length, issueCount: totalIssues },
   };
 }

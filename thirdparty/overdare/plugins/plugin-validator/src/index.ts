@@ -1,6 +1,11 @@
 import type { z } from "zod";
 import * as validatelua from "./validatelua.ts";
 
+type ToolRenderPayload = {
+  version: 1;
+  blocks: Array<Record<string, unknown>>;
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ToolContext {
@@ -21,6 +26,7 @@ type ApprovalResponse = "once" | "always" | "reject";
 
 interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
 }
 

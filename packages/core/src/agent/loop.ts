@@ -406,6 +406,7 @@ export async function executeToolCalls(
         output: result.output,
         isError: !!result.metadata?.error,
         timestamp: Date.now(),
+        render: result.render,
       };
 
       stream.push({
@@ -456,6 +457,7 @@ export async function executeToolCalls(
       output: result.output,
       isError: !!result.metadata?.error,
       timestamp: Date.now(),
+      render: result.render,
     };
 
     stream.push({

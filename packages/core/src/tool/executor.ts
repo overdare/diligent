@@ -1,4 +1,5 @@
 // @summary Executes tool calls with parameter validation and auto-truncation
+import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { ToolCallBlock } from "../types";
 import {
   persistFullOutput,
@@ -34,6 +35,25 @@ export async function executeTool(
   } catch (err) {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     return { output: `Error: Tool "${toolCall.name}" threw an unexpected error: ${message}`, metadata: { error: true } };
+  }
+
+  if (result.render !== undefined) {
+    const parsedRender = ToolRenderPayloadSchema.safeParse(result.render);
+    if (!parsedRender.success) {
+      result = {
+        ...result,
+        render: undefined,
+        metadata: {
+          ...result.metadata,
+          renderValidationError: parsedRender.error.flatten(),
+        },
+      };
+    } else {
+      result = {
+        ...result,
+        render: parsedRender.data,
+      };
+    }
   }
 
   // D025: Auto-truncation safety net

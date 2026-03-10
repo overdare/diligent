@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { ToolRenderPayload } from "@diligent/protocol";
 
 // D013: Tool definition
 // biome-ignore lint/suspicious/noExplicitAny: generic default requires any for unparameterized Tool references
@@ -64,6 +65,7 @@ export interface ApprovalRequest {
 // D020: Tool result
 export interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
   truncateDirection?: "head" | "tail" | "head_tail"; // D025: hint for auto-truncation. Default: "tail"
   /** When true, the tool result is persisted to the session but NOT sent to the LLM.

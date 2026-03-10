@@ -5,9 +5,22 @@ import * as instanceAdd from "./methods/instance.add.ts";
 import * as instanceDelete from "./methods/instance.delete.ts";
 // ── Method modules ────────────────────────────────────────────────────────────
 import * as levelBrowse from "./methods/level.browse.ts";
+import {
+  buildDeleteRender,
+  buildGamePlayRender,
+  buildGameStopRender,
+  buildInstanceAddRender,
+  buildLevelBrowseRender,
+  buildScriptAddRender,
+} from "./render.ts";
 import * as scriptAdd from "./methods/script.add.ts";
 import * as scriptDelete from "./methods/script.delete.ts";
 import { call } from "./rpc.ts";
+
+type ToolRenderPayload = {
+  version: 1;
+  blocks: Array<Record<string, unknown>>;
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +42,7 @@ type ApprovalResponse = "once" | "always" | "reject";
 
 interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
 }
 
@@ -108,9 +122,26 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
         const normalizedArgs = mod.normalizeArgs ? mod.normalizeArgs(args as Record<string, unknown>) : (args as Record<string, unknown>);
         const result = await call(rpcMethod, normalizedArgs);
         const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+        const render =
+          toolName === "studiorpc_level_browse"
+            ? buildLevelBrowseRender(result)
+            : toolName === "studiorpc_script_add"
+              ? buildScriptAddRender(normalizedArgs, output)
+              : toolName === "studiorpc_script_delete"
+                ? buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output)
+                : toolName === "studiorpc_instance_delete"
+                  ? buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output)
+                  : toolName === "studiorpc_instance_add"
+                    ? buildInstanceAddRender(normalizedArgs, output)
+                    : toolName === "studiorpc_game_play"
+                      ? buildGamePlayRender(normalizedArgs, output)
+                      : toolName === "studiorpc_game_stop"
+                        ? buildGameStopRender(output)
+                        : undefined;
 
         return {
           output,
+          render,
           metadata: { method: rpcMethod, result },
         };
       },

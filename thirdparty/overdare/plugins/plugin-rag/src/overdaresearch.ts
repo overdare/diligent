@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { loadOverdareConfig } from "./config.ts";
+import { buildSearchRender } from "./render.ts";
+
+type ToolRenderPayload = {
+  version: 1;
+  blocks: Array<Record<string, unknown>>;
+};
 
 const BASE_URL = "https://aiguide.overdare.com";
 const TIMEOUT_MS = 5_000;
@@ -64,6 +70,7 @@ interface ToolContext {
 
 interface ToolResult {
   output: string;
+  render?: ToolRenderPayload;
   metadata?: Record<string, unknown>;
 }
 
@@ -72,7 +79,7 @@ function resolveAuthToken(): string {
   if (!token) {
     throw new Error(
       "Missing OVERDARE RAG auth token.\n" +
-        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/@overdare.jsonc",
+        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/overdare.jsonc",
     );
   }
   return token;
@@ -128,6 +135,7 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
 
     return {
       output: results.length ? JSON.stringify(results, null, 2) : "No results found.",
+      render: buildSearchRender({ source: args.source, query: args.query }, results),
       metadata: { resultCount: results.length, results },
     };
   } catch (err) {
