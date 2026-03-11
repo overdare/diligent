@@ -118,7 +118,7 @@ describe("isSlashPrefix", () => {
 describe("BUILTIN_COMMANDS", () => {
   test("has expected core commands", () => {
     const names = BUILTIN_COMMANDS.map((c) => c.name);
-    expect(names).toEqual(["help", "new", "resume", "model"]);
+    expect(names).toEqual(["help", "new", "resume", "model", "effort"]);
   });
 
   test("resume requires args and exposes usage", () => {
@@ -182,6 +182,6 @@ describe("buildCommandList", () => {
       { name: "effort", description: "Skill named effort" },
     ]);
     expect(commands.find((c) => c.name === "mode")?.isSkill).toBe(true);
-    expect(commands.find((c) => c.name === "effort")?.isSkill).toBe(true);
+    expect(commands.find((c) => c.name === "effort")?.isSkill).toBeUndefined();
   });
 });
