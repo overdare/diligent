@@ -5,6 +5,8 @@ Evaluation of when to introduce a web UI and how the current architecture aligns
 **Date**: 2026-02-25
 **Status**: Reference document — no action items yet
 
+> Historical note: this assessment reflects the 2026-02-25 state of the project. Approval flow, `request_user_input`, and compaction stability work have since been implemented, so treat missing-prerequisite notes below as historical context rather than current status.
+
 ---
 
 ## 1. Timing Verdict

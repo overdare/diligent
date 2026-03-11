@@ -6,26 +6,26 @@
 
 - [ ] **Implement per-tool output limits** — Different char limits per tool (read_file: 50k, shell: 30k, grep: 20k, glob: 20k, edit: 10k, write: 1k) instead of current uniform 50KB/2000 lines for all tools. Configurable via SessionConfig. Reference: attractor spec §5.2. (added: 2026-02-27)
 - [ ] **Plan mode bash allowlist/denylist (D087a)** — Regex-based allowlist/denylist for bash tool in plan mode (git status ok, git push blocked). pi-agent's approach: concrete, testable regex patterns, not instruction-only. Stored as `planMode.bashAllowlist` / `planMode.bashDenylist` in config schema. (added: 2026-03-02)
-- [ ] **`request_user_input` tool (D088)** — Available in all modes (not plan-only). Blocks execution and surfaces a question to the user via TUI TextInput overlay. Returns user's text response. Supports multiple questions, options list, secret masking. See phase-5a plan. (updated: 2026-03-02)
-- [ ] **Show sub-agent tool call errors in UI** — When a tool call fails inside a sub-agent (spawn_agent), the error is currently invisible to the user in both Web and TUI. Surface tool call failure messages from child agent sessions so the parent thread's UI can display them (e.g., inline error badge or expandable error detail in the sub-agent result). (added: 2026-03-08)
+- [x] **`request_user_input` tool (D088)** — Available in all modes (not plan-only). Blocks execution and surfaces questions to the user. Supports multiple questions, options list, and secret masking. Implemented in both Web and TUI. (done: 2026-03-11)
+- [x] **Show sub-agent tool call errors in UI** — Tool call failures inside sub-agents are surfaced in the parent thread UI so Web and TUI can display child-agent error details directly in the sub-agent result. (done: 2026-03-11)
 
 ### P2 — Medium (future capabilities)
 
 - [ ] **User-friendly API error handling (overloaded, rate-limit, etc.)** — When the LLM API returns transient errors like `overloaded_error` or `rate_limit_error`, show a human-readable message (e.g., "Model is currently busy, retrying…") instead of raw JSON. Implement exponential backoff retry with configurable max attempts. Surface retry progress in both TUI and Web UI. Optionally fall back to a lighter model after N failures. (added: 2026-03-03)
 
-- [ ] **Add context budget management for compaction** — Context compaction fails when the context window is completely full (no room to run the compaction itself). The agent needs to reserve ~20% of the context window as headroom so compaction can always be triggered before it's too late. Investigate the right threshold and implement a proactive compaction strategy. (added: 2026-02-25)
+- [x] **Add context budget management for compaction** — The agent now reserves compaction headroom so proactive compaction can run before the context window is fully exhausted. (done: 2026-03-11)
 - [ ] **Implement background async piggyback pattern** — The agent loop needs a mechanism to inject asynchronously-produced results (LSP diagnostics, file watcher events, background indexer output) into the next turn's context at natural breakpoints. The pattern is well-documented in research (codex-rs `TurnMetadataState`, pi-agent `getSteeringMessages`, opencode DB re-read) but not implemented or planned. Generalize the existing `getSteeringMessages()` callback design (D011) to a `getPendingInjections()` that drains both user steering messages and background results. See: `docs/research/layers/01-agent-loop.md` § Background Async Piggyback Pattern. (added: 2026-02-25)
 - [ ] **Per-mode model override** — Allow config to specify a different model per mode (e.g., plan mode uses a cheaper/faster model). `config.jsonc` → `modes.plan.model`. Passed through AgentLoopConfig when mode is active. (added: 2026-03-02)
 
-### L4 — Approval System (stub → real implementation)
+### L4 — Approval System ✓ Done (2026-03-11)
 
-> Currently `ctx.approve()` auto-returns `"once"`. All decisions D027-D031 are designed but unimplemented.
+> `ctx.approve()` is implemented as a real permission boundary with rule evaluation, inline approval flow, session-memory responses, and frontend approval UX.
 
-- [ ] **Rule-based permission matching (D027)** — `PermissionEngine` with `{ permission, pattern, action }` rules, wildcard matching, last-match-wins. Actions: `"allow"` / `"deny"` / `"prompt"`. Load from `permissions` array in config. See phase-5a plan. (updated: 2026-03-02)
-- [ ] **`ctx.approve()` inline approval flow (D028)** — Replace auto-approve stub with real blocking permission gate. `AgentLoopConfig.approve` callback; TUI provides dialog. `ApprovalResponse = "once" | "always" | "reject"`. See phase-5a plan. (updated: 2026-03-02)
-- [ ] **Once/always/reject with session cache (D029)** — `"always"` adds rule to `PermissionEngine` session cache; future matching calls auto-resolve. `"reject"` cancels current call (cascading all pending is post-MVP). See phase-5a plan. (updated: 2026-03-02)
-- [ ] **Denied tools removed from LLM list (D070)** — `filterAllowedTools()` in loop.ts removes tools with static deny rules before building LLM tool list. See phase-5a plan. (updated: 2026-03-02)
-- [ ] **TUI approval dialog overlay** — New `ApprovalDialog` component (3-button: Once / Always / Reject). Wire to `app.ts` approve callback. Block agent loop while shown. See phase-5a plan. (updated: 2026-03-02)
+- [x] **Rule-based permission matching (D027)** — `PermissionEngine` evaluates `{ permission, pattern, action }` rules with wildcard matching and last-match-wins semantics. (done: 2026-03-11)
+- [x] **`ctx.approve()` inline approval flow (D028)** — Tool execution can block on approval requests after rule evaluation, using the shared approval callback path. (done: 2026-03-11)
+- [x] **Once/always/reject with session cache (D029)** — `"always"` stores a session-scoped rule so matching future requests auto-resolve; `"reject"` cancels the current request. (done: 2026-03-11)
+- [x] **Denied tools removed from LLM list (D070)** — Tools covered by static deny rules are filtered out before the LLM tool list is built. (done: 2026-03-11)
+- [x] **TUI approval dialog overlay** — Approval requests are surfaced through the TUI approval dialog with Once / Always / Reject actions. (done: 2026-03-11)
 
 ### L9 — MCP (designed, unimplemented)
 

@@ -28,16 +28,16 @@ Each layer is a functional subsystem. Layers are progressively deepened across i
 | Layer | Name | Status | Key Decisions |
 |---|---|---|---|
 | L0 | Provider | 4 providers (Anthropic, OpenAI, ChatGPT OAuth, Gemini) + ProviderManager | D001, D003, D009, D010 |
-| L1 | Agent Loop | Full events, compaction, mode filtering, loop detection, steering | D004, D007, D008, D087 |
-| L2 | Tool System | Truncation, progress, approval hook stub | D013, D014, D015, D025 |
+| L1 | Agent Loop | Full events, compaction, context headroom, mode filtering, loop detection, steering | D004, D007, D008, D087 |
+| L2 | Tool System | Truncation, progress, permission-aware tool execution | D013, D014, D015, D025 |
 | L3 | Core Tools | 11 tools (bash, read, write, edit, glob, grep, ls, plan, task, add_knowledge, request_user_input) | D017-D024, D082, D088 |
-| L4 | Approval | Stub (auto-approve, future) | D027-D031 |
+| L4 | Approval | Rule-based permissions + blocking approval flow + session memory | D027-D031 |
 | L5 | Config | 3-layer JSONC + knowledge/compaction wired | D032-D035 |
 | L6 | Session | Persistent + compaction + knowledge + steering + session list/switch/delete | D036-REV, D037-D043, D080-D084 |
 | L7 | TUI & Commands | Component framework + overlay + slash commands + collaboration modes | D045-D051, D087 |
 | L8 | Skills | Discovery, frontmatter, system prompt injection | D052-D053 |
 | L9 | MCP | Planned | D056-D061 |
-| L10 | Multi-Agent | Done (task tool, agent types, permission isolation, result format) | D062-D065 |
+| L10 | Multi-Agent | Done (task tool, agent types, permission isolation, result format, surfaced child errors) | D062-D065 |
 
 Deep research per layer: `docs/research/layers/NN-*.md`
 
@@ -84,13 +84,15 @@ Both transports use raw JSON-RPC 2.0 messages with no custom wrapper envelopes. 
 - **TurnContext** (D008): Immutable per-turn config (model, tools, policies) separated from mutable session state. Agent loop is a pure stateless function.
 - **Provider abstraction** (D003): Common `StreamFunction` interface. `ProviderManager` dispatches to Anthropic, OpenAI (Responses API), ChatGPT (OAuth), Gemini based on model prefix. Model registry with alias resolution. API key and OAuth token lifecycle managed centrally via auth-store.
 - **Session persistence** (D006/D036-REV): JSONL append-only files with tree structure (id/parentId). Project-local at `.diligent/sessions/`. SESSION_VERSION 4 with CompactionEntry, ModeChangeEntry, SteeringEntry. Session list/switch/delete via protocol.
-- **Compaction** (D037-D039): Token-based trigger with LLM summarization. Proactive (pre-turn check) and reactive (context_overflow recovery). File operation tracking across compactions.
+- **Compaction** (D037-D039): Token-based trigger with reserved context headroom and LLM summarization. Proactive (pre-turn check) and reactive (context_overflow recovery). File operation tracking across compactions.
 - **Knowledge** (D081-D083): JSONL append-only store with 5 typed entries. Ranked injection into system prompt with 30-day time decay and token budget. `add_knowledge` tool for autonomous recording.
 - **Collaboration modes** (D087): ModeKind ("default" | "plan" | "execute"). Plan mode filters tools to read-only set. Mode-specific system prompt prefixes. ModeChangeEntry in session history.
+- **Approval system** (D027-D031, D070): Rule-based permission engine with wildcard matching, inline blocking approvals, Once / Always / Reject responses, session-scoped remembered rules, and static deny filtering before tool exposure.
 - **Steering queue**: `steer()` injects mid-task messages; `followUp()` queues post-task messages. SteeringEntry persisted in session JSONL. Drained before/after LLM calls.
 - **Loop detection**: Tracks tool call signatures in sliding window, detects repeating patterns (length 1-3, 3 repetitions), injects warning message.
 - **Project data directory** (D080): `.diligent/` stores sessions, knowledge, and skills. Auto-generated `.gitignore` excludes sessions and knowledge.
 - **Diligent Protocol** (`@diligent/protocol`): JSON-RPC v2 protocol with Zod-validated schemas. 11 client request methods (initialize, thread/start, thread/resume, thread/list, thread/read, thread/delete, turn/start, turn/interrupt, turn/steer, mode/set, knowledge/list). 12 server notification types. 2 server request types (approval, user input). All domain models (Message, AgentEvent, ThreadItem, SessionSummary, ProviderAuthStatus) defined as Zod schemas. Raw JSON-RPC 2.0 messages are used on both CLI stdio and Web WebSocket transports with no custom wrapper envelopes.
+- **Sub-agent results**: Parent threads preserve sub-agent summaries together with child tool failure details so nested-agent debugging stays visible in both Web and TUI.
 - **RPC transport layer** (`packages/core/src/rpc/`): Transport-neutral JSON-RPC helpers — `channel.ts` (RpcPeer interface), `framing.ts` (NDJSON framing for stdio), `server-binding.ts` (binds `DiligentAppServer` to any message stream), `client.ts` (request correlation and server-request handling). These primitives are reused by both CLI stdio transport and Web WebSocket bridge.
 
 ## Key Decisions Summary
