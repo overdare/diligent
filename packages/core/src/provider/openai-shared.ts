@@ -134,7 +134,7 @@ export function mapUsage(
  * Process OpenAI Responses API SSE events from an async iterable.
  * Works for both SDK streams (openai.ts) and raw-parsed objects (chatgpt.ts).
  */
-let prevCacheRead = 0;
+const prevCacheReadBySession = new Map<string, number>();
 
 export async function handleResponsesAPIEvents(
   iter: AsyncIterable<Record<string, unknown>>,
@@ -142,6 +142,7 @@ export async function handleResponsesAPIEvents(
   model: Model,
   signal?: AbortSignal,
   turnIndex?: number,
+  sessionId?: string,
 ): Promise<void> {
   const contentBlocks: ContentBlock[] = [];
   let currentText = "";
@@ -150,6 +151,9 @@ export async function handleResponsesAPIEvents(
   let stopReason: StopReason = "end_turn";
   let usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const toolBuffers = new Map<string, { id: string; name: string; args: string }>();
+  let sawReasoningSummaryDelta = false;
+  let sawReasoningItemDone = false;
+  let sawOutputTextDelta = false;
 
   for await (const event of iter) {
     if (signal?.aborted) break;
@@ -160,6 +164,7 @@ export async function handleResponsesAPIEvents(
       case "response.output_text.delta": {
         const delta = event.delta as string;
         if (delta) {
+          sawOutputTextDelta = true;
           currentText += delta;
           stream.push({ type: "text_delta", delta });
         }
@@ -169,6 +174,7 @@ export async function handleResponsesAPIEvents(
       case "response.reasoning_summary_text.delta": {
         const delta = event.delta as string;
         if (delta) {
+          sawReasoningSummaryDelta = true;
           currentThinking += delta;
           stream.push({ type: "thinking_delta", delta });
         }
@@ -207,9 +213,21 @@ export async function handleResponsesAPIEvents(
       case "response.output_item.done": {
         const item = event.item as Record<string, unknown>;
         if (item?.type === "reasoning") {
-          if (currentThinking) {
-            stream.push({ type: "thinking_end", thinking: currentThinking });
-            contentBlocks.unshift({ type: "thinking", thinking: currentThinking });
+          sawReasoningItemDone = true;
+          const summaryText = Array.isArray(item.summary)
+            ? item.summary
+                .map((part) => {
+                  if (!part || typeof part !== "object") return "";
+                  const text = (part as { text?: unknown }).text;
+                  return typeof text === "string" ? text : "";
+                })
+                .filter((text) => text.length > 0)
+                .join("\n")
+            : "";
+          const finalThinking = currentThinking || summaryText;
+          if (finalThinking) {
+            stream.push({ type: "thinking_end", thinking: finalThinking });
+            contentBlocks.unshift({ type: "thinking", thinking: finalThinking });
             currentThinking = "";
           }
         } else if (item?.type === "message") {
@@ -248,10 +266,26 @@ export async function handleResponsesAPIEvents(
           usage = mapUsage(u as { input_tokens: number; output_tokens: number } | undefined);
           stopReason = mapStopReason(resp.status as string);
           const turn = turnIndex !== undefined ? ` (turn ${turnIndex})` : "";
-          if (usage.cacheReadTokens < prevCacheRead) {
-            console.warn(`Cache drop${turn}: ${prevCacheRead} → ${usage.cacheReadTokens}`);
+          if (sessionId) {
+            const prevCacheRead = prevCacheReadBySession.get(sessionId) ?? 0;
+            if (usage.cacheReadTokens < prevCacheRead) {
+              console.error(`Cache drop${turn} [session ${sessionId}]: ${prevCacheRead} → ${usage.cacheReadTokens}`);
+            }
+            prevCacheReadBySession.set(sessionId, usage.cacheReadTokens);
           }
-          prevCacheRead = usage.cacheReadTokens;
+          console.log(
+            "[ResponsesAPIEvents] completed",
+            JSON.stringify({
+              model: model.id,
+              sessionId: sessionId ?? null,
+              status: resp.status ?? null,
+              sawReasoningSummaryDelta,
+              sawReasoningItemDone,
+              sawOutputTextDelta,
+              contentBlocks: contentBlocks.map((block) => block.type),
+              usage,
+            }),
+          );
         }
         break;
       }

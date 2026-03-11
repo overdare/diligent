@@ -277,7 +277,7 @@ export async function streamAssistantResponse(
   const requestStartedAt = Date.now();
   const providerStream = turnRuntime.streamFunction(config.model, context, {
     signal: config.signal,
-    effort: config.effort ?? "medium",
+    effort: config.effort,
     maxTokens: resolveMaxTokens(config.model, config.reservePercent),
   });
 
@@ -485,7 +485,7 @@ export async function executeToolCalls(
 }
 
 function buildDebugScope(config: AgentLoopConfig): string {
-  const effectiveEffort = config.effort ?? "high";
+  const effectiveEffort = config.effort;
   return [
     config.debugThreadId ? `thread=${config.debugThreadId}` : null,
     config.debugTurnId ? `turn=${config.debugTurnId}` : null,

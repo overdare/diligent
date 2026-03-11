@@ -1,4 +1,5 @@
 // @summary ChatGPT subscription stream — raw fetch to chatgpt.com/backend-api/codex/responses (no SDK)
+import { createHash } from "node:crypto";
 import { arch, platform, release } from "node:os";
 import { DILIGENT_VERSION } from "@diligent/protocol";
 import type { OpenAIOAuthTokens } from "../auth/types";
@@ -11,6 +12,18 @@ import { ProviderError } from "./types";
 
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const USER_AGENT = `diligent/${DILIGENT_VERSION} (${platform()} ${release()}; ${arch()})`;
+
+function hashValue(value: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(value) ?? "null")
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function buildInputPrefix(input: unknown, maxItems = 6): unknown {
+  if (!Array.isArray(input)) return input;
+  return input.slice(0, maxItems);
+}
 
 /**
  * Create a StreamFunction for ChatGPT subscription (OAuth).
@@ -52,12 +65,12 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
         if (context.sessionId) {
-          headers["session_id"] = context.sessionId;
-          headers["conversation_id"] = context.sessionId;
+          headers.session_id = context.sessionId;
+          headers.conversation_id = context.sessionId;
         }
 
-        const effort = options.effort ?? "medium";
-        const useReasoning = model.supportsThinking && (options.budgetTokens ?? model.defaultBudgetTokens);
+        const effort = options.effort;
+        const useReasoning = model.supportsThinking;
 
         // Responses API format body
         const body: Record<string, unknown> = {
@@ -74,9 +87,35 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           body.tools = buildTools(context.tools);
         }
         if (useReasoning) {
-          body.reasoning = { effort: effort === "max" ? "high" : effort, summary: "auto" };
+          body.reasoning = { effort: effort === "max" ? "xhigh" : effort, summary: "auto" };
           body.include = ["reasoning.encrypted_content"];
         }
+
+        const instructions = body.instructions ?? null;
+        const input = body.input ?? null;
+        const inputPrefix = buildInputPrefix(input);
+
+        console.log(
+          "[ChatGPTStream] request",
+          JSON.stringify({
+            model: model.id,
+            provider: model.provider,
+            supportsThinking: Boolean(model.supportsThinking),
+            requestedEffort: effort,
+            useReasoning,
+            hasReasoning: "reasoning" in body,
+            include: body.include ?? null,
+            hasSessionId: Boolean(context.sessionId),
+            sessionId: context.sessionId ?? null,
+            messageCount: context.messages.length,
+            toolCount: context.tools.length,
+            instructionsLength: typeof instructions === "string" ? instructions.length : 0,
+            instructionsHash: hashValue(instructions),
+            inputItemCount: Array.isArray(input) ? input.length : 0,
+            inputHash: hashValue(input),
+            inputPrefixHash: hashValue(inputPrefix),
+          }),
+        );
 
         const response = await fetch(CHATGPT_CODEX_URL, {
           method: "POST",
@@ -137,7 +176,14 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           }
         }
 
-        await handleResponsesAPIEvents(parseSse(), stream, model, options.signal, context.messages.length);
+        await handleResponsesAPIEvents(
+          parseSse(),
+          stream,
+          model,
+          options.signal,
+          context.messages.length,
+          context.sessionId,
+        );
       } catch (err) {
         if (err instanceof ProviderError) {
           stream.push({ type: "error", error: err });

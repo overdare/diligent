@@ -32,7 +32,7 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
     (async () => {
       try {
-        const effort = options.effort ?? "medium";
+        const effort = options.effort;
         const useAdaptive = model.supportsThinking && model.supportsAdaptiveThinking;
         const useBudget = model.supportsThinking && !model.supportsAdaptiveThinking;
         const useThinking = useAdaptive || useBudget;
@@ -246,7 +246,6 @@ function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantM
     cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
     cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
   };
-
 
   const stopReason = mapStopReason(msg.stop_reason);
 

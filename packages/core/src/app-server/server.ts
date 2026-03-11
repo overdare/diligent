@@ -23,7 +23,7 @@ import type { AgentEvent, AgentLoopConfig } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
-import { getDefaultEffortForClass, getModelClass, resolveModel } from "../provider/models";
+import { resolveModel } from "../provider/models";
 import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
@@ -49,8 +49,8 @@ import {
   handleEffortSet,
   handleKnowledgeList,
   handleModeSet,
-  handleThreadDelete,
   handleThreadCompactStart,
+  handleThreadDelete,
   handleThreadList,
   handleThreadRead,
   handleThreadResume,
@@ -110,8 +110,8 @@ export interface DiligentAppServerConfig {
   toImageUrl?: (absPath: string) => string | undefined;
   /** Loaded skill names for slash-command disambiguation in turn/start. */
   skillNames?: string[];
-  /** Default effort from config — used as fallback when no session effort is set */
-  defaultEffort?: ThinkingEffort;
+  /** Default effort from config */
+  defaultEffort: ThinkingEffort;
 }
 
 interface ConnectedPeer {
@@ -159,7 +159,7 @@ export class DiligentAppServer {
       currentThreadId: null,
       cwd: options?.cwd ?? this.config.cwd ?? process.cwd(),
       mode: options?.mode ?? "default",
-      effort: this.config.defaultEffort ?? "medium",
+      effort: this.config.defaultEffort,
     };
     this.connections.set(connectionId, conn);
 
@@ -783,7 +783,7 @@ export class DiligentAppServer {
     cwd: string,
     mode: Mode,
     createNew: boolean,
-    effort: ThinkingEffort = this.config.defaultEffort ?? "medium",
+    effort: ThinkingEffort = this.config.defaultEffort,
     modelId?: string,
   ): Promise<ThreadRuntime> {
     const runtime: ThreadRuntime = {
@@ -861,8 +861,7 @@ export class DiligentAppServer {
   }
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
-    const modelId = this.currentModelId;
-    const fallback = this.config.defaultEffort ?? (modelId ? getDefaultEffortForClass(getModelClass(resolveModel(modelId))) : "medium");
+    const fallback = this.config.defaultEffort;
     return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
   }
 
@@ -888,8 +887,14 @@ export class DiligentAppServer {
       threads: this.threads,
       knownCwds: this.knownCwds,
       resolvePaths: this.config.resolvePaths,
-      createThreadRuntime: (threadId: string, cwd: string, mode: Mode, createNew: boolean, effort?: ThinkingEffort, modelId?: string) =>
-        this.createThreadRuntime(threadId, cwd, mode, createNew, effort, modelId),
+      createThreadRuntime: (
+        threadId: string,
+        cwd: string,
+        mode: Mode,
+        createNew: boolean,
+        effort?: ThinkingEffort,
+        modelId?: string,
+      ) => this.createThreadRuntime(threadId, cwd, mode, createNew, effort, modelId),
       resolveThreadRuntime: (threadId?: string) => this.resolveThreadRuntime(threadId),
       getLatestEffortForCwd: (cwd: string) => this.getLatestEffortForCwd(cwd),
       emit: (notification: DiligentServerNotification) => this.emit(notification),

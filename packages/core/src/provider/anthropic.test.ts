@@ -54,7 +54,7 @@ function baseModel(overrides: Partial<Model>): Model {
   };
 }
 
-async function collectRequest(model: Model, options: StreamOptions = {}) {
+async function collectRequest(model: Model, options: StreamOptions = { effort: "medium" }) {
   anthropicCalls.length = 0;
   const stream = createAnthropicStream("test-key")(model, EMPTY_CONTEXT, options);
   await stream.result();
@@ -97,7 +97,7 @@ describe("createAnthropicStream", () => {
       baseModel({
         supportsThinking: false,
       }),
-      { temperature: 0.25 },
+      { effort: "medium", temperature: 0.25 },
     );
 
     expect(request.thinking).toBeUndefined();

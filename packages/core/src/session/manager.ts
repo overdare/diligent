@@ -317,7 +317,10 @@ export class SessionManager {
       reservePercent: 16,
       keepRecentTokens: 20000,
     };
-    const stream = new EventStream<AgentEvent, Message[]>((event) => event.type === "agent_end", () => context.messages);
+    const stream = new EventStream<AgentEvent, Message[]>(
+      (event) => event.type === "agent_end",
+      () => context.messages,
+    );
     const compactedMessages = await this.performCompaction(tokensBefore, compactionConfig, stream);
     await this.waitForWrites();
     return {
@@ -466,7 +469,10 @@ export class SessionManager {
 
         currentMessages.push(assistantMessage);
         this.appendMessageEntry(assistantMessage);
-        const totalInputTokens = assistantMessage.usage.inputTokens + assistantMessage.usage.cacheReadTokens + assistantMessage.usage.cacheWriteTokens;
+        const totalInputTokens =
+          assistantMessage.usage.inputTokens +
+          assistantMessage.usage.cacheReadTokens +
+          assistantMessage.usage.cacheWriteTokens;
         if (totalInputTokens > 0) {
           this.lastApiInputTokens = totalInputTokens;
         }
@@ -866,7 +872,7 @@ export class SessionManager {
 }
 
 function buildSessionDebugScope(config: AgentLoopConfig, turnId: string, sessionId: string): string {
-  const effort = config.effort ?? "high";
+  const effort = config.effort;
   return ` session=${sessionId} thread=${config.debugThreadId ?? "-"} turn=${turnId} effort=${effort}`;
 }
 

@@ -200,6 +200,7 @@ export async function generateSummary(
 
   const providerStream = streamFunction(model, context, {
     signal: options.signal,
+    effort: "low",
     maxTokens: resolveMaxTokens(model, options.reservePercent),
   });
 

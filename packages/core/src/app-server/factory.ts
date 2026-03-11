@@ -17,7 +17,7 @@ export interface CreateAppServerConfigOptions {
 export function createAppServerConfig(opts: CreateAppServerConfigOptions): DiligentAppServerConfig {
   const { cwd, runtimeConfig, overrides } = opts;
   const modelInfoList = getModelInfoList();
-  const initialEffort = runtimeConfig.effort ?? "medium";
+  const initialEffort = runtimeConfig.effort;
 
   // Lazily resolve paths from the startup cwd — idempotent, cached after first call
   let pathsPromise: ReturnType<typeof ensureDiligentDir> | undefined;
@@ -75,6 +75,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       const paths = await getPaths();
       const deps = {
         model: resolvedModel,
+        effort,
         systemPrompt: systemPromptWithSkillGuard,
         streamFunction: runtimeConfig.streamFunction,
         getParentSessionId: getSessionId,

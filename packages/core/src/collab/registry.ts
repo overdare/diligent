@@ -133,6 +133,7 @@ export class AgentRegistry {
       paths: this.deps.paths,
       agentConfig: {
         model: childModel,
+        effort: this.deps.effort,
         systemPrompt: childSystemPrompt,
         tools: childTools,
         streamFunction: this.deps.streamFunction,

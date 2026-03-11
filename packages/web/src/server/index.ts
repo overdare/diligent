@@ -58,7 +58,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       getInitializeResult: async () => ({
         cwd,
         mode: runtimeConfig.mode,
-        effort: runtimeConfig.effort ?? "medium",
+        effort: runtimeConfig.effort,
         currentModel: runtimeConfig.model?.id,
         availableModels: getModelInfoList().filter((m) =>
           runtimeConfig.providerManager
