@@ -2,11 +2,13 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { normalizeImageFileName } from "../src/client/App";
+import { AssistantMessage } from "../src/client/components/AssistantMessage";
 import { Button } from "../src/client/components/Button";
 import { ContextMessage } from "../src/client/components/ContextMessage";
 import { Input } from "../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
 import { KnowledgeManagerModal } from "../src/client/components/KnowledgeManagerModal";
+import { MarkdownContent } from "../src/client/components/MarkdownContent";
 import { Modal } from "../src/client/components/Modal";
 import { SlashMenu } from "../src/client/components/SlashMenu";
 import { ToolBlock } from "../src/client/components/ToolBlock";
@@ -57,6 +59,33 @@ test("modal renders dialog role", () => {
 
   expect(html).toContain('role="dialog"');
   expect(html).toContain("Approval required");
+});
+
+test("markdown content renders external links and fenced code blocks cleanly", () => {
+  const markdown = ["# Title", "", "Visit [site](https://example.com).", "", "```ts", "const value = 1;", "```"].join(
+    "\n",
+  );
+  const html = renderToStaticMarkup(<MarkdownContent text={markdown} />);
+
+  expect(html).toContain('class="prose-content"');
+  expect(html).toContain('class="prose-link"');
+  expect(html).toContain('target="_blank"');
+  expect(html).toContain('class="language-ts"');
+  expect(html).toContain("hljs-keyword");
+  expect(html).toContain("value = ");
+  expect(html).toContain('hljs-number">1</span>');
+});
+
+test("markdown content preserves unordered and ordered list structure", () => {
+  const markdown = ["- one", "- two", "", "1. first", "2. second"].join("\n");
+  const html = renderToStaticMarkup(<MarkdownContent text={markdown} />);
+
+  expect(html).toContain("<ul>");
+  expect(html).toContain("<li>one</li>");
+  expect(html).toContain("<li>two</li>");
+  expect(html).toContain("<ol>");
+  expect(html).toContain("<li>first</li>");
+  expect(html).toContain("<li>second</li>");
 });
 
 test("tool settings modal renders tool and plugin rows", () => {
@@ -184,6 +213,45 @@ test("context message renders checkpoint language and expandable summary area", 
   expect(html).toContain("Compacted");
   expect(html).toContain("Older conversation was compressed to keep the thread efficient.");
   expect(html).toContain('aria-expanded="false"');
+});
+
+test("assistant message renders completed footer when turn duration is available", () => {
+  const html = renderToStaticMarkup(
+    <AssistantMessage
+      item={{
+        id: "assistant-1",
+        kind: "assistant",
+        text: "Done.",
+        thinking: "Checked relevant files",
+        thinkingDone: true,
+        timestamp: 1,
+        reasoningDurationMs: 1200,
+        turnDurationMs: 4200,
+      }}
+    />,
+  );
+
+  expect(html).toContain("Completed in 4.2s");
+  expect(html).not.toContain("Reasoned for");
+  expect(html).toContain('class="pb-4"');
+});
+
+test("assistant message keeps divider even when persisted duration is unavailable", () => {
+  const html = renderToStaticMarkup(
+    <AssistantMessage
+      item={{
+        id: "assistant-2",
+        kind: "assistant",
+        text: "Persisted reply",
+        thinking: "",
+        thinkingDone: true,
+        timestamp: 2,
+      }}
+    />,
+  );
+
+  expect(html).toContain("h-px w-full bg-white/10");
+  expect(html).not.toContain("Completed in");
 });
 
 test("input dock renders pending image preview and add-images action", () => {

@@ -23,6 +23,7 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
   const hasText = item.text.length > 0;
   const turnDuration = formatMs(item.turnDurationMs);
   const reasoningDuration = formatMs(item.reasoningDurationMs);
+  const showTurnDivider = item.thinkingDone;
 
   if (!hasThinking && !hasText) return null;
 
@@ -38,11 +39,20 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
         </div>
       )}
       {hasText && (
-        <div className="pb-8">
+        <div className="pb-4">
           <MarkdownContent text={item.text} />
         </div>
       )}
-      {turnDuration && <div className="pb-6 pt-1 text-xs text-muted">{`Loop: ${turnDuration}`}</div>}
+      {showTurnDivider ? (
+        <div className="pb-6 pt-1">
+          <div className="h-px w-full bg-white/10" />
+          {turnDuration ? (
+            <div className="pt-3 text-xs text-muted">
+              <span>{`Completed in ${turnDuration}`}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
