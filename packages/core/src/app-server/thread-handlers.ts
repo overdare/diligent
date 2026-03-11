@@ -219,17 +219,7 @@ export async function handleThreadRead(
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
   // Do this only when idle to avoid mutating active turn state mid-stream.
   if (!runtime.isRunning) {
-    const reconcile = await runtime.manager.reconcileFromDisk();
-    console.log(
-      "[AppServer] thread/read reconcile thread=%s changed=%s reason=%s memoryEntries=%d diskEntries=%d memoryLeaf=%s diskLeaf=%s",
-      runtime.id,
-      reconcile.changed,
-      reconcile.reason,
-      reconcile.memoryEntries,
-      reconcile.diskEntries,
-      reconcile.memoryLeafId ?? "-",
-      reconcile.diskLeafId ?? "-",
-    );
+    await runtime.manager.reconcileFromDisk();
   }
   const paths = await ctx.resolvePaths(runtime.cwd);
   const sessionId = runtime.manager.sessionId;

@@ -307,16 +307,6 @@ export class WebRpcClient {
       params: notification.params,
     } as DiligentServerNotification;
 
-    if (parsed.method.startsWith("collab/")) {
-      const params = parsed.params as { threadId?: string; callId?: string; childThreadId?: string };
-      console.log("[WebRpcClient][collab] received notification", {
-        method: parsed.method,
-        threadId: params.threadId,
-        callId: params.callId,
-        childThreadId: params.childThreadId,
-      });
-    }
-
     this.notificationListener?.(parsed);
   }
 

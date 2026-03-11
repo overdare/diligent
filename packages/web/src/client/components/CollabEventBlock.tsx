@@ -169,7 +169,8 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                     const info = getToolInfo(tool.toolName);
                     const isRunning = tool.status === "running";
                     const inputSummary = tool.inputText ? summarizeInput(tool.toolName, tool.inputText) : "";
-                    const outputSummary = tool.status === "done" && tool.outputText ? summarizeOutput(tool.toolName, tool.outputText) : "";
+                    const outputSummary =
+                      tool.status === "done" && tool.outputText ? summarizeOutput(tool.toolName, tool.outputText) : "";
                     return (
                       <div key={tool.toolCallId} className="flex flex-col gap-0.5 text-xs">
                         <div className="flex items-center gap-1.5">

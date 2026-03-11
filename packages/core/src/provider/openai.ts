@@ -25,22 +25,6 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
         const effort = options.effort;
         // OpenAI only supports low/medium/high; map "max" → "xhigh"
         const openaiEffort = effort === "max" ? "xhigh" : effort;
-
-        console.log(
-          "[OpenAIStream] request",
-          JSON.stringify({
-            model: model.id,
-            provider: model.provider,
-            supportsThinking: Boolean(model.supportsThinking),
-            requestedEffort: effort,
-            openaiEffort,
-            useReasoning,
-            hasSessionId: Boolean(context.sessionId),
-            messageCount: context.messages.length,
-            toolCount: context.tools.length,
-          }),
-        );
-
         const openaiStream = await client.responses.create(
           {
             model: model.id,
@@ -67,8 +51,6 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
           },
           ...(options.signal ? [{ signal: options.signal }] : []),
         );
-
-        console.log("[OpenAIStream] response", JSON.stringify({ streamCreated: true }));
 
         stream.push({ type: "start" });
 

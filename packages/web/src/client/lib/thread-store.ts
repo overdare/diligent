@@ -523,10 +523,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_spawn_begin": {
-      console.log("[ThreadStore][collab-debug] collab_spawn_begin", {
-        callId: event.callId,
-        promptPreview: event.prompt.slice(0, 80),
-      });
       // Create the spawn item eagerly so that child events (tool_start/update/end)
       // arriving before collab_spawn_end can find it via findCollabSpawnItem.
       // In the registry, callId === childThreadId (both are the child session id).
@@ -545,12 +541,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_spawn_end": {
-      console.log("[ThreadStore][collab-debug] collab_spawn_end", {
-        callId: event.callId,
-        childThreadId: event.childThreadId,
-        nickname: event.nickname,
-        status: event.status,
-      });
       const renderId = `collab:spawn:${event.callId}`;
       // If the item was already created by collab_spawn_begin, update it in place.
       const existing = findCollabSpawnItem(state, event.childThreadId);
@@ -588,19 +578,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "collab_wait_begin":
-      console.log("[ThreadStore][collab-debug] collab_wait_begin", {
-        callId: event.callId,
-        agentCount: event.agents.length,
-        agents: event.agents.map((a) => a.threadId),
-      });
       return state;
 
     case "collab_wait_end": {
-      console.log("[ThreadStore][collab-debug] collab_wait_end", {
-        callId: event.callId,
-        timedOut: event.timedOut,
-        statuses: event.agentStatuses.map((a) => `${a.threadId}:${a.status}`),
-      });
       const renderId = `collab:wait:${event.callId}`;
       let next = withItem(state, renderId, {
         id: renderId,
@@ -701,17 +681,14 @@ function settleInFlightItems(state: ThreadState): ThreadState {
   );
   if (!hasInFlight) return state;
 
-  console.log("[ThreadStore] settleInFlightItems: settling in-flight items after interrupt");
   return {
     ...state,
     itemSlots: {},
     items: state.items.map((item) => {
       if (item.kind === "assistant" && !item.thinkingDone) {
-        console.log("[ThreadStore] settleInFlightItems: closing thinking item", item.id);
         return { ...item, thinkingDone: true };
       }
       if (item.kind === "tool" && item.status === "streaming") {
-        console.log("[ThreadStore] settleInFlightItems: closing streaming tool item", item.id, item.toolName);
         return { ...item, status: "done" as const };
       }
       return item;
@@ -733,13 +710,6 @@ export function reduceServerNotification(
     state.activeThreadId !== null &&
     notification.params.threadId !== state.activeThreadId
   ) {
-    if (notification.method.startsWith("collab/") || notification.method.startsWith("item/")) {
-      console.log("[ThreadStore][collab-debug] notification ignored due to active-thread mismatch", {
-        method: notification.method,
-        activeThreadId: state.activeThreadId,
-        incomingThreadId: notification.params.threadId,
-      });
-    }
     return state;
   }
 
@@ -759,7 +729,6 @@ export function reduceServerNotification(
 
   // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
-    console.log("[ThreadStore] turn/interrupted received for thread", notification.params.threadId);
     const now = Date.now();
     const turnDurationMs =
       stateWithAuthoritativeStatus.activeTurnStartedAt !== null
