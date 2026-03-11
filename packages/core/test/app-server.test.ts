@@ -644,7 +644,7 @@ describe("DiligentAppServer", () => {
     expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("high");
   });
 
-  it("rejects minimal effort for anthropic models", async () => {
+  it("rejects minimal effort for models without none support", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
     const server = new DiligentAppServer(
@@ -668,7 +668,7 @@ describe("DiligentAppServer", () => {
         method: "effort/set",
         params: { threadId, effort: "none" },
       }),
-    ).resolves.toMatchObject({ error: { message: "Minimal thinking is not supported for Anthropic models." } });
+    ).resolves.toMatchObject({ error: { message: "Minimal thinking is not supported for this model." } });
   });
 
   it("adjusts none effort to medium when switching from openai to anthropic", async () => {

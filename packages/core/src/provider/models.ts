@@ -17,6 +17,8 @@ export interface ModelDefinition extends Model {
 }
 
 const GEMINI_THINKING_BUDGETS = { low: 2_048, medium: 8_192, high: 16_384, max: 24_576 } as const;
+const THINKING_EFFORTS_WITH_NONE: ThinkingEffort[] = ["none", "low", "medium", "high", "max"];
+const THINKING_EFFORTS_WITHOUT_NONE: ThinkingEffort[] = ["low", "medium", "high", "max"];
 
 export const KNOWN_MODELS: ModelDefinition[] = [
   // Anthropic — opus/sonnet use adaptive thinking (model decides budget within cap)
@@ -30,6 +32,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.5,
     cacheWriteCostPer1M: 6.25,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,
     supportsVision: true,
     supportsAdaptiveThinking: true,
     thinkingBudgets: { low: 2_000, medium: 8_000, high: 16_000, max: 32_000 },
@@ -46,6 +49,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.3,
     cacheWriteCostPer1M: 3.75,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,
     supportsVision: true,
     supportsAdaptiveThinking: true,
     thinkingBudgets: { low: 1_500, medium: 6_000, high: 12_000, max: 24_000 },
@@ -62,6 +66,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.1,
     cacheWriteCostPer1M: 1.25,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,
     supportsVision: true,
     thinkingBudgets: { low: 1_024, medium: 3_000, high: 8_000, max: 16_000 },
     aliases: ["claude-haiku", "haiku"],
@@ -76,6 +81,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     inputCostPer1M: 1.25,
     outputCostPer1M: 10.0,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
     thinkingBudgets: GEMINI_THINKING_BUDGETS,
     aliases: ["gemini-pro"],
     modelClass: "pro",
@@ -88,6 +94,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     inputCostPer1M: 0.3,
     outputCostPer1M: 2.5,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
     thinkingBudgets: GEMINI_THINKING_BUDGETS,
     aliases: ["gemini-flash", "gemini"],
     modelClass: "general",
@@ -100,6 +107,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     inputCostPer1M: 0.1,
     outputCostPer1M: 0.4,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
     thinkingBudgets: GEMINI_THINKING_BUDGETS,
     aliases: ["gemini-flash-lite"],
     modelClass: "lite",
@@ -116,6 +124,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.25,
     cacheWriteCostPer1M: 0,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
     supportsVision: true,
     accessLevel: "standard",
     aliases: ["gpt-5"],
@@ -131,6 +140,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.175,
     cacheWriteCostPer1M: 0,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
     supportsVision: true,
     accessLevel: "standard",
     aliases: ["codex"],
@@ -145,6 +155,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     outputCostPer1M: 14.0,
     cacheReadCostPer1M: 0.175,
     cacheWriteCostPer1M: 0,
+    supportsThinking: false,
     supportsVision: true,
     accessLevel: "standard",
     modelClass: "general",
@@ -160,6 +171,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheReadCostPer1M: 0.025,
     cacheWriteCostPer1M: 0,
     supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,
     supportsVision: true,
     accessLevel: "standard",
     aliases: ["codex-mini"],
@@ -226,6 +238,7 @@ export function getModelInfoList(): ModelInfo[] {
     inputCostPer1M: m.inputCostPer1M,
     outputCostPer1M: m.outputCostPer1M,
     supportsThinking: m.supportsThinking,
+    supportedEfforts: m.supportedEfforts,
     supportsVision: m.supportsVision,
   }));
 }
@@ -245,15 +258,33 @@ export function resolveModel(modelId: string): Model {
 
   // Infer provider from prefix
   if (modelId.startsWith("gemini-")) {
-    return { id: modelId, provider: "gemini", contextWindow: 1_000_000, maxOutputTokens: 65_536 };
+    return {
+      id: modelId,
+      provider: "gemini",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 65_536,
+      supportsThinking: true,
+    };
   }
   if (modelId.startsWith("claude-")) {
-    return { id: modelId, provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16_384 };
+    return {
+      id: modelId,
+      provider: "anthropic",
+      contextWindow: 200_000,
+      maxOutputTokens: 16_384,
+      supportsThinking: true,
+    };
   }
   if (modelId.startsWith("gpt-") || modelId.match(/^o[1-9]/)) {
-    return { id: modelId, provider: "openai", contextWindow: 128_000, maxOutputTokens: 16_384 };
+    return { id: modelId, provider: "openai", contextWindow: 128_000, maxOutputTokens: 16_384, supportsThinking: true };
   }
 
   // Default to anthropic
-  return { id: modelId, provider: "anthropic", contextWindow: 200_000, maxOutputTokens: 16_384 };
+  return {
+    id: modelId,
+    provider: "anthropic",
+    contextWindow: 200_000,
+    maxOutputTokens: 16_384,
+    supportsThinking: true,
+  };
 }

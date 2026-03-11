@@ -20,6 +20,8 @@ export {
   findModelInfo,
   getThinkingEffortLabel,
   getThinkingEffortOptions,
+  getThinkingEffortUsage,
+  getThinkingEffortUsageValues,
   normalizeThinkingEffort,
   supportsThinkingNone,
 } from "./thinking-effort";

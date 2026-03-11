@@ -20,7 +20,8 @@ export interface Model {
   outputCostPer1M?: number; // cost per 1M output tokens in USD
   cacheReadCostPer1M?: number; // cost per 1M cache-read tokens in USD
   cacheWriteCostPer1M?: number; // cost per 1M cache-write tokens in USD
-  supportsThinking?: boolean;
+  supportsThinking: boolean;
+  supportedEfforts?: ThinkingEffort[];
   supportsVision?: boolean;
   defaultBudgetTokens?: number; // fallback when thinkingBudgets absent
   supportsAdaptiveThinking?: boolean; // claude-opus-4-6, sonnet-4-6: model decides budget

@@ -1,5 +1,11 @@
 // @summary Thinking effort command with provider-aware minimal support
-import { getThinkingEffortLabel, getThinkingEffortOptions, resolveModel, supportsThinkingNone } from "@diligent/core";
+import {
+  getThinkingEffortLabel,
+  getThinkingEffortOptions,
+  getThinkingEffortUsage,
+  resolveModel,
+  supportsThinkingNone,
+} from "@diligent/core";
 import type { ThinkingEffort } from "@diligent/protocol";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
@@ -25,16 +31,11 @@ export const effortCommand: Command = {
     if (args) {
       const normalized = EFFORT_ALIASES[args.trim().toLowerCase()];
       if (!normalized) {
-        ctx.displayError(`Unknown effort: ${args}`);
+        ctx.displayError(`Unknown effort: ${args}. Usage: /effort <${getThinkingEffortUsage(model)}>`);
         return;
       }
-      if (
-        normalized === "none" &&
-        model.provider === "anthropic" &&
-        model.supportsThinking &&
-        !supportsThinkingNone(model)
-      ) {
-        ctx.displayError("Anthropic models do not support minimal thinking.");
+      if (normalized === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+        ctx.displayError("This model does not support minimal thinking.");
         return;
       }
       await ctx.setEffort(normalized);

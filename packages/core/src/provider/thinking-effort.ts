@@ -14,26 +14,45 @@ export function normalizeThinkingEffort(value: ThinkingEffort): ThinkingEffort {
   return value;
 }
 
-export function supportsThinkingNone(model: Pick<Model, "provider" | "supportsThinking"> | undefined): boolean {
+export function supportsThinkingNone(
+  model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
+): boolean {
   if (!model?.supportsThinking) return false;
-  return model.provider === "openai" || model.provider === "gemini";
+  return model.supportedEfforts?.includes("none") ?? false;
 }
 
 export function getThinkingEffortLabel(
   effort: ThinkingEffort,
-  model: Pick<Model, "provider" | "supportsThinking"> | undefined,
+  model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
 ): string {
   if (effort === "none" && supportsThinkingNone(model)) return "minimal";
   return effort;
 }
 
 export function getThinkingEffortOptions(
-  model: Pick<Model, "provider" | "supportsThinking"> | undefined,
+  model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
 ): Array<{ value: ThinkingEffort; label: string }> {
-  return THINKING_EFFORT_VALUES.filter((effort) => effort !== "none" || supportsThinkingNone(model)).map((effort) => ({
+  if (model && !model.supportsThinking) return [];
+  const supportedEfforts =
+    model?.supportsThinking === true
+      ? (model.supportedEfforts ?? THINKING_EFFORT_VALUES.filter((effort) => effort !== "none"))
+      : THINKING_EFFORT_VALUES.filter((effort) => effort !== "none");
+  return supportedEfforts.map((effort) => ({
     value: effort,
     label: getThinkingEffortLabel(effort, model),
   }));
+}
+
+export function getThinkingEffortUsageValues(
+  model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
+): string[] {
+  return getThinkingEffortOptions(model).map((option) => option.label);
+}
+
+export function getThinkingEffortUsage(
+  model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
+): string {
+  return getThinkingEffortUsageValues(model).join("|");
 }
 
 export function findModelInfo(models: ModelInfo[], modelId?: string): ModelInfo | undefined {

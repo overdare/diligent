@@ -35,6 +35,7 @@ interface InputDockProps {
   hasProvider: boolean;
   onOpenProviders: () => void;
   supportsVision: boolean;
+  supportsThinking: boolean;
   pendingImages: Array<{ path: string; url: string; fileName?: string }>;
   isUploadingImages: boolean;
   onAddImages: (files: FileList | File[]) => void;
@@ -125,6 +126,7 @@ export function InputDock({
   hasProvider,
   onOpenProviders,
   supportsVision,
+  supportsThinking,
   pendingImages,
   isUploadingImages,
   onAddImages,
@@ -200,6 +202,7 @@ export function InputDock({
     value: option.value,
     label: option.label,
   }));
+  const showEffortSelector = supportsThinking && effortMenuOptions.length > 0;
 
   useEffect(() => {
     if (!isPlusMenuOpen) return;
@@ -539,15 +542,17 @@ export function InputDock({
               />
             ) : null}
 
-            <Select
-              ariaLabel="Effort selector"
-              value={effort}
-              options={effortMenuOptions}
-              onChange={(value) => onEffortChange(value as ThinkingEffort)}
-              openDirection="up"
-              className="w-[90px]"
-              disabled={isBusy}
-            />
+            {showEffortSelector ? (
+              <Select
+                ariaLabel="Effort selector"
+                value={effort}
+                options={effortMenuOptions}
+                onChange={(value) => onEffortChange(value as ThinkingEffort)}
+                openDirection="up"
+                className="w-[90px]"
+                disabled={isBusy}
+              />
+            ) : null}
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">

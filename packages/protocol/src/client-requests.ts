@@ -30,7 +30,8 @@ export const ModelInfoSchema = z.object({
   maxOutputTokens: z.number().int().positive(),
   inputCostPer1M: z.number().optional(),
   outputCostPer1M: z.number().optional(),
-  supportsThinking: z.boolean().optional(),
+  supportsThinking: z.boolean(),
+  supportedEfforts: z.array(ThinkingEffortSchema).optional(),
   supportsVision: z.boolean().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;

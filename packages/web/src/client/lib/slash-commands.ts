@@ -11,6 +11,8 @@ export interface SlashCommand {
   isSkill?: boolean;
 }
 
+const DEFAULT_EFFORT_USAGE = "minimal|low|medium|high|max";
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   {
     name: "help",
@@ -35,7 +37,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   {
     name: "effort",
     description: "Set thinking level",
-    usage: "/effort <minimal|low|medium|high|max>",
+    usage: `/effort <${DEFAULT_EFFORT_USAGE}>`,
     requiresArgs: true,
   },
 ];

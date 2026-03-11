@@ -418,7 +418,7 @@ export class DiligentAppServer {
           if (runtime.modelId !== result.model) {
             runtime.modelId = result.model;
             const model = resolveModel(result.model);
-            if (runtime.effort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+            if (runtime.effort === "none" && !supportsThinkingNone(model)) {
               runtime.effort = "medium";
               runtime.manager.appendEffortChange("medium", "config");
             }

@@ -11,6 +11,13 @@ import { normalizeThinkingEffort } from "./thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
+function mapChatGPTEffort(
+  effort: ReturnType<typeof normalizeThinkingEffort>,
+): "none" | "low" | "medium" | "high" | "xhigh" {
+  if (effort === "max") return "xhigh";
+  return effort;
+}
+
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const USER_AGENT = `diligent/${DILIGENT_VERSION} (${platform()} ${release()}; ${arch()})`;
 
@@ -88,7 +95,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           body.tools = buildTools(context.tools);
         }
         if (useReasoning) {
-          body.reasoning = { effort: effort === "max" ? "xhigh" : effort, summary: "auto" };
+          body.reasoning = { effort: mapChatGPTEffort(effort), summary: "auto" };
           body.include = ["reasoning.encrypted_content"];
         }
 

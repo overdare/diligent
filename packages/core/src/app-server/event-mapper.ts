@@ -52,6 +52,7 @@ export function agentEventToNotification(
       };
 
     case "turn_end":
+      console.log(`[AssistantTurn] thread=${threadId} turn=${turnId} stop=${event.message.stopReason ?? "unknown"}`);
       return null;
 
     case "message_start":

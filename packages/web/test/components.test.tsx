@@ -164,6 +164,7 @@ test("input dock renders pending image preview and add-images action", () => {
           maxOutputTokens: 128000,
           supportsVision: true,
           supportsThinking: true,
+          supportedEfforts: ["none", "low", "medium", "high", "max"],
         },
       ]}
       onModelChange={() => {}}
@@ -173,6 +174,7 @@ test("input dock renders pending image preview and add-images action", () => {
       hasProvider={true}
       onOpenProviders={() => {}}
       supportsVision={true}
+      supportsThinking={true}
       pendingImages={[{ path: "/tmp/shot.png", url: "blob:shot", fileName: "shot.png" }]}
       isUploadingImages={false}
       onAddImages={() => {}}
@@ -220,6 +222,7 @@ test("input dock shows uploading state and disables send affordance", () => {
       hasProvider={true}
       onOpenProviders={() => {}}
       supportsVision={true}
+      supportsThinking={true}
       pendingImages={[]}
       isUploadingImages={true}
       onAddImages={() => {}}
@@ -229,6 +232,50 @@ test("input dock shows uploading state and disables send affordance", () => {
 
   expect(html).toContain("Uploading images…");
   expect(html).toContain("disabled");
+});
+
+test("input dock hides effort selector when model does not support thinking", () => {
+  const html = renderToStaticMarkup(
+    <InputDock
+      input=""
+      onInputChange={() => {}}
+      onSend={() => {}}
+      onSteer={() => {}}
+      onInterrupt={() => {}}
+      onCompactionClick={() => {}}
+      canSend={true}
+      canSteer={false}
+      threadStatus="idle"
+      mode="default"
+      onModeChange={() => {}}
+      effort="medium"
+      onEffortChange={() => {}}
+      currentModel="gpt-5.3-chat-latest"
+      availableModels={[
+        {
+          id: "gpt-5.3-chat-latest",
+          provider: "openai",
+          contextWindow: 400000,
+          maxOutputTokens: 16384,
+          supportsThinking: false,
+        },
+      ]}
+      onModelChange={() => {}}
+      usage={{ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0 }}
+      currentContextTokens={0}
+      contextWindow={400000}
+      hasProvider={true}
+      onOpenProviders={() => {}}
+      supportsVision={false}
+      supportsThinking={false}
+      pendingImages={[]}
+      isUploadingImages={false}
+      onAddImages={() => {}}
+      onRemoveImage={() => {}}
+    />,
+  );
+
+  expect(html).not.toContain("Effort selector");
 });
 
 test("slash menu renders a flat command list without submenu affordances", () => {

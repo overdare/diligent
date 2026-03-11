@@ -30,7 +30,7 @@ export const modelCommand: Command = {
 
         ctx.config.model = model;
         ctx.onModelChanged(model.id);
-        if (ctx.currentEffort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+        if (ctx.currentEffort === "none" && !supportsThinkingNone(model)) {
           await ctx.setEffort("medium");
           ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
         }
@@ -93,7 +93,7 @@ export const modelCommand: Command = {
 
             ctx.config.model = model;
             ctx.onModelChanged(model.id);
-            if (ctx.currentEffort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+            if (ctx.currentEffort === "none" && !supportsThinkingNone(model)) {
               await ctx.setEffort("medium");
               ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
             }

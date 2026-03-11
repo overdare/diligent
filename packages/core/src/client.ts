@@ -12,6 +12,8 @@ export {
   findModelInfo,
   getThinkingEffortLabel,
   getThinkingEffortOptions,
+  getThinkingEffortUsage,
+  getThinkingEffortUsageValues,
   supportsThinkingNone,
 } from "./provider/thinking-effort";
 export { isSummaryMessage, SUMMARY_PREFIX } from "./session/compaction";

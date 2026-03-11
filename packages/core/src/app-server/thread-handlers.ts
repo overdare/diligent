@@ -329,6 +329,9 @@ export async function handleTurnStart(
   runtime.runningModelIdSnapshot = params.model ?? runtime.modelId;
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
+  console.log(
+    `[UserTurn] thread=${runtime.id} turn=${turnId} model=${params.model ?? runtime.modelId} effort=${runtime.effort} mode=${runtime.mode} msg="${(params.message ?? "").slice(0, 200)}"`,
+  );
   console.log("[AppServer][thread-status] turn/start set running", {
     threadId: runtime.id,
     sessionId: runtime.manager.sessionId,
@@ -428,8 +431,8 @@ export async function handleEffortSet(
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
   const model = modelId ? resolveModel(modelId) : undefined;
-  if (effort === "none" && model?.provider === "anthropic" && model.supportsThinking && !supportsThinkingNone(model)) {
-    throw Object.assign(new Error("Minimal thinking is not supported for Anthropic models."), { code: -32602 });
+  if (effort === "none" && model && !supportsThinkingNone(model)) {
+    throw Object.assign(new Error("Minimal thinking is not supported for this model."), { code: -32602 });
   }
   runtime.effort = effort;
   runtime.manager.appendEffortChange(effort, "command");

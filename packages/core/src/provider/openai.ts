@@ -8,6 +8,13 @@ import { normalizeThinkingEffort } from "./thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
+function mapOpenAIEffort(
+  effort: ReturnType<typeof normalizeThinkingEffort>,
+): "none" | "low" | "medium" | "high" | "xhigh" {
+  if (effort === "max") return "xhigh";
+  return effort;
+}
+
 export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunction {
   const client = new OpenAI({ apiKey, baseURL: baseUrl });
 
@@ -24,8 +31,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
       try {
         const useReasoning = model.supportsThinking;
         const effort = normalizeThinkingEffort(options.effort);
-        // OpenAI only supports low/medium/high; map "max" → "xhigh"
-        const openaiEffort = effort === "max" ? "xhigh" : effort;
+        const openaiEffort = mapOpenAIEffort(effort);
         const openaiStream = await client.responses.create(
           {
             model: model.id,

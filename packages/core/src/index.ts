@@ -142,6 +142,8 @@ export {
   getModelInfoList,
   getThinkingEffortLabel,
   getThinkingEffortOptions,
+  getThinkingEffortUsage,
+  getThinkingEffortUsageValues,
   KNOWN_MODELS,
   PROVIDER_HINTS,
   PROVIDER_NAMES,

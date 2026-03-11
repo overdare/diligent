@@ -1,7 +1,12 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type { AgentEvent } from "@diligent/core/client";
-import { findModelInfo, ProtocolNotificationAdapter, supportsThinkingNone } from "@diligent/core/client";
+import {
+  findModelInfo,
+  getThinkingEffortUsage,
+  ProtocolNotificationAdapter,
+  supportsThinkingNone,
+} from "@diligent/core/client";
 import type {
   DiligentServerNotification,
   InitializeResponse,
@@ -578,6 +583,7 @@ export function App() {
   const canSteer = activeInput.trim().length > 0 && isBusy;
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
   const supportsVision = currentModelInfo?.supportsVision === true;
+  const supportsThinking = currentModelInfo?.supportsThinking === true;
 
   const sendMessage = async () => {
     const rpc = rpcRef.current;
@@ -704,8 +710,8 @@ export function App() {
       const rpc = getRpc();
       if (!rpc || !state.activeThreadId) return;
       const currentModelInfo = findModelInfo(providerMgr.availableModels, providerMgr.currentModel);
-      if (e === "none" && currentModelInfo?.provider === "anthropic" && currentModelInfo.supportsThinking) {
-        dispatch({ type: "show_info_toast", payload: "Anthropic models do not support minimal thinking." });
+      if (e === "none" && currentModelInfo?.supportsThinking && !supportsThinkingNone(currentModelInfo)) {
+        dispatch({ type: "show_info_toast", payload: "This model does not support minimal thinking." });
         return;
       }
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId: state.activeThreadId, effort: e });
@@ -835,7 +841,7 @@ export function App() {
 
           void providerMgr.changeModel(arg).then(() => {
             const modelInfo = providerMgr.availableModels.find((model) => model.id === arg);
-            if (effort === "none" && modelInfo?.supportsThinking && !supportsThinkingNone(modelInfo)) {
+            if (effort === "none" && modelInfo && !supportsThinkingNone(modelInfo)) {
               setEffortState("medium");
               dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}. Thinking adjusted to medium.` });
               return;
@@ -845,8 +851,14 @@ export function App() {
           return;
         }
         case "effort": {
+          const modelInfo = findModelInfo(providerMgr.availableModels, providerMgr.currentModel);
+          if (modelInfo && !modelInfo.supportsThinking) {
+            dispatch({ type: "show_info_toast", payload: "This model does not support thinking effort settings." });
+            return;
+          }
+          const usage = `/effort <${getThinkingEffortUsage(modelInfo)}>`;
           if (!arg) {
-            dispatch({ type: "show_info_toast", payload: "Usage: /effort <minimal|low|medium|high|max>" });
+            dispatch({ type: "show_info_toast", payload: `Usage: ${usage}` });
             return;
           }
           const raw = arg.toLowerCase();
@@ -858,7 +870,7 @@ export function App() {
             normalized !== "high" &&
             normalized !== "max"
           ) {
-            dispatch({ type: "show_info_toast", payload: `Unknown effort: ${arg}` });
+            dispatch({ type: "show_info_toast", payload: `Unknown effort: ${arg}. Usage: ${usage}` });
             return;
           }
           void setEffort(normalized as ThinkingEffort);
@@ -908,6 +920,13 @@ export function App() {
     void sendMessage();
     // biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is stable enough
   }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
+
+  useEffect(() => {
+    if (effort !== "none") return;
+    if (!currentModelInfo) return;
+    if (supportsThinkingNone(currentModelInfo)) return;
+    setEffortState("medium");
+  }, [effort, currentModelInfo]);
 
   const listTools = useCallback(async (): Promise<ToolsListResponse> => {
     const rpc = rpcRef.current;
@@ -1039,6 +1058,7 @@ export function App() {
             hasProvider={providerMgr.providers.some((p) => p.configured || p.oauthConnected)}
             onOpenProviders={() => setShowProviderModal(true)}
             supportsVision={supportsVision}
+            supportsThinking={supportsThinking}
             pendingImages={pendingImages.map((image) => ({
               path: image.path,
               url: image.webUrl,
