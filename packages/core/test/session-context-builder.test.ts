@@ -1,7 +1,7 @@
 // @summary Tests for building context from session entries
 import { describe, expect, it } from "bun:test";
 import { SUMMARY_PREFIX } from "../src/session/compaction";
-import { buildSessionContext } from "../src/session/context-builder";
+import { buildSessionContext, buildSessionTranscript } from "../src/session/context-builder";
 import type { CompactionEntry, SessionEntry } from "../src/session/types";
 
 function makeMsg(id: string, parentId: string | null, role: "user" | "assistant", text: string): SessionEntry {
@@ -231,5 +231,39 @@ describe("buildSessionContext", () => {
     expect(ctx.messages).toHaveLength(2);
     expect(ctx.messages[0].role).toBe("user");
     expect(ctx.messages[1].role).toBe("assistant");
+  });
+});
+
+describe("buildSessionTranscript", () => {
+  it("preserves full visible conversation history across compaction", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "Compacted summary",
+      recentUserMessages: [{ role: "user", content: "kept user msg", timestamp: 1708900000000 }],
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+      details: { readFiles: ["/src/a.ts"], modifiedFiles: ["/src/b.ts"] },
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old user"),
+      makeMsg("a2", "a1", "assistant", "old assistant"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new user"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+    expect(transcript).toHaveLength(4);
+    expect(transcript[0]).toMatchObject({ type: "message" });
+    expect(transcript[1]).toMatchObject({ type: "message" });
+    expect(transcript[2]).toMatchObject({ type: "compaction" });
+    expect(transcript[3]).toMatchObject({ type: "message" });
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
+      "Compacted summary",
+    );
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain("Files Read");
   });
 });

@@ -1,7 +1,8 @@
-// @summary Collapsible system-like block for compaction summary context
+// @summary Collapsible system checkpoint block for compaction summaries in the visible transcript
 
 import { useState } from "react";
 import { MarkdownContent } from "./MarkdownContent";
+import { SystemCard } from "./SystemCard";
 
 interface ContextMessageProps {
   summary: string;
@@ -10,21 +11,51 @@ interface ContextMessageProps {
 export function ContextMessage({ summary }: ContextMessageProps) {
   const [open, setOpen] = useState(false);
 
+  const previewLine = summary
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !line.startsWith("#"))
+    ?.slice(0, 140);
+
   return (
-    <div className="my-2 rounded-lg border border-border/50 bg-surface/50">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-muted hover:text-text"
-        onClick={() => setOpen(!open)}
-      >
-        <span className={`transition-transform ${open ? "rotate-90" : ""}`}>&#9654;</span>
-        <span>Previous context (compacted)</span>
-      </button>
-      {open && (
-        <div className="border-t border-border/30 px-4 py-3">
-          <MarkdownContent text={summary} />
-        </div>
-      )}
-    </div>
+    <SystemCard>
+      <div className="space-y-3">
+        <button
+          type="button"
+          className="flex w-full items-start gap-3 text-left"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-sky-400/25 bg-sky-400/10 text-[13px] text-sky-200">
+            ⟳
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/80">
+              <span>Context checkpoint</span>
+              <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-2 py-0.5 text-[10px] tracking-normal text-sky-100/80">
+                Compacted
+              </span>
+            </div>
+            <div className="mt-1 text-sm text-text/90">
+              Older conversation was compressed to keep the thread efficient.
+            </div>
+            {previewLine ? (
+              <div className="mt-1 text-xs text-muted">
+                {previewLine}
+                {summary.length > previewLine.length ? "…" : ""}
+              </div>
+            ) : null}
+          </div>
+          <div className={`pt-0.5 text-xs text-muted transition-transform ${open ? "rotate-90" : ""}`}>▶</div>
+        </button>
+
+        {open ? (
+          <div className="rounded-md border border-border/40 bg-black/10 px-4 py-3">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Summary details</div>
+            <MarkdownContent text={summary} />
+          </div>
+        ) : null}
+      </div>
+    </SystemCard>
   );
 }

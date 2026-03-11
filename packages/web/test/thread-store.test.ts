@@ -357,6 +357,85 @@ test("hydrateFromThreadRead restores tool_call input and merges matching tool_re
   expect(tool && tool.kind === "tool" ? tool.outputText : "").toContain("const x = 1");
 });
 
+test("hydrateFromThreadRead prefers raw transcript over compacted context for post-compaction history", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: "recent user",
+        timestamp: 300,
+      },
+      {
+        role: "user",
+        content:
+          "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n\nCompacted summary",
+        timestamp: 400,
+      },
+    ],
+    transcript: [
+      {
+        type: "message",
+        id: "a1",
+        timestamp: "2026-02-25T10:00:00.000Z",
+        message: {
+          role: "user",
+          content: "old user",
+          timestamp: 100,
+        },
+      },
+      {
+        type: "message",
+        id: "a2",
+        timestamp: "2026-02-25T10:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "old assistant" }],
+          model: "x",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 200,
+        },
+      },
+      {
+        type: "compaction",
+        id: "c1",
+        timestamp: "2026-02-25T10:00:02.000Z",
+        summary: "Compacted summary",
+      },
+      {
+        type: "message",
+        id: "a3",
+        timestamp: "2026-02-25T10:00:03.000Z",
+        message: {
+          role: "user",
+          content: "new user",
+          timestamp: 500,
+        },
+      },
+    ],
+    errors: [],
+    hasFollowUp: false,
+    entryCount: 4,
+    isRunning: false,
+    currentEffort: "medium",
+    currentModel: "x",
+    totalCost: 0,
+  });
+
+  const userTexts = hydrated.items
+    .filter((item) => item.kind === "user")
+    .map((item) => (item.kind === "user" ? item.text : ""));
+  const assistantTexts = hydrated.items
+    .filter((item) => item.kind === "assistant")
+    .map((item) => (item.kind === "assistant" ? item.text : ""));
+  const contexts = hydrated.items.filter((item) => item.kind === "context");
+
+  expect(userTexts).toEqual(["old user", "new user"]);
+  expect(assistantTexts).toEqual(["old assistant"]);
+  expect(contexts).toHaveLength(1);
+  expect(contexts[0] && contexts[0].kind === "context" ? contexts[0].summary : "").toBe("Compacted summary");
+});
+
 test("hydrateFromThreadRead keeps tool_result even without prior tool_call block", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [
