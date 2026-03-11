@@ -4,7 +4,6 @@ import type { AgentEvent } from "@diligent/core/client";
 import {
   findModelInfo,
   getThinkingEffortUsage,
-  ProtocolNotificationAdapter,
   supportsThinkingNone,
 } from "@diligent/core/client";
 import type {
@@ -56,6 +55,7 @@ import {
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
+import { useThreadManager } from "./lib/use-thread-manager";
 
 type PendingImage = LocalImageBlock & { webUrl: string };
 
@@ -214,13 +214,13 @@ export function App() {
   const providerMgr = useProviderManager(rpcRef);
   const activeThreadIdRef = useRef<string | null>(null);
   const [state, dispatch] = useReducer(appReducer, initialThreadState);
-  const adapterRef = useRef(new ProtocolNotificationAdapter());
   const stateRef = useRef(state);
   stateRef.current = state;
   const [cwd, setCwd] = useState<string>("");
   const cwdRef = useRef<string>("");
   cwdRef.current = cwd;
-  const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
+  const modeRef = useRef(state.mode);
+  modeRef.current = state.mode;
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
@@ -228,7 +228,6 @@ export function App() {
   const [showToolModal, setShowToolModal] = useState(false);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
-  const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
@@ -253,18 +252,33 @@ export function App() {
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
 
-  const refreshThreadList = useCallback(
-    async (rpc = rpcRef.current): Promise<void> => {
-      if (!rpc) return;
-      try {
-        const list = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST, { limit: 100 });
-        dispatch({ type: "set_threads", payload: list.data });
-      } catch (error) {
-        console.error(error);
-      }
-    },
-    [rpcRef],
-  );
+  const clearAttention = useCallback((threadId: string) => {
+    setAttentionThreadIds((prev) => {
+      if (!prev.has(threadId)) return prev;
+      const next = new Set(prev);
+      next.delete(threadId);
+      return next;
+    });
+  }, []);
+
+  const closeModals = useCallback(() => {
+    setShowKnowledgeModal(false);
+    setShowToolModal(false);
+  }, []);
+
+  const threadMgr = useThreadManager({
+    rpcRef,
+    dispatch,
+    activeThreadIdRef,
+    modeRef,
+    cwdRef,
+    applySessionModel: providerMgr.applySessionModel,
+    currentModelRef: providerMgr.currentModelRef,
+    setEffortState,
+    activateServerThread: serverRequests.activateThread,
+    clearAttention,
+    closeModals,
+  });
 
   const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
 
@@ -311,7 +325,7 @@ export function App() {
           currentUiThreadStatus: stateRef.current.threadStatus,
           itemCount: stateRef.current.items.length,
         });
-        void refreshThreadList(rpc);
+        void threadMgr.refreshThreadList(rpc);
         // Re-hydrate if any items are still showing as in-flight (notifications missed during disconnect)
         const params = notification.params as { status?: string };
         if (params.status === "idle") {
@@ -333,7 +347,7 @@ export function App() {
                     messageCount: history.messages.length,
                     entryCount: history.entryCount,
                   });
-                  adapterRef.current.reset();
+                  threadMgr.adapterRef.current.reset();
                   dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
                 })
                 .catch(console.error);
@@ -341,12 +355,12 @@ export function App() {
           }
         }
       }
-      const events = adapterRef.current.toAgentEvents(notification);
+      const events = threadMgr.adapterRef.current.toAgentEvents(notification);
       dispatch({ type: "notification", payload: { notification, events } });
     });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
   }, [
-    refreshThreadList,
+    threadMgr.refreshThreadList,
     providerMgr.onAccountLoginCompleted,
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
@@ -376,7 +390,7 @@ export function App() {
         setCwd(meta.cwd ?? "");
         setEffortState(meta.effort ?? "medium");
         setSkills(meta.skills ?? []);
-        adapterRef.current.reset();
+        threadMgr.adapterRef.current.reset();
         providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
@@ -394,7 +408,7 @@ export function App() {
             setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
             await providerMgr.applySessionModel(history.currentModel);
-            await refreshThreadList(rpc);
+            await threadMgr.refreshThreadList(rpc);
             return;
           }
         }
@@ -411,7 +425,7 @@ export function App() {
             setEffortState(history.currentEffort);
             replaceThreadUrl(resumed.threadId);
             await providerMgr.applySessionModel(history.currentModel);
-            await refreshThreadList(rpc);
+            await threadMgr.refreshThreadList(rpc);
             return;
           }
         }
@@ -426,7 +440,7 @@ export function App() {
           setEffortState(history.currentEffort);
           replaceThreadUrl(mostRecent.threadId);
           await providerMgr.applySessionModel(history.currentModel);
-          await refreshThreadList(rpc);
+          await threadMgr.refreshThreadList(rpc);
           return;
         }
 
@@ -440,7 +454,7 @@ export function App() {
         dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode, history } });
         setEffortState(history.currentEffort);
         replaceThreadUrl(started.threadId);
-        await refreshThreadList(rpc);
+        await threadMgr.refreshThreadList(rpc);
       } catch (error) {
         console.error(error);
       } finally {
@@ -458,80 +472,12 @@ export function App() {
     providerMgr.setInitialModel,
     providerMgr.applySessionModel,
     providerMgr.refreshProviders,
-    refreshThreadList,
+    threadMgr.refreshThreadList,
     rpcRef,
   ]);
 
-  const startNewThread = useCallback(async (): Promise<void> => {
-    const rpc = getRpc();
-    if (!rpc) return;
-    setShowKnowledgeModal(false);
-    setShowToolModal(false);
-    adapterRef.current.reset();
-    try {
-      const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-        cwd: cwd || "/",
-        mode: state.mode,
-        model: providerMgr.currentModelRef.current || undefined,
-      });
-      const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
-      console.log("[App][thread-status] hydrate after thread start", {
-        threadId: started.threadId,
-        isRunning: history.isRunning,
-        messageCount: history.messages.length,
-        entryCount: history.entryCount,
-      });
-      dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
-      setEffortState(history.currentEffort);
-      pushThreadUrl(started.threadId);
-      serverRequests.activateThread(started.threadId);
-      await refreshThreadList(rpc);
-    } catch (error) {
-      console.error(error);
-    }
-  }, [cwd, state.mode, providerMgr, serverRequests, refreshThreadList, getRpc]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refs and mutable state are accessed intentionally
-  const openThread = useCallback(
-    async (threadId: string): Promise<void> => {
-      const rpc = getRpc();
-      if (!rpc) return;
-      setShowKnowledgeModal(false);
-      setShowToolModal(false);
-      adapterRef.current.reset();
-      try {
-        const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
-        if (!resumed.found || !resumed.threadId) return;
-        const resumedId = resumed.threadId;
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
-        console.log("[App][thread-status] hydrate after thread resume", {
-          threadId: resumedId,
-          isRunning: history.isRunning,
-          messageCount: history.messages.length,
-          entryCount: history.entryCount,
-        });
-        dispatch({ type: "hydrate", payload: { threadId: resumedId, mode: state.mode, history } });
-        setEffortState(history.currentEffort);
-        pushThreadUrl(resumedId);
-        await refreshThreadList(rpc);
-        await providerMgr.applySessionModel(history.currentModel);
-
-        // Clear attention marker for this thread
-        setAttentionThreadIds((prev) => {
-          if (!prev.has(resumedId)) return prev;
-          const next = new Set(prev);
-          next.delete(resumedId);
-          return next;
-        });
-
-        // Promote any buffered approval for this thread → shows the approval dialog.
-        serverRequests.activateThread(resumedId);
-      } catch (error) {
-        console.error(error);
-      }
-    },
-    [dispatch, state.mode, providerMgr, serverRequests, refreshThreadList, getRpc],
-  );
+  const startNewThread = threadMgr.startNewThread;
+  const openThread = threadMgr.openThread;
 
   // Handle browser back/forward navigation between threads
   useEffect(() => {
@@ -567,12 +513,12 @@ export function App() {
 
   const isBusy = state.threadStatus === "busy";
   const showCompactingIndicator = isCompacting;
-  const activeInput = state.activeThreadId ? (threadInputs[state.activeThreadId] ?? "") : "";
+  const activeInput = state.activeThreadId ? (threadMgr.threadInputs[state.activeThreadId] ?? "") : "";
   const setActiveInput = useCallback(
     (value: string) => {
       const threadId = state.activeThreadId;
       if (!threadId) return;
-      setThreadInputs((prev) => {
+      threadMgr.setThreadInputs((prev) => {
         const next = value.length > 0 ? { ...prev, [threadId]: value } : { ...prev };
         if (value.length === 0) delete next[threadId];
         return next;
@@ -581,7 +527,7 @@ export function App() {
     [state.activeThreadId],
   );
   const clearThreadInput = useCallback((threadId: string) => {
-    setThreadInputs((prev) => {
+    threadMgr.setThreadInputs((prev) => {
       if (!(threadId in prev)) return prev;
       const next = { ...prev };
       delete next[threadId];
@@ -655,43 +601,7 @@ export function App() {
     }
   };
 
-  const confirmDeleteThread = async (): Promise<void> => {
-    const threadId = pendingDeleteThreadId;
-    setPendingDeleteThreadId(null);
-    if (!threadId) return;
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-    adapterRef.current.reset();
-    try {
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE, { threadId });
-      // If the deleted thread was active, switch to most recent or start new
-      if (state.activeThreadId === threadId) {
-        const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
-        if (resumed.found && resumed.threadId) {
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-            threadId: resumed.threadId,
-          });
-          dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode: state.mode, history } });
-          setEffortState(history.currentEffort);
-          replaceThreadUrl(resumed.threadId);
-        } else {
-          const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-            cwd: cwd || "/",
-            mode: state.mode,
-          });
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-            threadId: started.threadId,
-          });
-          dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
-          setEffortState(history.currentEffort);
-          replaceThreadUrl(started.threadId);
-        }
-      }
-      await refreshThreadList(rpc);
-    } catch (error) {
-      console.error(error);
-    }
-  };
+  const confirmDeleteThread = threadMgr.confirmDeleteThread;
 
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
@@ -1022,7 +932,7 @@ export function App() {
           attentionThreadIds={attentionThreadIds}
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
-          onDeleteThread={(id) => setPendingDeleteThreadId(id)}
+          onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
           providers={providerMgr.providers}
           onOpenProviders={(p) => {
             setFocusedProvider(p ?? null);
@@ -1186,15 +1096,15 @@ export function App() {
         />
       ) : null}
 
-      {pendingDeleteThreadId ? (
+      {threadMgr.pendingDeleteThreadId ? (
         <Modal
           title="Delete conversation?"
           description="This will permanently delete the conversation file. This action cannot be undone."
-          onCancel={() => setPendingDeleteThreadId(null)}
+          onCancel={() => threadMgr.setPendingDeleteThreadId(null)}
           onConfirm={() => void confirmDeleteThread()}
         >
           <div className="flex items-center justify-end gap-2">
-            <Button intent="ghost" size="sm" onClick={() => setPendingDeleteThreadId(null)}>
+            <Button intent="ghost" size="sm" onClick={() => threadMgr.setPendingDeleteThreadId(null)}>
               Cancel
             </Button>
             <Button intent="danger" size="sm" onClick={() => void confirmDeleteThread()}>
