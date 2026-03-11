@@ -1,7 +1,4 @@
 // @summary Auto-truncation of tool output with head, tail, and head_tail strategies
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 /** D025: Auto-truncation constants */
 export const MAX_OUTPUT_BYTES = 50_000; // 50KB
@@ -151,6 +148,9 @@ export function truncateHeadTail(
 
 /** Save full output to temp file, return path */
 export async function persistFullOutput(output: string): Promise<string> {
+  const { mkdtemp, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
   const dir = await mkdtemp(join(tmpdir(), "diligent-"));
   const filePath = join(dir, "full-output.txt");
   await writeFile(filePath, output, "utf-8");

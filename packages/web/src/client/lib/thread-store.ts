@@ -434,6 +434,11 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "status_change":
+      console.log("[ThreadStore][thread-status] agent event", {
+        activeThreadId: state.activeThreadId,
+        from: state.threadStatus,
+        to: event.status,
+      });
       return { ...state, threadStatus: event.status };
 
     case "usage":
@@ -835,6 +840,15 @@ export function reduceServerNotification(
   let current = stateWithAuthoritativeStatus;
   for (const event of events) {
     current = reduceAgentEvent(current, event);
+  }
+  if (current.threadStatus !== state.threadStatus) {
+    console.log("[ThreadStore][thread-status] state updated", {
+      method: notification.method,
+      activeThreadId: current.activeThreadId,
+      from: state.threadStatus,
+      to: current.threadStatus,
+      eventTypes: events.map((event) => event.type),
+    });
   }
   return current;
 }

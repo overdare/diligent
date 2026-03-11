@@ -1,6 +1,7 @@
 // @summary Plan tool — create and update a visible task checklist during long-horizon execution
 import { z } from "zod";
 import type { Tool, ToolContext, ToolResult } from "../tool/types";
+import planDescription from "./templates/plan-description.txt" with { type: "text" };
 
 const PlanStep = z.object({
   text: z.string().describe("Step description"),
@@ -23,19 +24,7 @@ export function createPlanTool(): Tool<typeof PlanParams> {
   return {
     name: "plan",
     supportParallel: true,
-    description:
-      "Create or update a visible task checklist that the user can see. " +
-      // When to use
-      "Use proactively for: complex multistep tasks (3+ steps), non-trivial tasks requiring careful planning, " +
-      "when the user provides multiple tasks, or after receiving new instructions that involve multiple actions. " +
-      "Do NOT use for single trivial tasks, purely conversational requests, or tasks completable in under 3 steps. " +
-      // How to use
-      "Call this at the start of complex tasks to show the user your plan. " +
-      "After receiving new instructions, immediately capture requirements as plan steps. " +
-      "Each step should represent a unit of work you can complete in one go. " +
-      "Only ONE step should be in_progress at a time. Mark each step done immediately after completing it, before starting the next. " +
-      "Add any new follow-up steps discovered during execution. Cancel steps that become irrelevant instead of deleting them. " +
-      "IMPORTANT: Before summarizing results to the user, call this tool to mark the last step done.",
+    description: planDescription,
     parameters: PlanParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       if (!Array.isArray(args.steps) || args.steps.length === 0) {

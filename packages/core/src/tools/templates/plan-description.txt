@@ -1,0 +1,48 @@
+Create or update a visible task checklist that the user can see.
+
+## When to use
+Use proactively for:
+- Complex multistep tasks (3+ steps)
+- Non-trivial tasks requiring careful planning
+- When the user provides multiple tasks
+- After receiving new instructions that involve multiple actions
+- There are logical phases or dependencies where sequencing matters
+- The work has ambiguity that benefits from outlining high-level goals
+- You want intermediate checkpoints for feedback and validation
+- You generate additional steps while working, and plan to do them before yielding to the user
+
+Do NOT use for single trivial tasks, purely conversational requests, or tasks completable in under 3 steps.
+
+## How to use
+- Call this at the start of complex tasks to show the user your plan.
+- After receiving new instructions, immediately capture requirements as plan steps.
+- Each step should represent a unit of work you can complete in one go.
+- Only ONE step should be in_progress at a time. Mark each step done immediately after completing it, before starting the next.
+- Add any new follow-up steps discovered during execution.
+- Cancel steps that become irrelevant instead of deleting them.
+- IMPORTANT: Before summarizing results to the user, call this tool to mark the last step done.
+
+## Step quality
+Each step should be specific and actionable. Include concrete details about what each step does.
+
+High-quality steps:
+  1. Add CLI entry with file args
+  2. Parse Markdown via CommonMark library
+  3. Apply semantic HTML template
+  4. Handle code blocks, images, links
+  5. Add error handling for invalid files
+
+  1. Define CSS variables for colors
+  2. Add toggle with localStorage state
+  3. Refactor components to use variables
+  4. Verify all views for readability
+  5. Add smooth theme-change transition
+
+Low-quality steps (avoid):
+  1. Create CLI tool
+  2. Add Markdown parser
+  3. Convert to HTML
+
+  1. Add dark mode toggle
+  2. Save preference
+  3. Make styles look good
