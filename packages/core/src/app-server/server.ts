@@ -46,12 +46,14 @@ import {
   requestUserInputFromConnections,
 } from "./server-requests";
 import {
-  getLatestEffortFromSessions,
-  handleEffortSet,
   handleKnowledgeAdd,
   handleKnowledgeDelete,
   handleKnowledgeList,
   handleKnowledgeUpdate,
+} from "./knowledge-handlers";
+import {
+  getLatestEffortFromSessions,
+  handleEffortSet,
   handleModeSet,
   handleThreadCompactStart,
   handleThreadDelete,
