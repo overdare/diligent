@@ -68,10 +68,7 @@ interface ToolResult {
 function resolveAuthToken(): string {
   const token = process.env.OVERDARE_RAG_AUTH_TOKEN || loadOverdareConfig().ragAuthToken;
   if (!token) {
-    throw new Error(
-      "Missing OVERDARE RAG auth token.\n" +
-        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/overdare.jsonc",
-    );
+    throw new Error("Missing OVERDARE RAG auth token.\n" + "Set ragAuthToken in ~/.diligent/overdare.jsonc");
   }
   return token;
 }

@@ -1,13 +1,35 @@
 // @summary Sidecar lifecycle: spawn Bun web server, parse port from stdout, navigate WebView
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use chrono::Local;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
+
+fn global_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    #[cfg(not(windows))]
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    home.map(|h| h.join(".diligent"))
+}
+
+fn default_web_log_path() -> Result<PathBuf, String> {
+    let global = global_dir().ok_or("Cannot determine home directory for Desktop web logs")?;
+    let logs_dir = global.join("logs");
+    fs::create_dir_all(&logs_dir)
+        .map_err(|e| format!("Cannot create Desktop web log directory {}: {e}", logs_dir.display()))?;
+
+    let date = Local::now().format("%Y%m%d").to_string();
+    let pid = std::process::id();
+    Ok(logs_dir.join(format!("{}-{}.log", date, pid)))
+}
 
 /// Resolve dist/client: prefer bundle resource_dir, fall back to directory next to the exe.
 fn resolve_dist_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -39,6 +61,8 @@ fn resolve_rg_bin() -> Option<std::path::PathBuf> {
 pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
     let dist_dir = resolve_dist_dir(app)?;
     let dist_dir_str = dist_dir.to_string_lossy().to_string();
+    let log_path = default_web_log_path()?;
+    let log_path_str = log_path.to_string_lossy().to_string();
 
     // Spawn the sidecar with port=0 so the OS picks a free port
     let mut sidecar_cmd = app
@@ -49,6 +73,7 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
             "--port=0",
             &format!("--dist-dir={}", dist_dir_str),
             &format!("--cwd={}", cwd),
+            &format!("--log-file={}", log_path_str),
         ]);
 
     if let Some(rg_path) = resolve_rg_bin() {
