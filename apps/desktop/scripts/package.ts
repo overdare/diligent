@@ -131,8 +131,6 @@ function assembleDefaults(packageDir: string | undefined): void {
     if (!existsSync(packageDir)) {
       console.warn(`⚠️  --package dir not found, skipping: ${packageDir}`);
     } else {
-      const scopeName = packageDir.split(/[\\/]/).at(-1)!; // e.g. "overdare"
-
       // Copy .jsonc config files from package root
       for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".jsonc")) continue;

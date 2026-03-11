@@ -15,7 +15,14 @@ export function buildValidateLuaRender(filePath: string, output: string): ToolRe
     return {
       version: 1,
       blocks: [
-        { type: "key_value", title: "Luau validation", items: [{ key: "path", value: filePath }, { key: "issues", value: "0" }] },
+        {
+          type: "key_value",
+          title: "Luau validation",
+          items: [
+            { key: "path", value: filePath },
+            { key: "issues", value: "0" },
+          ],
+        },
         { type: "summary", text: "No issues found. Code is valid.", tone: "success" },
       ],
     };
@@ -25,7 +32,14 @@ export function buildValidateLuaRender(filePath: string, output: string): ToolRe
   return {
     version: 1,
     blocks: [
-      { type: "key_value", title: "Luau validation", items: [{ key: "path", value: filePath }, { key: "lines", value: String(lines.length) }] },
+      {
+        type: "key_value",
+        title: "Luau validation",
+        items: [
+          { key: "path", value: filePath },
+          { key: "lines", value: String(lines.length) },
+        ],
+      },
       ...(statusItems.length > 0 ? [{ type: "list" as const, title: "Files", items: statusItems }] : []),
       { type: "file", filePath, content: output, isError: true },
     ],

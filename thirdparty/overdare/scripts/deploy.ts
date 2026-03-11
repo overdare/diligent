@@ -10,9 +10,9 @@
 // Diligent auto-discovers scoped plugins by scanning ~/.diligent/plugins/@<scope>/<name>.
 
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 const OVERDARE_DIR = join(import.meta.dir, "..");
 const PLUGINS_DIR = join(OVERDARE_DIR, "plugins");
@@ -117,7 +117,9 @@ if (allPlugins.length === 0) {
 }
 
 // Apply optional filter
-const targets = filterArg ? allPlugins.filter((p) => p.dirName === filterArg || p.packageName === filterArg) : allPlugins;
+const targets = filterArg
+  ? allPlugins.filter((p) => p.dirName === filterArg || p.packageName === filterArg)
+  : allPlugins;
 
 if (targets.length === 0) {
   console.error(`Plugin not found: "${filterArg}"`);

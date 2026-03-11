@@ -1,7 +1,9 @@
 {
   "name": "@overdare/workspace",
   "private": true,
-  "workspaces": ["plugins/*"],
+  "workspaces": [
+    "plugins/*"
+  ],
   "scripts": {
     "install:local": "bun run scripts/install.ts",
     "deploy": "bun run scripts/deploy.ts",

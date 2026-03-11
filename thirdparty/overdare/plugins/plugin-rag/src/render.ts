@@ -39,15 +39,26 @@ export function buildSearchRender(args: { source: string; query: string }, resul
           { key: "results", value: String(results.length) },
         ],
       },
-      ...(results.length === 0 ? [{ type: "summary" as const, text: "No results found.", tone: "warning" as const }] : []),
+      ...(results.length === 0
+        ? [{ type: "summary" as const, text: "No results found.", tone: "warning" as const }]
+        : []),
       ...(rows.length > 0 ? [{ type: "table" as const, title: "Matches", columns: ["Snippet", "Origin"], rows }] : []),
     ],
   };
 }
 
-export function buildOriginFileRender(action: string, requestedUrls: string[], files: OriginFileResult[]): ToolRenderPayload {
+export function buildOriginFileRender(
+  action: string,
+  requestedUrls: string[],
+  files: OriginFileResult[],
+): ToolRenderPayload {
   const loaded = files.filter((entry) => typeof entry.content === "string");
-  const rows = files.slice(0, 10).map((entry) => [clip(shortUrl(entry.originFileUrl), 56), entry.content ? `${entry.content.split("\n").length} lines` : "missing"]);
+  const rows = files
+    .slice(0, 10)
+    .map((entry) => [
+      clip(shortUrl(entry.originFileUrl), 56),
+      entry.content ? `${entry.content.split("\n").length} lines` : "missing",
+    ]);
   const blocks: ToolRenderPayload["blocks"] = [
     {
       type: "key_value",
