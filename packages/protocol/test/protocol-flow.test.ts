@@ -189,6 +189,82 @@ describe("protocol/flow", () => {
     ).toBe(true);
   });
 
+  it("accepts knowledge add/update/delete request and response payloads", () => {
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD,
+        params: {
+          threadId: "th-1",
+          type: "decision",
+          content: "Use feature flag X for rollout",
+          confidence: 0.9,
+          tags: ["rollout", "flag"],
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        params: {
+          threadId: "th-1",
+          id: "k-1",
+          type: "correction",
+          content: "Feature flag X defaults to false",
+          confidence: 1,
+          tags: ["correction"],
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE,
+        params: {
+          threadId: "th-1",
+          id: "k-1",
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD,
+        result: {
+          entry: {
+            id: "k-1",
+            timestamp: new Date().toISOString(),
+            type: "pattern",
+            content: "Always run focused tests first",
+            confidence: 0.8,
+          },
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+        result: {
+          entry: {
+            id: "k-1",
+            timestamp: new Date().toISOString(),
+            type: "pattern",
+            content: "Always run focused tests first",
+            confidence: 0.9,
+          },
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      DiligentClientResponseSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE,
+        result: { deleted: true },
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects malformed tool protocol payloads", () => {
     expect(
       DiligentClientRequestSchema.safeParse({

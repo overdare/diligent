@@ -13,6 +13,7 @@ import { z } from "zod";
 import { DiligentAppServer } from "../src/app-server";
 import { EventStream } from "../src/event-stream";
 import { ensureDiligentDir } from "../src/infrastructure";
+import { readKnowledge } from "../src/knowledge/store";
 import { createNdjsonParser, formatNdjsonMessage, RpcClientSession, type RpcPeer } from "../src/rpc";
 
 class MemoryPeer implements RpcPeer {
@@ -240,6 +241,108 @@ describe("RPC binding", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(approvalRequestId).not.toBeNull();
+
+    stop();
+  });
+
+  it("supports knowledge add/update/delete over RPC", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-rpc-binding-knowledge-"));
+    const { client: clientPeer, server: serverPeer } = createLinkedPeers();
+
+    const client = new RpcClientSession(clientPeer);
+    clientPeer.onMessage(async (message) => {
+      await client.handleMessage(message);
+    });
+
+    const server = new DiligentAppServer({
+      getInitializeResult: async () => ({
+        cwd: projectRoot,
+        mode: "default",
+        effort: "medium",
+        currentModel: "fake-model",
+        availableModels: [],
+      }),
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      buildAgentConfig: ({ mode, signal, approve, ask }) => ({
+        model: {
+          id: "fake-model",
+          provider: "fake",
+          contextWindow: 128_000,
+          maxOutputTokens: 4096,
+        },
+        systemPrompt: [{ label: "base", content: "test" }],
+        tools: [],
+        mode,
+        signal,
+        approve,
+        ask,
+        streamFunction: () => {
+          const stream = new EventStream(
+            (event) => event.type === "done",
+            (event) => ({ message: (event as { message: unknown }).message }),
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({
+              type: "done",
+              stopReason: "end_turn",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "ok" }],
+                model: "fake-model",
+                usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                stopReason: "end_turn",
+                timestamp: Date.now(),
+              },
+            });
+          });
+          return stream as never;
+        },
+      }),
+    });
+
+    const { bindAppServer } = await import("../src/rpc/server-binding");
+    const stop = bindAppServer(server, serverPeer);
+
+    const started = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: projectRoot });
+
+    const added = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD, {
+      threadId: started.threadId,
+      type: "pattern",
+      content: "Use focused tests before full suite",
+      confidence: 0.85,
+      tags: ["tests"],
+    });
+    expect(added.entry.content).toBe("Use focused tests before full suite");
+    expect(added.entry.type).toBe("pattern");
+
+    const updated = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, {
+      threadId: started.threadId,
+      id: added.entry.id,
+      type: "decision",
+      content: "Run focused tests before full suite",
+      confidence: 0.9,
+      tags: ["tests", "workflow"],
+    });
+    expect(updated.entry.id).toBe(added.entry.id);
+    expect(updated.entry.type).toBe("decision");
+    expect(updated.entry.confidence).toBe(0.9);
+
+    const listed = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST, {
+      threadId: started.threadId,
+      limit: 10,
+    });
+    expect(listed.data.some((entry) => entry.id === added.entry.id && entry.type === "decision")).toBe(true);
+
+    const deleted = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE, {
+      threadId: started.threadId,
+      id: added.entry.id,
+    });
+    expect(deleted.deleted).toBe(true);
+
+    const paths = await ensureDiligentDir(projectRoot);
+    const entries = await readKnowledge(paths.knowledge);
+    expect(entries.some((entry) => entry.id === added.entry.id)).toBe(false);
 
     stop();
   });

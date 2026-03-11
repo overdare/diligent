@@ -5,6 +5,7 @@ import { normalizeImageFileName } from "../src/client/App";
 import { Button } from "../src/client/components/Button";
 import { Input } from "../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
+import { KnowledgeManagerModal } from "../src/client/components/KnowledgeManagerModal";
 import { Modal } from "../src/client/components/Modal";
 import { SlashMenu } from "../src/client/components/SlashMenu";
 import { ToolBlock } from "../src/client/components/ToolBlock";
@@ -57,7 +58,7 @@ test("modal renders dialog role", () => {
   expect(html).toContain("Approval required");
 });
 
-test("tool settings modal renders trust warning and tool/plugin rows", () => {
+test("tool settings modal renders tool and plugin rows", () => {
   const html = renderToStaticMarkup(
     <ToolSettingsModal
       threadId="thread-1"
@@ -117,13 +118,49 @@ test("tool settings modal renders trust warning and tool/plugin rows", () => {
     />,
   );
 
-  expect(html).toContain("Plugin packages run with full trust");
   expect(html).toContain("Built-in tools");
   expect(html).toContain("bash");
   expect(html).toContain("Locked");
   expect(html).toContain("@acme/diligent-tools");
   expect(html).toContain("jira_comment");
-  expect(html).toContain("Changes apply on the next turn");
+});
+
+test("knowledge manager modal renders inline overlay controls and filter UI", () => {
+  const html = renderToStaticMarkup(
+    <KnowledgeManagerModal
+      threadId="thread-1"
+      className="absolute inset-0 z-40 bg-black/35"
+      onList={async () => ({
+        data: [
+          {
+            id: "k1",
+            timestamp: "2026-03-11T08:00:00.000Z",
+            type: "pattern",
+            content: "Use focused tests first",
+            confidence: 0.8,
+            tags: ["tests"],
+            sessionId: "thread-1",
+          },
+        ],
+      })}
+      onUpdate={async () => {
+        throw new Error("unused");
+      }}
+      onDelete={async () => ({ deleted: true })}
+      onClose={() => {}}
+    />,
+  );
+
+  expect(html).toContain('aria-label="Knowledge"');
+  expect(html).toContain("absolute inset-0 z-40 bg-black/35");
+  expect(html).toContain("Search");
+  expect(html).toContain("Filter knowledge type");
+  expect(html).toContain("Sort knowledge entries");
+  expect(html).not.toContain("New entry");
+  expect(html).toContain("Loading knowledge entries…");
+  expect(html).toContain("Entries (0/0)");
+  expect(html).toContain("pattern");
+  expect(html).toContain("decision");
 });
 
 test("user message renders attached images", () => {

@@ -30,3 +30,14 @@ export async function readKnowledge(knowledgePath: string): Promise<KnowledgeEnt
     .filter(Boolean)
     .map((line) => JSON.parse(line) as KnowledgeEntry);
 }
+
+/** Overwrite the full knowledge store with provided entries. */
+export async function writeKnowledge(knowledgePath: string, entries: KnowledgeEntry[]): Promise<void> {
+  const filePath = join(knowledgePath, KNOWLEDGE_FILENAME);
+  if (entries.length === 0) {
+    await Bun.write(filePath, "");
+    return;
+  }
+  const text = `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+  await Bun.write(filePath, text);
+}

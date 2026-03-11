@@ -279,7 +279,7 @@ export function ToolSettingsModal({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
-        <div className="mb-1 flex items-start justify-between gap-2">
+        <div className="mb-4 flex items-start justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold text-text">Config</h2>
             <p className="mt-1 text-sm text-muted">Manage built-in tools and trusted JavaScript plugin packages.</p>
@@ -294,15 +294,7 @@ export function ToolSettingsModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-          <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200">
-            Plugin packages run with full trust in the same process as Diligent. Only add packages you trust.
-          </div>
-          {state?.appliesOnNextTurn ? (
-            <div className="rounded-md border border-accent/20 bg-accent/10 px-3 py-2 text-sm text-accent">
-              Changes apply on the next turn.
-            </div>
-          ) : null}
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
 
           {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
           {error ? <p className="text-sm text-danger">{error}</p> : null}

@@ -8,6 +8,9 @@ import {
   supportsThinkingNone,
 } from "@diligent/core/client";
 import type {
+  KnowledgeDeleteResponse,
+  KnowledgeEntry,
+  KnowledgeUpdateParams,
   DiligentServerNotification,
   InitializeResponse,
   LocalImageBlock,
@@ -35,6 +38,7 @@ import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { PlanPanel } from "./components/PlanPanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
+import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
@@ -222,6 +226,7 @@ export function App() {
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showToolModal, setShowToolModal] = useState(false);
+  const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
@@ -460,6 +465,8 @@ export function App() {
   const startNewThread = useCallback(async (): Promise<void> => {
     const rpc = getRpc();
     if (!rpc) return;
+    setShowKnowledgeModal(false);
+    setShowToolModal(false);
     adapterRef.current.reset();
     try {
       const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
@@ -489,6 +496,8 @@ export function App() {
     async (threadId: string): Promise<void> => {
       const rpc = getRpc();
       if (!rpc) return;
+      setShowKnowledgeModal(false);
+      setShowToolModal(false);
       adapterRef.current.reset();
       try {
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
@@ -949,6 +958,45 @@ export function App() {
     [rpcRef],
   );
 
+  const listKnowledge = useCallback(
+    async (threadId?: string): Promise<{ data: KnowledgeEntry[] }> => {
+      const rpc = rpcRef.current;
+      if (!rpc) {
+        throw new Error("WebSocket is not connected");
+      }
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST, {
+        threadId,
+        limit: 500,
+      });
+    },
+    [rpcRef],
+  );
+
+  const updateKnowledge = useCallback(
+    async (params: KnowledgeUpdateParams): Promise<{ entry: KnowledgeEntry }> => {
+      const rpc = rpcRef.current;
+      if (!rpc) {
+        throw new Error("WebSocket is not connected");
+      }
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, params);
+    },
+    [rpcRef],
+  );
+
+  const deleteKnowledge = useCallback(
+    async (threadId: string | undefined, id: string): Promise<KnowledgeDeleteResponse> => {
+      const rpc = rpcRef.current;
+      if (!rpc) {
+        throw new Error("WebSocket is not connected");
+      }
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE, {
+        threadId,
+        id,
+      });
+    },
+    [rpcRef],
+  );
+
   const threadTitle = useMemo(() => {
     const active = state.threadList.find((t) => t.id === state.activeThreadId);
     const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
@@ -980,7 +1028,14 @@ export function App() {
             setFocusedProvider(p ?? null);
             setShowProviderModal(true);
           }}
-          onOpenTools={() => setShowToolModal(true)}
+          onOpenTools={() => {
+            setShowKnowledgeModal(false);
+            setShowToolModal(true);
+          }}
+          onOpenKnowledge={() => {
+            setShowToolModal(false);
+            setShowKnowledgeModal(true);
+          }}
         />
 
         <Panel className="relative flex min-h-0 flex-col overflow-hidden">
@@ -1077,6 +1132,17 @@ export function App() {
               onList={listTools}
               onSave={saveTools}
               onClose={() => setShowToolModal(false)}
+              className="absolute inset-0 z-40 bg-black/35"
+            />
+          ) : null}
+
+          {showKnowledgeModal ? (
+            <KnowledgeManagerModal
+              threadId={state.activeThreadId}
+              onList={listKnowledge}
+              onUpdate={updateKnowledge}
+              onDelete={deleteKnowledge}
+              onClose={() => setShowKnowledgeModal(false)}
               className="absolute inset-0 z-40 bg-black/35"
             />
           ) : null}

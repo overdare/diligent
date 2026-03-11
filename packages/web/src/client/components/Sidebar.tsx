@@ -21,6 +21,7 @@ interface SidebarProps {
   providers?: ProviderAuthStatus[];
   onOpenProviders?: (provider?: string) => void;
   onOpenTools?: () => void;
+  onOpenKnowledge?: () => void;
 }
 
 export function Sidebar({
@@ -34,30 +35,44 @@ export function Sidebar({
   providers,
   onOpenProviders,
   onOpenTools,
+  onOpenKnowledge,
 }: SidebarProps) {
   const cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
 
   return (
     <Panel className="flex min-h-0 flex-col overflow-hidden">
       {/* Header */}
-      <div className="border-b border-text/10 px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
+      <div className="relative border-b border-text/10 px-4 py-3">
+        <div className="pr-24">
           <span className="font-mono text-sm font-bold text-accent">diligent</span>
+          <p className="mt-1 truncate font-mono text-xs- text-muted" title={cwd}>
+            {cwdShort}
+          </p>
+        </div>
+        <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-1">
+          {onOpenKnowledge ? (
+            <button
+              type="button"
+              onClick={onOpenKnowledge}
+              aria-label="Open knowledge"
+              title="Knowledge"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#a78bfa]/35 bg-[#8b5cf6]/12 text-sm text-[#c4b5fd] transition hover:border-[#c4b5fd]/55 hover:bg-[#8b5cf6]/18 hover:text-[#ddd6fe]"
+            >
+              <span className="block leading-none">✦</span>
+            </button>
+          ) : null}
           {onOpenTools ? (
             <button
               type="button"
               onClick={onOpenTools}
               aria-label="Open config"
               title="Config"
-              className="rounded-md border border-text/15 px-2 py-1 text-xs text-muted transition hover:border-accent/40 hover:text-accent"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-text/15 bg-surface/60 text-sm text-muted transition hover:border-text/25 hover:bg-surface hover:text-text"
             >
-              ⚙
+              <span className="block leading-none">⚙</span>
             </button>
           ) : null}
         </div>
-        <p className="mt-1 truncate font-mono text-xs- text-muted" title={cwd}>
-          {cwdShort}
-        </p>
       </div>
 
       {/* Thread list */}

@@ -294,13 +294,6 @@ export const toolsCommand: Command = {
   description: "Manage built-in tools and trusted plugin packages",
   supportsArgs: false,
   handler: async (_args, ctx) => {
-    ctx.displayLines([
-      "",
-      `  ${t.warn}Trusted plugins run in-process with full access to your project and environment.${t.reset}`,
-      "  Changes apply on the next turn.",
-      "",
-    ]);
-
     let state = await fetchTools(ctx);
     let draft = createDraft(state);
 
@@ -338,7 +331,6 @@ export const toolsCommand: Command = {
         ctx.displayLines([
           `  ${t.success}Saved tool settings.${t.reset}`,
           `  ${t.dim}${state.configPath}${t.reset}`,
-          "  Changes apply on the next turn.",
         ]);
       }
     }

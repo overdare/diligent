@@ -47,8 +47,11 @@ import {
 } from "./server-requests";
 import {
   getLatestEffortFromSessions,
+  handleKnowledgeAdd,
+  handleKnowledgeDelete,
   handleEffortSet,
   handleKnowledgeList,
+  handleKnowledgeUpdate,
   handleModeSet,
   handleThreadCompactStart,
   handleThreadDelete,
@@ -310,6 +313,9 @@ export class DiligentAppServer {
       DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
       DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
       DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
+      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD,
+      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
+      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE,
       DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST,
       DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
     ];
@@ -384,6 +390,15 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
         return this.handleKnowledgeList(request.params.threadId, request.params.limit);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD:
+        return this.handleKnowledgeAdd(request.params.threadId, request.params);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE:
+        return this.handleKnowledgeUpdate(request.params.threadId, request.params);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE:
+        return this.handleKnowledgeDelete(request.params.threadId, request.params.id);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
         return this.handleThreadDelete(request.params.threadId);
@@ -523,6 +538,35 @@ export class DiligentAppServer {
 
   private async handleKnowledgeList(threadId: string | undefined, limit?: number): Promise<{ data: unknown[] }> {
     return handleKnowledgeList(this.buildThreadHandlersContext(), threadId, limit);
+  }
+
+  private async handleKnowledgeAdd(
+    threadId: string | undefined,
+    params: {
+      type: "pattern" | "decision" | "discovery" | "preference" | "correction";
+      content: string;
+      confidence?: number;
+      tags?: string[];
+    },
+  ): Promise<{ entry: unknown }> {
+    return handleKnowledgeAdd(this.buildThreadHandlersContext(), threadId, params);
+  }
+
+  private async handleKnowledgeUpdate(
+    threadId: string | undefined,
+    params: {
+      id: string;
+      type: "pattern" | "decision" | "discovery" | "preference" | "correction";
+      content: string;
+      confidence: number;
+      tags?: string[];
+    },
+  ): Promise<{ entry: unknown }> {
+    return handleKnowledgeUpdate(this.buildThreadHandlersContext(), threadId, params);
+  }
+
+  private async handleKnowledgeDelete(threadId: string | undefined, id: string): Promise<{ deleted: boolean }> {
+    return handleKnowledgeDelete(this.buildThreadHandlersContext(), threadId, id);
   }
 
   private async handleThreadDelete(threadId: string): Promise<{ deleted: boolean }> {

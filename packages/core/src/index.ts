@@ -105,6 +105,7 @@ export {
   buildKnowledgeSection,
   rankKnowledge,
   readKnowledge,
+  writeKnowledge,
 } from "./knowledge/index";
 // Notification Adapter (shared TUI/Web)
 export { ProtocolNotificationAdapter } from "./notification-adapter";
