@@ -1,5 +1,5 @@
-import type { z } from "zod";
 import type { ToolRenderPayload } from "@diligent/protocol";
+import type { z } from "zod";
 
 // D013: Tool definition
 // biome-ignore lint/suspicious/noExplicitAny: generic default requires any for unparameterized Tool references

@@ -686,7 +686,9 @@ export function App() {
       dispatch({ type: "show_info_toast", payload: MANUAL_COMPACTION_TOAST });
       try {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId: state.activeThreadId });
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: state.activeThreadId });
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+          threadId: state.activeThreadId,
+        });
         dispatch({ type: "hydrate", payload: { threadId: state.activeThreadId, mode: state.mode, history } });
         dispatch({ type: "show_info_toast", payload: "Thread compacted." });
       } catch (error) {
@@ -899,7 +901,11 @@ export function App() {
               <span
                 className={`shrink-0 font-mono text-xs ${showCompactingIndicator || state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}
               >
-                {showCompactingIndicator ? "Compacting..." : state.threadStatus === "busy" ? "Running..." : state.threadStatus}
+                {showCompactingIndicator
+                  ? "Compacting..."
+                  : state.threadStatus === "busy"
+                    ? "Running..."
+                    : state.threadStatus}
               </span>
             )}
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
@@ -1062,7 +1068,6 @@ export function App() {
           )}
         </Modal>
       ) : null}
-
     </div>
   );
 }

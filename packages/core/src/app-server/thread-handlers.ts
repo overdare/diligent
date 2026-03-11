@@ -11,17 +11,17 @@ import {
   type ToolDescriptor,
   type TurnStartParams,
 } from "@diligent/protocol";
+import { calculateCost } from "../agent/loop";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
 import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import type { DiligentPaths } from "../infrastructure/diligent-dir";
 import { readKnowledge } from "../knowledge/store";
+import { resolveModel } from "../provider/models";
 import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
-import { calculateCost } from "../agent/loop";
-import { resolveModel } from "../provider/models";
 import { buildDefaultTools } from "../tools/defaults";
 
 export interface ThreadRuntime {
@@ -239,7 +239,11 @@ export async function handleThreadRead(
 
   let totalCost = 0;
   for (const msg of messages) {
-    const m = msg as { role?: string; model?: string; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } };
+    const m = msg as {
+      role?: string;
+      model?: string;
+      usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+    };
     if (m.role === "assistant" && m.usage && m.model) {
       totalCost += calculateCost(resolveModel(m.model), m.usage);
     }

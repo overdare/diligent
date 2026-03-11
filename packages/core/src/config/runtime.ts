@@ -90,7 +90,9 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   if (config.systemPrompt) {
     basePrompt = config.systemPrompt;
   } else if (config.systemPromptFile) {
-    const filePath = isAbsolute(config.systemPromptFile) ? config.systemPromptFile : resolve(cwd, config.systemPromptFile);
+    const filePath = isAbsolute(config.systemPromptFile)
+      ? config.systemPromptFile
+      : resolve(cwd, config.systemPromptFile);
     basePrompt = (await readFile(filePath, "utf-8"))
       .replace(/\{\{currentDate\}\}/g, new Date().toISOString().split("T")[0])
       .replace(/\{\{cwd\}\}/g, cwd)

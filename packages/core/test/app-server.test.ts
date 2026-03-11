@@ -113,7 +113,10 @@ function defaultServerRequestResponse(method: DiligentServerRequest["method"]): 
   };
 }
 
-function makeFactoryRuntimeConfig(overrides?: { tools?: Record<string, unknown>; effort?: "low" | "medium" | "high" | "max" }) {
+function makeFactoryRuntimeConfig(overrides?: {
+  tools?: Record<string, unknown>;
+  effort?: "low" | "medium" | "high" | "max";
+}) {
   const providerManager = new ProviderManager({});
   providerManager.setApiKey("anthropic", "test-key");
   providerManager.setApiKey("openai", "test-key");

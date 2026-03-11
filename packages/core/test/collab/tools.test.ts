@@ -64,7 +64,7 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).toContain("your primary role becomes coordinating them until they finish");
     expect(spawnTool.description).toContain("'general':");
     expect(spawnTool.description).toContain("'explore':");
-    expect(spawnTool.description).toContain("'planner':");
+    expect(spawnTool.description).not.toContain("'planner':");
   });
 
   it("exposes detailed role guidance in agent_type schema description", () => {
@@ -75,7 +75,7 @@ describe("spawn_agent tool", () => {
     expect(shape.agent_type.description).toContain("Available built-in roles");
     expect(shape.agent_type.description).toContain("'general':");
     expect(shape.agent_type.description).toContain("'explore':");
-    expect(shape.agent_type.description).toContain("'planner':");
+    expect(shape.agent_type.description).not.toContain("'planner':");
   });
 });
 

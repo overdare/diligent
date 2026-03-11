@@ -282,6 +282,11 @@ export function ToolSettingsModal({
           <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200">
             Plugin packages run with full trust in the same process as Diligent. Only add packages you trust.
           </div>
+          {state?.appliesOnNextTurn ? (
+            <div className="rounded-md border border-accent/20 bg-accent/10 px-3 py-2 text-sm text-accent">
+              Changes apply on the next turn.
+            </div>
+          ) : null}
 
           {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
           {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -289,157 +294,157 @@ export function ToolSettingsModal({
 
           {state && draft ? (
             <div className="space-y-4">
-            <section className="space-y-2">
-              <div>
-                <h3 className="text-sm font-semibold text-text">Built-in tools</h3>
-                <p className="text-xs text-muted">
-                  Immutable tools stay enabled even if config tries to turn them off.
-                </p>
-              </div>
-              <div className="space-y-2">
-                {state.tools
-                  .filter((tool) => tool.source === "builtin")
-                  .map((tool) => {
-                    const checked = tool.configurable ? (draft.builtin[tool.name] ?? tool.enabled) : true;
-                    const disabled = !tool.configurable || tool.immutable;
-                    return (
-                      <label
-                        key={tool.name}
-                        className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={(event) => handleBuiltinToggle(tool.name, event.target.checked)}
-                          className="mt-0.5"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-text">{tool.name}</span>
-                            {tool.immutable ? (
-                              <span className="rounded border border-text/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-                                Locked
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
-                          {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
-                        </div>
-                      </label>
-                    );
-                  })}
-              </div>
-            </section>
-
-            <section className="space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-text">Plugin packages</h3>
-                <p className="text-xs text-muted">
-                  Packages must already be installed and resolvable from this project.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Input
-                  aria-label="Plugin package name"
-                  placeholder="@acme/diligent-tools"
-                  value={newPackageName}
-                  onChange={(event) => setNewPackageName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      handleAddPlugin();
-                    }
-                  }}
-                />
-                <Button size="sm" intent="ghost" disabled={!newPackageName.trim()} onClick={handleAddPlugin}>
-                  Add package
-                </Button>
-              </div>
-
-              {currentPluginDrafts.length === 0 ? (
-                <div className="rounded-md border border-dashed border-text/15 px-3 py-3 text-sm text-muted">
-                  No plugin packages configured.
+              <section className="space-y-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Built-in tools</h3>
+                  <p className="text-xs text-muted">
+                    Immutable tools stay enabled even if config tries to turn them off.
+                  </p>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {currentPluginDrafts.map((pluginDraft) => {
-                    const pluginState = state.plugins.find((plugin) => plugin.package === pluginDraft.package);
-                    const pluginTools = pluginToolsByPackage.get(pluginDraft.package) ?? [];
-                    const canShowRuntimeState = Boolean(pluginState);
-                    return (
-                      <div key={pluginDraft.package} className="rounded-md border border-text/10 px-3 py-3">
-                        <div className="flex items-start gap-3">
+                <div className="space-y-2">
+                  {state.tools
+                    .filter((tool) => tool.source === "builtin")
+                    .map((tool) => {
+                      const checked = tool.configurable ? (draft.builtin[tool.name] ?? tool.enabled) : true;
+                      const disabled = !tool.configurable || tool.immutable;
+                      return (
+                        <label
+                          key={tool.name}
+                          className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                        >
                           <input
                             type="checkbox"
-                            checked={pluginDraft.enabled}
-                            onChange={(event) => handlePluginToggle(pluginDraft.package, event.target.checked)}
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={(event) => handleBuiltinToggle(tool.name, event.target.checked)}
                             className="mt-0.5"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="truncate text-sm font-medium text-text">{pluginDraft.package}</span>
-                              {!pluginState ? (
-                                <span className="rounded border border-accent/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                                  Pending save
+                              <span className="text-sm font-medium text-text">{tool.name}</span>
+                              {tool.immutable ? (
+                                <span className="rounded border border-text/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                                  Locked
                                 </span>
                               ) : null}
                             </div>
-                            <p className="mt-0.5 text-xs text-muted">
-                              {pluginState
-                                ? pluginSummary(pluginState)
-                                : "New package. Save to load and inspect its tools."}
-                            </p>
-                            {pluginState?.loadError ? (
-                              <p className="mt-1 text-xs text-danger">{pluginState.loadError}</p>
-                            ) : null}
-                            {pluginState?.warnings.map((warning) => (
-                              <p key={warning} className="mt-1 text-xs text-yellow-300">
-                                {warning}
-                              </p>
-                            ))}
+                            <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
+                            {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
                           </div>
-                          <Button size="sm" intent="ghost" onClick={() => handleRemovePlugin(pluginDraft.package)}>
-                            Remove
-                          </Button>
-                        </div>
-
-                        {canShowRuntimeState && pluginTools.length > 0 ? (
-                          <div className="mt-3 space-y-2 border-t border-text/10 pt-3">
-                            {pluginTools.map((tool) => {
-                              const checked = pluginDraft.tools[tool.name] ?? tool.enabled;
-                              const disabled = !tool.configurable || !tool.available;
-                              return (
-                                <label
-                                  key={tool.name}
-                                  className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={disabled}
-                                    onChange={(event) =>
-                                      handlePluginToolToggle(pluginDraft.package, tool.name, event.target.checked)
-                                    }
-                                    className="mt-0.5"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium text-text">{tool.name}</div>
-                                    <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
-                                    {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
-                                  </div>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                        </label>
+                      );
+                    })}
                 </div>
-              )}
-            </section>
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Plugin packages</h3>
+                  <p className="text-xs text-muted">
+                    Packages must already be installed and resolvable from this project.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label="Plugin package name"
+                    placeholder="@acme/diligent-tools"
+                    value={newPackageName}
+                    onChange={(event) => setNewPackageName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleAddPlugin();
+                      }
+                    }}
+                  />
+                  <Button size="sm" intent="ghost" disabled={!newPackageName.trim()} onClick={handleAddPlugin}>
+                    Add package
+                  </Button>
+                </div>
+
+                {currentPluginDrafts.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-text/15 px-3 py-3 text-sm text-muted">
+                    No plugin packages configured.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {currentPluginDrafts.map((pluginDraft) => {
+                      const pluginState = state.plugins.find((plugin) => plugin.package === pluginDraft.package);
+                      const pluginTools = pluginToolsByPackage.get(pluginDraft.package) ?? [];
+                      const canShowRuntimeState = Boolean(pluginState);
+                      return (
+                        <div key={pluginDraft.package} className="rounded-md border border-text/10 px-3 py-3">
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={pluginDraft.enabled}
+                              onChange={(event) => handlePluginToggle(pluginDraft.package, event.target.checked)}
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium text-text">{pluginDraft.package}</span>
+                                {!pluginState ? (
+                                  <span className="rounded border border-accent/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                                    Pending save
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-0.5 text-xs text-muted">
+                                {pluginState
+                                  ? pluginSummary(pluginState)
+                                  : "New package. Save to load and inspect its tools."}
+                              </p>
+                              {pluginState?.loadError ? (
+                                <p className="mt-1 text-xs text-danger">{pluginState.loadError}</p>
+                              ) : null}
+                              {pluginState?.warnings.map((warning) => (
+                                <p key={warning} className="mt-1 text-xs text-yellow-300">
+                                  {warning}
+                                </p>
+                              ))}
+                            </div>
+                            <Button size="sm" intent="ghost" onClick={() => handleRemovePlugin(pluginDraft.package)}>
+                              Remove
+                            </Button>
+                          </div>
+
+                          {canShowRuntimeState && pluginTools.length > 0 ? (
+                            <div className="mt-3 space-y-2 border-t border-text/10 pt-3">
+                              {pluginTools.map((tool) => {
+                                const checked = pluginDraft.tools[tool.name] ?? tool.enabled;
+                                const disabled = !tool.configurable || !tool.available;
+                                return (
+                                  <label
+                                    key={tool.name}
+                                    className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={disabled}
+                                      onChange={(event) =>
+                                        handlePluginToolToggle(pluginDraft.package, tool.name, event.target.checked)
+                                      }
+                                      className="mt-0.5"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-sm font-medium text-text">{tool.name}</div>
+                                      <p className="mt-0.5 text-xs text-muted">{describeToolReason(tool)}</p>
+                                      {tool.error ? <p className="mt-1 text-xs text-danger">{tool.error}</p> : null}
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
           ) : null}
         </div>

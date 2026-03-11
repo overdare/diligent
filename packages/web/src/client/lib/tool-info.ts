@@ -444,7 +444,6 @@ export function deriveRenderPayload(
       return { version: 1, blocks: [{ type: "summary", text: firstLine, tone: "info" }] };
     }
   }
-
   return undefined;
 }
 

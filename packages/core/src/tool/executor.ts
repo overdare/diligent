@@ -34,7 +34,10 @@ export async function executeTool(
     result = await tool.execute(parsed.data, ctx);
   } catch (err) {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    return { output: `Error: Tool "${toolCall.name}" threw an unexpected error: ${message}`, metadata: { error: true } };
+    return {
+      output: `Error: Tool "${toolCall.name}" threw an unexpected error: ${message}`,
+      metadata: { error: true },
+    };
   }
 
   if (result.render !== undefined) {

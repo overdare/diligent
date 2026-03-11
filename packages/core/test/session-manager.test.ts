@@ -228,11 +228,14 @@ describe("SessionManager", () => {
 
   test("compactNow() appends compaction entry", async () => {
     const dir = await setupDir();
-    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant("hello"), makeAssistant("## Goal\ncompact")])));
+    const mgr = new SessionManager(
+      makeManagerConfig(dir, createMockStreamFn([makeAssistant("hello"), makeAssistant("## Goal\ncompact")])),
+    );
     await mgr.create();
 
     const stream = mgr.run({ role: "user", content: "please compact this thread", timestamp: Date.now() });
-    for await (const _ of stream) {}
+    for await (const _ of stream) {
+    }
     await mgr.waitForWrites();
 
     const result = await mgr.compactNow();
