@@ -1,7 +1,7 @@
 // @summary Factory that builds a DiligentAppServerConfig from a RuntimeConfig, eliminating Web/CLI duplication
 import type { ModeKind } from "../agent/types";
 import type { RuntimeConfig } from "../config/runtime";
-import { ensureDiligentDir } from "../infrastructure/diligent-dir";
+import { ensureDiligentDir } from "../infrastructure";
 import { getModelInfoList, resolveModel } from "../provider/models";
 import { buildDefaultTools } from "../tools/defaults";
 import type { DiligentAppServerConfig } from "./server";

@@ -30,7 +30,7 @@ export interface BuildDefaultToolsResult {
 
 /**
  * Returns true when the model's provider is OpenAI.
- * OpenAI models use `apply_patch` + relative-path `write`;
+ * OpenAI models use `apply_patch` only;
  * all other providers use `edit` + `multi_edit` + absolute-path `write`.
  */
 function isOpenAIProvider(provider?: string): boolean {

@@ -19,7 +19,7 @@ import { z } from "zod";
 import { createAppServerConfig, DiligentAppServer } from "../src/app-server";
 import { createCollabTools } from "../src/collab";
 import { EventStream } from "../src/event-stream";
-import { ensureDiligentDir } from "../src/infrastructure/diligent-dir";
+import { ensureDiligentDir } from "../src/infrastructure";
 import { ProviderManager } from "../src/provider/provider-manager";
 import type { Model } from "../src/provider/types";
 import { SessionWriter } from "../src/session/persistence";

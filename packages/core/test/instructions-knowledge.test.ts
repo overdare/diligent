@@ -16,7 +16,7 @@ describe("buildSystemPromptWithKnowledge", () => {
   it("includes instructions after knowledge section", () => {
     const result = buildSystemPromptWithKnowledge(
       "Base",
-      [{ path: "/project/CLAUDE.md", content: "Project rules" }],
+      [{ path: "/project/AGENTS.md", content: "Project rules" }],
       "## Project Knowledge\n- [pattern] Use Bun\n",
     );
 

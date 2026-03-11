@@ -15,7 +15,7 @@ import { calculateCost } from "../agent/loop";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
 import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
-import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import type { DiligentPaths } from "../infrastructure";
 import { readKnowledge } from "../knowledge/store";
 import { resolveModel } from "../provider/models";
 import { buildSessionContext } from "../session/context-builder";

@@ -10,7 +10,7 @@ import {
 import { LoopDetector } from "../agent/loop-detector";
 import type { AgentEvent, AgentLoopConfig, ModeKind } from "../agent/types";
 import { EventStream } from "../event-stream";
-import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import type { DiligentPaths } from "../infrastructure";
 import { ProviderError } from "../provider/types";
 import type { AssistantMessage, Message, ToolCallBlock } from "../types";
 import { debug } from "../util/debug";

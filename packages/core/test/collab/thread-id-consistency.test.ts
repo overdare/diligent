@@ -4,7 +4,7 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRegistry } from "../../src/collab/registry";
-import { resolvePaths } from "../../src/infrastructure/diligent-dir";
+import { resolvePaths } from "../../src/infrastructure";
 import { readSessionFile } from "../../src/session/persistence";
 import { makeAssistant, makeStreamFn, TEST_MODEL } from "./helpers";
 

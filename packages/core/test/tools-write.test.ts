@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "../src/tool/types";
-import { createWriteTool } from "../src/tools/write";
+import { createWriteAbsoluteTool, createWriteTool } from "../src/tools/write";
 
 function makeCtx(): ToolContext {
   return {
@@ -69,6 +69,31 @@ describe("write tool", () => {
   test("returns error for absolute file_path", async () => {
     const result = await tool.execute({ file_path: join(tmpDir, "absolute.txt"), content: "hello" }, makeCtx());
     expect(result.output).toContain("file_path must be relative");
+    expect(result.metadata?.error).toBe(true);
+  });
+});
+
+describe("write tool (absolute path variant)", () => {
+  test("writes to an absolute path", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "write-absolute-test-"));
+    const tool = createWriteAbsoluteTool();
+    const filePath = join(tmpDir, "absolute.txt");
+
+    try {
+      const result = await tool.execute({ file_path: filePath, content: "absolute content" }, makeCtx());
+      expect(result.output).toContain("Wrote");
+
+      const content = await readFile(filePath, "utf-8");
+      expect(content).toBe("absolute content");
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("returns error for relative file_path", async () => {
+    const tool = createWriteAbsoluteTool();
+    const result = await tool.execute({ file_path: "relative.txt", content: "hello" }, makeCtx());
+    expect(result.output).toContain("file_path must be absolute");
     expect(result.metadata?.error).toBe(true);
   });
 });

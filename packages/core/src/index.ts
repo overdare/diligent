@@ -33,7 +33,6 @@ export {
 export type { CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
 export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { PermissionAction, PermissionEngine, PermissionRule } from "./approval/index";
-// Approval (Phase 5a)
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval/index";
 // Auth
 export type {
@@ -230,18 +229,20 @@ export type {
   ToolStateReason,
 } from "./tools/index";
 export {
-  bashTool,
   buildDefaultTools,
   buildToolCatalog,
   createAddKnowledgeTool,
   createApplyPatchTool,
   createBashTool,
+  createEditTool,
   createGlobTool,
   createGrepTool,
   createLsTool,
+  createMultiEditTool,
   createPlanTool,
   createReadTool,
   createSkillTool,
+  createWriteAbsoluteTool,
   createWriteTool,
   getGlobalPluginPath,
   getGlobalPluginRoot,

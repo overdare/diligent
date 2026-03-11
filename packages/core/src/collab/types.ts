@@ -1,6 +1,6 @@
 // @summary AgentStatus, AgentEntry, CollabToolDeps, and CollabEvent types for non-blocking multi-agent collab
 import type { AgentEvent } from "../agent/types";
-import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import type { DiligentPaths } from "../infrastructure";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../provider/types";
 import type { SessionManager } from "../session/manager";
 import type { Tool, UserInputRequest, UserInputResponse } from "../tool/types";

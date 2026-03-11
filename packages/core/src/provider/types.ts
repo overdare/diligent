@@ -57,7 +57,7 @@ export interface StreamOptions {
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
-  budgetTokens?: number; // legacy fallback; prefer effort
+  budgetTokens?: number; // compatibility fallback; prefer effort
   effort: ThinkingEffort; // thinking effort level
 }
 

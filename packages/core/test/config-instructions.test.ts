@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("discoverInstructions", () => {
-  it("finds CLAUDE.md in cwd", async () => {
+  it("finds AGENTS.md in cwd", async () => {
     const projectDir = join(TEST_ROOT, "project");
     await mkdir(projectDir, { recursive: true });
     await Bun.write(join(projectDir, "AGENTS.md"), "# Instructions\nUse Bun.");
@@ -26,7 +26,7 @@ describe("discoverInstructions", () => {
     expect(result[0].path).toBe(join(projectDir, "AGENTS.md"));
   });
 
-  it("returns empty when no CLAUDE.md found", async () => {
+  it("returns empty when no AGENTS.md is found", async () => {
     const emptyDir = join(TEST_ROOT, "empty");
     await mkdir(emptyDir, { recursive: true });
     // Create a .git so it doesn't traverse up
@@ -37,7 +37,7 @@ describe("discoverInstructions", () => {
   });
 
   it("stops at .git boundary", async () => {
-    // Structure: parent/CLAUDE.md, parent/.git, parent/sub/
+    // Structure: parent/AGENTS.md, parent/.git, parent/sub/
     const parent = join(TEST_ROOT, "parent");
     const sub = join(parent, "sub");
     await mkdir(sub, { recursive: true });
@@ -51,7 +51,7 @@ describe("discoverInstructions", () => {
     expect(result[0].content).toBe("parent instructions");
   });
 
-  it("finds CLAUDE.md at cwd even if cwd has .git", async () => {
+  it("finds AGENTS.md at cwd even if cwd has .git", async () => {
     const projectDir = join(TEST_ROOT, "git-project");
     await mkdir(projectDir, { recursive: true });
     await mkdir(join(projectDir, ".git"));
@@ -85,16 +85,16 @@ describe("buildSystemPrompt", () => {
   });
 
   it("includes discovered instructions as tagged sections", () => {
-    const result = buildSystemPrompt("Base.", [{ path: "/p/CLAUDE.md", content: "Use Bun." }]);
+    const result = buildSystemPrompt("Base.", [{ path: "/p/AGENTS.md", content: "Use Bun." }]);
     expect(result[0].content).toBe("Base.");
     const instrSection = result.find((s) => s.tag === "user_instructions");
     expect(instrSection).toBeDefined();
-    expect(instrSection!.tagAttributes?.path).toBe("/p/CLAUDE.md");
+    expect(instrSection!.tagAttributes?.path).toBe("/p/AGENTS.md");
     expect(instrSection!.content).toBe("Use Bun.");
     expect(instrSection!.cacheControl).toBe("ephemeral");
     // flattenSections produces XML-wrapped output
     const flat = flattenSections(result);
-    expect(flat).toContain('<user_instructions path="/p/CLAUDE.md">');
+    expect(flat).toContain('<user_instructions path="/p/AGENTS.md">');
     expect(flat).toContain("</user_instructions>");
   });
 
@@ -106,7 +106,7 @@ describe("buildSystemPrompt", () => {
   });
 
   it("combines all sources", () => {
-    const result = buildSystemPrompt("Base.", [{ path: "/p/CLAUDE.md", content: "From file." }], ["From config."]);
+    const result = buildSystemPrompt("Base.", [{ path: "/p/AGENTS.md", content: "From file." }], ["From config."]);
     const flat = flattenSections(result);
     expect(flat).toContain("Base.");
     expect(flat).toContain("From file.");

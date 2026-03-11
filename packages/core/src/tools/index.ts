@@ -3,12 +3,13 @@ export type { CollabToolDeps } from "../collab";
 export { AgentRegistry, createCollabTools } from "../collab";
 export { createAddKnowledgeTool } from "./add-knowledge";
 export { createApplyPatchTool } from "./apply-patch";
-export { bashTool, createBashTool } from "./bash";
+export { createBashTool } from "./bash";
 // Tool catalog (P032)
 export type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEntry, ToolStateReason } from "./catalog";
 export { buildToolCatalog } from "./catalog";
 export type { BuildDefaultToolsResult } from "./defaults";
 export { buildDefaultTools } from "./defaults";
+export { createEditTool, createMultiEditTool } from "./edit";
 export { createGlobTool } from "./glob";
 export { createGrepTool } from "./grep";
 export { IMMUTABLE_TOOLS, isImmutableTool } from "./immutable";
@@ -19,4 +20,4 @@ export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-l
 export { createReadTool } from "./read";
 export { requestUserInputTool } from "./request-user-input";
 export { createSkillTool, registerSkillTool } from "./skill";
-export { createWriteTool } from "./write";
+export { createWriteAbsoluteTool, createWriteTool } from "./write";

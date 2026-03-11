@@ -30,8 +30,8 @@ export function shouldTruncate(output: string): boolean {
 
 /**
  * Keep the first portion (for file reads — beginning is most relevant).
- * Phase 1: char-based truncation first (handles pathological cases like 2-line 10MB).
- * Phase 2: line-based truncation for readability.
+ * Step 1: char-based truncation first (handles pathological cases like 2-line 10MB).
+ * Step 2: line-based truncation for readability.
  */
 export function truncateHead(
   output: string,
@@ -47,13 +47,13 @@ export function truncateHead(
 
   let result = output;
 
-  // Phase 1: Truncate by bytes first (handles pathological cases)
+  // Step 1: Truncate by bytes first (handles pathological cases)
   const encoder = new TextEncoder();
   if (encoder.encode(result).length > maxBytes) {
     result = truncateStringToBytes(result, maxBytes);
   }
 
-  // Phase 2: Truncate by lines for readability (keep first N lines)
+  // Step 2: Truncate by lines for readability (keep first N lines)
   if (countLines(result) > maxLines) {
     const lines = result.split("\n");
     result = lines.slice(0, maxLines).join("\n");
@@ -64,8 +64,8 @@ export function truncateHead(
 
 /**
  * Keep the last portion (for bash — recent output is most relevant).
- * Phase 1: char-based truncation first.
- * Phase 2: line-based truncation for readability.
+ * Step 1: char-based truncation first.
+ * Step 2: line-based truncation for readability.
  */
 export function truncateTail(
   output: string,
@@ -81,7 +81,7 @@ export function truncateTail(
 
   let result = output;
 
-  // Phase 1: Truncate by bytes first (keep tail)
+  // Step 1: Truncate by bytes first (keep tail)
   const encoder = new TextEncoder();
   if (encoder.encode(result).length > maxBytes) {
     const decoded = new TextDecoder();
@@ -94,7 +94,7 @@ export function truncateTail(
     }
   }
 
-  // Phase 2: Truncate by lines for readability (keep last N lines)
+  // Step 2: Truncate by lines for readability (keep last N lines)
   if (countLines(result) > maxLines) {
     const lines = result.split("\n");
     result = lines.slice(-maxLines).join("\n");

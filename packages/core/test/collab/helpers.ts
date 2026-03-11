@@ -3,7 +3,7 @@
 import type { AgentEvent } from "../../src/agent/types";
 import type { CollabToolDeps } from "../../src/collab/types";
 import { EventStream } from "../../src/event-stream";
-import type { DiligentPaths } from "../../src/infrastructure/diligent-dir";
+import type { DiligentPaths } from "../../src/infrastructure";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../../src/provider/types";
 import type { SessionManagerConfig } from "../../src/session/manager";
 import type { AssistantMessage, Message } from "../../src/types";

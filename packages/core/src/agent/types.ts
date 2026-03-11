@@ -81,7 +81,7 @@ export type AgentEvent =
   | { type: "usage"; usage: Usage; cost: number }
   // Error (1) — D086: SerializableError instead of Error
   | { type: "error"; error: SerializableError; fatal: boolean }
-  // Compaction (2) — Phase 3b
+  // Compaction (2)
   | { type: "compaction_start"; estimatedTokens: number }
   | {
       type: "compaction_end";
@@ -90,7 +90,7 @@ export type AgentEvent =
       summary: string;
       tailMessages?: Array<{ role: string; preview: string }>;
     }
-  // Knowledge (1) — Phase 3b
+  // Knowledge (1)
   | { type: "knowledge_saved"; knowledgeId: string; content: string }
   // Loop detection (1) — P0
   | { type: "loop_detected"; patternLength: number; toolName: string }

@@ -140,6 +140,3 @@ export function createBashTool(cwd: string): Tool<typeof BashParams> {
     },
   };
 }
-
-/** @deprecated Use createBashTool(cwd) instead — this uses process.cwd() which is incorrect in server contexts */
-export const bashTool = createBashTool(process.cwd());

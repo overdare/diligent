@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { DiligentServerNotification } from "@diligent/protocol";
 import { handleTurnStart, type ThreadRuntime } from "../src/app-server/thread-handlers";
 import { EventStream } from "../src/event-stream";
-import type { DiligentPaths } from "../src/infrastructure/diligent-dir";
+import type { DiligentPaths } from "../src/infrastructure";
 
 describe("handleTurnStart slash skill rewriting", () => {
   it("rewrites /skill-name messages into a forced skill-tool instruction", async () => {

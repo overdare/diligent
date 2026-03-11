@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureDiligentDir, resolvePaths } from "../src/infrastructure/diligent-dir";
+import { ensureDiligentDir, resolvePaths } from "../src/infrastructure";
 
 const TEST_ROOT = join(tmpdir(), `diligent-test-${Date.now()}`);
 

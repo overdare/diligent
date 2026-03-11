@@ -1,5 +1,6 @@
 // @summary Dynamic plugin package loader — imports npm packages and validates tool exports
 
+import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -53,10 +54,7 @@ export function getGlobalPluginPath(packageName: string): string {
 export async function discoverGlobalPlugins(): Promise<string[]> {
   const root = getGlobalPluginRoot();
   try {
-    const entries = (await readdir(root, { withFileTypes: true })) as unknown as Array<{
-      isDirectory(): boolean;
-      name: string;
-    }>;
+    const entries: Dirent[] = await readdir(root, { withFileTypes: true });
     const plugins: string[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -64,10 +62,7 @@ export async function discoverGlobalPlugins(): Promise<string[]> {
         // Scoped package: scan one level deeper → "@scope/package"
         const scopeDir = join(root, entry.name);
         try {
-          const scopedEntries = (await readdir(scopeDir, { withFileTypes: true })) as unknown as Array<{
-            isDirectory(): boolean;
-            name: string;
-          }>;
+          const scopedEntries: Dirent[] = await readdir(scopeDir, { withFileTypes: true });
           for (const sub of scopedEntries) {
             if (sub.isDirectory()) plugins.push(`${entry.name}/${sub.name}`);
           }

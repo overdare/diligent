@@ -5,10 +5,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
-import { agentLoop, bashTool, createAnthropicStream, createReadTool, createWriteTool } from "@diligent/core";
+import {
+  agentLoop,
+  createAnthropicStream,
+  createBashTool,
+  createReadTool,
+  createWriteAbsoluteTool,
+} from "@diligent/core";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const runLiveE2E = process.env.DILIGENT_RUN_LIVE_E2E === "1";
+const bashTool = createBashTool(process.cwd());
 
 const TEST_MODEL: Model = {
   id: process.env.DILIGENT_MODEL ?? "claude-sonnet-4-20250514",
@@ -105,7 +112,7 @@ describe("E2E: Real Anthropic API", () => {
       const stream = agentLoop(
         messages,
         makeConfig({
-          tools: [createReadTool(), createWriteTool()],
+          tools: [createReadTool(), createWriteAbsoluteTool()],
           systemPrompt: [
             {
               label: "test",

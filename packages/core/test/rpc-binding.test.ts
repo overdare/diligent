@@ -12,7 +12,7 @@ import {
 import { z } from "zod";
 import { DiligentAppServer } from "../src/app-server";
 import { EventStream } from "../src/event-stream";
-import { ensureDiligentDir } from "../src/infrastructure/diligent-dir";
+import { ensureDiligentDir } from "../src/infrastructure";
 import { createNdjsonParser, formatNdjsonMessage, RpcClientSession, type RpcPeer } from "../src/rpc";
 
 class MemoryPeer implements RpcPeer {

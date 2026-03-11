@@ -22,7 +22,7 @@ import {
 import type { AgentEvent, AgentLoopConfig } from "../agent/types";
 import type { AgentRegistry } from "../collab/registry";
 import type { DiligentConfig } from "../config/schema";
-import type { DiligentPaths } from "../infrastructure/diligent-dir";
+import type { DiligentPaths } from "../infrastructure";
 import { resolveModel } from "../provider/models";
 import type { ProviderManager } from "../provider/provider-manager";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";

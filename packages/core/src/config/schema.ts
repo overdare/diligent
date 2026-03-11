@@ -49,7 +49,7 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
-    // Knowledge settings (prepared for Phase 3b)
+    // Knowledge settings
     knowledge: z
       .object({
         enabled: z.boolean().optional(),
@@ -59,7 +59,7 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
-    // Compaction settings (prepared for Phase 3b)
+    // Compaction settings
     compaction: z
       .object({
         enabled: z.boolean().optional(),
@@ -68,7 +68,7 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
-    // Skills settings (Phase 4b)
+    // Skills settings
     skills: z
       .object({
         enabled: z.boolean().optional(),
@@ -76,11 +76,11 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
-    // Collaboration mode (Phase 4c)
+    // Collaboration mode
     mode: z.enum(["default", "plan", "execute"]).optional(),
     effort: ThinkingEffortSchema.optional(),
 
-    // Permission rules (Phase 5a — D027, D032)
+    // Permission rules
     permissions: z
       .array(
         z.object({

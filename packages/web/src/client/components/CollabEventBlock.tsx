@@ -170,7 +170,7 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                     const isRunning = tool.status === "running";
                     const inputSummary = tool.inputText ? summarizeInput(tool.toolName, tool.inputText) : "";
                     const outputSummary =
-                      tool.status === "done" && !tool.isError && tool.outputText
+                      tool.status === "done" && tool.outputText
                         ? summarizeOutput(tool.toolName, tool.outputText)
                         : "";
                     return (
@@ -196,7 +196,14 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                         </div>
                         {outputSummary ? (
                           <div className="ml-8 flex items-center gap-1">
-                            <span className="max-w-[56ch] truncate font-mono text-accent/50">↳ {outputSummary}</span>
+                            <span
+                              className={cn(
+                                "max-w-[56ch] truncate font-mono",
+                                tool.isError ? "text-danger/60" : "text-accent/50",
+                              )}
+                            >
+                              ↳ {outputSummary}
+                            </span>
                           </div>
                         ) : null}
                       </div>

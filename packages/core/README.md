@@ -2,17 +2,19 @@
 
 The engine. Agent loop, provider abstraction, tool system, session management, and all agent logic lives here.
 
+Tests are primarily under `test/` for package-level behavior, with a small number of focused colocated tests in `src/**/__tests__/`.
+
 ## Structure
 
 ```
 src/
   agent/          Agent loop, loop detection, agent types
   app-server/     DiligentAppServer — the single RPC entry point
-  approval/       Approval hook (stub)
+  approval/       Permission engine and approval matching
   auth/           API key + OAuth token lifecycle
   collab/         Multi-agent collaboration tools (spawn_agent, wait, send_input, close_agent)
   config/         3-layer JSONC config loading
-  infrastructure/ EventStream, utilities
+  infrastructure/ Project-local .diligent path resolution and setup
   knowledge/      JSONL knowledge store + system prompt injection
   prompt/         System prompt construction
   provider/       Anthropic, OpenAI, ChatGPT OAuth, Gemini providers
@@ -20,7 +22,7 @@ src/
   session/        JSONL session persistence, compaction, steering
   skills/         Skill discovery + frontmatter + system prompt injection
   tool/           Tool interface + execution harness
-  tools/          10 built-in tools (bash, read, write, apply_patch, glob, grep, ls, plan, add_knowledge, request_user_input)
+  tools/          Built-in tools, provider-specific file editing variants, and plugin loading
 ```
 
 ## Key Patterns
@@ -30,6 +32,15 @@ src/
 - **TurnContext** — immutable per-turn config; `SessionState` holds mutable state
 - **Provider** — common `StreamFunction` interface, dispatched by model prefix
 - **Tool** — `{ name, description, parameters (Zod), execute(args, ctx) }`, one file per tool
+
+## Tool assembly
+
+- `buildDefaultTools()` assembles the baseline built-ins and then applies config/plugin resolution.
+- File-editing tools are provider-dependent:
+  - OpenAI models use `apply_patch`
+  - Other providers use `write` + `edit` + `multi_edit`
+- `add_knowledge` is included when project paths are available.
+- Collaboration tools are added separately and are not user-configurable.
 
 ## collab — Multi-Agent Tools
 

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { AgentEvent } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
-import { resolvePaths } from "../src/infrastructure/diligent-dir";
+import { resolvePaths } from "../src/infrastructure";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "../src/provider/types";
 import { buildSessionContext } from "../src/session/context-builder";
 import type { SessionManagerConfig } from "../src/session/manager";
