@@ -258,6 +258,40 @@ export async function handleThreadRead(
   };
 }
 
+export async function handleThreadCompactStart(
+  ctx: ThreadHandlersContext,
+  threadId?: string,
+): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
+  const runtime = await ctx.resolveThreadRuntime(threadId);
+  if (runtime.isRunning) throw new Error("Cannot compact while a turn is running");
+
+  runtime.isRunning = true;
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+    params: { threadId: runtime.id, status: "busy" },
+  });
+
+  try {
+    const result = await runtime.manager.compactNow();
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED,
+      params: {
+        threadId: runtime.id,
+        entryCount: result.entryCount,
+        tokensBefore: result.tokensBefore,
+        tokensAfter: result.tokensAfter,
+      },
+    });
+    return result;
+  } finally {
+    runtime.isRunning = false;
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "idle" },
+    });
+  }
+}
+
 export async function handleTurnStart(
   ctx: ThreadHandlersContext,
   params: TurnStartParams,

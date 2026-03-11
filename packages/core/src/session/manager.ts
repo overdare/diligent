@@ -308,6 +308,26 @@ export class SessionManager {
     return buildSessionContext(this.entries, this.leafId).currentEffort;
   }
 
+  async compactNow(): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
+    await this.waitForWrites();
+    const context = buildSessionContext(this.entries, this.leafId);
+    const tokensBefore = estimateTokens(context.messages);
+    const compactionConfig = this.config.compaction ?? {
+      enabled: true,
+      reservePercent: 16,
+      keepRecentTokens: 20000,
+    };
+    const stream = new EventStream<AgentEvent, Message[]>((event) => event.type === "agent_end", () => context.messages);
+    const compactedMessages = await this.performCompaction(tokensBefore, compactionConfig, stream);
+    await this.waitForWrites();
+    return {
+      compacted: true,
+      entryCount: this.entryCount,
+      tokensBefore,
+      tokensAfter: estimateTokens(compactedMessages),
+    };
+  }
+
   appendModelChange(provider: string, modelId: string): void {
     const entry: ModelChangeEntry = {
       type: "model_change",

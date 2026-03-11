@@ -226,6 +226,23 @@ describe("SessionManager", () => {
     expect(() => mgr.appendModeChange("execute")).not.toThrow();
   });
 
+  test("compactNow() appends compaction entry", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant("hello"), makeAssistant("## Goal\ncompact")])));
+    await mgr.create();
+
+    const stream = mgr.run({ role: "user", content: "please compact this thread", timestamp: Date.now() });
+    for await (const _ of stream) {}
+    await mgr.waitForWrites();
+
+    const result = await mgr.compactNow();
+    expect(result.compacted).toBe(true);
+    expect(result.entryCount).toBeGreaterThanOrEqual(3);
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries.some((entry) => entry.type === "compaction")).toBe(true);
+  });
+
   test("aborted signal with pending steering settles inner work (no re-entry loop)", async () => {
     const dir = await setupDir();
     const controller = new AbortController();

@@ -17,6 +17,7 @@ interface InputDockProps {
   onSteer: () => void;
   onInterrupt: () => void;
   onCompactionClick: () => void;
+  isCompacting: boolean;
   canSend: boolean;
   canSteer: boolean;
   threadStatus: ThreadStatus;
@@ -120,6 +121,7 @@ export function InputDock({
   onSteer,
   onInterrupt,
   onCompactionClick,
+  isCompacting,
   canSend,
   canSteer,
   threadStatus,
@@ -315,6 +317,11 @@ export function InputDock({
       <div
         className={`rounded-3xl border px-3 py-2.5 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}${isBusy ? " input-dock-glow" : ""}`}
       >
+        {isCompacting ? (
+          <div className="mb-2 rounded-xl border border-accent/20 bg-accent/10 px-3 py-2 text-xs text-accent">
+            Compacting context…
+          </div>
+        ) : null}
         {!hasProvider ? (
           <button
             type="button"
@@ -511,9 +518,14 @@ export function InputDock({
                               setIsPlusMenuOpen(false);
                               setActiveSubmenu(null);
                             }}
-                            className="block w-full rounded-lg px-2.5 py-2 text-left text-xs text-muted transition hover:bg-surface/80 hover:text-text"
+                            disabled={isCompacting}
+                            className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                              isCompacting
+                                ? "cursor-not-allowed text-muted/40"
+                                : "text-muted hover:bg-surface/80 hover:text-text"
+                            }`}
                           >
-                            Compact now
+                            {isCompacting ? "Compacting…" : "Compact now"}
                           </button>
                         </div>
                       ) : null}

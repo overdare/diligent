@@ -50,6 +50,7 @@ import {
   handleKnowledgeList,
   handleModeSet,
   handleThreadDelete,
+  handleThreadCompactStart,
   handleThreadList,
   handleThreadRead,
   handleThreadResume,
@@ -303,6 +304,7 @@ export class DiligentAppServer {
       DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
       DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT,
       DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
+      DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START,
       DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET,
       DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
       DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
@@ -360,6 +362,9 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
         return this.handleThreadRead(request.params.threadId);
+
+      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START:
+        return this.handleThreadCompactStart(request.params.threadId);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_START:
         return this.handleTurnStart(request.params, connectionId);
@@ -478,6 +483,10 @@ export class DiligentAppServer {
 
   private async handleThreadRead(threadId?: string) {
     return handleThreadRead(this.buildThreadHandlersContext(), threadId);
+  }
+
+  private async handleThreadCompactStart(threadId?: string) {
+    return handleThreadCompactStart(this.buildThreadHandlersContext(), threadId);
   }
 
   private async handleTurnStart(params: TurnStartParams, connectionId?: string): Promise<{ accepted: true }> {

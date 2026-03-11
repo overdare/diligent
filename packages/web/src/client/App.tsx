@@ -50,6 +50,8 @@ import { useServerRequests } from "./lib/use-server-requests";
 
 type PendingImage = LocalImageBlock & { webUrl: string };
 
+const MANUAL_COMPACTION_TOAST = "Manual compaction in progress…";
+
 type AppAction =
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
@@ -219,6 +221,7 @@ export function App() {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [isCompacting, setIsCompacting] = useState(false);
   // Threads needing attention (turn completed, approval/user-input buffered while user is elsewhere)
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
@@ -521,6 +524,7 @@ export function App() {
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
+  const showCompactingIndicator = isCompacting;
   const activeInput = state.activeThreadId ? (threadInputs[state.activeThreadId] ?? "") : "";
   const setActiveInput = useCallback(
     (value: string) => {
@@ -675,7 +679,25 @@ export function App() {
   };
 
   const handleCompactionClick = () => {
-    dispatch({ type: "show_info_toast", payload: "Manual compaction is not wired yet." });
+    void (async () => {
+      const rpc = rpcRef.current;
+      if (!rpc || !state.activeThreadId || isCompacting) return;
+      setIsCompacting(true);
+      dispatch({ type: "show_info_toast", payload: MANUAL_COMPACTION_TOAST });
+      try {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId: state.activeThreadId });
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: state.activeThreadId });
+        dispatch({ type: "hydrate", payload: { threadId: state.activeThreadId, mode: state.mode, history } });
+        dispatch({ type: "show_info_toast", payload: "Thread compacted." });
+      } catch (error) {
+        dispatch({
+          type: "show_info_toast",
+          payload: error instanceof Error ? error.message : "Manual compaction failed.",
+        });
+      } finally {
+        setIsCompacting(false);
+      }
+    })();
   };
 
   const handleAddImages = async (files: FileList | File[]): Promise<void> => {
@@ -873,11 +895,11 @@ export function App() {
           {/* Thread title bar */}
           <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
             <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
-            {state.threadStatus !== "idle" && (
+            {(state.threadStatus !== "idle" || showCompactingIndicator) && (
               <span
-                className={`shrink-0 font-mono text-xs ${state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}
+                className={`shrink-0 font-mono text-xs ${showCompactingIndicator || state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}
               >
-                {state.threadStatus === "busy" ? "Running..." : state.threadStatus}
+                {showCompactingIndicator ? "Compacting..." : state.threadStatus === "busy" ? "Running..." : state.threadStatus}
               </span>
             )}
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
@@ -887,7 +909,7 @@ export function App() {
 
           <MessageList
             items={state.items}
-            threadStatus={state.threadStatus}
+            threadStatus={showCompactingIndicator ? "busy" : state.threadStatus}
             onSelectPrompt={(p) => setActiveInput(p)}
             approvalPrompt={
               serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
@@ -921,6 +943,7 @@ export function App() {
             onSteer={() => void steerMessage()}
             onInterrupt={() => void interruptTurn()}
             onCompactionClick={handleCompactionClick}
+            isCompacting={isCompacting}
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}
@@ -989,7 +1012,7 @@ export function App() {
             setOauthPending(true);
             setOauthError(null);
             const result = await providerMgr.handleOAuthStart();
-            window.open(result.authUrl, "_blank");
+            // Server opens the browser server-side (works in both regular browser and Tauri)
             return result;
           }}
           onClose={() => {

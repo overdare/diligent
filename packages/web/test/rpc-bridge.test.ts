@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiligentAppServer, EventStream, ensureDiligentDir } from "@diligent/core";
 import type { JSONRPCMessage } from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import { toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
 interface FakePeer {
@@ -255,6 +255,41 @@ describe("DiligentAppServer multi-connection (web)", () => {
       expect(attachment.path).toContain(threadId);
       expect(attachment.webUrl).toContain(WEB_IMAGE_ROUTE_PREFIX);
       expect(await Bun.file(attachment.path).text()).toBe("png-bytes");
+    });
+  });
+
+  test("thread/compact/start: emits compacted notification", async () => {
+    await withSandboxedProject(async (projectRoot) => {
+      const server = createMinimalServer({ cwd: projectRoot });
+      const p1 = createFakePeer();
+      server.connect("c1", p1.peer);
+
+      sendRpc(p1, {
+        id: 1,
+        method: "initialize",
+        params: { clientName: "t", clientVersion: "0.0.1", protocolVersion: 1 },
+      });
+      sendRpc(p1, { id: 2, method: "thread/start", params: { cwd: projectRoot, mode: "default" } });
+      const started = await waitFor(
+        p1,
+        (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED,
+      );
+      const threadId = (started as { params: { threadId: string } }).params.threadId;
+
+      sendRpc(p1, {
+        id: 3,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START,
+        params: { threadId },
+      });
+
+      const response = await waitFor(p1, (m) => "id" in m && (m as { id: unknown }).id === 3 && "result" in m);
+      expect((response as { result: { compacted: boolean } }).result.compacted).toBe(true);
+
+      const notification = await waitFor(
+        p1,
+        (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED,
+      );
+      expect(notification).toBeTruthy();
     });
   });
 });

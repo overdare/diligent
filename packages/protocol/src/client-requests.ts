@@ -132,6 +132,19 @@ export const ThreadReadResponseSchema = z.object({
 });
 export type ThreadReadResponse = z.infer<typeof ThreadReadResponseSchema>;
 
+export const ThreadCompactStartParamsSchema = z.object({
+  threadId: z.string().optional(),
+});
+export type ThreadCompactStartParams = z.infer<typeof ThreadCompactStartParamsSchema>;
+
+export const ThreadCompactStartResponseSchema = z.object({
+  compacted: z.boolean(),
+  entryCount: z.number().int().nonnegative(),
+  tokensBefore: z.number().int().nonnegative(),
+  tokensAfter: z.number().int().nonnegative(),
+});
+export type ThreadCompactStartResponse = z.infer<typeof ThreadCompactStartResponseSchema>;
+
 export const TurnAttachmentSchema = z.object({
   type: z.literal("local_image"),
   path: z.string(),
@@ -392,6 +405,7 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), params: ThreadResumeParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), params: ThreadListParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), params: ThreadReadParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START), params: ThreadCompactStartParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START), params: TurnStartParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), params: TurnInterruptParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), params: TurnSteerParamsSchema }),
@@ -424,6 +438,7 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), result: ThreadResumeResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST), result: ThreadListResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ), result: ThreadReadResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START), result: ThreadCompactStartResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START), result: TurnStartResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT), result: TurnInterruptResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER), result: TurnSteerResponseSchema }),

@@ -31,6 +31,17 @@ export const ThreadResumedNotificationSchema = z.object({
 });
 export type ThreadResumedNotification = z.infer<typeof ThreadResumedNotificationSchema>;
 
+export const ThreadCompactedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED),
+  params: z.object({
+    threadId: z.string(),
+    entryCount: z.number().int().nonnegative(),
+    tokensBefore: z.number().int().nonnegative(),
+    tokensAfter: z.number().int().nonnegative(),
+  }),
+});
+export type ThreadCompactedNotification = z.infer<typeof ThreadCompactedNotificationSchema>;
+
 const ThreadStatusSnapshotFields = {
   threadStatus: ThreadStatusSchema.optional(),
   threadStatusRetry: ThreadStatusRetrySchema.optional(),
@@ -304,6 +315,7 @@ export type CollabInteractionEndNotification = z.infer<typeof CollabInteractionE
 export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
+  ThreadCompactedNotificationSchema,
   ThreadStatusChangedNotificationSchema,
   TurnStartedNotificationSchema,
   ItemStartedNotificationSchema,
