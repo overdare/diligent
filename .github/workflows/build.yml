@@ -3,28 +3,18 @@ on:
   push:
     tags: ["release-*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to package (for example: 0.1.0)
+        required: true
+        type: string
 
 jobs:
-  build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            name: macOS (arm64)
-            tui-script: build:darwin-arm64
-            tui-artifact: diligent-darwin-arm64
-            tauri-target: aarch64-apple-darwin
-            desktop-artifact: desktop-macos-arm64
-
-          - os: windows-latest
-            name: Windows (x64)
-            tui-script: build:windows-x64
-            tui-artifact: diligent-windows-x64.exe
-            tauri-target: x86_64-pc-windows-msvc
-            desktop-artifact: desktop-windows-x64
+  desktop-windows:
+    name: Desktop Windows release artifact
+    runs-on: windows-latest
+    env:
+      RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -37,24 +27,25 @@ jobs:
 
       - run: bun install
 
-      # ── TUI ──────────────────────────────────────────────────────────────
-      - name: Build TUI
-        run: bun run ${{ matrix.tui-script }}
+      - name: Resolve release version
+        shell: bash
+        run: |
+          VERSION="${RELEASE_VERSION#release-}"
+          if [ -z "$VERSION" ]; then
+            echo "Failed to resolve version from RELEASE_VERSION=$RELEASE_VERSION" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Packaging version: $VERSION"
 
-      - name: Upload TUI artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.tui-artifact }}
-          path: dist/${{ matrix.tui-artifact }}
-
-      # ── Desktop ──────────────────────────────────────────────────────────
-      - name: Build Desktop
-        env:
-          TAURI_TARGET_TRIPLE: ${{ matrix.tauri-target }}
-        run: bun run --cwd apps/desktop build
+      - name: Package desktop release
+        run: bun run package --version ${{ env.VERSION }} --platforms windows-x64
 
       - name: Upload Desktop artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.desktop-artifact }}
-          path: dist/
+          name: diligent-desktop-windows-x64-${{ env.VERSION }}
+          path: |
+            dist/windows-x64/**
+            dist/checksums.sha256
+            dist/release-meta.json
