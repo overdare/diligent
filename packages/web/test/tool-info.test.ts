@@ -57,7 +57,7 @@ test("plan header uses status-based progress for modern plan payloads", () => {
 });
 
 test("summarizeInput shows read target path", () => {
-  const input = JSON.stringify({ file_path: "/Users/devbv-mini4/git/diligent/packages/web/src/client/App.tsx" });
+  const input = JSON.stringify({ file_path: "/Users/alice/git/diligent/packages/web/src/client/App.tsx" });
   expect(summarizeInput("read", input)).toBe("Read client/App.tsx");
 });
 

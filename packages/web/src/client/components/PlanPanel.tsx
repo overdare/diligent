@@ -21,7 +21,13 @@ export function PlanPanel({ planState }: { planState: PlanState }) {
             className={`flex items-start gap-2 ${step.status === "done" || step.status === "cancelled" ? "text-muted line-through" : "text-text"}`}
           >
             <span className="shrink-0">
-              {step.status === "done" ? "✓" : step.status === "cancelled" ? "✕" : step.status === "in_progress" ? "▶" : "○"}
+              {step.status === "done"
+                ? "✓"
+                : step.status === "cancelled"
+                  ? "✕"
+                  : step.status === "in_progress"
+                    ? "▶"
+                    : "○"}
             </span>{" "}
             <span>{step.text}</span>
           </li>

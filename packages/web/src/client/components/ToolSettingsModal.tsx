@@ -1,7 +1,7 @@
 // @summary Modal for listing and updating built-in tool/plugin settings through shared RPC methods
 
 import type { ToolsListResponse, ToolsSetParams, ToolsSetResponse } from "@diligent/protocol";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 
@@ -111,6 +111,7 @@ export function ToolSettingsModal({
   onClose,
   className,
 }: ToolSettingsModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ToolsListResponse | null>(initialState ?? null);
   const [draft, setDraft] = useState<ToolSettingsDraft | null>(initialState ? createDraft(initialState) : null);
   const [loading, setLoading] = useState(!initialState);
@@ -118,6 +119,10 @@ export function ToolSettingsModal({
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [newPackageName, setNewPackageName] = useState("");
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (initialState) {
@@ -254,14 +259,25 @@ export function ToolSettingsModal({
     }
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    if (event.key !== "Escape") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    event.preventDefault();
+    onClose();
+  };
+
   return (
     <div className={className ?? "fixed inset-0 z-50 bg-black/35"} role="presentation" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Config"
+        tabIndex={-1}
         className="absolute inset-0 z-10 flex flex-col rounded-lg border border-text/20 bg-surface p-4 shadow-panel"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
         <div className="mb-1 flex items-start justify-between gap-2">
           <div>
