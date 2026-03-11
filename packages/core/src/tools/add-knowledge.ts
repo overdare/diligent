@@ -7,7 +7,7 @@ import type { Tool, ToolContext, ToolResult } from "../tool/types";
 
 const addKnowledgeSchema = z.object({
   type: z.enum(["pattern", "decision", "discovery", "preference", "correction"]),
-  content: z.string().describe("The knowledge to save. Be specific and actionable."),
+  content: z.string().describe("The knowledge to save. Write in the user's language. Be specific and actionable."),
   confidence: z.number().min(0).max(1).optional().default(0.8),
   tags: z.array(z.string()).optional(),
 });

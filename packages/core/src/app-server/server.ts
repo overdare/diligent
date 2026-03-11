@@ -47,9 +47,9 @@ import {
 } from "./server-requests";
 import {
   getLatestEffortFromSessions,
+  handleEffortSet,
   handleKnowledgeAdd,
   handleKnowledgeDelete,
-  handleEffortSet,
   handleKnowledgeList,
   handleKnowledgeUpdate,
   handleModeSet,

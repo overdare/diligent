@@ -328,10 +328,7 @@ export const toolsCommand: Command = {
       if (choice === "__save") {
         state = await saveTools(ctx, draft);
         draft = createDraft(state);
-        ctx.displayLines([
-          `  ${t.success}Saved tool settings.${t.reset}`,
-          `  ${t.dim}${state.configPath}${t.reset}`,
-        ]);
+        ctx.displayLines([`  ${t.success}Saved tool settings.${t.reset}`, `  ${t.dim}${state.configPath}${t.reset}`]);
       }
     }
   },

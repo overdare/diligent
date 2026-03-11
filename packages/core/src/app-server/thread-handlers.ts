@@ -2,9 +2,9 @@
 
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
+  type DiligentServerNotification,
   type KnowledgeEntry,
   type KnowledgeType,
-  type DiligentServerNotification,
   type Mode,
   type PluginDescriptor,
   type SessionSummary,

@@ -80,9 +80,9 @@ export function Sidebar({
         <button
           type="button"
           onClick={onNewThread}
-          className="flex w-full items-center gap-2 rounded-md border border-dashed border-text/15 px-3 py-2 text-left text-sm text-muted transition hover:border-accent/40 hover:text-accent"
+          className="flex w-full items-center gap-2 rounded-md border border-dashed border-accent/35 bg-accent/8 px-3 py-2.5 text-left text-sm font-medium text-accent transition hover:border-accent/50 hover:bg-accent/12 hover:text-accent"
         >
-          <span className="text-base leading-none">+</span>
+          <span className="text-lg leading-none">+</span>
           <span>New conversation</span>
         </button>
 

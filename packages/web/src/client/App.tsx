@@ -8,11 +8,11 @@ import {
   supportsThinkingNone,
 } from "@diligent/core/client";
 import type {
+  DiligentServerNotification,
+  InitializeResponse,
   KnowledgeDeleteResponse,
   KnowledgeEntry,
   KnowledgeUpdateParams,
-  DiligentServerNotification,
-  InitializeResponse,
   LocalImageBlock,
   Mode,
   SessionSummary,
@@ -33,12 +33,12 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
+import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
 import { MessageList } from "./components/MessageList";
 import { Modal } from "./components/Modal";
 import { Panel } from "./components/Panel";
 import { PlanPanel } from "./components/PlanPanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
-import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
 import { Sidebar } from "./components/Sidebar";
 import { StatusDot } from "./components/StatusDot";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";

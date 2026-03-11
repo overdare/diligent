@@ -295,7 +295,6 @@ export function ToolSettingsModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-
           {loading ? <p className="text-sm text-muted">Loading tool settings…</p> : null}
           {error ? <p className="text-sm text-danger">{error}</p> : null}
           {savedMessage ? <p className="text-sm text-accent">{savedMessage}</p> : null}

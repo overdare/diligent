@@ -1,12 +1,7 @@
 // @summary Modal for direct user CRUD management of knowledge entries over RPC
 
-import type {
-  KnowledgeDeleteResponse,
-  KnowledgeEntry,
-  KnowledgeType,
-  KnowledgeUpdateParams,
-} from "@diligent/protocol";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { KnowledgeDeleteResponse, KnowledgeEntry, KnowledgeType, KnowledgeUpdateParams } from "@diligent/protocol";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { Modal } from "./Modal";
@@ -77,6 +72,7 @@ export function KnowledgeManagerModal({
   onClose,
   className,
 }: KnowledgeManagerModalProps) {
+  const idPrefix = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +83,10 @@ export function KnowledgeManagerModal({
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<KnowledgeType | "all">("all");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
+
+  const searchInputId = `${idPrefix}-search`;
+  const typeFilterId = `${idPrefix}-type-filter`;
+  const sortModeId = `${idPrefix}-sort-mode`;
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -113,7 +113,6 @@ export function KnowledgeManagerModal({
           return b.confidence - a.confidence || Date.parse(b.timestamp) - Date.parse(a.timestamp);
         case "confidence_asc":
           return a.confidence - b.confidence || Date.parse(b.timestamp) - Date.parse(a.timestamp);
-        case "newest":
         default:
           return Date.parse(b.timestamp) - Date.parse(a.timestamp);
       }
@@ -121,7 +120,7 @@ export function KnowledgeManagerModal({
     return sorted;
   }, [entries, search, sortMode, typeFilter]);
 
-  const loadEntries = async (): Promise<void> => {
+  const loadEntries = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
@@ -132,12 +131,11 @@ export function KnowledgeManagerModal({
     } finally {
       setLoading(false);
     }
-  };
+  }, [onList, threadId]);
 
   useEffect(() => {
     void loadEntries();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: threadId is the intended trigger
-  }, [threadId]);
+  }, [loadEntries]);
 
   const cancelEditing = () => {
     setEditing(null);
@@ -246,18 +244,20 @@ export function KnowledgeManagerModal({
             </div>
 
             <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_160px_180px]">
-              <label className="text-xs text-muted">
+              <label htmlFor={searchInputId} className="text-xs text-muted">
                 Search
                 <Input
+                  id={searchInputId}
                   aria-label="Search knowledge"
                   placeholder="Search content, tags, type"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
-              <label className="text-xs text-muted">
+              <label htmlFor={typeFilterId} className="text-xs text-muted">
                 Type
                 <select
+                  id={typeFilterId}
                   aria-label="Filter knowledge type"
                   className="mt-1 h-10 w-full rounded-md border border-text/20 bg-surface px-2 text-sm text-text"
                   value={typeFilter}
@@ -271,9 +271,10 @@ export function KnowledgeManagerModal({
                   ))}
                 </select>
               </label>
-              <label className="text-xs text-muted">
+              <label htmlFor={sortModeId} className="text-xs text-muted">
                 Sort
                 <select
+                  id={sortModeId}
                   aria-label="Sort knowledge entries"
                   className="mt-1 h-10 w-full rounded-md border border-text/20 bg-surface px-2 text-sm text-text"
                   value={sortMode}
@@ -328,26 +329,31 @@ export function KnowledgeManagerModal({
                             ))}
                           </select>
                         </label>
-                        <label className="text-xs text-muted">
+                        <label htmlFor={`${idPrefix}-${entry.id}-confidence`} className="text-xs text-muted">
                           Confidence (0..1)
                           <Input
+                            id={`${idPrefix}-${entry.id}-confidence`}
                             value={editing.draft.confidence}
                             onChange={(event) =>
                               updateEntryDraft((current) => ({ ...current, confidence: event.target.value }))
                             }
                           />
                         </label>
-                        <label className="text-xs text-muted">
+                        <label htmlFor={`${idPrefix}-${entry.id}-tags`} className="text-xs text-muted">
                           Tags (comma separated)
                           <Input
+                            id={`${idPrefix}-${entry.id}-tags`}
                             value={editing.draft.tags}
-                            onChange={(event) => updateEntryDraft((current) => ({ ...current, tags: event.target.value }))}
+                            onChange={(event) =>
+                              updateEntryDraft((current) => ({ ...current, tags: event.target.value }))
+                            }
                           />
                         </label>
                       </div>
-                      <label className="block text-xs text-muted">
+                      <label htmlFor={`${idPrefix}-${entry.id}-content`} className="block text-xs text-muted">
                         Content
                         <TextArea
+                          id={`${idPrefix}-${entry.id}-content`}
                           maxRows={8}
                           value={editing.draft.content}
                           onChange={(event) =>
@@ -425,4 +431,3 @@ export function KnowledgeManagerModal({
     </div>
   );
 }
-
