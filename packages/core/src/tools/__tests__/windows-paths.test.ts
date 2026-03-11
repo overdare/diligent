@@ -7,8 +7,8 @@ import { createGlobTool } from "../glob";
 import { createGrepTool } from "../grep";
 
 const UNIX_CWD = "/home/user/project";
-const WIN_CWD_BACKSLASH = "C:\\Users\\devbv\\git\\diligent";
-const WIN_CWD_FORWARD = "C:/Users/devbv/git/diligent";
+const WIN_CWD_BACKSLASH = "C:\\Users\\alice\\git\\diligent";
+const WIN_CWD_FORWARD = "C:/Users/alice/git/diligent";
 
 const mockCtx = {
   toolCallId: "test-call-id",
@@ -73,9 +73,9 @@ describe("glob - Windows path normalization", () => {
     spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
-    await tool.execute({ pattern: "*.ts", path: "C:\\Users\\devbv\\git\\diligent\\packages\\core\\src" }, mockCtx);
+    await tool.execute({ pattern: "*.ts", path: "C:\\Users\\alice\\git\\diligent\\packages\\core\\src" }, mockCtx);
 
-    expect(capturedSearchPath(spy)).toBe("C:/Users/devbv/git/diligent/packages/core/src");
+    expect(capturedSearchPath(spy)).toBe("C:/Users/alice/git/diligent/packages/core/src");
   });
 
   it("leaves forward-slash paths unchanged", async () => {
@@ -100,10 +100,10 @@ describe("glob - Windows path normalization", () => {
     spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGlobTool(UNIX_CWD);
 
-    // Double backslash: C:\\Users\\devbv (two backslash chars between segments)
-    await tool.execute({ pattern: "*.ts", path: "C:\\\\Users\\\\devbv\\\\git" }, mockCtx);
+    // Double backslash: C:\\Users\\alice (two backslash chars between segments)
+    await tool.execute({ pattern: "*.ts", path: "C:\\\\Users\\\\alice\\\\git" }, mockCtx);
 
-    expect(capturedSearchPath(spy)).toBe("C:/Users/devbv/git");
+    expect(capturedSearchPath(spy)).toBe("C:/Users/alice/git");
   });
 
   it("rejects relative paths with error", async () => {
@@ -152,9 +152,9 @@ describe("grep - Windows path normalization", () => {
     spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc(""));
     const tool = createGrepTool(UNIX_CWD);
 
-    await tool.execute({ pattern: "foo", path: "C:\\Users\\devbv\\git\\diligent\\packages\\core\\src" }, mockCtx);
+    await tool.execute({ pattern: "foo", path: "C:\\Users\\alice\\git\\diligent\\packages\\core\\src" }, mockCtx);
 
-    expect(capturedSearchPath(spy)).toBe("C:/Users/devbv/git/diligent/packages/core/src");
+    expect(capturedSearchPath(spy)).toBe("C:/Users/alice/git/diligent/packages/core/src");
   });
 
   it("leaves forward-slash paths unchanged", async () => {

@@ -5,7 +5,7 @@
  * Works across platforms regardless of the OS the code is running on.
  *
  * Unix: /home/user/project
- * Windows: C:\Users\devbv or C:/Users/devbv
+ * Windows: C:\Users\alice or C:/Users/alice
  */
 export function isAbsolute(path: string): boolean {
   // Unix: starts with /

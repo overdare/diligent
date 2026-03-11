@@ -32,11 +32,10 @@ export function createPlanTool(): Tool<typeof PlanParams> {
       // How to use
       "Call this at the start of complex tasks to show the user your plan. " +
       "After receiving new instructions, immediately capture requirements as plan steps. " +
-      "Exactly ONE step should be in_progress at a time — mark it in_progress when starting, done when finished. " +
-      "You MUST call this immediately after completing each step to mark it done before moving on to the next step. " +
-      "Complete current steps before starting new ones. " +
-      "After completing a step, add any new follow-up steps discovered during execution. " +
-      "Cancel steps that become irrelevant instead of deleting them.",
+      "Each step should represent a unit of work you can complete in one go. " +
+      "Only ONE step should be in_progress at a time. Mark each step done immediately after completing it, before starting the next. " +
+      "Add any new follow-up steps discovered during execution. Cancel steps that become irrelevant instead of deleting them. " +
+      "IMPORTANT: Before summarizing results to the user, call this tool to mark the last step done.",
     parameters: PlanParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       if (!Array.isArray(args.steps) || args.steps.length === 0) {
