@@ -9,8 +9,8 @@ export {
   SUMMARY_PREFIX,
   shouldCompact,
 } from "./compaction";
-export type { SessionContext } from "./context-builder";
-export { buildSessionContext } from "./context-builder";
+export type { SessionContext, SessionTranscriptEntry } from "./context-builder";
+export { buildSessionContext, buildSessionTranscript } from "./context-builder";
 export type { ResumeSessionOptions, SessionManagerConfig } from "./manager";
 export { SessionManager } from "./manager";
 export {

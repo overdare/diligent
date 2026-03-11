@@ -21,7 +21,7 @@ import {
   generateSummary,
   shouldCompact,
 } from "./compaction";
-import { buildSessionContext } from "./context-builder";
+import { buildSessionContext, buildSessionTranscript } from "./context-builder";
 import { listSessions, readSessionFile, SessionWriter } from "./persistence";
 import type {
   CollabSessionMeta,
@@ -191,6 +191,11 @@ export class SessionManager {
   getContext(): Message[] {
     const context = buildSessionContext(this.entries, this.leafId);
     return context.messages;
+  }
+
+  /** Get the full raw transcript for human-facing UIs. */
+  getTranscript() {
+    return buildSessionTranscript(this.entries, this.leafId);
   }
 
   getErrors(): ErrorEntry[] {

@@ -226,6 +226,7 @@ export async function handleThreadRead(
   threadId?: string,
 ): Promise<{
   messages: unknown[];
+  transcript?: unknown[];
   errors: unknown[];
   childSessions?: unknown[];
   hasFollowUp: boolean;
@@ -254,6 +255,7 @@ export async function handleThreadRead(
   const children = await readChildSessions(paths.sessions, sessionId);
 
   const messages = runtime.manager.getContext();
+  const transcript = runtime.manager.getTranscript();
 
   let totalCost = 0;
   for (const msg of messages) {
@@ -269,6 +271,7 @@ export async function handleThreadRead(
 
   return {
     messages,
+    transcript,
     errors: runtime.manager.getErrors(),
     childSessions: children.length > 0 ? children : undefined,
     hasFollowUp: runtime.manager.hasPendingMessages(),

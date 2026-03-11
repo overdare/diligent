@@ -1,4 +1,4 @@
-// @summary Builds linear message context from tree-structured session entries with compaction support
+// @summary Builds model context and raw transcript views from tree-structured session entries with compaction support
 import type { Message } from "../types";
 import { formatFileOperations, SUMMARY_PREFIX } from "./compaction";
 import type { CompactionEntry, SessionEntry } from "./types";
@@ -7,6 +7,45 @@ export interface SessionContext {
   messages: Message[];
   currentModel?: { provider: string; modelId: string };
   currentEffort?: "none" | "low" | "medium" | "high" | "max";
+}
+
+export type SessionTranscriptEntry =
+  | {
+      type: "message";
+      id: string;
+      timestamp: string;
+      message: Message;
+    }
+  | {
+      type: "compaction";
+      id: string;
+      timestamp: string;
+      summary: string;
+    };
+
+function getPathEntries(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
+  if (entries.length === 0) {
+    return [];
+  }
+
+  const byId = new Map<string, SessionEntry>();
+  for (const entry of entries) {
+    byId.set(entry.id, entry);
+  }
+
+  const leaf = leafId ? byId.get(leafId) : entries[entries.length - 1];
+  if (!leaf) {
+    return [];
+  }
+
+  const path: SessionEntry[] = [];
+  let current: SessionEntry | undefined = leaf;
+  while (current) {
+    path.push(current);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  path.reverse();
+  return path;
 }
 
 /**
@@ -20,30 +59,10 @@ export interface SessionContext {
  * 5. Extract messages + track latest model setting
  */
 export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
-  if (entries.length === 0) {
+  const path = getPathEntries(entries, leafId);
+  if (path.length === 0) {
     return { messages: [] };
   }
-
-  const byId = new Map<string, SessionEntry>();
-  for (const entry of entries) {
-    byId.set(entry.id, entry);
-  }
-
-  // Find leaf: specified leafId, or last entry
-  const leaf = leafId ? byId.get(leafId) : entries[entries.length - 1];
-
-  if (!leaf) {
-    return { messages: [] };
-  }
-
-  // Walk from leaf to root
-  const path: SessionEntry[] = [];
-  let current: SessionEntry | undefined = leaf;
-  while (current) {
-    path.push(current);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  path.reverse();
 
   // Find the latest CompactionEntry on the path
   let lastCompaction: CompactionEntry | undefined;
@@ -112,4 +131,37 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     currentModel,
     currentEffort,
   };
+}
+
+/**
+ * Build the human-readable transcript from raw session entries.
+ * Unlike buildSessionContext(), this preserves the full visible conversation history
+ * and records compaction as an explicit transcript event instead of replacing older turns.
+ */
+export function buildSessionTranscript(entries: SessionEntry[], leafId?: string | null): SessionTranscriptEntry[] {
+  const path = getPathEntries(entries, leafId);
+  const transcript: SessionTranscriptEntry[] = [];
+
+  for (const entry of path) {
+    switch (entry.type) {
+      case "message":
+        transcript.push({
+          type: "message",
+          id: entry.id,
+          timestamp: entry.timestamp,
+          message: entry.message,
+        });
+        break;
+      case "compaction":
+        transcript.push({
+          type: "compaction",
+          id: entry.id,
+          timestamp: entry.timestamp,
+          summary: entry.summary + formatFileOperations(entry.details),
+        });
+        break;
+    }
+  }
+
+  return transcript;
 }

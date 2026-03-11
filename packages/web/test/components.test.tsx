@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { normalizeImageFileName } from "../src/client/App";
 import { Button } from "../src/client/components/Button";
+import { ContextMessage } from "../src/client/components/ContextMessage";
 import { Input } from "../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../src/client/components/InputDock";
 import { KnowledgeManagerModal } from "../src/client/components/KnowledgeManagerModal";
@@ -174,6 +175,15 @@ test("user message renders attached images", () => {
   expect(html).toContain("See attached");
   expect(html).toContain('src="blob:test-image"');
   expect(html).toContain('alt="screen.png"');
+});
+
+test("context message renders checkpoint language and expandable summary area", () => {
+  const html = renderToStaticMarkup(<ContextMessage summary={"## Goal\nShip transcript-aware compaction UI"} />);
+
+  expect(html).toContain("Context checkpoint");
+  expect(html).toContain("Compacted");
+  expect(html).toContain("Older conversation was compressed to keep the thread efficient.");
+  expect(html).toContain('aria-expanded="false"');
 });
 
 test("input dock renders pending image preview and add-images action", () => {

@@ -1,7 +1,7 @@
 // @summary Hydrates web thread render state from thread/read payload history
 
 import { isSummaryMessage, SUMMARY_PREFIX } from "@diligent/core/client";
-import type { ChildSession, ThreadReadResponse } from "@diligent/protocol";
+import type { ChildSession, ThreadReadResponse, TranscriptEntry } from "@diligent/protocol";
 import type { PlanState, ThreadState, UsageState } from "./thread-store";
 import {
   COLLAB_RENDERED_TOOLS,
@@ -12,6 +12,15 @@ import {
   withItem,
   zeroUsage,
 } from "./thread-utils";
+
+type DisplayMessage =
+  | TranscriptEntry
+  | {
+      type: "message";
+      id: string;
+      timestamp: string;
+      message: ThreadReadResponse["messages"][number];
+    };
 
 function extractChildTools(child: ChildSession): Array<{
   toolCallId: string;
@@ -114,7 +123,21 @@ function parseCloseOutput(output: string): { threadId?: string; nickname?: strin
   }
 }
 
+function getDisplayMessages(payload: ThreadReadResponse): DisplayMessage[] {
+  if (payload.transcript && payload.transcript.length > 0) {
+    return payload.transcript;
+  }
+
+  return payload.messages.map((message, index) => ({
+    type: "message" as const,
+    id: `legacy:${message.role}:${message.timestamp}:${index}`,
+    timestamp: new Date(message.timestamp).toISOString(),
+    message,
+  }));
+}
+
 export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadResponse): ThreadState {
+  const displayMessages = getDisplayMessages(payload);
   const resolvedToolCallIds = new Set<string>();
   if (payload.isRunning) {
     for (const message of payload.messages) {
@@ -217,12 +240,24 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     });
   }
 
-  for (const message of payload.messages) {
+  for (const entry of displayMessages) {
+    if (entry.type === "compaction") {
+      current = withItem(current, `history:context:${entry.id}`, {
+        id: `history:context:${entry.id}`,
+        kind: "context",
+        summary: entry.summary,
+        timestamp: Date.parse(entry.timestamp),
+      });
+      continue;
+    }
+
+    const message = entry.message;
+
     if (message.role === "user") {
       if (isSummaryMessage(message)) {
         const summary = (message.content as string).slice(SUMMARY_PREFIX.length + 1);
-        current = withItem(current, `history:context:${message.timestamp}`, {
-          id: `history:context:${message.timestamp}`,
+        current = withItem(current, `history:context:${entry.id}`, {
+          id: `history:context:${entry.id}`,
           kind: "context",
           summary,
           timestamp: message.timestamp,
@@ -230,8 +265,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         continue;
       }
       const { text, images } = extractUserTextAndImages(message.content);
-      current = withItem(current, `history:user:${message.timestamp}`, {
-        id: `history:user:${message.timestamp}`,
+      current = withItem(current, `history:user:${entry.id}`, {
+        id: `history:user:${entry.id}`,
         kind: "user",
         text,
         images,
@@ -248,8 +283,8 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
         if (block.type === "thinking") thinking += block.thinking;
       }
 
-      current = withItem(current, `history:assistant:${message.timestamp}`, {
-        id: `history:assistant:${message.timestamp}`,
+      current = withItem(current, `history:assistant:${entry.id}`, {
+        id: `history:assistant:${entry.id}`,
         kind: "assistant",
         text,
         thinking,
