@@ -44,7 +44,7 @@ function resolvePort(): number {
  *
  * Configuration (in priority order):
  *   1. STUDIO_HOST / STUDIO_PORT environment variables
- *   2. ~/.diligent/@overdare.jsonc config file
+ *   2. ~/.diligent/overdare.jsonc config file
  *   3. Hard-coded defaults: localhost:13377
  */
 export async function call(method: string, params?: Record<string, unknown>): Promise<unknown> {

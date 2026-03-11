@@ -15,7 +15,7 @@ let cached: OverdareConfig | undefined;
 
 export function loadOverdareConfig(): OverdareConfig {
   if (cached) return cached;
-  const configPath = join(homedir(), ".diligent", "@overdare.jsonc");
+  const configPath = join(homedir(), ".diligent", "overdare.jsonc");
   try {
     const raw = readFileSync(configPath, "utf-8");
     cached = JSON.parse(stripJsonComments(raw)) as OverdareConfig;
