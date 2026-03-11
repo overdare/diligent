@@ -39,6 +39,10 @@ export function createPlanTool(): Tool<typeof PlanParams> {
       "Cancel steps that become irrelevant instead of deleting them.",
     parameters: PlanParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
+      if (!Array.isArray(args.steps) || args.steps.length === 0) {
+        throw new Error("Plan must include at least one step");
+      }
+
       const steps = args.steps.map((s) => ({ text: s.text, status: s.status ?? "pending" }));
       const pending = steps.filter((s) => s.status === "pending").length;
       const inProgress = steps.filter((s) => s.status === "in_progress").length;
