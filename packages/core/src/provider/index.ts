@@ -16,6 +16,13 @@ export { DEFAULT_MODELS, DEFAULT_PROVIDER, PROVIDER_HINTS, PROVIDER_NAMES, Provi
 export type { RetryConfig } from "./retry";
 export { withRetry } from "./retry";
 export { flattenSections } from "./system-sections";
+export {
+  findModelInfo,
+  getThinkingEffortLabel,
+  getThinkingEffortOptions,
+  normalizeThinkingEffort,
+  supportsThinkingNone,
+} from "./thinking-effort";
 export type {
   Model,
   ProviderErrorType,

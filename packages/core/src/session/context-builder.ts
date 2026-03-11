@@ -6,7 +6,7 @@ import type { CompactionEntry, SessionEntry } from "./types";
 export interface SessionContext {
   messages: Message[];
   currentModel?: { provider: string; modelId: string };
-  currentEffort?: "low" | "medium" | "high" | "max";
+  currentEffort?: "none" | "low" | "medium" | "high" | "max";
 }
 
 /**
@@ -58,7 +58,7 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
 
   const messages: Message[] = [];
   let currentModel: { provider: string; modelId: string } | undefined;
-  let currentEffort: "low" | "medium" | "high" | "max" | undefined;
+  let currentEffort: "none" | "low" | "medium" | "high" | "max" | undefined;
 
   if (lastCompaction) {
     // 1. Inject recent user messages (chronological, stored on CompactionEntry)

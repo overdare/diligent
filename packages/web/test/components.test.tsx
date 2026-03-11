@@ -153,16 +153,17 @@ test("input dock renders pending image preview and add-images action", () => {
       threadStatus="idle"
       mode="default"
       onModeChange={() => {}}
-      effort="high"
+      effort="none"
       onEffortChange={() => {}}
-      currentModel="claude-sonnet-4-6"
+      currentModel="gpt-5.4"
       availableModels={[
         {
-          id: "claude-sonnet-4-6",
-          provider: "anthropic",
-          contextWindow: 200000,
-          maxOutputTokens: 16384,
+          id: "gpt-5.4",
+          provider: "openai",
+          contextWindow: 400000,
+          maxOutputTokens: 128000,
           supportsVision: true,
+          supportsThinking: true,
         },
       ]}
       onModelChange={() => {}}
@@ -182,6 +183,8 @@ test("input dock renders pending image preview and add-images action", () => {
   expect(html).toContain('src="blob:shot"');
   expect(html).toContain('accept="image/png,image/jpeg,image/webp,image/gif"');
   expect(html).toContain('placeholder="Ask anything or attach images…"');
+  expect(html).toContain("minimal");
+  expect(html).toContain("minimal");
 });
 
 test("input dock shows uploading state and disables send affordance", () => {

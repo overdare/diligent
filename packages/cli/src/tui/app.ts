@@ -10,13 +10,14 @@ import type {
   SkillMetadata,
   UserInputRequest,
 } from "@diligent/core";
-import { ProtocolNotificationAdapter } from "@diligent/core";
+import { getThinkingEffortLabel, ProtocolNotificationAdapter } from "@diligent/core";
 import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
   Mode as ProtocolMode,
   RequestId,
+  ThinkingEffort,
 } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
@@ -89,6 +90,7 @@ export class App {
   private activeUserInputRequestId: RequestId | null = null;
   private pendingUserInputRequestIds = new Set<RequestId>();
   private currentMode: ProtocolMode;
+  private currentEffort: ThinkingEffort = "medium";
   private turnStartedAtMs: number | null = null;
   private reasoningStartedAtMs: number | null = null;
   private reasoningAccumulatedMs = 0;
@@ -105,6 +107,7 @@ export class App {
     private options?: AppOptions,
   ) {
     this.currentMode = config.mode;
+    this.currentEffort = config.diligent.effort ?? "medium";
     this.terminal = new Terminal();
     this.overlayStack = new OverlayStack();
     this.stdinBuffer = new StdinBuffer();
@@ -170,6 +173,9 @@ export class App {
       setCurrentMode: (mode) => {
         this.currentMode = mode;
       },
+      setCurrentEffort: (effort) => {
+        this.currentEffort = effort;
+      },
       restartRpcClient: async () => {
         await this.restartRpcClient();
       },
@@ -224,6 +230,11 @@ export class App {
         this.statusBar.update({ model: modelId });
         this.renderer.requestRender();
       },
+      onEffortChanged: (effort, label) => {
+        this.currentEffort = effort;
+        this.statusBar.update({ effort, effortLabel: label });
+        this.renderer.requestRender();
+      },
       threadManager: this.threadManager,
       configManager: this.configManager,
     });
@@ -258,6 +269,8 @@ export class App {
       status: "idle",
       cwd: process.cwd(),
       mode: this.currentMode,
+      effort: this.currentEffort,
+      effortLabel: getThinkingEffortLabel(this.currentEffort, this.config.model),
     });
 
     // Setup wizard: if current provider has no API key, prompt user

@@ -1,5 +1,6 @@
 // @summary Input dock with auto-resize textarea, slash command autocomplete, model/effort controls, and usage tray
 
+import { findModelInfo, getThinkingEffortOptions } from "@diligent/core/client";
 import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -69,13 +70,6 @@ const MODE_LABELS: Record<Mode, string> = {
   execute: "execute",
 };
 
-const EFFORT_LABELS: Record<ThinkingEffort, string> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  max: "max",
-};
-
 function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -104,13 +98,6 @@ function modeOptions(): SelectOption[] {
   return (Object.keys(MODE_LABELS) as Mode[]).map((m) => ({
     value: m,
     label: MODE_LABELS[m],
-  }));
-}
-
-function effortOptions(): SelectOption[] {
-  return (Object.keys(EFFORT_LABELS) as ThinkingEffort[]).map((e) => ({
-    value: e,
-    label: EFFORT_LABELS[e],
   }));
 }
 
@@ -208,6 +195,11 @@ export function InputDock({
   );
 
   const modeMenuOptions = modeOptions();
+  const currentModelInfo = findModelInfo(availableModels, currentModel);
+  const effortMenuOptions: SelectOption[] = getThinkingEffortOptions(currentModelInfo).map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
 
   useEffect(() => {
     if (!isPlusMenuOpen) return;
@@ -550,7 +542,7 @@ export function InputDock({
             <Select
               ariaLabel="Effort selector"
               value={effort}
-              options={effortOptions()}
+              options={effortMenuOptions}
               onChange={(value) => onEffortChange(value as ThinkingEffort)}
               openDirection="up"
               className="w-[90px]"

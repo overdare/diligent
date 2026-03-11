@@ -136,9 +136,12 @@ export {
   createOpenAIStream,
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
+  findModelInfo,
   flattenSections,
   getModelClass,
   getModelInfoList,
+  getThinkingEffortLabel,
+  getThinkingEffortOptions,
   KNOWN_MODELS,
   PROVIDER_HINTS,
   PROVIDER_NAMES,
@@ -146,6 +149,7 @@ export {
   ProviderManager,
   resolveModel,
   resolveModelForClass,
+  supportsThinkingNone,
   withRetry,
 } from "./provider/index";
 export type { NdjsonParser, RpcMessageSink, RpcMessageSource, RpcPeer } from "./rpc";

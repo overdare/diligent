@@ -4,6 +4,7 @@ import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
 import { buildTools, convertMessages, handleResponsesAPIEvents, isContextOverflow } from "./openai-shared";
 import { flattenSections } from "./system-sections";
+import { normalizeThinkingEffort } from "./thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
@@ -22,7 +23,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
     (async () => {
       try {
         const useReasoning = model.supportsThinking;
-        const effort = options.effort;
+        const effort = normalizeThinkingEffort(options.effort);
         // OpenAI only supports low/medium/high; map "max" → "xhigh"
         const openaiEffort = effort === "max" ? "xhigh" : effort;
         const openaiStream = await client.responses.create(

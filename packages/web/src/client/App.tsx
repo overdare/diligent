@@ -1,7 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type { AgentEvent } from "@diligent/core/client";
-import { ProtocolNotificationAdapter } from "@diligent/core/client";
+import { findModelInfo, ProtocolNotificationAdapter, supportsThinkingNone } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
   InitializeResponse,
@@ -256,10 +256,12 @@ export function App() {
     [rpcRef],
   );
 
+  const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
+
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
   useEffect(() => {
-    const rpc = rpcRef.current;
+    const rpc = getRpc();
     if (!rpc) return;
 
     rpc.onNotification((notification: DiligentServerNotification) => {
@@ -291,6 +293,14 @@ export function App() {
 
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
+        console.log("[App][thread-status] notification", {
+          notificationThreadId: notification.params.threadId,
+          status: notification.params.status,
+          retry: notification.params.retry,
+          activeThreadId: activeThreadIdRef.current,
+          currentUiThreadStatus: stateRef.current.threadStatus,
+          itemCount: stateRef.current.items.length,
+        });
         void refreshThreadList(rpc);
         // Re-hydrate if any items are still showing as in-flight (notifications missed during disconnect)
         const params = notification.params as { status?: string };
@@ -307,6 +317,12 @@ export function App() {
               void rpc
                 .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId })
                 .then((history) => {
+                  console.log("[App][thread-status] rehydrate after idle notification", {
+                    threadId,
+                    isRunning: history.isRunning,
+                    messageCount: history.messages.length,
+                    entryCount: history.entryCount,
+                  });
                   adapterRef.current.reset();
                   dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
                 })
@@ -325,7 +341,7 @@ export function App() {
     providerMgr.onAccountUpdated,
     serverRequests.handleServerRequest,
     markAttention,
-    rpcRef.current,
+    getRpc,
   ]);
 
   useEffect(() => {
@@ -436,8 +452,8 @@ export function App() {
     rpcRef,
   ]);
 
-  const startNewThread = async (): Promise<void> => {
-    const rpc = rpcRef.current;
+  const startNewThread = useCallback(async (): Promise<void> => {
+    const rpc = getRpc();
     if (!rpc) return;
     adapterRef.current.reset();
     try {
@@ -447,6 +463,12 @@ export function App() {
         model: providerMgr.currentModelRef.current || undefined,
       });
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
+      console.log("[App][thread-status] hydrate after thread start", {
+        threadId: started.threadId,
+        isRunning: history.isRunning,
+        messageCount: history.messages.length,
+        entryCount: history.entryCount,
+      });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode: state.mode, history } });
       setEffortState(history.currentEffort);
       pushThreadUrl(started.threadId);
@@ -455,12 +477,12 @@ export function App() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [cwd, state.mode, providerMgr, serverRequests, refreshThreadList, getRpc]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and mutable state are accessed intentionally
   const openThread = useCallback(
     async (threadId: string): Promise<void> => {
-      const rpc = rpcRef.current;
+      const rpc = getRpc();
       if (!rpc) return;
       adapterRef.current.reset();
       try {
@@ -468,6 +490,12 @@ export function App() {
         if (!resumed.found || !resumed.threadId) return;
         const resumedId = resumed.threadId;
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
+        console.log("[App][thread-status] hydrate after thread resume", {
+          threadId: resumedId,
+          isRunning: history.isRunning,
+          messageCount: history.messages.length,
+          entryCount: history.entryCount,
+        });
         dispatch({ type: "hydrate", payload: { threadId: resumedId, mode: state.mode, history } });
         setEffortState(history.currentEffort);
         pushThreadUrl(resumedId);
@@ -488,7 +516,7 @@ export function App() {
         console.error(error);
       }
     },
-    [dispatch, state.mode, providerMgr, serverRequests, refreshThreadList],
+    [dispatch, state.mode, providerMgr, serverRequests, refreshThreadList, getRpc],
   );
 
   // Handle browser back/forward navigation between threads
@@ -671,12 +699,20 @@ export function App() {
     dispatch({ type: "set_mode", payload: mode });
   };
 
-  const setEffort = async (e: ThinkingEffort) => {
-    const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId) return;
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId: state.activeThreadId, effort: e });
-    setEffortState(e);
-  };
+  const setEffort = useCallback(
+    async (e: ThinkingEffort) => {
+      const rpc = getRpc();
+      if (!rpc || !state.activeThreadId) return;
+      const currentModelInfo = findModelInfo(providerMgr.availableModels, providerMgr.currentModel);
+      if (e === "none" && currentModelInfo?.provider === "anthropic" && currentModelInfo.supportsThinking) {
+        dispatch({ type: "show_info_toast", payload: "Anthropic models do not support minimal thinking." });
+        return;
+      }
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId: state.activeThreadId, effort: e });
+      setEffortState(e);
+    },
+    [providerMgr, state.activeThreadId, getRpc],
+  );
 
   const handleCompactionClick = () => {
     void (async () => {
@@ -798,8 +834,34 @@ export function App() {
           }
 
           void providerMgr.changeModel(arg).then(() => {
+            const modelInfo = providerMgr.availableModels.find((model) => model.id === arg);
+            if (effort === "none" && modelInfo?.supportsThinking && !supportsThinkingNone(modelInfo)) {
+              setEffortState("medium");
+              dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}. Thinking adjusted to medium.` });
+              return;
+            }
             dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}` });
           });
+          return;
+        }
+        case "effort": {
+          if (!arg) {
+            dispatch({ type: "show_info_toast", payload: "Usage: /effort <minimal|low|medium|high|max>" });
+            return;
+          }
+          const raw = arg.toLowerCase();
+          const normalized = raw === "minimal" ? "none" : raw;
+          if (
+            normalized !== "none" &&
+            normalized !== "low" &&
+            normalized !== "medium" &&
+            normalized !== "high" &&
+            normalized !== "max"
+          ) {
+            dispatch({ type: "show_info_toast", payload: `Unknown effort: ${arg}` });
+            return;
+          }
+          void setEffort(normalized as ThinkingEffort);
           return;
         }
         default: {
@@ -820,8 +882,17 @@ export function App() {
         }
       }
     },
-    // biome-ignore lint/correctness/useExhaustiveDependencies: startNewThread is stable enough
-    [rpcRef, slashCommands, state.activeThreadId, startNewThread, openThread, providerMgr, clearThreadInput],
+    [
+      rpcRef,
+      slashCommands,
+      state.activeThreadId,
+      startNewThread,
+      openThread,
+      providerMgr,
+      clearThreadInput,
+      effort,
+      setEffort,
+    ],
   );
 
   // Intercept slash commands on send

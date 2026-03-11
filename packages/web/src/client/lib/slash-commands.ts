@@ -32,6 +32,12 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
     usage: "/model <model-id>",
     requiresArgs: true,
   },
+  {
+    name: "effort",
+    description: "Set thinking level",
+    usage: "/effort <minimal|low|medium|high|max>",
+    requiresArgs: true,
+  },
 ];
 
 /** Build the full command list by merging builtins with dynamic skill commands. */

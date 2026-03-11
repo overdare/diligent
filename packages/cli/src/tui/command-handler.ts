@@ -1,6 +1,6 @@
 // @summary Factory for command dispatch, user submit, steering, and CommandContext assembly
 import type { SkillMetadata } from "@diligent/core";
-import type { Mode as ProtocolMode } from "@diligent/protocol";
+import type { Mode as ProtocolMode, ThinkingEffort } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
 import { parseCommand } from "./commands/parser";
@@ -35,6 +35,7 @@ export interface CommandHandlerDeps {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
   shutdown: () => void;
   onModelChanged: (modelId: string) => void;
+  onEffortChanged: (effort: ThinkingEffort, label: string) => void;
   // Domain modules
   threadManager: ThreadManager;
   configManager: ConfigManager;
@@ -149,12 +150,15 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         reload: () => deps.configManager.reloadConfig(),
         currentMode: deps.getCurrentMode(),
         setMode: (mode) => deps.configManager.setMode(mode),
+        currentEffort: deps.getConfig().diligent.effort ?? "medium",
+        setEffort: (effort) => deps.configManager.setEffort(effort),
         startNewThread: () => deps.threadManager.startNewThread(),
         resumeThread: (threadId) => deps.threadManager.resumeThread(threadId),
         deleteThread: (threadId) => deps.threadManager.deleteThread(threadId),
         listThreads: () => deps.threadManager.listThreads(),
         readThread: () => deps.threadManager.readThread(),
         onModelChanged: (modelId) => deps.onModelChanged(modelId),
+        onEffortChanged: (effort, label) => deps.onEffortChanged(effort, label),
       };
     },
 

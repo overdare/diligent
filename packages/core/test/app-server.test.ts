@@ -115,17 +115,28 @@ function defaultServerRequestResponse(method: DiligentServerRequest["method"]): 
 
 function makeFactoryRuntimeConfig(overrides?: {
   tools?: Record<string, unknown>;
-  effort?: "low" | "medium" | "high" | "max";
+  effort?: "none" | "low" | "medium" | "high" | "max";
+  modelId?: string;
 }) {
   const providerManager = new ProviderManager({});
   providerManager.setApiKey("anthropic", "test-key");
   providerManager.setApiKey("openai", "test-key");
-  const model: Model = {
-    id: "claude-sonnet-4-6",
-    provider: "anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 128_000,
-  };
+  const model: Model =
+    overrides?.modelId === "gpt-5.4"
+      ? {
+          id: "gpt-5.4",
+          provider: "openai",
+          contextWindow: 400_000,
+          maxOutputTokens: 128_000,
+          supportsThinking: true,
+        }
+      : {
+          id: "claude-sonnet-4-6",
+          provider: "anthropic",
+          contextWindow: 200_000,
+          maxOutputTokens: 128_000,
+          supportsThinking: true,
+        };
 
   return {
     model,
@@ -631,6 +642,72 @@ describe("DiligentAppServer", () => {
     });
 
     expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("high");
+  });
+
+  it("rejects minimal effort for anthropic models", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig(),
+      }),
+    );
+
+    connectTestPeer(server);
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1510,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    await expect(
+      server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1511,
+        method: "effort/set",
+        params: { threadId, effort: "none" },
+      }),
+    ).resolves.toMatchObject({ error: { message: "Minimal thinking is not supported for Anthropic models." } });
+  });
+
+  it("adjusts none effort to medium when switching from openai to anthropic", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig({ modelId: "gpt-5.4" }),
+      }),
+    );
+
+    connectTestPeer(server);
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1512,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1513,
+      method: "effort/set",
+      params: { threadId, effort: "none" },
+    });
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1514,
+      method: "config/set",
+      params: { threadId, model: "claude-sonnet-4-6" },
+    });
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1515,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("medium");
   });
 
   it("lists a newly started thread before the first turn", async () => {

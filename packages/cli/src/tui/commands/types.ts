@@ -1,5 +1,5 @@
 import type { SkillMetadata } from "@diligent/core";
-import type { Mode, SessionSummary, ThreadReadResponse } from "@diligent/protocol";
+import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
 import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
@@ -48,6 +48,10 @@ export interface CommandContext {
   currentMode: Mode;
   /** Switch to a new collaboration mode */
   setMode: (mode: Mode) => void;
+  /** Current thinking effort */
+  currentEffort: ThinkingEffort;
+  /** Change thinking effort for the active thread */
+  setEffort: (effort: ThinkingEffort) => Promise<void>;
   /** Start a fresh thread and make it active */
   startNewThread: () => Promise<string>;
   /** Resume thread (or most recent when omitted) and make it active */
@@ -60,6 +64,8 @@ export interface CommandContext {
   readThread: () => Promise<ThreadReadResponse | null>;
   /** Notify status bar after changing ctx.config.model */
   onModelChanged: (modelId: string) => void;
+  /** Notify status bar after changing effort */
+  onEffortChanged: (effort: ThinkingEffort, label: string) => void;
 }
 
 /**

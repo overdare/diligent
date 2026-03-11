@@ -2,7 +2,7 @@
 import { z } from "zod";
 
 export const ModelId = z.string().describe("Model identifier, e.g. 'claude-sonnet-4-6', 'gpt-4o', 'gemini-2.5-flash'");
-const ThinkingEffortSchema = z.enum(["low", "medium", "high", "max"]);
+const ThinkingEffortSchema = z.enum(["none", "low", "medium", "high", "max"]);
 
 export const DiligentConfigSchema = z
   .object({

@@ -9,7 +9,7 @@ export interface SystemSection {
   cacheControl?: "ephemeral"; // hint for Anthropic cache breakpoints
 }
 
-export type ThinkingEffort = "low" | "medium" | "high" | "max";
+export type ThinkingEffort = "none" | "low" | "medium" | "high" | "max";
 
 export interface Model {
   id: string;

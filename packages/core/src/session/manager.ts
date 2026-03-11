@@ -304,7 +304,7 @@ export class SessionManager {
     };
   }
 
-  getCurrentEffort(): "low" | "medium" | "high" | "max" | undefined {
+  getCurrentEffort(): "none" | "low" | "medium" | "high" | "max" | undefined {
     return buildSessionContext(this.entries, this.leafId).currentEffort;
   }
 
@@ -768,7 +768,7 @@ export class SessionManager {
   }
 
   appendEffortChange(
-    effort: "low" | "medium" | "high" | "max",
+    effort: "none" | "low" | "medium" | "high" | "max",
     changedBy: EffortChangeEntry["changedBy"] = "command",
   ): void {
     const entry: EffortChangeEntry = {

@@ -1,7 +1,7 @@
 // @summary Footer status bar displaying mode and connection information
 
 import { sep } from "node:path";
-import type { Mode } from "@diligent/protocol";
+import type { Mode, ThinkingEffort } from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 
@@ -13,6 +13,8 @@ export interface StatusBarInfo {
   status?: "idle" | "busy" | "retry";
   cwd?: string;
   mode?: Mode;
+  effort?: ThinkingEffort;
+  effortLabel?: string;
 }
 
 function formatTokensCompact(n: number): string {
@@ -71,6 +73,10 @@ export class StatusBar implements Component {
 
     if (this.info.cwd) {
       leftParts.push(shortenPath(this.info.cwd));
+    }
+
+    if (this.info.effortLabel ?? this.info.effort) {
+      leftParts.push(`thinking:${this.info.effortLabel ?? this.info.effort}`);
     }
 
     const statusHint =

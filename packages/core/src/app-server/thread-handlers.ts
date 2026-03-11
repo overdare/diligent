@@ -18,6 +18,7 @@ import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import type { DiligentPaths } from "../infrastructure";
 import { readKnowledge } from "../knowledge/store";
 import { resolveModel } from "../provider/models";
+import { supportsThinkingNone } from "../provider/thinking-effort";
 import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
@@ -126,6 +127,14 @@ export async function handleThreadResume(
     const existing = ctx.threads.get(params.threadId);
     if (existing) {
       const context = existing.manager.getContext();
+      console.log("[AppServer][thread-status] thread/resume existing runtime", {
+        requestedThreadId: params.threadId,
+        runtimeThreadId: existing.id,
+        sessionId: existing.manager.sessionId,
+        isRunning: existing.isRunning,
+        currentTurnId: existing.currentTurnId,
+        entryCount: existing.manager.entryCount,
+      });
       ctx.setActiveThreadId(params.threadId);
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED,
@@ -158,6 +167,15 @@ export async function handleThreadResume(
     runtime.effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
     runtime.modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
     ctx.threads.set(threadId, runtime);
+    console.log("[AppServer][thread-status] thread/resume hydrated runtime from disk", {
+      requestedThreadId: params.threadId,
+      resumedThreadId: threadId,
+      sessionId: runtime.manager.sessionId,
+      isRunning: runtime.isRunning,
+      currentTurnId: runtime.currentTurnId,
+      entryCount: runtime.manager.entryCount,
+      cwd,
+    });
     ctx.setActiveThreadId(threadId);
 
     await ctx.emit({
@@ -216,6 +234,14 @@ export async function handleThreadRead(
   totalCost?: number;
 }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  console.log("[AppServer][thread-status] thread/read begin", {
+    requestedThreadId: threadId,
+    runtimeThreadId: runtime.id,
+    sessionId: runtime.manager.sessionId,
+    isRunning: runtime.isRunning,
+    currentTurnId: runtime.currentTurnId,
+    entryCount: runtime.manager.entryCount,
+  });
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
   // Do this only when idle to avoid mutating active turn state mid-stream.
   if (!runtime.isRunning) {
@@ -303,6 +329,13 @@ export async function handleTurnStart(
   runtime.runningModelIdSnapshot = params.model ?? runtime.modelId;
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
+  console.log("[AppServer][thread-status] turn/start set running", {
+    threadId: runtime.id,
+    sessionId: runtime.manager.sessionId,
+    isRunning: runtime.isRunning,
+    currentTurnId: runtime.currentTurnId,
+    entryCount: runtime.manager.entryCount,
+  });
 
   await ctx.emit({
     method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
@@ -393,6 +426,11 @@ export async function handleEffortSet(
   effort: ThinkingEffort,
 ): Promise<{ effort: ThinkingEffort }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  const modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
+  const model = modelId ? resolveModel(modelId) : undefined;
+  if (effort === "none" && model?.provider === "anthropic" && model.supportsThinking && !supportsThinkingNone(model)) {
+    throw Object.assign(new Error("Minimal thinking is not supported for Anthropic models."), { code: -32602 });
+  }
   runtime.effort = effort;
   runtime.manager.appendEffortChange(effort, "command");
   return { effort };

@@ -7,6 +7,7 @@ import { EventStream } from "../event-stream";
 import { isNetworkError } from "./errors";
 import { buildTools, convertMessages, handleResponsesAPIEvents } from "./openai-shared";
 import { flattenSections } from "./system-sections";
+import { normalizeThinkingEffort } from "./thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "./types";
 import { ProviderError } from "./types";
 
@@ -69,7 +70,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers.conversation_id = context.sessionId;
         }
 
-        const effort = options.effort;
+        const effort = normalizeThinkingEffort(options.effort);
         const useReasoning = model.supportsThinking;
 
         // Responses API format body

@@ -1,6 +1,6 @@
 // @summary Factory for config reload and collaboration mode switching
 import type { DiligentPaths, SkillMetadata } from "@diligent/core";
-import type { Mode as ProtocolMode } from "@diligent/protocol";
+import type { Mode as ProtocolMode, ThinkingEffort } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
@@ -15,6 +15,7 @@ export interface ConfigManagerDeps {
   setConfig: (config: AppConfig) => void;
   getPaths: () => DiligentPaths | undefined;
   setCurrentMode: (mode: ProtocolMode) => void;
+  setCurrentEffort: (effort: ThinkingEffort) => void;
   restartRpcClient: () => Promise<void>;
   setSkills: (skills: SkillMetadata[]) => void;
   setCommandRegistry: (registry: CommandRegistry) => void;
@@ -25,6 +26,7 @@ export interface ConfigManagerDeps {
 
 export interface ConfigManager {
   setMode: (mode: ProtocolMode) => void;
+  setEffort: (effort: ThinkingEffort) => Promise<void>;
   reloadConfig: () => Promise<void>;
 }
 
@@ -38,6 +40,16 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
       if (rpc && threadId) {
         void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId, mode }).catch(() => {});
       }
+      deps.requestRender();
+    },
+
+    async setEffort(effort: ThinkingEffort): Promise<void> {
+      const rpc = deps.getRpcClient();
+      const threadId = deps.getCurrentThreadId();
+      if (!rpc || !threadId) return;
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId, effort });
+      deps.setCurrentEffort(effort);
+      deps.updateStatusBar({ effort });
       deps.requestRender();
     },
 

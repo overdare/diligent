@@ -1,5 +1,5 @@
 // @summary Model selection command - allows switching between available LLM models
-import { KNOWN_MODELS, resolveModel } from "@diligent/core";
+import { getThinkingEffortLabel, KNOWN_MODELS, resolveModel, supportsThinkingNone } from "@diligent/core";
 import { saveModel } from "../../../config-writer";
 import { DEFAULT_PROVIDER, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
@@ -30,6 +30,10 @@ export const modelCommand: Command = {
 
         ctx.config.model = model;
         ctx.onModelChanged(model.id);
+        if (ctx.currentEffort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+          await ctx.setEffort("medium");
+          ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
+        }
         ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
         saveModel(model.id).catch(() => {});
       } catch {
@@ -89,6 +93,10 @@ export const modelCommand: Command = {
 
             ctx.config.model = model;
             ctx.onModelChanged(model.id);
+            if (ctx.currentEffort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+              await ctx.setEffort("medium");
+              ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
+            }
             ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
             saveModel(model.id).catch(() => {});
           }

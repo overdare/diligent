@@ -1,6 +1,7 @@
 import type { SkillMetadata } from "@diligent/core";
 import type { CommandRegistry } from "../registry";
 import { compactCommand } from "./compact";
+import { effortCommand } from "./effort";
 import { helpCommand } from "./help";
 import { bugCommand, clearCommand, configCommand, costCommand, exitCommand, versionCommand } from "./misc";
 import { modelCommand } from "./model";
@@ -12,6 +13,7 @@ import { toolsCommand } from "./tools";
 
 export function registerBuiltinCommands(registry: CommandRegistry, skills: SkillMetadata[]): void {
   registry.register(helpCommand);
+  registry.register(effortCommand);
   registry.register(modelCommand);
   registry.register(providerCommand);
   registry.register(toolsCommand);

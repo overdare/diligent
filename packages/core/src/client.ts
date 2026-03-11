@@ -8,6 +8,12 @@ export type {
 } from "./agent/types";
 
 export { ProtocolNotificationAdapter } from "./notification-adapter";
+export {
+  findModelInfo,
+  getThinkingEffortLabel,
+  getThinkingEffortOptions,
+  supportsThinkingNone,
+} from "./provider/thinking-effort";
 export { isSummaryMessage, SUMMARY_PREFIX } from "./session/compaction";
 export type {
   AssistantMessage,

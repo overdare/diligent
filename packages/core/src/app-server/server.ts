@@ -25,6 +25,7 @@ import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import { resolveModel } from "../provider/models";
 import type { ProviderManager } from "../provider/provider-manager";
+import { supportsThinkingNone } from "../provider/thinking-effort";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "../tool/types";
@@ -417,6 +418,10 @@ export class DiligentAppServer {
           if (runtime.modelId !== result.model) {
             runtime.modelId = result.model;
             const model = resolveModel(result.model);
+            if (runtime.effort === "none" && model.supportsThinking && !supportsThinkingNone(model)) {
+              runtime.effort = "medium";
+              runtime.manager.appendEffortChange("medium", "config");
+            }
             runtime.manager.appendModelChange(model.provider, model.id);
           }
         } else {
@@ -636,6 +641,12 @@ export class DiligentAppServer {
         // Abort path: release the thread immediately so new turns can start.
         // The abort signal prevents runSession from doing meaningful work,
         // so the zombie-loop risk is negligible.
+        console.log("[AppServer][thread-status] consumeStream clearing running (aborted)", {
+          threadId: runtime.id,
+          sessionId: runtime.manager.sessionId,
+          isRunningBeforeClear: runtime.isRunning,
+          currentTurnId: runtime.currentTurnId,
+        });
         runtime.abortController = null;
         runtime.runningEffortSnapshot = undefined;
         runtime.runningModelIdSnapshot = undefined;
@@ -658,6 +669,12 @@ export class DiligentAppServer {
       } else {
         // Normal path: wait for innerWork before clearing state
         await stream.waitForInnerWork(undefined).catch(() => {});
+        console.log("[AppServer][thread-status] consumeStream clearing running (normal)", {
+          threadId: runtime.id,
+          sessionId: runtime.manager.sessionId,
+          isRunningBeforeClear: runtime.isRunning,
+          currentTurnId: runtime.currentTurnId,
+        });
         runtime.abortController = null;
         runtime.runningEffortSnapshot = undefined;
         runtime.runningModelIdSnapshot = undefined;
@@ -843,7 +860,17 @@ export class DiligentAppServer {
     if (!id) throw new Error("No active thread");
 
     const existing = this.threads.get(id);
-    if (existing) return existing;
+    if (existing) {
+      console.log("[AppServer][thread-status] resolveThreadRuntime existing", {
+        requestedThreadId: id,
+        runtimeThreadId: existing.id,
+        sessionId: existing.manager.sessionId,
+        isRunning: existing.isRunning,
+        currentTurnId: existing.currentTurnId,
+        entryCount: existing.manager.entryCount,
+      });
+      return existing;
+    }
 
     for (const cwd of this.knownCwds) {
       const runtime = await this.createThreadRuntime(id, cwd, "default", false, await this.getLatestEffortForCwd(cwd));
@@ -854,6 +881,15 @@ export class DiligentAppServer {
       runtime.modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
       this.threads.set(id, runtime);
       this.activeThreadId = id;
+      console.log("[AppServer][thread-status] resolveThreadRuntime hydrated from disk", {
+        requestedThreadId: id,
+        runtimeThreadId: runtime.id,
+        sessionId: runtime.manager.sessionId,
+        isRunning: runtime.isRunning,
+        currentTurnId: runtime.currentTurnId,
+        entryCount: runtime.manager.entryCount,
+        cwd,
+      });
       return runtime;
     }
 

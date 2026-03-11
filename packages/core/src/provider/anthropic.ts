@@ -5,6 +5,7 @@ import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from 
 import { isNetworkError } from "./errors";
 import { materializeUserContentBlocks } from "./image-io";
 import { toAnthropicBlocks } from "./system-sections";
+import { normalizeThinkingEffort } from "./thinking-effort";
 import type {
   Model,
   ProviderEvent,
@@ -32,12 +33,15 @@ export function createAnthropicStream(apiKey: string): StreamFunction {
 
     (async () => {
       try {
-        const effort = options.effort;
+        const effort = normalizeThinkingEffort(options.effort);
         const useAdaptive = model.supportsThinking && model.supportsAdaptiveThinking;
         const useBudget = model.supportsThinking && !model.supportsAdaptiveThinking;
         const useThinking = useAdaptive || useBudget;
+        const budgetKey = effort === "none" ? "low" : effort;
 
-        const budgetTokens = useThinking ? (model.thinkingBudgets?.[effort] ?? model.defaultBudgetTokens ?? 8_000) : 0;
+        const budgetTokens = useThinking
+          ? (model.thinkingBudgets?.[budgetKey] ?? model.defaultBudgetTokens ?? 8_000)
+          : 0;
 
         const thinkingConfig = useAdaptive
           ? {

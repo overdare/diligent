@@ -4,7 +4,7 @@ import { DiligentConfigSchema } from "../schema.js";
 
 describe("DiligentConfigSchema — tools section", () => {
   it("accepts valid effort values", () => {
-    for (const effort of ["low", "medium", "high", "max"] as const) {
+    for (const effort of ["none", "low", "medium", "high", "max"] as const) {
       const result = DiligentConfigSchema.parse({ effort });
       expect(result.effort).toBe(effort);
     }
