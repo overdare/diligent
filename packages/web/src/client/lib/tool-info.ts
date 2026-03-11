@@ -147,19 +147,20 @@ export function getToolHeaderTitle(toolName: string, inputText: string, outputTe
   return displayName;
 }
 
-type PlanHeaderStep = { text: string; status?: "pending" | "in_progress" | "done" };
+type PlanHeaderStep = { text: string; status?: "pending" | "in_progress" | "done" | "cancelled" };
 
 function parsePlanHeaderTitle(inputText: string): string {
   try {
     const parsed = JSON.parse(inputText) as Record<string, unknown>;
-    if (parsed.close === true) return "Plan — Closed";
     const steps = parsed.steps as PlanHeaderStep[] | undefined;
     const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
     if (!steps || !Array.isArray(steps)) return title ? `Plan — ${clip(title, 50)}` : "Plan";
     const doneCount = steps.filter((step) => step.status === "done").length;
+    const cancelledCount = steps.filter((step) => step.status === "cancelled").length;
+    const resolvedCount = doneCount + cancelledCount;
     const totalCount = steps.length;
     const progress = `${doneCount}/${totalCount}`;
-    const label = doneCount === 0 ? "Created" : doneCount === totalCount ? "Done" : "Updated";
+    const label = resolvedCount === 0 ? "Created" : resolvedCount === totalCount ? "Done" : "Updated";
     const suffix = title ? ` — ${clip(title, 40)}` : "";
     return `Plan ${label} ${progress}${suffix}`;
   } catch {

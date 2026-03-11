@@ -24,7 +24,7 @@ export { hydrateFromThreadRead } from "./thread-hydration";
 
 export interface PlanState {
   title: string;
-  steps: Array<{ text: string; status: "pending" | "in_progress" | "done" }>;
+  steps: Array<{ text: string; status: "pending" | "in_progress" | "done" | "cancelled" }>;
 }
 
 export interface ToastState {
@@ -424,10 +424,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
       if (event.toolName === "plan" && event.output) {
         const plan = parsePlanOutput(event.output);
-        if (plan === "closed") {
-          next = { ...next, planState: null };
-        } else if (plan) {
-          next = { ...next, planState: plan };
+        if (plan) {
+          const allResolved = plan.steps.every((s) => s.status === "done" || s.status === "cancelled");
+          next = { ...next, planState: allResolved ? null : plan };
         }
       }
 

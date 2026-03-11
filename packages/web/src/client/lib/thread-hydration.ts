@@ -392,10 +392,9 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   for (const message of payload.messages) {
     if (message.role === "tool_result" && message.toolName === "plan") {
       const plan = parsePlanOutput(message.output);
-      if (plan === "closed") {
-        lastPlan = null;
-      } else if (plan) {
-        lastPlan = plan;
+      if (plan) {
+        const allResolved = plan.steps.every((s) => s.status === "done" || s.status === "cancelled");
+        lastPlan = allResolved ? null : plan;
       }
     }
   }

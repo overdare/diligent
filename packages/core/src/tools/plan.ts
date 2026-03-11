@@ -5,18 +5,16 @@ import type { Tool, ToolContext, ToolResult } from "../tool/types";
 const PlanStep = z.object({
   text: z.string().describe("Step description"),
   status: z
-    .enum(["pending", "in_progress", "done"])
+    .enum(["pending", "in_progress", "done", "cancelled"])
     .default("pending")
-    .describe("Step status: 'pending' (not started), 'in_progress' (currently active), or 'done' (completed)"),
+    .describe(
+      "Step status: 'pending' (not started), 'in_progress' (currently active), 'done' (completed), or 'cancelled' (no longer needed)",
+    ),
 });
 
 const PlanParams = z.object({
-  steps: z.array(PlanStep).min(1).optional().describe("Ordered list of steps in the plan"),
+  steps: z.array(PlanStep).min(1).describe("Ordered list of steps in the plan"),
   title: z.string().optional().describe("Optional plan title (default: 'Plan')"),
-  close: z
-    .boolean()
-    .optional()
-    .describe("If true, dismiss the plan panel entirely. Use when the task is done or cancelled."),
 });
 
 export type PlanStep = z.infer<typeof PlanStep>;
@@ -26,25 +24,42 @@ export function createPlanTool(): Tool<typeof PlanParams> {
     name: "plan",
     supportParallel: true,
     description:
-      "Create or update a visible task checklist. " +
-      "Call this at the start of complex multi-step tasks to show the user your plan. " +
-      "You MUST call this immediately after completing each step to mark it done=true before moving on to the next step. " +
-      "Never skip updating the plan after a step is done — always mark the finished step before starting the next one. " +
-      "Exactly ONE step should be in_progress at a time — mark it in_progress when starting, done when finished, before moving to the next. " +
-      "Call with close=true (no steps needed) to dismiss the plan when the task is done or cancelled. " +
-      "Use for complex multi-step tasks that require 3 or more distinct steps. Do not use for simple tasks that require fewer than 3 steps.",
+      "Create or update a visible task checklist that the user can see. " +
+      // When to use
+      "Use proactively for: complex multistep tasks (3+ steps), non-trivial tasks requiring careful planning, " +
+      "when the user provides multiple tasks, or after receiving new instructions that involve multiple actions. " +
+      "Do NOT use for single trivial tasks, purely conversational requests, or tasks completable in under 3 steps. " +
+      // How to use
+      "Call this at the start of complex tasks to show the user your plan. " +
+      "After receiving new instructions, immediately capture requirements as plan steps. " +
+      "Exactly ONE step should be in_progress at a time — mark it in_progress when starting, done when finished. " +
+      "You MUST call this immediately after completing each step to mark it done before moving on to the next step. " +
+      "Complete current steps before starting new ones. " +
+      "After completing a step, add any new follow-up steps discovered during execution. " +
+      "Cancel steps that become irrelevant instead of deleting them.",
     parameters: PlanParams,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      if (args.close) {
-        return { output: JSON.stringify({ closed: true }) };
+      const steps = args.steps.map((s) => ({ text: s.text, status: s.status ?? "pending" }));
+      const pending = steps.filter((s) => s.status === "pending").length;
+      const inProgress = steps.filter((s) => s.status === "in_progress").length;
+      const done = steps.filter((s) => s.status === "done").length;
+      const cancelled = steps.filter((s) => s.status === "cancelled").length;
+      const remaining = pending + inProgress;
+
+      let hint: string;
+      if (remaining === 0 && done + cancelled === steps.length) {
+        hint = "All steps resolved. Summarize results to the user.";
+      } else if (remaining > 0) {
+        hint = `${done}/${steps.length} done, ${inProgress} in progress, ${pending} pending${cancelled > 0 ? `, ${cancelled} cancelled` : ""}. Continue working.`;
+      } else {
+        hint = "Update the plan as you progress.";
       }
-      if (!args.steps || args.steps.length === 0) {
-        throw new Error("Plan must have at least one step, or set close=true to dismiss");
-      }
+
       return {
         output: JSON.stringify({
           title: args.title ?? "Plan",
-          steps: args.steps.map((s) => ({ text: s.text, status: s.status ?? "pending" })),
+          steps,
+          hint,
         }),
       };
     },

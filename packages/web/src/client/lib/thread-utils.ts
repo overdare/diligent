@@ -81,15 +81,13 @@ export function extractUserTextAndImages(content: unknown): {
   return { text: textParts.join("\n\n"), images };
 }
 
-/** Returns null when the plan output signals closure ({closed:true}), otherwise parses PlanState. */
-export function parsePlanOutput(output: string): PlanState | null | "closed" {
+/** Parses plan tool output JSON into PlanState. Returns null if invalid. */
+export function parsePlanOutput(output: string): PlanState | null {
   try {
     const parsed = JSON.parse(output) as {
-      closed?: boolean;
       title?: string;
-      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done" }>;
+      steps?: Array<{ text: string; status?: "pending" | "in_progress" | "done" | "cancelled" }>;
     };
-    if (parsed?.closed) return "closed";
     if (parsed && Array.isArray(parsed.steps)) {
       return {
         title: parsed.title ?? "Plan",

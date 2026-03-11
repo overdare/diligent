@@ -3,7 +3,8 @@ import type { PlanState } from "../lib/thread-store";
 
 export function PlanPanel({ planState }: { planState: PlanState }) {
   const doneCount = planState.steps.filter((s) => s.status === "done").length;
-  const totalCount = planState.steps.length;
+  const activeSteps = planState.steps.filter((s) => s.status !== "cancelled");
+  const totalCount = activeSteps.length;
 
   return (
     <div className="shrink-0 border-t border-text/10 bg-surface px-6 py-3">
@@ -17,9 +18,11 @@ export function PlanPanel({ planState }: { planState: PlanState }) {
         {planState.steps.map((step) => (
           <li
             key={step.text}
-            className={`flex items-start gap-2 ${step.status === "done" ? "text-muted line-through" : "text-text"}`}
+            className={`flex items-start gap-2 ${step.status === "done" || step.status === "cancelled" ? "text-muted line-through" : "text-text"}`}
           >
-            <span className="shrink-0">{step.status === "done" ? "✓" : step.status === "in_progress" ? "▶" : "○"}</span>{" "}
+            <span className="shrink-0">
+              {step.status === "done" ? "✓" : step.status === "cancelled" ? "✕" : step.status === "in_progress" ? "▶" : "○"}
+            </span>{" "}
             <span>{step.text}</span>
           </li>
         ))}
