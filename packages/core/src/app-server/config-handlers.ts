@@ -125,11 +125,11 @@ export async function handleAuthOAuthStart(args: {
 
   const authUrl = `${CHATGPT_AUTH_URL}?${query}`;
   const loginId = state;
-  // Only open browser server-side if caller provides openBrowser (e.g. TUI).
-  // Web frontend receives authUrl in the response and opens it via window.open().
-  if (args.openBrowser) {
-    args.openBrowser(authUrl);
-  }
+  // Always open browser server-side. Custom openBrowser callback is used if provided (e.g. TUI),
+  // otherwise fall back to the default platform browser launcher. This ensures it works inside
+  // Tauri where window.open() cannot open an external browser.
+  const opener = args.openBrowser ?? defaultOpenBrowser;
+  opener(authUrl);
 
   const pending = (async () => {
     try {
