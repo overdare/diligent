@@ -1,5 +1,5 @@
-// Quick test: create a VFXPreset via Studio RPC
-// Usage: bun run scripts/test-vfx.ts [parentGuid]
+// Test all VFX presets via Studio RPC
+// Usage: bun run scripts/test-vfx.ts <parentGuid>
 
 import net from "node:net";
 import readline from "node:readline";
@@ -33,6 +33,84 @@ function rpc(method: string, params?: Record<string, unknown>): Promise<unknown>
   });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const ALL_PRESETS = [
+  "Hit",
+  "Explosion",
+  "Knockback",
+  "Dash",
+  "Landing",
+  "Trail",
+  "Crack",
+  "Muzzle",
+  "Heal",
+  "Cast",
+  "Barrier",
+  //"Hit Blood",
+  "Fire",
+  "Portal",
+  //"Firefly",
+  "Rain",
+  "Spawn",
+  "Buff Zone",
+  "Speedup",
+  "Warning",
+  "Level Up",
+  "Get Item",
+  "Hit Object",
+  //"Impact",
+  "Destroy",
+  //  "Debuff",
+  "Stun",
+  "Debuff Toxic",
+  "Guard",
+  "Simple Hit",
+  "Blood",
+  "Electric Muzzle",
+  "Flash Hit",
+  "Electric Explosion",
+  "Smoke Explosion",
+  "Highlight Burst",
+  "Floating Puzzle",
+  "Spin Trail",
+  "Solar Swirl Trail",
+  "Solar Trail Plus",
+  "Solar Trail Burst",
+  "Electric Attack",
+  "Electric Dragon",
+  "Electric Dragon Strike",
+  "Electric Kick",
+  "Game Over",
+  "Scratch",
+  "Snowflake",
+  "Spark",
+  "Tornado",
+  "Water Swirl Trail",
+  "Waterfall Attack",
+  "Lightning Arc",
+  "Bounce",
+  //  "Spear Thurst",
+  "Simple Punch",
+  "Punch",
+  "Strong Punch",
+  "Light Cast",
+  "Light Charge",
+  "Small Barrier",
+  "Aura Wave",
+  "Swirl Ring",
+  "Dash Burst",
+  "Soccer Dash",
+  "Simple Landing",
+  "Void Portal",
+  "Water Splash",
+  "Mining",
+  "Dig",
+  "Leaf",
+  "Fog",
+  //"Collapse",
+] as const;
+
 const parentGuid = process.argv[2] || "";
 
 if (!parentGuid) {
@@ -47,33 +125,45 @@ if (!parentGuid) {
   process.exit(0);
 }
 
-// Test VFXPreset creation
-const presets = ["Hit", "Explosion", "Flash Hit", "Electric Dragon"] as const;
+console.log(`Testing all ${ALL_PRESETS.length} VFX presets`);
+console.log(`Parent: ${parentGuid}\n`);
 
-for (const preset of presets) {
-  console.log(`\nCreating VFXPreset: ${preset}`);
+let ok = 0;
+let fail = 0;
+
+for (let i = 0; i < ALL_PRESETS.length; i++) {
+  const preset = ALL_PRESETS[i];
+  const label = `[${i + 1}/${ALL_PRESETS.length}]`;
+
   try {
     const result = await rpc("instance.vfx_preset.add", {
       parentGuid,
       class: "VFXPreset",
-      name: `Test_${preset.replace(/ /g, "_")}`,
+      name: `VFX_${preset.replace(/ /g, "_")}`,
       properties: {
         PresetName: preset,
         Color: [
-          { Time: 0, Color: { R: 255, G: 100, B: 50 } },
-          { Time: 1, Color: { R: 255, G: 100, B: 50 } },
+          { Time: 0, Color: { r: 255, g: 100, b: 50 } },
+          { Time: 1, Color: { r: 50, g: 100, b: 255 } },
         ],
         Enabled: true,
         InfiniteLoop: false,
-        LoopCount: 3,
-        Size: 1.5,
-        Transparency: 0.2,
+        LoopCount: 1,
+        Size: 1,
+        Transparency: 0,
       },
     });
-    console.log("  OK:", JSON.stringify(result));
+    ok++;
+    console.log(`${label} OK  "${preset}" -> ${JSON.stringify(result)}`);
   } catch (e) {
-    console.error("  FAIL:", (e as Error).message);
+    fail++;
+    console.error(`${label} FAIL "${preset}" -> ${(e as Error).message}`);
   }
+
+  await sleep(100);
 }
 
-console.log("\nDone!");
+console.log(`\n--- Results ---`);
+console.log(`Total: ${ALL_PRESETS.length}  OK: ${ok}  FAIL: ${fail}`);
+if (fail === 0) console.log("All presets passed!");
+else process.exit(1);
