@@ -158,13 +158,6 @@ function getThreadIdFromUrl(): string | null {
   return path || null;
 }
 
-/** Push `/{threadId}` into the browser address bar (no reload). */
-function _pushThreadUrl(threadId: string): void {
-  if (getThreadIdFromUrl() !== threadId) {
-    window.history.pushState(null, "", `/${threadId}`);
-  }
-}
-
 /** Replace current URL with `/{threadId}` (used for initial load so back doesn't double-stack). */
 function replaceThreadUrl(threadId: string): void {
   if (getThreadIdFromUrl() !== threadId) {
