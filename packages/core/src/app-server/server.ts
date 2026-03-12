@@ -40,17 +40,17 @@ import {
 } from "./config-handlers";
 import { agentEventToNotification } from "./event-mapper";
 import {
-  handleServerResponseMessage,
-  type PendingServerRequest,
-  requestApprovalFromConnections,
-  requestUserInputFromConnections,
-} from "./server-requests";
-import {
   handleKnowledgeAdd,
   handleKnowledgeDelete,
   handleKnowledgeList,
   handleKnowledgeUpdate,
 } from "./knowledge-handlers";
+import {
+  handleServerResponseMessage,
+  type PendingServerRequest,
+  requestApprovalFromConnections,
+  requestUserInputFromConnections,
+} from "./server-requests";
 import {
   getLatestEffortFromSessions,
   handleEffortSet,
