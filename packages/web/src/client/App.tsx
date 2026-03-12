@@ -1,11 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type { AgentEvent } from "@diligent/core/client";
-import {
-  findModelInfo,
-  getThinkingEffortUsage,
-  supportsThinkingNone,
-} from "@diligent/core/client";
+import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
   InitializeResponse,
@@ -163,7 +159,7 @@ function getThreadIdFromUrl(): string | null {
 }
 
 /** Push `/{threadId}` into the browser address bar (no reload). */
-function pushThreadUrl(threadId: string): void {
+function _pushThreadUrl(threadId: string): void {
   if (getThreadIdFromUrl() !== threadId) {
     window.history.pushState(null, "", `/${threadId}`);
   }
@@ -284,6 +280,7 @@ export function App() {
 
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: adapterRef.current methods are accessed via ref intentionally
   useEffect(() => {
     const rpc = getRpc();
     if (!rpc) return;
@@ -368,6 +365,7 @@ export function App() {
     getRpc,
   ]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: adapterRef.current.reset is accessed via ref intentionally
   useEffect(() => {
     if (connection !== "connected") {
       return;
@@ -524,16 +522,19 @@ export function App() {
         return next;
       });
     },
-    [state.activeThreadId],
+    [state.activeThreadId, threadMgr.setThreadInputs],
   );
-  const clearThreadInput = useCallback((threadId: string) => {
-    threadMgr.setThreadInputs((prev) => {
-      if (!(threadId in prev)) return prev;
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
-  }, []);
+  const clearThreadInput = useCallback(
+    (threadId: string) => {
+      threadMgr.setThreadInputs((prev) => {
+        if (!(threadId in prev)) return prev;
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    },
+    [threadMgr.setThreadInputs],
+  );
   const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
   const canSteer = activeInput.trim().length > 0 && isBusy;
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);

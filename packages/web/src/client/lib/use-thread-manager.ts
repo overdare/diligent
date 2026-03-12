@@ -88,9 +88,18 @@ export function useThreadManager({
     } catch (error) {
       console.error(error);
     }
-  }, [rpcRef, modeRef, cwdRef, currentModelRef, dispatch, setEffortState, activateServerThread, refreshThreadList, closeModals]);
+  }, [
+    rpcRef,
+    modeRef,
+    cwdRef,
+    currentModelRef,
+    dispatch,
+    setEffortState,
+    activateServerThread,
+    refreshThreadList,
+    closeModals,
+  ]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refs and mutable state are accessed intentionally
   const openThread = useCallback(
     async (threadId: string): Promise<void> => {
       const rpc = rpcRef.current;
@@ -124,7 +133,17 @@ export function useThreadManager({
         console.error(error);
       }
     },
-    [rpcRef, modeRef, dispatch, setEffortState, refreshThreadList, applySessionModel, clearAttention, activateServerThread, closeModals],
+    [
+      rpcRef,
+      modeRef,
+      dispatch,
+      setEffortState,
+      refreshThreadList,
+      applySessionModel,
+      clearAttention,
+      activateServerThread,
+      closeModals,
+    ],
   );
 
   const confirmDeleteThread = useCallback(async (): Promise<void> => {
