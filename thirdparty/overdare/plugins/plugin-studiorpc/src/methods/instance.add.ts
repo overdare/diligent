@@ -117,7 +117,7 @@ export const params = z.object({
     .union([
       z
         .object({
-          Shape: z.enum(["Enum.Block", "Enum.Ball", "Enum.Cylinder"]).optional(),
+          Shape: z.enum(["Enum.PartType.Block", "Enum.PartType.Ball", "Enum.PartType.Cylinder"]).optional(),
           CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
           Size: vec3.describe("units in cm").optional(),
           Color: rgb.optional(),

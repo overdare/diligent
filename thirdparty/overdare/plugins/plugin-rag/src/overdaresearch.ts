@@ -30,7 +30,7 @@ When to use each source:
   - Always start with topK=3~5; only increase if results are insufficient — do NOT start with topK=5 or higher
   - "docs": API references, conceptual guides, configuration details, service descriptions
   - "code": Working Lua implementation examples, proven patterns, real script snippets
-  - When writing or modifying code, search BOTH sources (docs first for API shape, then code for implementation patterns)
+  - When writing or modifying code, search BOTH sources in parallel (two calls: one for docs, one for code) to get API shape + implementation patterns simultaneously
 
 Query tips:
   - Provide a clear, specific RAG-friendly query describing what you want to find

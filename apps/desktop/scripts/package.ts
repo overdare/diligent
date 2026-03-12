@@ -131,9 +131,13 @@ function assembleDefaults(packageDir: string | undefined): void {
     if (!existsSync(packageDir)) {
       console.warn(`⚠️  --package dir not found, skipping: ${packageDir}`);
     } else {
-      // Copy .jsonc config files from package root
+      // Copy config and resource files from package root (skip source/build artifacts)
+      const SKIP_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".lock", ".lockb"]);
+      const SKIP_FILES = new Set(["package.json", "tsconfig.json", "bun.lock", "bun.lockb"]);
       for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.endsWith(".jsonc")) continue;
+        if (!entry.isFile()) continue;
+        if (SKIP_FILES.has(entry.name)) continue;
+        if (SKIP_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf(".")))) continue;
         cpSync(join(packageDir, entry.name), join(DEFAULTS_RESOURCES, entry.name));
         console.log(`   Copied file:     ${entry.name}`);
       }
@@ -340,23 +344,11 @@ mkdirSync(DIST, { recursive: true });
 
 const allArtifacts: Record<string, string[]> = {};
 let backup: VersionBackup | undefined;
-let promptBackup: string | undefined;
-const SYSTEM_PROMPT_PATH = join(ROOT, "packages/core/src/agent/templates/system-prompt.txt");
 
 try {
   // Inject version into protocol + tauri.conf.json
   console.log(`⚙️  Injecting version ${version}...`);
   backup = injectVersion(version);
-
-  // Inject custom system prompt if --package provides system-prompt.txt
-  if (extraPackageDir) {
-    const customPrompt = join(extraPackageDir, "system-prompt.txt");
-    if (existsSync(customPrompt)) {
-      promptBackup = readFileSync(SYSTEM_PROMPT_PATH, "utf-8");
-      cpSync(customPrompt, SYSTEM_PROMPT_PATH);
-      console.log("📝 Injected custom system prompt");
-    }
-  }
 
   // Build web frontend once (embedded in desktop)
   console.log("\n🌐 Building web frontend...");
@@ -390,10 +382,6 @@ try {
   generateChecksums(DIST);
 } finally {
   // Always restore original files even on failure
-  if (promptBackup !== undefined) {
-    writeFileSync(SYSTEM_PROMPT_PATH, promptBackup);
-    console.log("♻️  Restored system-prompt.txt");
-  }
   if (backup) {
     console.log("♻️  Restoring version files...");
     restoreVersion(backup);

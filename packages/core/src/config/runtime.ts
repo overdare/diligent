@@ -1,7 +1,7 @@
 // @summary Shared runtime config loader — single init path for both CLI and Web
 
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { access, readFile } from "node:fs/promises";
+import { dirname, isAbsolute, resolve } from "node:path";
 import type { ModeKind } from "../agent/index";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
@@ -90,13 +90,20 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   if (config.systemPrompt) {
     basePrompt = config.systemPrompt;
   } else if (config.systemPromptFile) {
-    const filePath = isAbsolute(config.systemPromptFile)
-      ? config.systemPromptFile
-      : resolve(cwd, config.systemPromptFile);
-    basePrompt = (await readFile(filePath, "utf-8"))
-      .replace(/\{\{currentDate\}\}/g, new Date().toISOString().split("T")[0])
-      .replace(/\{\{cwd\}\}/g, cwd)
-      .replace(/\{\{platform\}\}/g, process.platform);
+    const filePath = await resolveSystemPromptFile(config.systemPromptFile, sources);
+    if (filePath) {
+      basePrompt = (await readFile(filePath, "utf-8"))
+        .replace(/\{\{currentDate\}\}/g, new Date().toISOString().split("T")[0])
+        .replace(/\{\{cwd\}\}/g, cwd)
+        .replace(/\{\{platform\}\}/g, process.platform);
+    } else {
+      console.warn(`[config] systemPromptFile "${config.systemPromptFile}" not found, using default`);
+      basePrompt = buildBaseSystemPrompt({
+        currentDate: new Date().toISOString().split("T")[0],
+        cwd,
+        platform: process.platform,
+      });
+    }
   } else {
     basePrompt = buildBaseSystemPrompt({
       currentDate: new Date().toISOString().split("T")[0],
@@ -129,4 +136,31 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
     providerManager,
   };
+}
+
+/**
+ * Resolve systemPromptFile path: absolute paths used as-is, relative paths
+ * checked against each config file's directory first, then cwd as fallback.
+ */
+async function resolveSystemPromptFile(file: string, configSources: string[]): Promise<string | null> {
+  if (isAbsolute(file)) {
+    try {
+      await access(file);
+      return file;
+    } catch {
+      return null;
+    }
+  }
+
+  for (const source of configSources) {
+    const candidate = resolve(dirname(source), file);
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // not found in this config dir, try next
+    }
+  }
+
+  return null;
 }
