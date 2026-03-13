@@ -92,12 +92,7 @@ export class InputEditor implements Component, Focusable {
 
     // Show spinner when busy and input is empty
     if (this.busy && this.text.length === 0) {
-      return [
-        "",
-        sep,
-        `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset}${CURSOR_MARKER}`,
-        sep,
-      ];
+      return ["", sep, `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset}${CURSOR_MARKER}`, sep];
     }
 
     // Build line with cursor marker embedded
