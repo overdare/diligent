@@ -295,7 +295,7 @@ export class ChatView implements Component {
         break;
 
       case "compaction_start":
-        this.activeSpinner.start(`Compacting context (${formatTokensCompact(event.estimatedTokens)} tokens)…`);
+        // Compaction progress is shown via overlay dialog (managed by App)
         break;
 
       case "compaction_end": {

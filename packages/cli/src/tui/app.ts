@@ -32,6 +32,7 @@ import { type CommandHandler, createCommandHandler } from "./command-handler";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { CommandRegistry } from "./commands/registry";
 import { ApprovalDialog } from "./components/approval-dialog";
+import { CompactingDialog } from "./components/compacting-dialog";
 import { ChatView } from "./components/chat-view";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
@@ -86,6 +87,7 @@ export class App {
     reject: (error: Error) => void;
   } | null = null;
   private activeQuestionCancel: (() => void) | null = null;
+  private compactingDialog: { dialog: CompactingDialog; handle: ReturnType<OverlayStack["show"]> } | null = null;
   private activeUserInputResolved = false;
   private activeUserInputRequestId: RequestId | null = null;
   private pendingUserInputRequestIds = new Set<RequestId>();
@@ -396,6 +398,25 @@ export class App {
       });
     } else if (event.type === "status_change") {
       this.statusBar.update({ status: event.status });
+    }
+
+    if (event.type === "compaction_start") {
+      const msg = `Compacting context\u2026`;
+      const dialog = new CompactingDialog(() => this.renderer.requestRender(), msg);
+      const handle = this.overlayStack.show(dialog);
+      this.compactingDialog = { dialog, handle };
+      if (!this.isProcessing) {
+        this.inputEditor.setBusy(true);
+      }
+    } else if (event.type === "compaction_end") {
+      if (this.compactingDialog) {
+        this.compactingDialog.dialog.dispose();
+        this.compactingDialog.handle.hide();
+        this.compactingDialog = null;
+      }
+      if (!this.isProcessing) {
+        this.inputEditor.setBusy(false);
+      }
     }
   }
 
