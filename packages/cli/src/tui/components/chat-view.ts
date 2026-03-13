@@ -348,6 +348,15 @@ export class ChatView implements Component {
     this.options.requestRender();
   }
 
+  /** Add a completed assistant message from history (rendered via MarkdownView) */
+  addAssistantMessage(text: string): void {
+    const view = new MarkdownView(this.options.requestRender);
+    view.pushDelta(text);
+    view.finalize();
+    this.items.push(view);
+    this.options.requestRender();
+  }
+
   /** Commit accumulated thinking block as a collapsed indicator */
   private commitThinkingBlock(): void {
     this.thinkingSpinner.stop();
