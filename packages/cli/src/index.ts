@@ -36,6 +36,7 @@ async function main() {
     args,
     options: {
       continue: { type: "boolean", short: "c" },
+      resume: { type: "string", short: "r" }, // --resume <sessionId>
       list: { type: "boolean", short: "l" },
       prompt: { type: "string", short: "p" },
       mode: { type: "string", short: "m" }, // D087: collaboration mode
@@ -119,7 +120,7 @@ async function main() {
     process.exit(exitCode);
   }
 
-  const app = new App(config, paths, { resume: values.continue });
+  const app = new App(config, paths, { resume: values.continue, resumeId: values.resume });
   await app.start();
 }
 

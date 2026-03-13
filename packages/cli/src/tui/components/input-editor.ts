@@ -90,9 +90,9 @@ export class InputEditor implements Component, Focusable {
       return ["", sep, `${t.bold}${t.dim}${prompt}${t.reset}${this.text}`, sep];
     }
 
-    // Show spinner when busy and input is empty
+    // Show spinner when busy and input is empty — no cursor marker so renderer hides cursor
     if (this.busy && this.text.length === 0) {
-      return ["", sep, `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset}${CURSOR_MARKER}`, sep];
+      return ["", sep, `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset}`, sep];
     }
 
     // Build line with cursor marker embedded

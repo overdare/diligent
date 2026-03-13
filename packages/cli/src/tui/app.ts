@@ -55,6 +55,7 @@ import { createThreadManager, type ThreadManager } from "./thread-manager";
 
 export interface AppOptions {
   resume?: boolean;
+  resumeId?: string;
   rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
 }
 
@@ -308,13 +309,24 @@ export class App {
     });
     await rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
-    if (this.options?.resume) {
-      const resumedId = await this.threadManager.resumeThread();
+    let resumedId: string | null = null;
+    if (this.options?.resumeId) {
+      resumedId = await this.threadManager.resumeThread(this.options.resumeId);
+      if (!resumedId) {
+        this.chatView.addLines([`  ${t.error}Session not found: ${this.options.resumeId}${t.reset}`]);
+        await this.threadManager.startNewThread();
+      }
+    } else if (this.options?.resume) {
+      resumedId = await this.threadManager.resumeThread();
       if (!resumedId) {
         await this.threadManager.startNewThread();
       }
     } else {
       await this.threadManager.startNewThread();
+    }
+
+    if (resumedId) {
+      await this.hydrateThreadHistory();
     }
 
     this.renderer.requestRender();
@@ -698,9 +710,48 @@ export class App {
     ];
   }
 
+  private async hydrateThreadHistory(): Promise<void> {
+    const thread = await this.threadManager.readThread();
+    if (!thread?.transcript?.length) return;
+
+    this.chatView.addLines([`  ${t.dim}─── Resuming session ───${t.reset}`, ""]);
+
+    for (const entry of thread.transcript) {
+      if (entry.type === "compaction") {
+        this.chatView.addLines([`  ${t.dim}[Compacted: ${entry.summary}]${t.reset}`, ""]);
+      } else if (entry.type === "message") {
+        const msg = entry.message;
+        if (msg.role === "user") {
+          const text =
+            typeof msg.content === "string"
+              ? msg.content
+              : msg.content
+                  .filter((b) => b.type === "text")
+                  .map((b) => (b as { text: string }).text)
+                  .join("");
+          if (text.trim()) this.chatView.addUserMessage(text);
+        } else if (msg.role === "assistant") {
+          const textBlocks = msg.content.filter((b) => b.type === "text");
+          if (textBlocks.length > 0) {
+            const fullText = textBlocks.map((b) => (b as { text: string }).text).join("");
+            this.chatView.addAssistantMessage(fullText);
+          }
+        }
+      }
+    }
+
+    this.chatView.addLines(["", `  ${t.dim}─── Continue ───${t.reset}`, ""]);
+  }
+
   private shutdown(): void {
     this.stop();
-    this.terminal.write(`\n${t.dim}Goodbye!${t.reset}\n`);
+    const sessionId = this.currentThreadId;
+    let farewell = `\n${t.dim}Goodbye!${t.reset}\n`;
+    if (sessionId) {
+      farewell += `\n${t.dim}Resume this session with:${t.reset}\n`;
+      farewell += `  diligent --resume ${sessionId}\n\n`;
+    }
+    this.terminal.write(farewell);
     process.exit(0);
   }
 }
