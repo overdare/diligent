@@ -609,9 +609,18 @@ export class App {
     return { answers };
   }
 
-  /** Show approval dialog overlay — returns Once/Always/Reject */
+  /** Show approval dialog inline in the chat stream — returns Once/Always/Reject */
   private showApprovalDialog(request: ApprovalRequest): Promise<ApprovalResponse> {
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (response: ApprovalResponse) => {
+        if (settled) return;
+        settled = true;
+        this.chatView.setActiveQuestion(null);
+        this.renderer.requestRender();
+        resolve(response);
+      };
+
       const dialog = new ApprovalDialog(
         {
           toolName: request.toolName,
@@ -623,14 +632,9 @@ export class App {
               ? String(request.details.file_path ?? request.details.path)
               : undefined,
         },
-        (response) => {
-          handle.hide();
-          this.renderer.setFocus(this.inputEditor);
-          this.renderer.requestRender();
-          resolve(response);
-        },
+        finish,
       );
-      const handle = this.overlayStack.show(dialog, { anchor: "center" });
+      this.chatView.setActiveQuestion(dialog);
       this.renderer.requestRender();
     });
   }
