@@ -1,5 +1,6 @@
 {
-  "model": "gpt-5.4",
+  "model": "gpt-5.3-codex",
+  "effort": "low",
   "systemPromptFile": "system-prompt.txt",
   "yolo": true,
   "tools": {
