@@ -27,6 +27,7 @@ export interface CommandHandlerDeps {
   addUserMessage: (text: string) => void;
   addLines: (lines: string[]) => void;
   clearActive: () => void;
+  clearChatHistory: () => void;
   handleAgentStartEvent: () => void;
   handleTurnError: (err: unknown) => void;
   updateStatusBar: (updates: Record<string, unknown>) => void;
@@ -155,6 +156,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         setMode: (mode) => deps.configManager.setMode(mode),
         currentEffort: deps.getConfig().diligent.effort ?? "medium",
         setEffort: (effort) => deps.configManager.setEffort(effort),
+        clearChatHistory: () => deps.clearChatHistory(),
         startNewThread: () => deps.threadManager.startNewThread(),
         resumeThread: (threadId) => deps.threadManager.resumeThread(threadId),
         deleteThread: (threadId) => deps.threadManager.deleteThread(threadId),

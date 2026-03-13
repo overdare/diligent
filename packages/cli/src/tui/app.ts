@@ -215,6 +215,10 @@ export class App {
       addUserMessage: (text) => this.chatView.addUserMessage(text),
       addLines: (lines) => this.chatView.addLines(lines),
       clearActive: () => this.chatView.clearActive(),
+      clearChatHistory: () => {
+        this.chatView.clearHistory();
+        this.statusBar.resetUsage();
+      },
       handleAgentStartEvent: () => this.chatView.handleEvent({ type: "agent_start" }),
       handleTurnError: (err) => {
         this.chatView.handleEvent({
