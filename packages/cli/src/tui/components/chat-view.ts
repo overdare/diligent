@@ -476,6 +476,14 @@ export class ChatView implements Component {
     };
   }
 
+  /** Reset the chat history and all active state (for new thread). */
+  clearHistory(): void {
+    this.clearActive();
+    this.items = [];
+    this.lastUsage = null;
+    this.toolStartTimes.clear();
+    this.options.requestRender();
+  }
   /** Stop all active spinners and discard streaming state. */
   clearActive(): void {
     this.activeSpinner.stop();

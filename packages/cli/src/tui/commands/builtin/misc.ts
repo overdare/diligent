@@ -5,11 +5,12 @@ import type { Command } from "../types";
 
 export const clearCommand: Command = {
   name: "clear",
-  description: "Clear chat display",
-  availableDuringTask: true,
-  aliases: ["cls"],
+  description: "Start a new thread and clear chat display",
+  availableDuringTask: false,
+  aliases: ["cls", "new"],
   handler: async (_args, ctx) => {
-    // ChatView clear is handled by the app integration
+    await ctx.startNewThread();
+    ctx.clearChatHistory();
     ctx.displayLines(["\x1b[2J\x1b[H"]); // ANSI clear screen
   },
 };

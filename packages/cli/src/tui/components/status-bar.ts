@@ -56,6 +56,12 @@ export class StatusBar implements Component {
     Object.assign(this.info, info);
   }
 
+  /** Reset usage counters when starting a new thread */
+  resetUsage(): void {
+    this.info.tokensUsed = undefined;
+    this.info.sessionId = undefined;
+  }
+
   render(width: number): string[] {
     const leftParts: string[] = [];
 

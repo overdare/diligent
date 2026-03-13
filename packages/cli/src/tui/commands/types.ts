@@ -52,6 +52,8 @@ export interface CommandContext {
   currentEffort: ThinkingEffort;
   /** Change thinking effort for the active thread */
   setEffort: (effort: ThinkingEffort) => Promise<void>;
+  /** Clear chat view history (for new thread) */
+  clearChatHistory: () => void;
   /** Start a fresh thread and make it active */
   startNewThread: () => Promise<string>;
   /** Resume thread (or most recent when omitted) and make it active */
