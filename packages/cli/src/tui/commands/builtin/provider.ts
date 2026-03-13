@@ -1,6 +1,6 @@
 // @summary Provider configuration command - configure LLM provider and API keys
-import type { OpenAIOAuthTokens } from "@diligent/core";
-import { resolveModel, runChatGPTOAuth, saveAuthKey, saveOAuthTokens } from "@diligent/core";
+import { resolveModel, saveAuthKey } from "@diligent/core";
+import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { saveModel } from "../../../config-writer";
 import {
   DEFAULT_MODELS,
@@ -152,19 +152,36 @@ function promptOpenAIAuth(ctx: CommandContext): Promise<void> {
 }
 
 async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
+  const rpc = ctx.app.getRpcClient?.();
+  if (!rpc) {
+    ctx.displayError("App server not available. Cannot start OAuth flow.");
+    return;
+  }
+
   ctx.displayLines(["  Opening browser for ChatGPT authentication..."]);
 
   try {
-    const tokens = await runChatGPTOAuth({
-      onUrl: (url) => {
-        ctx.displayLines([`  Auth URL: ${url}`]);
-      },
-    });
+    // Delegate OAuth to app-server so its providerManager receives the tokens directly
+    const { authUrl } = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START, {});
+    ctx.displayLines([`  Auth URL: ${t.dim}${authUrl}${t.reset}`]);
 
-    ctx.config.providerManager.setOAuthTokens(tokens);
+    // Wait for ACCOUNT_LOGIN_COMPLETED notification forwarded via app.ts
+    const waitFn = ctx.app.waitForOAuthComplete;
+    if (!waitFn) {
+      ctx.displayError("OAuth completion handler not available.");
+      return;
+    }
+    const result = await waitFn();
+
+    if (!result.success) {
+      ctx.displayError(`OAuth failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+
     ctx.displayLines([`  ${t.success}Authenticated via ChatGPT subscription.${t.reset}`]);
 
-    await promptSaveOAuthTokens(tokens, ctx);
+    // Mark openai as configured in the TUI's local providerManager (cosmetic — app-server has real tokens)
+    ctx.config.providerManager.setApiKey("openai", "chatgpt-oauth");
 
     // Switch to default Codex model
     const model = resolveModel(DEFAULT_MODELS.openai);
@@ -177,31 +194,6 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
   }
 }
 
-function promptSaveOAuthTokens(tokens: OpenAIOAuthTokens, ctx: CommandContext): Promise<void> {
-  return new Promise((resolve) => {
-    const dialog = new ConfirmDialog(
-      {
-        title: "Save Auth?",
-        message: "Save ChatGPT session to ~/.diligent/auth.jsonc?",
-      },
-      async (confirmed) => {
-        handle.hide();
-        ctx.requestRender();
-        if (confirmed) {
-          try {
-            await saveOAuthTokens(tokens);
-            ctx.displayLines([`  ${t.success}Saved to auth.json.${t.reset}`]);
-          } catch (err) {
-            ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-        resolve();
-      },
-    );
-    const handle = ctx.showOverlay(dialog, { anchor: "center" });
-    ctx.requestRender();
-  });
-}
 
 function showProviderStatus(ctx: CommandContext): void {
   const pm = ctx.config.providerManager;

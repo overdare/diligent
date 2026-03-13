@@ -96,6 +96,7 @@ export class App {
   private turnStartedAtMs: number | null = null;
   private reasoningStartedAtMs: number | null = null;
   private reasoningAccumulatedMs = 0;
+  private pendingOAuthResolve: ((result: { success: boolean; error: string | null }) => void) | null = null;
 
   // Extracted modules
   private threadManager: ThreadManager;
@@ -158,6 +159,7 @@ export class App {
     this.threadManager = createThreadManager({
       getRpcClient: () => this.rpcClient,
       getCurrentMode: () => this.currentMode,
+      getModelId: () => this.config.model.id,
       setCurrentThreadId: (id) => {
         this.currentThreadId = id;
       },
@@ -237,6 +239,10 @@ export class App {
         this.statusBar.update({ effort, effortLabel: label });
         this.renderer.requestRender();
       },
+      waitForOAuthComplete: () =>
+        new Promise((resolve) => {
+          this.pendingOAuthResolve = resolve;
+        }),
       threadManager: this.threadManager,
       configManager: this.configManager,
     });
@@ -483,6 +489,12 @@ export class App {
           this.activeQuestionCancel?.();
         }
       }
+    }
+
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED) {
+      const { success, error } = notification.params;
+      this.pendingOAuthResolve?.({ success, error: error ?? null });
+      this.pendingOAuthResolve = null;
     }
 
     this.renderer.requestRender();
