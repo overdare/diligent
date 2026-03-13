@@ -36,6 +36,7 @@ export interface CommandHandlerDeps {
   shutdown: () => void;
   onModelChanged: (modelId: string) => void;
   onEffortChanged: (effort: ThinkingEffort, label: string) => void;
+  waitForOAuthComplete: () => Promise<{ success: boolean; error: string | null }>;
   // Domain modules
   threadManager: ThreadManager;
   configManager: ConfigManager;
@@ -89,6 +90,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
           threadId,
           message: text,
+          model: deps.getConfig().model.id,
         });
         await turnCompleted;
       } catch (err) {
@@ -131,6 +133,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           confirm: (o) => deps.confirm(o),
           stop: () => deps.shutdown(),
           getRpcClient: () => deps.getRpcClient(),
+          waitForOAuthComplete: () => deps.waitForOAuthComplete(),
         },
         config: deps.getConfig(),
         threadId: deps.getCurrentThreadId(),

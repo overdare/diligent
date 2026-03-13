@@ -75,4 +75,5 @@ export interface AppAccessor {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
   stop: () => void;
   getRpcClient?: () => AppServerRpcClient | null;
+  waitForOAuthComplete?: () => Promise<{ success: boolean; error: string | null }>;
 }
