@@ -64,7 +64,7 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 
 # Cylinder(Parts Shape)
 - Unlike Roblox (X axis), a cylinder shape is oriented along the **Y axis**. 
-  Size format: `(Diameter, Height, Diameter)`.
+- Size format: `(Diameter, Height, Diameter)`.
   | Object | Size | Orientation | Notes |
   |--------|------|-------------|-------|
   | Coin / Disc (flat) | `(100, 5, 100)` | `(0, 0, 0)` | Already flat — just use small Height |
@@ -86,6 +86,20 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - No keyboard input: Do not design interactions based on keyboard input. All player actions must be triggered through on-screen touch buttons
 - Touch input: Design UI elements with touch-friendly sizes and spacing for mobile devices
 - UI-related Scripts: When writing UI-related Scripts, always consider mobile device behavior and constraints.
+
+# UI Quality and Readability Standards
+When creating or modifying UI, always prioritize readability, non-overlapping, and alignment consistency.
+- Ensure sufficient contrast between text and background.
+- Do not use text colors similar to background colors, or hard-to-read transparent combinations.
+- If necessary, automatically adjust text color, background color, opacity, etc.
+- When adding new UI, place it so it never overlaps with existing UI.
+- If overlap occurs, find empty space or reorganize the entire layout.
+- If space is insufficient, do not force overlap; restructure using stacks, grids, scrolls, section separation, etc.
+- UI should prioritize alignment rules and consistent spacing over arbitrary coordinate placement.
+- Repeated elements like buttons, panels, cards should maintain consistent size, spacing, and alignment standards.
+- If background is complex or has large brightness variations, ensure UI readability with overlays, panels, shadows, etc.
+- Before finalizing results, always review: whether text is readable, elements don't overlap, nothing goes off-screen, layout is maintained when adding more elements.
+- Prioritize readable and non-overlapping results over visually appealing ones.
 </building-rules>
 
 <workarounds>
