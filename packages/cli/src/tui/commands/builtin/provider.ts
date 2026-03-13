@@ -194,7 +194,6 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
   }
 }
 
-
 function showProviderStatus(ctx: CommandContext): void {
   const pm = ctx.config.providerManager;
   const currentProvider = ctx.config.model.provider ?? DEFAULT_PROVIDER;
