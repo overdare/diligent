@@ -79,12 +79,10 @@ const echoTool: Tool = {
 };
 
 function makeAgent(streamFn: StreamFunction, toolOverride?: Tool[]): Agent {
-  return new Agent(
-    TEST_MODEL,
-    [{ label: "test", content: "test" }],
-    toolOverride ?? [echoTool],
-    { effort: "medium", streamFn },
-  );
+  return new Agent(TEST_MODEL, [{ label: "test", content: "test" }], toolOverride ?? [echoTool], {
+    effort: "medium",
+    streamFn,
+  });
 }
 
 async function runAgent(agent: Agent, userMessage: Message): Promise<{ events: CoreAgentEvent[]; result: Message[] }> {

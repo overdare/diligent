@@ -3,19 +3,17 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { PROVIDER_NAMES, type ProviderManager } from "@diligent/core/llm/provider-manager";
 import {
+  openBrowser as defaultOpenBrowser,
   loadAuthStore,
   loadOAuthTokens,
   removeAuthKey,
   removeOAuthTokens,
+  runChatGPTOAuth,
   saveAuthKey,
   saveOAuthTokens,
 } from "../auth/index";
-import {
-  openBrowser as defaultOpenBrowser,
-  runChatGPTOAuth,
-} from "../auth/index";
-import { PROVIDER_NAMES, type ProviderManager } from "@diligent/core/llm/provider-manager";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   type DiligentServerNotification,

@@ -20,12 +20,9 @@ async function main(): Promise<void> {
   providerManager.setOAuthTokens(tokens);
   configureStreamResolver(() => providerManager.createProxyStream());
 
-  const agent = new Agent(
-    "gpt-5.3-codex",
-    [{ label: "system", content: "You are a concise assistant." }],
-    [],
-    { effort: "medium" },
-  );
+  const agent = new Agent("gpt-5.3-codex", [{ label: "system", content: "You are a concise assistant." }], [], {
+    effort: "medium",
+  });
 
   agent.subscribe((event) => {
     if (event.type === "message_delta" && event.delta.type === "text_delta") {

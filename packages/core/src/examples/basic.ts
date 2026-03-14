@@ -1,8 +1,8 @@
 // @summary Minimal example: create an Agent with a tool and run it with a user message
 import { z } from "zod";
 import { Agent } from "../agent/agent";
-import { configureStreamResolver } from "../llm/stream-resolver";
 import { createAnthropicStream } from "../llm/provider/anthropic";
+import { configureStreamResolver } from "../llm/stream-resolver";
 import type { Tool } from "../tool/types";
 import type { Message } from "../types";
 import { c, tag } from "./common/colors";
@@ -38,7 +38,7 @@ const calculatorTool: Tool<z.ZodObject<{ expression: z.ZodString }>> = {
 const agent = new Agent(
   DEFAULT_MODEL,
   [{ label: "system", content: "You are a helpful assistant. Use the calculator tool when asked to compute math." }],
-  [calculatorTool]
+  [calculatorTool],
 );
 
 let turnCount = 0;
@@ -63,13 +63,19 @@ agent.subscribe((event) => {
       process.stdout.write("\n");
       break;
     case "tool_start":
-      console.log(`${I2}${tag(c.yellow, "tool_start")} ${c.bold}${event.toolName}${c.reset}${c.gray}(${JSON.stringify(event.input)})${c.reset}`);
+      console.log(
+        `${I2}${tag(c.yellow, "tool_start")} ${c.bold}${event.toolName}${c.reset}${c.gray}(${JSON.stringify(event.input)})${c.reset}`,
+      );
       break;
     case "tool_end":
-      console.log(`${I2}${tag(c.yellow, "tool_end")} ${c.bold}${event.toolName}${c.reset} → ${c.magenta}${event.output}${c.reset}`);
+      console.log(
+        `${I2}${tag(c.yellow, "tool_end")} ${c.bold}${event.toolName}${c.reset} → ${c.magenta}${event.output}${c.reset}`,
+      );
       break;
     case "usage":
-      console.log(`${I2}${tag(c.gray, "usage")} ${c.dim}in=${event.usage.inputTokens} out=${event.usage.outputTokens}${c.reset}`);
+      console.log(
+        `${I2}${tag(c.gray, "usage")} ${c.dim}in=${event.usage.inputTokens} out=${event.usage.outputTokens}${c.reset}`,
+      );
       break;
     case "agent_end":
       console.log(tag(c.green, "agent_end"));

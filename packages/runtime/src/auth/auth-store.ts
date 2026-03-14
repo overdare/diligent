@@ -2,10 +2,10 @@
 import { chmod, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { OpenAIOAuthTokens } from "@diligent/core/auth";
+import type { ProviderName } from "@diligent/core/llm/types";
 import { parse as parseJsonc } from "jsonc-parser";
 import { z } from "zod";
-import type { ProviderName } from "@diligent/core/llm/types";
-import type { OpenAIOAuthTokens } from "@diligent/core/auth";
 
 export type AuthKeys = {
   anthropic?: string;

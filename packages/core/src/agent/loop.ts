@@ -30,8 +30,11 @@ export interface LoopRuntime {
   };
 }
 
-
-export async function runAgentLoop(messages: Message[], runtime: LoopRuntime, userSignal?: AbortSignal): Promise<Message[]> {
+export async function runAgentLoop(
+  messages: Message[],
+  runtime: LoopRuntime,
+  userSignal?: AbortSignal,
+): Promise<Message[]> {
   const { config, streamFunction, stream, hooks } = runtime;
   const toolAbortController = new AbortController();
   const signal = AbortSignal.any([toolAbortController.signal, userSignal].filter((s): s is AbortSignal => s != null));

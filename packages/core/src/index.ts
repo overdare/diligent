@@ -1,6 +1,6 @@
 export type {
-  AgentOptions,
   AgentListener,
+  AgentOptions,
   CoreAgentEvent,
   MessageDelta,
   SerializableError,
@@ -44,10 +44,10 @@ export type {
 } from "./llm/index";
 export {
   agentTypeToModelClass,
-  createAnthropicNativeCompaction,
   classifyGeminiError,
-  createChatGPTNativeCompaction,
+  createAnthropicNativeCompaction,
   createAnthropicStream,
+  createChatGPTNativeCompaction,
   createChatGPTStream,
   createGeminiStream,
   createOpenAINativeCompaction,

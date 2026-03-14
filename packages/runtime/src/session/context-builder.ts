@@ -9,7 +9,9 @@ export interface SessionContext {
   currentEffort?: "none" | "low" | "medium" | "high" | "max";
 }
 
-export interface BuildSessionContextOptions {}
+export type BuildSessionContextOptions = {
+  includeCompactionSummary?: boolean;
+};
 
 export type SessionTranscriptEntry =
   | {
@@ -65,6 +67,7 @@ export function buildSessionContext(
   leafId?: string | null,
   options: BuildSessionContextOptions = {},
 ): SessionContext {
+  const { includeCompactionSummary = true } = options;
   const path = getPathEntries(entries, leafId);
   if (path.length === 0) {
     return { messages: [] };
@@ -84,7 +87,7 @@ export function buildSessionContext(
   let currentModel: { provider: string; modelId: string } | undefined;
   let currentEffort: "none" | "low" | "medium" | "high" | "max" | undefined;
 
-  if (lastCompaction) {
+  if (lastCompaction && includeCompactionSummary) {
     // Rebuild [recentUserMessages..., summaryMessage] — same structure as live compaction
     messages.push(
       ...buildMessagesFromCompaction(

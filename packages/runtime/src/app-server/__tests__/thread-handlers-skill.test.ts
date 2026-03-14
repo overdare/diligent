@@ -16,9 +16,8 @@ describe("handleTurnStart slash skill rewriting", () => {
       effort: "medium",
       manager: {
         subscribe: () => () => {},
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        run: async (userMessage: any) => {
-          capturedUserMessage = userMessage as { content: string | unknown[] };
+        run: async (userMessage: { content: string | unknown[] }) => {
+          capturedUserMessage = userMessage;
         },
       } as unknown as ThreadRuntime["manager"],
       abortController: null,
@@ -80,9 +79,8 @@ describe("handleTurnStart slash skill rewriting", () => {
       effort: "medium",
       manager: {
         subscribe: () => () => {},
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        run: async (userMessage: any) => {
-          capturedUserMessage = userMessage as { content: string | unknown[] };
+        run: async (userMessage: { content: string | unknown[] }) => {
+          capturedUserMessage = userMessage;
         },
       } as unknown as ThreadRuntime["manager"],
       abortController: null,

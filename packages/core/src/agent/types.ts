@@ -1,6 +1,6 @@
 // @summary Agent public types and event stream primitives for the core runner
 
-import type { ProviderErrorType, ThinkingEffort, StreamFunction } from "../llm/types";
+import type { ProviderErrorType, StreamFunction, ThinkingEffort } from "../llm/types";
 import type { AssistantMessage, Message, ToolResultMessage, Usage } from "../types";
 
 export type MessageDelta = { type: "text_delta"; delta: string } | { type: "thinking_delta"; delta: string };
@@ -108,4 +108,3 @@ export interface AgentOptions {
   /** Explicit stream function — overrides the global stream resolver. Use in tests and custom extensions. */
   streamFn?: StreamFunction;
 }
-

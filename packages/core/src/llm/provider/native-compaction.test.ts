@@ -1,9 +1,9 @@
 // @summary Tests for provider-native compaction adapters (OpenAI/ChatGPT/Anthropic)
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { Model } from "../types";
 import { createAnthropicNativeCompaction } from "./anthropic";
 import { createChatGPTNativeCompaction } from "./chatgpt";
 import { createOpenAINativeCompaction } from "./openai";
-import type { Model } from "../types";
 
 const originalFetch = globalThis.fetch;
 

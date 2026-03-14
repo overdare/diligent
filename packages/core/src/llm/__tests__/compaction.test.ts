@@ -2,7 +2,6 @@
 import { describe, expect, it } from "bun:test";
 import { EventStream } from "@diligent/core/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
-import { resolveMaxTokens } from "@diligent/core/llm/types";
 import type { Message, UserMessage } from "@diligent/core/types";
 import { compact, compactMessages, generateSummary } from "../compaction";
 
@@ -113,7 +112,10 @@ describe("compact", () => {
       model: { ...TEST_MODEL, provider: "openai" },
       messages: [userMsg("hello"), assistantMsg("world")],
       systemPrompt: [{ label: "test", content: "test" }],
-      config: { reservePercent: 16, nativeRegistry: (p) => p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined },
+      config: {
+        reservePercent: 16,
+        nativeRegistry: (p) => (p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined),
+      },
     });
 
     expect(result).toBe("native summary");
@@ -124,7 +126,11 @@ describe("compact", () => {
       model: { ...TEST_MODEL, provider: "openai" },
       messages: [userMsg("hello"), assistantMsg("world")],
       systemPrompt: [{ label: "test", content: "test" }],
-      config: { reservePercent: 16, nativeRegistry: (p) => p === "openai" ? async () => ({ status: "unsupported", reason: "not_available" }) : undefined },
+      config: {
+        reservePercent: 16,
+        nativeRegistry: (p) =>
+          p === "openai" ? async () => ({ status: "unsupported", reason: "not_available" }) : undefined,
+      },
       streamFn: makeStreamFn("local summary"),
     });
 

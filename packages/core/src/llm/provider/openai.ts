@@ -2,19 +2,18 @@
 import OpenAI from "openai";
 import { EventStream } from "../../event-stream";
 import { isNetworkError } from "../errors";
-import type { NativeCompactFn } from "./native-compaction";
 import { flattenSections } from "../system-sections";
 import { normalizeThinkingEffort } from "../thinking-effort";
-import type {
-  Model,
-  ProviderEvent,
-  ProviderResult,
-  StreamContext,
-  StreamFunction,
-  StreamOptions,
-} from "../types";
+import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
-import { buildResponsesRequestBody, convertMessages, extractCompactionSummary, handleResponsesAPIEvents, isContextOverflow } from "./openai-shared";
+import type { NativeCompactFn } from "./native-compaction";
+import {
+  buildResponsesRequestBody,
+  convertMessages,
+  extractCompactionSummary,
+  handleResponsesAPIEvents,
+  isContextOverflow,
+} from "./openai-shared";
 
 export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunction {
   const client = new OpenAI({ apiKey, baseURL: baseUrl });

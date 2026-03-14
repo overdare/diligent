@@ -7,10 +7,10 @@ import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../ll
 import type { Tool } from "../tool/types";
 import type { Message } from "../types";
 import { runCompaction } from "./compaction";
-import { runAgentLoop } from "./loop";
 import type { LoopRuntime } from "./loop";
+import { runAgentLoop } from "./loop";
 import type { AgentOptions, CompactionConfig } from "./types";
-import { AgentStream, LLMRetryConfig } from "./types";
+import { AgentStream, type LLMRetryConfig } from "./types";
 
 export class Agent {
   model: Model;
@@ -25,12 +25,7 @@ export class Agent {
   private sessionId?: string;
   readonly agentStream = new AgentStream();
 
-  constructor(
-    model: string | Model,
-    systemPrompt: SystemSection[],
-    tools: Tool[],
-    opts?: AgentOptions
-  ) {
+  constructor(model: string | Model, systemPrompt: SystemSection[], tools: Tool[], opts?: AgentOptions) {
     this.model = typeof model === "string" ? resolveModel(model) : model;
     this.systemPrompt = systemPrompt;
     this.tools = tools;
@@ -77,11 +72,7 @@ export class Agent {
    */
   async prompt(userMessage: Message, signal?: AbortSignal): Promise<Message[]> {
     const nextMessages = [...this.messages, userMessage];
-    const result = await runAgentLoop(
-      nextMessages,
-      this.createLoopRuntime(),
-      signal,
-    );
+    const result = await runAgentLoop(nextMessages, this.createLoopRuntime(), signal);
     this.messages = result;
     return result;
   }

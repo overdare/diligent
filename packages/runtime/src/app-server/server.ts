@@ -616,8 +616,6 @@ export class DiligentAppServer {
       void this.emitFromAgentEvent(runtime.id, turnId, event);
     });
 
-    let wasAborted = false;
-
     try {
       await runPromise;
       wireCollabHandler(); // wire any registry created during the run
@@ -633,7 +631,6 @@ export class DiligentAppServer {
         runtime.abortController?.signal.aborted === true;
 
       if (isAbort) {
-        wasAborted = true;
         await this.emit({
           method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
           params: { threadId: runtime.id, turnId },
@@ -931,15 +928,4 @@ export class DiligentAppServer {
       error: { code, message, data },
     });
   }
-}
-
-function summarizeSessionTail(messages: ReturnType<SessionManager["getContext"]>): string {
-  const last = messages[messages.length - 1];
-  if (!last) return "none";
-  if (last.role === "tool_result") return `tool_result:${last.toolName}:error=${last.isError}`;
-  if (last.role === "assistant") {
-    const blockTypes = last.content.map((block) => block.type).join(",") || "-";
-    return `assistant:stop=${last.stopReason}:blocks=${blockTypes}`;
-  }
-  return last.role;
 }

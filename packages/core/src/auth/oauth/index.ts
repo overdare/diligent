@@ -1,3 +1,4 @@
+export type { ChatGPTOAuthRequest, ChatGPTOAuthUrlOptions } from "./chatgpt-oauth";
 export {
   buildChatGPTOAuthUrl,
   CHATGPT_AUTH_URL,
@@ -6,7 +7,6 @@ export {
   CHATGPT_SCOPES,
   createChatGPTOAuthRequest,
 } from "./chatgpt-oauth";
-export type { ChatGPTOAuthRequest, ChatGPTOAuthUrlOptions } from "./chatgpt-oauth";
 export type { PKCEPair } from "./pkce";
 export { generateCodeChallenge, generateCodeVerifier, generatePKCE } from "./pkce";
 export { refreshOAuthTokens, shouldRefresh } from "./refresh";

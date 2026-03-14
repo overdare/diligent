@@ -41,6 +41,7 @@ export function withRetry(
         // Collect events from the inner stream
         const inner = streamFn(model, context, options);
         let errorEvent: ProviderError | undefined;
+        let hasSentDelta = false;
 
         for await (const event of inner) {
           if (event.type === "error") {
@@ -60,6 +61,9 @@ export function withRetry(
           }
 
           // Forward non-terminal events (text_delta, etc.)
+          // Track whether any visible delta has been sent — once streaming starts,
+          // retry is unsafe because the consumer already received partial output.
+          hasSentDelta = true;
           stream.push(event);
         }
 
@@ -75,8 +79,10 @@ export function withRetry(
           return;
         }
 
-        // We have an error — decide whether to retry
-        if (!errorEvent.isRetryable || attempt >= config.maxAttempts) {
+        // We have an error — decide whether to retry.
+        // Never retry after streaming has started: the consumer already received
+        // partial deltas and a retry would produce duplicate/corrupted output.
+        if (hasSentDelta || !errorEvent.isRetryable || attempt >= config.maxAttempts) {
           stream.push({ type: "error", error: errorEvent });
           return;
         }

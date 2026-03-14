@@ -73,7 +73,11 @@ describe("E2E: Real Anthropic API", () => {
           { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
         ],
       }),
-      { role: "user", content: "Run 'echo hello' using the bash tool and tell me what it outputs", timestamp: Date.now() },
+      {
+        role: "user",
+        content: "Run 'echo hello' using the bash tool and tell me what it outputs",
+        timestamp: Date.now(),
+      },
     );
 
     const toolEnd = events.find((e) => e.type === "tool_end");
@@ -128,7 +132,11 @@ describe("E2E: Real Anthropic API", () => {
           { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
         ],
       }),
-      { role: "user", content: "Run 'echo recovery_test' using the bash tool. Before that, briefly say hello.", timestamp: Date.now() },
+      {
+        role: "user",
+        content: "Run 'echo recovery_test' using the bash tool. Before that, briefly say hello.",
+        timestamp: Date.now(),
+      },
     );
 
     // Conversation should complete successfully

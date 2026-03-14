@@ -19,12 +19,12 @@ import {
   type JSONRPCResponse,
 } from "@diligent/protocol";
 import {
+  type AgentOptions,
   createCollabTools,
   createPermissionEngine,
   createRequestUserInputTool,
   createYoloPermissionEngine,
   RuntimeAgent,
-  type AgentOptions,
 } from "@diligent/runtime";
 import { createAppServerConfig, DiligentAppServer } from "@diligent/runtime/app-server";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
@@ -214,11 +214,9 @@ describe("DiligentAppServer", () => {
       }),
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -242,8 +240,8 @@ describe("DiligentAppServer", () => {
             });
 
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -312,11 +310,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -339,8 +335,8 @@ describe("DiligentAppServer", () => {
             });
 
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server, "observer");
@@ -406,36 +402,31 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: ({ effort }) =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          {
-            effort,
-            ...fakeConfig(() => {
-              const stream = new EventStream(
-                (event) => event.type === "done",
-                (event) => ({ message: (event as { message: unknown }).message }),
-              );
-              queueMicrotask(() => {
-                stream.push({ type: "start" });
-                stream.push({
-                  type: "done",
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort,
+          ...fakeConfig(() => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "ok" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
                   stopReason: "end_turn",
-                  message: {
-                    role: "assistant",
-                    content: [{ type: "text", text: "ok" }],
-                    model: "fake-model",
-                    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-                    stopReason: "end_turn",
-                    timestamp: Date.now(),
-                  },
-                });
+                  timestamp: Date.now(),
+                },
               });
-              return stream as never;
-            }),
-          },
-        ),
+            });
+            return stream as never;
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -481,36 +472,31 @@ describe("DiligentAppServer", () => {
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       cwd: projectRoot,
       createAgent: ({ effort }) =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          {
-            effort,
-            ...fakeConfig(() => {
-              const stream = new EventStream(
-                (event) => event.type === "done",
-                (event) => ({ message: (event as { message: unknown }).message }),
-              );
-              queueMicrotask(() => {
-                stream.push({ type: "start" });
-                stream.push({
-                  type: "done",
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort,
+          ...fakeConfig(() => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "ok" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
                   stopReason: "end_turn",
-                  message: {
-                    role: "assistant",
-                    content: [{ type: "text", text: "ok" }],
-                    model: "fake-model",
-                    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-                    stopReason: "end_turn",
-                    timestamp: Date.now(),
-                  },
-                });
+                  timestamp: Date.now(),
+                },
               });
-              return stream as never;
-            }),
-          },
-        ),
+            });
+            return stream as never;
+          }),
+        }),
     });
 
     const resumed = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
@@ -711,11 +697,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -736,8 +720,8 @@ describe("DiligentAppServer", () => {
               });
             });
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     connectTestPeer(server);
@@ -765,11 +749,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -790,8 +772,8 @@ describe("DiligentAppServer", () => {
               });
             });
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -891,11 +873,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -916,8 +896,8 @@ describe("DiligentAppServer", () => {
               });
             });
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -970,49 +950,52 @@ describe("DiligentAppServer", () => {
           FAKE_MODEL,
           [{ label: "base", content: "test" }],
           [createRequestUserInputTool({ ask }) as never],
-          { effort: "medium", ...fakeConfig(() => {
-            const stream = new EventStream(
-              (event) => event.type === "done",
-              (event) => ({ message: (event as { message: unknown }).message }),
-            );
+          {
+            effort: "medium",
+            ...fakeConfig(() => {
+              const stream = new EventStream(
+                (event) => event.type === "done",
+                (event) => ({ message: (event as { message: unknown }).message }),
+              );
 
-            queueMicrotask(() => {
-              stream.push({ type: "start" });
-              stream.push({
-                type: "done",
-                stopReason: "tool_use",
-                message: {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_call",
-                      id: "tc-1",
-                      name: "request_user_input",
-                      input: {
-                        questions: [
-                          {
-                            id: "q1",
-                            header: "scope",
-                            question: "Pick one",
-                            options: [
-                              { label: "A (Recommended)", description: "Preferred" },
-                              { label: "B", description: "Alternative" },
-                            ],
-                          },
-                        ],
-                      },
-                    },
-                  ],
-                  model: "fake-model",
-                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+              queueMicrotask(() => {
+                stream.push({ type: "start" });
+                stream.push({
+                  type: "done",
                   stopReason: "tool_use",
-                  timestamp: Date.now(),
-                },
+                  message: {
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "tool_call",
+                        id: "tc-1",
+                        name: "request_user_input",
+                        input: {
+                          questions: [
+                            {
+                              id: "q1",
+                              header: "scope",
+                              question: "Pick one",
+                              options: [
+                                { label: "A (Recommended)", description: "Preferred" },
+                                { label: "B", description: "Alternative" },
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                    model: "fake-model",
+                    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                    stopReason: "tool_use",
+                    timestamp: Date.now(),
+                  },
+                });
               });
-            });
 
-            return stream as never;
-          }) },
+              return stream as never;
+            }),
+          },
         ),
     });
 
@@ -1077,17 +1060,12 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          {
-            effort: "medium",
-            ...fakeConfig(() => {
-              throw new Error("invalid model for provider");
-            }),
-          },
-        ),
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
+            throw new Error("invalid model for provider");
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -1143,37 +1121,32 @@ describe("DiligentAppServer", () => {
         cwd: projectRoot,
         resolvePaths: async (cwd) => ensureDiligentDir(cwd),
         createAgent: () =>
-          new RuntimeAgent(
-            FAKE_MODEL,
-            [{ label: "base", content: "test" }],
-            [],
-            {
-              effort: "medium",
-              ...fakeConfig(() => {
-                const stream = new EventStream(
-                  (event) => event.type === "done",
-                  (event) => ({ message: (event as { message: unknown }).message }),
-                );
-                queueMicrotask(() => {
-                  stream.push({ type: "start" });
-                  stream.push({ type: "text_delta", delta: "persist-check" });
-                  stream.push({
-                    type: "done",
+          new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+            effort: "medium",
+            ...fakeConfig(() => {
+              const stream = new EventStream(
+                (event) => event.type === "done",
+                (event) => ({ message: (event as { message: unknown }).message }),
+              );
+              queueMicrotask(() => {
+                stream.push({ type: "start" });
+                stream.push({ type: "text_delta", delta: "persist-check" });
+                stream.push({
+                  type: "done",
+                  stopReason: "end_turn",
+                  message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: "persist-check" }],
+                    model: "fake-model",
+                    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
                     stopReason: "end_turn",
-                    message: {
-                      role: "assistant",
-                      content: [{ type: "text", text: "persist-check" }],
-                      model: "fake-model",
-                      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-                      stopReason: "end_turn",
-                      timestamp: Date.now(),
-                    },
-                  });
+                    timestamp: Date.now(),
+                  },
                 });
-                return stream as never;
-              }),
-            },
-          ),
+              });
+              return stream as never;
+            }),
+          }),
       });
 
       const connection = connectTestPeer(server);
@@ -1221,11 +1194,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: ({ approve }) =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -1254,8 +1225,8 @@ describe("DiligentAppServer", () => {
             });
 
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);
@@ -1305,11 +1276,9 @@ describe("DiligentAppServer", () => {
       cwd: projectRoot,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: ({ approve }) =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -1338,8 +1307,8 @@ describe("DiligentAppServer", () => {
             });
 
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const connection = connectTestPeer(server);

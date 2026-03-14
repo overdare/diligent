@@ -89,7 +89,9 @@ export function mapStopReason(status: string | undefined): StopReason {
   }
 }
 
-export function toResponsesReasoningEffort(effort: "none" | "low" | "medium" | "high" | "max"): ResponsesReasoningEffort {
+export function toResponsesReasoningEffort(
+  effort: "none" | "low" | "medium" | "high" | "max",
+): ResponsesReasoningEffort {
   if (effort === "max") return "xhigh";
   return effort;
 }

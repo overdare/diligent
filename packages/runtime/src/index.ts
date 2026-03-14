@@ -32,7 +32,14 @@ export {
   resolveModel,
   supportsThinkingNone,
 } from "@diligent/core";
-export type { AuthKeys } from "./auth";
+export type { ModeKind } from "./agent/mode";
+export { RuntimeAgent } from "./agent/runtime-agent";
+export type { AgentEvent, RuntimeAgentEvent } from "./agent-event";
+export type { CreateAgentArgs, CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
+export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
+export type { ApprovalRequest, ApprovalResponse, PermissionAction, PermissionEngine, PermissionRule } from "./approval";
+export { createPermissionEngine, createYoloPermissionEngine } from "./approval";
+export type { AuthKeys, OAuthFlowOptions } from "./auth";
 export {
   getAuthFilePath,
   loadAuthStore,
@@ -45,14 +52,6 @@ export {
   saveOAuthTokens,
   waitForCallback,
 } from "./auth";
-export type { OAuthFlowOptions } from "./auth";
-export type { ModeKind } from "./agent/mode";
-export { RuntimeAgent } from "./agent/runtime-agent";
-export type { AgentEvent, RuntimeAgentEvent } from "./agent-event";
-export type { CreateAgentArgs, CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
-export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
-export type { ApprovalRequest, ApprovalResponse, PermissionAction, PermissionEngine, PermissionRule } from "./approval";
-export { createPermissionEngine, createYoloPermissionEngine } from "./approval";
 export type { AgentEntry, AgentStatus, CollabToolDeps } from "./collab";
 export { AgentRegistry, COLLAB_TOOL_NAMES, createCollabTools } from "./collab";
 export type {

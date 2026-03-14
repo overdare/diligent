@@ -1,9 +1,9 @@
-export { Agent } from "./agent";
 export type { CompactionPrompts, CompactMessagesResult } from "../llm/compaction";
+export { Agent } from "./agent";
 export { buildMessagesFromCompaction, selectForCompaction, splitCompactionMessages } from "./compaction";
 export type {
-  AgentOptions,
   AgentListener,
+  AgentOptions,
   CoreAgentEvent,
   MessageDelta,
   SerializableError,

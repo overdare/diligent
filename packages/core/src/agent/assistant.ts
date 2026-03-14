@@ -1,14 +1,7 @@
 // @summary Assistant-response streaming helpers and provider debug logging
 
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type {
-  Model,
-  StreamContext,
-  StreamFunction,
-  SystemSection,
-  ThinkingEffort,
-  ToolDefinition,
-} from "../llm/types";
+import type { Model, StreamContext, StreamFunction, SystemSection, ThinkingEffort, ToolDefinition } from "../llm/types";
 import { resolveMaxTokens } from "../llm/types";
 import type { Tool } from "../tool/types";
 import type { AssistantMessage, Message } from "../types";

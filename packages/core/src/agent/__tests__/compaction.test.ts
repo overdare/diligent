@@ -227,7 +227,9 @@ describe("runCompaction", () => {
   it("always rebuilds summary as a user turn, including native summaries", async () => {
     const messages: Message[] = [userMsg("first"), assistantMsg("reply"), userMsg("second")];
     const stream = new AgentStream();
-    configureCompactionRegistry((p) => p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined);
+    configureCompactionRegistry((p) =>
+      p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined,
+    );
     const result = await runCompaction({
       messages,
       model: { ...TEST_MODEL, provider: "openai" },
@@ -246,9 +248,11 @@ describe("runCompaction", () => {
     expect(result.messages[2]?.role).toBe("user");
     const summaryMessage = result.messages[2];
     expect(summaryMessage?.role).toBe("user");
-    expect(summaryMessage && summaryMessage.role === "user" && typeof summaryMessage.content === "string" ? summaryMessage.content : "").toContain(
-      "native summary",
-    );
+    expect(
+      summaryMessage && summaryMessage.role === "user" && typeof summaryMessage.content === "string"
+        ? summaryMessage.content
+        : "",
+    ).toContain("native summary");
   });
 });
 

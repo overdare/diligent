@@ -1,12 +1,12 @@
 // @summary Unit tests for Agent class — subscribe()+prompt() yields turn events
 import { describe, expect, test } from "bun:test";
-import { z } from "zod";
 import type { CoreAgentEvent } from "@diligent/core/agent";
 import { Agent } from "@diligent/core/agent";
 import { EventStream } from "@diligent/core/event-stream";
 import type { Model, ProviderEvent, ProviderResult } from "@diligent/core/llm/types";
 import { ProviderError } from "@diligent/core/llm/types";
 import type { AssistantMessage } from "@diligent/core/types";
+import { z } from "zod";
 
 const TEST_MODEL: Model = {
   id: "test-model",
@@ -54,12 +54,11 @@ function makeStreamFn(response: AssistantMessage) {
 
 describe("Agent", () => {
   test("prompt() yields turn events via subscribe()", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      [{ label: "test", content: "be helpful" }],
-      BASE_CONFIG.tools,
-      { effort: BASE_CONFIG.effort, compaction: BASE_CONFIG.compaction, streamFn: makeStreamFn(makeAssistant("hello")) },
-    );
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "be helpful" }], BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: makeStreamFn(makeAssistant("hello")),
+    });
 
     const events: CoreAgentEvent[] = [];
     const unsub = agent.subscribe((e) => events.push(e));
@@ -73,12 +72,11 @@ describe("Agent", () => {
 
   test("prompt() resolves to final message list", async () => {
     const response = makeAssistant("result text");
-    const agent = new Agent(
-      TEST_MODEL,
-      [{ label: "test", content: "be helpful" }],
-      BASE_CONFIG.tools,
-      { effort: BASE_CONFIG.effort, compaction: BASE_CONFIG.compaction, streamFn: makeStreamFn(response) },
-    );
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "be helpful" }], BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: makeStreamFn(response),
+    });
 
     const messages = await agent.prompt({ role: "user", content: "ask", timestamp: Date.now() });
 
@@ -89,18 +87,13 @@ describe("Agent", () => {
 
   test("prompt() does not commit user message when the loop fails", async () => {
     const restoredMessage = { role: "user", content: "existing", timestamp: Date.now() } as const;
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      {
-        effort: BASE_CONFIG.effort,
-        compaction: BASE_CONFIG.compaction,
-        streamFn: () => {
-          throw new Error("provider failed before producing a response");
-        },
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: () => {
+        throw new Error("provider failed before producing a response");
       },
-    );
+    });
     agent.restore([restoredMessage]);
 
     await expect(agent.prompt({ role: "user", content: "new", timestamp: Date.now() })).rejects.toThrow(
@@ -113,19 +106,14 @@ describe("Agent", () => {
   test("prompt() passes signal to streamFunction", async () => {
     let capturedSignal: AbortSignal | undefined;
     const response = makeAssistant();
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      {
-        effort: BASE_CONFIG.effort,
-        compaction: BASE_CONFIG.compaction,
-        streamFn: (_model: Model, _ctx: unknown, opts: { signal?: AbortSignal }) => {
-          capturedSignal = opts?.signal;
-          return makeStreamFn(response)();
-        },
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: (_model: Model, _ctx: unknown, opts: { signal?: AbortSignal }) => {
+        capturedSignal = opts?.signal;
+        return makeStreamFn(response)();
       },
-    );
+    });
 
     const controller = new AbortController();
     await agent.prompt({ role: "user", content: "hi", timestamp: Date.now() }, controller.signal);
@@ -138,12 +126,11 @@ describe("Agent", () => {
   });
 
   test("config is readable; setters update config", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      { effort: BASE_CONFIG.effort, compaction: BASE_CONFIG.compaction, streamFn: makeStreamFn(makeAssistant("response")) },
-    );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: makeStreamFn(makeAssistant("response")),
+    });
 
     expect(agent.effort).toBe("medium");
     agent.setEffort("high");
@@ -151,12 +138,11 @@ describe("Agent", () => {
   });
 
   test("steer() and hasPendingMessages() work correctly", () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      { effort: BASE_CONFIG.effort, compaction: BASE_CONFIG.compaction, streamFn: makeStreamFn(makeAssistant()) },
-    );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: makeStreamFn(makeAssistant()),
+    });
 
     expect(agent.hasPendingMessages()).toBe(false);
     agent.steer({ role: "user", content: "redirect", timestamp: Date.now() });
@@ -166,12 +152,11 @@ describe("Agent", () => {
   });
 
   test("event ordering stays lifecycle-safe", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      { effort: BASE_CONFIG.effort, compaction: BASE_CONFIG.compaction, streamFn: makeStreamFn(makeAssistant("ordered")) },
-    );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: makeStreamFn(makeAssistant("ordered")),
+    });
 
     const events: CoreAgentEvent[] = [];
     const unsub = agent.subscribe((event) => events.push(event));
@@ -256,27 +241,22 @@ describe("Agent", () => {
   });
 
   test("abort emits agent_end once and no fatal error event", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      {
-        effort: BASE_CONFIG.effort,
-        compaction: BASE_CONFIG.compaction,
-        streamFn: () => {
-          const stream = new EventStream<ProviderEvent, ProviderResult>(
-            (event) => event.type === "done" || event.type === "error",
-            (event) => {
-              if (event.type === "done") return { message: event.message };
-              throw (event as { type: "error"; error: Error }).error;
-            },
-          );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: () => {
+        const stream = new EventStream<ProviderEvent, ProviderResult>(
+          (event) => event.type === "done" || event.type === "error",
+          (event) => {
+            if (event.type === "done") return { message: event.message };
+            throw (event as { type: "error"; error: Error }).error;
+          },
+        );
 
-          setTimeout(() => stream.end({ message: makeAssistant("aborted") }), 20);
-          return stream;
-        },
+        setTimeout(() => stream.end({ message: makeAssistant("aborted") }), 20);
+        return stream;
       },
-    );
+    });
 
     const events: CoreAgentEvent[] = [];
     const unsub = agent.subscribe((event) => events.push(event));
@@ -291,27 +271,22 @@ describe("Agent", () => {
   });
 
   test("provider stream missing terminal event raises fatal error", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      {
-        effort: BASE_CONFIG.effort,
-        compaction: BASE_CONFIG.compaction,
-        streamFn: () => {
-          const stream = new EventStream<ProviderEvent, ProviderResult>(
-            (event) => event.type === "done" || event.type === "error",
-            (event) => {
-              if (event.type === "done") return { message: event.message };
-              throw (event as { type: "error"; error: Error }).error;
-            },
-          );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: () => {
+        const stream = new EventStream<ProviderEvent, ProviderResult>(
+          (event) => event.type === "done" || event.type === "error",
+          (event) => {
+            if (event.type === "done") return { message: event.message };
+            throw (event as { type: "error"; error: Error }).error;
+          },
+        );
 
-          queueMicrotask(() => stream.end({ message: makeAssistant("missing done") }));
-          return stream;
-        },
+        queueMicrotask(() => stream.end({ message: makeAssistant("missing done") }));
+        return stream;
       },
-    );
+    });
 
     const events: CoreAgentEvent[] = [];
     const unsub = agent.subscribe((event) => events.push(event));
@@ -329,32 +304,27 @@ describe("Agent", () => {
   });
 
   test("provider errors retain classification in fatal error events", async () => {
-    const agent = new Agent(
-      TEST_MODEL,
-      BASE_CONFIG.systemPrompt,
-      BASE_CONFIG.tools,
-      {
-        effort: BASE_CONFIG.effort,
-        compaction: BASE_CONFIG.compaction,
-        streamFn: () => {
-          const stream = new EventStream<ProviderEvent, ProviderResult>(
-            (event) => event.type === "done" || event.type === "error",
-            (event) => {
-              if (event.type === "done") return { message: event.message };
-              throw (event as { type: "error"; error: Error }).error;
-            },
-          );
+    const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
+      effort: BASE_CONFIG.effort,
+      compaction: BASE_CONFIG.compaction,
+      streamFn: () => {
+        const stream = new EventStream<ProviderEvent, ProviderResult>(
+          (event) => event.type === "done" || event.type === "error",
+          (event) => {
+            if (event.type === "done") return { message: event.message };
+            throw (event as { type: "error"; error: Error }).error;
+          },
+        );
 
-          queueMicrotask(() =>
-            stream.push({
-              type: "error",
-              error: new ProviderError("Context overflow", "context_overflow", false, undefined, 400),
-            }),
-          );
-          return stream;
-        },
+        queueMicrotask(() =>
+          stream.push({
+            type: "error",
+            error: new ProviderError("Context overflow", "context_overflow", false, undefined, 400),
+          }),
+        );
+        return stream;
       },
-    );
+    });
 
     const events: CoreAgentEvent[] = [];
     const unsub = agent.subscribe((event) => events.push(event));

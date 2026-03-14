@@ -1,18 +1,18 @@
 // @summary LLM barrel exporting shared model/runtime modules, provider implementations, and compaction
 
+export type {
+  CompactionPrompts,
+  CompactMessagesResult,
+  GenerateSummaryOptions,
+  LLMCompactConfig,
+  LLMCompactInput,
+} from "./compaction";
 export {
   compact,
   compactMessages,
   configureCompactionRegistry,
   generateSummary,
   resetCompactionRegistry,
-} from "./compaction";
-export type {
-  CompactMessagesResult,
-  CompactionPrompts,
-  GenerateSummaryOptions,
-  LLMCompactConfig,
-  LLMCompactInput,
 } from "./compaction";
 export type { ModelClass, ModelDefinition } from "./models";
 export {

@@ -45,8 +45,10 @@ describe("plan tool", () => {
 
   it("defaults status to pending when omitted", async () => {
     const tool = createPlanTool();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await tool.execute({ steps: [{ text: "Do something" }] } as any, makeCtx());
+    const input = {
+      steps: [{ text: "Do something" }],
+    } as unknown as Parameters<typeof tool.execute>[0];
+    const result = await tool.execute(input, makeCtx());
     const parsed = JSON.parse(result.output);
     expect(parsed.steps[0].status).toBe("pending");
   });

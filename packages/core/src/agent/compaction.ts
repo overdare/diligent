@@ -6,9 +6,9 @@ import type { Model, StreamFunction, SystemSection } from "../llm/types";
 import type { Message } from "../types";
 import type { AgentStream, CompactionConfig } from "./types";
 
+export type { CompactionPrompts, CompactMessagesResult } from "../llm/compaction";
 // Re-export estimateTokens and LLM-layer compaction types so consumers can import from either location
 export { estimateTokens } from "../llm/tokens";
-export type { CompactMessagesResult, CompactionPrompts } from "../llm/compaction";
 
 /**
  * Prefix injected before a compaction summary so the resuming model understands

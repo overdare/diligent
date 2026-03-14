@@ -12,12 +12,12 @@ import {
   type JSONRPCMessage,
 } from "@diligent/protocol";
 import {
+  type AgentOptions,
   createNdjsonParser,
   formatNdjsonMessage,
   RpcClientSession,
   type RpcPeer,
   RuntimeAgent,
-  type AgentOptions,
 } from "@diligent/runtime";
 import { DiligentAppServer } from "@diligent/runtime/app-server";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
@@ -93,11 +93,9 @@ describe("RPC binding", () => {
       }),
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -118,8 +116,8 @@ describe("RPC binding", () => {
               });
             });
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const { bindAppServer } = await import("@diligent/runtime");
@@ -196,11 +194,9 @@ describe("RPC binding", () => {
           },
         };
 
-        return new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [approvalTool],
-          { effort: "medium", ...fakeConfig(() => {
+        return new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [approvalTool], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -244,8 +240,8 @@ describe("RPC binding", () => {
               }
             });
             return stream as never;
-          }) },
-        );
+          }),
+        });
       },
     });
 
@@ -285,11 +281,9 @@ describe("RPC binding", () => {
       }),
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
-        new RuntimeAgent(
-          FAKE_MODEL,
-          [{ label: "base", content: "test" }],
-          [],
-          { effort: "medium", ...fakeConfig(() => {
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
             const stream = new EventStream(
               (event) => event.type === "done",
               (event) => ({ message: (event as { message: unknown }).message }),
@@ -310,8 +304,8 @@ describe("RPC binding", () => {
               });
             });
             return stream as never;
-          }) },
-        ),
+          }),
+        }),
     });
 
     const { bindAppServer } = await import("@diligent/runtime");

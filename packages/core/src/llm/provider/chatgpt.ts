@@ -3,18 +3,11 @@ import { arch, platform, release } from "node:os";
 import type { OpenAIOAuthTokens } from "../../auth/types";
 import { EventStream } from "../../event-stream";
 import { isNetworkError } from "../errors";
-import type { NativeCompactFn } from "./native-compaction";
 import { flattenSections } from "../system-sections";
 import { normalizeThinkingEffort } from "../thinking-effort";
-import type {
-  Model,
-  ProviderEvent,
-  ProviderResult,
-  StreamContext,
-  StreamFunction,
-  StreamOptions,
-} from "../types";
+import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
+import type { NativeCompactFn } from "./native-compaction";
 import {
   buildResponsesRequestBody,
   convertMessages,
@@ -25,7 +18,6 @@ import {
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CHATGPT_COMPACT_URL = "https://chatgpt.com/backend-api/codex/responses/compact";
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
-
 
 /**
  * Create a StreamFunction for ChatGPT subscription (OAuth).

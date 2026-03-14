@@ -13,7 +13,7 @@ const WIN_CWD_FORWARD = "C:/Users/alice/git/diligent";
 const mockCtx = {
   toolCallId: "test-call-id",
   signal: new AbortController().signal,
-    abort: () => {},
+  abort: () => {},
 };
 
 function mockProc(stdoutText = "", exitCode = 0) {

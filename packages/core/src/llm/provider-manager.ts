@@ -157,7 +157,10 @@ function createCompactionRegistry(
   const chatgptStream = authState.getChatGPTStream();
   const oauthTokens = authState.getOAuthTokens();
   if (chatgptStream && oauthTokens) {
-    fns.set("openai", createChatGPTNativeCompaction(() => authState.getOAuthTokens()!));
+    fns.set(
+      "openai",
+      createChatGPTNativeCompaction(() => authState.getOAuthTokens()!),
+    );
   } else {
     const openAIKey = authState.getApiKey("openai");
     if (openAIKey) {

@@ -205,7 +205,6 @@ describe("buildSessionContext", () => {
     expect(ctx.messages[0].role).toBe("user");
     expect(ctx.messages[1].role).toBe("assistant");
   });
-
 });
 
 describe("buildSessionTranscript", () => {

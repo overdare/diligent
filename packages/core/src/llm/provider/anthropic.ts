@@ -4,7 +4,6 @@ import { EventStream } from "../../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../../types";
 import { isNetworkError } from "../errors";
 import { materializeUserContentBlocks } from "../image-io";
-import type { NativeCompactFn } from "./native-compaction";
 import { normalizeThinkingEffort } from "../thinking-effort";
 import type {
   Model,
@@ -17,6 +16,7 @@ import type {
   ToolDefinition,
 } from "../types";
 import { ProviderError } from "../types";
+import type { NativeCompactFn } from "./native-compaction";
 
 export function createAnthropicStream(apiKey: string, baseUrl?: string): StreamFunction {
   const resolvedSdkBaseUrl = resolveAnthropicSdkBaseUrl(baseUrl);

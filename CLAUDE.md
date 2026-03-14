@@ -10,7 +10,8 @@ Read only what your task requires.
 |------|-----------|
 | Project identity & principles | `README.md` |
 | Architecture, layers & patterns | `ARCHITECTURE.md` |
-| Source code — core (agent loop, providers, tools, config, sessions) | `packages/core/` |
+| Source code — core engine (agent loop, providers, tool interfaces, auth primitives) | `packages/core/` |
+| Source code — runtime (built-in tools, app-server, sessions, config, knowledge, skills, collab) | `packages/runtime/` |
 | Source code — cli (TUI) | `packages/cli/` |
 | Source code — web (React + Tailwind web frontend) | `packages/web/` |
 | Source code — desktop (Tauri v2 native app) | `apps/desktop/` |
@@ -33,5 +34,5 @@ Every source file has a `@summary` annotation on the first line: `// @summary <d
 - Clarify requirements fully before implementing — no assumptions
 - Run tests after code changes
 - Plan before implementing when a task involves multiple files or architectural changes
-- After exiting plan mode, run `/tidy-plan` first before starting implementation
 - When adding user-facing features, implement for both Web and TUI — they are thin clients of the same protocol (see `ARCHITECTURE.md` "Frontend Protocol Philosophy")
+- Distinguish naming clearly: `Config` is for configuration values, while `Options` is for optional function arguments. Do not put runtime control arguments like `signal` into `Config`.

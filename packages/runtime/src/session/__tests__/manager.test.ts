@@ -42,9 +42,7 @@ function makeAssistantMessage(
   };
 }
 
-function createProviderEventStream(
-  outcome: AssistantMessage | Error,
-): EventStream<ProviderEvent, ProviderResult> {
+function createProviderEventStream(outcome: AssistantMessage | Error): EventStream<ProviderEvent, ProviderResult> {
   const stream = new EventStream<ProviderEvent, ProviderResult>(
     (event) => event.type === "done" || event.type === "error",
     (event) => {
@@ -167,17 +165,12 @@ describe("SessionManager", () => {
     const mgr = new SessionManager({
       cwd: dir,
       paths: resolvePaths(dir),
-      agent: new Agent(
-        TEST_MODEL,
-        [{ label: "test", content: "test" }],
-        [],
-        {
-          effort: "medium",
-          streamFn: () => {
-            throw new Error("provider failed");
-          },
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        streamFn: () => {
+          throw new Error("provider failed");
         },
-      ),
+      }),
     });
     await mgr.create();
 
@@ -198,31 +191,26 @@ describe("SessionManager", () => {
     const mgr = new SessionManager({
       cwd: dir,
       paths: resolvePaths(dir),
-      agent: new Agent(
-        TEST_MODEL,
-        [{ label: "test", content: "test" }],
-        [],
-        {
-          effort: "medium",
-          streamFn: () => {
-            const stream = new EventStream<ProviderEvent, ProviderResult>(
-              (event) => event.type === "done" || event.type === "error",
-              (event) => {
-                if (event.type === "done") return { message: event.message };
-                throw (event as { type: "error"; error: Error }).error;
-              },
-            );
-            queueMicrotask(() => {
-              stream.push({ type: "start" });
-              stream.push({ type: "text_delta", delta: "partial" });
-            });
-            releaseDone = () => {
-              stream.push({ type: "done", stopReason: "end_turn", message: makeAssistant("completed") });
-            };
-            return stream;
-          },
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        streamFn: () => {
+          const stream = new EventStream<ProviderEvent, ProviderResult>(
+            (event) => event.type === "done" || event.type === "error",
+            (event) => {
+              if (event.type === "done") return { message: event.message };
+              throw (event as { type: "error"; error: Error }).error;
+            },
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({ type: "text_delta", delta: "partial" });
+          });
+          releaseDone = () => {
+            stream.push({ type: "done", stopReason: "end_turn", message: makeAssistant("completed") });
+          };
+          return stream;
         },
-      ),
+      }),
     });
     await mgr.create();
 
@@ -326,12 +314,10 @@ describe("SessionManager", () => {
     const mgr = new SessionManager({
       cwd: dir,
       paths: resolvePaths(dir),
-      agent: new Agent(
-        TEST_MODEL,
-        [{ label: "test", content: "test" }],
-        [],
-        { effort: "medium", streamFn: createMockStreamFn([makeAssistant("should not run")]) },
-      ),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        streamFn: createMockStreamFn([makeAssistant("should not run")]),
+      }),
     });
     await mgr.create();
 
@@ -368,25 +354,20 @@ describe("SessionManager", () => {
       cwd: dir,
       paths: resolvePaths(dir),
       compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 200 },
-      agent: new Agent(
-        { ...TEST_MODEL, contextWindow: 120 },
-        [{ label: "test", content: "test" }],
-        [compactingTool],
-        {
-          effort: "medium",
-          streamFn: ((_model, context, _options) => {
-            if (context.systemPrompt.some((section) => section.label === "test")) {
-              providerContexts.push([...context.messages]);
-            }
-            if (providerCallCount++ === 0) {
-              return createProviderEventStream(
-                makeAssistantMessage([{ type: "tool_call", id: "tc_1", name: "inflate", input: {} }], "tool_use"),
-              );
-            }
-            return createProviderEventStream(makeAssistant("after compaction"));
-          }) as StreamFunction,
-        },
-      ),
+      agent: new Agent({ ...TEST_MODEL, contextWindow: 120 }, [{ label: "test", content: "test" }], [compactingTool], {
+        effort: "medium",
+        streamFn: ((_model, context, _options) => {
+          if (context.systemPrompt.some((section) => section.label === "test")) {
+            providerContexts.push([...context.messages]);
+          }
+          if (providerCallCount++ === 0) {
+            return createProviderEventStream(
+              makeAssistantMessage([{ type: "tool_call", id: "tc_1", name: "inflate", input: {} }], "tool_use"),
+            );
+          }
+          return createProviderEventStream(makeAssistant("after compaction"));
+        }) as StreamFunction,
+      }),
     });
     await mgr.create();
 

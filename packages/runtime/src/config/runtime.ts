@@ -2,19 +2,19 @@
 
 import { access, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import { configureCompactionRegistry } from "@diligent/core/llm/compaction";
+import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import { ProviderManager } from "@diligent/core/llm/provider-manager";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "@diligent/core/llm/types";
 import type { ModeKind } from "../agent/mode";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
+import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
 import type { DiligentPaths } from "../infrastructure/index";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import type { SkillMetadata } from "../skills/index";
 import { discoverSkills, renderSkillsSection } from "../skills/index";
-import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
 import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
 import { loadDiligentConfig } from "./loader";
 import type { DiligentConfig } from "./schema";

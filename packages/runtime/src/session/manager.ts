@@ -2,9 +2,9 @@
 
 import type { CoreAgentEvent } from "@diligent/core/agent";
 import {
+  type Agent,
   buildMessagesFromCompaction,
   selectForCompaction,
-  type Agent,
   toSerializableError,
 } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/types";
@@ -195,8 +195,7 @@ export class SessionManager {
   /** Get the current message context for display (e.g., after resume) */
   getContext(): Message[] {
     const { entries, leafId } = this.getVisibleSessionState();
-    const context = buildSessionContext(entries, leafId, {
-    });
+    const context = buildSessionContext(entries, leafId, {});
     return context.messages;
   }
 
@@ -211,8 +210,7 @@ export class SessionManager {
   }
 
   getCurrentModel(): { provider: string; modelId: string } | undefined {
-    return buildSessionContext(this.entries, this.leafId, {
-    }).currentModel;
+    return buildSessionContext(this.entries, this.leafId, {}).currentModel;
   }
 
   /**
@@ -313,14 +311,12 @@ export class SessionManager {
   }
 
   getCurrentEffort(): "none" | "low" | "medium" | "high" | "max" | undefined {
-    return buildSessionContext(this.entries, this.leafId, {
-    }).currentEffort;
+    return buildSessionContext(this.entries, this.leafId, {}).currentEffort;
   }
 
   async compactNow(): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
     await this.waitForWrites();
-    const context = buildSessionContext(this.entries, this.leafId, {
-    });
+    const context = buildSessionContext(this.entries, this.leafId, {});
     const compactionConfig = this.config.compaction ?? { enabled: true, reservePercent: 16, keepRecentTokens: 20000 };
 
     const agentResult = this.resolveAgent();
@@ -341,7 +337,8 @@ export class SessionManager {
         tokensAfter = event.tokensAfter;
         this.persistCompactionEntry({
           summary: event.summary,
-          recentUserMessages: selectForCompaction(context.messages, compactionConfig.keepRecentTokens).recentUserMessages,
+          recentUserMessages: selectForCompaction(context.messages, compactionConfig.keepRecentTokens)
+            .recentUserMessages,
           tokensBefore: event.tokensBefore,
           tokensAfter: event.tokensAfter,
         });
@@ -438,7 +435,7 @@ export class SessionManager {
       agent.restore(context.messages);
       this._initializedAgent = agent;
     }
-    
+
     // 6. Subscribe to agent events — persist + relay, handle compaction_end for persistence
     let currentTurnId: string | undefined;
     const unsub = agent.subscribe((event: CoreAgentEvent) => {
@@ -465,7 +462,6 @@ export class SessionManager {
       }
       this.setPendingEntries(stagedEntries, stagedLeafId);
     });
-
 
     try {
       await agent.prompt(userMessage, opts?.signal);
@@ -628,7 +624,12 @@ export class SessionManager {
   private handleUsageEvent(usage: { cacheReadTokens: number }): void {
     const prevCacheRead = this.prevCacheReadBySession.get(this.writer.id) ?? 0;
     if (usage.cacheReadTokens < prevCacheRead) {
-      console.error("[SessionManager] Cache drop session=%s: %d -> %d", this.writer.id, prevCacheRead, usage.cacheReadTokens);
+      console.error(
+        "[SessionManager] Cache drop session=%s: %d -> %d",
+        this.writer.id,
+        prevCacheRead,
+        usage.cacheReadTokens,
+      );
     }
     this.prevCacheReadBySession.set(this.writer.id, usage.cacheReadTokens);
   }
@@ -650,12 +651,15 @@ export class SessionManager {
     }
   }
 
-  private createCompactionEntry(event: {
-    summary: string;
-    recentUserMessages: Message[];
-    tokensBefore: number;
-    tokensAfter: number;
-  }, parentId: string | null): CompactionEntry {
+  private createCompactionEntry(
+    event: {
+      summary: string;
+      recentUserMessages: Message[];
+      tokensBefore: number;
+      tokensAfter: number;
+    },
+    parentId: string | null,
+  ): CompactionEntry {
     return {
       type: "compaction",
       id: generateEntryId(),
@@ -688,10 +692,7 @@ export class SessionManager {
           await this.writer.write(entry);
         })
         .catch((error) => {
-          const detail =
-            entry.type === "message"
-              ? entry.message.role
-              : entry.type;
+          const detail = entry.type === "message" ? entry.message.role : entry.type;
           console.error(
             "[SessionManager] Failed to persist %s for session=%s: %s",
             detail,

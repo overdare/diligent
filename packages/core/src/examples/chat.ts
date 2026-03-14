@@ -4,6 +4,7 @@ import { Agent } from "../agent/agent";
 import { createAnthropicStream } from "../llm/provider/anthropic";
 import { configureStreamResolver } from "../llm/stream-resolver";
 import { c } from "./common/colors";
+
 const DEFAULT_MODEL = "haiku";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -13,11 +14,7 @@ if (!apiKey) {
 
 configureStreamResolver(() => createAnthropicStream(apiKey));
 
-const agent = new Agent(
-  DEFAULT_MODEL,
-  [{ label: "system", content: "You are a helpful assistant." }],
-  []
-);
+const agent = new Agent(DEFAULT_MODEL, [{ label: "system", content: "You are a helpful assistant." }], []);
 
 agent.subscribe((event) => {
   if (event.type === "message_start") {

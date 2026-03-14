@@ -1,7 +1,6 @@
 // @summary LLM-layer compaction execution — generateSummary, compactMessages, compact (native-first)
 
 import type { Message, TextBlock } from "../types";
-import { estimateTokens } from "./tokens";
 import type { NativeCompactionLookup } from "./provider/native-compaction";
 import { resolveStream } from "./stream-resolver";
 import type { Model, StreamContext, StreamFunction, SystemSection } from "./types";
@@ -148,7 +147,7 @@ export async function compactMessages(
     reservePercent: config.reservePercent,
     prompts: resolveCompactionPrompts(config.prompts),
   });
-  return summary
+  return summary;
 }
 
 /**
@@ -168,11 +167,9 @@ export async function compact(input: LLMCompactInput): Promise<string> {
         signal: input.signal,
       });
       if (nativeResult.status === "ok") {
-        return nativeResult.summary.trim();     
+        return nativeResult.summary.trim();
       }
-    } catch (error) {
-
-    }
+    } catch {}
   }
 
   const streamFunction = input.streamFn ?? resolveStream(input.model.provider);

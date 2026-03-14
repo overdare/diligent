@@ -90,9 +90,7 @@ export class InputEditor implements Component, Focusable {
 
     if (!this.focused) {
       const textLines = this.text.split("\n");
-      const renderedLines = textLines.map((line, index) =>
-        `${index === 0 ? promptPrefix : continuationPrefix}${line}`,
-      );
+      const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
       return ["", sep, ...renderedLines, sep];
     }
 
@@ -123,7 +121,9 @@ export class InputEditor implements Component, Focusable {
     }
 
     const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
-    const inputLines = cursorEmbeddedLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
+    const inputLines = cursorEmbeddedLines.map(
+      (line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`,
+    );
 
     // Render completion popup below the input
     const popupLines = this.renderCompletionPopup(width);
@@ -145,7 +145,7 @@ export class InputEditor implements Component, Focusable {
     }
 
     if (matchesKey(data, "shift+enter")) {
-      this.text = this.text.slice(0, this.cursorPos) + "\n" + this.text.slice(this.cursorPos);
+      this.text = `${this.text.slice(0, this.cursorPos)}\n${this.text.slice(this.cursorPos)}`;
       this.cursorPos += 1;
       this.updateCompletion();
       this.requestRender();

@@ -102,11 +102,9 @@ describe("withRetry", () => {
     const { streamFn, callCount } = createFailingStreamFn(failures);
 
     const retryCallbacks: Array<{ attempt: number; delayMs: number }> = [];
-    const retried = withRetry(
-      streamFn,
-      { maxAttempts: 5, baseDelayMs: 1, maxDelayMs: 100 },
-      (attempt, delayMs) => { retryCallbacks.push({ attempt, delayMs }); },
-    );
+    const retried = withRetry(streamFn, { maxAttempts: 5, baseDelayMs: 1, maxDelayMs: 100 }, (attempt, delayMs) => {
+      retryCallbacks.push({ attempt, delayMs });
+    });
 
     const stream = retried(testModel, testContext, testOptions);
     const events: ProviderEvent[] = [];
@@ -175,11 +173,9 @@ describe("withRetry", () => {
     const { streamFn } = createFailingStreamFn(failures);
 
     const retryDelays: number[] = [];
-    const retried = withRetry(
-      streamFn,
-      { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1000 },
-      (_attempt, delayMs) => { retryDelays.push(delayMs); },
-    );
+    const retried = withRetry(streamFn, { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1000 }, (_attempt, delayMs) => {
+      retryDelays.push(delayMs);
+    });
 
     const stream = retried(testModel, testContext, testOptions);
     for await (const _event of stream) {
@@ -199,11 +195,9 @@ describe("withRetry", () => {
     const { streamFn, callCount } = createFailingStreamFn(failures);
     const controller = new AbortController();
 
-    const retried = withRetry(
-      streamFn,
-      { maxAttempts: 5, baseDelayMs: 50, maxDelayMs: 100 },
-      () => { controller.abort(); },
-    );
+    const retried = withRetry(streamFn, { maxAttempts: 5, baseDelayMs: 50, maxDelayMs: 100 }, () => {
+      controller.abort();
+    });
 
     const stream = retried(testModel, testContext, { ...testOptions, signal: controller.signal });
     const events: ProviderEvent[] = [];
@@ -216,6 +210,46 @@ describe("withRetry", () => {
     expect(callCount()).toBeLessThanOrEqual(2);
   });
 
+  test("does not retry after streaming has started (delta sent)", async () => {
+    // Simulates a retryable error that occurs mid-stream, after a text_delta was already emitted.
+    // Retry must be suppressed to avoid duplicate deltas reaching the consumer.
+    let callCount = 0;
+    const streamFn: StreamFunction = (_model, _context, _options) => {
+      const stream = new EventStream<ProviderEvent, ProviderResult>(
+        (event) => event.type === "done" || event.type === "error",
+        (event) => {
+          if (event.type === "done") return { message: event.message };
+          throw (event as { type: "error"; error: Error }).error;
+        },
+      );
+
+      callCount++;
+      queueMicrotask(() => {
+        // Always: emit a delta first, then a retryable error
+        stream.push({ type: "text_delta", delta: "partial" });
+        stream.push({
+          type: "error",
+          error: new ProviderError("overloaded mid-stream", "overloaded", true, undefined, 529),
+        });
+      });
+
+      return stream;
+    };
+
+    const retried = withRetry(streamFn, { maxAttempts: 5, baseDelayMs: 1, maxDelayMs: 10 });
+
+    const stream = retried(testModel, testContext, testOptions);
+    const events: ProviderEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+    await stream.result().catch(() => {});
+
+    // Must not retry — only 1 attempt despite retryable error
+    expect(callCount).toBe(1);
+    expect(events.find((e) => e.type === "error")).toBeDefined();
+  });
+
   test("exponential backoff increases delay", async () => {
     const failures = [
       new ProviderError("overloaded", "overloaded", true, undefined, 529),
@@ -225,11 +259,9 @@ describe("withRetry", () => {
     const { streamFn } = createFailingStreamFn(failures);
 
     const retryDelays: number[] = [];
-    const retried = withRetry(
-      streamFn,
-      { maxAttempts: 5, baseDelayMs: 10, maxDelayMs: 1000 },
-      (_attempt, delayMs) => { retryDelays.push(delayMs); },
-    );
+    const retried = withRetry(streamFn, { maxAttempts: 5, baseDelayMs: 10, maxDelayMs: 1000 }, (_attempt, delayMs) => {
+      retryDelays.push(delayMs);
+    });
 
     const stream = retried(testModel, testContext, testOptions);
     for await (const _event of stream) {

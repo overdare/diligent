@@ -4,6 +4,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@diligent/core/agent";
+import { COMPACTION_SUMMARY_PREFIX } from "@diligent/core/agent/compaction";
 import { EventStream } from "@diligent/core/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
@@ -11,7 +12,6 @@ import type { AssistantMessage, UserMessage } from "@diligent/core/types";
 import { resolvePaths } from "@diligent/runtime/infrastructure";
 import type { SessionEntry, SessionManagerConfig } from "@diligent/runtime/session";
 import { buildSessionContext, readSessionFile, SessionManager } from "@diligent/runtime/session";
-import { COMPACTION_SUMMARY_PREFIX } from "@diligent/core/agent/compaction";
 import { z } from "zod";
 import type { AgentEvent } from "../../agent-event";
 
