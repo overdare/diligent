@@ -49,9 +49,16 @@ export async function buildProviderList(): Promise<ProviderAuthStatus[]> {
   const oauthTokens = await loadOAuthTokens();
   return PROVIDER_NAMES.map((provider) => ({
     provider,
-    configured: Boolean(keys[provider]),
-    maskedKey: keys[provider] ? maskKey(keys[provider] as string) : undefined,
-    oauthConnected: provider === "openai" ? Boolean(oauthTokens) : undefined,
+    configured: provider === "chatgpt" ? Boolean(oauthTokens) : Boolean(keys[provider]),
+    maskedKey:
+      provider === "chatgpt"
+        ? oauthTokens
+          ? "ChatGPT OAuth"
+          : undefined
+        : keys[provider]
+          ? maskKey(keys[provider] as string)
+          : undefined,
+    oauthConnected: provider === "chatgpt" ? Boolean(oauthTokens) : undefined,
   }));
 }
 
@@ -61,6 +68,9 @@ export async function handleAuthSet(
   emit: EmitFn,
 ): Promise<{ ok: true }> {
   if (!providerManager) throw Object.assign(new Error("Auth not available"), { code: -32601 });
+  if (params.provider === "chatgpt") {
+    throw Object.assign(new Error("ChatGPT uses OAuth login, not API keys"), { code: -32602 });
+  }
 
   await saveAuthKey(params.provider, params.apiKey);
   providerManager.setApiKey(params.provider, params.apiKey);
@@ -78,7 +88,7 @@ export async function handleAuthRemove(
 
   await removeAuthKey(params.provider);
   providerManager.removeApiKey(params.provider);
-  if (params.provider === "openai") {
+  if (params.provider === "chatgpt") {
     await removeOAuthTokens();
     providerManager.removeOAuthTokens();
   }
@@ -89,12 +99,16 @@ export async function handleAuthRemove(
 }
 
 export async function handleAuthOAuthStart(args: {
+  params: { provider: "chatgpt" };
   providerManager: ProviderManager | undefined;
   oauthPending: Promise<void> | null;
   setOAuthPending: (value: Promise<void> | null) => void;
   openBrowser?: (url: string) => void;
   emit: EmitFn;
 }): Promise<{ authUrl: string }> {
+  if (args.params.provider !== "chatgpt") {
+    throw Object.assign(new Error("Unsupported OAuth provider"), { code: -32602 });
+  }
   const pm = args.providerManager;
   if (!pm) throw Object.assign(new Error("Auth not available"), { code: -32601 });
   if (args.oauthPending) throw Object.assign(new Error("OAuth flow already in progress"), { code: -32000 });

@@ -408,7 +408,9 @@ export const AuthRemoveResponseSchema = z.object({
 export type AuthRemoveResponse = z.infer<typeof AuthRemoveResponseSchema>;
 
 // --- auth/oauth/start ---
-export const AuthOAuthStartParamsSchema = z.object({});
+export const AuthOAuthStartParamsSchema = z.object({
+  provider: z.literal("chatgpt"),
+});
 export type AuthOAuthStartParams = z.infer<typeof AuthOAuthStartParamsSchema>;
 
 export const AuthOAuthStartResponseSchema = z.object({

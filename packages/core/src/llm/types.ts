@@ -11,7 +11,7 @@ export interface SystemSection {
 
 export type ThinkingEffort = "none" | "low" | "medium" | "high" | "max";
 
-export type ProviderName = "anthropic" | "openai" | "gemini";
+export type ProviderName = "anthropic" | "openai" | "chatgpt" | "gemini";
 
 export interface ModelInfo {
   id: string;
@@ -65,14 +65,14 @@ export interface StreamContext {
   systemPrompt: SystemSection[];
   messages: Message[];
   tools: ToolDefinition[];
-  sessionId?: string;
 }
 
 export interface StreamOptions {
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
-  effort: ThinkingEffort; // thinking effort level
+  sessionId?: string;
+  effort?: ThinkingEffort;
 }
 
 export interface ToolDefinition {

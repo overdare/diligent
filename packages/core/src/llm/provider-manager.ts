@@ -12,6 +12,7 @@ export interface ProviderManagerConfig {
   provider?: {
     anthropic?: { baseUrl?: string };
     openai?: { baseUrl?: string };
+    chatgpt?: { baseUrl?: string };
     gemini?: { baseUrl?: string };
   };
   onOAuthTokensRefreshed?: (tokens: OpenAIOAuthTokens) => Promise<void>;
@@ -21,23 +22,28 @@ export type { ProviderName };
 
 export const DEFAULT_PROVIDER: ProviderName = "anthropic";
 
-export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "gemini"];
+export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "chatgpt", "gemini"];
 
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-5.3-codex",
+  chatgpt: "chatgpt-5.3-codex",
   gemini: "gemini-2.5-flash",
 };
 
 export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPlaceholder: string }> = {
   anthropic: { apiKeyUrl: "https://console.anthropic.com/settings/keys", apiKeyPlaceholder: "sk-ant-..." },
   openai: { apiKeyUrl: "https://platform.openai.com/api-keys", apiKeyPlaceholder: "sk-..." },
+  chatgpt: { apiKeyUrl: "https://chatgpt.com", apiKeyPlaceholder: "OAuth login required" },
   gemini: { apiKeyUrl: "https://aistudio.google.com/apikey", apiKeyPlaceholder: "AIza..." },
 };
 
 const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) => StreamFunction> = {
   anthropic: createAnthropicStream,
   openai: createOpenAIStream,
+  chatgpt: () => {
+    throw new Error("ChatGPT stream requires OAuth tokens");
+  },
   gemini: createGeminiStream,
 };
 
@@ -74,18 +80,18 @@ class AuthStateManager {
   setOAuthTokens(tokens: OpenAIOAuthTokens): void {
     this.oauthTokens = tokens;
     this.chatgptStream = createChatGPTStream(() => this.oauthTokens!);
-    this.keys.openai = "chatgpt-oauth";
+    this.keys.chatgpt = "chatgpt-oauth";
   }
 
   removeOAuthTokens(): void {
     this.oauthTokens = undefined;
     this.chatgptStream = undefined;
-    if (this.keys.openai === "chatgpt-oauth") {
-      delete this.keys.openai;
+    if (this.keys.chatgpt === "chatgpt-oauth") {
+      delete this.keys.chatgpt;
     }
   }
 
-  hasOAuthFor(_provider: "openai"): boolean {
+  hasOAuthFor(_provider: "chatgpt"): boolean {
     return this.oauthTokens !== undefined;
   }
 
@@ -138,7 +144,7 @@ class AuthStateManager {
   getMaskedKey(provider: ProviderName): string | undefined {
     const key = this.keys[provider];
     if (!key) return undefined;
-    if (provider === "openai" && this.oauthTokens) return "ChatGPT OAuth";
+    if (provider === "chatgpt" && this.oauthTokens) return "ChatGPT OAuth";
     return key.length > 7 ? `${key.slice(0, 7)}...` : key;
   }
 }
@@ -149,7 +155,7 @@ function createCompactionRegistry(
 ): NativeCompactionLookup {
   // Live lookup: reads current auth state on each call so key/token changes are reflected.
   return (provider) => {
-    if (provider === "openai" && authState.getChatGPTStream()) {
+    if (provider === "chatgpt" && authState.getChatGPTStream()) {
       return createChatGPTNativeCompaction(() => authState.getOAuthTokens()!);
     }
     const key = authState.getApiKey(provider as ProviderName);
@@ -171,11 +177,9 @@ export function createStreamForProvider(provider: string, apiKey: string): Strea
  * Manages provider API keys and creates a proxy StreamFunction
  * that dispatches to the correct provider based on model.provider.
  *
- * OpenAI supports two auth modes (both can be active):
- *   - API Key (sk-...): uses api.openai.com — set via setApiKey("openai", ...)
- *   - ChatGPT OAuth:    uses chatgpt.com/backend-api/codex — set via setOAuthTokens(...)
- *
- * OAuth takes priority when both are set.
+ * Provider auth is provider-specific:
+ *   - openai  -> API key (api.openai.com)
+ *   - chatgpt -> ChatGPT OAuth (chatgpt.com backend)
  */
 export class ProviderManager {
   private baseUrls: Partial<Record<ProviderName, string>> = {};
@@ -186,6 +190,7 @@ export class ProviderManager {
     // Only read baseUrls from config — API keys come exclusively from auth.json
     this.baseUrls.anthropic = config.provider?.anthropic?.baseUrl;
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
+    this.baseUrls.chatgpt = config.provider?.chatgpt?.baseUrl;
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
     this.authState = new AuthStateManager(config.onOAuthTokensRefreshed);
   }
@@ -198,8 +203,8 @@ export class ProviderManager {
     this.authState.setOAuthTokens(tokens);
   }
 
-  /** Whether OpenAI is authenticated via ChatGPT OAuth */
-  hasOAuthFor(_provider: "openai"): boolean {
+  /** Whether ChatGPT is authenticated via OAuth */
+  hasOAuthFor(_provider: "chatgpt"): boolean {
     return this.authState.hasOAuthFor(_provider);
   }
 
@@ -223,7 +228,7 @@ export class ProviderManager {
 
       // ChatGPT OAuth path: use dedicated stream (token refreshed via closure)
       const chatgptStream = this.authState.getChatGPTStream();
-      if (provider === "openai" && chatgptStream) {
+      if (provider === "chatgpt" && chatgptStream) {
         // Trigger background refresh if tokens are near expiry (non-blocking)
         this.ensureOAuthFresh().catch(() => {});
         return chatgptStream(model, context, options);
@@ -232,7 +237,7 @@ export class ProviderManager {
       // API Key path: dispatch via key
       const apiKey = this.authState.getApiKey(provider);
       if (!apiKey) {
-        throw new Error(`No API key configured for ${provider}. Use /provider ${provider} to configure.`);
+        throw new Error(`No authentication configured for ${provider}. Use /provider ${provider} to configure.`);
       }
 
       const stream = this.streamCache.getOrCreate(provider, apiKey, this.baseUrls[provider]);

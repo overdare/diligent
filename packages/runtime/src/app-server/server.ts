@@ -464,6 +464,7 @@ export class DiligentAppServer {
 
       case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START:
         return handleAuthOAuthStart({
+          params: request.params,
           providerManager: this.config.providerManager,
           oauthPending: this.oauthPending,
           setOAuthPending: (value) => {

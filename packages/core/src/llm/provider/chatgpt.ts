@@ -4,7 +4,6 @@ import type { OpenAIOAuthTokens } from "../../auth/types";
 import { EventStream } from "../../event-stream";
 import { isNetworkError } from "../errors";
 import { flattenSections } from "../system-sections";
-import { normalizeThinkingEffort } from "../thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
@@ -18,6 +17,10 @@ import {
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CHATGPT_COMPACT_URL = "https://chatgpt.com/backend-api/codex/responses/compact";
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
+
+function resolveChatGPTModelId(modelId: string): string {
+  return modelId.startsWith("chatgpt-") ? `gpt-${modelId.slice("chatgpt-".length)}` : modelId;
+}
 
 /**
  * Create a StreamFunction for ChatGPT subscription (OAuth).
@@ -59,20 +62,20 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
         if (tokens.account_id) {
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
-        if (context.sessionId) {
-          headers.session_id = context.sessionId;
-          headers.conversation_id = context.sessionId;
+        if (options.sessionId) {
+          headers.session_id = options.sessionId;
+          headers.conversation_id = options.sessionId;
         }
 
-        const effort = normalizeThinkingEffort(options.effort);
+        const effort = options.effort;
         const useReasoning = model.supportsThinking;
 
         const body = await buildResponsesRequestBody({
-          model: model.id,
+          model: resolveChatGPTModelId(model.id),
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
           tools: context.tools,
-          sessionId: context.sessionId,
+          sessionId: options.sessionId,
           useReasoning,
           effort,
           store: false,
@@ -143,7 +146,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           model,
           options.signal,
           context.messages.length,
-          context.sessionId,
+          options.sessionId,
         );
       } catch (err) {
         if (err instanceof ProviderError) {
@@ -186,7 +189,7 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
     }
 
     const body: Record<string, unknown> = {
-      model: input.model.id,
+      model: resolveChatGPTModelId(input.model.id),
       store: false,
       input: await convertMessages(input.messages),
     };

@@ -142,7 +142,7 @@ export function Sidebar({
       {providers && onOpenProviders ? (
         <div className="space-y-2 border-t border-text/10 px-3 py-2.5">
           {(() => {
-            const connected = providers.filter((p) => p.configured || p.oauthConnected);
+            const connected = providers.filter((p) => p.configured);
             return (
               <div className="flex flex-wrap items-center gap-1.5">
                 {connected.length === 0 ? (

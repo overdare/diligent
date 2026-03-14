@@ -8,7 +8,7 @@ import {
   PROVIDER_NAMES,
   type ProviderName,
 } from "../provider-manager";
-import { promptSaveKey } from "./commands/builtin/provider";
+import { promptSaveKey, promptApiKey } from "./commands/builtin/provider";
 import type { CommandContext } from "./commands/types";
 import type { ListPickerItem } from "./components/list-picker";
 import { ListPicker } from "./components/list-picker";
@@ -49,6 +49,7 @@ export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
   }
 
   function wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
+    if (provider === "chatgpt") return Promise.resolve(null);
     return new Promise((resolve) => {
       const { apiKeyUrl: hint, apiKeyPlaceholder: placeholder } = PROVIDER_HINTS[provider];
 
@@ -79,7 +80,7 @@ export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
       const provider = await wizardPickProvider();
       if (!provider) {
         deps.addLines([
-          `  ${t.dim}Setup skipped. Use /provider set <anthropic|openai> to configure later.${t.reset}`,
+          `  ${t.dim}Setup skipped. Use /provider set <anthropic|openai|chatgpt|gemini> to configure later.${t.reset}`,
           "",
         ]);
         deps.requestRender();
@@ -87,19 +88,27 @@ export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
       }
 
       // Step 2: Enter API key
-      const apiKey = await wizardEnterApiKey(provider);
-      if (!apiKey) {
-        deps.addLines([`  ${t.dim}Setup skipped. Use /provider set ${provider} to configure later.${t.reset}`, ""]);
-        deps.requestRender();
-        return;
+      if (provider === "chatgpt") {
+        const ctx = deps.buildCommandContext();
+        await promptApiKey("chatgpt", ctx);
+        if (!deps.config.providerManager.hasKeyFor("chatgpt")) {
+          deps.addLines([`  ${t.dim}Setup skipped. Use /provider set chatgpt to configure later.${t.reset}`, ""]);
+          deps.requestRender();
+          return;
+        }
+      } else {
+        const apiKey = await wizardEnterApiKey(provider);
+        if (!apiKey) {
+          deps.addLines([`  ${t.dim}Setup skipped. Use /provider set ${provider} to configure later.${t.reset}`, ""]);
+          deps.requestRender();
+          return;
+        }
+
+        deps.config.providerManager.setApiKey(provider, apiKey);
+
+        const ctx = deps.buildCommandContext();
+        await promptSaveKey(provider, apiKey, ctx);
       }
-
-      // Apply key immediately
-      deps.config.providerManager.setApiKey(provider, apiKey);
-
-      // Step 3: Save to global config?
-      const ctx = deps.buildCommandContext();
-      await promptSaveKey(provider, apiKey, ctx);
 
       // Switch model if the selected provider differs from current
       const currentProvider = deps.config.model.provider ?? DEFAULT_PROVIDER;

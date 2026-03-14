@@ -15,6 +15,7 @@ describe("ProviderManager", () => {
     const pm = new ProviderManager({});
     expect(pm.hasKeyFor("anthropic")).toBe(false);
     expect(pm.hasKeyFor("openai")).toBe(false);
+    expect(pm.hasKeyFor("chatgpt")).toBe(false);
   });
 
   test("setApiKey updates the key and invalidates cache", () => {
@@ -64,11 +65,11 @@ describe("ProviderManager", () => {
         { systemPrompt: [], messages: [], tools: [] },
         {},
       );
-    }).toThrow(/No API key configured for anthropic/);
+    }).toThrow(/No authentication configured for anthropic/);
   });
 
   test("PROVIDER_NAMES constant contains all providers", () => {
-    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai", "gemini"]);
+    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai", "chatgpt", "gemini"]);
   });
 
   test("DEFAULT_MODELS has entries for all providers", () => {
@@ -90,5 +91,18 @@ describe("ProviderManager", () => {
     const pm = new ProviderManager({});
     pm.setApiKey("anthropic", "");
     expect(pm.hasKeyFor("anthropic")).toBe(false);
+  });
+
+  test("oauth marks chatgpt as configured", () => {
+    const pm = new ProviderManager({});
+    pm.setOAuthTokens({
+      access_token: "at",
+      refresh_token: "rt",
+      id_token: "id",
+      expires_at: Number.MAX_SAFE_INTEGER,
+    });
+    expect(pm.hasKeyFor("chatgpt")).toBe(true);
+    expect(pm.hasOAuthFor("chatgpt")).toBe(true);
+    expect(pm.getMaskedKey("chatgpt")).toBe("ChatGPT OAuth");
   });
 });

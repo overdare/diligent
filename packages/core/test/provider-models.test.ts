@@ -32,12 +32,17 @@ describe("resolveModel", () => {
     const model = resolveModel("unknown-model");
     expect(model.provider).toBe("anthropic");
   });
+
+  it("infers chatgpt from chatgpt- prefix", () => {
+    const model = resolveModel("chatgpt-5.3-codex");
+    expect(model.provider).toBe("chatgpt");
+  });
 });
 
 describe("model class annotations", () => {
   it("annotates vision support for Anthropic and OpenAI only", () => {
     for (const model of KNOWN_MODELS) {
-      if (model.provider === "anthropic" || model.provider === "openai") {
+      if (model.provider === "anthropic" || model.provider === "openai" || model.provider === "chatgpt") {
         expect(model.supportsVision).toBe(true);
       } else {
         expect(model.supportsVision).not.toBe(true);
@@ -53,7 +58,7 @@ describe("model class annotations", () => {
   });
 
   it("each provider has at least one model per class", () => {
-    for (const provider of ["anthropic", "openai", "gemini"]) {
+    for (const provider of ["anthropic", "openai", "chatgpt", "gemini"]) {
       for (const cls of ["pro", "general", "lite"] as const) {
         const match = KNOWN_MODELS.find((m) => m.provider === provider && m.modelClass === cls);
         expect(match).toBeDefined();
@@ -77,6 +82,12 @@ describe("model class annotations", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "gemini-2.5-pro")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "gemini-2.5-flash")?.modelClass).toBe("general");
     expect(KNOWN_MODELS.find((m) => m.id === "gemini-2.5-flash-lite")?.modelClass).toBe("lite");
+  });
+
+  it("chatgpt classes map correctly", () => {
+    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4")?.modelClass).toBe("pro");
+    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.3-codex")?.modelClass).toBe("general");
+    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.1-codex-mini")?.modelClass).toBe("lite");
   });
 });
 
@@ -143,6 +154,13 @@ describe("resolveModelForClass", () => {
     const lite = resolveModelForClass(flash, "lite");
     expect(lite.id).toBe("gemini-2.5-flash-lite");
     expect(lite.provider).toBe("gemini");
+  });
+
+  it("resolves chatgpt general → lite", () => {
+    const codex = resolveModel("chatgpt-5.3-codex");
+    const lite = resolveModelForClass(codex, "lite");
+    expect(lite.id).toBe("chatgpt-5.1-codex-mini");
+    expect(lite.provider).toBe("chatgpt");
   });
 
   it("falls back to current model for unknown provider", () => {

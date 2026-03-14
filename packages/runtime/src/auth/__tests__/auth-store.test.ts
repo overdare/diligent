@@ -66,21 +66,21 @@ describe("loadAuthStore", () => {
     expect(result.anthropic).toBe("sk-ant-123");
   });
 
-  test("loads openai_oauth tokens", async () => {
+  test("loads chatgpt_oauth tokens", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadAuthStore(path);
-    expect(result.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(result.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
-  test("loads both plain key and openai_oauth simultaneously", async () => {
+  test("loads both plain key and chatgpt_oauth simultaneously", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadAuthStore(path);
     expect(result.anthropic).toBe("sk-ant-123");
-    expect(result.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(result.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
   test("returns {} for invalid JSON", async () => {
@@ -140,15 +140,15 @@ describe("saveAuthKey", () => {
     expect(content.openai).toBe("sk-openai-new");
   });
 
-  test("preserves openai_oauth when saving plain key", async () => {
+  test("preserves chatgpt_oauth when saving plain key", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     await saveAuthKey("anthropic", "sk-ant-new", path);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant-new");
-    expect(content.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
   test("overwrites existing key for same provider", async () => {
@@ -181,13 +181,13 @@ describe("saveAuthKey", () => {
 });
 
 describe("saveOAuthTokens", () => {
-  test("saves openai_oauth to new file", async () => {
+  test("saves chatgpt_oauth to new file", async () => {
     const path = join(TEST_ROOT, "oauth-auth.jsonc");
 
     await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
 
     const content = JSON.parse(await Bun.file(path).text());
-    expect(content.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
   test("preserves plain API keys when saving OAuth tokens", async () => {
@@ -198,19 +198,19 @@ describe("saveOAuthTokens", () => {
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant-test");
-    expect(content.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
-  test("overwrites existing openai_oauth", async () => {
+  test("overwrites existing chatgpt_oauth", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     const oldTokens: OpenAIOAuthTokens = { ...TEST_OAUTH_TOKENS, account_id: "acc-old" };
-    await Bun.write(path, JSON.stringify({ openai_oauth: oldTokens }));
+    await Bun.write(path, JSON.stringify({ chatgpt_oauth: oldTokens }));
 
     const newTokens: OpenAIOAuthTokens = { ...TEST_OAUTH_TOKENS, account_id: "acc-new" };
     await saveOAuthTokens(newTokens, path);
 
     const content = JSON.parse(await Bun.file(path).text());
-    expect(content.openai_oauth.account_id).toBe("acc-new");
+    expect(content.chatgpt_oauth.account_id).toBe("acc-new");
   });
 
   test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
@@ -226,29 +226,29 @@ describe("saveOAuthTokens", () => {
 describe("remove auth entries", () => {
   test("removes a plain API key without disturbing oauth tokens", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     await removeAuthKey("anthropic", path);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBeUndefined();
-    expect(content.openai_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
   });
 
   test("removes oauth tokens without disturbing API keys", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     await removeOAuthTokens(path);
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant");
-    expect(content.openai_oauth).toBeUndefined();
+    expect(content.chatgpt_oauth).toBeUndefined();
   });
 });
 
 describe("loadOAuthTokens", () => {
-  test("returns undefined when no openai_oauth in file", async () => {
+  test("returns undefined when no chatgpt_oauth in file", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant" }));
 
@@ -258,7 +258,7 @@ describe("loadOAuthTokens", () => {
 
   test("returns OAuth tokens when present", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ openai_oauth: TEST_OAUTH_TOKENS }));
+    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
     const result = await loadOAuthTokens(path);
     expect(result).toEqual(TEST_OAUTH_TOKENS);

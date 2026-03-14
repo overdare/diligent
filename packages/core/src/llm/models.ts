@@ -176,6 +176,38 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     aliases: ["codex-mini"],
     modelClass: "lite",
   },
+  // ChatGPT subscription models map to the same upstream family, but remain distinct
+  // in Diligent so provider identity stays separate from auth strategy.
+  {
+    id: "chatgpt-5.4",
+    provider: "chatgpt",
+    contextWindow: 400_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
+    supportsVision: true,
+    modelClass: "pro",
+  },
+  {
+    id: "chatgpt-5.3-codex",
+    provider: "chatgpt",
+    contextWindow: 400_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITH_NONE,
+    supportsVision: true,
+    modelClass: "general",
+  },
+  {
+    id: "chatgpt-5.1-codex-mini",
+    provider: "chatgpt",
+    contextWindow: 400_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,
+    supportsVision: true,
+    modelClass: "lite",
+  },
 ];
 
 /**
@@ -273,6 +305,9 @@ export function resolveModel(modelId: string): Model {
       maxOutputTokens: 16_384,
       supportsThinking: true,
     };
+  }
+  if (modelId.startsWith("chatgpt-")) {
+    return { id: modelId, provider: "chatgpt", contextWindow: 128_000, maxOutputTokens: 16_384, supportsThinking: true };
   }
   if (modelId.startsWith("gpt-") || modelId.match(/^o[1-9]/)) {
     return { id: modelId, provider: "openai", contextWindow: 128_000, maxOutputTokens: 16_384, supportsThinking: true };

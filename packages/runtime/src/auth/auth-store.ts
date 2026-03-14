@@ -10,8 +10,9 @@ import { z } from "zod";
 export type AuthKeys = {
   anthropic?: string;
   openai?: string;
+  chatgpt?: string;
   gemini?: string;
-  openai_oauth?: OpenAIOAuthTokens;
+  chatgpt_oauth?: OpenAIOAuthTokens;
 };
 
 const OpenAIOAuthSchema = z.object({
@@ -26,8 +27,9 @@ const AuthKeysSchema = z
   .object({
     anthropic: z.string().optional(),
     openai: z.string().optional(),
+    chatgpt: z.string().optional(),
     gemini: z.string().optional(),
-    openai_oauth: OpenAIOAuthSchema.optional(),
+    chatgpt_oauth: OpenAIOAuthSchema.optional(),
   })
   .strict();
 
@@ -85,7 +87,7 @@ export async function saveAuthKey(provider: ProviderName, apiKey: string, path?:
 export async function saveOAuthTokens(tokens: OpenAIOAuthTokens, path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
   const existing = await readValidatedStore(filePath, false);
-  existing.openai_oauth = tokens;
+  existing.chatgpt_oauth = tokens;
   await writeStore(filePath, existing);
 }
 
@@ -99,11 +101,11 @@ export async function removeAuthKey(provider: ProviderName, path?: string): Prom
 export async function removeOAuthTokens(path?: string): Promise<void> {
   const filePath = path ?? getAuthFilePath();
   const existing = await readValidatedStore(filePath, false);
-  delete existing.openai_oauth;
+  delete existing.chatgpt_oauth;
   await writeStore(filePath, existing);
 }
 
 export async function loadOAuthTokens(path?: string): Promise<OpenAIOAuthTokens | undefined> {
   const keys = await loadAuthStore(path);
-  return keys.openai_oauth;
+  return keys.chatgpt_oauth;
 }
