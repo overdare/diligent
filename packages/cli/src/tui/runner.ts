@@ -24,6 +24,7 @@ const APP_SERVER_STDERR_PREFIX = "[app-server]";
 export class NonInteractiveRunner {
   private exitCode = 0;
   private isThinking = false;
+  private shouldBellOnComplete = true;
 
   constructor(
     private config: AppConfig,
@@ -32,6 +33,8 @@ export class NonInteractiveRunner {
   ) {}
 
   async run(prompt: string): Promise<number> {
+    this.shouldBellOnComplete = this.config.diligent.terminalBell !== false;
+
     if (!this.paths) {
       this.writeStderr("[error] No .diligent directory — non-interactive mode is unavailable.", false);
       return 1;
@@ -68,6 +71,7 @@ export class NonInteractiveRunner {
         threadId &&
         notification.params.threadId === threadId
       ) {
+        this.ringTerminalBell();
         pendingTurn?.resolve();
       }
 
@@ -200,5 +204,12 @@ export class NonInteractiveRunner {
     } else {
       process.stderr.write(`${msg}\n`);
     }
+  }
+
+  private ringTerminalBell(): void {
+    if (!this.shouldBellOnComplete) {
+      return;
+    }
+    process.stderr.write("\x07");
   }
 }

@@ -73,6 +73,11 @@ export class Terminal {
     (this.stdout as NodeJS.WritableStream).write(data);
   }
 
+  /** Emit the terminal bell control character. */
+  bell(): void {
+    this.write("\x07");
+  }
+
   /** Write wrapped in synchronized output sequences to prevent flicker */
   writeSynchronized(data: string): void {
     (this.stdout as NodeJS.WritableStream).write(SEQ.SYNC_START + data + SEQ.SYNC_END);

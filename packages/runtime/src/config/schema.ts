@@ -93,6 +93,9 @@ export const DiligentConfigSchema = z
     // YOLO mode — auto-approve all permission prompts without asking
     yolo: z.boolean().optional(),
 
+    // Notify when a turn completes in terminal clients (TUI/CLI)
+    terminalBell: z.boolean().optional(),
+
     // Tool configuration (P032)
     tools: z
       .object({

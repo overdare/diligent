@@ -367,4 +367,45 @@ describe("NonInteractiveRunner", () => {
 
     expect(stdout.join("")).toBe("");
   });
+
+  test("rings terminal bell when turn completes", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
+
+    const { stderr, restore } = captureOutput();
+    try {
+      const cfg = makeConfig(streamFn);
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
+      const exitCode = await runner.run("ping");
+      expect(exitCode).toBe(0);
+    } finally {
+      restore();
+      workspace.cleanup();
+    }
+
+    expect(stderr.join("")).toContain("\x07");
+  });
+
+  test("terminal bell can be disabled via config", async () => {
+    const workspace = await setupWorkspace("diligent-runner-test-");
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
+
+    const { stderr, restore } = captureOutput();
+    try {
+      const cfg = makeConfig(streamFn);
+      cfg.diligent = { ...cfg.diligent, terminalBell: false };
+      const runner = new NonInteractiveRunner(cfg, workspace.paths, {
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+      });
+      const exitCode = await runner.run("ping");
+      expect(exitCode).toBe(0);
+    } finally {
+      restore();
+      workspace.cleanup();
+    }
+
+    expect(stderr.join("")).not.toContain("\x07");
+  });
 });

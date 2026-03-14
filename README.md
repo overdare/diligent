@@ -27,6 +27,18 @@ make dev
 
 Resume the last session with `--continue`, or list past sessions with `--list`.
 
+## Completion bell (terminal)
+
+Diligent rings the terminal bell when a turn completes in CLI/TUI.
+
+You can disable it in `.diligent/config.jsonc`:
+
+```jsonc
+{
+  "terminalBell": false
+}
+```
+
 ## Tool settings
 
 Diligent supports project-local tool settings for:

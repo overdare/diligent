@@ -100,6 +100,7 @@ export class App {
   private reasoningStartedAtMs: number | null = null;
   private reasoningAccumulatedMs = 0;
   private pendingOAuthResolve: ((result: { success: boolean; error: string | null }) => void) | null = null;
+  private shouldBellOnComplete: boolean;
 
   // Extracted modules
   private threadManager: ThreadManager;
@@ -114,6 +115,7 @@ export class App {
   ) {
     this.currentMode = config.mode;
     this.currentEffort = config.diligent.effort ?? "medium";
+    this.shouldBellOnComplete = config.diligent.terminalBell !== false;
     this.terminal = new Terminal();
     this.overlayStack = new OverlayStack();
     this.stdinBuffer = new StdinBuffer();
@@ -487,6 +489,7 @@ export class App {
       this.currentThreadId &&
       notification.params.threadId === this.currentThreadId
     ) {
+      this.ringTerminalBell();
       this.appendLocalTurnTimingLine();
       this.pendingTurn?.resolve();
     }
@@ -586,6 +589,13 @@ export class App {
       }
       this.activeUserInputResolved = false;
     }
+  }
+
+  private ringTerminalBell(): void {
+    if (!this.shouldBellOnComplete) {
+      return;
+    }
+    this.terminal.bell();
   }
 
   private appendLocalTurnTimingLine(): void {

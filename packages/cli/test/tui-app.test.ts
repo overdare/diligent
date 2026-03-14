@@ -407,4 +407,54 @@ describe("App", () => {
 
     expect(writes.join("")).toContain("Cancelled");
   });
+
+  test("rings terminal bell when turn completes", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
+
+    const cfg = makeConfig(streamFn);
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("ring");
+      emitEnter();
+      await wait(180);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    expect(writes.join("")).toContain("\x07");
+  });
+
+  test("terminal bell can be disabled via config", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
+
+    const cfg = makeConfig(streamFn, { diligent: { terminalBell: false } });
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("ring");
+      emitEnter();
+      await wait(180);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    expect(writes.join("")).not.toContain("\x07");
+  });
 });

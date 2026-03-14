@@ -14,6 +14,15 @@ describe("DiligentConfigSchema — tools section", () => {
     expect(() => DiligentConfigSchema.parse({ effort: "ultra" })).toThrow();
   });
 
+  it("accepts terminalBell boolean", () => {
+    expect(DiligentConfigSchema.parse({ terminalBell: true }).terminalBell).toBe(true);
+    expect(DiligentConfigSchema.parse({ terminalBell: false }).terminalBell).toBe(false);
+  });
+
+  it("rejects non-boolean terminalBell", () => {
+    expect(() => DiligentConfigSchema.parse({ terminalBell: "yes" })).toThrow();
+  });
+
   it("accepts a valid tools section with all fields", () => {
     const result = DiligentConfigSchema.parse({
       tools: {
