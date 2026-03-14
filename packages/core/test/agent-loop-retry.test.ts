@@ -74,9 +74,9 @@ async function runAgent(
 ): Promise<{ events: CoreAgentEvent[] }> {
   const agent = new Agent(testModel, [{ label: "test", content: "test" }], [], {
     effort: "medium",
-    streamFn,
+    llmMsgStreamFn: streamFn,
     retry: {
-      maxRetries: opts?.retry?.maxRetries,
+      maxRetries: opts?.retry?.maxRetries ?? 5,
       baseDelayMs: opts?.retry?.baseDelayMs ?? 1,
       maxDelayMs: opts?.retry?.maxDelayMs ?? 10,
     },

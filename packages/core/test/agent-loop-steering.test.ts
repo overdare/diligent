@@ -81,7 +81,7 @@ const echoTool: Tool = {
 function makeAgent(streamFn: StreamFunction, toolOverride?: Tool[]): Agent {
   return new Agent(TEST_MODEL, [{ label: "test", content: "test" }], toolOverride ?? [echoTool], {
     effort: "medium",
-    streamFn,
+    llmMsgStreamFn: streamFn,
   });
 }
 

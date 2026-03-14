@@ -28,7 +28,7 @@ export function createTestServer(opts: {
           { id: "fake", provider: "fake", contextWindow: 8192, maxOutputTokens: 4096, supportsThinking: false },
           [],
           opts.tools ?? [],
-          { effort: "medium", streamFn },
+          { effort: "medium", llmMsgStreamFn: streamFn },
         ),
     });
   }
