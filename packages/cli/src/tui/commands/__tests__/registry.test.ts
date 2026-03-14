@@ -1,5 +1,11 @@
 // @summary Tests for command registry and command execution
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
+import type { ThinkingEffort } from "@diligent/protocol";
+import type { AppConfig } from "../../../config";
+import { createCommandHandler, type CommandHandlerDeps } from "../../command-handler";
+import type { ConfigManager } from "../../config-manager";
+import type { OverlayHandle } from "../../framework/types";
+import type { ThreadManager } from "../../thread-manager";
 import { CommandRegistry } from "../registry";
 import type { Command, CommandContext } from "../types";
 
@@ -7,6 +13,53 @@ function makeCommand(overrides: Partial<Command> & { name: string }): Command {
   return {
     description: `Test command: ${overrides.name}`,
     handler: async (_args: string | undefined, _ctx: CommandContext) => {},
+    ...overrides,
+  };
+}
+
+function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHandlerDeps {
+  const threadManager: ThreadManager = {
+    startNewThread: async () => "thread-1",
+    resumeThread: async () => null,
+    listThreads: async () => [],
+    readThread: async () => null,
+    deleteThread: async () => false,
+  };
+
+  const configManager: ConfigManager = {
+    setMode: () => {},
+    setEffort: async () => {},
+    reloadConfig: async () => {},
+  };
+
+  return {
+    getRpcClient: () => null,
+    getCurrentThreadId: () => "thread-1",
+    getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } } as AppConfig),
+    getCommandRegistry: () => new CommandRegistry(),
+    getSkills: () => [],
+    getCurrentMode: () => "default",
+    getCurrentEffort: () => "medium",
+    getIsProcessing: () => false,
+    setIsProcessing: () => {},
+    setPendingTurn: () => {},
+    addUserMessage: () => {},
+    addLines: () => {},
+    clearActive: () => {},
+    clearChatHistory: () => {},
+    handleAgentStartEvent: () => {},
+    handleTurnError: () => {},
+    updateStatusBar: () => {},
+    requestRender: () => {},
+    showOverlay: () => ({ hide: () => {} }) as OverlayHandle,
+    confirm: async () => true,
+    shutdown: () => {},
+    onModelChanged: () => {},
+    onEffortChanged: () => {},
+    waitForOAuthComplete: async () => ({ success: true, error: null }),
+    syncActiveThreadState: async () => {},
+    threadManager,
+    configManager,
     ...overrides,
   };
 }
@@ -122,5 +175,44 @@ describe("CommandRegistry", () => {
 
       expect(registry.completeDetailed("z")).toEqual([]);
     });
+  });
+});
+
+describe("createCommandHandler", () => {
+  it("builds command context with the live current effort", () => {
+    let currentEffort: ThinkingEffort = "medium";
+    const handler = createCommandHandler(
+      makeHandlerDeps({
+        getCurrentEffort: () => currentEffort,
+        getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } } as AppConfig),
+      }),
+    );
+
+    currentEffort = "max";
+
+    expect(handler.buildCommandContext().currentEffort).toBe("max");
+  });
+
+  it("syncs active thread state after starting a new thread from command context", async () => {
+    const startNewThread = mock(async () => "thread-2");
+    const syncActiveThreadState = mock(async () => {});
+    const handler = createCommandHandler(
+      makeHandlerDeps({
+        threadManager: {
+          startNewThread,
+          resumeThread: async () => null,
+          listThreads: async () => [],
+          readThread: async () => null,
+          deleteThread: async () => false,
+        },
+        syncActiveThreadState,
+      }),
+    );
+
+    const threadId = await handler.buildCommandContext().startNewThread();
+
+    expect(threadId).toBe("thread-2");
+    expect(startNewThread).toHaveBeenCalledTimes(1);
+    expect(syncActiveThreadState).toHaveBeenCalledTimes(1);
   });
 });

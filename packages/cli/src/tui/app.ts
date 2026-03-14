@@ -26,7 +26,7 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from "@diligent/runtime";
-import { getThinkingEffortLabel, ProtocolNotificationAdapter } from "@diligent/runtime";
+import { getThinkingEffortLabel, ProtocolNotificationAdapter, resolveModel } from "@diligent/runtime";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { DEFAULT_PROVIDER, type ProviderName } from "../provider-manager";
@@ -206,6 +206,7 @@ export class App {
       getCommandRegistry: () => this.commandRegistry,
       getSkills: () => this.skills,
       getCurrentMode: () => this.currentMode,
+      getCurrentEffort: () => this.currentEffort,
       getIsProcessing: () => this.isProcessing,
       setIsProcessing: (val) => {
         this.isProcessing = val;
@@ -250,6 +251,7 @@ export class App {
         new Promise((resolve) => {
           this.pendingOAuthResolve = resolve;
         }),
+      syncActiveThreadState: () => this.syncActiveThreadState(),
       threadManager: this.threadManager,
       configManager: this.configManager,
     });
@@ -330,6 +332,8 @@ export class App {
     } else {
       await this.threadManager.startNewThread();
     }
+
+    await this.syncActiveThreadState();
 
     if (resumedId) {
       await this.hydrateThreadHistory();
@@ -521,6 +525,36 @@ export class App {
       this.pendingOAuthResolve = null;
     }
 
+    this.renderer.requestRender();
+  }
+
+  private async syncActiveThreadState(): Promise<void> {
+    const thread = await this.threadManager.readThread();
+    if (!thread) return;
+
+    this.currentEffort = thread.currentEffort;
+
+    let activeModel = this.config.model;
+    let modelId = activeModel.id;
+    let contextWindow = activeModel.contextWindow;
+
+    if (thread.currentModel) {
+      modelId = thread.currentModel;
+      try {
+        activeModel = resolveModel(thread.currentModel);
+        this.config.model = activeModel;
+        contextWindow = activeModel.contextWindow;
+      } catch {
+        activeModel = this.config.model;
+      }
+    }
+
+    this.statusBar.update({
+      model: modelId,
+      contextWindow,
+      effort: thread.currentEffort,
+      effortLabel: getThinkingEffortLabel(thread.currentEffort, activeModel),
+    });
     this.renderer.requestRender();
   }
 

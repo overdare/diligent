@@ -21,6 +21,7 @@ export interface CommandHandlerDeps {
   getCommandRegistry: () => CommandRegistry;
   getSkills: () => SkillMetadata[];
   getCurrentMode: () => ProtocolMode;
+  getCurrentEffort: () => ThinkingEffort;
   getIsProcessing: () => boolean;
   setIsProcessing: (val: boolean) => void;
   setPendingTurn: (turn: { resolve: () => void; reject: (error: Error) => void } | null) => void;
@@ -39,6 +40,7 @@ export interface CommandHandlerDeps {
   onModelChanged: (modelId: string) => void;
   onEffortChanged: (effort: ThinkingEffort, label: string) => void;
   waitForOAuthComplete: () => Promise<{ success: boolean; error: string | null }>;
+  syncActiveThreadState: () => Promise<void>;
   // Domain modules
   threadManager: ThreadManager;
   configManager: ConfigManager;
@@ -71,6 +73,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
       let threadId = deps.getCurrentThreadId();
       if (!threadId) {
         await deps.threadManager.startNewThread();
+        await deps.syncActiveThreadState();
         threadId = deps.getCurrentThreadId();
       }
       if (!threadId) {
@@ -155,12 +158,28 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         reload: () => deps.configManager.reloadConfig(),
         currentMode: deps.getCurrentMode(),
         setMode: (mode) => deps.configManager.setMode(mode),
-        currentEffort: deps.getConfig().diligent.effort ?? "medium",
+        currentEffort: deps.getCurrentEffort(),
         setEffort: (effort) => deps.configManager.setEffort(effort),
         clearChatHistory: () => deps.clearChatHistory(),
-        startNewThread: () => deps.threadManager.startNewThread(),
-        resumeThread: (threadId) => deps.threadManager.resumeThread(threadId),
-        deleteThread: (threadId) => deps.threadManager.deleteThread(threadId),
+        startNewThread: async () => {
+          const threadId = await deps.threadManager.startNewThread();
+          await deps.syncActiveThreadState();
+          return threadId;
+        },
+        resumeThread: async (threadId) => {
+          const resumedThreadId = await deps.threadManager.resumeThread(threadId);
+          if (resumedThreadId) {
+            await deps.syncActiveThreadState();
+          }
+          return resumedThreadId;
+        },
+        deleteThread: async (threadId) => {
+          const deleted = await deps.threadManager.deleteThread(threadId);
+          if (deleted) {
+            await deps.syncActiveThreadState();
+          }
+          return deleted;
+        },
         listThreads: () => deps.threadManager.listThreads(),
         readThread: () => deps.threadManager.readThread(),
         onModelChanged: (modelId) => deps.onModelChanged(modelId),
