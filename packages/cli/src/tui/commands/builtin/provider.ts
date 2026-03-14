@@ -258,7 +258,12 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
         ctx.requestRender();
         if (confirmed) {
           try {
-            await saveAuthKey(provider, apiKey);
+            const rpc = ctx.app.getRpcClient?.();
+            if (rpc) {
+              await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET, { provider, apiKey });
+            } else {
+              await saveAuthKey(provider, apiKey);
+            }
             ctx.displayLines([`  ${t.success}Key saved to auth.json.${t.reset}`]);
           } catch (err) {
             ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);

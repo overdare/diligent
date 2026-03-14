@@ -2,7 +2,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ThinkingEffort } from "@diligent/protocol";
 import type { AppConfig } from "../../../config";
-import { createCommandHandler, type CommandHandlerDeps } from "../../command-handler";
+import { type CommandHandlerDeps, createCommandHandler } from "../../command-handler";
 import type { ConfigManager } from "../../config-manager";
 import type { OverlayHandle } from "../../framework/types";
 import type { ThreadManager } from "../../thread-manager";
@@ -35,7 +35,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
   return {
     getRpcClient: () => null,
     getCurrentThreadId: () => "thread-1",
-    getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } } as AppConfig),
+    getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } }) as AppConfig,
     getCommandRegistry: () => new CommandRegistry(),
     getSkills: () => [],
     getCurrentMode: () => "default",
@@ -184,7 +184,7 @@ describe("createCommandHandler", () => {
     const handler = createCommandHandler(
       makeHandlerDeps({
         getCurrentEffort: () => currentEffort,
-        getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } } as AppConfig),
+        getConfig: () => ({ diligent: { effort: "medium" }, model: { id: "test-model" } }) as AppConfig,
       }),
     );
 
