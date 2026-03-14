@@ -16,9 +16,10 @@ import type {
 } from "../types";
 import { ProviderError } from "../types";
 
-export function createGeminiStream(apiKey: string, baseUrl?: string): StreamFunction {
+export function createGeminiStream(apiKey?: string, baseUrl?: string): StreamFunction {
+  const resolvedApiKey = resolveGeminiApiKey(apiKey);
   const client = new GoogleGenAI({
-    apiKey,
+    apiKey: resolvedApiKey,
     ...(baseUrl ? { httpOptions: { baseUrl } } : {}),
   });
 
@@ -200,6 +201,12 @@ function convertToGeminiTools(tools: ToolDefinition[]): { functionDeclarations: 
       })),
     },
   ];
+}
+
+function resolveGeminiApiKey(apiKey?: string): string {
+  const resolved = apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
+  if (resolved) return resolved;
+  throw new Error("Gemini API key is required. Set GEMINI_API_KEY or pass apiKey to createGeminiStream().");
 }
 
 function mapGeminiStopReason(finishReason: string): StopReason {

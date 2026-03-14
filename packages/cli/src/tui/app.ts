@@ -747,6 +747,12 @@ export class App {
                   .join("");
           if (text.trim()) this.chatView.addUserMessage(text);
         } else if (msg.role === "assistant") {
+          const thinkingBlocks = msg.content.filter((b) => b.type === "thinking");
+          if (thinkingBlocks.length > 0) {
+            const fullThinking = thinkingBlocks.map((b) => (b as { thinking: string }).thinking).join("");
+            if (fullThinking.trim()) this.chatView.addThinkingMessage(fullThinking);
+          }
+
           const textBlocks = msg.content.filter((b) => b.type === "text");
           if (textBlocks.length > 0) {
             const fullText = textBlocks.map((b) => (b as { text: string }).text).join("");

@@ -9,6 +9,7 @@ import type { ModeKind } from "../agent/mode";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
 import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
+import { createChatGPTOAuthBinding } from "../auth/provider-auth";
 import type { DiligentPaths } from "../infrastructure/index";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
@@ -43,7 +44,6 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   // Create ProviderManager — no throw on missing keys, deferred to call time
   const providerManager = new ProviderManager({
     ...config,
-    onOAuthTokensRefreshed: saveOAuthTokens,
   });
 
   // Overlay auth.json keys
@@ -54,11 +54,15 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     }
   }
 
-  // Load OpenAI OAuth tokens — takes priority over plain key if present
+  // Load ChatGPT OAuth tokens and bind them as external provider auth.
   const oauthTokens = await loadOAuthTokens();
   if (oauthTokens) {
-    providerManager.setOAuthTokens(oauthTokens);
-    await providerManager.ensureOAuthFresh();
+    const chatgptAuth = createChatGPTOAuthBinding({
+      initialTokens: oauthTokens,
+      onTokensRefreshed: saveOAuthTokens,
+    });
+    await chatgptAuth.auth.ensureFresh?.();
+    providerManager.setExternalAuth("chatgpt", chatgptAuth.auth);
   }
 
   const streamFunction = providerManager.createProxyStream();

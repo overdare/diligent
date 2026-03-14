@@ -1,7 +1,7 @@
 // @summary Provider configuration command - configure LLM provider and API keys
 import { resolveModel } from "@diligent/core";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { saveAuthKey } from "@diligent/runtime";
+import { createChatGPTOAuthBinding, saveAuthKey } from "@diligent/runtime";
 import { saveModel } from "../../../config-writer";
 import {
   DEFAULT_MODELS,
@@ -149,12 +149,15 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
     ctx.displayLines([`  ${t.success}Authenticated via ChatGPT subscription.${t.reset}`]);
 
     // Mark chatgpt as configured in the TUI's local providerManager (cosmetic — app-server has real tokens)
-    ctx.config.providerManager.setOAuthTokens({
-      access_token: "chatgpt-oauth",
-      refresh_token: "chatgpt-oauth",
-      id_token: "chatgpt-oauth",
-      expires_at: Number.MAX_SAFE_INTEGER,
+    const localOAuth = createChatGPTOAuthBinding({
+      initialTokens: {
+        access_token: "chatgpt-oauth",
+        refresh_token: "chatgpt-oauth",
+        id_token: "chatgpt-oauth",
+        expires_at: Number.MAX_SAFE_INTEGER,
+      },
     });
+    ctx.config.providerManager.setExternalAuth("chatgpt", localOAuth.auth);
 
     // Switch to default Codex model
     const model = resolveModel(DEFAULT_MODELS.chatgpt);

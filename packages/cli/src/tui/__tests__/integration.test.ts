@@ -345,6 +345,35 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.lineAt(sim.cursorRow)).toBe("› ");
   });
 
+  test("thinking content is rendered before assistant text", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("show your work");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "thinking_delta", delta: "Considering option A and B." },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: "Final answer.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
+
+    expect(sim.screen.some((l) => l.includes("▸ Thinking"))).toBe(true);
+    expect(sim.screen.some((l) => l.includes("Considering option A and B."))).toBe(true);
+    expect(sim.screen.some((l) => l.includes("Final answer."))).toBe(true);
+    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+  });
+
   test("cursor col is 0 after clearing input", () => {
     const { sim, inputEditor } = buildStack();
     inputEditor.handleInput("h");

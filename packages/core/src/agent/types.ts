@@ -96,9 +96,9 @@ export interface CompactionConfig {
 }
 
 export interface LLMRetryConfig {
-  maxRetries?: number; // D010: default 5
-  baseDelayMs?: number; // default: 1000
-  maxDelayMs?: number; // default: 30_000
+  maxRetries: number; // D010: default 5
+  baseDelayMs: number; // default: 1000
+  maxDelayMs: number; // default: 30_000
 }
 
 // D008: Loop control configuration — timing and compaction knobs only

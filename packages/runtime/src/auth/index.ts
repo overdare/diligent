@@ -12,3 +12,5 @@ export { openBrowser } from "./browser";
 export { waitForCallback } from "./callback-server";
 export type { OAuthFlowOptions } from "./chatgpt-oauth";
 export { runChatGPTOAuth } from "./chatgpt-oauth";
+export type { ChatGPTOAuthBinding } from "./provider-auth";
+export { createChatGPTOAuthBinding } from "./provider-auth";

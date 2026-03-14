@@ -1,7 +1,6 @@
 // @summary Minimal example: create an Agent with a tool and run it with a user message
 import { z } from "zod";
 import { Agent } from "../agent/agent";
-import { createAnthropicStream } from "../llm/provider/anthropic";
 import type { Tool } from "../tool/types";
 import type { Message } from "../types";
 import { c, tag } from "./common/colors";
@@ -9,11 +8,6 @@ import { c, tag } from "./common/colors";
 const I1 = "  ";
 const I2 = "    ";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
-
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) {
-  throw new Error("ANTHROPIC_API_KEY is required to run this example");
-}
 
 const calculatorTool: Tool<z.ZodObject<{ expression: z.ZodString }>> = {
   name: "calculator",
@@ -36,7 +30,6 @@ const agent = new Agent(
   DEFAULT_MODEL,
   [{ label: "system", content: "You are a helpful assistant. Use the calculator tool when asked to compute math." }],
   [calculatorTool],
-  { llmMsgStreamFn: createAnthropicStream(apiKey) },
 );
 
 let turnCount = 0;

@@ -144,6 +144,11 @@ type ChatItem =
       header: string;
       details: string[];
     }
+  | {
+      kind: "thinking";
+      header: string;
+      body: MarkdownView;
+    }
   | MarkdownView
   | UserMessageView;
 
@@ -446,14 +451,23 @@ export class ChatView implements Component {
     this.options.requestRender();
   }
 
-  /** Commit accumulated thinking block as a collapsed indicator */
+  /** Add a completed thinking message from history (rendered via MarkdownView) */
+  addThinkingMessage(text: string, elapsedMs?: number): void {
+    const view = new MarkdownView(this.options.requestRender);
+    view.pushDelta(text);
+    view.finalize();
+    const elapsedVal = elapsedMs !== undefined ? formatToolElapsed(elapsedMs) : null;
+    const elapsedStr = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
+    this.items.push({ kind: "thinking", header: `${t.dim}▸ Thinking${elapsedStr}${t.reset}`, body: view });
+    this.options.requestRender();
+  }
+
+  /** Commit accumulated thinking block as visible content */
   private commitThinkingBlock(): void {
     this.thinkingSpinner.stop();
     if (this.thinkingText.length > 0) {
-      const elapsedVal =
-        this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : null;
-      const elapsedStr = elapsedVal ? ` ${t.dim}\xb7 ${elapsedVal}${t.reset}` : "";
-      this.items.push({ kind: "plain", lines: [`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`] });
+      const elapsedMs = this.thinkingStartTime !== null ? Date.now() - this.thinkingStartTime : undefined;
+      this.addThinkingMessage(this.thinkingText, elapsedMs);
     }
     this.thinkingStartTime = null;
     this.thinkingText = "";
@@ -517,6 +531,8 @@ export class ChatView implements Component {
 
       if (item instanceof MarkdownView || item instanceof UserMessageView) {
         count += item.render(width).length;
+      } else if (item.kind === "thinking") {
+        count += 1 + item.body.render(width).length;
       } else {
         count += item.lines.length;
       }
@@ -541,6 +557,15 @@ export class ChatView implements Component {
 
       if (item instanceof UserMessageView) {
         result.push(...item.render(width));
+        continue;
+      }
+
+      if (item.kind === "thinking") {
+        result.push(item.header);
+        const bodyLines = item.body.render(width);
+        if (bodyLines.length > 0) {
+          result.push(...bodyLines.map((line, index) => (index === 0 ? `  ${line}` : `  ${line}`)));
+        }
         continue;
       }
 
@@ -604,6 +629,8 @@ export class ChatView implements Component {
     for (const item of this.items) {
       if (item instanceof MarkdownView || item instanceof UserMessageView) {
         item.invalidate();
+      } else if (item.kind === "thinking") {
+        item.body.invalidate();
       }
     }
     this.activeMarkdown?.invalidate();

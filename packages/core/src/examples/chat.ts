@@ -1,19 +1,11 @@
 // @summary Multi-turn chat example: agent maintains message history internally across turns
 import * as readline from "node:readline";
 import { Agent } from "../agent/agent";
-import { createAnthropicStream } from "../llm/provider/anthropic";
 import { c } from "./common/colors";
 
 const DEFAULT_MODEL = "haiku";
 
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) {
-  throw new Error("ANTHROPIC_API_KEY is required to run this example");
-}
-
-const agent = new Agent(DEFAULT_MODEL, [{ label: "system", content: "You are a helpful assistant." }], [], {
-  llmMsgStreamFn: createAnthropicStream(apiKey),
-});
+const agent = new Agent(DEFAULT_MODEL, [{ label: "system", content: "You are a helpful assistant." }], []);
 
 agent.subscribe((event) => {
   if (event.type === "message_start") {

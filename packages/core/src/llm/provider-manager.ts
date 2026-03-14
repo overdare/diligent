@@ -1,12 +1,17 @@
-// @summary Unified provider manager — API key/OAuth token lifecycle, proxy stream dispatch
-import { refreshOAuthTokens, shouldRefresh } from "../auth/oauth/refresh";
-import type { OpenAIOAuthTokens } from "../auth/types";
+// @summary Unified provider manager — provider stream dispatch with injected auth bindings
 import { createAnthropicNativeCompaction, createAnthropicStream } from "./provider/anthropic";
-import { createChatGPTNativeCompaction, createChatGPTStream } from "./provider/chatgpt";
 import { createGeminiStream } from "./provider/gemini";
 import type { NativeCompactionLookup } from "./provider/native-compaction";
 import { createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
 import type { ProviderName, StreamFunction } from "./types";
+
+export interface ExternalProviderAuth {
+  isConfigured: () => boolean;
+  getMaskedKey?: () => string | undefined;
+  getStream: () => StreamFunction;
+  getNativeCompaction?: () => import("./provider/native-compaction").NativeCompactFn | undefined;
+  ensureFresh?: () => Promise<void>;
+}
 
 export interface ProviderManagerConfig {
   provider?: {
@@ -15,7 +20,7 @@ export interface ProviderManagerConfig {
     chatgpt?: { baseUrl?: string };
     gemini?: { baseUrl?: string };
   };
-  onOAuthTokensRefreshed?: (tokens: OpenAIOAuthTokens) => Promise<void>;
+  auth?: Partial<Record<ProviderName, ExternalProviderAuth>>;
 }
 
 export type { ProviderName };
@@ -42,7 +47,7 @@ const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) =
   anthropic: createAnthropicStream,
   openai: createOpenAIStream,
   chatgpt: () => {
-    throw new Error("ChatGPT stream requires OAuth tokens");
+    throw new Error("ChatGPT stream requires external auth binding");
   },
   gemini: createGeminiStream,
 };
@@ -70,54 +75,25 @@ class StreamFactoryCache {
 }
 
 class AuthStateManager {
-  constructor(private onOAuthTokensRefreshed?: (tokens: OpenAIOAuthTokens) => Promise<void>) {}
-
   private keys: Partial<Record<ProviderName, string>> = {};
-  private oauthTokens: OpenAIOAuthTokens | undefined = undefined;
-  private chatgptStream: StreamFunction | undefined = undefined;
-  private refreshLock: Promise<void> | undefined = undefined;
+  private externalAuth: Partial<Record<ProviderName, ExternalProviderAuth>> = {};
 
-  setOAuthTokens(tokens: OpenAIOAuthTokens): void {
-    this.oauthTokens = tokens;
-    this.chatgptStream = createChatGPTStream(() => this.oauthTokens!);
-    this.keys.chatgpt = "chatgpt-oauth";
+  constructor(initialAuth?: Partial<Record<ProviderName, ExternalProviderAuth>>) {
+    this.externalAuth = { ...(initialAuth ?? {}) };
   }
 
-  removeOAuthTokens(): void {
-    this.oauthTokens = undefined;
-    this.chatgptStream = undefined;
-    if (this.keys.chatgpt === "chatgpt-oauth") {
-      delete this.keys.chatgpt;
-    }
+  setExternalAuth(provider: ProviderName, auth: ExternalProviderAuth): void {
+    this.externalAuth[provider] = auth;
   }
 
-  hasOAuthFor(_provider: "chatgpt"): boolean {
-    return this.oauthTokens !== undefined;
+  removeExternalAuth(provider: ProviderName): void {
+    delete this.externalAuth[provider];
   }
 
-  getOAuthTokens(): OpenAIOAuthTokens | undefined {
-    return this.oauthTokens;
-  }
-
-  getChatGPTStream(): StreamFunction | undefined {
-    return this.chatgptStream;
-  }
-
-  async ensureOAuthFresh(): Promise<void> {
-    if (!this.oauthTokens || !shouldRefresh(this.oauthTokens)) return;
-
-    if (!this.refreshLock) {
-      this.refreshLock = (async () => {
-        try {
-          const newTokens = await refreshOAuthTokens(this.oauthTokens!);
-          this.oauthTokens = newTokens;
-          await this.onOAuthTokensRefreshed?.(newTokens).catch(() => {});
-        } finally {
-          this.refreshLock = undefined;
-        }
-      })();
-    }
-    await this.refreshLock;
+  getExternalAuth(provider: ProviderName): ExternalProviderAuth | undefined {
+    const binding = this.externalAuth[provider];
+    if (!binding) return undefined;
+    return binding.isConfigured() ? binding : undefined;
   }
 
   setApiKey(provider: ProviderName, apiKey: string): void {
@@ -129,6 +105,8 @@ class AuthStateManager {
   }
 
   hasKeyFor(provider: ProviderName): boolean {
+    const external = this.getExternalAuth(provider);
+    if (external) return true;
     const key = this.keys[provider];
     return key !== undefined && key !== "";
   }
@@ -142,9 +120,10 @@ class AuthStateManager {
   }
 
   getMaskedKey(provider: ProviderName): string | undefined {
+    const external = this.getExternalAuth(provider);
+    if (external) return external.getMaskedKey?.() ?? `${provider} external auth`;
     const key = this.keys[provider];
     if (!key) return undefined;
-    if (provider === "chatgpt" && this.oauthTokens) return "ChatGPT OAuth";
     return key.length > 7 ? `${key.slice(0, 7)}...` : key;
   }
 }
@@ -153,11 +132,12 @@ function createCompactionRegistry(
   authState: AuthStateManager,
   baseUrls: Partial<Record<ProviderName, string>>,
 ): NativeCompactionLookup {
-  // Live lookup: reads current auth state on each call so key/token changes are reflected.
   return (provider) => {
-    if (provider === "chatgpt" && authState.getChatGPTStream()) {
-      return createChatGPTNativeCompaction(() => authState.getOAuthTokens()!);
+    const external = authState.getExternalAuth(provider as ProviderName);
+    if (external) {
+      return external.getNativeCompaction?.();
     }
+
     const key = authState.getApiKey(provider as ProviderName);
     if (!key) return undefined;
     if (provider === "anthropic") return createAnthropicNativeCompaction(key, baseUrls.anthropic);
@@ -166,75 +146,49 @@ function createCompactionRegistry(
   };
 }
 
-/** Create a StreamFunction for a given provider and API key. */
 export function createStreamForProvider(provider: string, apiKey: string): StreamFunction {
   const factory = PROVIDER_FACTORIES[provider as ProviderName];
   if (!factory) throw new Error(`Unknown provider: ${provider}`);
   return factory(apiKey);
 }
 
-/**
- * Manages provider API keys and creates a proxy StreamFunction
- * that dispatches to the correct provider based on model.provider.
- *
- * Provider auth is provider-specific:
- *   - openai  -> API key (api.openai.com)
- *   - chatgpt -> ChatGPT OAuth (chatgpt.com backend)
- */
 export class ProviderManager {
   private baseUrls: Partial<Record<ProviderName, string>> = {};
   private streamCache = new StreamFactoryCache();
   private authState: AuthStateManager;
 
   constructor(config: ProviderManagerConfig) {
-    // Only read baseUrls from config — API keys come exclusively from auth.json
     this.baseUrls.anthropic = config.provider?.anthropic?.baseUrl;
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
     this.baseUrls.chatgpt = config.provider?.chatgpt?.baseUrl;
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
-    this.authState = new AuthStateManager(config.onOAuthTokensRefreshed);
+    this.authState = new AuthStateManager(config.auth);
   }
 
-  /**
-   * Store ChatGPT OAuth tokens and create the dedicated ChatGPT stream.
-   * The stream uses access_token directly (no sk-... key needed).
-   */
-  setOAuthTokens(tokens: OpenAIOAuthTokens): void {
-    this.authState.setOAuthTokens(tokens);
+  setExternalAuth(provider: ProviderName, auth: ExternalProviderAuth): void {
+    this.streamCache.invalidateProvider(provider);
+    this.authState.setExternalAuth(provider, auth);
   }
 
-  /** Whether ChatGPT is authenticated via OAuth */
-  hasOAuthFor(_provider: "chatgpt"): boolean {
-    return this.authState.hasOAuthFor(_provider);
+  removeExternalAuth(provider: ProviderName): void {
+    this.streamCache.invalidateProvider(provider);
+    this.authState.removeExternalAuth(provider);
   }
 
-  /** Return OAuth tokens (for save prompt) */
-  getOAuthTokens(): OpenAIOAuthTokens | undefined {
-    return this.authState.getOAuthTokens();
+  hasOAuthFor(provider: "chatgpt"): boolean {
+    return this.authState.getExternalAuth(provider) !== undefined;
   }
 
-  /**
-   * Ensure OAuth tokens are fresh. Awaitable for blocking refresh (e.g., at startup).
-   * Safe to call concurrently — uses a lock to prevent double-refresh.
-   */
-  async ensureOAuthFresh(): Promise<void> {
-    await this.authState.ensureOAuthFresh();
-  }
-
-  /** Create a proxy StreamFunction that dispatches based on model.provider */
   createProxyStream(): StreamFunction {
     return (model, context, options) => {
       const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
-      // ChatGPT OAuth path: use dedicated stream (token refreshed via closure)
-      const chatgptStream = this.authState.getChatGPTStream();
-      if (provider === "chatgpt" && chatgptStream) {
-        // Trigger background refresh if tokens are near expiry (non-blocking)
-        this.ensureOAuthFresh().catch(() => {});
-        return chatgptStream(model, context, options);
+      const external = this.authState.getExternalAuth(provider);
+      if (external) {
+        external.ensureFresh?.().catch(() => {});
+        return external.getStream()(model, context, options);
       }
 
-      // API Key path: dispatch via key
       const apiKey = this.authState.getApiKey(provider);
       if (!apiKey) {
         throw new Error(`No authentication configured for ${provider}. Use /provider ${provider} to configure.`);
@@ -255,39 +209,28 @@ export class ProviderManager {
     return this.createNativeCompactionRegistry()(provider);
   }
 
-  /** Check if a key is set for the given provider */
   hasKeyFor(provider: ProviderName): boolean {
     return this.authState.hasKeyFor(provider);
   }
 
-  /** Get the API key for a provider (or undefined) */
   getApiKey(provider: ProviderName): string | undefined {
     return this.authState.getApiKey(provider);
   }
 
-  /** Set an API key for a provider, invalidating cached streams */
   setApiKey(provider: ProviderName, apiKey: string): void {
     this.streamCache.invalidateProvider(provider);
     this.authState.setApiKey(provider, apiKey);
   }
 
-  /** Remove an API key for a provider, invalidating cached streams */
   removeApiKey(provider: ProviderName): void {
     this.streamCache.invalidateProvider(provider);
     this.authState.removeApiKey(provider);
   }
 
-  /** Remove OAuth tokens and the associated ChatGPT stream */
-  removeOAuthTokens(): void {
-    this.authState.removeOAuthTokens();
-  }
-
-  /** Get list of providers that have API keys configured */
   getConfiguredProviders(): ProviderName[] {
     return this.authState.getConfiguredProviders();
   }
 
-  /** Get a masked version of the API key for display (first 7 chars) */
   getMaskedKey(provider: ProviderName): string | undefined {
     return this.authState.getMaskedKey(provider);
   }

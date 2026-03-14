@@ -17,10 +17,11 @@ import type {
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
 
-export function createAnthropicStream(apiKey: string, baseUrl?: string): StreamFunction {
+export function createAnthropicStream(apiKey?: string, baseUrl?: string): StreamFunction {
+  const resolvedApiKey = resolveAnthropicApiKey(apiKey);
   const resolvedSdkBaseUrl = resolveAnthropicSdkBaseUrl(baseUrl);
   const debugEndpoint = `${resolvedSdkBaseUrl.replace(/\/+$/, "")}/v1/messages`;
-  const client = new Anthropic({ apiKey, baseURL: resolvedSdkBaseUrl });
+  const client = new Anthropic({ apiKey: resolvedApiKey, baseURL: resolvedSdkBaseUrl });
 
   return (model: Model, context: StreamContext, options: StreamOptions): EventStream<ProviderEvent, ProviderResult> => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
@@ -342,6 +343,12 @@ function parseRetryAfter(headers?: Headers | Record<string, string | null | unde
 function resolveAnthropicBaseUrl(baseUrl?: string): string {
   const resolved = (baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
   return resolved.endsWith("/v1") ? resolved : `${resolved}/v1`;
+}
+
+function resolveAnthropicApiKey(apiKey?: string): string {
+  const resolved = apiKey?.trim() || process.env.ANTHROPIC_API_KEY?.trim();
+  if (resolved) return resolved;
+  throw new Error("Anthropic API key is required. Set ANTHROPIC_API_KEY or pass apiKey to createAnthropicStream().");
 }
 
 function resolveAnthropicSdkBaseUrl(baseUrl?: string): string {

@@ -2,6 +2,7 @@
 
 import { resolveCompaction } from "../llm/compaction";
 import { resolveModel } from "../llm/models";
+import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import { withRetry } from "../llm/retry";
 import { resolveStream } from "../llm/stream-resolver";
 import type { Model, ProviderName, StreamFunction, SystemSection, ThinkingEffort } from "../llm/types";
@@ -19,7 +20,7 @@ export class Agent {
   tools: Tool[];
   effort: ThinkingEffort;
   private llmMsgStreamFn: StreamFunction;
-  private llmCompactionFn?: import("../llm/provider/native-compaction").NativeCompactFn;
+  private llmCompactionFn?: NativeCompactFn;
   private retryConfig: LLMRetryConfig;
   private compactionConfig: CompactionConfig;
   private messages: Message[] = [];
@@ -50,9 +51,9 @@ export class Agent {
 
   private wrapWithRetry(fn: StreamFunction): StreamFunction {
     return withRetry(fn, {
-      maxAttempts: this.retryConfig.maxRetries ?? 5,
-      baseDelayMs: this.retryConfig.baseDelayMs ?? 1_000,
-      maxDelayMs: this.retryConfig.maxDelayMs ?? 30_000,
+      maxAttempts: this.retryConfig.maxRetries,
+      baseDelayMs: this.retryConfig.baseDelayMs,
+      maxDelayMs: this.retryConfig.maxDelayMs,
     });
   }
 
@@ -123,11 +124,7 @@ export class Agent {
     return this.pendingSteeringMessages.splice(0);
   }
 
-  setModel(
-    model: string | Model,
-    streamFn?: StreamFunction,
-    compactionFn?: import("../llm/provider/native-compaction").NativeCompactFn,
-  ): void {
+  setModel(model: string | Model, streamFn?: StreamFunction, compactionFn?: NativeCompactFn): void {
     this.model = typeof model === "string" ? resolveModel(model) : model;
     this.llmMsgStreamFn = this.wrapWithRetry(streamFn ?? resolveStream(this.model.provider as ProviderName));
     this.llmCompactionFn = compactionFn ?? resolveCompaction(this.model.provider);
@@ -151,7 +148,7 @@ export class Agent {
       messages: this.messages,
       model: this.model,
       systemPrompt: this.systemPrompt,
-      compactionConfig: this.compactionConfig ?? { reservePercent: 16, keepRecentTokens: 20_000 },
+      compactionConfig: this.compactionConfig,
       llmMsgStreamFn: this.llmMsgStreamFn,
       llmCompactionFn: this.llmCompactionFn,
       stream: this.agentStream,

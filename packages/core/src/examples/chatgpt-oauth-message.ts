@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { Agent } from "../agent/agent";
 import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "../auth/oauth";
+import { createChatGPTNativeCompaction, createChatGPTStream } from "../llm/provider/chatgpt";
 import { ProviderManager } from "../llm/provider-manager";
 
 async function main(): Promise<void> {
@@ -15,8 +16,16 @@ async function main(): Promise<void> {
   const rawTokens = await exchangeCodeForTokens(code, request.codeVerifier);
   const tokens = buildOAuthTokens(rawTokens);
 
-  const providerManager = new ProviderManager({});
-  providerManager.setOAuthTokens(tokens);
+  const providerManager = new ProviderManager({
+    auth: {
+      chatgpt: {
+        isConfigured: () => true,
+        getMaskedKey: () => "ChatGPT OAuth",
+        getStream: () => createChatGPTStream(() => tokens),
+        getNativeCompaction: () => createChatGPTNativeCompaction(() => tokens),
+      },
+    },
+  });
   const agent = new Agent("gpt-5.3-codex", [{ label: "system", content: "You are a concise assistant." }], [], {
     effort: "medium",
     llmMsgStreamFn: providerManager.createProxyStream(),

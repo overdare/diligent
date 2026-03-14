@@ -14,8 +14,9 @@ import {
   isContextOverflow,
 } from "./openai-shared";
 
-export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunction {
-  const client = new OpenAI({ apiKey, baseURL: baseUrl });
+export function createOpenAIStream(apiKey?: string, baseUrl?: string): StreamFunction {
+  const resolvedApiKey = resolveOpenAIApiKey(apiKey);
+  const client = new OpenAI({ apiKey: resolvedApiKey, baseURL: baseUrl });
 
   return (model: Model, context: StreamContext, options: StreamOptions): EventStream<ProviderEvent, ProviderResult> => {
     const stream = new EventStream<ProviderEvent, ProviderResult>(
@@ -96,6 +97,12 @@ export function classifyOpenAIError(err: unknown): ProviderError {
     undefined,
     err instanceof Error ? err : undefined,
   );
+}
+
+function resolveOpenAIApiKey(apiKey?: string): string {
+  const resolved = apiKey?.trim() || process.env.OPENAI_API_KEY?.trim();
+  if (resolved) return resolved;
+  throw new Error("OpenAI API key is required. Set OPENAI_API_KEY or pass apiKey to createOpenAIStream().");
 }
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";

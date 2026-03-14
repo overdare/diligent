@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { PROVIDER_NAMES, type ProviderManager } from "@diligent/core/llm/provider-manager";
 import {
+  createChatGPTOAuthBinding,
   openBrowser as defaultOpenBrowser,
   loadAuthStore,
   loadOAuthTokens,
@@ -90,7 +91,7 @@ export async function handleAuthRemove(
   providerManager.removeApiKey(params.provider);
   if (params.provider === "chatgpt") {
     await removeOAuthTokens();
-    providerManager.removeOAuthTokens();
+    providerManager.removeExternalAuth("chatgpt");
   }
 
   const providers = await buildProviderList();
@@ -130,7 +131,11 @@ export async function handleAuthOAuthStart(args: {
         openBrowser: opener,
       });
       await saveOAuthTokens(tokens);
-      pm.setOAuthTokens(tokens);
+      const authBinding = createChatGPTOAuthBinding({
+        initialTokens: tokens,
+        onTokensRefreshed: saveOAuthTokens,
+      });
+      pm.setExternalAuth("chatgpt", authBinding.auth);
       await args.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
         params: { loginId, success: true, error: null },

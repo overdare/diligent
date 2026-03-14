@@ -1,5 +1,6 @@
 // @summary Tests for provider manager configuration and model handling
 import { describe, expect, test } from "bun:test";
+import { createChatGPTOAuthBinding } from "@diligent/runtime";
 import { DEFAULT_MODELS, PROVIDER_NAMES, ProviderManager } from "../src/provider-manager";
 
 describe("ProviderManager", () => {
@@ -95,12 +96,15 @@ describe("ProviderManager", () => {
 
   test("oauth marks chatgpt as configured", () => {
     const pm = new ProviderManager({});
-    pm.setOAuthTokens({
-      access_token: "at",
-      refresh_token: "rt",
-      id_token: "id",
-      expires_at: Number.MAX_SAFE_INTEGER,
+    const binding = createChatGPTOAuthBinding({
+      initialTokens: {
+        access_token: "at",
+        refresh_token: "rt",
+        id_token: "id",
+        expires_at: Number.MAX_SAFE_INTEGER,
+      },
     });
+    pm.setExternalAuth("chatgpt", binding.auth);
     expect(pm.hasKeyFor("chatgpt")).toBe(true);
     expect(pm.hasOAuthFor("chatgpt")).toBe(true);
     expect(pm.getMaskedKey("chatgpt")).toBe("ChatGPT OAuth");
