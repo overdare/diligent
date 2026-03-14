@@ -147,7 +147,10 @@ describe("Agent loop", () => {
     const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
     const streamFn = createMockStreamFunction([msg]);
 
-    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], { effort: "medium", streamFn });
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    });
 
     const { events, result } = await runAgent(agent, { role: "user", content: "hi", timestamp: Date.now() });
 
@@ -172,7 +175,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events } = await runAgent(agent, { role: "user", content: "echo hello", timestamp: Date.now() });
@@ -217,7 +220,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [complexTool], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     await runAgent(agent, { role: "user", content: "test", timestamp: Date.now() });
@@ -253,7 +256,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events } = await runAgent(agent, { role: "user", content: "use fake tool", timestamp: Date.now() });
@@ -279,7 +282,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [toolA, toolB], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
@@ -316,7 +319,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [toolA, sequentialTool], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
@@ -336,7 +339,10 @@ describe("Agent loop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [toolA], { effort: "medium", streamFn });
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [toolA], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    });
 
     const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
@@ -358,7 +364,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
@@ -383,7 +389,7 @@ describe("Agent loop", () => {
 
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [abortTool, toolB], {
       effort: "medium",
-      streamFn,
+      llmMsgStreamFn: streamFn,
     });
 
     const { events, result } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });

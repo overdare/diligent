@@ -1,25 +1,11 @@
-// @summary Tests for stream resolver requiring explicit runtime configuration
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { configureStreamResolver, resetStreamResolver, resolveStream } from "./stream-resolver";
-
-beforeEach(() => {
-  resetStreamResolver();
-});
-
-afterEach(() => {
-  resetStreamResolver();
-});
+// @summary Tests for static stream resolver behavior
+import { describe, expect, test } from "bun:test";
+import { resolveStream } from "./stream-resolver";
 
 describe("resolveStream", () => {
-  test("throws when runtime has not configured a resolver", () => {
-    expect(() => resolveStream("anthropic")).toThrow('No stream resolver configured for provider "anthropic"');
-  });
-
-  test("uses the configured resolver when present", () => {
-    const streamFn = (() => {
-      throw new Error("unused");
-    }) as ReturnType<typeof resolveStream>;
-    configureStreamResolver(() => streamFn);
-    expect(resolveStream("anthropic")).toBe(streamFn);
+  test("throws when no static stream factory exists for provider", () => {
+    expect(() => resolveStream("anthropic")).toThrow(
+      'No static stream function for provider "anthropic". Provide llmMsgStreamFn via AgentOptions for authenticated providers.',
+    );
   });
 });

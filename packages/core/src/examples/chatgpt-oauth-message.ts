@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { Agent } from "../agent/agent";
 import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "../auth/oauth";
 import { ProviderManager } from "../llm/provider-manager";
-import { configureStreamResolver } from "../llm/stream-resolver";
 
 async function main(): Promise<void> {
   const prompt = process.argv.slice(2).join(" ").trim() || "Say hello in one short sentence.";
@@ -18,10 +17,10 @@ async function main(): Promise<void> {
 
   const providerManager = new ProviderManager({});
   providerManager.setOAuthTokens(tokens);
-  configureStreamResolver(() => providerManager.createProxyStream());
-
   const agent = new Agent("gpt-5.3-codex", [{ label: "system", content: "You are a concise assistant." }], [], {
     effort: "medium",
+    llmMsgStreamFn: providerManager.createProxyStream(),
+    llmCompactionFn: providerManager.createNativeCompactionForProvider("chatgpt"),
   });
 
   agent.subscribe((event) => {

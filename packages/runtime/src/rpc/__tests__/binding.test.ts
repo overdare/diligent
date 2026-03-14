@@ -33,7 +33,7 @@ const FAKE_MODEL = {
 };
 
 function fakeConfig(fn: StreamFunction): AgentOptions {
-  return { streamFn: fn };
+  return { llmMsgStreamFn: fn };
 }
 
 class MemoryPeer implements RpcPeer {

@@ -41,7 +41,7 @@ test("connect() peer: initialize -> thread/start -> turn/start emits turn notifi
           [],
           {
             effort: "medium",
-            streamFn: () => {
+            llmMsgStreamFn: () => {
               const stream = new EventStream(
                 (e) => e.type === "done",
                 (e) => ({ message: (e as { message: unknown }).message }),

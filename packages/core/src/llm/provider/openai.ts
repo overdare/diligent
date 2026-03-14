@@ -3,7 +3,6 @@ import OpenAI from "openai";
 import { EventStream } from "../../event-stream";
 import { isNetworkError } from "../errors";
 import { flattenSections } from "../system-sections";
-import { normalizeThinkingEffort } from "../thinking-effort";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
@@ -31,19 +30,18 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
     (async () => {
       try {
         const useReasoning = model.supportsThinking;
-        const effort = normalizeThinkingEffort(options.effort);
         const requestBody = await buildResponsesRequestBody({
           model: model.id,
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
           tools: context.tools,
           strictTools: false,
-          sessionId: context.sessionId,
+          sessionId: options.sessionId,
           promptCacheRetention: "24h",
           maxTokens: options.maxTokens,
           temperature: options.temperature,
           useReasoning,
-          effort,
+          effort: options.effort,
         });
         const openaiStream = await client.responses.create(
           requestBody,
@@ -58,7 +56,7 @@ export function createOpenAIStream(apiKey: string, baseUrl?: string): StreamFunc
           model,
           options.signal,
           context.messages.length,
-          context.sessionId,
+          options.sessionId,
         );
       } catch (err) {
         stream.push({ type: "error", error: classifyOpenAIError(err) });

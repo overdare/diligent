@@ -1,6 +1,7 @@
 // @summary Agent-layer compaction helpers — shouldCompact, message selection, runCompaction
 
 import { compact as llmCompact } from "../llm/compaction";
+import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import { estimateTokens } from "../llm/tokens";
 import type { Model, StreamFunction, SystemSection } from "../llm/types";
 import type { Message } from "../types";
@@ -70,7 +71,8 @@ export interface RunCompactionInput {
   model: Model;
   systemPrompt: SystemSection[];
   compactionConfig: CompactionConfig;
-  streamFn: StreamFunction;
+  llmMsgStreamFn: StreamFunction;
+  llmCompactionFn?: NativeCompactFn;
   stream: AgentStream;
   signal?: AbortSignal;
 }
@@ -121,7 +123,8 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     systemPrompt: input.systemPrompt,
     config: input.compactionConfig,
     signal: input.signal,
-    streamFn: input.streamFn,
+    streamFn: input.llmMsgStreamFn,
+    llmCompactionFn: input.llmCompactionFn,
   });
   const summary = `${COMPACTION_SUMMARY_PREFIX}\n\n${result}`;
   const messages = buildMessagesFromCompaction(recentUserMessages, summary, Date.now());

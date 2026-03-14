@@ -8,7 +8,7 @@ import {
   PROVIDER_NAMES,
   type ProviderName,
 } from "../provider-manager";
-import { promptSaveKey, promptApiKey } from "./commands/builtin/provider";
+import { promptApiKey, promptSaveKey } from "./commands/builtin/provider";
 import type { CommandContext } from "./commands/types";
 import type { ListPickerItem } from "./components/list-picker";
 import { ListPicker } from "./components/list-picker";

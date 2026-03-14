@@ -97,7 +97,10 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction, tools: Tool[] 
   return {
     cwd: dir,
     paths: resolvePaths(dir),
-    agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], tools, { effort: "medium", streamFn }),
+    agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], tools, {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    }),
   };
 }
 

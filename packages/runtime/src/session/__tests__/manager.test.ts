@@ -85,7 +85,10 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManage
   return {
     cwd: dir,
     paths: resolvePaths(dir),
-    agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], { effort: "medium", streamFn }),
+    agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    }),
   };
 }
 
@@ -167,7 +170,7 @@ describe("SessionManager", () => {
       paths: resolvePaths(dir),
       agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
         effort: "medium",
-        streamFn: () => {
+        llmMsgStreamFn: () => {
           throw new Error("provider failed");
         },
       }),
@@ -193,7 +196,7 @@ describe("SessionManager", () => {
       paths: resolvePaths(dir),
       agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
         effort: "medium",
-        streamFn: () => {
+        llmMsgStreamFn: () => {
           const stream = new EventStream<ProviderEvent, ProviderResult>(
             (event) => event.type === "done" || event.type === "error",
             (event) => {
@@ -316,7 +319,7 @@ describe("SessionManager", () => {
       paths: resolvePaths(dir),
       agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
         effort: "medium",
-        streamFn: createMockStreamFn([makeAssistant("should not run")]),
+        llmMsgStreamFn: createMockStreamFn([makeAssistant("should not run")]),
       }),
     });
     await mgr.create();
@@ -356,7 +359,7 @@ describe("SessionManager", () => {
       compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 200 },
       agent: new Agent({ ...TEST_MODEL, contextWindow: 120 }, [{ label: "test", content: "test" }], [compactingTool], {
         effort: "medium",
-        streamFn: ((_model, context, _options) => {
+        llmMsgStreamFn: ((_model, context, _options) => {
           if (context.systemPrompt.some((section) => section.label === "test")) {
             providerContexts.push([...context.messages]);
           }

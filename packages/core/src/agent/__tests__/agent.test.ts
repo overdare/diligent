@@ -57,7 +57,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "be helpful" }], BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: makeStreamFn(makeAssistant("hello")),
+      llmMsgStreamFn: makeStreamFn(makeAssistant("hello")),
     });
 
     const events: CoreAgentEvent[] = [];
@@ -75,7 +75,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, [{ label: "test", content: "be helpful" }], BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: makeStreamFn(response),
+      llmMsgStreamFn: makeStreamFn(response),
     });
 
     const messages = await agent.prompt({ role: "user", content: "ask", timestamp: Date.now() });
@@ -90,7 +90,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: () => {
+      llmMsgStreamFn: () => {
         throw new Error("provider failed before producing a response");
       },
     });
@@ -109,7 +109,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: (_model: Model, _ctx: unknown, opts: { signal?: AbortSignal }) => {
+      llmMsgStreamFn: (_model: Model, _ctx: unknown, opts: { signal?: AbortSignal }) => {
         capturedSignal = opts?.signal;
         return makeStreamFn(response)();
       },
@@ -129,7 +129,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: makeStreamFn(makeAssistant("response")),
+      llmMsgStreamFn: makeStreamFn(makeAssistant("response")),
     });
 
     expect(agent.effort).toBe("medium");
@@ -141,7 +141,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: makeStreamFn(makeAssistant()),
+      llmMsgStreamFn: makeStreamFn(makeAssistant()),
     });
 
     expect(agent.hasPendingMessages()).toBe(false);
@@ -155,7 +155,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: makeStreamFn(makeAssistant("ordered")),
+      llmMsgStreamFn: makeStreamFn(makeAssistant("ordered")),
     });
 
     const events: CoreAgentEvent[] = [];
@@ -193,7 +193,7 @@ describe("Agent", () => {
       {
         effort: BASE_CONFIG.effort,
         compaction: BASE_CONFIG.compaction,
-        streamFn: () => {
+        llmMsgStreamFn: () => {
           const stream = new EventStream<ProviderEvent, ProviderResult>(
             (event) => event.type === "done" || event.type === "error",
             (event) => {
@@ -244,7 +244,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: () => {
+      llmMsgStreamFn: () => {
         const stream = new EventStream<ProviderEvent, ProviderResult>(
           (event) => event.type === "done" || event.type === "error",
           (event) => {
@@ -274,7 +274,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: () => {
+      llmMsgStreamFn: () => {
         const stream = new EventStream<ProviderEvent, ProviderResult>(
           (event) => event.type === "done" || event.type === "error",
           (event) => {
@@ -307,7 +307,7 @@ describe("Agent", () => {
     const agent = new Agent(TEST_MODEL, BASE_CONFIG.systemPrompt, BASE_CONFIG.tools, {
       effort: BASE_CONFIG.effort,
       compaction: BASE_CONFIG.compaction,
-      streamFn: () => {
+      llmMsgStreamFn: () => {
         const stream = new EventStream<ProviderEvent, ProviderResult>(
           (event) => event.type === "done" || event.type === "error",
           (event) => {

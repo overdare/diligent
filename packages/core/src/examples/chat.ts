@@ -2,7 +2,6 @@
 import * as readline from "node:readline";
 import { Agent } from "../agent/agent";
 import { createAnthropicStream } from "../llm/provider/anthropic";
-import { configureStreamResolver } from "../llm/stream-resolver";
 import { c } from "./common/colors";
 
 const DEFAULT_MODEL = "haiku";
@@ -12,9 +11,9 @@ if (!apiKey) {
   throw new Error("ANTHROPIC_API_KEY is required to run this example");
 }
 
-configureStreamResolver(() => createAnthropicStream(apiKey));
-
-const agent = new Agent(DEFAULT_MODEL, [{ label: "system", content: "You are a helpful assistant." }], []);
+const agent = new Agent(DEFAULT_MODEL, [{ label: "system", content: "You are a helpful assistant." }], [], {
+  llmMsgStreamFn: createAnthropicStream(apiKey),
+});
 
 agent.subscribe((event) => {
   if (event.type === "message_start") {

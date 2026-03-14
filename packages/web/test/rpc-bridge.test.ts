@@ -65,7 +65,7 @@ function createMinimalServer(opts: { cwd: string; toImageUrl?: (path: string) =>
         [],
         {
           effort: "medium",
-          streamFn: () => {
+          llmMsgStreamFn: () => {
             const stream = new EventStream(
               (e) => e.type === "done",
               (e) => ({ message: (e as { message: unknown }).message }),

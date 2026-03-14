@@ -61,12 +61,12 @@ export async function streamAssistantMessage(
     systemPrompt: runtime.systemPrompt,
     messages,
     tools: runtime.tools.map(toToolDefinition),
-    sessionId: request.sessionId,
   };
 
   const providerStream = runtime.providerStream(request.config.model, context, {
     signal: request.signal,
     effort: request.config.effort,
+    sessionId: request.sessionId,
     maxTokens: resolveMaxTokens(request.config.model),
   });
 

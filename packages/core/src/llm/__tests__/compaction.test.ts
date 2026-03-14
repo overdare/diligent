@@ -114,8 +114,8 @@ describe("compact", () => {
       systemPrompt: [{ label: "test", content: "test" }],
       config: {
         reservePercent: 16,
-        nativeRegistry: (p) => (p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined),
       },
+      llmCompactionFn: async () => ({ status: "ok", summary: "native summary" }),
     });
 
     expect(result).toBe("native summary");
@@ -128,9 +128,8 @@ describe("compact", () => {
       systemPrompt: [{ label: "test", content: "test" }],
       config: {
         reservePercent: 16,
-        nativeRegistry: (p) =>
-          p === "openai" ? async () => ({ status: "unsupported", reason: "not_available" }) : undefined,
       },
+      llmCompactionFn: async () => ({ status: "unsupported", reason: "not_available" }),
       streamFn: makeStreamFn("local summary"),
     });
 
@@ -142,7 +141,8 @@ describe("compact", () => {
       model: { ...TEST_MODEL, provider: "openai" },
       messages: [userMsg("hello"), assistantMsg("world")],
       systemPrompt: [],
-      config: { reservePercent: 16, nativeRegistry: () => undefined },
+      config: { reservePercent: 16 },
+      llmCompactionFn: undefined,
       streamFn: makeStreamFn("local only"),
     });
 

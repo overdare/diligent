@@ -30,7 +30,7 @@ function makeAgent(overrides: { tools?: Tool[]; systemPrompt?: SystemSection[] }
     TEST_MODEL,
     systemPrompt ?? [{ label: "test", content: "You are a helpful assistant. Follow instructions exactly." }],
     tools ?? [bashTool],
-    { effort: "medium", ...config, streamFn: createAnthropicStream(apiKey!) },
+    { effort: "medium", ...config, llmMsgStreamFn: createAnthropicStream(apiKey!) },
   );
 }
 

@@ -4,7 +4,6 @@ import { EventStream } from "../../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../../types";
 import { isNetworkError } from "../errors";
 import { materializeUserContentBlocks } from "../image-io";
-import { normalizeThinkingEffort } from "../thinking-effort";
 import type {
   Model,
   ProviderEvent,
@@ -36,30 +35,26 @@ export function createAnthropicStream(apiKey: string, baseUrl?: string): StreamF
 
     (async () => {
       try {
-        const effort = normalizeThinkingEffort(options.effort);
-        const useAdaptive = model.supportsThinking && model.supportsAdaptiveThinking;
-        const useBudget = model.supportsThinking && !model.supportsAdaptiveThinking;
-        const useThinking = useAdaptive || useBudget;
-        const budgetKey = effort === "none" ? "low" : effort;
+        const effort = options.effort;
+        const effortProvided = effort !== undefined;
 
-        const budgetTokens = useThinking
-          ? (model.thinkingBudgets?.[budgetKey] ?? model.defaultBudgetTokens ?? 8_000)
-          : 0;
-
-        const thinkingConfig = useAdaptive
-          ? {
-              thinking: { type: "adaptive" } as Anthropic.ThinkingConfigParam,
-              output_config: { effort },
-              temperature: 1,
-            }
-          : useBudget
-            ? {
-                thinking: { type: "enabled", budget_tokens: budgetTokens } as Anthropic.ThinkingConfigParam,
-                temperature: 1,
-              }
-            : options.temperature !== undefined
-              ? { temperature: options.temperature }
-              : {};
+        let thinkingConfig: Record<string, unknown>;
+        if (effortProvided && model.supportsThinking && model.supportsAdaptiveThinking) {
+          thinkingConfig = {
+            thinking: { type: "adaptive" } as Anthropic.ThinkingConfigParam,
+            output_config: { effort },
+            temperature: 1,
+          };
+        } else if (effortProvided && model.supportsThinking && !model.supportsAdaptiveThinking) {
+          const budgetKey = effort === "none" ? "low" : effort;
+          const budgetTokens = model.thinkingBudgets?.[budgetKey] ?? model.defaultBudgetTokens ?? 8_000;
+          thinkingConfig = {
+            thinking: { type: "enabled", budget_tokens: budgetTokens } as Anthropic.ThinkingConfigParam,
+            temperature: 1,
+          };
+        } else {
+          thinkingConfig = options.temperature !== undefined ? { temperature: options.temperature } : {};
+        }
 
         const systemBlocks = toAnthropicBlocks(context.systemPrompt);
         const requestParams = {

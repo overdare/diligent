@@ -3,6 +3,7 @@
 import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
 import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
+import type { ProviderName } from "@diligent/core/llm/types";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
@@ -434,7 +435,11 @@ export class DiligentAppServer {
           if (runtime.modelId !== result.model) {
             runtime.modelId = result.model;
             const model = resolveModel(result.model);
-            runtime.agent?.setModel(result.model);
+            const llmCompactionFn = this.config.providerManager?.createNativeCompactionForProvider(
+              model.provider as ProviderName,
+            );
+            const llmMsgStreamFn = this.config.providerManager?.createProxyStream();
+            runtime.agent?.setModel(result.model, llmMsgStreamFn, llmCompactionFn);
             if (runtime.effort === "none" && !supportsThinkingNone(model)) {
               runtime.effort = "medium";
               runtime.agent?.setEffort("medium");

@@ -2,7 +2,6 @@
 
 import { access, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { configureCompactionRegistry } from "@diligent/core/llm/compaction";
 import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import { ProviderManager } from "@diligent/core/llm/provider-manager";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "@diligent/core/llm/types";
@@ -63,11 +62,12 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   }
 
   const streamFunction = providerManager.createProxyStream();
-  configureCompactionRegistry(providerManager.createNativeCompactionRegistry());
 
   // Resolve model: use config.model if set, otherwise pick first available from configured providers
   const configured = providerManager.getConfiguredProviders();
-  const firstAvailable = KNOWN_MODELS.find((m) => configured.includes(m.provider as "anthropic" | "openai" | "gemini"));
+  const firstAvailable = KNOWN_MODELS.find((m) =>
+    configured.includes(m.provider as "anthropic" | "openai" | "chatgpt" | "gemini"),
+  );
   const modelId = config.model ?? firstAvailable?.id;
   const model = modelId ? resolveModel(modelId) : undefined;
 

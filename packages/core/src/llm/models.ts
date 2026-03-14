@@ -307,7 +307,13 @@ export function resolveModel(modelId: string): Model {
     };
   }
   if (modelId.startsWith("chatgpt-")) {
-    return { id: modelId, provider: "chatgpt", contextWindow: 128_000, maxOutputTokens: 16_384, supportsThinking: true };
+    return {
+      id: modelId,
+      provider: "chatgpt",
+      contextWindow: 128_000,
+      maxOutputTokens: 16_384,
+      supportsThinking: true,
+    };
   }
   if (modelId.startsWith("gpt-") || modelId.match(/^o[1-9]/)) {
     return { id: modelId, provider: "openai", contextWindow: 128_000, maxOutputTokens: 16_384, supportsThinking: true };

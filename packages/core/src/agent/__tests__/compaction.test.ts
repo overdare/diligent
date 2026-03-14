@@ -1,7 +1,6 @@
 // @summary Tests for agent-layer compaction helpers — token estimation, shouldCompact, selectForCompaction
-import { afterEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { EventStream } from "@diligent/core/event-stream";
-import { configureCompactionRegistry, resetCompactionRegistry } from "@diligent/core/llm/compaction";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
 import { resolveMaxTokens } from "@diligent/core/llm/types";
 import type { Message, UserMessage } from "@diligent/core/types";
@@ -222,14 +221,9 @@ describe("selectForCompaction", () => {
 });
 
 describe("runCompaction", () => {
-  afterEach(() => resetCompactionRegistry());
-
   it("always rebuilds summary as a user turn, including native summaries", async () => {
     const messages: Message[] = [userMsg("first"), assistantMsg("reply"), userMsg("second")];
     const stream = new AgentStream();
-    configureCompactionRegistry((p) =>
-      p === "openai" ? async () => ({ status: "ok", summary: "native summary" }) : undefined,
-    );
     const result = await runCompaction({
       messages,
       model: { ...TEST_MODEL, provider: "openai" },
@@ -238,7 +232,8 @@ describe("runCompaction", () => {
         reservePercent: 16,
         keepRecentTokens: 50,
       },
-      streamFn: makeStreamFn("unused summary"),
+      llmMsgStreamFn: makeStreamFn("unused summary"),
+      llmCompactionFn: async () => ({ status: "ok", summary: "native summary" }),
       stream,
     });
 

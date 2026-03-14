@@ -139,7 +139,7 @@ async function compactIfNeeded(
     model: request.config.model,
     systemPrompt: request.config.systemPrompt,
     compactionConfig: config,
-    streamFn: request.streamFunction,
+    llmMsgStreamFn: request.streamFunction,
     stream,
     signal: request.signal,
   });

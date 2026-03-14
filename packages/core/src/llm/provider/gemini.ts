@@ -5,7 +5,6 @@ import { EventStream } from "../../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../../types";
 import { isNetworkError } from "../errors";
 import { flattenSections } from "../system-sections";
-import { normalizeThinkingEffort } from "../thinking-effort";
 import type {
   Model,
   ProviderEvent,
@@ -35,13 +34,17 @@ export function createGeminiStream(apiKey: string, baseUrl?: string): StreamFunc
 
     (async () => {
       try {
-        const effort = normalizeThinkingEffort(options.effort);
+        const effort = options.effort;
+        const effortProvided = effort !== undefined;
         const defaultBudgets = { low: 2_048, medium: 8_192, high: 16_384, max: 24_576 };
-        const budgetKey = effort === "none" ? "low" : effort;
-        const budgetTokens = model.supportsThinking
-          ? (model.thinkingBudgets?.[budgetKey] ?? defaultBudgets[budgetKey])
-          : undefined;
-        const useThinking = model.supportsThinking && budgetTokens;
+        const budgetTokens =
+          effortProvided && model.supportsThinking
+            ? (() => {
+                const budgetKey = effort === "none" ? "low" : effort;
+                return model.thinkingBudgets?.[budgetKey] ?? defaultBudgets[budgetKey];
+              })()
+            : undefined;
+        const useThinking = budgetTokens !== undefined;
 
         const responseStream = await client.models.generateContentStream({
           model: model.id,

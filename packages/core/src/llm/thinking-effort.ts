@@ -9,10 +9,6 @@ export const THINKING_EFFORT_VALUES = [
   "max",
 ] as const satisfies readonly ThinkingEffort[];
 
-export function normalizeThinkingEffort(value: ThinkingEffort): ThinkingEffort {
-  return value;
-}
-
 export function supportsThinkingNone(
   model: Pick<Model, "provider" | "supportsThinking" | "supportedEfforts"> | undefined,
 ): boolean {

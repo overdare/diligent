@@ -1,9 +1,9 @@
 // @summary LLM-layer compaction execution — generateSummary, compactMessages, compact (native-first)
 
 import type { Message, TextBlock } from "../types";
-import type { NativeCompactionLookup } from "./provider/native-compaction";
+import type { NativeCompactFn } from "./provider/native-compaction";
 import { resolveStream } from "./stream-resolver";
-import type { Model, StreamContext, StreamFunction, SystemSection } from "./types";
+import type { Model, ProviderName, StreamContext, StreamFunction, SystemSection } from "./types";
 import { resolveMaxTokens } from "./types";
 
 // --- Types ---
@@ -58,7 +58,6 @@ export interface GenerateSummaryOptions {
 export interface LLMCompactConfig {
   reservePercent: number;
   prompts?: CompactionPrompts;
-  nativeRegistry?: NativeCompactionLookup;
 }
 
 export interface LLMCompactInput {
@@ -71,20 +70,20 @@ export interface LLMCompactInput {
   signal?: AbortSignal;
   /** Optional stream function override — for tests and custom models. When omitted, resolveStream() is used. */
   streamFn?: StreamFunction;
+  /** Optional provider-native compaction function override. When omitted, resolveCompaction() is used. */
+  llmCompactionFn?: NativeCompactFn;
 }
 
-// --- Module-level lookup ---
+type CompactionResolver = (provider: string) => NativeCompactFn | undefined;
 
-let _defaultLookup: NativeCompactionLookup | undefined;
+const STATIC_COMPACTION_RESOLVERS: Partial<Record<string, CompactionResolver>> = {
+  // Intentionally empty for now: authenticated providers should pass llmCompactionFn via AgentOptions.
+};
 
-/** Configure the global native compaction lookup. Called once at app startup. */
-export function configureCompactionRegistry(lookup: NativeCompactionLookup): void {
-  _defaultLookup = lookup;
-}
-
-/** Reset the global native compaction lookup (for test cleanup). */
-export function resetCompactionRegistry(): void {
-  _defaultLookup = undefined;
+/** Resolve a provider-native compaction function for the given provider from static definitions. */
+export function resolveCompaction(provider: string): NativeCompactFn | undefined {
+  const resolver = STATIC_COMPACTION_RESOLVERS[provider];
+  return resolver?.(provider);
 }
 
 // --- Helpers ---
@@ -154,8 +153,7 @@ export async function compactMessages(
  * Native-first summary pipeline: tries provider-native summary first, falls back to local LLM summarization.
  */
 export async function compact(input: LLMCompactInput): Promise<string> {
-  const lookup = input.config.nativeRegistry ?? _defaultLookup;
-  const nativeCompactFn = lookup?.(input.model.provider);
+  const nativeCompactFn = input.llmCompactionFn ?? resolveCompaction(input.model.provider);
 
   if (nativeCompactFn) {
     try {
@@ -172,7 +170,7 @@ export async function compact(input: LLMCompactInput): Promise<string> {
     } catch {}
   }
 
-  const streamFunction = input.streamFn ?? resolveStream(input.model.provider);
+  const streamFunction = input.streamFn ?? resolveStream(input.model.provider as ProviderName);
   const local = await compactMessages(
     input.messages,
     streamFunction,

@@ -27,7 +27,10 @@ export function createInProcessRpcClientFactory(
       cwd: process.cwd(),
       resolvePaths: async () => paths,
       createAgent: () =>
-        new RuntimeAgent(config.model, config.systemPrompt, [], { effort: "medium", streamFn: config.streamFunction }),
+        new RuntimeAgent(config.model, config.systemPrompt, [], {
+          effort: "medium",
+          llmMsgStreamFn: config.streamFunction,
+        }),
     });
 
     let notificationListener: ((notification: DiligentServerNotification) => void | Promise<void>) | null = null;

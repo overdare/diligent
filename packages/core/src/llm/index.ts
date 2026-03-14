@@ -7,13 +7,7 @@ export type {
   LLMCompactConfig,
   LLMCompactInput,
 } from "./compaction";
-export {
-  compact,
-  compactMessages,
-  configureCompactionRegistry,
-  generateSummary,
-  resetCompactionRegistry,
-} from "./compaction";
+export { compact, compactMessages, generateSummary, resolveCompaction } from "./compaction";
 export type { ModelClass, ModelDefinition } from "./models";
 export {
   agentTypeToModelClass,
@@ -47,7 +41,7 @@ export {
 } from "./provider-manager";
 export type { RetryConfig } from "./retry";
 export { withRetry } from "./retry";
-export { configureStreamResolver, resetStreamResolver, resolveStream } from "./stream-resolver";
+export { resolveStream } from "./stream-resolver";
 export { flattenSections } from "./system-sections";
 export {
   findModelInfo,
@@ -55,7 +49,6 @@ export {
   getThinkingEffortOptions,
   getThinkingEffortUsage,
   getThinkingEffortUsageValues,
-  normalizeThinkingEffort,
   supportsThinkingNone,
 } from "./thinking-effort";
 export type {

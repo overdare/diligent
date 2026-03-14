@@ -1,9 +1,10 @@
 // @summary Stateful Agent class — holds member vars, steering queue, and subscriber list; prompt() runs the loop
 
+import { resolveCompaction } from "../llm/compaction";
 import { resolveModel } from "../llm/models";
 import { withRetry } from "../llm/retry";
 import { resolveStream } from "../llm/stream-resolver";
-import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../llm/types";
+import type { Model, ProviderName, StreamFunction, SystemSection, ThinkingEffort } from "../llm/types";
 import type { Tool } from "../tool/types";
 import type { Message } from "../types";
 import { runCompaction } from "./compaction";
@@ -17,7 +18,8 @@ export class Agent {
   systemPrompt: SystemSection[];
   tools: Tool[];
   effort: ThinkingEffort;
-  private llmStream: StreamFunction;
+  private llmMsgStreamFn: StreamFunction;
+  private llmCompactionFn?: import("../llm/provider/native-compaction").NativeCompactFn;
   private retryConfig: LLMRetryConfig;
   private compactionConfig: CompactionConfig;
   private messages: Message[] = [];
@@ -40,7 +42,10 @@ export class Agent {
       baseDelayMs: 1_000,
       maxDelayMs: 30_000,
     };
-    this.llmStream = this.wrapWithRetry(opts?.streamFn ?? resolveStream(this.model.provider));
+    this.llmMsgStreamFn = this.wrapWithRetry(
+      opts?.llmMsgStreamFn ?? resolveStream(this.model.provider as ProviderName),
+    );
+    this.llmCompactionFn = opts?.llmCompactionFn ?? resolveCompaction(this.model.provider);
   }
 
   private wrapWithRetry(fn: StreamFunction): StreamFunction {
@@ -93,7 +98,7 @@ export class Agent {
         effort: this.effort,
         compaction: this.compactionConfig,
       },
-      streamFunction: this.llmStream,
+      streamFunction: this.llmMsgStreamFn,
       stream: this.agentStream,
       sessionId: this.sessionId,
       hooks: {
@@ -118,9 +123,14 @@ export class Agent {
     return this.pendingSteeringMessages.splice(0);
   }
 
-  setModel(model: string | Model, streamFn?: StreamFunction): void {
+  setModel(
+    model: string | Model,
+    streamFn?: StreamFunction,
+    compactionFn?: import("../llm/provider/native-compaction").NativeCompactFn,
+  ): void {
     this.model = typeof model === "string" ? resolveModel(model) : model;
-    this.llmStream = this.wrapWithRetry(streamFn ?? resolveStream(this.model.provider));
+    this.llmMsgStreamFn = this.wrapWithRetry(streamFn ?? resolveStream(this.model.provider as ProviderName));
+    this.llmCompactionFn = compactionFn ?? resolveCompaction(this.model.provider);
   }
 
   setEffort(effort: ThinkingEffort): void {
@@ -142,7 +152,8 @@ export class Agent {
       model: this.model,
       systemPrompt: this.systemPrompt,
       compactionConfig: this.compactionConfig ?? { reservePercent: 16, keepRecentTokens: 20_000 },
-      streamFn: this.llmStream,
+      llmMsgStreamFn: this.llmMsgStreamFn,
+      llmCompactionFn: this.llmCompactionFn,
       stream: this.agentStream,
       signal,
     });

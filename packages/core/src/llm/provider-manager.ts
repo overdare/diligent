@@ -249,6 +249,12 @@ export class ProviderManager {
     return createCompactionRegistry(this.authState, this.baseUrls);
   }
 
+  createNativeCompactionForProvider(
+    provider: ProviderName,
+  ): import("./provider/native-compaction").NativeCompactFn | undefined {
+    return this.createNativeCompactionRegistry()(provider);
+  }
+
   /** Check if a key is set for the given provider */
   hasKeyFor(provider: ProviderName): boolean {
     return this.authState.hasKeyFor(provider);

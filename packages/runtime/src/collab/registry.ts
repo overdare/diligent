@@ -141,7 +141,7 @@ export class AgentRegistry {
           childModel.id,
           childSystemPrompt,
           result.tools,
-          { effort: this.deps.effort, streamFn: this.deps.streamFn },
+          { effort: this.deps.effort, llmMsgStreamFn: this.deps.streamFn },
           result.registry,
         );
       },

@@ -47,7 +47,7 @@ const FAKE_MODEL = {
 };
 
 function fakeConfig(fn: StreamFunction): AgentOptions {
-  return { streamFn: fn };
+  return { llmMsgStreamFn: fn };
 }
 
 const TEST_CONNECTION_ID = "test";

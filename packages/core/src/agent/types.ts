@@ -1,5 +1,6 @@
 // @summary Agent public types and event stream primitives for the core runner
 
+import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import type { ProviderErrorType, StreamFunction, ThinkingEffort } from "../llm/types";
 import type { AssistantMessage, Message, ToolResultMessage, Usage } from "../types";
 
@@ -106,5 +107,7 @@ export interface AgentOptions {
   retry?: LLMRetryConfig;
   compaction?: CompactionConfig;
   /** Explicit stream function — overrides the global stream resolver. Use in tests and custom extensions. */
-  streamFn?: StreamFunction;
+  llmMsgStreamFn?: StreamFunction;
+  /** Explicit native compaction function — overrides the global compaction resolver. */
+  llmCompactionFn?: NativeCompactFn;
 }

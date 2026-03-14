@@ -107,7 +107,7 @@ export function ProviderSettingsModal({
                   {PROVIDER_LABELS[p.provider] ?? p.provider}
                 </span>
                 {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
-                  {p.oauthConnected ? <span className="font-mono text-xs text-muted">OAuth</span> : null}
+                {p.oauthConnected ? <span className="font-mono text-xs text-muted">OAuth</span> : null}
                 {editingProvider !== p.provider && !oauthPending ? (
                   isConnected(p) || isSaving ? (
                     <Button
