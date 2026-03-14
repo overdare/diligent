@@ -1,5 +1,5 @@
 // @summary Skills command - displays available skills and their documentation
-import type { SkillMetadata } from "@diligent/core";
+import type { SkillMetadata } from "@diligent/runtime";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";

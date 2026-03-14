@@ -1,7 +1,8 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
 import { createWriteStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-
+import type { JSONRPCMessage } from "@diligent/protocol";
+import { JSONRPCMessageSchema } from "@diligent/protocol";
 import {
   type AgentRegistry,
   createAppServerConfig,
@@ -12,9 +13,8 @@ import {
   loadRuntimeConfig,
   type PROVIDER_NAMES,
   type RpcPeer,
-} from "@diligent/core";
-import type { JSONRPCMessage } from "@diligent/protocol";
-import { JSONRPCMessageSchema } from "@diligent/protocol";
+  type RuntimeAgent,
+} from "@diligent/runtime";
 import type { ServerWebSocket } from "bun";
 import { decodeWebImageRelativePath, toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
 
@@ -48,7 +48,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   const paths = await ensureDiligentDir(cwd);
   const runtimeConfig = await loadRuntimeConfig(cwd, paths);
 
-  let registry: AgentRegistry | undefined;
+  let lastRegistry: AgentRegistry | undefined;
 
   const baseConfig = createAppServerConfig({
     cwd,
@@ -73,12 +73,12 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
     },
   });
 
-  // Wrap buildAgentConfig to capture registry for shutdown
-  const origBuild = baseConfig.buildAgentConfig;
-  baseConfig.buildAgentConfig = async (args) => {
-    const result = await origBuild(args);
-    if (result.registry) registry = result.registry;
-    return result;
+  // Wrap createAgent to capture registry for shutdown
+  const origCreate = baseConfig.createAgent;
+  baseConfig.createAgent = async (args): Promise<RuntimeAgent> => {
+    const agent = await origCreate(args);
+    if (agent.registry) lastRegistry = agent.registry;
+    return agent;
   };
 
   const appServer = new DiligentAppServer(baseConfig);
@@ -155,7 +155,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   return {
     server,
     stop: () => {
-      registry?.shutdownAll().catch(() => {});
+      lastRegistry?.shutdownAll().catch(() => {});
       server.stop();
     },
   };

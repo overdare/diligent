@@ -1,6 +1,5 @@
 // @summary Child-process-backed JSON-RPC client for TUI/app-server stdio communication
 
-import { createNdjsonParser, formatNdjsonMessage } from "@diligent/core";
 import {
   DILIGENT_SERVER_REQUEST_METHODS,
   type DiligentClientRequest,
@@ -13,6 +12,7 @@ import {
   type JSONRPCResponse,
   type RequestId,
 } from "@diligent/protocol";
+import { createNdjsonParser, formatNdjsonMessage } from "@diligent/runtime";
 
 type CliRequestMethod = DiligentClientRequest["method"];
 type CliRequestParams<M extends CliRequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];

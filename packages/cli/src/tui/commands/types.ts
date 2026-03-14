@@ -1,5 +1,5 @@
-import type { SkillMetadata } from "@diligent/core";
 import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
+import type { SkillMetadata } from "@diligent/runtime";
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
 import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";

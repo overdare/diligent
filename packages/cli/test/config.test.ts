@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flattenSections } from "@diligent/core";
+import { flattenSections } from "@diligent/runtime";
 import { loadConfig } from "../src/config";
 
 const TEST_ROOT = join(tmpdir(), `diligent-cli-config-test-${Date.now()}`);
@@ -49,14 +49,12 @@ describe("loadConfig", () => {
       `{
         // Project config
         "model": "claude-haiku-3-20250307",
-        "maxTurns": 10,
         "provider": { "anthropic": { "apiKey": "sk-test" } }
       }`,
     );
 
     const config = await loadConfig(dir);
     expect(config.model.id).toBe("claude-haiku-3-20250307");
-    expect(config.diligent.maxTurns).toBe(10);
     expect(config.sources.length).toBeGreaterThan(0);
   });
 

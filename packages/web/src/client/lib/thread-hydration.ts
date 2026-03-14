@@ -1,6 +1,5 @@
 // @summary Hydrates web thread render state from thread/read payload history
 
-import { isSummaryMessage, SUMMARY_PREFIX } from "@diligent/core/client";
 import type { ChildSession, ThreadReadResponse, TranscriptEntry } from "@diligent/protocol";
 import type { PlanState, ThreadState, UsageState } from "./thread-store";
 import {
@@ -254,16 +253,6 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
     const message = entry.message;
 
     if (message.role === "user") {
-      if (isSummaryMessage(message)) {
-        const summary = (message.content as string).slice(SUMMARY_PREFIX.length + 1);
-        current = withItem(current, `history:context:${entry.id}`, {
-          id: `history:context:${entry.id}`,
-          kind: "context",
-          summary,
-          timestamp: message.timestamp,
-        });
-        continue;
-      }
       const { text, images } = extractUserTextAndImages(message.content);
       current = withItem(current, `history:user:${entry.id}`, {
         id: `history:user:${entry.id}`,

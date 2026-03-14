@@ -1,5 +1,5 @@
 // @summary Factory for first-run provider selection and API key setup wizard
-import { resolveModel } from "@diligent/core";
+import { resolveModel } from "@diligent/runtime";
 import type { AppConfig } from "../config";
 import {
   DEFAULT_MODELS,

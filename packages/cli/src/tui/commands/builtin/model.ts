@@ -1,5 +1,5 @@
 // @summary Model selection command - allows switching between available LLM models
-import { getThinkingEffortLabel, KNOWN_MODELS, resolveModel, supportsThinkingNone } from "@diligent/core";
+import { getThinkingEffortLabel, KNOWN_MODELS, resolveModel, supportsThinkingNone } from "@diligent/runtime";
 import { saveModel } from "../../../config-writer";
 import { DEFAULT_PROVIDER, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadRuntimeConfig } from "@diligent/core";
+import { loadRuntimeConfig } from "@diligent/runtime";
 
 function makeTmpEnv(base: string) {
   const knowledge = join(base, ".diligent", "knowledge");

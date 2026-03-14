@@ -1,5 +1,5 @@
 // @summary Renders the agent message history and real-time streaming output
-import type { AgentEvent } from "@diligent/core";
+import type { AgentEvent } from "@diligent/runtime";
 import { debugLogger } from "../framework/debug-logger";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
@@ -60,8 +60,92 @@ export interface ChatViewOptions {
   requestRender: () => void;
 }
 
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function summarizePathForUi(value: string): string {
+  const path = value.trim();
+  if (!path) return path;
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length === 0) return "/";
+  if (parts.length === 1) return parts[0];
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
+function summarizeToolInput(toolName: string, input: unknown): string {
+  const normalizedName = toolName.toLowerCase();
+  if (input === null || input === undefined) return "";
+
+  if (normalizedName === "plan") return "";
+
+  if (typeof input === "string") {
+    const firstLine = input
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean);
+    return firstLine ? clip(firstLine, normalizedName === "bash" ? 120 : 80) : "";
+  }
+
+  if (typeof input !== "object") {
+    return clip(String(input), 80);
+  }
+
+  const parsed = input as Record<string, unknown>;
+  const filePath = typeof parsed.file_path === "string" ? parsed.file_path.trim() : "";
+  if (normalizedName === "read" && filePath) return `Read ${clip(summarizePathForUi(filePath), 72)}`;
+  if (normalizedName === "write" && filePath) return `Write ${clip(summarizePathForUi(filePath), 72)}`;
+  if ((normalizedName === "edit" || normalizedName === "multi_edit" || normalizedName === "multiedit") && filePath) {
+    return `Edit ${clip(summarizePathForUi(filePath), 72)}`;
+  }
+
+  const intentKeys = ["description", "question", "message", "command", "path", "query", "prompt"];
+  for (const key of intentKeys) {
+    const value = parsed[key];
+    if (typeof value === "string" && value.trim()) {
+      return clip(value.trim(), normalizedName === "bash" ? 120 : 80);
+    }
+  }
+
+  try {
+    return clip(JSON.stringify(parsed), normalizedName === "bash" ? 120 : 80);
+  } catch {
+    return "";
+  }
+}
+
+function summarizeToolOutput(toolName: string, output: string): string {
+  if (!output.trim()) return "";
+  const normalizedName = toolName.toLowerCase();
+  const firstLine = output
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return "";
+  return clip(firstLine, normalizedName === "bash" ? 120 : 80);
+}
+
+function buildToolHeader(toolName: string, input: unknown, output: string): string {
+  const inputSummary = summarizeToolInput(toolName, input);
+  if (inputSummary) return `${toolName} — ${inputSummary}`;
+  const outputSummary = summarizeToolOutput(toolName, output);
+  if (outputSummary) return `${toolName} — ${outputSummary}`;
+  return toolName;
+}
+
 /** A committed item in the chat history */
-type ChatItem = string[] | MarkdownView | UserMessageView;
+type ChatItem =
+  | {
+      kind: "plain";
+      lines: string[];
+    }
+  | {
+      kind: "tool_result";
+      header: string;
+      details: string[];
+    }
+  | MarkdownView
+  | UserMessageView;
 
 const TOOL_MAX_LINES = 5;
 
@@ -78,9 +162,11 @@ export class ChatView implements Component {
   private thinkingText = "";
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
+  private toolCallInputs = new Map<string, unknown>();
   private collabState = new Map<string, { toolName: string; label: string; prompt?: string }>();
   private planCallCount = 0;
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
+  private toolResultsExpanded = false;
 
   constructor(private options: ChatViewOptions) {
     this.activeSpinner = new SpinnerComponent(options.requestRender);
@@ -128,6 +214,7 @@ export class ChatView implements Component {
 
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());
+        this.toolCallInputs.set(event.toolCallId, event.input);
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning\u2026" : "Updating plan\u2026";
           this.activeSpinner.start(label);
@@ -178,6 +265,8 @@ export class ChatView implements Component {
         this.activeSpinner.stop();
         const startTime = this.toolStartTimes.get(event.toolCallId);
         this.toolStartTimes.delete(event.toolCallId);
+        const toolInput = this.toolCallInputs.get(event.toolCallId);
+        this.toolCallInputs.delete(event.toolCallId);
         const elapsedVal = startTime !== undefined ? formatToolElapsed(Date.now() - startTime) : null;
         const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
 
@@ -203,13 +292,13 @@ export class ChatView implements Component {
             }
           }
 
-          this.items.push(lines);
+          this.items.push({ kind: "plain", lines });
         } else if (event.toolName === "skill") {
           const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
           const match = event.output.match(/<skill_content\s+name="([^"]+)"/);
           const skillName = match?.[1];
           const label = skillName ? `Loaded skill: ${skillName}` : "Loaded skill";
-          this.items.push([`${icon} ${label}${elapsed}`]);
+          this.items.push({ kind: "plain", lines: [`${icon} ${label}${elapsed}`] });
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           this.collabState.delete(event.toolCallId);
@@ -254,11 +343,12 @@ export class ChatView implements Component {
             lines.push(`${icon} ${event.toolName}${elapsed}`);
           }
 
-          this.items.push(lines);
+          this.items.push(this.createToolResultItem(lines));
         } else if (event.output) {
+          const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
           const rawLines = event.output.split("\n");
           const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
-          const lines: string[] = [`${t.success}⏺${t.reset} ${event.toolName}${elapsed}`];
+          const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
           for (let i = 0; i < display.length; i++) {
             const isEllipsis = display[i].startsWith("… +");
             if (isEllipsis) {
@@ -269,20 +359,17 @@ export class ChatView implements Component {
               lines.push(`${t.dim}    ${display[i]}${t.reset}`);
             }
           }
-          this.items.push(lines);
+          this.items.push(this.createToolResultItem(lines));
         } else {
-          this.items.push([`${t.success}⏺${t.reset} ${event.toolName}${elapsed}`]);
+          const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
+          this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
         }
         this.options.requestRender();
         break;
       }
 
       case "status_change":
-        if (event.status === "retry" && event.retry) {
-          this.activeSpinner.start(
-            `Retrying (attempt ${event.retry.attempt}, waiting ${Math.round(event.retry.delayMs / 1000)}s)…`,
-          );
-        }
+        if (event.status === "busy") this.activeSpinner.start("Working…");
         break;
 
       case "usage":
@@ -300,16 +387,18 @@ export class ChatView implements Component {
 
       case "compaction_end": {
         this.activeSpinner.stop();
-        const tailInfo = event.tailMessages?.length ? ` [${event.tailMessages.map((m) => m.role).join(" → ")}]` : "";
-        this.items.push([
-          `${t.success}⏺${t.reset} ${t.dim}compacted: ${formatTokensCompact(event.tokensBefore)} → ${formatTokensCompact(event.tokensAfter)}${tailInfo}${t.reset}`,
-        ]);
+        this.items.push({
+          kind: "plain",
+          lines: [
+            `${t.success}⏺${t.reset} ${t.dim}compacted: ${formatTokensCompact(event.tokensBefore)} → ${formatTokensCompact(event.tokensAfter)}${t.reset}`,
+          ],
+        });
         this.options.requestRender();
         break;
       }
 
       case "knowledge_saved":
-        this.items.push([`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`]);
+        this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`] });
         this.options.requestRender();
         break;
 
@@ -318,7 +407,7 @@ export class ChatView implements Component {
         this.thinkingSpinner.stop();
         this.thinkingStartTime = null;
         this.thinkingText = "";
-        this.items.push([`${t.error}✗ ${event.error.message}${t.reset}`]);
+        this.items.push({ kind: "plain", lines: [`${t.error}✗ ${event.error.message}${t.reset}`] });
         this.options.requestRender();
         break;
 
@@ -344,7 +433,7 @@ export class ChatView implements Component {
 
   /** Add raw lines to the display (used for banners, tips, etc.) */
   addLines(lines: string[]): void {
-    this.items.push(lines);
+    this.items.push({ kind: "plain", lines });
     this.options.requestRender();
   }
 
@@ -364,11 +453,27 @@ export class ChatView implements Component {
       const elapsedVal =
         this.thinkingStartTime !== null ? formatToolElapsed(Date.now() - this.thinkingStartTime) : null;
       const elapsedStr = elapsedVal ? ` ${t.dim}\xb7 ${elapsedVal}${t.reset}` : "";
-      this.items.push([`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`]);
+      this.items.push({ kind: "plain", lines: [`${t.dim}\u25b8 Thinking${elapsedStr}${t.reset}`] });
     }
     this.thinkingStartTime = null;
     this.thinkingText = "";
     this.options.requestRender();
+  }
+
+  toggleToolResultsCollapsed(): void {
+    this.toolResultsExpanded = !this.toolResultsExpanded;
+    this.options.requestRender();
+  }
+
+  private createToolResultItem(lines: string[]): ChatItem {
+    if (lines.length === 0) {
+      return { kind: "plain", lines };
+    }
+    return {
+      kind: "tool_result",
+      header: lines[0],
+      details: lines.slice(1),
+    };
   }
 
   /** Stop all active spinners and discard streaming state. */
@@ -378,6 +483,7 @@ export class ChatView implements Component {
     this.thinkingStartTime = null;
     this.thinkingText = "";
     this.planCallCount = 0;
+    this.toolCallInputs.clear();
     if (this.activeMarkdown) {
       this.activeMarkdown.finalize();
       this.activeMarkdown = null;
@@ -394,10 +500,17 @@ export class ChatView implements Component {
     for (let i = 0; i < this.items.length; i++) {
       if (i > 0 && count > 0) count++; // blank line between items
       const item = this.items[i];
-      if (Array.isArray(item)) {
-        count += item.length;
-      } else {
+
+      // Tool result rows are user-toggleable (Ctrl+O), so they must stay active.
+      // Once we hit one, everything after it is considered active too.
+      if (!(item instanceof MarkdownView) && !(item instanceof UserMessageView) && item.kind === "tool_result") {
+        return count;
+      }
+
+      if (item instanceof MarkdownView || item instanceof UserMessageView) {
         count += item.render(width).length;
+      } else {
+        count += item.lines.length;
       }
     }
     return count;
@@ -415,10 +528,23 @@ export class ChatView implements Component {
         if (lines.length > 0) {
           result.push(TURN_MARKER + lines[0], ...lines.slice(1));
         }
-      } else if (Array.isArray(item)) {
-        result.push(...item);
-      } else {
+        continue;
+      }
+
+      if (item instanceof UserMessageView) {
         result.push(...item.render(width));
+        continue;
+      }
+
+      if (item.kind === "tool_result") {
+        const icon = this.toolResultsExpanded ? "▾" : "▸";
+        const hint = this.toolResultsExpanded ? "" : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+        result.push(`${t.dim}${icon}${t.reset} ${item.header}${hint}`);
+        if (this.toolResultsExpanded) {
+          result.push(...item.details);
+        }
+      } else {
+        result.push(...item.lines);
       }
     }
 
@@ -468,7 +594,7 @@ export class ChatView implements Component {
 
   invalidate(): void {
     for (const item of this.items) {
-      if (!Array.isArray(item)) {
+      if (item instanceof MarkdownView || item instanceof UserMessageView) {
         item.invalidate();
       }
     }

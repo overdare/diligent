@@ -4,14 +4,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, AgentLoopConfig, Message, Model } from "@diligent/core";
+import type { AgentOptions, CoreAgentEvent, Message, Model, SystemSection, Tool } from "@diligent/runtime";
 import {
-  agentLoop,
+  Agent,
   createAnthropicStream,
   createBashTool,
   createReadTool,
   createWriteAbsoluteTool,
-} from "@diligent/core";
+} from "@diligent/runtime";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const runLiveE2E = process.env.DILIGENT_RUN_LIVE_E2E === "1";
@@ -24,17 +24,30 @@ const TEST_MODEL: Model = {
   maxOutputTokens: 16_384,
 };
 
-// Mirror real App usage: always provide AbortController signal
-function makeConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopConfig {
-  const ac = new AbortController();
-  return {
-    model: TEST_MODEL,
-    systemPrompt: [{ label: "test", content: "You are a helpful assistant. Follow instructions exactly." }],
-    tools: [bashTool],
-    streamFunction: createAnthropicStream(apiKey!),
-    signal: ac.signal,
-    ...overrides,
-  };
+function makeAgent(overrides: { tools?: Tool[]; systemPrompt?: SystemSection[] } & AgentOptions = {}): Agent {
+  const { tools, systemPrompt, ...config } = overrides;
+  return new Agent(
+    TEST_MODEL,
+    systemPrompt ?? [{ label: "test", content: "You are a helpful assistant. Follow instructions exactly." }],
+    tools ?? [bashTool],
+    { effort: "medium", ...config, streamFn: createAnthropicStream(apiKey!) },
+  );
+}
+
+async function runAgent(
+  agent: Agent,
+  userMessage: Message,
+  signal?: AbortSignal,
+): Promise<{ events: CoreAgentEvent[]; result: Message[] }> {
+  const events: CoreAgentEvent[] = [];
+  const unsub = agent.subscribe((e) => events.push(e));
+  let result: Message[] = [];
+  try {
+    result = await agent.prompt(userMessage, signal);
+  } finally {
+    unsub();
+  }
+  return { events, result };
 }
 
 describe("E2E: Real Anthropic API", () => {
@@ -44,49 +57,24 @@ describe("E2E: Real Anthropic API", () => {
   }
 
   test("simple conversation without tools", async () => {
-    const messages: Message[] = [
-      {
-        role: "user",
-        content: "Say exactly: hello world",
-        timestamp: Date.now(),
-      },
-    ];
-
-    const stream = agentLoop(
-      messages,
-      makeConfig({
-        tools: [],
-        maxTurns: 1,
-      }),
-    );
-
-    const result = await stream.result();
+    const { result } = await runAgent(makeAgent({ tools: [], maxTurns: 1 }), {
+      role: "user",
+      content: "Say exactly: hello world",
+      timestamp: Date.now(),
+    });
     const assistant = result.find((m) => m.role === "assistant");
     expect(assistant).toBeDefined();
   }, 30_000);
 
   test("conversation with bash tool", async () => {
-    const messages: Message[] = [
-      {
-        role: "user",
-        content: "Run 'echo hello' using the bash tool and tell me what it outputs",
-        timestamp: Date.now(),
-      },
-    ];
-
-    const stream = agentLoop(
-      messages,
-      makeConfig({
+    const { events } = await runAgent(
+      makeAgent({
         systemPrompt: [
           { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
         ],
       }),
+      { role: "user", content: "Run 'echo hello' using the bash tool and tell me what it outputs", timestamp: Date.now() },
     );
-
-    const events: AgentEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
 
     const toolEnd = events.find((e) => e.type === "tool_end");
     expect(toolEnd).toBeDefined();
@@ -101,17 +89,8 @@ describe("E2E: Real Anthropic API", () => {
     writeFileSync(filePath, "original content");
 
     try {
-      const messages: Message[] = [
-        {
-          role: "user",
-          content: `Read the file at ${filePath}, then overwrite it with "updated content", then read it again to confirm the change. Report the final content.`,
-          timestamp: Date.now(),
-        },
-      ];
-
-      const stream = agentLoop(
-        messages,
-        makeConfig({
+      const { events } = await runAgent(
+        makeAgent({
           tools: [createReadTool(), createWriteAbsoluteTool()],
           systemPrompt: [
             {
@@ -120,12 +99,12 @@ describe("E2E: Real Anthropic API", () => {
             },
           ],
         }),
+        {
+          role: "user",
+          content: `Read the file at ${filePath}, then overwrite it with "updated content", then read it again to confirm the change. Report the final content.`,
+          timestamp: Date.now(),
+        },
       );
-
-      const events: AgentEvent[] = [];
-      for await (const event of stream) {
-        events.push(event);
-      }
 
       const toolEnds = events.filter((e) => e.type === "tool_end");
       // Expect at least 3 tool calls: read, write, read
@@ -142,28 +121,15 @@ describe("E2E: Real Anthropic API", () => {
   test("error recovery: unknown tool call fed back to LLM", async () => {
     // Use only bash tool but instruct LLM in a way that might produce an
     // error — the real test is that the conversation continues after error
-    const messages: Message[] = [
-      {
-        role: "user",
-        content: "Run 'echo recovery_test' using the bash tool. Before that, briefly say hello.",
-        timestamp: Date.now(),
-      },
-    ];
-
-    const stream = agentLoop(
-      messages,
-      makeConfig({
+    const { events } = await runAgent(
+      makeAgent({
         maxTurns: 5,
         systemPrompt: [
           { label: "test", content: "You are a helpful assistant. Use the bash tool when asked to run commands." },
         ],
       }),
+      { role: "user", content: "Run 'echo recovery_test' using the bash tool. Before that, briefly say hello.", timestamp: Date.now() },
     );
-
-    const events: AgentEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
 
     // Conversation should complete successfully
     const agentEnd = events.find((e) => e.type === "agent_end");
@@ -185,39 +151,27 @@ describe("E2E: Real Anthropic API", () => {
       },
     ];
 
-    const stream = agentLoop(
-      messages,
-      makeConfig({
-        tools: [],
-        maxTurns: 1,
-        signal: ac.signal,
-      }),
-    );
-
-    let eventCount = 0;
-    const events: AgentEvent[] = [];
-
-    // Abort after receiving a few events
-    for await (const event of stream) {
+    const agent = makeAgent({ tools: [], maxTurns: 1 });
+    const events: CoreAgentEvent[] = [];
+    const unsub = agent.subscribe((event) => {
       events.push(event);
-      eventCount++;
-      if (eventCount >= 3) {
+      if (events.length >= 3) {
         ac.abort();
-        break;
       }
+    });
+
+    // run() should reject promptly after abort
+    const runPromise = agent.prompt(messages, ac.signal).catch(() => null);
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
+    try {
+      await Promise.race([runPromise, timeout]);
+    } catch {
+      // Expected — timeout or abort rejection, that's fine
+    } finally {
+      unsub();
     }
 
     // Should have received some events before abort
     expect(events.length).toBeGreaterThanOrEqual(1);
-
-    // Stream should not hang — result should resolve (or reject) promptly
-    const resultPromise = stream.result();
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
-    // Either resolves or rejects is fine — just shouldn't hang
-    try {
-      await Promise.race([resultPromise, timeout]);
-    } catch {
-      // Expected — abort may cause rejection, that's fine
-    }
   }, 30_000);
 });

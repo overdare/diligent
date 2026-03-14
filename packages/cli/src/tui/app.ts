@@ -3,15 +3,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
-  AgentEvent,
-  ApprovalRequest,
-  ApprovalResponse,
-  DiligentPaths,
-  SkillMetadata,
-  UserInputRequest,
-} from "@diligent/core";
-import { getThinkingEffortLabel, ProtocolNotificationAdapter } from "@diligent/core";
-import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
@@ -25,6 +16,17 @@ import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_SERVER_REQUEST_METHODS,
 } from "@diligent/protocol";
+import type {
+  AgentEvent,
+  ApprovalRequest,
+  ApprovalResponse,
+  DiligentPaths,
+  SkillMetadata,
+  UserInputQuestion,
+  UserInputRequest,
+  UserInputResponse,
+} from "@diligent/runtime";
+import { getThinkingEffortLabel, ProtocolNotificationAdapter } from "@diligent/runtime";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { DEFAULT_PROVIDER, type ProviderName } from "../provider-manager";
@@ -371,6 +373,12 @@ export class App {
         continue;
       }
 
+      // Ctrl+O: expand/collapse tool result details
+      if (matchesKey(seq, "ctrl+o")) {
+        this.chatView.toggleToolResultsCollapsed();
+        continue;
+      }
+
       if (matchesKey(seq, "ctrl+c") || matchesKey(seq, "escape")) {
         this.handleCancel();
       } else {
@@ -445,7 +453,6 @@ export class App {
         .catch(() => {});
       this.chatView.clearActive();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
-      this.pendingTurn?.resolve();
     } else if (!this.isProcessing) {
       this.shutdown();
     }
@@ -482,6 +489,7 @@ export class App {
       notification.params.threadId === this.currentThreadId
     ) {
       this.appendLocalTurnTimingLine();
+      this.pendingTurn?.resolve();
     }
 
     if (
@@ -597,7 +605,7 @@ export class App {
   }
 
   /** ask callback — show TextInput overlay for each question sequentially */
-  private async handleAsk(request: UserInputRequest): Promise<import("@diligent/core").UserInputResponse> {
+  private async handleAsk(request: UserInputRequest): Promise<UserInputResponse> {
     const answers: Record<string, string | string[]> = {};
     for (const question of request.questions) {
       if (this.activeUserInputResolved) {
@@ -640,7 +648,7 @@ export class App {
   }
 
   /** Show question input inline in the chat stream */
-  private showTextInputOverlay(question: import("@diligent/core").UserInputQuestion): Promise<string | string[]> {
+  private showTextInputOverlay(question: UserInputQuestion): Promise<string | string[]> {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (value: string | string[] | null) => {
@@ -709,7 +717,7 @@ export class App {
       ...(yoloLine ? [`${t.dim}│${t.reset} ${t.warn}${pad(yoloLine)}${t.reset} ${t.dim}│${t.reset}`] : []),
       `${t.dim}╰${"─".repeat(boxWidth - 2)}╯${t.reset}`,
       "",
-      `${t.dim}  Tip: /help for commands · ctrl+c to cancel · ctrl+d to exit${t.reset}`,
+      `${t.dim}  Tip: /help · ctrl+o toggle tool details · ctrl+c cancel · ctrl+d exit${t.reset}`,
       "",
     ];
   }

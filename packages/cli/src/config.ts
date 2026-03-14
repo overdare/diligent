@@ -1,21 +1,15 @@
 // @summary Loads and validates the CLI configuration from disk
 import type {
-  AgentEvent,
-  AgentLoopConfig,
   DiligentConfig,
   DiligentPaths,
-  EventStream,
-  Message,
   ModeKind,
   Model,
   SkillMetadata,
   StreamFunction,
   SystemSection,
-} from "@diligent/core";
-import { ensureDiligentDir, loadRuntimeConfig, resolveModel } from "@diligent/core";
+} from "@diligent/runtime";
+import { ensureDiligentDir, loadRuntimeConfig, resolveModel } from "@diligent/runtime";
 import { DEFAULT_PROVIDER, type ProviderManager, type ProviderName } from "./provider-manager";
-
-export type AgentLoopFn = (messages: Message[], config: AgentLoopConfig) => EventStream<AgentEvent, Message[]>;
 
 export interface AppConfig {
   apiKey: string;
@@ -24,10 +18,13 @@ export interface AppConfig {
   streamFunction: StreamFunction;
   diligent: DiligentConfig;
   sources: string[];
-  agentLoopFn?: AgentLoopFn;
   skills: SkillMetadata[];
   mode: ModeKind; // D087: always set, defaults to "default"
-  compaction: { enabled: boolean; reservePercent: number; keepRecentTokens: number };
+  compaction: {
+    enabled: boolean;
+    reservePercent: number;
+    keepRecentTokens: number;
+  };
   providerManager: ProviderManager;
 }
 
@@ -48,7 +45,11 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
     sources: runtime.sources,
     skills: runtime.skills,
     mode: runtime.mode,
-    compaction: runtime.compaction,
+    compaction: {
+      enabled: runtime.compaction.enabled,
+      reservePercent: runtime.compaction.reservePercent,
+      keepRecentTokens: runtime.compaction.keepRecentTokens,
+    },
     providerManager: runtime.providerManager,
   };
 }

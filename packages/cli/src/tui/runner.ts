@@ -1,6 +1,5 @@
 // @summary Non-interactive runner using JSON-RPC app-server communication
-import type { AgentEvent, DiligentPaths } from "@diligent/core";
-import { ProtocolNotificationAdapter } from "@diligent/core";
+
 import type { DiligentServerNotification } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
@@ -8,6 +7,8 @@ import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
+import type { AgentEvent, DiligentPaths } from "@diligent/runtime";
+import { ProtocolNotificationAdapter } from "@diligent/runtime";
 import type { AppConfig } from "../config";
 import type { SpawnedAppServer } from "./rpc-client";
 import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
@@ -170,9 +171,8 @@ export class NonInteractiveRunner {
         return hasText;
 
       case "compaction_end": {
-        const tailInfo = event.tailMessages?.length ? ` [${event.tailMessages.map((m) => m.role).join(" → ")}]` : "";
         this.writeStderr(
-          `[compaction] ${Math.round(event.tokensBefore / 1000)}k -> ${Math.round(event.tokensAfter / 1000)}k tokens${tailInfo}`,
+          `[compaction] ${Math.round(event.tokensBefore / 1000)}k -> ${Math.round(event.tokensAfter / 1000)}k tokens`,
           isTTY,
         );
         return hasText;

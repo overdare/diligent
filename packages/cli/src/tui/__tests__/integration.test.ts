@@ -1,6 +1,6 @@
 // @summary Integration tests for ChatView, InputEditor, StatusBar with tool execution
 import { describe, expect, test } from "bun:test";
-import type { AgentEvent } from "@diligent/core";
+import type { AgentEvent } from "@diligent/runtime";
 import { ChatView } from "../components/chat-view";
 import { InputEditor } from "../components/input-editor";
 import { StatusBar } from "../components/status-bar";
@@ -263,6 +263,55 @@ describe("Integration: full tool execution cycle", () => {
     );
 
     expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+  });
+
+  test("tool result details can be toggled collapsed and expanded", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("run something");
+    chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "tool_end",
+        toolCallId: "t1",
+        itemId: "i1",
+        toolName: "bash",
+        output: "line1\nline2\nline3",
+        isError: false,
+      }),
+    );
+
+    expect(sim.screen.some((l) => l.includes("line1"))).toBe(false);
+    expect(sim.screen.some((l) => l.includes("ctrl+o to expand"))).toBe(true);
+
+    chatView.toggleToolResultsCollapsed();
+
+    expect(sim.screen.some((l) => l.includes("line1"))).toBe(true);
+  });
+
+  test("collapsed tool header includes one-line summary from input", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("search in file");
+    chatView.handleEvent(
+      ev({
+        type: "tool_start",
+        toolName: "grep",
+        toolCallId: "t2",
+        itemId: "i2",
+        input: { pattern: "TODO", path: "/Users/me/project/src/main.ts", include: "*.ts" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "tool_end",
+        toolCallId: "t2",
+        itemId: "i2",
+        toolName: "grep",
+        output: "src/main.ts:1:// TODO",
+        isError: false,
+      }),
+    );
+
+    expect(sim.screen.some((l) => l.includes("grep — /Users/me/project/src/main.ts"))).toBe(true);
   });
 
   test("prompt count stays at 2 after full tool + response cycle", () => {

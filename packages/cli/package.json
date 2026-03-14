@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@diligent/core": "workspace:*",
+    "@diligent/runtime": "workspace:*",
     "@diligent/protocol": "workspace:*",
     "jsonc-parser": "^3.3.1",
     "marked": "^17.0.3"

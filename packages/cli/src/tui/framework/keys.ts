@@ -18,6 +18,7 @@ export type KeyId =
   | "ctrl+d"
   | "ctrl+l"
   | "ctrl+z"
+  | "ctrl+o"
   | "ctrl+a"
   | "ctrl+e"
   | "ctrl+k"
@@ -47,6 +48,7 @@ const KEY_SEQUENCES: Record<string, string[]> = {
   "ctrl+d": ["\x04"],
   "ctrl+l": ["\x0c"],
   "ctrl+z": ["\x1a"],
+  "ctrl+o": ["\x0f"],
   "ctrl+a": ["\x01"],
   "ctrl+e": ["\x05"],
   "ctrl+k": ["\x0b"],

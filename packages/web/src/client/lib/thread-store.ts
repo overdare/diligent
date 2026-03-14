@@ -1,6 +1,5 @@
 // @summary Protocol event reducer and view-state normalization for Web CLI thread rendering
 
-import type { AgentEvent } from "@diligent/core/client";
 import type {
   ApprovalRequest,
   DiligentServerNotification,
@@ -10,6 +9,7 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import type { AgentEvent } from "@diligent/runtime/client";
 import {
   COLLAB_RENDERED_TOOLS,
   extractUserTextAndImages,
@@ -434,11 +434,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "status_change":
-      console.log("[ThreadStore][thread-status] agent event", {
-        activeThreadId: state.activeThreadId,
-        from: state.threadStatus,
-        to: event.status,
-      });
       return { ...state, threadStatus: event.status };
 
     case "usage":
@@ -475,16 +470,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         },
       };
 
-    case "loop_detected":
-      return {
-        ...state,
-        toast: {
-          id: `loop-${event.patternLength}`,
-          kind: "info",
-          message: `Loop detected in ${event.toolName}`,
-        },
-      };
-
     case "compaction_start":
       return {
         ...state,
@@ -497,15 +482,12 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
 
     case "compaction_end": {
-      const tailInfo = event.tailMessages?.length
-        ? ` [${event.tailMessages.map((m: { role: string }) => m.role).join(" → ")}]`
-        : "";
       return {
         ...state,
         toast: {
           id: `compaction-end-${Date.now()}`,
           kind: "info",
-          message: `Compacted: ${Math.round(event.tokensBefore / 1000)}k → ${Math.round(event.tokensAfter / 1000)}k tokens${tailInfo}`,
+          message: `Compacted: ${Math.round(event.tokensBefore / 1000)}k → ${Math.round(event.tokensAfter / 1000)}k tokens`,
         },
       };
     }

@@ -10,8 +10,8 @@ import type {
   ProviderEvent,
   StreamContext,
   StreamFunction,
-} from "@diligent/core";
-import { EventStream, ensureDiligentDir } from "@diligent/core";
+} from "@diligent/runtime";
+import { EventStream, ensureDiligentDir } from "@diligent/runtime";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { App } from "../src/tui/app";
@@ -161,6 +161,10 @@ function emitEnter() {
 
 function emitCtrlC() {
   process.stdin.emit("data", Buffer.from("\x03"));
+}
+
+function emitCtrlO() {
+  process.stdin.emit("data", Buffer.from("\x0f"));
 }
 
 function captureStdout(): { writes: string[]; restore: () => void } {
@@ -331,6 +335,49 @@ describe("App", () => {
     }
 
     expect(writes.join("")).toContain("something went wrong");
+  });
+
+  test("Ctrl+O toggles tool result details on and off", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        message: createAssistantMessage({
+          toolCall: { id: "tc_1", name: "bash", input: { command: "printf 'line1\\nline2'" } },
+        }),
+      },
+      {
+        events: [{ type: "text_delta", delta: "done" }],
+        message: createAssistantMessage({ text: "done" }),
+      },
+    ]);
+
+    const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("run");
+      emitEnter();
+      await wait(240);
+
+      emitCtrlO();
+      await wait(60);
+      const expandedOutput = stripAnsi(writes.join(""));
+      expect(expandedOutput).toContain("line1");
+
+      emitCtrlO();
+      await wait(60);
+      const collapsedOutput = stripAnsi(writes.join(""));
+      expect(collapsedOutput).toContain("(ctrl+o to expand)");
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
   });
 
   test("Ctrl+C during active turn cancels processing", async () => {

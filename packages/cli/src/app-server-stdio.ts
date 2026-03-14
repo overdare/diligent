@@ -3,6 +3,7 @@
 import { once } from "node:events";
 import type { Readable, Writable } from "node:stream";
 import { format } from "node:util";
+import type { JSONRPCMessage } from "@diligent/protocol";
 import {
   bindAppServer,
   createAppServerConfig,
@@ -14,8 +15,7 @@ import {
   loadRuntimeConfig,
   openBrowser,
   type RpcPeer,
-} from "@diligent/core";
-import type { JSONRPCMessage } from "@diligent/protocol";
+} from "@diligent/runtime";
 
 export interface AppServerStdioOptions {
   cwd: string;

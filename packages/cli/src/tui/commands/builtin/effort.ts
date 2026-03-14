@@ -1,12 +1,13 @@
 // @summary Thinking effort command with provider-aware minimal support
+
+import type { ThinkingEffort } from "@diligent/protocol";
 import {
   getThinkingEffortLabel,
   getThinkingEffortOptions,
   getThinkingEffortUsage,
   resolveModel,
   supportsThinkingNone,
-} from "@diligent/core";
-import type { ThinkingEffort } from "@diligent/protocol";
+} from "@diligent/runtime";
 import { ListPicker, type ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";

@@ -1,5 +1,6 @@
 // @summary Provider configuration command - configure LLM provider and API keys
-import { resolveModel, saveAuthKey } from "@diligent/core";
+import { resolveModel } from "@diligent/core";
+import { saveAuthKey } from "@diligent/runtime";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { saveModel } from "../../../config-writer";
 import {

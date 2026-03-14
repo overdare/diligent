@@ -1,8 +1,8 @@
 // @summary React hook for thread CRUD, switching, and per-thread input state
 
-import { ProtocolNotificationAdapter } from "@diligent/core/client";
 import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
+import { ProtocolNotificationAdapter } from "@diligent/runtime/client";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
@@ -70,12 +70,6 @@ export function useThreadManager({
         model: currentModelRef.current || undefined,
       });
       const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
-      console.log("[App][thread-status] hydrate after thread start", {
-        threadId: started.threadId,
-        isRunning: history.isRunning,
-        messageCount: history.messages.length,
-        entryCount: history.entryCount,
-      });
       dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode, history } });
       setEffortState(history.currentEffort);
       if (typeof window !== "undefined") {
@@ -112,12 +106,7 @@ export function useThreadManager({
         if (!resumed.found || !resumed.threadId) return;
         const resumedId = resumed.threadId;
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
-        console.log("[App][thread-status] hydrate after thread resume", {
-          threadId: resumedId,
-          isRunning: history.isRunning,
-          messageCount: history.messages.length,
-          entryCount: history.entryCount,
-        });
+
         dispatch({ type: "hydrate", payload: { threadId: resumedId, mode, history } });
         setEffortState(history.currentEffort);
         if (typeof window !== "undefined") {

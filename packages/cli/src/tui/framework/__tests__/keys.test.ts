@@ -95,6 +95,7 @@ describe("matchesKey", () => {
 
   test("matches shift+enter (Kitty)", () => {
     expect(matchesKey("\x1b[13;2u", "shift+enter")).toBe(true);
+    expect(matchesKey("\x1b[13;2:1u", "shift+enter")).toBe(true);
   });
 });
 

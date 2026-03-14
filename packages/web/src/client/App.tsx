@@ -1,7 +1,5 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
-import type { AgentEvent } from "@diligent/core/client";
-import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "@diligent/core/client";
 import type {
   DiligentServerNotification,
   InitializeResponse,
@@ -25,6 +23,8 @@ import {
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
+import type { AgentEvent } from "@diligent/runtime/client";
+import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "@diligent/runtime/client";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
@@ -310,7 +310,6 @@ export function App() {
         console.log("[App][thread-status] notification", {
           notificationThreadId: notification.params.threadId,
           status: notification.params.status,
-          retry: notification.params.retry,
           activeThreadId: activeThreadIdRef.current,
           currentUiThreadStatus: stateRef.current.threadStatus,
           itemCount: stateRef.current.items.length,

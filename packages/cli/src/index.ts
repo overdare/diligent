@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import type { ModeKind } from "@diligent/core";
-import { ensureDiligentDir, listSessions } from "@diligent/core";
 import { DILIGENT_VERSION } from "@diligent/protocol";
+import type { ModeKind } from "@diligent/runtime";
+import { ensureDiligentDir, listSessions } from "@diligent/runtime";
 import { runAppServerStdio } from "./app-server-stdio";
 import { loadConfig } from "./config";
 import { DEFAULT_PROVIDER, type ProviderName } from "./provider-manager";

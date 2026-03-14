@@ -1,7 +1,7 @@
 // @summary Input dock with auto-resize textarea, slash command autocomplete, model/effort controls, and usage tray
 
-import { findModelInfo, getThinkingEffortOptions } from "@diligent/core/client";
 import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
+import { findModelInfo, getThinkingEffortOptions } from "@diligent/runtime/client";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SlashCommand } from "../lib/slash-commands";

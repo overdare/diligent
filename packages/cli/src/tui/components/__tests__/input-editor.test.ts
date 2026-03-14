@@ -117,6 +117,40 @@ describe("InputEditor", () => {
     expect(editor.getText()).toBe("");
   });
 
+  test("shift+enter inserts newline without submit", () => {
+    const submitted: string[] = [];
+    const { editor } = create({ onSubmit: (t) => submitted.push(t) });
+    editor.handleInput("h");
+    editor.handleInput("i");
+    editor.handleInput("\x1b[13;2u"); // shift+enter (kitty)
+    editor.handleInput("t");
+    editor.handleInput("h");
+    editor.handleInput("e");
+    editor.handleInput("r");
+    editor.handleInput("e");
+
+    expect(submitted).toEqual([]);
+    expect(editor.getText()).toBe("hi\nthere");
+  });
+
+  test("enter submits multiline text", () => {
+    const submitted: string[] = [];
+    const { editor } = create({ onSubmit: (t) => submitted.push(t) });
+    editor.setText("line 1\nline 2");
+    editor.handleInput("\r");
+    expect(submitted).toEqual(["line 1\nline 2"]);
+    expect(editor.getText()).toBe("");
+  });
+
+  test("render shows multiline input rows", () => {
+    const { editor } = create();
+    editor.setText("first\nsecond");
+    const lines = editor.render(80);
+    expect(lines).toHaveLength(5); // blank + sep + 2 input lines + sep
+    expect(lines[2]).toContain("first");
+    expect(lines[3]).toContain("second");
+  });
+
   test("enter does nothing for empty input", () => {
     const submitted: string[] = [];
     const { editor } = create({ onSubmit: (t) => submitted.push(t) });

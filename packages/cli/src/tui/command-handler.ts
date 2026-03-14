@@ -1,7 +1,8 @@
 // @summary Factory for command dispatch, user submit, steering, and CommandContext assembly
-import type { SkillMetadata } from "@diligent/core";
+
 import type { Mode as ProtocolMode, ThinkingEffort } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
+import type { SkillMetadata } from "@diligent/runtime";
 import type { AppConfig } from "../config";
 import { parseCommand } from "./commands/parser";
 import type { CommandRegistry } from "./commands/registry";

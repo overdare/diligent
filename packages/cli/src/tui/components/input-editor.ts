@@ -83,40 +83,52 @@ export class InputEditor implements Component, Focusable {
     const prompt = this.busy
       ? `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset} `
       : (this.options.prompt ?? "› ");
+    const promptPrefix = `${t.bold}${t.dim}${prompt}${t.reset}`;
     const promptWidth = displayWidth(prompt);
+    const continuationPrefix = " ".repeat(promptWidth);
     const maxTextWidth = width - promptWidth;
 
     if (!this.focused) {
-      return ["", sep, `${t.bold}${t.dim}${prompt}${t.reset}${this.text}`, sep];
-    }
-
-    // Show spinner when busy and input is empty — no cursor marker so renderer hides cursor
-    if (this.busy && this.text.length === 0) {
-      return ["", sep, `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset}`, sep];
+      const textLines = this.text.split("\n");
+      const renderedLines = textLines.map((line, index) =>
+        `${index === 0 ? promptPrefix : continuationPrefix}${line}`,
+      );
+      return ["", sep, ...renderedLines, sep];
     }
 
     // Build line with cursor marker embedded
     const before = this.text.slice(0, this.cursorPos);
     const after = this.text.slice(this.cursorPos);
+    const hasMultilineInput = this.text.includes("\n");
 
-    // Scroll if text is wider than terminal (use display width for column math)
-    let displayBefore = before;
-    let displayAfter = after;
-    const beforeWidth = displayWidth(before);
-    const afterWidth = displayWidth(after);
-    if (beforeWidth + afterWidth > maxTextWidth && maxTextWidth > 0) {
-      const targetBeforeWidth = Math.floor(maxTextWidth * 0.7);
-      displayBefore = beforeWidth > targetBeforeWidth ? sliceEndToFitWidth(before, targetBeforeWidth) : before;
-      const remaining = maxTextWidth - displayWidth(displayBefore);
-      displayAfter = sliceToFitWidth(after, Math.max(0, remaining));
+    // Scroll single-line input if text is wider than terminal (use display width for column math)
+    if (!hasMultilineInput) {
+      let displayBefore = before;
+      let displayAfter = after;
+      const beforeWidth = displayWidth(before);
+      const afterWidth = displayWidth(after);
+      if (beforeWidth + afterWidth > maxTextWidth && maxTextWidth > 0) {
+        const targetBeforeWidth = Math.floor(maxTextWidth * 0.7);
+        displayBefore = beforeWidth > targetBeforeWidth ? sliceEndToFitWidth(before, targetBeforeWidth) : before;
+        const remaining = maxTextWidth - displayWidth(displayBefore);
+        displayAfter = sliceToFitWidth(after, Math.max(0, remaining));
+      }
+
+      const inputLine = `${promptPrefix}${displayBefore}${CURSOR_MARKER}${displayAfter}`;
+
+      // Render completion popup below the input
+      const popupLines = this.renderCompletionPopup(width);
+
+      return ["", sep, inputLine, sep, ...popupLines];
     }
 
-    const inputLine = `${t.bold}${t.dim}${prompt}${t.reset}${displayBefore}${CURSOR_MARKER}${displayAfter}`;
+    const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
+    const inputLines = cursorEmbeddedLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
 
     // Render completion popup below the input
     const popupLines = this.renderCompletionPopup(width);
 
-    return ["", sep, inputLine, sep, ...popupLines];
+    return ["", sep, ...inputLines, sep, ...popupLines];
   }
 
   /** Returns true if the key was consumed by the editor, false if the caller should handle it. */
@@ -130,6 +142,14 @@ export class InputEditor implements Component, Focusable {
         return true;
       }
       return false;
+    }
+
+    if (matchesKey(data, "shift+enter")) {
+      this.text = this.text.slice(0, this.cursorPos) + "\n" + this.text.slice(this.cursorPos);
+      this.cursorPos += 1;
+      this.updateCompletion();
+      this.requestRender();
+      return true;
     }
 
     if (matchesKey(data, "enter")) {
@@ -420,6 +440,7 @@ export class InputEditor implements Component, Focusable {
       this.text.startsWith("/") &&
       !this.text.startsWith("//") &&
       !this.text.includes(" ") &&
+      !this.text.includes("\n") &&
       this.options.onCompleteDetailed
     ) {
       const partial = this.text.slice(1);

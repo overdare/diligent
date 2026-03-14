@@ -1,7 +1,7 @@
 // @summary Deterministic fake StreamFunction factories for protocol-level e2e tests
 
-import type { ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core";
-import { EventStream } from "@diligent/core";
+import type { ProviderEvent, ProviderResult, StreamFunction } from "@diligent/runtime";
+import { EventStream } from "@diligent/runtime";
 
 export interface ToolCallSpec {
   id: string;

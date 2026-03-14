@@ -10,8 +10,8 @@ import type {
   ProviderEvent,
   StreamContext,
   StreamFunction,
-} from "@diligent/core";
-import { EventStream, ensureDiligentDir } from "@diligent/core";
+} from "@diligent/runtime";
+import { EventStream, ensureDiligentDir } from "@diligent/runtime";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { NonInteractiveRunner } from "../src/tui/runner";

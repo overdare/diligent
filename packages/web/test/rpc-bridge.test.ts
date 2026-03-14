@@ -3,15 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DiligentAppServer, EventStream, ensureDiligentDir } from "@diligent/core";
 import type { JSONRPCMessage } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { DiligentAppServer, EventStream, ensureDiligentDir, RuntimeAgent } from "@diligent/runtime";
 import { toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../src/shared/image-routes";
 
 interface FakePeer {
   sent: JSONRPCMessage[];
   receive: (msg: JSONRPCMessage) => void;
-  peer: import("@diligent/core").RpcPeer;
+  peer: import("@diligent/runtime").RpcPeer;
   closeListeners: Array<() => void>;
   simulateClose: () => void;
 }
@@ -58,38 +58,38 @@ function createMinimalServer(opts: { cwd: string; toImageUrl?: (path: string) =>
   return new DiligentAppServer({
     cwd: opts.cwd,
     resolvePaths: async (cwd) => ensureDiligentDir(cwd),
-    buildAgentConfig: ({ mode, signal, approve, ask }) => ({
-      model: { id: "fake", provider: "fake", contextWindow: 8192, maxOutputTokens: 4096 },
-      systemPrompt: [],
-      tools: [],
-      mode,
-      signal,
-      approve,
-      ask,
-      streamFunction: () => {
-        const stream = new EventStream(
-          (e) => e.type === "done",
-          (e) => ({ message: (e as { message: unknown }).message }),
-        );
-        queueMicrotask(() => {
-          stream.push({ type: "start" });
-          stream.push({ type: "text_delta", delta: "ok" });
-          stream.push({
-            type: "done",
-            stopReason: "end_turn",
-            message: {
-              role: "assistant",
-              content: [{ type: "text", text: "ok" }],
-              model: "fake",
-              usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-              stopReason: "end_turn",
-              timestamp: Date.now(),
-            },
-          });
-        });
-        return stream as never;
-      },
-    }),
+    createAgent: () =>
+      new RuntimeAgent(
+        { id: "fake", provider: "fake", contextWindow: 8192, maxOutputTokens: 4096, supportsThinking: false },
+        [],
+        [],
+        {
+          effort: "medium",
+          streamFn: () => {
+            const stream = new EventStream(
+              (e) => e.type === "done",
+              (e) => ({ message: (e as { message: unknown }).message }),
+            );
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({ type: "text_delta", delta: "ok" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "ok" }],
+                  model: "fake",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+            return stream as never;
+          },
+        },
+      ),
     toImageUrl: opts.toImageUrl,
   });
 }

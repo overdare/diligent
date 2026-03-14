@@ -1,6 +1,6 @@
 // @summary Tests for ApprovalDialog — render, keyboard shortcuts, button navigation
 import { describe, expect, it } from "bun:test";
-import type { ApprovalResponse } from "@diligent/core";
+import type { ApprovalResponse } from "@diligent/runtime";
 import { ApprovalDialog } from "../approval-dialog";
 
 function makeDialog(onResult: (r: ApprovalResponse) => void) {

@@ -1,5 +1,5 @@
 // @summary RpcClientSession-based test client with direct bidirectional message channel
-import { type DiligentAppServer, RpcClientSession } from "@diligent/core";
+
 import {
   DILIGENT_VERSION,
   type DiligentServerNotification,
@@ -7,6 +7,7 @@ import {
   type DiligentServerRequestResponse,
   type JSONRPCMessage,
 } from "@diligent/protocol";
+import { type DiligentAppServer, RpcClientSession } from "@diligent/runtime";
 
 export interface ProtocolTestClient {
   /** Send a typed JSON-RPC request and await the response. */

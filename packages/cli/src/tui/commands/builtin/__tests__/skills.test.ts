@@ -1,6 +1,6 @@
 // @summary Tests for dynamic skill command registration and slash delegation behavior
 import { describe, expect, it, mock } from "bun:test";
-import type { SkillMetadata } from "@diligent/core";
+import type { SkillMetadata } from "@diligent/runtime";
 import { CommandRegistry } from "../../registry";
 import type { CommandContext } from "../../types";
 import { registerBuiltinCommands } from "../index";

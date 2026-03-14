@@ -1,5 +1,5 @@
 // @summary Inline approval prompt — Once / Always / Reject — minimal 2-line style
-import type { ApprovalResponse } from "@diligent/core";
+import type { ApprovalResponse } from "@diligent/runtime";
 import { matchesKey } from "../framework/keys";
 import type { Component } from "../framework/types";
 import { t } from "../theme";

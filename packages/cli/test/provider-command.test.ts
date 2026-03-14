@@ -1,6 +1,6 @@
 // @summary Tests for provider command parsing and execution
 import { describe, expect, test } from "bun:test";
-import type { ModeKind } from "@diligent/core";
+import type { ModeKind } from "@diligent/runtime";
 import type { AppConfig } from "../src/config";
 import { ProviderManager } from "../src/provider-manager";
 import { providerCommand } from "../src/tui/commands/builtin/provider";

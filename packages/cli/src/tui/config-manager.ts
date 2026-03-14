@@ -1,7 +1,8 @@
 // @summary Factory for config reload and collaboration mode switching
-import type { DiligentPaths, SkillMetadata } from "@diligent/core";
+
 import type { Mode as ProtocolMode, ThinkingEffort } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
+import type { DiligentPaths, SkillMetadata } from "@diligent/runtime";
 import type { AppConfig } from "../config";
 import { loadConfig } from "../config";
 import { registerBuiltinCommands } from "./commands/builtin/index";

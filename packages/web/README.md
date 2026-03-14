@@ -7,8 +7,7 @@ React + Tailwind web frontend. Thin client over WebSocket JSON-RPC — same prot
 ```
 src/
   server/
-    index.ts      Bun HTTP/WebSocket server: start DiligentAppServer, expose /rpc, serve static files
-    tools.ts      Built-in tool assembly (re-exports buildDefaultTools from @diligent/core)
+    index.ts      Bun HTTP/WebSocket server: start DiligentAppServer from @diligent/runtime, expose /rpc, serve static files
   client/
     components/   React UI components (see below)
     lib/          RPC bridge, WebSocket client, state (see below)
@@ -19,6 +18,11 @@ src/
 ## Transport
 
 The web server starts `DiligentAppServer` in-process and exposes a WebSocket endpoint at `/rpc`. Each connection is wired via `appServer.connect()`. The React client connects via `RpcBridge` — same raw JSON-RPC 2.0 messages as the CLI stdio transport, no custom envelope.
+
+`@diligent/web` depends on two shared backend packages:
+
+- `@diligent/core` for reusable engine types
+- `@diligent/runtime` for Diligent's app-server, sessions, tools, and RPC runtime
 
 ## client/components
 

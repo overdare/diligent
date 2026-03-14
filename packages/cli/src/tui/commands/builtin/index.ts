@@ -1,4 +1,4 @@
-import type { SkillMetadata } from "@diligent/core";
+import type { SkillMetadata } from "@diligent/runtime";
 import type { CommandRegistry } from "../registry";
 import { compactCommand } from "./compact";
 import { effortCommand } from "./effort";
