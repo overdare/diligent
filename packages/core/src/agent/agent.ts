@@ -22,6 +22,7 @@ export class Agent {
   private compactionConfig: CompactionConfig;
   private messages: Message[] = [];
   private pendingSteeringMessages: Message[] = [];
+  private _running = false;
   private sessionId?: string;
   readonly agentStream = new AgentStream();
 
@@ -62,7 +63,7 @@ export class Agent {
 
   /** Get the current conversation messages. */
   getMessages(): Message[] {
-    return this.messages;
+    return [...this.messages];
   }
 
   /**
@@ -71,10 +72,16 @@ export class Agent {
    * Resolves with the final message array when the loop ends.
    */
   async prompt(userMessage: Message, signal?: AbortSignal): Promise<Message[]> {
-    const nextMessages = [...this.messages, userMessage];
-    const result = await runAgentLoop(nextMessages, this.createLoopRuntime(), signal);
-    this.messages = result;
-    return result;
+    if (this._running) throw new Error("Agent is already running a prompt");
+    this._running = true;
+    try {
+      const nextMessages = [...this.messages, userMessage];
+      const result = await runAgentLoop(nextMessages, this.createLoopRuntime(), signal);
+      this.messages = result;
+      return result;
+    } finally {
+      this._running = false;
+    }
   }
 
   private createLoopRuntime(): LoopRuntime {

@@ -147,28 +147,17 @@ function createCompactionRegistry(
   authState: AuthStateManager,
   baseUrls: Partial<Record<ProviderName, string>>,
 ): NativeCompactionLookup {
-  const fns = new Map<string, ReturnType<typeof createAnthropicNativeCompaction>>();
-
-  const anthropicKey = authState.getApiKey("anthropic");
-  if (anthropicKey) {
-    fns.set("anthropic", createAnthropicNativeCompaction(anthropicKey, baseUrls.anthropic));
-  }
-
-  const chatgptStream = authState.getChatGPTStream();
-  const oauthTokens = authState.getOAuthTokens();
-  if (chatgptStream && oauthTokens) {
-    fns.set(
-      "openai",
-      createChatGPTNativeCompaction(() => authState.getOAuthTokens()!),
-    );
-  } else {
-    const openAIKey = authState.getApiKey("openai");
-    if (openAIKey) {
-      fns.set("openai", createOpenAINativeCompaction(openAIKey, baseUrls.openai));
+  // Live lookup: reads current auth state on each call so key/token changes are reflected.
+  return (provider) => {
+    if (provider === "openai" && authState.getChatGPTStream()) {
+      return createChatGPTNativeCompaction(() => authState.getOAuthTokens()!);
     }
-  }
-
-  return (provider) => fns.get(provider);
+    const key = authState.getApiKey(provider as ProviderName);
+    if (!key) return undefined;
+    if (provider === "anthropic") return createAnthropicNativeCompaction(key, baseUrls.anthropic);
+    if (provider === "openai") return createOpenAINativeCompaction(key, baseUrls.openai);
+    return undefined;
+  };
 }
 
 /** Create a StreamFunction for a given provider and API key. */
