@@ -93,18 +93,50 @@ export class TUIRenderer {
     this.terminal.showCursor();
   }
 
+  /** Count how many terminal rows a single line occupies given terminal width */
+  private countTerminalRowsForLine(line: string, width: number): number {
+    const safeWidth = Math.max(1, width);
+    const visible = displayWidth(stripAnsi(line));
+    return Math.max(1, Math.ceil(visible / safeWidth));
+  }
+
   /** Count how many terminal rows a set of lines occupies given terminal width */
   private countTerminalRows(lines: string[], width: number): number {
-    return lines.reduce((sum, line) => {
-      const visible = displayWidth(stripAnsi(line));
-      return sum + Math.max(1, Math.ceil(visible / width));
-    }, 0);
+    return lines.reduce((sum, line) => sum + this.countTerminalRowsForLine(line, width), 0);
+  }
+
+  /** Keep only the suffix of lines that fits within the terminal's visible row budget */
+  private sliceLinesToTerminalRows(
+    lines: string[],
+    width: number,
+    maxRows: number,
+  ): { lines: string[]; startIdx: number } {
+    if (maxRows <= 0 || lines.length === 0) {
+      return { lines: [], startIdx: lines.length };
+    }
+
+    let usedRows = 0;
+    let startIdx = lines.length;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const lineRows = this.countTerminalRowsForLine(lines[i], width);
+      if (usedRows + lineRows > maxRows) {
+        break;
+      }
+      usedRows += lineRows;
+      startIdx = i;
+    }
+
+    if (startIdx === lines.length) {
+      return { lines: [lines[lines.length - 1]], startIdx: lines.length - 1 };
+    }
+
+    return { lines: lines.slice(startIdx), startIdx };
   }
 
   /** Render with committed/active split: committed lines go to scrollback once,
    *  active lines are redrawn each frame. */
   private doRender(): void {
-    const width = this.terminal.columns;
+    const width = Math.max(1, this.terminal.columns);
     const allLines = this.root.render(width);
 
     // Determine committed line count (monotonically increasing)
@@ -135,16 +167,22 @@ export class TUIRenderer {
       }
     }
 
-    // Cap active lines to terminal height
-    const maxLines = this.terminal.rows;
+    // Cap active content to the terminal's visible physical rows.
+    // Using logical line count here causes wrapped lines to spill into scrollback,
+    // which then shows duplicated content during repeated redraws.
+    const maxRows = Math.max(0, this.terminal.rows);
     let displayActiveLines = cleanActive;
     let displayCursorRow = cursorRow;
-    if (cleanActive.length > maxLines) {
-      const startIdx = cleanActive.length - maxLines;
-      displayActiveLines = cleanActive.slice(startIdx);
+    if (maxRows === 0) {
+      displayActiveLines = [];
+      displayCursorRow = -1;
+      cursorCol = -1;
+    } else if (this.countTerminalRows(cleanActive, width) > maxRows) {
+      const { lines, startIdx } = this.sliceLinesToTerminalRows(cleanActive, width, maxRows);
+      displayActiveLines = lines;
       if (cursorRow !== -1) {
         displayCursorRow = cursorRow - startIdx;
-        if (displayCursorRow < 0 || displayCursorRow >= maxLines) {
+        if (displayCursorRow < 0 || displayCursorRow >= displayActiveLines.length) {
           displayCursorRow = -1;
           cursorCol = -1;
         }

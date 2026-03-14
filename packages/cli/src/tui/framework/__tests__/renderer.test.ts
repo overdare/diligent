@@ -312,6 +312,31 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(promptCount).toBe(1);
   });
 
+  test("wrapped active lines do not spill duplicate content into scrollback", () => {
+    const { terminal, sim } = createSim(4, 10);
+    let chatLines = ["12345678901234567890", "abcdefghijabcdefghij"];
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...chatLines],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    const firstPromptCount = sim.screen.filter((l) => l === "prompt> ").length;
+    expect(firstPromptCount).toBe(1);
+
+    chatLines = ["12345678901234567890", "abcdefghijabcdefghij", "tail"];
+    renderer.forceRender();
+
+    const promptCount = sim.screen.filter((l) => l === "prompt> ").length;
+    expect(promptCount).toBe(1);
+    expect(sim.screen.filter((l) => l === "tail").length).toBeLessThanOrEqual(1);
+  });
+
   test("cursor stays on input row when content shrinks (spinner → no-output tool)", () => {
     // Regression: spinner disappears without tool output → content shrinks by 1.
     // The renderer must move the cursor UP when last-changed row is past newLines end.
