@@ -1,17 +1,17 @@
 // @summary Tests for infinite loop detection in agent behavior
 import { describe, expect, test } from "bun:test";
-import { LoopDetector } from "../src/agent/loop-detector";
+import { DoomLoopDetector } from "../src/agent/util/doom-loop";
 
-describe("LoopDetector", () => {
+describe("DoomLoopDetector", () => {
   test("no detection with insufficient calls", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "ls" });
     expect(d.check().detected).toBe(false);
   });
 
   test("length-1: detects same call 3 times", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "ls" });
@@ -22,7 +22,7 @@ describe("LoopDetector", () => {
   });
 
   test("length-1: different inputs are not a loop", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "pwd" });
     d.record("bash", { command: "date" });
@@ -30,7 +30,7 @@ describe("LoopDetector", () => {
   });
 
   test("length-2: detects A-B-A-B-A-B pattern", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("read", { path: "/tmp" });
     d.record("bash", { command: "ls" });
@@ -44,7 +44,7 @@ describe("LoopDetector", () => {
   });
 
   test("length-3: detects A-B-C-A-B-C-A-B-C pattern", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("read", { path: "/a" });
     d.record("write", { path: "/b" });
@@ -61,7 +61,7 @@ describe("LoopDetector", () => {
   });
 
   test("window limits stored signatures", () => {
-    const d = new LoopDetector(5);
+    const d = new DoomLoopDetector(5);
     // Fill with unique calls beyond window
     for (let i = 0; i < 10; i++) {
       d.record("bash", { command: `cmd-${i}` });
@@ -75,7 +75,7 @@ describe("LoopDetector", () => {
   });
 
   test("no false positive after breaking the pattern", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "ls" });
     d.record("bash", { command: "ls" });
@@ -86,7 +86,7 @@ describe("LoopDetector", () => {
   });
 
   test("detects loop in later calls (not just from start)", () => {
-    const d = new LoopDetector();
+    const d = new DoomLoopDetector();
     d.record("read", { path: "/a" });
     d.record("write", { path: "/b" });
     // Now a length-1 loop begins
@@ -96,5 +96,20 @@ describe("LoopDetector", () => {
     const result = d.check();
     expect(result.detected).toBe(true);
     expect(result.patternLength).toBe(1);
+  });
+});
+
+describe("doom loop helpers", () => {
+  test("detectDoomLoop works via class", () => {
+    const d = new DoomLoopDetector();
+    d.record("bash", { command: "ls" });
+    d.record("bash", { command: "ls" });
+    d.record("bash", { command: "ls" });
+
+    expect(d.check()).toEqual({
+      detected: true,
+      patternLength: 1,
+      toolName: "bash",
+    });
   });
 });

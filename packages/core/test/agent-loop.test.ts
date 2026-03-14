@@ -1,8 +1,8 @@
-// @summary Tests for core agent loop execution and tool calling
+// @summary Tests for core agent loop execution and tool calling (via Agent.subscribe+prompt)
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { agentLoop } from "../src/agent/loop";
-import type { AgentEvent, AgentLoopConfig } from "../src/agent/types";
+import { Agent } from "../src/agent/agent";
+import type { CoreAgentEvent } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
 import type {
   Model,
@@ -11,7 +11,7 @@ import type {
   StreamContext,
   StreamFunction,
   StreamOptions,
-} from "../src/provider/types";
+} from "../src/llm/types";
 import type { Tool } from "../src/tool/types";
 import type { AssistantMessage, Message } from "../src/types";
 
@@ -55,7 +55,6 @@ function createMockStreamFunction(
       },
     );
 
-    // Simulate async streaming
     setTimeout(() => {
       stream.push({ type: "start" });
       for (const block of msg.content) {
@@ -108,6 +107,18 @@ function createParallelTool(name: string, delayMs = 50): Tool & { calls: number[
   };
 }
 
+function createParallelAbortTool(name: string): Tool {
+  return {
+    name,
+    description: `Aborting parallel tool ${name}`,
+    parameters: z.object({ query: z.string() }),
+    supportParallel: true,
+    async execute(args: { query: string }) {
+      return { output: `${name}:${args.query}`, abortRequested: true };
+    },
+  };
+}
+
 /** A sequential tool (no supportParallel flag) */
 const sequentialTool: Tool = {
   name: "seq_tool",
@@ -118,25 +129,27 @@ const sequentialTool: Tool = {
   },
 };
 
-describe("agentLoop", () => {
+/** Helper: run agent with a single user message and collect events */
+async function runAgent(
+  agent: Agent,
+  userMessage: Message,
+  opts?: Parameters<Agent["prompt"]>[1],
+): Promise<{ events: CoreAgentEvent[]; result: Message[] }> {
+  const events: CoreAgentEvent[] = [];
+  const unsub = agent.subscribe((e) => events.push(e));
+  const result = await agent.prompt(userMessage, opts);
+  unsub();
+  return { events, result };
+}
+
+describe("Agent loop", () => {
   test("text-only response: single turn", async () => {
     const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
     const streamFn = createMockStreamFunction([msg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], { effort: "medium", streamFn });
 
-    const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
-
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events, result } = await runAgent(agent, { role: "user", content: "hi", timestamp: Date.now() });
 
     const types = events.map((e) => e.type);
     expect(types).toContain("agent_start");
@@ -146,7 +159,6 @@ describe("agentLoop", () => {
     expect(types).toContain("turn_end");
     expect(types).toContain("agent_end");
 
-    const result = await loop.result();
     expect(result.length).toBeGreaterThan(1); // user + assistant
   });
 
@@ -158,33 +170,20 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "The echo returned: hello" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], { effort: "medium", streamFn });
 
-    const messages: Message[] = [{ role: "user", content: "echo hello", timestamp: Date.now() }];
-
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "echo hello", timestamp: Date.now() });
 
     const types = events.map((e) => e.type);
     expect(types).toContain("tool_start");
     expect(types).toContain("tool_end");
 
-    // Should have two turn_start events
     expect(types.filter((t) => t === "turn_start")).toHaveLength(2);
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as Extract<AgentEvent, { type: "tool_end" }>;
+    const toolEnd = events.find((e) => e.type === "tool_end") as Extract<CoreAgentEvent, { type: "tool_end" }>;
     expect(toolEnd.toolName).toBe("echo");
     expect(toolEnd.output).toBe("hello");
 
-    // Verify StreamContext received correct tool definitions
     expect(streamFn.contexts.length).toBeGreaterThanOrEqual(1);
     const tools = streamFn.contexts[0].tools;
     expect(tools).toHaveLength(1);
@@ -194,76 +193,6 @@ describe("agentLoop", () => {
     expect((tools[0].inputSchema as Record<string, unknown>).properties).toHaveProperty("message");
   });
 
-  test("passes maxTokens derived from reservePercent and model limits", async () => {
-    const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
-    const streamFn = createMockStreamFunction([msg]);
-
-    const config: AgentLoopConfig = {
-      model: { ...TEST_MODEL, contextWindow: 100_000, maxOutputTokens: 5_000 },
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-      reservePercent: 16,
-      maxTurns: 1,
-    };
-
-    const loop = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], config);
-    for await (const _event of loop) {
-    }
-
-    expect(streamFn.options).toHaveLength(1);
-    expect(streamFn.options[0].maxTokens).toBe(5_000);
-  });
-
-  test("caps maxTokens to buffered context when model output limit is higher", async () => {
-    const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
-    const streamFn = createMockStreamFunction([msg]);
-
-    const config: AgentLoopConfig = {
-      model: { ...TEST_MODEL, contextWindow: 100_000, maxOutputTokens: 40_000 },
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-      reservePercent: 16,
-      maxTurns: 1,
-    };
-
-    const loop = agentLoop([{ role: "user", content: "hi", timestamp: Date.now() }], config);
-    for await (const _event of loop) {
-    }
-
-    expect(streamFn.options).toHaveLength(1);
-    expect(streamFn.options[0].maxTokens).toBe(16_000);
-  });
-
-  test("maxTurns safety: loop exits after max turns", async () => {
-    // Create an infinite tool call loop
-    const toolCallMsg = makeAssistant(
-      [{ type: "tool_call", id: "tc_1", name: "echo", input: { message: "loop" } }],
-      "tool_use",
-    );
-    const streamFn = createMockStreamFunction([toolCallMsg, toolCallMsg, toolCallMsg]);
-
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-      maxTurns: 2,
-    };
-
-    const messages: Message[] = [{ role: "user", content: "loop", timestamp: Date.now() }];
-
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
-
-    // Should have exactly 2 turn_starts
-    const turnStarts = events.filter((e) => e.type === "turn_start");
-    expect(turnStarts).toHaveLength(2);
-  });
 
   test("tool schemas: Zod types converted to valid JSON Schema in StreamContext", async () => {
     const complexTool: Tool = {
@@ -284,17 +213,9 @@ describe("agentLoop", () => {
     const msg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([msg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [complexTool],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [complexTool], { effort: "medium", streamFn });
 
-    const loop = agentLoop([{ role: "user", content: "test", timestamp: Date.now() }], config);
-    for await (const _ of loop) {
-      /* drain */
-    }
+    await runAgent(agent, { role: "user", content: "test", timestamp: Date.now() });
 
     const tools = streamFn.contexts[0].tools;
     expect(tools).toHaveLength(1);
@@ -303,14 +224,12 @@ describe("agentLoop", () => {
     const props = schema.properties as Record<string, Record<string, unknown>>;
     const required = schema.required as string[];
 
-    // Required fields: query, recursive, extensions, mode (not limit — it's optional)
     expect(required).toContain("query");
     expect(required).toContain("recursive");
     expect(required).toContain("extensions");
     expect(required).toContain("mode");
     expect(required).not.toContain("limit");
 
-    // Type correctness
     expect(props.query.type).toBe("string");
     expect(props.limit.type).toBe("number");
     expect(props.recursive.type).toBe("boolean");
@@ -318,7 +237,6 @@ describe("agentLoop", () => {
     expect(props.mode).toHaveProperty("enum");
     expect(props.mode.enum as string[]).toEqual(["exact", "fuzzy", "regex"]);
 
-    // Descriptions preserved
     expect(props.query.description).toBe("Search query");
     expect(props.extensions.description).toBe("File extensions");
   });
@@ -328,22 +246,11 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "Sorry, that tool doesn't exist" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], { effort: "medium", streamFn });
 
-    const messages: Message[] = [{ role: "user", content: "use fake tool", timestamp: Date.now() }];
+    const { events } = await runAgent(agent, { role: "user", content: "use fake tool", timestamp: Date.now() });
 
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
-
-    const toolEnd = events.find((e) => e.type === "tool_end") as Extract<AgentEvent, { type: "tool_end" }>;
+    const toolEnd = events.find((e) => e.type === "tool_end") as Extract<CoreAgentEvent, { type: "tool_end" }>;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.output).toContain("Unknown tool");
   });
@@ -362,22 +269,16 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [toolA, toolB],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(
+      TEST_MODEL,
+      [{ label: "test", content: "test" }],
+      [toolA, toolB],
+      { effort: "medium", streamFn },
+    );
 
-    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
     const types = events.map((e) => e.type);
-
-    // All tool_start events should appear before any tool_end
     const firstToolEnd = types.indexOf("tool_end");
     const toolStarts = types.filter((t) => t === "tool_start");
     const toolStartIndices: number[] = [];
@@ -388,11 +289,9 @@ describe("agentLoop", () => {
     expect(toolStarts).toHaveLength(2);
     expect(toolStartIndices.every((idx) => idx < firstToolEnd)).toBe(true);
 
-    // Both tools should have been called (timing: starts should be close together)
     expect(toolA.calls).toHaveLength(1);
     expect(toolB.calls).toHaveLength(1);
     const timeDiff = Math.abs(toolA.calls[0] - toolB.calls[0]);
-    // If truly parallel, start times should be within ~10ms of each other
     expect(timeDiff).toBeLessThan(30);
   });
 
@@ -409,22 +308,16 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [toolA, sequentialTool],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(
+      TEST_MODEL,
+      [{ label: "test", content: "test" }],
+      [toolA, sequentialTool],
+      { effort: "medium", streamFn },
+    );
 
-    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
     const types = events.map((e) => e.type);
-
-    // Sequential: tool_start, tool_end, tool_start, tool_end (interleaved)
     const toolEvents = types.filter((t) => t === "tool_start" || t === "tool_end");
     expect(toolEvents).toEqual(["tool_start", "tool_end", "tool_start", "tool_end"]);
   });
@@ -439,27 +332,16 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [toolA],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [toolA], { effort: "medium", streamFn });
 
-    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
-    // Works correctly — single tool still executes
-    const toolEnds = events.filter((e) => e.type === "tool_end") as Extract<AgentEvent, { type: "tool_end" }>[];
+    const toolEnds = events.filter((e) => e.type === "tool_end") as Extract<CoreAgentEvent, { type: "tool_end" }>[];
     expect(toolEnds).toHaveLength(1);
     expect(toolEnds[0].output).toBe("ptool_a:solo");
   });
 
   test("tool without supportParallel flag: treated as sequential (default false)", async () => {
-    // echoTool has no supportParallel flag
     const toolCallMsg = makeAssistant(
       [
         { type: "tool_call", id: "tc_1", name: "echo", input: { message: "a" } },
@@ -470,22 +352,40 @@ describe("agentLoop", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [echoTool], { effort: "medium", streamFn });
 
-    const loop = agentLoop([{ role: "user", content: "go", timestamp: Date.now() }], config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
     const types = events.map((e) => e.type);
-    // Sequential: interleaved tool_start/tool_end
     const toolEvents = types.filter((t) => t === "tool_start" || t === "tool_end");
     expect(toolEvents).toEqual(["tool_start", "tool_end", "tool_start", "tool_end"]);
+  });
+
+  test("parallel abort request stops after first emitted result", async () => {
+    const abortTool = createParallelAbortTool("abort_tool");
+    const toolB = createParallelTool("ptool_b", 10);
+
+    const toolCallMsg = makeAssistant(
+      [
+        { type: "tool_call", id: "tc_1", name: "abort_tool", input: { query: "stop" } },
+        { type: "tool_call", id: "tc_2", name: "ptool_b", input: { query: "later" } },
+      ],
+      "tool_use",
+    );
+    const streamFn = createMockStreamFunction([toolCallMsg]);
+
+    const agent = new Agent(
+      TEST_MODEL,
+      [{ label: "test", content: "test" }],
+      [abortTool, toolB],
+      { effort: "medium", streamFn },
+    );
+
+    const { events, result } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+
+    expect(events.filter((event) => event.type === "turn_start")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool_start")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "tool_end")).toHaveLength(1);
+    expect(result.filter((message) => message.role === "tool_result")).toHaveLength(0);
   });
 });

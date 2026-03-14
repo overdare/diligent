@@ -6,8 +6,8 @@ import {
   KNOWN_MODELS,
   resolveModel,
   resolveModelForClass,
-} from "../src/provider/models";
-import type { Model } from "../src/provider/types";
+} from "../src/llm/models";
+import type { Model } from "../src/llm/types";
 
 describe("resolveModel", () => {
   it("infers anthropic from claude- prefix", () => {

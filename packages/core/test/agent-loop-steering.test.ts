@@ -1,10 +1,10 @@
 // @summary Tests for agent loop with steering injection and tool execution
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { agentLoop } from "../src/agent/loop";
-import type { AgentEvent, AgentLoopConfig } from "../src/agent/types";
+import { Agent } from "../src/agent/agent";
+import type { CoreAgentEvent } from "../src/agent/types";
 import { EventStream } from "../src/event-stream";
-import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../src/provider/types";
+import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction } from "../src/llm/types";
 import type { Tool } from "../src/tool/types";
 import type { AssistantMessage, Message } from "../src/types";
 
@@ -78,9 +78,26 @@ const echoTool: Tool = {
   },
 };
 
-describe("agentLoop steering", () => {
+function makeAgent(streamFn: StreamFunction, toolOverride?: Tool[]): Agent {
+  return new Agent(
+    TEST_MODEL,
+    [{ label: "test", content: "test" }],
+    toolOverride ?? [echoTool],
+    { effort: "medium", streamFn },
+  );
+}
+
+async function runAgent(agent: Agent, userMessage: Message): Promise<{ events: CoreAgentEvent[]; result: Message[] }> {
+  const events: CoreAgentEvent[] = [];
+  const unsub = agent.subscribe((e) => events.push(e));
+  const result = await agent.prompt(userMessage);
+  unsub();
+  return { events, result };
+}
+
+describe("agent steering", () => {
   test("steering messages injected before LLM call are visible in context", async () => {
-    // First call: LLM makes a tool call. Second call: LLM responds with text.
+    // First call: tool call. Second call: text response.
     const toolCallMsg = makeAssistant(
       [{ type: "tool_call", id: "tc_1", name: "echo", input: { message: "hi" } }],
       "tool_use",
@@ -88,37 +105,12 @@ describe("agentLoop steering", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, responseMsg]);
 
-    let callCount = 0;
-    const steeringMessages: Message[] = [];
+    const agent = makeAgent(streamFn);
 
-    // Queue a steering message that will be drained before the first LLM call
-    steeringMessages.push({
-      role: "user",
-      content: "change direction",
-      timestamp: Date.now(),
-    });
+    // Queue a steering message BEFORE prompt() — gets drained at turn 1 start
+    agent.steer({ role: "user", content: "change direction", timestamp: Date.now() });
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-      getSteeringMessages: () => {
-        callCount++;
-        // Only return messages on first drain
-        if (callCount === 1) {
-          return steeringMessages.splice(0);
-        }
-        return [];
-      },
-    };
-
-    const messages: Message[] = [{ role: "user", content: "hello", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "hello", timestamp: Date.now() });
 
     // Should have emitted steering_injected event with messages
     const steeringEvents = events.filter((e) => e.type === "steering_injected");
@@ -150,35 +142,21 @@ describe("agentLoop steering", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([toolCallMsg1, toolCallMsg2, responseMsg]);
 
-    let drainCount = 0;
+    const agent = makeAgent(streamFn);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-      getSteeringMessages: () => {
-        drainCount++;
-        // Inject a steering message on drain #2 (before second LLM call = loop top of turn 2)
-        if (drainCount === 2) {
-          return [
-            {
-              role: "user" as const,
-              content: "redirect after tools",
-              timestamp: Date.now(),
-            },
-          ];
-        }
-        return [];
-      },
-    };
-
-    const messages: Message[] = [{ role: "user", content: "go", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    let turnCount = 0;
+    const events: CoreAgentEvent[] = [];
+    const unsub = agent.subscribe((e) => {
+      events.push(e);
+      if (e.type === "turn_end" && turnCount === 0) {
+        // Steer after turn 1 ends — tool-call turns always continue,
+        // so this will be drained at the start of turn 2
+        turnCount++;
+        agent.steer({ role: "user", content: "redirect after tools", timestamp: Date.now() });
+      }
+    });
+    await agent.prompt({ role: "user", content: "go", timestamp: Date.now() });
+    unsub();
 
     const steeringEvents = events.filter((e) => e.type === "steering_injected");
     expect(steeringEvents.length).toBeGreaterThanOrEqual(1);
@@ -196,70 +174,34 @@ describe("agentLoop steering", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "hello" }]);
     const streamFn = createMockStreamFunction([responseMsg]);
 
-    let drainCount = 0;
+    const agent = makeAgent(streamFn);
+    // Don't steer anything
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-      getSteeringMessages: () => {
-        drainCount++;
-        return []; // Always empty
-      },
-    };
-
-    const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const { events } = await runAgent(agent, { role: "user", content: "hi", timestamp: Date.now() });
 
     // No steering_injected events should be emitted
     const steeringEvents = events.filter((e) => e.type === "steering_injected");
     expect(steeringEvents).toHaveLength(0);
-
-    // getSteeringMessages was called (at least once: before LLM)
-    expect(drainCount).toBeGreaterThanOrEqual(1);
   });
 
-  test("hasPendingMessages peek continues loop when no tool calls", async () => {
-    // Scenario: text-only response, but hasPendingMessages returns true
-    // → loop continues, drains at top, LLM addresses the steering
+  test("hasPendingMessages causes loop to continue after text-only response", async () => {
+    // Scenario: text-only response, but pending steering messages → loop continues
     const firstMsg = makeAssistant([{ type: "text", text: "initial thoughts" }]);
     const secondMsg = makeAssistant([{ type: "text", text: "addressed steer" }]);
     const streamFn = createMockStreamFunction([firstMsg, secondMsg]);
 
-    let drainCount = 0;
-    let peekCount = 0;
+    const agent = makeAgent(streamFn);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-      getSteeringMessages: () => {
-        drainCount++;
-        // drain #2 (loop top of turn 2): return the steer that was peeked
-        if (drainCount === 2) {
-          return [{ role: "user" as const, content: "please focus on X", timestamp: Date.now() }];
-        }
-        return [];
-      },
-      hasPendingMessages: () => {
-        peekCount++;
-        // First peek (after first text-only response): pending messages exist
-        return peekCount === 1;
-      },
-    };
-
-    const messages: Message[] = [{ role: "user", content: "hello", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const events: CoreAgentEvent[] = [];
+    const unsub = agent.subscribe((e) => {
+      events.push(e);
+      // Steer on message_end of first response — this fires BEFORE hasPendingMessages check
+      if (e.type === "message_end" && streamFn.contexts.length === 1) {
+        agent.steer({ role: "user", content: "please focus on X", timestamp: Date.now() });
+      }
+    });
+    await agent.prompt({ role: "user", content: "hello", timestamp: Date.now() });
+    unsub();
 
     // steering_injected should fire (from drain at turn 2 top)
     const steeringEvents = events.filter((e) => e.type === "steering_injected");
@@ -288,38 +230,19 @@ describe("agentLoop steering", () => {
     const finalMsg = makeAssistant([{ type: "text", text: "addressed steers" }]);
     const streamFn = createMockStreamFunction([toolCallMsg, textOnlyMsg, finalMsg]);
 
-    let drainCount = 0;
-    let peekCount = 0;
+    const agent = makeAgent(streamFn);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [echoTool],
-      streamFunction: streamFn,
-      getSteeringMessages: () => {
-        drainCount++;
-        // drain #3 (loop top of turn 3): return the 2 steers
-        if (drainCount === 3) {
-          return [
-            { role: "user" as const, content: "steer A", timestamp: Date.now() },
-            { role: "user" as const, content: "steer B", timestamp: Date.now() },
-          ];
-        }
-        return [];
-      },
-      hasPendingMessages: () => {
-        peekCount++;
-        // First peek (no-tool-call path after second response): steers are pending
-        return peekCount === 1;
-      },
-    };
-
-    const messages: Message[] = [{ role: "user", content: "start", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const events: CoreAgentEvent[] = [];
+    const unsub = agent.subscribe((e) => {
+      events.push(e);
+      // Steer on message_end of second response (text-only) — fires before hasPendingMessages check
+      if (e.type === "message_end" && streamFn.contexts.length === 2) {
+        agent.steer({ role: "user", content: "steer A", timestamp: Date.now() });
+        agent.steer({ role: "user", content: "steer B", timestamp: Date.now() });
+      }
+    });
+    await agent.prompt({ role: "user", content: "start", timestamp: Date.now() });
+    unsub();
 
     // steering_injected should have been emitted for the 2 steers
     const steeringEvents = events.filter((e) => e.type === "steering_injected");
@@ -349,47 +272,11 @@ describe("agentLoop steering", () => {
     const responseMsg = makeAssistant([{ type: "text", text: "done" }]);
     const streamFn = createMockStreamFunction([responseMsg]);
 
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-      getSteeringMessages: () => [],
-    };
-
-    const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
+    const agent = makeAgent(streamFn, []);
+    const { events } = await runAgent(agent, { role: "user", content: "hi", timestamp: Date.now() });
 
     // Only 1 LLM call — loop broke normally
     expect(streamFn.contexts.length).toBe(1);
     expect(events.some((e) => e.type === "steering_injected")).toBe(false);
-  });
-
-  test("no getSteeringMessages callback is a no-op", async () => {
-    const responseMsg = makeAssistant([{ type: "text", text: "hello" }]);
-    const streamFn = createMockStreamFunction([responseMsg]);
-
-    const config: AgentLoopConfig = {
-      model: TEST_MODEL,
-      systemPrompt: [{ label: "test", content: "test" }],
-      tools: [],
-      streamFunction: streamFn,
-      // No getSteeringMessages
-    };
-
-    const messages: Message[] = [{ role: "user", content: "hi", timestamp: Date.now() }];
-    const loop = agentLoop(messages, config);
-    const events: AgentEvent[] = [];
-    for await (const event of loop) {
-      events.push(event);
-    }
-
-    // No steering_injected events
-    const steeringEvents = events.filter((e) => e.type === "steering_injected");
-    expect(steeringEvents).toHaveLength(0);
   });
 });

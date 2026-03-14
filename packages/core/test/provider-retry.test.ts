@@ -1,7 +1,7 @@
 // @summary Tests for provider stream retry wrapper behavior
 import { describe, expect, test } from "bun:test";
 import { EventStream } from "../src/event-stream";
-import { withRetry } from "../src/provider/retry";
+import { withRetry } from "../src/llm/retry";
 import type {
   Model,
   ProviderEvent,
@@ -9,8 +9,8 @@ import type {
   StreamContext,
   StreamFunction,
   StreamOptions,
-} from "../src/provider/types";
-import { ProviderError } from "../src/provider/types";
+} from "../src/llm/types";
+import { ProviderError } from "../src/llm/types";
 import type { AssistantMessage } from "../src/types";
 
 const testModel: Model = {
@@ -102,14 +102,11 @@ describe("withRetry", () => {
     const { streamFn, callCount } = createFailingStreamFn(failures);
 
     const retryCallbacks: Array<{ attempt: number; delayMs: number }> = [];
-    const retried = withRetry(streamFn, {
-      maxAttempts: 5,
-      baseDelayMs: 1,
-      maxDelayMs: 100,
-      onRetry: (attempt, delayMs) => {
-        retryCallbacks.push({ attempt, delayMs });
-      },
-    });
+    const retried = withRetry(
+      streamFn,
+      { maxAttempts: 5, baseDelayMs: 1, maxDelayMs: 100 },
+      (attempt, delayMs) => { retryCallbacks.push({ attempt, delayMs }); },
+    );
 
     const stream = retried(testModel, testContext, testOptions);
     const events: ProviderEvent[] = [];
@@ -178,14 +175,11 @@ describe("withRetry", () => {
     const { streamFn } = createFailingStreamFn(failures);
 
     const retryDelays: number[] = [];
-    const retried = withRetry(streamFn, {
-      maxAttempts: 3,
-      baseDelayMs: 1,
-      maxDelayMs: 1000,
-      onRetry: (_attempt, delayMs) => {
-        retryDelays.push(delayMs);
-      },
-    });
+    const retried = withRetry(
+      streamFn,
+      { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1000 },
+      (_attempt, delayMs) => { retryDelays.push(delayMs); },
+    );
 
     const stream = retried(testModel, testContext, testOptions);
     for await (const _event of stream) {
@@ -205,18 +199,13 @@ describe("withRetry", () => {
     const { streamFn, callCount } = createFailingStreamFn(failures);
     const controller = new AbortController();
 
-    const retried = withRetry(streamFn, {
-      maxAttempts: 5,
-      baseDelayMs: 50,
-      maxDelayMs: 100,
-      signal: controller.signal,
-      onRetry: () => {
-        // Abort after first retry attempt starts
-        controller.abort();
-      },
-    });
+    const retried = withRetry(
+      streamFn,
+      { maxAttempts: 5, baseDelayMs: 50, maxDelayMs: 100 },
+      () => { controller.abort(); },
+    );
 
-    const stream = retried(testModel, testContext, testOptions);
+    const stream = retried(testModel, testContext, { ...testOptions, signal: controller.signal });
     const events: ProviderEvent[] = [];
     for await (const event of stream) {
       events.push(event);
@@ -236,14 +225,11 @@ describe("withRetry", () => {
     const { streamFn } = createFailingStreamFn(failures);
 
     const retryDelays: number[] = [];
-    const retried = withRetry(streamFn, {
-      maxAttempts: 5,
-      baseDelayMs: 10,
-      maxDelayMs: 1000,
-      onRetry: (_attempt, delayMs) => {
-        retryDelays.push(delayMs);
-      },
-    });
+    const retried = withRetry(
+      streamFn,
+      { maxAttempts: 5, baseDelayMs: 10, maxDelayMs: 1000 },
+      (_attempt, delayMs) => { retryDelays.push(delayMs); },
+    );
 
     const stream = retried(testModel, testContext, testOptions);
     for await (const _event of stream) {

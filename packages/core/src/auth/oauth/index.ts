@@ -1,13 +1,12 @@
-export { openBrowser } from "./browser";
-export { waitForCallback } from "./callback-server";
-export type { OAuthFlowOptions } from "./chatgpt-oauth";
 export {
+  buildChatGPTOAuthUrl,
   CHATGPT_AUTH_URL,
   CHATGPT_CLIENT_ID,
   CHATGPT_REDIRECT_URI,
   CHATGPT_SCOPES,
-  runChatGPTOAuth,
+  createChatGPTOAuthRequest,
 } from "./chatgpt-oauth";
+export type { ChatGPTOAuthRequest, ChatGPTOAuthUrlOptions } from "./chatgpt-oauth";
 export type { PKCEPair } from "./pkce";
 export { generateCodeChallenge, generateCodeVerifier, generatePKCE } from "./pkce";
 export { refreshOAuthTokens, shouldRefresh } from "./refresh";

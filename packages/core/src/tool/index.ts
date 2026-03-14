@@ -13,14 +13,8 @@ export {
   truncateTail,
 } from "./truncation";
 export type {
-  ApprovalRequest,
-  ApprovalResponse,
   Tool,
   ToolContext,
   ToolRegistry,
   ToolResult,
-  UserInputQuestion,
-  UserInputRequest,
-  UserInputResponse,
-  UserInputSource,
 } from "./types";

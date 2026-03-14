@@ -1,51 +1,55 @@
-// @summary ChatGPT subscription OAuth 2.0 PKCE flow — returns OpenAIOAuthTokens
+// @summary ChatGPT OAuth request helpers — build authorize URL and PKCE request state
 import { randomBytes } from "node:crypto";
-import type { OpenAIOAuthTokens } from "../types";
-import { openBrowser } from "./browser";
-import { waitForCallback } from "./callback-server";
 import { generatePKCE } from "./pkce";
-import { buildOAuthTokens, exchangeCodeForTokens } from "./token-exchange";
 
 export const CHATGPT_AUTH_URL = "https://auth.openai.com/oauth/authorize";
 export const CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CHATGPT_REDIRECT_URI = "http://localhost:1455/auth/callback";
 export const CHATGPT_SCOPES = "openid profile email offline_access";
 
-export interface OAuthFlowOptions {
-  /** Called when the browser URL is ready (for display in TUI before opening) */
-  onUrl?: (url: string) => void;
-  /** Timeout in ms (default: 5 minutes) */
-  timeoutMs?: number;
+export interface ChatGPTOAuthUrlOptions {
+  codeChallenge: string;
+  state: string;
+  clientId?: string;
+  redirectUri?: string;
+  scopes?: string;
 }
 
-/**
- * Run the full ChatGPT OAuth flow. Opens browser, waits for callback,
- * exchanges code for OpenAIOAuthTokens (access_token + account_id from JWT).
- */
-export async function runChatGPTOAuth(options: OAuthFlowOptions = {}): Promise<OpenAIOAuthTokens> {
-  const { codeVerifier, codeChallenge } = generatePKCE();
-  const state = randomBytes(32).toString("base64url");
+export interface ChatGPTOAuthRequest {
+  state: string;
+  codeVerifier: string;
+  codeChallenge: string;
+  authUrl: string;
+}
 
+export function buildChatGPTOAuthUrl(options: ChatGPTOAuthUrlOptions): string {
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: CHATGPT_CLIENT_ID,
-    redirect_uri: CHATGPT_REDIRECT_URI,
-    scope: CHATGPT_SCOPES,
-    code_challenge: codeChallenge,
+    client_id: options.clientId ?? CHATGPT_CLIENT_ID,
+    redirect_uri: options.redirectUri ?? CHATGPT_REDIRECT_URI,
+    scope: options.scopes ?? CHATGPT_SCOPES,
+    code_challenge: options.codeChallenge,
     code_challenge_method: "S256",
-    // Required for ChatGPT subscription — ensures org/account info in JWT
     id_token_add_organizations: "true",
     codex_cli_simplified_flow: "true",
     originator: "diligent",
-    state,
+    state: options.state,
   });
 
-  const authUrl = `${CHATGPT_AUTH_URL}?${params}`;
-  options.onUrl?.(authUrl);
+  return `${CHATGPT_AUTH_URL}?${params}`;
+}
 
-  openBrowser(authUrl);
+export function createChatGPTOAuthRequest(): ChatGPTOAuthRequest {
+  const { codeVerifier, codeChallenge } = generatePKCE();
+  const state = randomBytes(32).toString("base64url");
 
-  const { code } = await waitForCallback(state, options.timeoutMs);
-  const rawTokens = await exchangeCodeForTokens(code, codeVerifier);
-  return buildOAuthTokens(rawTokens);
+  return {
+    state,
+    codeVerifier,
+    codeChallenge,
+    authUrl: buildChatGPTOAuthUrl({
+      state,
+      codeChallenge,
+    }),
+  };
 }

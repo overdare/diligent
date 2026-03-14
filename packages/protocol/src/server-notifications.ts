@@ -8,7 +8,6 @@ import {
   SerializableErrorSchema,
   ThreadItemDeltaSchema,
   ThreadItemSchema,
-  ThreadStatusRetrySchema,
   ThreadStatusSchema,
   UsageSchema,
 } from "./data-model";
@@ -44,7 +43,6 @@ export type ThreadCompactedNotification = z.infer<typeof ThreadCompactedNotifica
 
 const ThreadStatusSnapshotFields = {
   threadStatus: ThreadStatusSchema.optional(),
-  threadStatusRetry: ThreadStatusRetrySchema.optional(),
 };
 
 export const ThreadStatusChangedNotificationSchema = z.object({
@@ -52,7 +50,6 @@ export const ThreadStatusChangedNotificationSchema = z.object({
   params: z.object({
     threadId: z.string(),
     status: ThreadStatusSchema,
-    retry: ThreadStatusRetrySchema.optional(),
   }),
 });
 export type ThreadStatusChangedNotification = z.infer<typeof ThreadStatusChangedNotificationSchema>;
@@ -148,17 +145,6 @@ export const KnowledgeSavedNotificationSchema = z.object({
   }),
 });
 export type KnowledgeSavedNotification = z.infer<typeof KnowledgeSavedNotificationSchema>;
-
-export const LoopDetectedNotificationSchema = z.object({
-  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.LOOP_DETECTED),
-  params: z.object({
-    threadId: z.string(),
-    patternLength: z.number().int().positive(),
-    toolName: z.string(),
-    ...ThreadStatusSnapshotFields,
-  }),
-});
-export type LoopDetectedNotification = z.infer<typeof LoopDetectedNotificationSchema>;
 
 export const ErrorNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR),
@@ -325,7 +311,6 @@ export const DiligentServerNotificationSchema = z.union([
   TurnInterruptedNotificationSchema,
   ServerRequestResolvedNotificationSchema,
   KnowledgeSavedNotificationSchema,
-  LoopDetectedNotificationSchema,
   ErrorNotificationSchema,
   UsageUpdatedNotificationSchema,
   AccountLoginCompletedNotificationSchema,

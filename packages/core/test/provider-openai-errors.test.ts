@@ -1,7 +1,7 @@
 // @summary Tests for OpenAI API error classification and handling
 import { describe, expect, it } from "bun:test";
 import OpenAI from "openai";
-import { classifyOpenAIError } from "../src/provider/openai";
+import { classifyOpenAIError } from "../src/llm/provider/openai";
 
 const emptyHeaders = new Headers();
 

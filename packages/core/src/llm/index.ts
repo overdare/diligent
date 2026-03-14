@@ -1,0 +1,72 @@
+// @summary LLM barrel exporting shared model/runtime modules, provider implementations, and compaction
+
+export {
+  compact,
+  compactMessages,
+  configureCompactionRegistry,
+  generateSummary,
+  resetCompactionRegistry,
+} from "./compaction";
+export type {
+  CompactMessagesResult,
+  CompactionPrompts,
+  GenerateSummaryOptions,
+  LLMCompactConfig,
+  LLMCompactInput,
+} from "./compaction";
+export type { ModelClass, ModelDefinition } from "./models";
+export {
+  agentTypeToModelClass,
+  getModelClass,
+  getModelInfoList,
+  KNOWN_MODELS,
+  resolveModel,
+  resolveModelForClass,
+} from "./models";
+export { classifyAnthropicError, createAnthropicNativeCompaction, createAnthropicStream } from "./provider/anthropic";
+export { createChatGPTNativeCompaction, createChatGPTStream } from "./provider/chatgpt";
+export { classifyGeminiError, createGeminiStream } from "./provider/gemini";
+export { createMockStream } from "./provider/mock";
+export type {
+  NativeCompactFn,
+  NativeCompactionInput,
+  NativeCompactionLookup,
+  NativeCompactionResult,
+  NativeCompactionSuccess,
+  NativeCompactionUnsupported,
+} from "./provider/native-compaction";
+export { classifyOpenAIError, createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
+export type { ProviderName } from "./provider-manager";
+export {
+  createStreamForProvider,
+  DEFAULT_MODELS,
+  DEFAULT_PROVIDER,
+  PROVIDER_HINTS,
+  PROVIDER_NAMES,
+  ProviderManager,
+} from "./provider-manager";
+export type { RetryConfig } from "./retry";
+export { withRetry } from "./retry";
+export { configureStreamResolver, resetStreamResolver, resolveStream } from "./stream-resolver";
+export { flattenSections } from "./system-sections";
+export {
+  findModelInfo,
+  getThinkingEffortLabel,
+  getThinkingEffortOptions,
+  getThinkingEffortUsage,
+  getThinkingEffortUsageValues,
+  normalizeThinkingEffort,
+  supportsThinkingNone,
+} from "./thinking-effort";
+export type {
+  Model,
+  ProviderErrorType,
+  ProviderEvent,
+  ProviderResult,
+  StreamContext,
+  StreamFunction,
+  StreamOptions,
+  SystemSection,
+  ToolDefinition,
+} from "./types";
+export { ProviderError } from "./types";

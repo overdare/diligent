@@ -8,14 +8,22 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "allowArbitraryExtensions": true,
     "isolatedModules": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@diligent/core": ["packages/core/src/index.ts"],
+      "@diligent/core/*": ["packages/core/src/*"],
+      "@diligent/runtime": ["packages/runtime/src/index.ts"],
+      "@diligent/runtime/client": ["packages/runtime/src/client.ts"],
+      "@diligent/runtime/*": ["packages/runtime/src/*"],
+      "@diligent/protocol": ["packages/protocol/src/index.ts"],
+      "@diligent/protocol/*": ["packages/protocol/src/*"]
+    }
   },
   "include": []
 }

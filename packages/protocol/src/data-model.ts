@@ -305,13 +305,7 @@ export const AgentEventSchema = z.union([
   }),
   z.object({
     type: z.literal("status_change"),
-    status: z.enum(["idle", "busy", "retry"]),
-    retry: z
-      .object({
-        attempt: z.number().int().nonnegative(),
-        delayMs: z.number().int().nonnegative(),
-      })
-      .optional(),
+    status: z.enum(["idle", "busy"]),
   }),
   z.object({ type: z.literal("usage"), usage: UsageSchema, cost: z.number() }),
   z.object({ type: z.literal("error"), error: SerializableErrorSchema, fatal: z.boolean() }),
@@ -323,7 +317,6 @@ export const AgentEventSchema = z.union([
     summary: z.string(),
   }),
   z.object({ type: z.literal("knowledge_saved"), knowledgeId: z.string(), content: z.string() }),
-  z.object({ type: z.literal("loop_detected"), patternLength: z.number().int().positive(), toolName: z.string() }),
   z.object({ type: z.literal("steering_injected"), messageCount: z.number().int().nonnegative() }),
   // Collab — sub-agent orchestration events (3 pairs of begin/end)
   z.object({
@@ -387,14 +380,8 @@ export const AgentEventSchema = z.union([
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 
-export const ThreadStatusSchema = z.enum(["idle", "busy", "retry"]);
+export const ThreadStatusSchema = z.enum(["idle", "busy"]);
 export type ThreadStatus = z.infer<typeof ThreadStatusSchema>;
-
-export const ThreadStatusRetrySchema = z.object({
-  attempt: z.number().int().nonnegative(),
-  delayMs: z.number().int().nonnegative(),
-});
-export type ThreadStatusRetry = z.infer<typeof ThreadStatusRetrySchema>;
 
 export const ThreadItemSchema = z.union([
   z.object({

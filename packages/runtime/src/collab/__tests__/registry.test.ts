@@ -1,0 +1,211 @@
+// @summary Tests for AgentRegistry: spawn, maxAgents, status tracking, shutdownAll
+import { describe, expect, it } from "bun:test";
+import { AgentRegistry, isFinal } from "@diligent/runtime/collab";
+import type { SessionManagerConfig } from "@diligent/runtime/session";
+import type { AgentEvent } from "../../agent-event";
+import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "./helpers";
+
+describe("AgentRegistry", () => {
+  it("spawn returns threadId and nickname immediately", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    const { threadId, nickname } = registry.spawn({
+      prompt: "do something",
+      description: "test agent",
+      agentType: "general",
+    });
+    expect(typeof threadId).toBe("string");
+    expect(threadId.length).toBeGreaterThan(0);
+    expect(typeof nickname).toBe("string");
+    expect(nickname.length).toBeGreaterThan(0);
+  });
+
+  it("spawn starts agent as pending/running, not completed", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    const { threadId } = registry.spawn({
+      prompt: "slow task",
+      description: "slow",
+      agentType: "general",
+    });
+    const status = registry.getStatus(threadId);
+    // Status may be pending or running immediately after spawn
+    expect(status.kind === "pending" || status.kind === "running").toBe(true);
+  });
+
+  it("wait resolves when agent completes", async () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("finished")),
+      }),
+    );
+    const { threadId } = registry.spawn({
+      prompt: "task",
+      description: "",
+      agentType: "general",
+    });
+    const { status, timedOut } = await registry.wait([threadId], 5000);
+    expect(timedOut).toBe(false);
+    expect(status[threadId]).toBeDefined();
+    expect(isFinal(status[threadId])).toBe(true);
+  });
+
+  it("wait returns completed status with output", async () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("my output")),
+      }),
+    );
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    const { status } = await registry.wait([threadId], 5000);
+    const s = status[threadId];
+    expect(s.kind).toBe("completed");
+    if (s.kind === "completed") {
+      expect(s.output).toContain("my output");
+    }
+  });
+
+  it("rejects when maxAgents exceeded", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        maxAgents: 2,
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    registry.spawn({ prompt: "task1", description: "", agentType: "general" });
+    registry.spawn({ prompt: "task2", description: "", agentType: "general" });
+    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(
+      /Max active agents/,
+    );
+  });
+
+  it("throws for unknown agent ID in wait", async () => {
+    const registry = new AgentRegistry(makeCollabDeps());
+    await expect(registry.wait(["unknown-id"], 1000)).rejects.toThrow(/Unknown agent/);
+  });
+
+  it("getNickname returns undefined for unknown agent", () => {
+    const registry = new AgentRegistry(makeCollabDeps());
+    expect(registry.getNickname("bad-id")).toBeUndefined();
+  });
+
+  it("shutdownAll aborts all agents", async () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("done")),
+      }),
+    );
+    registry.spawn({ prompt: "task1", description: "", agentType: "general" });
+    registry.spawn({ prompt: "task2", description: "", agentType: "general" });
+    await registry.shutdownAll();
+    // After shutdown, no more agents tracked
+    // After shutdown, spawned agents are cleared
+    // (we don't know the exact sessionIds, just verify shutdown completed without error)
+  });
+
+  it("close aborts agent and returns final status", async () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("result")),
+      }),
+    );
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    const finalStatus = await registry.close(threadId);
+    expect(isFinal(finalStatus)).toBe(true);
+    // Agent is retained with shutdown status (not deleted)
+    expect(registry.getStatus(threadId)).toEqual({ kind: "shutdown" });
+  });
+
+  it("two unique nicknames for two agents", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    const r1 = registry.spawn({ prompt: "task1", description: "", agentType: "general" });
+    const r2 = registry.spawn({ prompt: "task2", description: "", agentType: "general" });
+    expect(r1.nickname).not.toBe(r2.nickname);
+  });
+
+  it("restoreAgent registers agent as shutdown", () => {
+    const registry = new AgentRegistry(makeCollabDeps());
+    registry.restoreAgent("sess-9999", "RestoredBot");
+    expect(registry.getNickname("sess-9999")).toBe("RestoredBot");
+    expect(registry.getStatus("sess-9999")).toEqual({ kind: "shutdown" });
+  });
+
+  it("restoreAgent skips if agent already exists", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    const { threadId, nickname } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    registry.restoreAgent(threadId, "DifferentNick");
+    // Original nickname preserved — restore was a no-op
+    expect(registry.getNickname(threadId)).toBe(nickname);
+  });
+
+  it("restored agents do not count toward maxAgents", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        maxAgents: 2,
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    registry.restoreAgent("sess-old-1", "Old1");
+    registry.restoreAgent("sess-old-2", "Old2");
+    // Can still spawn 2 active agents despite 2 restored (shutdown) agents
+    registry.spawn({ prompt: "task1", description: "", agentType: "general" });
+    registry.spawn({ prompt: "task2", description: "", agentType: "general" });
+    // 3rd active would exceed limit
+    expect(() => registry.spawn({ prompt: "task3", description: "", agentType: "general" })).toThrow(
+      /Max active agents/,
+    );
+  });
+
+  it("spawn passes parentSessionId to child SessionManager config", () => {
+    let capturedConfig: SessionManagerConfig | undefined;
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        getParentSessionId: () => "parent-xyz",
+        sessionManagerFactory: (config) => {
+          capturedConfig = config;
+          return makeMockSessionManagerFactory(makeAssistant("ok"))!(config);
+        },
+      }),
+    );
+    registry.spawn({ prompt: "test", description: "", agentType: "general" });
+    expect(capturedConfig?.parentSession).toBe("parent-xyz");
+  });
+
+  it("emits immediate errored spawn_end when child fails before wait", async () => {
+    const events: AgentEvent[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        onCollabEvent: (event) => events.push(event),
+        sessionManagerFactory: makeMockSessionManagerFactory(new Error("model not found")),
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+
+    const { status } = await registry.wait([threadId], 5000);
+    expect(status[threadId]?.kind).toBe("errored");
+
+    const spawnEndErrored = events.find(
+      (event) =>
+        event.type === "collab_spawn_end" &&
+        event.childThreadId === threadId &&
+        event.status === "errored" &&
+        event.message?.includes("model not found"),
+    );
+    expect(spawnEndErrored).toBeDefined();
+  });
+});
