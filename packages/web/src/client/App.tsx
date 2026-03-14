@@ -1013,7 +1013,7 @@ export function App() {
             contextWindow={
               providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0
             }
-            hasProvider={providerMgr.providers.some((p) => p.configured || p.oauthConnected)}
+            hasProvider={providerMgr.providers.some((p) => p.configured)}
             onOpenProviders={() => setShowProviderModal(true)}
             supportsVision={supportsVision}
             supportsThinking={supportsThinking}
@@ -1077,7 +1077,7 @@ export function App() {
           onOAuthStart={async () => {
             setOauthPending(true);
             setOauthError(null);
-            const result = await providerMgr.handleOAuthStart();
+            const result = await providerMgr.handleOAuthStart("chatgpt");
             // Server opens the browser server-side (works in both regular browser and Tauri)
             return result;
           }}

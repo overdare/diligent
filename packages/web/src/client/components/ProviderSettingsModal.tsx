@@ -1,4 +1,4 @@
-// @summary Modal for managing provider API keys and ChatGPT OAuth (connect/disconnect per provider)
+// @summary Modal for managing provider authentication (API keys and ChatGPT OAuth)
 
 import type { ProviderAuthStatus } from "@diligent/protocol";
 import { useCallback, useState } from "react";
@@ -14,13 +14,14 @@ interface ProviderSettingsModalProps {
   oauthError: string | null;
   onSet: (provider: string, apiKey: string) => Promise<void>;
   onRemove: (provider: string) => Promise<void>;
-  onOAuthStart: () => Promise<{ authUrl: string }>;
+  onOAuthStart: (provider: string) => Promise<{ authUrl: string }>;
   onClose: () => void;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
+  chatgpt: "ChatGPT",
   gemini: "Gemini",
 };
 
@@ -73,10 +74,10 @@ export function ProviderSettingsModal({
   };
 
   const handleOAuthStart = useCallback(async () => {
-    setSavingProvider("openai");
+    setSavingProvider("chatgpt");
     setError(null);
     try {
-      await onOAuthStart();
+      await onOAuthStart("chatgpt");
       // Server opens the browser; account/login/completed notification will signal completion
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start OAuth");
@@ -106,7 +107,7 @@ export function ProviderSettingsModal({
                   {PROVIDER_LABELS[p.provider] ?? p.provider}
                 </span>
                 {p.maskedKey ? <span className="font-mono text-xs text-muted">{p.maskedKey}</span> : null}
-                {p.oauthConnected ? <span className="font-mono text-xs text-muted">ChatGPT</span> : null}
+                  {p.oauthConnected ? <span className="font-mono text-xs text-muted">OAuth</span> : null}
                 {editingProvider !== p.provider && !oauthPending ? (
                   isConnected(p) || isSaving ? (
                     <Button
@@ -122,9 +123,13 @@ export function ProviderSettingsModal({
                       intent="ghost"
                       size="sm"
                       onClick={() => {
-                        setEditingProvider(p.provider);
-                        setKeyInput("");
-                        setError(null);
+                        if (p.provider === "chatgpt") {
+                          void handleOAuthStart();
+                        } else {
+                          setEditingProvider(p.provider);
+                          setKeyInput("");
+                          setError(null);
+                        }
                       }}
                     >
                       Connect
@@ -159,9 +164,8 @@ export function ProviderSettingsModal({
                       Cancel
                     </Button>
                   </div>
-                  {p.provider === "openai" ? (
+                  {p.provider === "chatgpt" ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted">or</span>
                       <Button
                         intent="ghost"
                         size="sm"
@@ -175,7 +179,7 @@ export function ProviderSettingsModal({
                 </div>
               ) : null}
 
-              {p.provider === "openai" && oauthPending && editingProvider !== p.provider ? (
+              {p.provider === "chatgpt" && oauthPending && editingProvider !== p.provider ? (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="animate-pulse text-xs text-accent">Waiting for ChatGPT login...</span>
                 </div>

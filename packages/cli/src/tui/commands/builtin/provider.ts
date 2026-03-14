@@ -24,7 +24,7 @@ export const providerCommand: Command = {
     const parts = args?.trim().split(/\s+/) ?? [];
     const subcommand = parts[0] ?? "";
 
-    // /provider set <name> — set API key
+    // /provider set <name> — set auth
     if (subcommand === "set") {
       const provider = parts[1] as ProviderName | undefined;
       if (provider && PROVIDER_NAMES.includes(provider)) {
@@ -77,8 +77,8 @@ function pickProvider(ctx: CommandContext): Promise<void> {
           const selected = value as ProviderName;
           if (selected === currentProvider && ctx.config.providerManager.hasKeyFor(selected)) {
             // Already active with key — offer auth change
-            if (selected === "openai") {
-              await promptOpenAIAuth(ctx);
+            if (selected === "chatgpt") {
+              await startChatGPTOAuthFlow(ctx);
             } else {
               await promptApiKey(selected, ctx);
             }
@@ -100,13 +100,13 @@ function pickProvider(ctx: CommandContext): Promise<void> {
 /** Switch to a provider: prompt auth if needed, then switch model to default */
 async function switchProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
   if (!ctx.config.providerManager.hasKeyFor(provider)) {
-    if (provider === "openai") {
-      await promptOpenAIAuth(ctx);
+    if (provider === "chatgpt") {
+      await startChatGPTOAuthFlow(ctx);
     } else {
       await promptApiKey(provider, ctx);
     }
     if (!ctx.config.providerManager.hasKeyFor(provider)) {
-      ctx.displayError("Provider switch cancelled — no API key provided.");
+      ctx.displayError("Provider switch cancelled — no authentication configured.");
       return;
     }
   }
@@ -117,39 +117,6 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   ctx.onModelChanged(model.id);
   ctx.displayLines([`  Provider: ${t.bold}${provider}${t.reset}  Model: ${t.bold}${model.id}${t.reset}`]);
   saveModel(model.id).catch(() => {});
-}
-
-/** OpenAI: show "Enter API key" vs "Login with ChatGPT" */
-function promptOpenAIAuth(ctx: CommandContext): Promise<void> {
-  return new Promise((resolve) => {
-    const items: ListPickerItem[] = [
-      {
-        label: "Enter API key",
-        description: "Paste sk-... key from platform.openai.com",
-        value: "apikey",
-      },
-      {
-        label: "Login with ChatGPT",
-        description: "Use Plus/Pro subscription via browser OAuth",
-        value: "oauth",
-      },
-    ];
-
-    const picker = new ListPicker({ title: "OpenAI Authentication", items }, async (value) => {
-      handle.hide();
-      ctx.requestRender();
-
-      if (value === "apikey") {
-        await promptApiKey("openai", ctx);
-      } else if (value === "oauth") {
-        await startChatGPTOAuthFlow(ctx);
-      }
-      resolve();
-    });
-
-    const handle = ctx.showOverlay(picker, { anchor: "center" });
-    ctx.requestRender();
-  });
 }
 
 async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
@@ -163,7 +130,7 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
 
   try {
     // Delegate OAuth to app-server so its providerManager receives the tokens directly
-    const { authUrl } = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START, {});
+    const { authUrl } = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START, { provider: "chatgpt" });
     ctx.displayLines([`  Auth URL: ${t.dim}${authUrl}${t.reset}`]);
 
     // Wait for ACCOUNT_LOGIN_COMPLETED notification forwarded via app.ts
@@ -181,11 +148,16 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
 
     ctx.displayLines([`  ${t.success}Authenticated via ChatGPT subscription.${t.reset}`]);
 
-    // Mark openai as configured in the TUI's local providerManager (cosmetic — app-server has real tokens)
-    ctx.config.providerManager.setApiKey("openai", "chatgpt-oauth");
+    // Mark chatgpt as configured in the TUI's local providerManager (cosmetic — app-server has real tokens)
+    ctx.config.providerManager.setOAuthTokens({
+      access_token: "chatgpt-oauth",
+      refresh_token: "chatgpt-oauth",
+      id_token: "chatgpt-oauth",
+      expires_at: Number.MAX_SAFE_INTEGER,
+    });
 
     // Switch to default Codex model
-    const model = resolveModel(DEFAULT_MODELS.openai);
+    const model = resolveModel(DEFAULT_MODELS.chatgpt);
     ctx.config.model = model;
     ctx.onModelChanged(model.id);
     ctx.displayLines([`  Model: ${t.bold}${model.id}${t.reset}`]);
@@ -203,14 +175,14 @@ function showProviderStatus(ctx: CommandContext): void {
   for (const provider of PROVIDER_NAMES) {
     const maskedKey = pm.getMaskedKey(provider);
     const active = provider === currentProvider ? ` ${t.accent}(active)${t.reset}` : "";
-    const oauthNote = provider === "openai" && pm.hasOAuthFor("openai") ? ` ${t.dim}(ChatGPT OAuth)${t.reset}` : "";
+    const oauthNote = provider === "chatgpt" && pm.hasOAuthFor("chatgpt") ? ` ${t.dim}(OAuth)${t.reset}` : "";
     const status = maskedKey ? `${t.success}configured${t.reset} (${maskedKey})` : `${t.dim}not configured${t.reset}`;
     const marker = pm.hasKeyFor(provider) ? "\u2713" : "\u2717";
     lines.push(`  ${marker} ${t.bold}${provider}${t.reset}: ${status}${oauthNote}${active}`);
   }
 
   lines.push("");
-  lines.push(`  ${t.dim}Use /provider set <name> to add a key, /provider <name> to switch.${t.reset}`);
+  lines.push(`  ${t.dim}Use /provider set <name> to add auth, /provider <name> to switch.${t.reset}`);
   lines.push("");
 
   ctx.displayLines(lines);
@@ -239,6 +211,9 @@ function pickProviderThenSetKey(ctx: CommandContext): Promise<void> {
 }
 
 export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promise<void> {
+  if (provider === "chatgpt") {
+    return startChatGPTOAuthFlow(ctx);
+  }
   return new Promise((resolve) => {
     const { apiKeyUrl, apiKeyPlaceholder } = PROVIDER_HINTS[provider];
 

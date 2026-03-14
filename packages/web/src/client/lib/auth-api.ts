@@ -17,6 +17,9 @@ export async function removeProviderKey(rpc: WebRpcClient, provider: string): Pr
   await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE, { provider: provider as ProviderName });
 }
 
-export async function startOAuthFlow(rpc: WebRpcClient): Promise<AuthOAuthStartResponse> {
-  return rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START, {});
+export async function startOAuthFlow(rpc: WebRpcClient, provider: ProviderName): Promise<AuthOAuthStartResponse> {
+  if (provider !== "chatgpt") {
+    throw new Error("OAuth login is only supported for chatgpt provider");
+  }
+  return rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START, { provider });
 }

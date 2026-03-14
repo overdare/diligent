@@ -98,10 +98,13 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
     [rpcRef],
   );
 
-  const handleOAuthStart = useCallback(async (): Promise<AuthOAuthStartResponse> => {
+  const handleOAuthStart = useCallback(async (provider: string): Promise<AuthOAuthStartResponse> => {
     const rpc = rpcRef.current;
     if (!rpc) throw new Error("Not connected");
-    return startOAuthFlow(rpc);
+    if (provider !== "chatgpt") {
+      throw new Error("OAuth login is only supported for chatgpt provider");
+    }
+    return startOAuthFlow(rpc, provider);
   }, [rpcRef]);
 
   // Notification handlers: called from App.tsx when server pushes account notifications
