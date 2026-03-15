@@ -262,7 +262,7 @@ describe("RPC binding", () => {
     stop();
   });
 
-  it("supports knowledge add/update/delete over RPC", async () => {
+  it("supports knowledge update (upsert/delete) over RPC", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-rpc-binding-knowledge-"));
     const { client: clientPeer, server: serverPeer } = createLinkedPeers();
 
@@ -313,7 +313,8 @@ describe("RPC binding", () => {
 
     const started = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, { cwd: projectRoot });
 
-    const added = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD, {
+    const added = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, {
+      action: "upsert",
       threadId: started.threadId,
       type: "pattern",
       content: "Use focused tests before full suite",
@@ -324,24 +325,26 @@ describe("RPC binding", () => {
     expect(added.entry.type).toBe("pattern");
 
     const updated = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, {
+      action: "upsert",
       threadId: started.threadId,
       id: added.entry.id,
-      type: "decision",
+      type: "backlog",
       content: "Run focused tests before full suite",
       confidence: 0.9,
       tags: ["tests", "workflow"],
     });
     expect(updated.entry.id).toBe(added.entry.id);
-    expect(updated.entry.type).toBe("decision");
+    expect(updated.entry.type).toBe("backlog");
     expect(updated.entry.confidence).toBe(0.9);
 
     const listed = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST, {
       threadId: started.threadId,
       limit: 10,
     });
-    expect(listed.data.some((entry) => entry.id === added.entry.id && entry.type === "decision")).toBe(true);
+    expect(listed.data.some((entry) => entry.id === added.entry.id && entry.type === "backlog")).toBe(true);
 
-    const deleted = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE, {
+    const deleted = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, {
+      action: "delete",
       threadId: started.threadId,
       id: added.entry.id,
     });

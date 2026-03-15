@@ -86,10 +86,10 @@ export function buildSystemPrompt(
 }
 
 const KNOWLEDGE_INSTRUCTION = `
-You have access to an add_knowledge tool. Use it to save important information that should persist across sessions:
+You have access to an update_knowledge tool. Use it to save, revise, or delete important information that should persist across sessions:
 - Project patterns (naming conventions, preferred libraries, architectural patterns)
 - User preferences (workflow, style, communication)
-- Key decisions made during this session
+- Important backlog items to revisit later
 - Corrections to previous behavior
 
 Use your judgment — save knowledge when you discover something that would be useful in future sessions.`;

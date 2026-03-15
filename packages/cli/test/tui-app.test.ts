@@ -380,6 +380,46 @@ describe("App", () => {
     }
   });
 
+  test("steering injected during active turn is rendered as user message", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([
+      {
+        message: createAssistantMessage({
+          toolCall: { id: "tc_1", name: "bash", input: { command: "sleep 0.2 && echo done" } },
+        }),
+      },
+      {
+        message: createAssistantMessage({ text: "final" }),
+      },
+    ]);
+
+    const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("start");
+      emitEnter();
+      await wait(60);
+
+      emitText("change approach");
+      emitEnter();
+      await wait(360);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(writes.join(""));
+    expect(output).toContain("change approach");
+    expect(output).not.toContain("[steering] change approach");
+  });
+
   test("Ctrl+C during active turn cancels processing", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);

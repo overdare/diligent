@@ -1,9 +1,12 @@
 // @summary Renders the agent message history and real-time streaming output
 import type { AgentEvent } from "@diligent/runtime";
+import { deriveToolRenderPayload } from "@diligent/runtime/tools";
+import type { ToolRenderPayload } from "@diligent/protocol";
 import { debugLogger } from "../framework/debug-logger";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
+import { renderToolPayload } from "../render-blocks";
 import { MarkdownView } from "./markdown-view";
 import { SpinnerComponent } from "./spinner";
 
@@ -274,6 +277,12 @@ export class ChatView implements Component {
         this.toolCallInputs.delete(event.toolCallId);
         const elapsedVal = startTime !== undefined ? formatToolElapsed(Date.now() - startTime) : null;
         const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
+        const renderPayload: ToolRenderPayload | undefined = deriveToolRenderPayload(
+          event.toolName,
+          toolInput,
+          event.output,
+          event.isError,
+        );
 
         if (event.toolName === "plan") {
           this.planCallCount++;
@@ -348,6 +357,14 @@ export class ChatView implements Component {
             lines.push(`${icon} ${event.toolName}${elapsed}`);
           }
 
+          this.items.push(this.createToolResultItem(lines));
+        } else if (renderPayload) {
+          const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
+          const rendered = renderToolPayload(renderPayload);
+          const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
+          if (rendered.length > 0) {
+            lines.push(...rendered.map((line, index) => (index === 0 ? `  ${line}` : `  ${line}`)));
+          }
           this.items.push(this.createToolResultItem(lines));
         } else if (event.output) {
           const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);

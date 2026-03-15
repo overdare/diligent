@@ -1,7 +1,7 @@
 export type { CollabToolDeps } from "../collab";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, createCollabTools } from "../collab";
-export { createAddKnowledgeTool } from "./add-knowledge";
+export { createUpdateKnowledgeTool } from "./update-knowledge";
 export { createApplyPatchTool } from "./apply-patch";
 export { createBashTool, filterSensitiveEnv } from "./bash";
 // Tool catalog (P032)
@@ -18,6 +18,7 @@ export { createPlanTool } from "./plan";
 export type { PluginLoadResult, PluginManifest } from "./plugin-loader";
 export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-loader";
 export { createReadTool } from "./read";
+export { deriveToolRenderPayload } from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
 export { createSkillTool, registerSkillTool } from "./skill";
 export type { UserInputQuestion, UserInputRequest, UserInputResponse, UserInputSource } from "./user-input-types";

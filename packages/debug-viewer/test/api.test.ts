@@ -93,7 +93,7 @@ describe("GET /api/knowledge", () => {
     // Check types
     const types = data.entries.map((e: { type: string }) => e.type);
     expect(types).toContain("pattern");
-    expect(types).toContain("decision");
+    expect(types).toContain("backlog");
     expect(types).toContain("discovery");
     expect(types).toContain("preference");
     expect(types).toContain("correction");

@@ -189,13 +189,14 @@ describe("protocol/flow", () => {
     ).toBe(true);
   });
 
-  it("accepts knowledge add/update/delete request and response payloads", () => {
+  it("accepts knowledge update (upsert/delete) request and response payloads", () => {
     expect(
       DiligentClientRequestSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
         params: {
+          action: "upsert",
           threadId: "th-1",
-          type: "decision",
+          type: "backlog",
           content: "Use feature flag X for rollout",
           confidence: 0.9,
           tags: ["rollout", "flag"],
@@ -207,6 +208,7 @@ describe("protocol/flow", () => {
       DiligentClientRequestSchema.safeParse({
         method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
         params: {
+          action: "upsert",
           threadId: "th-1",
           id: "k-1",
           type: "correction",
@@ -219,8 +221,9 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientRequestSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
         params: {
+          action: "delete",
           threadId: "th-1",
           id: "k-1",
         },
@@ -229,7 +232,7 @@ describe("protocol/flow", () => {
 
     expect(
       DiligentClientResponseSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD,
+        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
         result: {
           entry: {
             id: "k-1",
@@ -245,21 +248,6 @@ describe("protocol/flow", () => {
     expect(
       DiligentClientResponseSchema.safeParse({
         method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
-        result: {
-          entry: {
-            id: "k-1",
-            timestamp: new Date().toISOString(),
-            type: "pattern",
-            content: "Always run focused tests first",
-            confidence: 0.9,
-          },
-        },
-      }).success,
-    ).toBe(true);
-
-    expect(
-      DiligentClientResponseSchema.safeParse({
-        method: DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE,
         result: { deleted: true },
       }).success,
     ).toBe(true);
@@ -427,23 +415,7 @@ describe("protocol/flow", () => {
     expect(bad.success).toBe(false);
   });
 
-  it("accepts ToolResultMessage with render payload", () => {
-    const msg = ToolResultMessageSchema.safeParse({
-      role: "tool_result",
-      toolCallId: "tc-1",
-      toolName: "my_tool",
-      output: "plain text fallback",
-      isError: false,
-      timestamp: 1000,
-      render: {
-        version: 1,
-        blocks: [{ type: "summary", text: "2 files changed" }],
-      },
-    });
-    expect(msg.success).toBe(true);
-  });
-
-  it("accepts ToolResultMessage without render (backwards compat)", () => {
+  it("accepts ToolResultMessage", () => {
     const msg = ToolResultMessageSchema.safeParse({
       role: "tool_result",
       toolCallId: "tc-1",

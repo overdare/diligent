@@ -41,6 +41,7 @@ export interface CommandHandlerDeps {
   onEffortChanged: (effort: ThinkingEffort, label: string) => void;
   waitForOAuthComplete: () => Promise<{ success: boolean; error: string | null }>;
   syncActiveThreadState: () => Promise<void>;
+  queuePendingSteer: (text: string) => void;
   // Domain modules
   threadManager: ThreadManager;
   configManager: ConfigManager;
@@ -191,7 +192,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
       const rpc = deps.getRpcClient();
       const threadId = deps.getCurrentThreadId();
       if (!rpc || !threadId) return;
-      deps.addLines([`  ${t.dim}[steering] ${text}${t.reset}`]);
+      deps.queuePendingSteer(text);
       void rpc
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
           threadId,

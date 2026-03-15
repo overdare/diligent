@@ -1,5 +1,5 @@
 /** D081: Five knowledge types */
-export type KnowledgeType = "pattern" | "decision" | "discovery" | "preference" | "correction";
+export type KnowledgeType = "pattern" | "discovery" | "preference" | "correction" | "backlog";
 
 export interface KnowledgeEntry {
   id: string;

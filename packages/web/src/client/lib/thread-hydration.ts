@@ -389,7 +389,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
               status: "done",
               timestamp: message.timestamp,
               durationMs: Math.max(0, message.timestamp - item.startedAt),
-              render: msgRender ?? item.render,
+              render: item.render ?? msgRender,
             }
           : item,
       );

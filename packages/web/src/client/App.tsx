@@ -3,7 +3,6 @@
 import type {
   DiligentServerNotification,
   InitializeResponse,
-  KnowledgeDeleteResponse,
   KnowledgeEntry,
   KnowledgeUpdateParams,
   LocalImageBlock,
@@ -876,26 +875,12 @@ export function App() {
   );
 
   const updateKnowledge = useCallback(
-    async (params: KnowledgeUpdateParams): Promise<{ entry: KnowledgeEntry }> => {
+    async (params: KnowledgeUpdateParams): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> => {
       const rpc = rpcRef.current;
       if (!rpc) {
         throw new Error("WebSocket is not connected");
       }
       return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, params);
-    },
-    [rpcRef],
-  );
-
-  const deleteKnowledge = useCallback(
-    async (threadId: string | undefined, id: string): Promise<KnowledgeDeleteResponse> => {
-      const rpc = rpcRef.current;
-      if (!rpc) {
-        throw new Error("WebSocket is not connected");
-      }
-      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE, {
-        threadId,
-        id,
-      });
     },
     [rpcRef],
   );
@@ -1044,7 +1029,6 @@ export function App() {
               threadId={state.activeThreadId}
               onList={listKnowledge}
               onUpdate={updateKnowledge}
-              onDelete={deleteKnowledge}
               onClose={() => setShowKnowledgeModal(false)}
               className="absolute inset-0 z-40 bg-black/35"
             />

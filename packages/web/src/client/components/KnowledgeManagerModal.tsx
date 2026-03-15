@@ -1,6 +1,6 @@
 // @summary Modal for direct user CRUD management of knowledge entries over RPC
 
-import type { KnowledgeDeleteResponse, KnowledgeEntry, KnowledgeType, KnowledgeUpdateParams } from "@diligent/protocol";
+import type { KnowledgeEntry, KnowledgeType, KnowledgeUpdateParams } from "@diligent/protocol";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
@@ -10,17 +10,16 @@ import { TextArea } from "./TextArea";
 interface KnowledgeManagerModalProps {
   threadId?: string | null;
   onList: (threadId?: string) => Promise<{ data: KnowledgeEntry[] }>;
-  onUpdate: (params: KnowledgeUpdateParams) => Promise<{ entry: KnowledgeEntry }>;
-  onDelete: (threadId: string | undefined, id: string) => Promise<KnowledgeDeleteResponse>;
+  onUpdate: (params: KnowledgeUpdateParams) => Promise<{ entry?: KnowledgeEntry; deleted?: boolean }>;
   onClose: () => void;
   className?: string;
 }
 
-const KNOWLEDGE_TYPES: KnowledgeType[] = ["pattern", "decision", "discovery", "preference", "correction"];
+const KNOWLEDGE_TYPES: KnowledgeType[] = ["pattern", "discovery", "preference", "correction", "backlog"];
 
 const KNOWLEDGE_TYPE_STYLES: Record<KnowledgeType, string> = {
   pattern: "border-blue-400/30 bg-blue-400/10 text-blue-300",
-  decision: "border-violet-400/30 bg-violet-400/10 text-violet-300",
+  backlog: "border-violet-400/30 bg-violet-400/10 text-violet-300",
   discovery: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   preference: "border-amber-400/30 bg-amber-400/10 text-amber-300",
   correction: "border-rose-400/30 bg-rose-400/10 text-rose-300",
@@ -68,7 +67,6 @@ export function KnowledgeManagerModal({
   threadId,
   onList,
   onUpdate,
-  onDelete,
   onClose,
   className,
 }: KnowledgeManagerModalProps) {
@@ -168,6 +166,7 @@ export function KnowledgeManagerModal({
     setError(null);
     try {
       const result = await onUpdate({
+        action: "upsert",
         threadId: threadId ?? undefined,
         id: editing.id,
         type: editing.draft.type,
@@ -175,7 +174,10 @@ export function KnowledgeManagerModal({
         confidence,
         tags: normalizeTags(editing.draft.tags),
       });
-      setEntries((current) => current.map((entry) => (entry.id === editing.id ? result.entry : entry)));
+      if (!result.entry) {
+        throw new Error("Knowledge update did not return an entry");
+      }
+      setEntries((current) => current.map((entry) => (entry.id === editing.id ? result.entry! : entry)));
       cancelEditing();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to save knowledge entry");
@@ -189,7 +191,11 @@ export function KnowledgeManagerModal({
     setSaving(true);
     setError(null);
     try {
-      const result = await onDelete(threadId ?? undefined, pendingDeleteId);
+      const result = await onUpdate({
+        action: "delete",
+        threadId: threadId ?? undefined,
+        id: pendingDeleteId,
+      });
       if (!result.deleted) {
         setError("Knowledge entry not found");
       } else {

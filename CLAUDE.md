@@ -36,3 +36,22 @@ Every source file has a `@summary` annotation on the first line: `// @summary <d
 - Plan before implementing when a task involves multiple files or architectural changes
 - When adding user-facing features, implement for both Web and TUI — they are thin clients of the same protocol (see `ARCHITECTURE.md` "Frontend Protocol Philosophy")
 - Distinguish naming clearly: `Config` is for configuration values, while `Options` is for optional function arguments. Do not put runtime control arguments like `signal` into `Config`.
+
+## Test File Convention
+
+- Put all tests under each package-level `test/` directory only.
+- Do not add tests under `src/**/__tests__/`.
+- Mirror `src/` structure inside `test/`.
+  - Example: `src/session/manager.ts` → `test/session/manager.test.ts`
+- Use `*.test.ts` (or `*.test.tsx`) for unit tests.
+- Use `*.integration.test.ts` (or `*.integration.test.tsx`) for integration tests.
+- Keep shared test utilities in `test/helpers/` and static fixtures in `test/fixtures/`.
+- For end-to-end scenarios, place tests in `packages/e2e/` only.
+- For existing mixed layouts, prefer incremental migration to this convention when touching related files.
+
+### Why this convention
+
+- One obvious place for tests reduces decision overhead.
+- Clear separation between runtime source (`src`) and verification code (`test`).
+- Predictable paths improve review quality and refactoring safety.
+- Simpler include/exclude patterns for tooling and CI.

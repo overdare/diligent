@@ -6,7 +6,7 @@ import { createCollabTools } from "../collab";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
-import { createAddKnowledgeTool } from "./add-knowledge";
+import { createUpdateKnowledgeTool } from "./update-knowledge";
 import { createBashTool } from "./bash";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
@@ -59,7 +59,7 @@ export async function buildDefaultTools(
   ];
 
   if (paths) {
-    builtinTools.push(createAddKnowledgeTool(paths.knowledge));
+    builtinTools.push(createUpdateKnowledgeTool(paths.knowledge));
   }
 
   // 2. Run catalog resolution (applies config toggles, loads plugins, enforces immutables)

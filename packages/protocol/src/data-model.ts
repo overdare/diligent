@@ -212,7 +212,6 @@ export const ToolResultMessageSchema = z.object({
   output: z.string(),
   isError: z.boolean(),
   timestamp: z.number().int(),
-  render: ToolRenderPayloadSchema.optional(),
 });
 export type ToolResultMessage = z.infer<typeof ToolResultMessageSchema>;
 
@@ -299,7 +298,6 @@ export const AgentEventSchema = z.union([
     toolName: z.string(),
     output: z.string(),
     isError: z.boolean(),
-    render: ToolRenderPayloadSchema.optional(),
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
   }),
@@ -402,7 +400,6 @@ export const ThreadItemSchema = z.union([
     input: z.unknown(),
     output: z.string().optional(),
     isError: z.boolean().optional(),
-    render: ToolRenderPayloadSchema.optional(),
   }),
   z.object({
     type: z.literal("compaction"),
@@ -509,7 +506,7 @@ export const UserInputResponseSchema = z.object({
 });
 export type UserInputResponse = z.infer<typeof UserInputResponseSchema>;
 
-export const KnowledgeTypeSchema = z.enum(["pattern", "decision", "discovery", "preference", "correction"]);
+export const KnowledgeTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 export type KnowledgeType = z.infer<typeof KnowledgeTypeSchema>;
 
 export const KnowledgeEntrySchema = z.object({

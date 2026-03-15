@@ -12,7 +12,7 @@ describe("PLAN_MODE_ALLOWED_TOOLS", () => {
     expect(PLAN_MODE_ALLOWED_TOOLS.has("bash")).toBe(false);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("write")).toBe(false);
     expect(PLAN_MODE_ALLOWED_TOOLS.has("apply_patch")).toBe(false);
-    expect(PLAN_MODE_ALLOWED_TOOLS.has("add_knowledge")).toBe(false);
+    expect(PLAN_MODE_ALLOWED_TOOLS.has("update_knowledge")).toBe(false);
   });
 });
 

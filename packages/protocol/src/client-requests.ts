@@ -240,45 +240,44 @@ export const KnowledgeListResponseSchema = z.object({
 });
 export type KnowledgeListResponse = z.infer<typeof KnowledgeListResponseSchema>;
 
-export const KnowledgeAddParamsSchema = z.object({
-  threadId: z.string().optional(),
-  type: z.enum(["pattern", "decision", "discovery", "preference", "correction"]),
-  content: z.string().min(1),
-  confidence: z.number().min(0).max(1).optional(),
-  tags: z.array(z.string()).optional(),
-});
-export type KnowledgeAddParams = z.infer<typeof KnowledgeAddParamsSchema>;
+const KnowledgeTypeParamSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 
-export const KnowledgeAddResponseSchema = z.object({
-  entry: KnowledgeEntrySchema,
-});
-export type KnowledgeAddResponse = z.infer<typeof KnowledgeAddResponseSchema>;
+export const KnowledgeUpdateParamsSchema = z
+  .object({
+    action: z.enum(["upsert", "delete"]),
+    threadId: z.string().optional(),
+    id: z.string().optional(),
+    type: KnowledgeTypeParamSchema.optional(),
+    content: z.string().min(1).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.action === "delete") {
+      if (!value.id || value.id.trim().length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["id"], message: "id is required for delete action" });
+      }
+      return;
+    }
 
-export const KnowledgeUpdateParamsSchema = z.object({
-  threadId: z.string().optional(),
-  id: z.string(),
-  type: z.enum(["pattern", "decision", "discovery", "preference", "correction"]),
-  content: z.string().min(1),
-  confidence: z.number().min(0).max(1),
-  tags: z.array(z.string()).optional(),
-});
+    if (!value.type) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["type"], message: "type is required for upsert action" });
+    }
+    if (!value.content || value.content.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content"],
+        message: "content is required for upsert action",
+      });
+    }
+  });
 export type KnowledgeUpdateParams = z.infer<typeof KnowledgeUpdateParamsSchema>;
 
 export const KnowledgeUpdateResponseSchema = z.object({
-  entry: KnowledgeEntrySchema,
+  entry: KnowledgeEntrySchema.optional(),
+  deleted: z.boolean().optional(),
 });
 export type KnowledgeUpdateResponse = z.infer<typeof KnowledgeUpdateResponseSchema>;
-
-export const KnowledgeDeleteParamsSchema = z.object({
-  threadId: z.string().optional(),
-  id: z.string(),
-});
-export type KnowledgeDeleteParams = z.infer<typeof KnowledgeDeleteParamsSchema>;
-
-export const KnowledgeDeleteResponseSchema = z.object({
-  deleted: z.boolean(),
-});
-export type KnowledgeDeleteResponse = z.infer<typeof KnowledgeDeleteResponseSchema>;
 
 export const ThreadDeleteParamsSchema = z.object({
   threadId: z.string(),
@@ -475,14 +474,9 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), params: ModeSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), params: EffortSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), params: KnowledgeListParamsSchema }),
-  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD), params: KnowledgeAddParamsSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
     params: KnowledgeUpdateParamsSchema,
-  }),
-  z.object({
-    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE),
-    params: KnowledgeDeleteParamsSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), params: ThreadDeleteParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), params: ToolsListParamsSchema }),
@@ -520,14 +514,9 @@ export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET), result: ModeSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET), result: EffortSetResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST), result: KnowledgeListResponseSchema }),
-  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_ADD), result: KnowledgeAddResponseSchema }),
   z.object({
     method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE),
     result: KnowledgeUpdateResponseSchema,
-  }),
-  z.object({
-    method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_DELETE),
-    result: KnowledgeDeleteResponseSchema,
   }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE), result: ThreadDeleteResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST), result: ToolsListResponseSchema }),

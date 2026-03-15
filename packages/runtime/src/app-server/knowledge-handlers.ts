@@ -16,76 +16,68 @@ export async function handleKnowledgeList(
   return { data: entries.slice(0, limit ?? entries.length) };
 }
 
-export async function handleKnowledgeAdd(
+export async function handleKnowledgeUpdate(
   ctx: ThreadHandlersContext,
   threadId: string | undefined,
   params: {
-    type: KnowledgeType;
-    content: string;
+    action: "upsert" | "delete";
+    id?: string;
+    type?: KnowledgeType;
+    content?: string;
     confidence?: number;
     tags?: string[];
   },
-): Promise<{ entry: KnowledgeEntry }> {
+): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const paths = await ctx.resolvePaths(runtime.cwd);
   const entries = await readKnowledge(paths.knowledge);
+
+  if (params.action === "delete") {
+    if (!params.id) {
+      throw Object.assign(new Error("Knowledge id is required for delete action"), { code: -32602 });
+    }
+    const nextEntries = entries.filter((entry) => entry.id !== params.id);
+    const deleted = nextEntries.length !== entries.length;
+    if (deleted) {
+      await writeKnowledge(paths.knowledge, nextEntries);
+    }
+    return { deleted };
+  }
+
+  if (!params.type || !params.content || params.content.trim().length === 0) {
+    throw Object.assign(new Error("Knowledge type and content are required for upsert action"), { code: -32602 });
+  }
+
+  const now = new Date().toISOString();
+  const requestedContent = params.content.trim();
+
+  if (params.id) {
+    const index = entries.findIndex((entry) => entry.id === params.id);
+    if (index >= 0) {
+      const updated: KnowledgeEntry = {
+        ...entries[index],
+        type: params.type,
+        content: requestedContent,
+        confidence: params.confidence ?? entries[index].confidence,
+        tags: params.tags ?? entries[index].tags,
+        timestamp: now,
+      };
+      entries[index] = updated;
+      await writeKnowledge(paths.knowledge, entries);
+      return { entry: updated };
+    }
+  }
+
   const entry: KnowledgeEntry = {
-    id: generateEntryId(),
-    timestamp: new Date().toISOString(),
+    id: params.id ?? generateEntryId(),
+    timestamp: now,
     sessionId: runtime.id,
     type: params.type,
-    content: params.content,
+    content: requestedContent,
     confidence: params.confidence ?? 0.8,
     tags: params.tags,
   };
   entries.push(entry);
   await writeKnowledge(paths.knowledge, entries);
   return { entry };
-}
-
-export async function handleKnowledgeUpdate(
-  ctx: ThreadHandlersContext,
-  threadId: string | undefined,
-  params: {
-    id: string;
-    type: KnowledgeType;
-    content: string;
-    confidence: number;
-    tags?: string[];
-  },
-): Promise<{ entry: KnowledgeEntry }> {
-  const runtime = await ctx.resolveThreadRuntime(threadId);
-  const paths = await ctx.resolvePaths(runtime.cwd);
-  const entries = await readKnowledge(paths.knowledge);
-  const index = entries.findIndex((entry) => entry.id === params.id);
-  if (index < 0) {
-    throw Object.assign(new Error(`Knowledge entry not found: ${params.id}`), { code: -32602 });
-  }
-
-  const updated: KnowledgeEntry = {
-    ...entries[index],
-    type: params.type,
-    content: params.content,
-    confidence: params.confidence,
-    tags: params.tags,
-    timestamp: new Date().toISOString(),
-  };
-  entries[index] = updated;
-  await writeKnowledge(paths.knowledge, entries);
-  return { entry: updated };
-}
-
-export async function handleKnowledgeDelete(
-  ctx: ThreadHandlersContext,
-  threadId: string | undefined,
-  id: string,
-): Promise<{ deleted: boolean }> {
-  const runtime = await ctx.resolveThreadRuntime(threadId);
-  const paths = await ctx.resolvePaths(runtime.cwd);
-  const entries = await readKnowledge(paths.knowledge);
-  const nextEntries = entries.filter((entry) => entry.id !== id);
-  const deleted = nextEntries.length !== entries.length;
-  if (!deleted) return { deleted: false };
-  await writeKnowledge(paths.knowledge, nextEntries);
-  return { deleted: true };
 }

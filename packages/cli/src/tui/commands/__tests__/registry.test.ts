@@ -5,6 +5,7 @@ import type { AppConfig } from "../../../config";
 import { type CommandHandlerDeps, createCommandHandler } from "../../command-handler";
 import type { ConfigManager } from "../../config-manager";
 import type { OverlayHandle } from "../../framework/types";
+import type { AppServerRpcClient } from "../../rpc-client";
 import type { ThreadManager } from "../../thread-manager";
 import { CommandRegistry } from "../registry";
 import type { Command, CommandContext } from "../types";
@@ -58,6 +59,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     onEffortChanged: () => {},
     waitForOAuthComplete: async () => ({ success: true, error: null }),
     syncActiveThreadState: async () => {},
+    queuePendingSteer: () => {},
     threadManager,
     configManager,
     ...overrides,
@@ -214,5 +216,22 @@ describe("createCommandHandler", () => {
     expect(threadId).toBe("thread-2");
     expect(startNewThread).toHaveBeenCalledTimes(1);
     expect(syncActiveThreadState).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues steering text instead of rendering local steering line", () => {
+    const queuePendingSteer = mock(() => {});
+    const steerRequest = mock(async () => ({ accepted: true }));
+    const handler = createCommandHandler(
+      makeHandlerDeps({
+        getRpcClient: () => ({ request: steerRequest } as unknown as AppServerRpcClient),
+        queuePendingSteer,
+      }),
+    );
+
+    handler.handleSteering("change approach");
+
+    expect(queuePendingSteer).toHaveBeenCalledTimes(1);
+    expect(queuePendingSteer).toHaveBeenCalledWith("change approach");
+    expect(steerRequest).toHaveBeenCalledTimes(1);
   });
 });

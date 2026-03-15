@@ -101,6 +101,7 @@ export class App {
   private reasoningAccumulatedMs = 0;
   private pendingOAuthResolve: ((result: { success: boolean; error: string | null }) => void) | null = null;
   private shouldBellOnComplete: boolean;
+  private pendingSteers: string[] = [];
 
   // Extracted modules
   private threadManager: ThreadManager;
@@ -254,6 +255,9 @@ export class App {
           this.pendingOAuthResolve = resolve;
         }),
       syncActiveThreadState: () => this.syncActiveThreadState(),
+      queuePendingSteer: (text) => {
+        this.pendingSteers.push(text);
+      },
       threadManager: this.threadManager,
       configManager: this.configManager,
     });
@@ -405,6 +409,13 @@ export class App {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
+    if (event.type === "steering_injected") {
+      const drained = this.pendingSteers.splice(0, event.messageCount);
+      for (const text of drained) {
+        this.chatView.addUserMessage(text);
+      }
+    }
+
     this.chatView.handleEvent(event);
 
     if (event.type === "turn_start" && !event.childThreadId) {

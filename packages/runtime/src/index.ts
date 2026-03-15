@@ -142,7 +142,7 @@ export type {
 export {
   buildDefaultTools,
   buildToolCatalog,
-  createAddKnowledgeTool,
+  createUpdateKnowledgeTool,
   createApplyPatchTool,
   createBashTool,
   createEditTool,

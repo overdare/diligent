@@ -416,6 +416,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 status: "done" as const,
                 durationMs: Date.now() - current.startedAt,
                 render: current.render,
+
               }
             : current,
         ),

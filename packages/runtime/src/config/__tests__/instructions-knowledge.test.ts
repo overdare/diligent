@@ -10,7 +10,7 @@ describe("buildSystemPromptWithKnowledge", () => {
     expect(flat).toContain("Base prompt");
     expect(flat).toContain("## Project Knowledge");
     expect(flat).toContain("[pattern] Use Bun");
-    expect(flat).toContain("add_knowledge tool");
+    expect(flat).toContain("update_knowledge tool");
   });
 
   it("includes instructions after knowledge section", () => {
@@ -30,7 +30,7 @@ describe("buildSystemPromptWithKnowledge", () => {
     const result = buildSystemPromptWithKnowledge("Base", [], "");
     const flat = flattenSections(result);
     expect(flat).not.toContain("## Project Knowledge");
-    expect(flat).toContain("add_knowledge tool");
+    expect(flat).toContain("update_knowledge tool");
   });
 
   it("includes additional instructions", () => {

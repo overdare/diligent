@@ -151,7 +151,7 @@ export interface KnowledgeEntry {
   id: string;
   timestamp: number;
   sessionId: string;
-  type: "pattern" | "decision" | "discovery" | "preference" | "correction";
+  type: "pattern" | "discovery" | "preference" | "correction" | "backlog";
   content: string;
   confidence: number;
   supersedes?: string;
