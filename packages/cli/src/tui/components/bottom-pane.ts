@@ -23,7 +23,10 @@ export class BottomPane implements Component {
     const statusLines = this.statusBar.render(width);
 
     if (visibleLiveStackBlocks.length > 0) {
-      blocks.push({ key: "live-stack-padding", lines: [""], persistence: "volatile" });
+      const hasOnlySteeringBlock = visibleLiveStackBlocks.length === 1 && visibleLiveStackBlocks[0]?.key === "steering";
+      if (!hasOnlySteeringBlock) {
+        blocks.push({ key: "live-stack-padding", lines: [""], persistence: "volatile" });
+      }
       blocks.push(...visibleLiveStackBlocks);
     }
     if (inputLines.length > 0) {

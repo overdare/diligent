@@ -10,6 +10,8 @@ export {
   readSessionFile,
   SessionWriter,
 } from "./persistence";
+export { SessionStateStore } from "./state-store";
+export { TurnStager } from "./turn-stager";
 export type {
   CompactionEntry,
   ModeChangeEntry,
