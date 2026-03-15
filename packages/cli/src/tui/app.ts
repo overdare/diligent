@@ -86,7 +86,6 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
-  private pendingAbortRestartMessage: string | null = null;
   private suppressNextSteeringInjectedCommit = false;
 
   constructor(
@@ -175,10 +174,8 @@ export class App {
         this.appendLocalTurnTimingLine();
         this.runtime.cancelRequested = false;
         this.runtime.pendingTurn?.resolve();
-        this.restartFromPendingAbortSteer();
       },
       onTurnErrored: (message) => {
-        this.pendingAbortRestartMessage = null;
         this.suppressNextSteeringInjectedCommit = false;
         this.runtime.pendingTurn?.reject(new Error(message));
       },
@@ -496,9 +493,8 @@ export class App {
       this.runtime.cancelRequested = true;
       const drainedSteers = this.chatView.consumePendingSteers();
       const drainedRuntimeSteers = this.runtime.drainPendingSteers();
-      const restartMessage = drainedSteers[0] ?? drainedRuntimeSteers[0] ?? null;
-      this.pendingAbortRestartMessage = restartMessage;
-      this.suppressNextSteeringInjectedCommit = restartMessage !== null;
+      const hadPendingSteers = drainedSteers.length > 0 || drainedRuntimeSteers.length > 0;
+      this.suppressNextSteeringInjectedCommit = hadPendingSteers;
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -506,29 +502,10 @@ export class App {
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
         .catch(() => {
           this.runtime.cancelRequested = false;
-          this.pendingAbortRestartMessage = null;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
     }
-  }
-
-  private restartFromPendingAbortSteer(): void {
-    const restartMessage = this.pendingAbortRestartMessage;
-    if (!restartMessage) {
-      return;
-    }
-
-    const attemptRestart = () => {
-      if (this.runtime.isProcessing) {
-        setTimeout(attemptRestart, 0);
-        return;
-      }
-      this.pendingAbortRestartMessage = null;
-      void this.commandHandler.handleSubmit(restartMessage);
-    };
-
-    queueMicrotask(attemptRestart);
   }
 
   private commitLocalUserMessage(text: string): void {

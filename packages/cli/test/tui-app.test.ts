@@ -516,7 +516,7 @@ describe("App", () => {
     expect(writes.join("")).toContain("Cancelled");
   });
 
-  test("Ctrl+C cancel restarts with one pending steering message as next user turn", async () => {
+  test("Ctrl+C cancel drops pending steering messages", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const calls: StreamContext[] = [];
     const streamFn = createScriptedStreamFunction(

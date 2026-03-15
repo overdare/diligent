@@ -643,12 +643,8 @@ export class DiligentAppServer {
         params: { threadId: runtime.id, status: "idle" },
       });
 
-      // Auto-submit any pending steer messages (both abort and normal paths)
-      const pending = runtime.manager.popPendingMessages();
-      if (pending && pending.length > 0) {
-        const message = pending.join("\n");
-        await this.handleTurnStart({ threadId: runtime.id, message });
-      }
+      // On turn end (including interruption), pending steering remains queued
+      // until an explicit subsequent turn is started by the client.
     }
   }
 
