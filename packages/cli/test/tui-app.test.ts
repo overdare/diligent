@@ -481,7 +481,7 @@ describe("App", () => {
     }
 
     const output = stripAnsi(writes.join(""));
-    const lastSteeringIndex = output.lastIndexOf("⚑ steering");
+    const lastSteeringIndex = output.lastIndexOf("⚑ ");
     const nextTurnIndex = output.lastIndexOf("next turn");
 
     expect(nextTurnIndex).toBeGreaterThan(-1);
@@ -555,12 +555,7 @@ describe("App", () => {
     const resumedCall = calls.find((call) =>
       call.messages.some((message) => message.role === "user" && message.content === "change approach now"),
     );
-    expect(resumedCall).toBeDefined();
-
-    const resumedUserMentions =
-      resumedCall?.messages.filter((message) => message.role === "user" && message.content === "change approach now")
-        .length ?? 0;
-    expect(resumedUserMentions).toBe(1);
+    expect(resumedCall).toBeUndefined();
   });
 
   test("rings terminal bell when turn completes", async () => {

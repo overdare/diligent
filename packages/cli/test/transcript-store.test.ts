@@ -62,7 +62,7 @@ describe("TranscriptStore", () => {
     store.setPendingSteers(["change approach"]);
 
     const lines = renderTranscript(store, 80).map(stripAnsi);
-    expect(lines.some((line) => line.includes("┌ ⚑ steering | change approach"))).toBe(true);
+    expect(lines.some((line) => line.includes("⚑ change approach"))).toBe(true);
   });
 
   test("orders live stack so status is below streaming markdown", () => {
@@ -79,7 +79,7 @@ describe("TranscriptStore", () => {
 
     const lines = renderTranscript(store, 100).map(stripAnsi);
     const statusIndex = lines.findIndex((line) => line.includes("Planning"));
-    const steeringIndex = lines.findIndex((line) => line.includes("┌ ⚑ steering | change approach"));
+    const steeringIndex = lines.findIndex((line) => line.includes("⚑ change approach"));
     const questionIndex = lines.findIndex((line) => line.includes("question prompt"));
 
     expect(statusIndex).toBeGreaterThanOrEqual(0);

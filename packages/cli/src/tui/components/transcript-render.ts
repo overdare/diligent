@@ -219,14 +219,13 @@ export function renderTranscriptSections(
   const renderSteeringLines = (): string[] => {
     const pendingSteers = store.getPendingSteers();
     if (pendingSteers.length === 0) return [];
-    const prefix = "  ┌ ";
-    const label = "⚑ steering";
-    const separator = " | ";
-    const availableWidth = Math.max(0, width - displayWidth(prefix) - displayWidth(label) - displayWidth(separator));
+    const prefix = "  ";
+    const label = "⚑ ";
+    const availableWidth = Math.max(0, width - displayWidth(prefix) - displayWidth(label));
     return pendingSteers.map((message) => {
       const clipped = availableWidth > 0 ? sliceToFitWidth(message, availableWidth) : "";
       const text = clipped.length < message.length ? `${clipped.slice(0, Math.max(0, clipped.length - 1))}…` : clipped;
-      return `${t.accent}${prefix}${label}${t.dim}${separator}${t.reset}${t.accent}${text}${t.reset}`;
+      return `${t.accent}${prefix}${label}${text}${t.reset}`;
     });
   };
 
@@ -302,11 +301,9 @@ export function renderTranscriptSections(
   if (steeringLines.length > 0) {
     if (liveStackBlocks.length > 0) {
       pushSeparator(liveStackLines, "live:steering");
-    }
-    liveStackLines.push(...steeringLines);
-    if (liveStackBlocks.length > 0) {
       liveStackBlocks.push({ key: "steering-separator", lines: [""], persistence: "volatile" });
     }
+    liveStackLines.push(...steeringLines);
     liveStackBlocks.push({ key: "steering", lines: [...steeringLines], persistence: "volatile" });
   }
   if (activeQuestion) {

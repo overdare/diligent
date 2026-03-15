@@ -12,7 +12,7 @@ export function SteeringQueuePanel({ pendingSteers }: SteeringQueuePanelProps) {
       <div className="space-y-1 font-mono text-xs text-accent/90">
         {pendingSteers.map((text, i) => (
           <div key={`${i}-${text.slice(0, 16)}`} className="truncate">
-            ⚑ steering {text}
+            ⚑ {text}
           </div>
         ))}
       </div>
