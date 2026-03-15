@@ -4,7 +4,6 @@ import type { ThinkingEffort } from "@diligent/protocol";
 import type { AppConfig } from "../../../config";
 import { type CommandHandlerDeps, createCommandHandler } from "../../command-handler";
 import type { ConfigManager } from "../../config-manager";
-import type { OverlayHandle } from "../../framework/types";
 import type { AppServerRpcClient } from "../../rpc-client";
 import type { ThreadManager } from "../../thread-manager";
 import { CommandRegistry } from "../registry";
@@ -50,11 +49,13 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},
     handleAgentStartEvent: () => {},
+    finishTurn: () => {},
     handleTurnError: () => {},
     updateStatusBar: () => {},
     requestRender: () => {},
-    showOverlay: () => ({ hide: () => {} }) as OverlayHandle,
     confirm: async () => true,
+    pickInline: async () => null,
+    promptInline: async () => null,
     shutdown: () => {},
     onModelChanged: () => {},
     onEffortChanged: () => {},

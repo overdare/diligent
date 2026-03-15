@@ -1,5 +1,5 @@
 // @summary Vertical stacking container for composing multiple components
-import type { Component } from "./types";
+import type { Component, RenderBlock } from "./types";
 
 /** Vertical stacking container — concatenates children's render output */
 export class Container implements Component {
@@ -25,19 +25,21 @@ export class Container implements Component {
     }
   }
 
-  getCommittedLineCount(width: number): number {
-    let total = 0;
-    for (const child of this.children) {
-      const childRendered = child.render(width);
-      const childCommitted = child.getCommittedLineCount?.(width) ?? 0;
-      total += childCommitted;
-      if (childCommitted < childRendered.length) break;
-    }
-    return total;
+  render(width: number): string[] {
+    return this.renderBlocks(width).flatMap((block) => block.lines);
   }
 
-  render(width: number): string[] {
-    return this.children.flatMap((child) => child.render(width));
+  renderBlocks(width: number): RenderBlock[] {
+    return this.children.flatMap(
+      (child) =>
+        child.renderBlocks?.(width) ?? [
+          {
+            key: "default",
+            lines: child.render(width),
+            persistence: "volatile" as const,
+          },
+        ],
+    );
   }
 
   handleInput(data: string): void {

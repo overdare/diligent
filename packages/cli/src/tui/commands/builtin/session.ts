@@ -33,28 +33,18 @@ export const resumeCommand: Command = {
       return;
     }
 
-    const { ListPicker } = await import("../../components/list-picker");
     const items = threads.map((thread) => ({
       label: thread.id,
       description: thread.modified,
       value: thread.id,
     }));
-
-    return new Promise<void>((resolve) => {
-      const picker = new ListPicker({ title: "Threads", items }, async (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (value) {
-          const resumedId = await ctx.resumeThread(value);
-          if (resumedId) {
-            ctx.displayLines([`  ${t.dim}Resumed thread: ${resumedId}${t.reset}`]);
-          }
-        }
-        resolve();
-      });
-      const handle = ctx.showOverlay(picker, { anchor: "center" });
-      ctx.requestRender();
-    });
+    const value = await ctx.app.pick({ title: "Threads", items });
+    if (value) {
+      const resumedId = await ctx.resumeThread(value);
+      if (resumedId) {
+        ctx.displayLines([`  ${t.dim}Resumed thread: ${resumedId}${t.reset}`]);
+      }
+    }
   },
 };
 
@@ -94,25 +84,15 @@ export const deleteCommand: Command = {
       return;
     }
 
-    const { ListPicker } = await import("../../components/list-picker");
     const items = threads.map((thread) => ({
       label: thread.firstUserMessage ?? thread.id,
       description: thread.modified,
       value: thread.id,
     }));
-
-    return new Promise<void>((resolve) => {
-      const picker = new ListPicker({ title: "Delete Session", items }, async (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (value) {
-          await doDelete(value);
-        }
-        resolve();
-      });
-      const handle = ctx.showOverlay(picker, { anchor: "center" });
-      ctx.requestRender();
-    });
+    const value = await ctx.app.pick({ title: "Delete Session", items });
+    if (value) {
+      await doDelete(value);
+    }
   },
 };
 

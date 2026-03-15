@@ -6,8 +6,6 @@ export interface TerminalOptions {
 
 // ANSI escape sequences
 const SEQ = {
-  SYNC_START: "\x1b[?2026h",
-  SYNC_END: "\x1b[?2026l",
   HIDE_CURSOR: "\x1b[?25l",
   SHOW_CURSOR: "\x1b[?25h",
   CLEAR_LINE: "\x1b[2K\r",
@@ -82,9 +80,9 @@ export class Terminal {
     this.write("\x07");
   }
 
-  /** Write wrapped in synchronized output sequences to prevent flicker */
+  /** Write batched render payload to stdout */
   writeSynchronized(data: string): void {
-    (this.stdout as NodeJS.WritableStream).write(SEQ.SYNC_START + data + SEQ.SYNC_END);
+    (this.stdout as NodeJS.WritableStream).write(data);
   }
 
   /** Terminal dimensions */

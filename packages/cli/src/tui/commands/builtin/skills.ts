@@ -1,6 +1,6 @@
 // @summary Skills command - displays available skills and their documentation
 import type { SkillMetadata } from "@diligent/runtime";
-import { ListPicker, type ListPickerItem } from "../../components/list-picker";
+import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
 
@@ -26,9 +26,7 @@ export function createSkillInvokeCommand(skillName: string, skill: SkillMetadata
   };
 }
 
-/**
- * /skills — Show skills picker overlay.
- */
+/** /skills — Show the skills picker. */
 export const skillsPickerCommand: Command = {
   name: "skills",
   description: "Browse and invoke skills",
@@ -47,21 +45,14 @@ export const skillsPickerCommand: Command = {
       value: s.name,
     }));
 
-    return new Promise<void>((resolve) => {
-      const picker = new ListPicker({ title: "Skills", items }, async (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (value) {
-          const skill = ctx.skills.find((s) => s.name === value);
-          if (skill) {
-            const cmd = createSkillInvokeCommand(skill.name, skill);
-            await cmd.handler(undefined, ctx);
-          }
-        }
-        resolve();
-      });
-      const handle = ctx.showOverlay(picker, { anchor: "center" });
-      ctx.requestRender();
-    });
+    const value = await ctx.app.pick({ title: "Skills", items });
+    if (!value) {
+      return;
+    }
+    const skill = ctx.skills.find((s) => s.name === value);
+    if (skill) {
+      const cmd = createSkillInvokeCommand(skill.name, skill);
+      await cmd.handler(undefined, ctx);
+    }
   },
 };

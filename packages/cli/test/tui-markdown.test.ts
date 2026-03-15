@@ -1,6 +1,7 @@
 // @summary Tests for markdown rendering with ANSI formatting
 import { describe, expect, test } from "bun:test";
 import { renderMarkdown } from "../src/tui/markdown";
+import { t } from "../src/tui/theme";
 
 function stripAnsi(value: string): string {
   return value.replace(/\x1b\[[0-9;]*m/g, "");
@@ -21,9 +22,9 @@ describe("renderMarkdown", () => {
     expect(result).toContain("\x1b[23m");
   });
 
-  test("renders inline code with cyan", () => {
+  test("renders inline code with theme info color", () => {
     const result = renderMarkdown("`some code`", 80);
-    expect(result).toContain("\x1b[36m");
+    expect(result).toContain(t.info);
     expect(result).toContain("some code");
   });
 
@@ -167,10 +168,11 @@ describe("renderMarkdown", () => {
   test("renders footnotes with inline reference and footer section", () => {
     const source = "Here is a sentence with a footnote[^1].\n\n[^1]: Footnote content.";
     const result = renderMarkdown(source, 80);
-    expect(result).toContain("Here is a sentence with a footnote");
-    expect(result).toContain("Footnotes");
-    expect(result).toContain("Footnote content.");
-    expect(result).not.toContain("[^1]:");
+    const plain = stripAnsi(result);
+    expect(plain).toContain("Here is a sentence with a footnote");
+    expect(plain).toContain("Footnotes");
+    expect(plain).toContain("Footnote content.");
+    expect(plain).not.toContain("[^1]:");
   });
 
   test("renders details blocks as expandable-like section", () => {

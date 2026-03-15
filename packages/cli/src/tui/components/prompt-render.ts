@@ -7,9 +7,7 @@ import { PromptStore } from "./prompt-store";
 
 export function renderPromptEditor(store: PromptStore, width: number, promptText?: string): string[] {
   const sep = `${t.dim}${"─".repeat(Math.max(0, width - 1))}${t.reset}`;
-  const prompt = store.busy
-    ? `${t.accent}${PromptStore.spinnerFrames[store.spinnerIndex]}${t.reset} `
-    : (promptText ?? "❯ ");
+  const prompt = promptText ?? "❯ ";
   const promptPrefix = `${t.bold}${t.dim}${prompt}${t.reset}`;
   const promptWidth = displayWidth(prompt);
   const continuationPrefix = " ".repeat(promptWidth);

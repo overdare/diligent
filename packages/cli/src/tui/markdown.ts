@@ -247,6 +247,7 @@ function applyGfmPostProcessing(rendered: string): string {
 
   for (let index = 0; index < lines.length; ) {
     const line = lines[index];
+    const plainLine = stripAnsi(line);
     const alertMatch = line.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
     if (alertMatch) {
       const body: string[] = [];
@@ -262,7 +263,7 @@ function applyGfmPostProcessing(rendered: string): string {
       continue;
     }
 
-    const footnoteMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/);
+    const footnoteMatch = plainLine.match(/^\[\^?([^\]]+)\]:\s*(.*)$/);
     if (footnoteMatch) {
       footnotes.set(footnoteMatch[1], footnoteMatch[2]);
       index += 1;

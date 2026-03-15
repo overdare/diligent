@@ -22,6 +22,10 @@ export interface RenderEntry {
   termRows: number;
   newLines: string[];
   cleanLines: string[];
+  committedCount?: number;
+  activeCount?: number;
+  activeDisplayCount?: number;
+  overflowCount?: number;
   cursorRow: number;
   cursorCol: number;
   /** Full redraw bytes sent to writeSynchronized */

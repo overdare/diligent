@@ -1,9 +1,9 @@
 // @summary Renders components to the terminal with diff-based updates
+import { Container } from "./container";
 import { debugLogger } from "./debug-logger";
-import type { OverlayStack } from "./overlay";
 import { charDisplayWidth, displayWidth } from "./string-width";
 import type { Terminal } from "./terminal";
-import type { Component, Focusable } from "./types";
+import type { Component, Focusable, RenderBlock } from "./types";
 import { CURSOR_MARKER } from "./types";
 
 /** Strip ANSI escape codes for measuring visible width */
@@ -20,40 +20,71 @@ function stripAnsi(str: string): string {
  * and text-selection features remain available.
  */
 export class TUIRenderer {
+  private static readonly DEFAULT_MAX_FPS = 30;
+  private static readonly OVERFLOW_FLUSH_INTERVAL_MS = 40;
   private renderScheduled = false;
+  private renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastRenderAt = 0;
+  private lastOverflowFlushAt = 0;
+  private readonly minRenderIntervalMs: number;
   private focusedComponent: (Component & Focusable) | null = null;
-  private overlayStack: OverlayStack | null = null;
   private started = false;
-  private flushedCommittedCount = 0; // committed lines already written to scrollback
+  private pendingHistoryLines: string[] = [];
+  private persistentFlushedCounts = new Map<string, number>();
+  private overflowFlushedCounts = new Map<string, number>();
   private lastActiveRows = 0; // terminal rows occupied by previous active region
   private lastCursorRowInActive = 0; // cursor row within active region (for rewind)
 
   constructor(
     private terminal: Terminal,
     private root: Component,
-  ) {}
-
-  /** Set the overlay stack for compositing */
-  setOverlayStack(overlayStack: OverlayStack): void {
-    this.overlayStack = overlayStack;
+  ) {
+    this.minRenderIntervalMs = this.resolveMinRenderIntervalMs();
   }
 
   /** Schedule a render on next tick (coalesces multiple requests) */
   requestRender(): void {
     if (this.renderScheduled || !this.started) return;
     this.renderScheduled = true;
-    queueMicrotask(() => {
+
+    const elapsed = Date.now() - this.lastRenderAt;
+    const delay = Math.max(0, this.minRenderIntervalMs - elapsed);
+    const runRender = () => {
       this.renderScheduled = false;
+      this.renderTimer = null;
       if (this.started) {
         this.doRender();
       }
-    });
+    };
+
+    if (delay === 0) {
+      queueMicrotask(runRender);
+      return;
+    }
+
+    this.renderTimer = setTimeout(runRender, delay);
   }
 
   /** Force an immediate render */
   forceRender(): void {
+    if (this.renderTimer) {
+      clearTimeout(this.renderTimer);
+      this.renderTimer = null;
+      this.renderScheduled = false;
+    }
     if (this.started) {
       this.doRender();
+    }
+  }
+
+  /** Insert finalized transcript lines into terminal history before the next active redraw. */
+  insertHistoryLines(lines: string[]): void {
+    if (lines.length === 0) {
+      return;
+    }
+    this.pendingHistoryLines.push(...lines);
+    if (this.started) {
+      this.forceRender();
     }
   }
 
@@ -77,7 +108,9 @@ export class TUIRenderer {
 
   /** Reset committed/active bookkeeping, typically before full-screen clears. */
   resetFrameState(): void {
-    this.flushedCommittedCount = 0;
+    this.pendingHistoryLines = [];
+    this.persistentFlushedCounts.clear();
+    this.overflowFlushedCounts.clear();
     this.lastActiveRows = 0;
     this.lastCursorRowInActive = 0;
   }
@@ -86,16 +119,42 @@ export class TUIRenderer {
   stop(): void {
     this.started = false;
     this.renderScheduled = false;
+    if (this.renderTimer) {
+      clearTimeout(this.renderTimer);
+      this.renderTimer = null;
+    }
     // Erase active region so only committed lines remain in scrollback
     if (this.lastActiveRows > 0) {
-      this.terminal.write("\r");
-      if (this.lastCursorRowInActive > 0) {
-        this.terminal.write(`\x1b[${this.lastCursorRowInActive}A`);
-      }
-      this.terminal.write("\x1b[0J");
+      this.clearPreviousActiveRegion();
     }
     this.resetFrameState();
     this.terminal.showCursor();
+  }
+
+  private clearPreviousActiveRegion(): void {
+    if (this.lastActiveRows <= 0) return;
+
+    // Rewind from current cursor position (within active region) back to the
+    // first physical row of the previous active frame.
+    this.terminal.write("\r");
+    if (this.lastCursorRowInActive > 0) {
+      this.terminal.write(`\x1b[${this.lastCursorRowInActive}A`);
+    }
+
+    // Clear only rows that belonged to the previous active region instead of
+    // clearing to end-of-screen, which causes visible terminal chrome flicker.
+    for (let i = 0; i < this.lastActiveRows; i++) {
+      this.terminal.write("\x1b[2K\r");
+      if (i < this.lastActiveRows - 1) {
+        this.terminal.write("\x1b[1B");
+      }
+    }
+
+    // Return cursor to the top row where the next active frame will be drawn.
+    if (this.lastActiveRows > 1) {
+      this.terminal.write(`\x1b[${this.lastActiveRows - 1}A`);
+    }
+    this.terminal.write("\r");
   }
 
   /** Count how many terminal rows a single line occupies given terminal width */
@@ -195,107 +254,201 @@ export class TUIRenderer {
     return { lines: lines.slice(startIdx), startIdx };
   }
 
-  /** Render with committed/active split: committed lines go to scrollback once,
-   *  active lines are redrawn each frame. */
-  private doRender(): void {
-    const width = Math.max(1, this.terminal.columns);
+  private getRenderBlocks(
+    component: Component,
+    width: number,
+    path = "root",
+  ): Array<{
+    component: Component;
+    key: string;
+    lines: string[];
+    persistence: RenderBlock["persistence"];
+  }> {
+    if (component instanceof Container) {
+      return component.children.flatMap((child, index) => this.getRenderBlocks(child, width, `${path}.${index}`));
+    }
 
-    let allLines: string[];
     try {
-      allLines = this.root.render(width);
+      const blocks = component.renderBlocks?.(width) ?? [
+        {
+          key: "default",
+          lines: component.render(width),
+          persistence: "volatile" as const,
+        },
+      ];
+      return blocks.map((block, index) => ({
+        component,
+        key: `${path}:${block.key || `block-${index}`}`,
+        lines: [...block.lines],
+        persistence: block.persistence,
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      allLines = [`[render error] ${message}`];
+      return [
+        {
+          component,
+          key: `${path}:error`,
+          lines: [`[render error] ${message}`],
+          persistence: "volatile",
+        },
+      ];
     }
+  }
 
-    // Determine committed line count (monotonically increasing)
-    // Cap to current frame length because historical scrollback may already
-    // contain lines that no longer exist in the latest render output.
-    let committedCount = 0;
-    try {
-      committedCount = this.root.getCommittedLineCount?.(width) ?? 0;
-    } catch {
-      committedCount = 0;
-    }
-    committedCount = Math.min(allLines.length, Math.max(committedCount, this.flushedCommittedCount));
+  /** Render using component-defined persistent/volatile blocks. */
+  private doRender(): void {
+    const width = Math.max(1, this.terminal.columns);
+    const renderBlocks = this.getRenderBlocks(this.root, width);
+    const allLines = renderBlocks.flatMap((block) => block.lines);
+    const persistentCount = renderBlocks
+      .filter((block) => block.persistence === "persistent")
+      .reduce((sum, block) => sum + block.lines.length, 0);
 
-    // Split into committed and active regions
-    const committedLines = allLines.slice(0, committedCount);
-    let activeLines = allLines.slice(committedCount);
-
-    // Apply overlays only to the active region
-    if (this.overlayStack?.hasVisible()) {
-      activeLines = this.compositeOverlays(activeLines, width);
-    }
-
-    // Find cursor marker — only in active region
-    let cursorRow = -1;
-    let cursorCol = -1;
-    const cleanActive: string[] = [];
-    for (let i = 0; i < activeLines.length; i++) {
-      const markerIdx = activeLines[i].indexOf(CURSOR_MARKER);
-      if (markerIdx !== -1) {
-        cursorRow = i;
-        cursorCol = displayWidth(stripAnsi(activeLines[i].slice(0, markerIdx)));
-        cleanActive.push(activeLines[i].replace(CURSOR_MARKER, ""));
-      } else {
-        cleanActive.push(activeLines[i]);
-      }
-    }
-
-    // Cap active content to the terminal's visible physical rows.
-    // Using logical line count here causes wrapped lines to spill into scrollback,
-    // which then shows duplicated content during repeated redraws.
-    const maxRows = Math.max(0, this.terminal.rows);
-    let displayActiveLines = cleanActive;
-    let displayCursorRow = cursorRow;
-    let overflowActiveLines: string[] = [];
-    if (maxRows === 0) {
-      overflowActiveLines = cleanActive;
-      displayActiveLines = [];
-      displayCursorRow = -1;
-      cursorCol = -1;
-    } else if (this.countPhysicalTerminalRows(cleanActive, width) > maxRows) {
-      const { lines, startIdx } = this.sliceLinesToTerminalRows(cleanActive, width, maxRows);
-      displayActiveLines = lines;
-      // Persist clipped prefix into native scrollback so past output doesn't vanish.
-      // Skip this while overlays are visible because overlay frames are transient.
-      if (!this.overlayStack?.hasVisible() && startIdx > 0) {
-        overflowActiveLines = cleanActive.slice(0, startIdx);
-      }
-      if (cursorRow !== -1) {
-        displayCursorRow = cursorRow - startIdx;
-        if (displayCursorRow < 0 || displayCursorRow >= displayActiveLines.length) {
-          displayCursorRow = -1;
-          cursorCol = -1;
+    const persistentFlushLines: string[] = [];
+    const activeBlocks = renderBlocks
+      .filter((block) => block.persistence === "volatile")
+      .map((block) => {
+        const previousPersistentCount = this.persistentFlushedCounts.get(block.key);
+        if (previousPersistentCount !== undefined) {
+          this.persistentFlushedCounts.delete(block.key);
         }
+        let cursorLineIndex = -1;
+        let cursorCol = -1;
+        const cleanLines = block.lines.map((line, index) => {
+          const markerIdx = line.indexOf(CURSOR_MARKER);
+          if (markerIdx === -1) {
+            return line;
+          }
+          cursorLineIndex = index;
+          cursorCol = displayWidth(stripAnsi(line.slice(0, markerIdx)));
+          return line.replace(CURSOR_MARKER, "");
+        });
+
+        return {
+          component: block.component,
+          key: block.key,
+          lines: cleanLines,
+          cursorLineIndex,
+          cursorCol,
+        };
+      });
+
+    for (const block of renderBlocks) {
+      if (block.persistence !== "persistent") {
+        continue;
       }
+      const previousCount = this.persistentFlushedCounts.get(block.key) ?? 0;
+      if (block.lines.length > previousCount) {
+        persistentFlushLines.push(...block.lines.slice(previousCount));
+      }
+      this.persistentFlushedCounts.set(block.key, Math.max(previousCount, block.lines.length));
+      this.overflowFlushedCounts.delete(block.key);
     }
 
-    // How many new committed lines to flush this frame
-    const committedFlushStart = Math.min(this.flushedCommittedCount, committedCount);
-    const newCommittedCount = committedCount - committedFlushStart;
+    const maxRows = Math.max(0, this.terminal.rows);
+    const displayBlocks: Array<{
+      component: Component;
+      key: string;
+      lines: string[];
+      hiddenCount: number;
+      cursorLineIndex: number;
+      cursorCol: number;
+    }> = [];
+    let remainingRows = maxRows;
+
+    for (let i = activeBlocks.length - 1; i >= 0; i--) {
+      const block = activeBlocks[i];
+      if (block.lines.length === 0) {
+        displayBlocks.unshift({
+          component: block.component,
+          key: block.key,
+          lines: [],
+          hiddenCount: 0,
+          cursorLineIndex: -1,
+          cursorCol: block.cursorCol,
+        });
+        continue;
+      }
+
+      if (remainingRows <= 0) {
+        displayBlocks.unshift({
+          component: block.component,
+          key: block.key,
+          lines: [],
+          hiddenCount: block.lines.length,
+          cursorLineIndex: -1,
+          cursorCol: block.cursorCol,
+        });
+        continue;
+      }
+
+      const { lines, startIdx } = this.sliceLinesToTerminalRows(block.lines, width, remainingRows);
+      const visibleRows = this.countPhysicalTerminalRows(lines, width);
+      remainingRows = Math.max(0, remainingRows - visibleRows);
+      const visibleCursorLineIndex = block.cursorLineIndex === -1 ? -1 : block.cursorLineIndex - startIdx;
+
+      displayBlocks.unshift({
+        component: block.component,
+        key: block.key,
+        lines,
+        hiddenCount: startIdx,
+        cursorLineIndex:
+          visibleCursorLineIndex >= 0 && visibleCursorLineIndex < lines.length ? visibleCursorLineIndex : -1,
+        cursorCol: block.cursorCol,
+      });
+    }
+
+    const overflowFlushLines: string[] = [];
+    for (let i = 0; i < activeBlocks.length; i++) {
+      const block = activeBlocks[i];
+      const hiddenCount = displayBlocks[i]?.hiddenCount ?? 0;
+      const previousHiddenCount = this.overflowFlushedCounts.get(block.key) ?? 0;
+      if (hiddenCount > previousHiddenCount) {
+        overflowFlushLines.push(...block.lines.slice(previousHiddenCount, hiddenCount));
+      }
+      this.overflowFlushedCounts.set(block.key, hiddenCount);
+    }
+
+    const displayActiveLines = displayBlocks.flatMap((block) => block.lines);
+    let displayCursorRow = -1;
+    let cursorCol = -1;
+    let linesBeforeCursor = 0;
+    for (const block of displayBlocks) {
+      if (displayCursorRow === -1 && block.cursorLineIndex !== -1 && block.cursorCol !== -1) {
+        displayCursorRow = linesBeforeCursor + block.cursorLineIndex;
+        cursorCol = block.cursorCol;
+      }
+      linesBeforeCursor += block.lines.length;
+    }
 
     // Erase previous active region
     if (this.lastActiveRows > 0) {
-      this.terminal.write("\r");
-      if (this.lastCursorRowInActive > 0) {
-        this.terminal.write(`\x1b[${this.lastCursorRowInActive}A`);
-      }
-      this.terminal.write("\x1b[0J");
+      this.clearPreviousActiveRegion();
     }
 
-    // Write newly committed lines to scrollback (permanent)
-    if (newCommittedCount > 0 || overflowActiveLines.length > 0) {
-      const newLines = committedLines.slice(committedFlushStart);
-      const commitBatch = [...newLines, ...overflowActiveLines];
+    const now = Date.now();
+    const allowOverflowFlush =
+      overflowFlushLines.length > 0 &&
+      (this.lastOverflowFlushAt === 0 || now - this.lastOverflowFlushAt >= TUIRenderer.OVERFLOW_FLUSH_INTERVAL_MS);
+
+    const historyFlushLines = this.pendingHistoryLines;
+    this.pendingHistoryLines = [];
+
+    if (historyFlushLines.length > 0 || persistentFlushLines.length > 0 || allowOverflowFlush) {
+      const commitBatch = [
+        ...historyFlushLines,
+        ...persistentFlushLines,
+        ...(allowOverflowFlush ? overflowFlushLines : []),
+      ];
       if (commitBatch.length > 0) {
         const commitPayload = this.serializeLinesForTerminal(commitBatch, width, true);
         if (commitPayload.length > 0) {
           this.terminal.write(commitPayload);
         }
       }
-      this.flushedCommittedCount = Math.max(this.flushedCommittedCount, committedCount + overflowActiveLines.length);
+      if (allowOverflowFlush) {
+        this.lastOverflowFlushAt = now;
+      }
     }
 
     // Write active region (redrawn each frame)
@@ -331,98 +484,25 @@ export class TUIRenderer {
         termRows: this.terminal.rows,
         newLines: allLines,
         cleanLines: displayActiveLines,
+        committedCount: persistentCount,
+        activeCount: activeBlocks.reduce((sum, block) => sum + block.lines.length, 0),
+        activeDisplayCount: displayActiveLines.length,
+        overflowCount: overflowFlushLines.length,
         cursorRow: displayCursorRow,
         cursorCol,
         fullOutput: displayActiveLines.join("\n"),
       });
     }
+    this.lastRenderAt = Date.now();
   }
 
-  private compositeOverlays(baseLines: string[], width: number): string[] {
-    if (!this.overlayStack) return baseLines;
-
-    const visible = this.overlayStack.getVisible();
-    if (visible.length === 0) return baseLines;
-
-    const result = [...baseLines];
-
-    // Pad to terminal height only when a center-anchored overlay needs room.
-    const hasCenterOverlay = visible.some(({ options: o }) => (o.anchor ?? "center") === "center");
-    const topPad = hasCenterOverlay ? Math.max(0, this.terminal.rows - result.length) : 0;
-    for (let i = 0; i < topPad; i++) {
-      result.unshift("");
+  private resolveMinRenderIntervalMs(): number {
+    const raw = process.env.DILIGENT_TUI_MAX_FPS;
+    const maxFps = raw ? Number.parseInt(raw, 10) : TUIRenderer.DEFAULT_MAX_FPS;
+    if (!Number.isFinite(maxFps) || maxFps <= 0) {
+      return Math.round(1000 / TUIRenderer.DEFAULT_MAX_FPS);
     }
-
-    for (const { component, options } of visible) {
-      const overlayLines = component.render(width);
-      if (overlayLines.length === 0) continue;
-
-      const overlayWidth = overlayLines.reduce(
-        (max: number, line: string) => Math.max(max, displayWidth(stripAnsi(line))),
-        0,
-      );
-
-      let startRow: number;
-      let startCol: number;
-      const anchor = options.anchor ?? "center";
-      const totalRows = result.length;
-
-      switch (anchor) {
-        case "center":
-          startRow = Math.max(0, Math.floor((totalRows - overlayLines.length) / 2));
-          startCol = Math.max(0, Math.floor((width - overlayWidth) / 2));
-          break;
-        case "bottom-center":
-          startRow = Math.max(0, totalRows - overlayLines.length - 2);
-          startCol = Math.max(0, Math.floor((width - overlayWidth) / 2));
-          break;
-        case "top-left":
-          startRow = (options.offsetY ?? 0) + topPad;
-          startCol = options.offsetX ?? 0;
-          break;
-        default:
-          startRow = Math.max(0, Math.floor((totalRows - overlayLines.length) / 2));
-          startCol = Math.max(0, Math.floor((width - overlayWidth) / 2));
-      }
-
-      // Ensure enough lines exist
-      while (result.length < startRow + overlayLines.length) {
-        result.push("");
-      }
-
-      // Splice overlay lines into base
-      for (let i = 0; i < overlayLines.length; i++) {
-        const row = startRow + i;
-        if (row < result.length) {
-          const baseLine = result[row];
-          const baseVisibleWidth = displayWidth(stripAnsi(baseLine));
-
-          // Build composited line: base before overlay, overlay, base after overlay
-          let composited = "";
-
-          // Pad base to reach startCol
-          if (baseVisibleWidth < startCol) {
-            composited = baseLine + " ".repeat(startCol - baseVisibleWidth);
-          } else {
-            // Reconstruct base up to startCol (preserving ANSI)
-            composited = this.sliceWithAnsi(baseLine, 0, startCol);
-          }
-
-          composited += `\x1b[0m${overlayLines[i]}\x1b[0m`;
-
-          // Add rest of base line after overlay
-          const overlayVisibleWidth = displayWidth(stripAnsi(overlayLines[i]));
-          const afterCol = startCol + overlayVisibleWidth;
-          if (baseVisibleWidth > afterCol) {
-            composited += this.sliceWithAnsi(baseLine, afterCol, baseVisibleWidth);
-          }
-
-          result[row] = composited;
-        }
-      }
-    }
-
-    return result;
+    return Math.max(1, Math.round(1000 / maxFps));
   }
 
   /** Slice a string with ANSI codes by visible column positions */

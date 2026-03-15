@@ -33,8 +33,8 @@ describe("Transcript steering queue", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
     store.setPendingSteers(["change approach", "use tests first"]);
     const lines = renderTranscript(store, 80).map(stripAnsi);
-    expect(lines.some((line) => line.includes("⚑ steering change approach"))).toBe(true);
-    expect(lines.some((line) => line.includes("⚑ steering use tests first"))).toBe(true);
+    expect(lines.some((line) => line.includes("┌ ⚑ steering | change approach"))).toBe(true);
+    expect(lines.some((line) => line.includes("┌ ⚑ steering | use tests first"))).toBe(true);
   });
 
   test("does not render steering indicator when queue is empty", () => {

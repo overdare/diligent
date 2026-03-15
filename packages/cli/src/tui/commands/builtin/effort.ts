@@ -8,7 +8,7 @@ import {
   resolveModel,
   supportsThinkingNone,
 } from "@diligent/runtime";
-import { ListPicker, type ListPickerItem } from "../../components/list-picker";
+import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
 
@@ -52,23 +52,17 @@ export const effortCommand: Command = {
     }));
     const selectedIdx = items.findIndex((item) => item.value === ctx.currentEffort);
 
-    await new Promise<void>((resolve) => {
-      const picker = new ListPicker(
-        { title: "Thinking", items, selectedIndex: Math.max(0, selectedIdx) },
-        async (value) => {
-          handle.hide();
-          ctx.requestRender();
-          if (value) {
-            const effort = value as ThinkingEffort;
-            await ctx.setEffort(effort);
-            ctx.onEffortChanged(effort, getThinkingEffortLabel(effort, model));
-            ctx.displayLines([`  Thinking set to ${t.bold}${getThinkingEffortLabel(effort, model)}${t.reset}`]);
-          }
-          resolve();
-        },
-      );
-      const handle = ctx.showOverlay(picker, { anchor: "center" });
-      ctx.requestRender();
+    const value = await ctx.app.pick({
+      title: "Thinking",
+      items,
+      selectedIndex: Math.max(0, selectedIdx),
     });
+    if (!value) {
+      return;
+    }
+    const effort = value as ThinkingEffort;
+    await ctx.setEffort(effort);
+    ctx.onEffortChanged(effort, getThinkingEffortLabel(effort, model));
+    ctx.displayLines([`  Thinking set to ${t.bold}${getThinkingEffortLabel(effort, model)}${t.reset}`]);
   },
 };

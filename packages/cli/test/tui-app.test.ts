@@ -364,7 +364,7 @@ describe("App", () => {
     expect(output).not.toContain("/clear");
   });
 
-  test("Ctrl+O toggles tool result details on and off", async () => {
+  test("Ctrl+O does not retroactively expand committed tool result snapshots", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([
       {
@@ -393,13 +393,9 @@ describe("App", () => {
 
       emitCtrlO();
       await wait(60);
-      const expandedOutput = stripAnsi(writes.join(""));
-      expect(expandedOutput).toContain("line1");
-
-      emitCtrlO();
-      await wait(60);
-      const collapsedOutput = stripAnsi(writes.join(""));
-      expect(collapsedOutput).toContain("(ctrl+o to expand)");
+      const output = stripAnsi(writes.join(""));
+      expect(output).toContain("(ctrl+o to expand)");
+      expect(output).not.toContain("line1");
     } finally {
       app.stop();
       restore();
@@ -473,6 +469,40 @@ describe("App", () => {
     }
 
     expect(writes.join("")).toContain("Cancelled");
+  });
+
+  test("Ctrl+C cancel immediately commits pending steering as user message", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
+
+    const cfg = makeConfig(streamFn);
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("slow");
+      emitEnter();
+      await wait(80);
+
+      emitText("change approach now");
+      emitEnter();
+      await wait(40);
+
+      emitCtrlC();
+      await wait(120);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(writes.join(""));
+    expect(output).toContain("change approach now");
+    expect(output).toContain("Cancelled");
   });
 
   test("rings terminal bell when turn completes", async () => {

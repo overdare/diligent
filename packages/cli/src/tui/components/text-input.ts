@@ -13,10 +13,7 @@ export interface TextInputOptions {
   minimal?: boolean;
 }
 
-/**
- * Text input overlay dialog.
- * Follows the same Component pattern as ConfirmDialog and ListPicker.
- */
+/** Text input prompt that can render inline or boxed. */
 export class TextInput implements Component {
   private value = "";
   private cursorPos = 0;

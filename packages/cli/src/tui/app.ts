@@ -22,6 +22,7 @@ import { AppSessionLifecycle } from "./app-session-lifecycle";
 import { type CommandHandler, createCommandHandler } from "./command-handler";
 import { registerBuiltinCommands } from "./commands/builtin/index";
 import { CommandRegistry } from "./commands/registry";
+import { BottomPane } from "./components/bottom-pane";
 import { ChatView } from "./components/chat-view";
 import type { ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
@@ -30,7 +31,6 @@ import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
 import { debugLogger } from "./framework/debug-logger";
 import { matchesKey } from "./framework/keys";
-import { OverlayStack } from "./framework/overlay";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
 import { Terminal } from "./framework/terminal";
@@ -49,9 +49,9 @@ export interface AppOptions {
 }
 
 export class App {
+  private static readonly DEFAULT_STREAM_RENDER_BATCH_MS = 16;
   private terminal: Terminal;
   private renderer: TUIRenderer;
-  private overlayStack: OverlayStack;
   private stdinBuffer: StdinBuffer;
   private root: Container;
 
@@ -59,6 +59,7 @@ export class App {
   private chatView: ChatView;
   private inputEditor: InputEditor;
   private statusBar: StatusBar;
+  private bottomPane: BottomPane;
 
   // Commands & Skills
   private commandRegistry: CommandRegistry;
@@ -82,6 +83,9 @@ export class App {
   private configManager: ConfigManager;
   private commandHandler: CommandHandler;
   private setupWizard: SetupWizard;
+  private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly streamRenderBatchMs: number;
+  private pendingUserMessageAcks: string[] = [];
 
   constructor(
     private config: AppConfig,
@@ -89,9 +93,9 @@ export class App {
     private options?: AppOptions,
   ) {
     this.runtime = new AppRuntimeState(config.mode, config.diligent.effort ?? "medium");
+    this.streamRenderBatchMs = App.resolveStreamRenderBatchMs();
     this.shouldBellOnComplete = config.diligent.terminalBell !== false;
     this.terminal = new Terminal();
-    this.overlayStack = new OverlayStack();
     this.stdinBuffer = new StdinBuffer();
 
     // Initialize command registry
@@ -100,13 +104,25 @@ export class App {
     registerBuiltinCommands(this.commandRegistry, this.skills);
 
     const requestRender = () => this.renderer.requestRender();
+    const requestRenderBatched = () => {
+      if (this.streamRenderTimer) return;
+      this.streamRenderTimer = setTimeout(() => {
+        this.streamRenderTimer = null;
+        this.renderer.requestRender();
+      }, this.streamRenderBatchMs);
+    };
 
     // Input history (loaded async in start())
     const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
     this.inputHistory = new InputHistory(join(home, ".diligent", "history"));
 
     // Build component tree
-    this.chatView = new ChatView({ requestRender });
+    this.chatView = new ChatView({
+      requestRender,
+      requestRenderBatched,
+      cwd: process.cwd(),
+      getCommitWidth: () => this.terminal.columns,
+    });
     this.inputEditor = new InputEditor(
       {
         onSubmit: (text) => {
@@ -125,14 +141,13 @@ export class App {
       requestRender,
     );
     this.statusBar = new StatusBar();
+    this.bottomPane = new BottomPane(this.chatView.getLiveStackComponent(), this.inputEditor, this.statusBar);
 
     this.root = new Container();
-    this.root.addChild(this.chatView);
-    this.root.addChild(this.inputEditor);
-    this.root.addChild(this.statusBar);
+    this.root.addChild(this.chatView.getHistoryComponent());
+    this.root.addChild(this.bottomPane);
 
     this.renderer = new TUIRenderer(this.terminal, this.root);
-    this.renderer.setOverlayStack(this.overlayStack);
     this.viewModel = createTuiViewModel({
       chatView: this.chatView,
       inputEditor: this.inputEditor,
@@ -143,7 +158,6 @@ export class App {
       getEffort: () => this.runtime.currentEffort,
     });
     this.dialogs = new AppDialogs({
-      overlayStack: this.overlayStack,
       renderer: this.renderer,
       runtime: this.runtime,
       setActiveInlineQuestion: (component) => this.chatView.setActiveQuestion(component),
@@ -154,8 +168,10 @@ export class App {
       mapNotificationToEvents: (notification) => this.notificationAdapter.toAgentEvents(notification),
       handleAgentEvent: (event) => this.handleAgentEvent(event),
       onTurnFinished: () => {
+        this.chatView.finishTurn();
         this.ringTerminalBell();
         this.appendLocalTurnTimingLine();
+        this.runtime.cancelRequested = false;
         this.runtime.pendingTurn?.resolve();
       },
       onTurnErrored: (message) => {
@@ -223,6 +239,9 @@ export class App {
       getIsProcessing: () => this.runtime.isProcessing,
       setIsProcessing: (val) => {
         this.runtime.isProcessing = val;
+        if (!val) {
+          this.runtime.cancelRequested = false;
+        }
         this.inputEditor.setBusy(val);
       },
       setPendingTurn: (turn) => {
@@ -251,6 +270,7 @@ export class App {
         this.renderer.resetFrameState();
       },
       handleAgentStartEvent: () => this.chatView.handleEvent({ type: "agent_start" }),
+      finishTurn: () => this.chatView.finishTurn(),
       handleTurnError: (err) => {
         this.chatView.handleEvent({
           type: "error",
@@ -263,8 +283,9 @@ export class App {
       },
       updateStatusBar: (updates) => this.statusBar.update(updates),
       requestRender: () => this.renderer.requestRender(),
-      showOverlay: (c, o) => this.overlayStack.show(c, o),
       confirm: (o) => this.dialogs.confirm(o),
+      pickInline: (o) => this.dialogs.pickInline(o),
+      promptInline: (o) => this.dialogs.promptInline(o),
       shutdown: () => this.shutdown(),
       onModelChanged: (modelId) => {
         this.statusBar.update({ model: modelId });
@@ -292,7 +313,6 @@ export class App {
       config: this.config,
       addLines: (lines) => this.chatView.addLines(lines),
       requestRender: () => this.renderer.requestRender(),
-      showOverlay: (c, o) => this.overlayStack.show(c, o),
       buildCommandContext: () => this.commandHandler.buildCommandContext(),
       updateStatusBar: (updates) => this.viewModel.status.update(updates),
     });
@@ -341,22 +361,14 @@ export class App {
     const sequences = this.stdinBuffer.split(data);
 
     for (const seq of sequences) {
-      // Inline question in chat takes input priority over overlay and editor
+      // Inline question in chat takes input priority over the editor.
       if (this.chatView.hasActiveQuestion()) {
         this.chatView.handleQuestionInput(seq);
         this.renderer.requestRender();
         continue;
       }
 
-      // Overlay takes all input when visible
-      if (this.overlayStack.hasVisible()) {
-        const topComponent = this.overlayStack.getTopComponent();
-        topComponent?.handleInput?.(seq);
-        this.renderer.requestRender();
-        continue;
-      }
-
-      // Shift+Tab: cycle collaboration mode (available always when no overlay)
+      // Shift+Tab: cycle collaboration mode
       if (matchesKey(seq, "shift+tab")) {
         this.cycleMode();
         continue;
@@ -415,11 +427,11 @@ export class App {
       const fallbackCount = Math.max(0, event.messageCount - consumed.length);
       if (fallbackCount > 0) {
         const fallback = this.runtime.consumePendingSteersFallback(fallbackCount);
-        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteers);
         consumed.push(...fallback);
       }
+      this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteers);
       for (const text of consumed) {
-        this.chatView.addUserMessage(text);
+        this.commitLocalUserMessage(text);
       }
     }
 
@@ -446,21 +458,51 @@ export class App {
       this.statusBar.update({
         tokensUsed: event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
       });
+      this.renderer.requestRender();
     } else if (event.type === "status_change") {
       this.statusBar.update({ status: event.status });
+      this.renderer.requestRender();
     }
   }
 
   private handleCancel(): void {
     if (this.runtime.isProcessing && this.rpcClient && this.runtime.currentThreadId) {
-      void this.rpcClient
-        .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
-        .catch(() => {});
+      if (this.runtime.cancelRequested) {
+        return;
+      }
+      this.runtime.cancelRequested = true;
+      const drainedSteers = this.chatView.consumePendingSteers();
+      this.runtime.drainPendingSteers();
+      if (drainedSteers.length > 0) {
+        for (const text of drainedSteers) {
+          this.commitLocalUserMessage(text);
+        }
+      }
+      this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
+      void this.rpcClient
+        .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
+        .catch(() => {
+          this.runtime.cancelRequested = false;
+        });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
     }
+  }
+
+  private commitLocalUserMessage(text: string): void {
+    this.chatView.addUserMessage(text);
+    this.pendingUserMessageAcks.push(text);
+  }
+
+  private handleRemoteUserMessage(text: string): void {
+    const index = this.pendingUserMessageAcks.indexOf(text);
+    if (index !== -1) {
+      this.pendingUserMessageAcks.splice(index, 1);
+      return;
+    }
+    this.chatView.addUserMessage(text);
   }
 
   private handleAppServerStderr(line: string): void {
@@ -476,9 +518,19 @@ export class App {
     ) {
       this.beginCompactionIndicator(0);
     }
-    await this.eventController.handleServerNotification(notification);
 
-    this.renderer.requestRender();
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED &&
+      notification.params.threadId === this.runtime.currentThreadId &&
+      notification.params.item.type === "userMessage"
+    ) {
+      const content = notification.params.item.message.content;
+      if (typeof content === "string" && content.trim().length > 0) {
+        this.handleRemoteUserMessage(content);
+      }
+    }
+
+    await this.eventController.handleServerNotification(notification);
   }
 
   private async syncActiveThreadState(): Promise<void> {
@@ -522,7 +574,10 @@ export class App {
 
   /** Stop the TUI */
   stop(): void {
-    this.overlayStack.clear();
+    if (this.streamRenderTimer) {
+      clearTimeout(this.streamRenderTimer);
+      this.streamRenderTimer = null;
+    }
     this.renderer.stop();
     this.terminal.stop();
     void this.rpcClient?.dispose().catch(() => {});
@@ -532,5 +587,13 @@ export class App {
     this.stop();
     this.terminal.write(buildShutdownMessage(this.runtime.currentThreadId));
     process.exit(0);
+  }
+
+  private static resolveStreamRenderBatchMs(): number {
+    const raw = process.env.DILIGENT_TUI_STREAM_BATCH_MS;
+    if (!raw) return App.DEFAULT_STREAM_RENDER_BATCH_MS;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) return App.DEFAULT_STREAM_RENDER_BATCH_MS;
+    return Math.max(16, parsed);
   }
 }

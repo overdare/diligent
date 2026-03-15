@@ -3,7 +3,6 @@ import { describe, expect, it, mock } from "bun:test";
 import { resolveModel } from "@diligent/runtime";
 import type { AppConfig } from "../../../../config";
 import type { ListPickerItem } from "../../../components/list-picker";
-import type { OverlayHandle } from "../../../framework/types";
 import type { CommandContext } from "../../types";
 import { modelCommand } from "../model";
 
@@ -32,6 +31,8 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
   return {
     app: {
       confirm: async () => true,
+      pick: async () => null,
+      prompt: async () => null,
       stop: () => {},
       getRpcClient: () => null,
     },
@@ -42,7 +43,6 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
     requestRender: () => {},
     displayLines: () => {},
     displayError: () => {},
-    showOverlay: () => ({ hide: () => {}, isHidden: () => false, setHidden: () => {} }) as OverlayHandle,
     runAgent: async () => {},
     reload: async () => {},
     currentMode: "default",
@@ -73,12 +73,15 @@ describe("modelCommand picker", () => {
     const config = makeConfig("gpt-4o", providerManager as unknown as AppConfig["providerManager"]);
 
     const ctx = makeContext(config, {
-      showOverlay: (component) => {
-        capturedItems = (component as unknown as { options: { items: ListPickerItem[] } }).options.items;
-        queueMicrotask(() => {
-          (component as { handleInput?: (data: string) => void }).handleInput?.("\x1b");
-        });
-        return { hide: () => {}, isHidden: () => false, setHidden: () => {} } as OverlayHandle;
+      app: {
+        confirm: async () => true,
+        pick: async (options) => {
+          capturedItems = options.items;
+          return null;
+        },
+        prompt: async () => null,
+        stop: () => {},
+        getRpcClient: () => null,
       },
     });
 
@@ -103,12 +106,15 @@ describe("modelCommand picker", () => {
     const config = makeConfig("claude-sonnet-4-6", providerManager as unknown as AppConfig["providerManager"]);
 
     const ctx = makeContext(config, {
-      showOverlay: (component) => {
-        capturedItems = (component as unknown as { options: { items: ListPickerItem[] } }).options.items;
-        queueMicrotask(() => {
-          (component as { handleInput?: (data: string) => void }).handleInput?.("\x1b");
-        });
-        return { hide: () => {}, isHidden: () => false, setHidden: () => {} } as OverlayHandle;
+      app: {
+        confirm: async () => true,
+        pick: async (options) => {
+          capturedItems = options.items;
+          return null;
+        },
+        prompt: async () => null,
+        stop: () => {},
+        getRpcClient: () => null,
       },
     });
 

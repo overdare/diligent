@@ -1,7 +1,8 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
+import path from "node:path";
 import type { ToolResultMessage } from "@diligent/core";
-import type { ToolRenderPayload } from "@diligent/protocol";
+import type { ToolRenderBlock, ToolRenderPayload } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
 import { deriveToolRenderPayload } from "@diligent/runtime/tools";
 import { debugLogger } from "../framework/debug-logger";
@@ -126,6 +127,8 @@ function summarizeToolOutput(toolName: string, output: string): string {
 }
 
 function buildToolHeader(toolName: string, input: unknown, output: string): string {
+  const normalizedName = toolName.toLowerCase();
+  if (normalizedName === "bash") return toolName;
   const inputSummary = summarizeToolInput(toolName, input);
   if (inputSummary) return `${toolName} — ${inputSummary}`;
   const outputSummary = summarizeToolOutput(toolName, output);
@@ -147,6 +150,11 @@ export type TranscriptItem =
       lines: string[];
     }
   | {
+      kind: "assistant_chunk";
+      text: string;
+      continued: boolean;
+    }
+  | {
       kind: "tool_result";
       header: string;
       details: string[];
@@ -156,7 +164,6 @@ export type TranscriptItem =
       header: string;
       bodyLines: string[];
     }
-  | MarkdownView
   | UserMessageView;
 
 type ActiveStatus = {
@@ -168,6 +175,7 @@ type ActiveStatus = {
 
 export interface TranscriptStoreOptions {
   requestRender: () => void;
+  cwd?: string;
 }
 
 export class TranscriptStore {
@@ -185,11 +193,21 @@ export class TranscriptStore {
   private pendingSteers: string[] = [];
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
   private toolResultsExpanded = false;
+  private hasCommittedAssistantChunkInMessage = false;
 
   constructor(private options: TranscriptStoreOptions) {}
 
   getItems(): TranscriptItem[] {
     return this.items;
+  }
+
+  drainCommittedItems(): TranscriptItem[] {
+    if (this.items.length === 0) {
+      return [];
+    }
+    const drainedItems = this.items;
+    this.items = [];
+    return drainedItems;
   }
 
   getActiveMarkdown(): MarkdownView | null {
@@ -226,7 +244,10 @@ export class TranscriptStore {
         this.startActiveStatus("Thinking…");
         break;
       case "message_start":
-        this.stopActiveStatus();
+        if (!this.isWorkingStatusActive()) {
+          this.stopActiveStatus();
+        }
+        this.hasCommittedAssistantChunkInMessage = false;
         this.activeMarkdown = new MarkdownView(this.options.requestRender);
         break;
       case "message_delta":
@@ -241,6 +262,7 @@ export class TranscriptStore {
             this.commitThinkingBlock();
           }
           this.activeMarkdown.pushDelta(event.delta.delta);
+          this.commitAssistantChunk(this.activeMarkdown);
         }
         break;
       case "message_end":
@@ -249,9 +271,10 @@ export class TranscriptStore {
         }
         if (this.activeMarkdown) {
           this.activeMarkdown.finalize();
-          this.items.push(this.activeMarkdown);
+          this.commitAssistantChunk(this.activeMarkdown);
           this.activeMarkdown = null;
         }
+        this.hasCommittedAssistantChunkInMessage = false;
         break;
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());
@@ -304,8 +327,12 @@ export class TranscriptStore {
         this.handleToolEnd(event);
         break;
       case "status_change":
-        if (event.status === "idle") {
-          this.statusBeforeCompaction = null;
+        if (event.status === "busy") {
+          this.startActiveStatus("Working…");
+          break;
+        }
+        this.statusBeforeCompaction = null;
+        if (!this.isWorkingStatusActive()) {
           this.stopActiveStatus();
         }
         break;
@@ -352,9 +379,9 @@ export class TranscriptStore {
       case "turn_start":
         break;
       case "turn_end":
-        if (event.toolResults.length > 0) {
-          this.startActiveStatus("Thinking…");
-        }
+        this.statusBeforeCompaction = null;
+        this.stopActiveStatus();
+        this.options.requestRender();
         break;
       default:
         break;
@@ -372,10 +399,8 @@ export class TranscriptStore {
   }
 
   addAssistantMessage(text: string): void {
-    const view = new MarkdownView(this.options.requestRender);
-    view.pushDelta(text);
-    view.finalize();
-    this.items.push(view);
+    if (!text) return;
+    this.items.push({ kind: "assistant_chunk", text, continued: false });
     this.options.requestRender();
   }
 
@@ -385,9 +410,12 @@ export class TranscriptStore {
       undefined,
       message.output,
       message.isError,
+      { cwd: this.options.cwd },
     );
     const icon = message.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
-    const headerLabel = buildToolHeader(message.toolName, undefined, message.output);
+    const headerLabel =
+      this.buildToolHeaderFromRenderPayload(renderPayload) ??
+      buildToolHeader(message.toolName, undefined, message.output);
 
     if (renderPayload) {
       const rendered = renderToolPayload(renderPayload);
@@ -454,10 +482,14 @@ export class TranscriptStore {
     this.toolCallInputs.clear();
     if (this.activeMarkdown) {
       this.activeMarkdown.finalize();
-      this.items.push(this.activeMarkdown);
+      this.commitAssistantChunk(this.activeMarkdown);
       this.activeMarkdown = null;
     }
     this.options.requestRender();
+  }
+
+  finishTurn(): void {
+    this.clearActiveWithCommit();
   }
 
   setActiveQuestion(q: (Component & { handleInput(data: string): void }) | null): void {
@@ -470,6 +502,14 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
+  consumePendingSteers(): string[] {
+    if (this.pendingSteers.length === 0) return [];
+    const drained = [...this.pendingSteers];
+    this.pendingSteers = [];
+    this.options.requestRender();
+    return drained;
+  }
+
   hasActiveQuestion(): boolean {
     return this.activeQuestion !== null;
   }
@@ -480,7 +520,7 @@ export class TranscriptStore {
 
   invalidate(): void {
     for (const item of this.items) {
-      if (item instanceof MarkdownView || item instanceof UserMessageView) {
+      if (item instanceof UserMessageView) {
         item.invalidate();
       }
     }
@@ -522,6 +562,7 @@ export class TranscriptStore {
       toolInput,
       event.output,
       event.isError,
+      { cwd: this.options.cwd },
     );
 
     if (event.toolName === "plan") {
@@ -595,7 +636,9 @@ export class TranscriptStore {
 
       this.items.push(this.createToolResultItem(lines));
     } else if (renderPayload) {
-      const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
+      const headerLabel =
+        this.buildToolHeaderFromRenderPayload(renderPayload) ??
+        buildToolHeader(event.toolName, toolInput, event.output);
       const rendered = renderToolPayload(renderPayload);
       const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
       if (rendered.length > 0) {
@@ -651,6 +694,86 @@ export class TranscriptStore {
     }
     this.activeStatus.message = message;
     this.options.requestRender();
+  }
+
+  private isWorkingStatusActive(): boolean {
+    return this.activeStatus?.message === "Working…";
+  }
+
+  private commitAssistantChunk(markdown: MarkdownView): void {
+    const text = markdown.takeCommittedText();
+    if (!text) return;
+    this.items.push({
+      kind: "assistant_chunk",
+      text,
+      continued: this.hasCommittedAssistantChunkInMessage,
+    });
+    this.hasCommittedAssistantChunkInMessage = true;
+  }
+
+  private buildToolHeaderFromRenderPayload(payload: ToolRenderPayload | undefined): string | null {
+    if (!payload || payload.blocks.length === 0) return null;
+    const firstBlock = payload.blocks[0];
+    const label = this.describeRenderBlock(firstBlock);
+    return label ? `${label}` : null;
+  }
+
+  private describeRenderBlock(block: ToolRenderBlock): string | null {
+    switch (block.type) {
+      case "summary": {
+        const humanized = this.humanizeSearchSummary(block.text);
+        return humanized ? `Summary — ${humanized}` : `Summary — ${block.text}`;
+      }
+      case "file":
+        return `File — ${this.formatPathForHeader(block.filePath)}`;
+      case "command":
+        return null;
+      case "diff": {
+        const firstFile = block.files[0];
+        if (!firstFile) return "Diff";
+        return `Diff — ${this.formatPathForHeader(firstFile.filePath)}`;
+      }
+      case "key_value":
+        return block.title ? `Details — ${block.title}` : "Details";
+      case "list":
+        return block.title ? `List — ${block.title}` : "List";
+      case "table":
+        return block.title ? `Table — ${block.title}` : "Table";
+      case "tree":
+        return block.title ? `Tree — ${block.title}` : "Tree";
+      case "status_badges":
+        return block.title ? `Status — ${block.title}` : "Status";
+      default:
+        return null;
+    }
+  }
+
+  private formatPathForHeader(filePath: string): string {
+    if (!this.options.cwd) return filePath;
+    if (!path.isAbsolute(filePath)) return filePath;
+    const relative = path.relative(this.options.cwd, filePath);
+    if (!relative || relative.startsWith("..")) return filePath;
+    return relative.split(path.sep).join("/");
+  }
+
+  private humanizeSearchSummary(summaryText: string): string | null {
+    if (!summaryText.startsWith("Search(")) return null;
+    const patternMatch = summaryText.match(/pattern:\s*("(?:[^"\\]|\\.)*")/);
+    if (!patternMatch) return null;
+    let pattern = "";
+    try {
+      pattern = JSON.parse(patternMatch[1]) as string;
+    } catch {
+      return null;
+    }
+    const pathMatch = summaryText.match(/path:\s*("(?:[^"\\]|\\.)*")/);
+    if (!pathMatch) return `Search ${pattern}`;
+    try {
+      const searchPath = JSON.parse(pathMatch[1]) as string;
+      return `Search ${pattern} in ${searchPath}`;
+    } catch {
+      return `Search ${pattern}`;
+    }
   }
 
   private stopActiveStatus(): void {

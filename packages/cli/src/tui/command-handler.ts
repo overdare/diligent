@@ -9,7 +9,6 @@ import type { CommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
 import type { ConfirmDialogOptions } from "./components/confirm-dialog";
 import type { ConfigManager } from "./config-manager";
-import type { Component, OverlayHandle, OverlayOptions } from "./framework/types";
 import type { AppServerRpcClient } from "./rpc-client";
 import { t } from "./theme";
 import type { ThreadManager } from "./thread-manager";
@@ -32,11 +31,24 @@ export interface CommandHandlerDeps {
   clearChatHistory: () => void;
   clearScreenAndResetRenderer: () => void;
   handleAgentStartEvent: () => void;
+  finishTurn: () => void;
   handleTurnError: (err: unknown) => void;
   updateStatusBar: (updates: Record<string, unknown>) => void;
   requestRender: () => void;
-  showOverlay: (component: Component, options?: OverlayOptions) => OverlayHandle;
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
+  pickInline: (options: {
+    title: string;
+    items: Array<{ label: string; description?: string; value: string; header?: boolean }>;
+    selectedIndex?: number;
+    filterable?: boolean;
+  }) => Promise<string | null>;
+  promptInline: (options: {
+    title: string;
+    message?: string;
+    placeholder?: string;
+    masked?: boolean;
+    minimal?: boolean;
+  }) => Promise<string | null>;
   shutdown: () => void;
   onModelChanged: (modelId: string) => void;
   onEffortChanged: (effort: ThinkingEffort, label: string) => void;
@@ -106,6 +118,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
 
       deps.setPendingTurn(null);
       deps.setIsProcessing(false);
+      deps.finishTurn();
       deps.updateStatusBar({ status: "idle" });
       deps.requestRender();
     },
@@ -138,6 +151,8 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
       return {
         app: {
           confirm: (o) => deps.confirm(o),
+          pick: (o) => deps.pickInline(o),
+          prompt: (o) => deps.promptInline(o),
           stop: () => deps.shutdown(),
           getRpcClient: () => deps.getRpcClient(),
           waitForOAuthComplete: () => deps.waitForOAuthComplete(),
@@ -155,7 +170,6 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           deps.addLines([`  ${t.error}${msg}${t.reset}`]);
           deps.requestRender();
         },
-        showOverlay: (c, o) => deps.showOverlay(c, o),
         runAgent: (text) => handler.handleSubmit(text),
         reload: () => deps.configManager.reloadConfig(),
         currentMode: deps.getCurrentMode(),

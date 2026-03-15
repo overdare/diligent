@@ -2,9 +2,6 @@
 import type { Component } from "../framework/types";
 import { renderMarkdown } from "../markdown";
 
-/** Delay before force-rendering trailing content that has no trailing newline */
-const TRAILING_RENDER_DELAY_MS = 100;
-
 /**
  * Streaming markdown renderer as a Component.
  * Implements newline-gated commit strategy (D047):
@@ -17,19 +14,20 @@ export class MarkdownView implements Component {
   private committedLines: string[] = [];
   private lastRenderWidth = 0;
   private finalized = false;
-  private trailingTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastRenderedLines: string[] = [];
 
   constructor(private requestRender: () => void) {}
+
+  static fromText(text: string): MarkdownView {
+    const view = new MarkdownView(() => {});
+    view.committedRaw = text;
+    view.finalized = true;
+    return view;
+  }
 
   /** Push a text delta (streaming token) */
   pushDelta(delta: string): void {
     this.buffer += delta;
-
-    // Clear trailing timer since we got new data
-    if (this.trailingTimer) {
-      clearTimeout(this.trailingTimer);
-      this.trailingTimer = null;
-    }
 
     // Newline-gated: commit only complete lines
     const lastNewline = this.buffer.lastIndexOf("\n");
@@ -41,25 +39,10 @@ export class MarkdownView implements Component {
       this.committedLines = [];
       this.requestRender();
     }
-
-    // Start a short timer to force-render trailing content
-    if (this.buffer.length > 0) {
-      this.trailingTimer = setTimeout(() => {
-        this.trailingTimer = null;
-        if (this.buffer.length > 0 && !this.finalized) {
-          this.requestRender();
-        }
-      }, TRAILING_RENDER_DELAY_MS);
-    }
   }
 
   /** Finalize — render all remaining buffered content */
   finalize(): void {
-    if (this.trailingTimer) {
-      clearTimeout(this.trailingTimer);
-      this.trailingTimer = null;
-    }
-
     this.committedRaw += this.buffer;
     this.buffer = "";
 
@@ -72,27 +55,43 @@ export class MarkdownView implements Component {
     this.requestRender();
   }
 
+  takeCommittedText(): string {
+    if (this.committedRaw.length === 0) {
+      return "";
+    }
+
+    const text = this.committedRaw;
+    this.committedRaw = "";
+    this.committedLines = [];
+    this.lastRenderedLines = [];
+    this.lastRenderWidth = 0;
+    return text;
+  }
+
+  isEmpty(): boolean {
+    return this.committedRaw.length === 0 && this.buffer.length === 0;
+  }
+
   /** Reset for a new message */
   reset(): void {
-    if (this.trailingTimer) {
-      clearTimeout(this.trailingTimer);
-      this.trailingTimer = null;
-    }
     this.buffer = "";
     this.committedRaw = "";
     this.committedLines = [];
     this.finalized = false;
+    this.lastRenderedLines = [];
   }
 
   render(width: number): string[] {
     if (this.committedRaw.length === 0 && this.buffer.length === 0) {
+      this.lastRenderedLines = [];
       return [];
     }
 
     // While streaming trailing text, render full content as markdown so users
     // don't see raw markdown markers (e.g. **, `) in interactive mode.
     if (this.buffer.length > 0 && !this.finalized) {
-      return this.renderToLines(this.committedRaw + this.buffer, width);
+      this.lastRenderedLines = this.renderToLines(this.committedRaw + this.buffer, width);
+      return this.lastRenderedLines;
     }
 
     // Re-render committed content if width changed or cache is empty
@@ -101,6 +100,7 @@ export class MarkdownView implements Component {
       this.lastRenderWidth = width;
     }
 
+    this.lastRenderedLines = this.committedLines;
     return this.committedLines;
   }
 

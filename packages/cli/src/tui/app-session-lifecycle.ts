@@ -63,15 +63,14 @@ export class AppSessionLifecycle {
       await this.deps.setupWizard.runSetupWizard();
     }
 
-    this.deps.chatView.addLines(
-      buildWelcomeBanner({
-        version: this.deps.pkgVersion,
-        modelId: this.deps.config.model.id,
-        cwd: process.cwd(),
-        terminalColumns: this.deps.terminal.columns,
-        yolo: Boolean(this.deps.config.diligent.yolo),
-      }),
-    );
+    const welcomeLines = buildWelcomeBanner({
+      version: this.deps.pkgVersion,
+      modelId: this.deps.config.model.id,
+      cwd: process.cwd(),
+      terminalColumns: this.deps.terminal.columns,
+      yolo: Boolean(this.deps.config.diligent.yolo),
+    });
+    this.deps.chatView.addLines(welcomeLines);
 
     if (!this.deps.pathsAvailable) {
       throw new Error("No .diligent directory paths are available.");

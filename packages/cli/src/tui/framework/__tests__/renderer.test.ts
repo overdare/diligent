@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Container } from "../container";
 import { TUIRenderer } from "../renderer";
 import type { Terminal } from "../terminal";
-import type { Component } from "../types";
+import type { Component, RenderBlock } from "../types";
 import { CURSOR_MARKER } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -413,7 +413,142 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(sim.screen.filter((l) => l === "short-1").length).toBe(1);
   });
 
-  test("cursor stays anchored when active content ends on wrap boundary", () => {
+  test("committed welcome and user lines are preserved while active body grows", () => {
+    const { terminal, sim } = createSim(8, 20);
+    const historyLines = ["welcome box", "tip line", "user message"];
+    let activeLines = ["body-1"];
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...historyLines, ...activeLines],
+      renderBlocks: () => [
+        { key: "history", lines: [...historyLines], persistence: "persistent" },
+        { key: "active", lines: [...activeLines], persistence: "volatile" },
+      ],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    activeLines = ["body-1", "body-2", "body-3", "body-4", "body-5", "body-6"];
+    renderer.forceRender();
+    renderer.forceRender();
+
+    expect(sim.screen.some((l) => l === "welcome box")).toBe(true);
+    expect(sim.screen.some((l) => l === "user message")).toBe(true);
+  });
+
+  test("overflow trims upper component blocks before live stack and input", () => {
+    const { terminal, sim } = createSim(3, 20);
+    const container = new Container();
+    let bodyLines = ["body-1", "body-2", "body-3"];
+    const bodyComponent: Component = {
+      render: () => [...bodyLines],
+      invalidate: () => {},
+    };
+    const liveStackComponent: Component = {
+      render: () => ["live-status"],
+      invalidate: () => {},
+    };
+
+    container.addChild(bodyComponent);
+    container.addChild(liveStackComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    expect(sim.screen.some((line) => line === "body-1")).toBe(true);
+
+    bodyLines = ["body-1", "body-2", "body-3", "body-4"];
+    renderer.forceRender();
+
+    expect(sim.screen.some((line) => line === "live-status")).toBe(true);
+    expect(sim.screen.some((line) => line === "prompt> ")).toBe(true);
+    expect(sim.screen.some((line) => line === "body-4")).toBe(true);
+  });
+
+  test("scrollback retains welcome box and all rendered component bands after long output completes", () => {
+    const { terminal, sim } = createSim(4, 20);
+    let bodyLines = ["result-1"];
+    const container = new Container();
+    const welcomeComponent: Component = {
+      render: () => ["welcome box", "tip line"],
+      renderBlocks: () => [{ key: "welcome", lines: ["welcome box", "tip line"], persistence: "persistent" }],
+      invalidate: () => {},
+    };
+    const bodyComponent: Component = {
+      render: () => [...bodyLines],
+      renderBlocks: () => [{ key: "body", lines: [...bodyLines], persistence: "volatile" }],
+      invalidate: () => {},
+    };
+    const liveStackComponent: Component = {
+      render: () => ["live-status"],
+      invalidate: () => {},
+    };
+    const statusComponent: Component = {
+      render: () => ["status-bar"],
+      invalidate: () => {},
+    };
+
+    container.addChild(welcomeComponent);
+    container.addChild(bodyComponent);
+    container.addChild(liveStackComponent);
+    container.addChild(createInputComponent());
+    container.addChild(statusComponent);
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    bodyLines = Array.from({ length: 12 }, (_, index) => `result-${index + 1}`);
+    renderer.forceRender();
+    renderer.forceRender();
+
+    expect(sim.screen.some((line) => line === "welcome box")).toBe(true);
+    expect(sim.screen.some((line) => line === "tip line")).toBe(true);
+    expect(sim.screen.some((line) => line === "live-status")).toBe(true);
+    expect(sim.screen.some((line) => line === "prompt> ")).toBe(true);
+    expect(sim.screen.some((line) => line === "status-bar")).toBe(true);
+    expect(sim.screen.some((line) => line === "result-12")).toBe(true);
+  });
+
+  test("adding a new bottom component preserves older bottom bands in scrollback", () => {
+    const { terminal, sim } = createSim(3, 20);
+    let liveBlocks: RenderBlock[] = [{ key: "status", lines: ["live-status"], persistence: "volatile" }];
+    const container = new Container();
+    const liveStackComponent: Component = {
+      render: () => liveBlocks.flatMap((block) => block.lines),
+      renderBlocks: () => liveBlocks,
+      invalidate: () => {},
+    };
+    const inputComponent = createInputComponent();
+    const statusComponent: Component = {
+      render: () => ["status-bar"],
+      invalidate: () => {},
+    };
+
+    container.addChild(liveStackComponent);
+    container.addChild(inputComponent);
+    container.addChild(statusComponent);
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    liveBlocks = [
+      { key: "status", lines: ["live-status"], persistence: "volatile" },
+      { key: "question-separator", lines: [""], persistence: "volatile" },
+      { key: "question", lines: ["question prompt"], persistence: "volatile" },
+    ];
+    renderer.forceRender();
+
+    expect(sim.screen.some((line) => line === "live-status")).toBe(true);
+    expect(sim.screen.some((line) => line === "question prompt")).toBe(true);
+    expect(sim.screen.some((line) => line === "prompt> ")).toBe(true);
+  });
+
+  test("cursor stays on the next logical row when active content ends on wrap boundary", () => {
     const { terminal, sim } = createSim(6, 10);
     let chatLines = ["1234567890"]; // exactly fills one terminal row
     const container = new Container();
@@ -427,16 +562,16 @@ describe("TUIRenderer — cursor position after renders", () => {
     const renderer = new TUIRenderer(terminal, container);
     renderer.start();
 
-    // Input should remain on next row, not drift upward across re-renders.
-    expect(sim.lineAt(2)).toBe("prompt> ");
+    // Input should remain on the next logical row, not drift upward across re-renders.
+    expect(sim.lineAt(1)).toBe("prompt> ");
 
     renderer.forceRender();
-    expect(sim.lineAt(2)).toBe("prompt> ");
+    expect(sim.lineAt(1)).toBe("prompt> ");
 
     chatLines = ["1234567890", "abcdefghij"]; // both boundary-width lines
     renderer.forceRender();
 
-    expect(sim.lineAt(4)).toBe("prompt> ");
+    expect(sim.lineAt(2)).toBe("prompt> ");
   });
 
   test("cursor stays on input row when content shrinks (spinner → no-output tool)", () => {
@@ -639,35 +774,32 @@ describe("TUIRenderer — original tests", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Helper: component with committed line count support
+// Helper: component with explicit persistent/volatile blocks
 // ---------------------------------------------------------------------------
 
-function createCommittedComponent(getLines: () => string[], getCommitted: () => number): Component {
+function createBlockComponent(getBlocks: () => RenderBlock[]): Component {
   return {
     render(_width: number) {
-      return getLines();
+      return getBlocks().flatMap((block) => block.lines);
     },
-    getCommittedLineCount(_width: number) {
-      return getCommitted();
-    },
+    renderBlocks: () => getBlocks(),
     invalidate() {},
   };
 }
 
 // ---------------------------------------------------------------------------
-// Renderer tests — committed/active split
+// Renderer tests — persistent/volatile blocks
 // ---------------------------------------------------------------------------
 
-describe("TUIRenderer — committed/active split", () => {
-  test("committed lines written to scrollback only once", () => {
+describe("TUIRenderer — persistent/volatile blocks", () => {
+  test("persistent lines written to scrollback only once", () => {
     const { terminal, sim } = createSim();
-    let lines = ["committed1", "committed2", "active"];
-    const committed = 2;
+    let active = ["active"];
 
-    const root = createCommittedComponent(
-      () => [...lines],
-      () => committed,
-    );
+    const root = createBlockComponent(() => [
+      { key: "history", lines: ["committed1", "committed2"], persistence: "persistent" },
+      { key: "active", lines: [...active], persistence: "volatile" },
+    ]);
 
     const renderer = new TUIRenderer(terminal, root);
     renderer.start();
@@ -677,11 +809,11 @@ describe("TUIRenderer — committed/active split", () => {
     expect(sim.lineAt(1)).toBe("committed2");
     expect(sim.lineAt(2)).toBe("active");
 
-    // Re-render with same content — committed lines should not be duplicated
-    lines = ["committed1", "committed2", "active-changed"];
+    // Re-render with same content — persistent lines should not be duplicated
+    active = ["active-changed"];
     renderer.forceRender();
 
-    // committed lines still at rows 0-1, active at row 2
+    // persistent lines still at rows 0-1, active at row 2
     expect(sim.lineAt(0)).toBe("committed1");
     expect(sim.lineAt(1)).toBe("committed2");
     expect(sim.lineAt(2)).toBe("active-changed");
@@ -691,15 +823,15 @@ describe("TUIRenderer — committed/active split", () => {
     expect(count).toBe(1);
   });
 
-  test("new committed lines appear between old committed and active", () => {
+  test("new persistent lines appear before volatile content", () => {
     const { terminal, sim } = createSim();
-    let lines = ["c1", "active"];
-    let committed = 1;
+    let history = ["c1"];
+    const active = ["active"];
 
-    const root = createCommittedComponent(
-      () => [...lines],
-      () => committed,
-    );
+    const root = createBlockComponent(() => [
+      { key: "history", lines: [...history], persistence: "persistent" },
+      { key: "active", lines: [...active], persistence: "volatile" },
+    ]);
 
     const renderer = new TUIRenderer(terminal, root);
     renderer.start();
@@ -707,9 +839,8 @@ describe("TUIRenderer — committed/active split", () => {
     expect(sim.lineAt(0)).toBe("c1");
     expect(sim.lineAt(1)).toBe("active");
 
-    // Add a new committed line
-    lines = ["c1", "c2", "active"];
-    committed = 2;
+    // Add a new persistent line
+    history = ["c1", "c2"];
     renderer.forceRender();
 
     expect(sim.lineAt(0)).toBe("c1");
@@ -717,37 +848,35 @@ describe("TUIRenderer — committed/active split", () => {
     expect(sim.lineAt(2)).toBe("active");
   });
 
-  test("committed count is monotonically increasing", () => {
+  test("persistent history does not get erased when current block shrinks", () => {
     const { terminal, sim } = createSim();
-    let lines = ["c1", "c2", "active"];
-    let committed = 2;
+    let history = ["c1", "c2"];
+    let active = ["active"];
 
-    const root = createCommittedComponent(
-      () => [...lines],
-      () => committed,
-    );
+    const root = createBlockComponent(() => [
+      { key: "history", lines: [...history], persistence: "persistent" },
+      { key: "active", lines: [...active], persistence: "volatile" },
+    ]);
 
     const renderer = new TUIRenderer(terminal, root);
     renderer.start();
 
-    // Even if component reports fewer committed, renderer keeps the max
-    committed = 1; // component "shrinks" committed — should be ignored
-    lines = ["c1", "c2", "active2"];
+    history = ["c1"];
+    active = ["active2"];
     renderer.forceRender();
 
-    // c2 should still be treated as committed (not redrawn)
+    // c2 should remain in scrollback even if the current persistent block shrinks
     expect(sim.lineAt(0)).toBe("c1");
     expect(sim.lineAt(1)).toBe("c2");
     expect(sim.lineAt(2)).toBe("active2");
   });
 
-  test("cursor in active region positions correctly", () => {
+  test("cursor in volatile block positions correctly", () => {
     const { terminal, sim } = createSim();
-    const lines = ["committed", `active ${CURSOR_MARKER}text`];
-    const root = createCommittedComponent(
-      () => [...lines],
-      () => 1,
-    );
+    const root = createBlockComponent(() => [
+      { key: "history", lines: ["committed"], persistence: "persistent" },
+      { key: "active", lines: [`active ${CURSOR_MARKER}text`], persistence: "volatile" },
+    ]);
 
     const renderer = new TUIRenderer(terminal, root);
     renderer.start();
@@ -758,13 +887,12 @@ describe("TUIRenderer — committed/active split", () => {
     expect(sim.cursorCol).toBe(7);
   });
 
-  test("stop() erases active region, leaving committed in scrollback", () => {
+  test("stop() erases volatile region, leaving persistent lines in scrollback", () => {
     const { terminal, sim } = createSim();
-    const lines = ["committed", "active"];
-    const root = createCommittedComponent(
-      () => [...lines],
-      () => 1,
-    );
+    const root = createBlockComponent(() => [
+      { key: "history", lines: ["committed"], persistence: "persistent" },
+      { key: "active", lines: ["active"], persistence: "volatile" },
+    ]);
 
     const renderer = new TUIRenderer(terminal, root);
     renderer.start();
@@ -774,7 +902,7 @@ describe("TUIRenderer — committed/active split", () => {
 
     renderer.stop();
 
-    // committed stays, active erased
+    // persistent stays, volatile erased
     expect(sim.lineAt(0)).toBe("committed");
     expect(sim.lineAt(1)).toBe("");
   });
@@ -816,53 +944,17 @@ describe("Container", () => {
     expect(container.render(80)).toEqual([]);
   });
 
-  test("getCommittedLineCount accumulates fully-committed children", () => {
+  test("renderBlocks flattens child blocks in order", () => {
     const container = new Container();
-    // Child A: 2 lines, all committed
-    container.addChild(
-      createCommittedComponent(
-        () => ["A1", "A2"],
-        () => 2,
-      ),
-    );
-    // Child B: 1 line, all committed
-    container.addChild(
-      createCommittedComponent(
-        () => ["B1"],
-        () => 1,
-      ),
-    );
-    // Child C: 2 lines, 0 committed (active)
+    container.addChild(createBlockComponent(() => [{ key: "a", lines: ["A1", "A2"], persistence: "persistent" }]));
+    container.addChild(createBlockComponent(() => [{ key: "b", lines: ["B1"], persistence: "persistent" }]));
     container.addChild(createStaticComponent(["C1", "C2"]));
 
-    expect(container.getCommittedLineCount(80)).toBe(3); // A(2) + B(1), stops at C
-  });
-
-  test("getCommittedLineCount stops at partially committed child", () => {
-    const container = new Container();
-    // Child A: 3 lines, 2 committed
-    container.addChild(
-      createCommittedComponent(
-        () => ["A1", "A2", "A3"],
-        () => 2,
-      ),
-    );
-    // Child B: should not be counted
-    container.addChild(createStaticComponent(["B1"]));
-
-    expect(container.getCommittedLineCount(80)).toBe(2); // stops at A (partial)
-  });
-
-  test("getCommittedLineCount returns 0 when first child has no committed", () => {
-    const container = new Container();
-    container.addChild(createStaticComponent(["X"]));
-    container.addChild(
-      createCommittedComponent(
-        () => ["Y"],
-        () => 1,
-      ),
-    );
-    expect(container.getCommittedLineCount(80)).toBe(0);
+    expect(container.renderBlocks(80)).toEqual([
+      { key: "a", lines: ["A1", "A2"], persistence: "persistent" },
+      { key: "b", lines: ["B1"], persistence: "persistent" },
+      { key: "default", lines: ["C1", "C2"], persistence: "volatile" },
+    ]);
   });
 
   test("delegates handleInput to first child with handler", () => {

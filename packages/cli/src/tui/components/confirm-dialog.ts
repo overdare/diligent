@@ -8,12 +8,10 @@ export interface ConfirmDialogOptions {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  minimal?: boolean;
 }
 
-/**
- * Simple yes/no dialog rendered as an overlay.
- * Foundation for Phase 4b's approval dialog.
- */
+/** Simple yes/no dialog that can render inline or boxed. */
 export class ConfirmDialog implements Component {
   private selectedIndex = 0; // 0 = confirm, 1 = cancel
   private confirmLabel: string;
@@ -28,6 +26,10 @@ export class ConfirmDialog implements Component {
   }
 
   render(width: number): string[] {
+    if (this.options.minimal) {
+      return this.renderMinimal();
+    }
+
     const title = this.options.title;
     const message = this.options.message;
 
@@ -74,6 +76,18 @@ export class ConfirmDialog implements Component {
     lines.push(`${t.bold}\u2514${"\u2500".repeat(dialogWidth - 2)}\u2518${t.reset}`);
 
     return lines;
+  }
+
+  private renderMinimal(): string[] {
+    const selectedConfirm = this.selectedIndex === 0;
+    const confirmStr = selectedConfirm ? `${t.inverse} ${this.confirmLabel} ${t.reset}` : ` ${this.confirmLabel} `;
+    const cancelStr = !selectedConfirm ? `${t.inverse} ${this.cancelLabel} ${t.reset}` : ` ${this.cancelLabel} `;
+
+    return [
+      `  ${t.warn}◆${t.reset} ${t.dim}${this.options.title}${t.reset}`,
+      `    ${this.options.message}`,
+      `    ${confirmStr}   ${cancelStr}`,
+    ];
   }
 
   handleInput(data: string): void {

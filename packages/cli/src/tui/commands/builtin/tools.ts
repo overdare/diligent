@@ -1,8 +1,7 @@
 // @summary Tool settings command for enabling/disabling built-ins and trusted plugin packages over RPC
 import type { PluginDescriptor, ToolDescriptor, ToolsListResponse, ToolsSetParams } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { ListPicker, type ListPickerItem } from "../../components/list-picker";
-import { TextInput } from "../../components/text-input";
+import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command, CommandContext } from "../types";
 
@@ -102,34 +101,17 @@ async function saveTools(ctx: CommandContext, draft: ToolSettingsDraft): Promise
 }
 
 function showPicker(ctx: CommandContext, title: string, items: ListPickerItem[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    const picker = new ListPicker({ title, items, filterable: true }, (value) => {
-      handle.hide();
-      ctx.requestRender();
-      resolve(value);
-    });
-    const handle = ctx.showOverlay(picker, { anchor: "center" });
-    ctx.requestRender();
-  });
+  return ctx.app.pick({ title, items, filterable: true });
 }
 
 function promptPackageName(ctx: CommandContext): Promise<string | null> {
-  return new Promise((resolve) => {
-    const input = new TextInput(
-      {
-        title: "Add plugin package",
-        message: "Enter an installed package name to load on the next refresh.",
-        placeholder: "@acme/diligent-tools",
-      },
-      (value) => {
-        handle.hide();
-        ctx.requestRender();
-        resolve(value?.trim() || null);
-      },
-    );
-    const handle = ctx.showOverlay(input, { anchor: "center" });
-    ctx.requestRender();
-  });
+  return ctx.app
+    .prompt({
+      title: "Add plugin package",
+      message: "Enter an installed package name to load on the next refresh.",
+      placeholder: "@acme/diligent-tools",
+    })
+    .then((value) => value?.trim() || null);
 }
 
 async function editBuiltins(ctx: CommandContext, state: ToolsListResponse, draft: ToolSettingsDraft): Promise<void> {

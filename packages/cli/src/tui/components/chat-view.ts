@@ -5,11 +5,20 @@ import type { AgentEvent } from "@diligent/runtime";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { MarkdownView } from "./markdown-view";
-import { getCommittedTranscriptLineCount, renderTranscript } from "./transcript-render";
+import {
+  renderCommittedTranscriptItems,
+  renderTranscript,
+  renderTranscriptLiveStack,
+  renderTranscriptLiveStackBlocks,
+} from "./transcript-render";
 import { TranscriptStore, UserMessageView } from "./transcript-store";
 
 export interface ChatViewOptions {
   requestRender: () => void;
+  requestRenderBatched?: () => void;
+  cwd?: string;
+  getCommitWidth?: () => number;
+  onCommittedLines?: (lines: string[]) => void;
 }
 
 /**
@@ -17,33 +26,62 @@ export interface ChatViewOptions {
  */
 export class ChatView implements Component {
   private store: TranscriptStore;
+  private historyView: Component;
+  private liveStackView: Component;
+  private hasCommittedHistory = false;
+  private committedHistoryLines: string[] = [];
+  private readonly requestRender: () => void;
+  private readonly getCommitWidth: () => number;
+  private readonly onCommittedLines: ((lines: string[]) => void) | null;
 
   constructor(options: ChatViewOptions) {
+    this.requestRender = options.requestRender;
     this.store = new TranscriptStore(options);
+    this.getCommitWidth = options.getCommitWidth ?? (() => 80);
+    this.onCommittedLines = options.onCommittedLines ?? null;
+    this.historyView = {
+      render: () => [...this.committedHistoryLines],
+      renderBlocks: () =>
+        this.committedHistoryLines.length > 0
+          ? [{ key: "history", lines: [...this.committedHistoryLines], persistence: "persistent" as const }]
+          : [],
+      invalidate: () => this.store.invalidate(),
+    };
+    this.liveStackView = {
+      render: (width: number) => renderTranscriptLiveStack(this.store, width),
+      renderBlocks: (width: number) => renderTranscriptLiveStackBlocks(this.store, width),
+      invalidate: () => this.store.invalidate(),
+    };
   }
 
   handleEvent(event: AgentEvent): void {
     this.store.handleEvent(event);
+    this.flushPendingCommittedItems();
   }
 
   addUserMessage(text: string): void {
     this.store.addUserMessage(text);
+    this.flushPendingCommittedItems();
   }
 
   addLines(lines: string[]): void {
     this.store.addLines(lines);
+    this.flushPendingCommittedItems();
   }
 
   addAssistantMessage(text: string): void {
     this.store.addAssistantMessage(text);
+    this.flushPendingCommittedItems();
   }
 
   addToolResultMessage(message: ToolResultMessage): void {
     this.store.addToolResultMessage(message);
+    this.flushPendingCommittedItems();
   }
 
   addThinkingMessage(text: string, elapsedMs?: number): void {
     this.store.addThinkingMessage(text, elapsedMs);
+    this.flushPendingCommittedItems();
   }
 
   toggleToolResultsCollapsed(): void {
@@ -52,6 +90,8 @@ export class ChatView implements Component {
 
   clearHistory(): void {
     this.store.clearHistory();
+    this.hasCommittedHistory = false;
+    this.committedHistoryLines = [];
   }
 
   clearActive(): void {
@@ -60,14 +100,23 @@ export class ChatView implements Component {
 
   clearActiveWithCommit(): void {
     this.store.clearActiveWithCommit();
+    this.flushPendingCommittedItems();
+  }
+
+  finishTurn(): void {
+    this.store.finishTurn();
   }
 
   getLastUsage(): { input: number; output: number; cost: number } | null {
     return this.store.getLastUsage();
   }
 
-  getCommittedLineCount(width: number): number {
-    return getCommittedTranscriptLineCount(this.store, width);
+  getLiveStackComponent(): Component {
+    return this.liveStackView;
+  }
+
+  getHistoryComponent(): Component {
+    return this.historyView;
   }
 
   render(width: number): string[] {
@@ -90,8 +139,33 @@ export class ChatView implements Component {
     this.store.setPendingSteers(steers);
   }
 
+  consumePendingSteers(): string[] {
+    return this.store.consumePendingSteers();
+  }
+
   invalidate(): void {
     this.store.invalidate();
+  }
+
+  private flushPendingCommittedItems(): void {
+    const items = this.store.drainCommittedItems();
+    if (items.length === 0) {
+      return;
+    }
+
+    const width = Math.max(1, this.getCommitWidth());
+    const lines = renderCommittedTranscriptItems(items, width, {
+      includeLeadingSeparator: this.hasCommittedHistory,
+      toolResultsExpanded: this.store.isToolResultsExpanded(),
+    });
+    if (lines.length === 0) {
+      return;
+    }
+
+    this.committedHistoryLines.push(...lines);
+    this.onCommittedLines?.(lines);
+    this.hasCommittedHistory = true;
+    this.requestRender();
   }
 }
 

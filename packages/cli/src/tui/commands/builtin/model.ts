@@ -2,7 +2,7 @@
 import { getThinkingEffortLabel, KNOWN_MODELS, resolveModel, supportsThinkingNone } from "@diligent/runtime";
 import { saveModel } from "../../../config-writer";
 import { DEFAULT_PROVIDER, PROVIDER_NAMES, type ProviderName } from "../../../provider-manager";
-import { ListPicker, type ListPickerItem } from "../../components/list-picker";
+import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command } from "../types";
 import { promptApiKey } from "./provider";
@@ -77,41 +77,29 @@ export const modelCommand: Command = {
 
     const selectedIdx = items.findIndex((i) => i.value === currentModelId);
 
-    return new Promise<void>((resolve) => {
-      const picker = new ListPicker(
-        { title: "Model", items, selectedIndex: Math.max(0, selectedIdx) },
-        async (value) => {
-          handle.hide();
-          ctx.requestRender();
-          if (value) {
-            const model = resolveModel(value);
-            const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
+    const value = await ctx.app.pick({ title: "Model", items, selectedIndex: Math.max(0, selectedIdx) });
+    if (!value) {
+      return;
+    }
+    const model = resolveModel(value);
+    const provider = (model.provider ?? DEFAULT_PROVIDER) as ProviderName;
 
-            // Check if provider has API key
-            if (!ctx.config.providerManager.hasKeyFor(provider)) {
-              ctx.displayLines([`  ${t.warn}No API key for ${provider}. Please enter one:${t.reset}`]);
-              await promptApiKey(provider, ctx);
-              if (!ctx.config.providerManager.hasKeyFor(provider)) {
-                ctx.displayError("Model switch cancelled — no API key provided.");
-                resolve();
-                return;
-              }
-            }
+    if (!ctx.config.providerManager.hasKeyFor(provider)) {
+      ctx.displayLines([`  ${t.warn}No API key for ${provider}. Please enter one:${t.reset}`]);
+      await promptApiKey(provider, ctx);
+      if (!ctx.config.providerManager.hasKeyFor(provider)) {
+        ctx.displayError("Model switch cancelled — no API key provided.");
+        return;
+      }
+    }
 
-            ctx.config.model = model;
-            ctx.onModelChanged(model.id);
-            if (ctx.currentEffort === "none" && !supportsThinkingNone(model)) {
-              await ctx.setEffort("medium");
-              ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
-            }
-            ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
-            saveModel(model.id).catch(() => {});
-          }
-          resolve();
-        },
-      );
-      const handle = ctx.showOverlay(picker, { anchor: "center" });
-      ctx.requestRender();
-    });
+    ctx.config.model = model;
+    ctx.onModelChanged(model.id);
+    if (ctx.currentEffort === "none" && !supportsThinkingNone(model)) {
+      await ctx.setEffort("medium");
+      ctx.onEffortChanged("medium", getThinkingEffortLabel("medium", model));
+    }
+    ctx.displayLines([`  Model switched to ${t.bold}${model.id}${t.reset}`]);
+    saveModel(model.id).catch(() => {});
   },
 };

@@ -6,8 +6,6 @@ import { handlePromptInput } from "./prompt-keymap";
 import { renderPromptEditor } from "./prompt-render";
 import { PromptStore } from "./prompt-store";
 
-const SPINNER_INTERVAL = 120;
-
 export interface InputEditorOptions {
   prompt?: string;
   onSubmit?: (text: string) => void;
@@ -19,7 +17,6 @@ export interface InputEditorOptions {
 }
 
 export class InputEditor implements Component, Focusable {
-  private spinnerTimer: ReturnType<typeof setInterval> | null = null;
   private store: PromptStore;
 
   constructor(
@@ -44,16 +41,6 @@ export class InputEditor implements Component, Focusable {
   setBusy(val: boolean): void {
     if (this.store.busy === val) return;
     this.store.busy = val;
-    if (val) {
-      this.store.spinnerIndex = 0;
-      this.spinnerTimer = setInterval(() => {
-        this.store.spinnerIndex = (this.store.spinnerIndex + 1) % PromptStore.spinnerFrames.length;
-        this.requestRender();
-      }, SPINNER_INTERVAL);
-    } else if (this.spinnerTimer) {
-      clearInterval(this.spinnerTimer);
-      this.spinnerTimer = null;
-    }
     this.requestRender();
   }
 

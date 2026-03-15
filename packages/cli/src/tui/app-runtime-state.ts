@@ -22,6 +22,7 @@ export class AppRuntimeState {
   reasoningAccumulatedMs = 0;
   pendingOAuthResolve: ((result: { success: boolean; error: string | null }) => void) | null = null;
   pendingSteers: string[] = [];
+  cancelRequested = false;
 
   constructor(mode: ProtocolMode, effort: ThinkingEffort) {
     this.currentMode = mode;
@@ -45,6 +46,12 @@ export class AppRuntimeState {
 
   consumePendingSteersFallback(count: number): string[] {
     return this.pendingSteers.splice(0, Math.max(0, count));
+  }
+
+  drainPendingSteers(): string[] {
+    const drained = this.pendingSteers.slice();
+    this.pendingSteers.length = 0;
+    return drained;
   }
 
   beginTurnTiming(): void {

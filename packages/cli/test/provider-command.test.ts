@@ -7,21 +7,30 @@ import { providerCommand } from "../src/tui/commands/builtin/provider";
 import type { CommandRegistry } from "../src/tui/commands/registry";
 import type { CommandContext } from "../src/tui/commands/types";
 import type { ConfirmDialogOptions } from "../src/tui/components/confirm-dialog";
-import type { Component, OverlayOptions } from "../src/tui/framework/types";
 
 function createMockContext(pm: ProviderManager): {
   ctx: CommandContext;
   lines: string[];
   errors: string[];
-  overlays: Component[];
+  picks: Array<{ title: string }>;
+  prompts: Array<{ title: string }>;
 } {
   const lines: string[] = [];
   const errors: string[] = [];
-  const overlays: Component[] = [];
+  const picks: Array<{ title: string }> = [];
+  const prompts: Array<{ title: string }> = [];
 
   const ctx: CommandContext = {
     app: {
       confirm: async (_o: ConfirmDialogOptions) => true,
+      pick: async (options) => {
+        picks.push({ title: options.title });
+        return null;
+      },
+      prompt: async (options) => {
+        prompts.push({ title: options.title });
+        return null;
+      },
       stop: () => {},
     },
     config: {
@@ -41,29 +50,35 @@ function createMockContext(pm: ProviderManager): {
     requestRender: () => {},
     displayLines: (l: string[]) => lines.push(...l),
     displayError: (msg: string) => errors.push(msg),
-    showOverlay: (c: Component, _o?: OverlayOptions) => {
-      overlays.push(c);
-      return { hide: () => {}, isHidden: () => false, setHidden: () => {} };
-    },
     runAgent: async () => {},
     reload: async () => {},
     currentMode: "default" as ModeKind,
     setMode: () => {},
+    currentEffort: "medium",
+    setEffort: async () => {},
+    clearChatHistory: () => {},
+    clearScreenAndResetRenderer: () => {},
+    startNewThread: async () => "thread-1",
+    resumeThread: async () => "thread-1",
+    deleteThread: async () => true,
+    listThreads: async () => [],
+    readThread: async () => null,
+    onModelChanged: () => {},
+    onEffortChanged: () => {},
   };
 
-  return { ctx, lines, errors, overlays };
+  return { ctx, lines, errors, picks, prompts };
 }
 
 describe("/provider command", () => {
-  test("no args shows provider picker overlay", async () => {
+  test("no args opens inline provider picker", async () => {
     const pm = new ProviderManager({});
     pm.setApiKey("anthropic", "sk-ant-1234567890");
-    const { ctx, overlays } = createMockContext(pm);
+    const { ctx, picks } = createMockContext(pm);
 
-    providerCommand.handler(undefined, ctx);
-    await new Promise((r) => setTimeout(r, 10));
+    await providerCommand.handler(undefined, ctx);
 
-    expect(overlays.length).toBeGreaterThanOrEqual(1);
+    expect(picks).toEqual([{ title: "Provider" }]);
   });
 
   test("status shows configured providers", async () => {
@@ -89,24 +104,22 @@ describe("/provider command", () => {
     expect(output).toContain("not configured");
   });
 
-  test("set with valid provider shows text input overlay", async () => {
+  test("set with valid provider opens inline prompt", async () => {
     const pm = new ProviderManager({});
-    const { ctx, overlays } = createMockContext(pm);
+    const { ctx, prompts } = createMockContext(pm);
 
-    providerCommand.handler("set openai", ctx);
-    await new Promise((r) => setTimeout(r, 10));
+    await providerCommand.handler("set openai", ctx);
 
-    expect(overlays.length).toBeGreaterThanOrEqual(1);
+    expect(prompts).toEqual([{ title: "openai API Key" }]);
   });
 
-  test("set without provider shows list picker overlay", async () => {
+  test("set without provider opens inline provider picker", async () => {
     const pm = new ProviderManager({});
-    const { ctx, overlays } = createMockContext(pm);
+    const { ctx, picks } = createMockContext(pm);
 
-    providerCommand.handler("set", ctx);
-    await new Promise((r) => setTimeout(r, 10));
+    await providerCommand.handler("set", ctx);
 
-    expect(overlays.length).toBeGreaterThanOrEqual(1);
+    expect(picks).toEqual([{ title: "Select Provider" }]);
   });
 
   test("unknown subcommand shows error", async () => {

@@ -2,7 +2,8 @@ import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@
 import type { SkillMetadata } from "@diligent/runtime";
 import type { AppConfig } from "../../config";
 import type { ConfirmDialogOptions } from "../components/confirm-dialog";
-import type { Component, OverlayHandle, OverlayOptions } from "../framework/types";
+import type { ListPickerItem } from "../components/list-picker";
+import type { TextInputOptions } from "../components/text-input";
 import type { AppServerRpcClient } from "../rpc-client";
 import type { CommandRegistry } from "./registry";
 
@@ -38,8 +39,6 @@ export interface CommandContext {
   displayLines: (lines: string[]) => void;
   /** Display an error message */
   displayError: (message: string) => void;
-  /** Show an overlay */
-  showOverlay: (component: Component, options?: OverlayOptions) => OverlayHandle;
   /** Inject a message and run the agent */
   runAgent: (text: string) => Promise<void>;
   /** Reload config and skills */
@@ -77,6 +76,13 @@ export interface CommandContext {
  */
 export interface AppAccessor {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
+  pick: (options: {
+    title: string;
+    items: ListPickerItem[];
+    selectedIndex?: number;
+    filterable?: boolean;
+  }) => Promise<string | null>;
+  prompt: (options: TextInputOptions) => Promise<string | null>;
   stop: () => void;
   getRpcClient?: () => AppServerRpcClient | null;
   waitForOAuthComplete?: () => Promise<{ success: boolean; error: string | null }>;

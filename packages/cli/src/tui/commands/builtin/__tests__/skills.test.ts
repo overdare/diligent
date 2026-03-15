@@ -19,7 +19,7 @@ function makeSkill(name: string): SkillMetadata {
 function makeCtx(overrides?: Partial<CommandContext>): CommandContext {
   const runAgent = mock(async (_text: string) => {});
   return {
-    app: { confirm: async () => true, stop: () => {} },
+    app: { confirm: async () => true, pick: async () => null, prompt: async () => null, stop: () => {} },
     config: {} as CommandContext["config"],
     threadId: null,
     skills: [],
@@ -27,16 +27,20 @@ function makeCtx(overrides?: Partial<CommandContext>): CommandContext {
     requestRender: () => {},
     displayLines: () => {},
     displayError: () => {},
-    showOverlay: () => ({ hide: () => {} }),
     runAgent,
     reload: async () => {},
     currentMode: "default",
     setMode: () => {},
+    currentEffort: "medium",
+    setEffort: async () => {},
+    clearChatHistory: () => {},
+    clearScreenAndResetRenderer: () => {},
+    readThread: async () => null,
+    onEffortChanged: () => {},
     startNewThread: async () => "thread-1",
     resumeThread: async () => "thread-1",
     deleteThread: async () => true,
     listThreads: async () => [],
-    readThread: async () => null,
     onModelChanged: () => {},
     ...overrides,
   } as CommandContext;

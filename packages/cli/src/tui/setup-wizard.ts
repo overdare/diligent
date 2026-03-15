@@ -11,16 +11,12 @@ import {
 import { promptApiKey, promptSaveKey } from "./commands/builtin/provider";
 import type { CommandContext } from "./commands/types";
 import type { ListPickerItem } from "./components/list-picker";
-import { ListPicker } from "./components/list-picker";
-import { TextInput } from "./components/text-input";
-import type { Component, OverlayHandle, OverlayOptions } from "./framework/types";
 import { t } from "./theme";
 
 export interface SetupWizardDeps {
   config: AppConfig;
   addLines: (lines: string[]) => void;
   requestRender: () => void;
-  showOverlay: (component: Component, options?: OverlayOptions) => OverlayHandle;
   buildCommandContext: () => CommandContext;
   updateStatusBar: (updates: Record<string, unknown>) => void;
 }
@@ -31,43 +27,24 @@ export interface SetupWizard {
 
 export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
   function wizardPickProvider(): Promise<ProviderName | null> {
-    return new Promise((resolve) => {
-      const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
-        label: p,
-        description: deps.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
-        value: p,
-      }));
-
-      const picker = new ListPicker({ title: "Select Provider", items }, (value) => {
-        handle.hide();
-        deps.requestRender();
-        resolve(value as ProviderName | null);
-      });
-      const handle = deps.showOverlay(picker, { anchor: "center" });
-      deps.requestRender();
-    });
+    const ctx = deps.buildCommandContext();
+    const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
+      label: p,
+      description: deps.config.providerManager.hasKeyFor(p) ? "configured" : "no key",
+      value: p,
+    }));
+    return ctx.app.pick({ title: "Select Provider", items }) as Promise<ProviderName | null>;
   }
 
   function wizardEnterApiKey(provider: ProviderName): Promise<string | null> {
     if (provider === "chatgpt") return Promise.resolve(null);
-    return new Promise((resolve) => {
-      const { apiKeyUrl: hint, apiKeyPlaceholder: placeholder } = PROVIDER_HINTS[provider];
-
-      const input = new TextInput(
-        {
-          title: `${provider} API Key`,
-          message: `Enter your ${provider} API key (${hint})`,
-          placeholder,
-          masked: true,
-        },
-        (value) => {
-          handle.hide();
-          deps.requestRender();
-          resolve(value);
-        },
-      );
-      const handle = deps.showOverlay(input, { anchor: "center" });
-      deps.requestRender();
+    const ctx = deps.buildCommandContext();
+    const { apiKeyUrl: hint, apiKeyPlaceholder: placeholder } = PROVIDER_HINTS[provider];
+    return ctx.app.prompt({
+      title: `${provider} API Key`,
+      message: `Enter your ${provider} API key (${hint})`,
+      placeholder,
+      masked: true,
     });
   }
 

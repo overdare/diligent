@@ -1,6 +1,7 @@
 // @summary Integration tests for ChatView, InputEditor, StatusBar with tool execution
 import { describe, expect, test } from "bun:test";
 import type { AgentEvent } from "@diligent/runtime";
+import { BottomPane } from "../components/bottom-pane";
 import { ChatView } from "../components/chat-view";
 import { InputEditor } from "../components/input-editor";
 import { StatusBar } from "../components/status-bar";
@@ -143,7 +144,9 @@ class TerminalSim {
 
   /** Count how many rows contain the given text */
   countOccurrences(text: string): number {
-    return this.screen.filter((l) => l.includes(text)).length;
+    return this.screen
+      .map((line) => line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ""))
+      .filter((l) => l.includes(text)).length;
   }
 
   lineAt(row: number): string {
@@ -173,7 +176,9 @@ function makeTerminal(sim: TerminalSim): Terminal {
     },
     clearLine() {},
     clearFromCursor() {},
-    clearScreen() {},
+    clearScreen() {
+      sim.feed("\x1b[2J\x1b[H");
+    },
     moveBy() {},
     start() {},
     stop() {},
@@ -191,14 +196,17 @@ function buildStack(rows = 40, columns = 120) {
   // We'll connect requestRender after renderer is created
   const requestRender = () => renderer.forceRender();
 
-  const chatView = new ChatView({ requestRender });
+  const chatView = new ChatView({
+    requestRender,
+    getCommitWidth: () => terminal.columns,
+  });
   const inputEditor = new InputEditor({ onSubmit: () => {}, onCancel: () => {}, onExit: () => {} }, requestRender);
   const statusBar = new StatusBar();
+  const bottomPane = new BottomPane(chatView.getLiveStackComponent(), inputEditor, statusBar);
 
   const container = new Container();
-  container.addChild(chatView);
-  container.addChild(inputEditor);
-  container.addChild(statusBar);
+  container.addChild(chatView.getHistoryComponent());
+  container.addChild(bottomPane);
 
   const renderer = new TUIRenderer(terminal, container);
   renderer.setFocus(inputEditor);
@@ -249,14 +257,75 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
-  test("status_change busy no longer shows Working spinner", () => {
+  test("status_change busy shows Working status in active stack", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
 
     chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.screen.some((line) => line.includes("Working…"))).toBe(true);
+  });
+
+  test("live stack keeps a blank spacer row above it", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("run something");
+
+    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+
+    const plainLines = sim.screen.map(stripAnsi);
+    const liveStackIndex = plainLines.findIndex((line) => line.includes("Working…"));
+    expect(liveStackIndex).toBeGreaterThan(0);
+    expect(plainLines[liveStackIndex - 1]).toBe("");
+  });
+
+  test("Working status persists until turn_end", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("keep working visible");
+
+    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent(
+      ev({ type: "message_delta", itemId: "m1", message: {}, delta: { type: "text_delta", delta: "x".repeat(600) } }),
+    );
+
+    expect(sim.screen.some((line) => line.includes("Working…"))).toBe(true);
+
+    chatView.handleEvent(
+      ev({
+        type: "turn_end",
+        threadId: "t1",
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        cost: 0,
+        toolResults: [],
+      }),
+    );
+
     expect(sim.screen.some((line) => line.includes("Working…"))).toBe(false);
+  });
+
+  test("layout order keeps live stack between transcript and chat input", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("order check");
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m1", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m1",
+        message: {},
+        delta: { type: "text_delta", delta: `${"s".repeat(600)} stream body text` },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
+
+    const plainLines = sim.screen.map(stripAnsi);
+    const transcriptIndex = plainLines.findIndex((line) => line.includes("order check"));
+    const liveStackIndex = plainLines.findIndex((line) => line.includes("Working…"));
+    const inputIndex = plainLines.findIndex((line) => line.trim() === "❯");
+
+    expect(transcriptIndex).toBeGreaterThanOrEqual(0);
+    expect(liveStackIndex).toBeGreaterThan(transcriptIndex);
+    expect(inputIndex).toBeGreaterThan(liveStackIndex);
   });
 
   test("compaction_start shows Compacting spinner", () => {
@@ -288,7 +357,7 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
-  test("tool result details can be toggled collapsed and expanded", () => {
+  test("historical tool result snapshot stays collapsed after commit", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
     chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
@@ -303,15 +372,17 @@ describe("Integration: full tool execution cycle", () => {
       }),
     );
 
-    expect(sim.screen.some((l) => l.includes("line1"))).toBe(false);
-    expect(sim.screen.some((l) => l.includes("ctrl+o to expand"))).toBe(true);
+    let plainLines = sim.screen.map(stripAnsi);
+    expect(plainLines.some((l) => l.includes("line1"))).toBe(false);
+    expect(plainLines.some((l) => l.includes("ctrl+o to expand"))).toBe(true);
 
     chatView.toggleToolResultsCollapsed();
 
-    expect(sim.screen.some((l) => l.includes("line1"))).toBe(true);
+    plainLines = sim.screen.map(stripAnsi);
+    expect(plainLines.some((l) => l.includes("line1"))).toBe(false);
   });
 
-  test("collapsed tool header includes one-line summary from input", () => {
+  test("collapsed grep tool header is renderpayload-first", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("search in file");
     chatView.handleEvent(
@@ -334,7 +405,13 @@ describe("Integration: full tool execution cycle", () => {
       }),
     );
 
-    expect(sim.screen.some((l) => l.includes("grep — /Users/me/project/src/main.ts"))).toBe(true);
+    const plainLines = sim.screen.map(stripAnsi);
+    expect(plainLines.some((l) => l.includes("grep — /Users/me/project/src/main.ts"))).toBe(false);
+    expect(plainLines.some((l) => l.includes("⏺ Summary — Search TODO in "))).toBe(true);
+    expect(plainLines.some((l) => l.includes('Search(pattern: "TODO", path: "/Users/me/project/src/main.ts")'))).toBe(
+      false,
+    );
+    expect(plainLines.some((l) => l.includes("⎿  Found 1 match"))).toBe(true);
   });
 
   test("prompt count stays at 2 after full tool + response cycle", () => {
@@ -448,12 +525,13 @@ describe("Integration: full tool execution cycle", () => {
     );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m3", message: {} }));
 
-    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
-    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Final answer."));
+    const plainLines = sim.screen.map(stripAnsi);
+    const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = plainLines.findIndex((line) => line.includes("Final answer."));
     expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
     expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
-    expect(sim.screen[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
-    expect(sim.screen[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
+    expect(plainLines[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
+    expect(plainLines[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
     expect(answerLineIndex - thoughtLineIndex).toBe(4);
   });
 
@@ -504,12 +582,13 @@ describe("Integration: full tool execution cycle", () => {
     );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m4", message: {} }));
 
-    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
-    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Answer starts now."));
+    const plainLines = sim.screen.map(stripAnsi);
+    const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = plainLines.findIndex((line) => line.includes("Answer starts now."));
     expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
     expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
-    expect(sim.screen[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
-    expect(sim.screen[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
+    expect(plainLines[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
+    expect(plainLines[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
     expect(answerLineIndex - thoughtLineIndex).toBe(4);
     expect(sim.countOccurrences("Line one")).toBe(1);
     expect(sim.countOccurrences("Line two")).toBe(1);
@@ -538,11 +617,12 @@ describe("Integration: full tool execution cycle", () => {
     );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m5", message: {} }));
 
-    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
-    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Answer line."));
+    const plainLines = sim.screen.map(stripAnsi);
+    const thoughtLineIndex = plainLines.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = plainLines.findIndex((line) => line.includes("Answer line."));
     expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
     expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
-    const between = sim.screen.slice(thoughtLineIndex + 1, answerLineIndex);
+    const between = plainLines.slice(thoughtLineIndex + 1, answerLineIndex);
     const blankBetween = between.filter((line) => line.trim() === "").length;
     expect(blankBetween).toBe(1);
     expect(sim.countOccurrences("Answer line.")).toBe(1);
@@ -593,7 +673,7 @@ describe("Integration: full tool execution cycle", () => {
 });
 
 describe("Integration: streaming markdown — rapid commits", () => {
-  test("clearing active streaming without commit discards partial markdown", () => {
+  test("clearing active streaming without commit discards hidden partial markdown", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("stream and clear");
 
@@ -603,11 +683,11 @@ describe("Integration: streaming markdown — rapid commits", () => {
         type: "message_delta",
         itemId: "m-clear",
         message: {},
-        delta: { type: "text_delta", delta: "partial response in progress\n" },
+        delta: { type: "text_delta", delta: `${"x".repeat(1100)} partial response in progress` },
       }),
     );
 
-    expect(sim.screen.some((line) => line.includes("partial response in progress"))).toBe(true);
+    expect(sim.screen.some((line) => line.includes("partial response in progress"))).toBe(false);
 
     chatView.clearActive();
     chatView.addLines(["Cancelled."]);
@@ -625,13 +705,13 @@ describe("Integration: streaming markdown — rapid commits", () => {
         type: "message_delta",
         itemId: "m-commit",
         message: {},
-        delta: { type: "text_delta", delta: "partial response kept\n" },
+        delta: { type: "text_delta", delta: "partial response kept" },
       }),
     );
 
     chatView.clearActiveWithCommit();
 
-    expect(sim.screen.some((line) => line.includes("partial response kept"))).toBe(true);
+    expect(sim.screen.map(stripAnsi).some((line) => line.includes("partial response kept"))).toBe(true);
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
@@ -668,6 +748,23 @@ describe("Integration: streaming markdown — rapid commits", () => {
     expect(nonEmpty.length).toBe(new Set(nonEmpty).size);
     expect(sim.screen.some((l) => l.includes("Hello! Welcome"))).toBe(true);
     expect(sim.screen.some((l) => l.includes("Feature one"))).toBe(true);
+  });
+
+  test("committed history remains in scrollback while active streaming grows", () => {
+    const { sim, chatView } = buildStack(8, 20);
+    chatView.addLines(["welcome box", "tip line"]);
+    chatView.addUserMessage("history");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m-history", message: {} }));
+    for (const delta of Array.from({ length: 6 }, (_, index) => `${`body-${index + 1} `.repeat(32)}\n`)) {
+      chatView.handleEvent(
+        ev({ type: "message_delta", itemId: "m-history", message: {}, delta: { type: "text_delta", delta } }),
+      );
+    }
+    const plainLines = sim.screen.map(stripAnsi);
+    expect(plainLines.some((line) => line.includes("welcome box"))).toBe(true);
+    expect(plainLines.some((line) => line.includes("history"))).toBe(true);
+    expect(plainLines.some((line) => line.includes("body-6"))).toBe(true);
   });
 
   test("partial commit mid-bold does not corrupt screen", () => {

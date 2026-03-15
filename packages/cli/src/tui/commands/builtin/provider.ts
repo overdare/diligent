@@ -10,9 +10,7 @@ import {
   PROVIDER_NAMES,
   type ProviderName,
 } from "../../../provider-manager";
-import { ConfirmDialog } from "../../components/confirm-dialog";
-import { ListPicker, type ListPickerItem } from "../../components/list-picker";
-import { TextInput } from "../../components/text-input";
+import type { ListPickerItem } from "../../components/list-picker";
 import { t } from "../../theme";
 import type { Command, CommandContext } from "../types";
 
@@ -59,7 +57,7 @@ export const providerCommand: Command = {
 
 /** ListPicker to select active provider */
 function pickProvider(ctx: CommandContext): Promise<void> {
-  return new Promise((resolve) => {
+  return (async () => {
     const currentProvider = (ctx.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
       label: p,
@@ -67,29 +65,20 @@ function pickProvider(ctx: CommandContext): Promise<void> {
       value: p,
     }));
     const selectedIdx = items.findIndex((i) => i.value === currentProvider);
-
-    const picker = new ListPicker(
-      { title: "Provider", items, selectedIndex: Math.max(0, selectedIdx), filterable: false },
-      async (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (value) {
-          const selected = value as ProviderName;
-          if (selected === currentProvider && ctx.config.providerManager.hasKeyFor(selected)) {
-            await manageConnectedProvider(selected, ctx);
-            resolve();
-          } else {
-            await switchProvider(selected, ctx);
-            resolve();
-          }
-        } else {
-          resolve();
-        }
-      },
-    );
-    const handle = ctx.showOverlay(picker, { anchor: "center" });
-    ctx.requestRender();
-  });
+    const value = await ctx.app.pick({
+      title: "Provider",
+      items,
+      selectedIndex: Math.max(0, selectedIdx),
+      filterable: false,
+    });
+    if (!value) return;
+    const selected = value as ProviderName;
+    if (selected === currentProvider && ctx.config.providerManager.hasKeyFor(selected)) {
+      await manageConnectedProvider(selected, ctx);
+      return;
+    }
+    await switchProvider(selected, ctx);
+  })();
 }
 
 type ConnectedProviderAction = "reconnect" | "disconnect" | null;
@@ -113,7 +102,7 @@ async function manageConnectedProvider(provider: ProviderName, ctx: CommandConte
 }
 
 function pickConnectedProviderAction(provider: ProviderName, ctx: CommandContext): Promise<ConnectedProviderAction> {
-  return new Promise((resolve) => {
+  return (async () => {
     const items: ListPickerItem[] = [
       {
         label: "Reconnect",
@@ -127,27 +116,17 @@ function pickConnectedProviderAction(provider: ProviderName, ctx: CommandContext
       },
       { label: "Cancel", description: "Keep current authentication", value: "cancel" },
     ];
-
-    const picker = new ListPicker(
-      {
-        title: `${provider} is already connected`,
-        items,
-        selectedIndex: 0,
-        filterable: false,
-      },
-      (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (!value || value === "cancel") {
-          resolve(null);
-          return;
-        }
-        resolve(value as ConnectedProviderAction);
-      },
-    );
-    const handle = ctx.showOverlay(picker, { anchor: "center" });
-    ctx.requestRender();
-  });
+    const value = await ctx.app.pick({
+      title: `${provider} is already connected`,
+      items,
+      selectedIndex: 0,
+      filterable: false,
+    });
+    if (!value || value === "cancel") {
+      return null;
+    }
+    return value as ConnectedProviderAction;
+  })();
 }
 
 /** Switch to a provider: prompt auth if needed, then switch model to default */
@@ -282,87 +261,61 @@ function showProviderStatus(ctx: CommandContext): void {
 }
 
 function pickProviderThenSetKey(ctx: CommandContext): Promise<void> {
-  return new Promise((resolve) => {
+  return (async () => {
     const items: ListPickerItem[] = PROVIDER_NAMES.map((p) => ({
       label: p,
       description: ctx.config.providerManager.hasKeyFor(p) ? "configured" : "not configured",
       value: p,
     }));
-
-    const picker = new ListPicker({ title: "Select Provider", items }, (value) => {
-      handle.hide();
-      ctx.requestRender();
-      if (value) {
-        promptApiKey(value as ProviderName, ctx).then(resolve);
-      } else {
-        resolve();
-      }
-    });
-    const handle = ctx.showOverlay(picker, { anchor: "center" });
-    ctx.requestRender();
-  });
+    const value = await ctx.app.pick({ title: "Select Provider", items });
+    if (value) {
+      await promptApiKey(value as ProviderName, ctx);
+    }
+  })();
 }
 
 export function promptApiKey(provider: ProviderName, ctx: CommandContext): Promise<void> {
   if (provider === "chatgpt") {
     return startChatGPTOAuthFlow(ctx);
   }
-  return new Promise((resolve) => {
+  return (async () => {
     const { apiKeyUrl, apiKeyPlaceholder } = PROVIDER_HINTS[provider];
-
-    const input = new TextInput(
-      {
-        title: `${provider} API Key`,
-        message: `Enter your ${provider} API key (${apiKeyUrl})`,
-        placeholder: apiKeyPlaceholder,
-        masked: true,
-      },
-      (value) => {
-        handle.hide();
-        ctx.requestRender();
-        if (value) {
-          ctx.config.providerManager.setApiKey(provider, value);
-          ctx.displayLines([`  ${t.success}API key set for ${provider}.${t.reset}`]);
-
-          // Ask to save to global config
-          promptSaveKey(provider, value, ctx).then(resolve);
-        } else {
-          resolve();
-        }
-      },
-    );
-    const handle = ctx.showOverlay(input, { anchor: "center" });
-    ctx.requestRender();
-  });
+    const value = await ctx.app.prompt({
+      title: `${provider} API Key`,
+      message: `Enter your ${provider} API key (${apiKeyUrl})`,
+      placeholder: apiKeyPlaceholder,
+      masked: true,
+    });
+    if (!value) {
+      return;
+    }
+    ctx.config.providerManager.setApiKey(provider, value);
+    ctx.displayLines([`  ${t.success}API key set for ${provider}.${t.reset}`]);
+    await promptSaveKey(provider, value, ctx);
+  })();
 }
 
 export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: CommandContext): Promise<void> {
-  return new Promise((resolve) => {
-    const dialog = new ConfirmDialog(
-      {
-        title: "Save API Key?",
-        message: `Save ${provider} key to ~/.diligent/auth.jsonc?`,
-      },
-      async (confirmed) => {
-        handle.hide();
-        ctx.requestRender();
-        if (confirmed) {
-          try {
-            const rpc = ctx.app.getRpcClient?.();
-            if (rpc) {
-              await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET, { provider, apiKey });
-            } else {
-              await saveAuthKey(provider, apiKey);
-            }
-            ctx.displayLines([`  ${t.success}Key saved to auth.json.${t.reset}`]);
-          } catch (err) {
-            ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-        resolve();
-      },
-    );
-    const handle = ctx.showOverlay(dialog, { anchor: "center" });
-    ctx.requestRender();
-  });
+  return (async () => {
+    const confirmed = await ctx.app.confirm({
+      title: "Save API Key?",
+      message: `Save ${provider} key to ~/.diligent/auth.jsonc?`,
+      confirmLabel: "Save",
+      cancelLabel: "Skip",
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const rpc = ctx.app.getRpcClient?.();
+      if (rpc) {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET, { provider, apiKey });
+      } else {
+        await saveAuthKey(provider, apiKey);
+      }
+      ctx.displayLines([`  ${t.success}Key saved to auth.json.${t.reset}`]);
+    } catch (err) {
+      ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
 }

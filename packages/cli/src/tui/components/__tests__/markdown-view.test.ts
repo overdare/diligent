@@ -2,38 +2,37 @@
 import { describe, expect, test } from "bun:test";
 import { MarkdownView } from "../markdown-view";
 
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 describe("MarkdownView", () => {
   test("returns empty for no content", () => {
     const mv = new MarkdownView(() => {});
     expect(mv.render(80)).toEqual([]);
   });
 
-  test("shows trailing buffer before newline, commits on newline", () => {
+  test("renders small trailing buffer immediately", () => {
     const mv = new MarkdownView(() => {});
     mv.pushDelta("Hello ");
-    // Trailing buffer is shown (better UX) but not yet committed via markdown rendering
     const beforeNewline = mv.render(80);
-    expect(beforeNewline).toEqual(["Hello"]);
+    expect(beforeNewline.join("")).toContain("Hello");
 
     mv.pushDelta("world\n");
-    const afterNewline = mv.render(80);
-    // Committed via markdown — "Hello world" visible
-    expect(afterNewline.join("")).toContain("Hello");
-    expect(afterNewline.join("")).toContain("world");
+    expect(mv.render(80).join("")).toContain("world");
+
+    mv.finalize();
+    const afterFinalize = mv.render(80);
+    expect(afterFinalize.join("")).toContain("Hello");
+    expect(afterFinalize.join("")).toContain("world");
   });
 
-  test("accumulates multiple deltas before newline", () => {
+  test("renders streaming content without a byte threshold", () => {
     const mv = new MarkdownView(() => {});
-    mv.pushDelta("one ");
-    mv.pushDelta("two ");
-    mv.pushDelta("three\n");
+    mv.pushDelta("a".repeat(32));
     const lines = mv.render(80);
     expect(lines.length).toBeGreaterThan(0);
-    // The rendered content should contain all three words
-    const text = lines.join(" ");
-    expect(text).toContain("one");
-    expect(text).toContain("two");
-    expect(text).toContain("three");
+    expect(stripAnsi(lines.join(""))).toContain("a");
   });
 
   test("finalize renders remaining content", () => {
@@ -53,6 +52,7 @@ describe("MarkdownView", () => {
   test("handles multiple lines correctly", () => {
     const mv = new MarkdownView(() => {});
     mv.pushDelta("line 1\nline 2\n");
+    mv.finalize();
     const lines = mv.render(80);
     expect(lines.length).toBeGreaterThanOrEqual(2);
     const text = lines.join(" ");
@@ -60,12 +60,14 @@ describe("MarkdownView", () => {
     expect(text).toContain("line 2");
   });
 
-  test("requestRender is called on commit", () => {
+  test("requestRender is called when a complete line is committed", () => {
     let renderCount = 0;
     const mv = new MarkdownView(() => {
       renderCount++;
     });
-    mv.pushDelta("hello\n");
+    mv.pushDelta("x".repeat(200));
+    expect(renderCount).toBe(0);
+    mv.pushDelta("\n");
     expect(renderCount).toBe(1);
   });
 
@@ -74,22 +76,15 @@ describe("MarkdownView", () => {
     const mv = new MarkdownView(() => {
       renderCount++;
     });
-    mv.pushDelta("hello"); // no newline, but trailing timer
+    mv.pushDelta("hello");
     mv.finalize();
     expect(renderCount).toBe(1);
   });
 
-  test("trailing buffer shown in render before finalize", () => {
-    const mv = new MarkdownView(() => {});
-    mv.pushDelta("trailing");
-    const lines = mv.render(80);
-    // Should show trailing text even though no newline
-    expect(lines[0]).toContain("trailing");
-  });
-
   test("renders markdown in trailing buffer during streaming", () => {
     const mv = new MarkdownView(() => {});
-    mv.pushDelta("**bold**");
+    mv.pushDelta("x".repeat(1024));
+    mv.pushDelta(" **bold**");
     const lines = mv.render(80).join(" ");
     expect(lines).toContain("bold");
     expect(lines).not.toContain("**bold**");

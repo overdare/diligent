@@ -20,6 +20,8 @@ export interface ListPickerOptions {
   maxVisible?: number;
   /** Enable type-to-filter (default: true) */
   filterable?: boolean;
+  /** When true, render as an inline bottom-pane prompt instead of a boxed dialog */
+  minimal?: boolean;
 }
 
 const DEFAULT_MAX_VISIBLE = 10;
@@ -41,6 +43,10 @@ export class ListPicker implements Component {
   }
 
   render(width: number): string[] {
+    if (this.options.minimal) {
+      return this.renderMinimal();
+    }
+
     const items = this.filteredItems;
     const maxVisible = this.options.maxVisible ?? DEFAULT_MAX_VISIBLE;
     const visibleCount = Math.min(items.length, maxVisible);
@@ -141,6 +147,33 @@ export class ListPicker implements Component {
 
     // Bottom border
     lines.push(`${t.bold}└${"─".repeat(dialogWidth - 2)}┘${t.reset}`);
+
+    return lines;
+  }
+
+  private renderMinimal(): string[] {
+    const lines: string[] = [`  ${t.warn}◆${t.reset} ${t.dim}${this.options.title}${t.reset}`];
+
+    if (this.filter) {
+      lines.push(`    ${t.dim}filter: ${this.filter}${t.reset}`);
+    }
+
+    if (this.filteredItems.length === 0) {
+      lines.push(`    ${t.dim}${this.filter ? "No matches" : "No items"}${t.reset}`);
+      return lines;
+    }
+
+    for (let index = 0; index < this.filteredItems.length; index++) {
+      const item = this.filteredItems[index];
+      if (item.header) {
+        lines.push(`    ${t.dim}-- ${item.label} --${t.reset}`);
+        continue;
+      }
+      const marker = index === this.selectedIndex ? `${t.accent}▸${t.reset}` : " ";
+      const label = index === this.selectedIndex ? `${t.bold}${item.label}${t.reset}` : item.label;
+      const description = item.description ? `  ${t.dim}· ${item.description}${t.reset}` : "";
+      lines.push(`    ${marker} ${label}${description}`);
+    }
 
     return lines;
   }

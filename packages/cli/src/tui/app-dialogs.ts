@@ -10,33 +10,39 @@ import type {
 import type { AppRuntimeState } from "./app-runtime-state";
 import { ApprovalDialog } from "./components/approval-dialog";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
+import { ListPicker, type ListPickerItem } from "./components/list-picker";
 import { QuestionInput } from "./components/question-input";
-import type { OverlayStack } from "./framework/overlay";
+import { TextInput, type TextInputOptions } from "./components/text-input";
 import type { TUIRenderer } from "./framework/renderer";
 import type { Component } from "./framework/types";
 
 export interface AppDialogsDeps {
-  overlayStack: OverlayStack;
   renderer: TUIRenderer;
   runtime: AppRuntimeState;
   setActiveInlineQuestion: (component: (Component & { handleInput(data: string): void }) | null) => void;
   restoreFocus: () => void;
 }
 
+export interface InlinePickerOptions {
+  title: string;
+  items: ListPickerItem[];
+  selectedIndex?: number;
+  filterable?: boolean;
+}
+
 export class AppDialogs {
   constructor(private deps: AppDialogsDeps) {}
 
   async confirm(options: ConfirmDialogOptions): Promise<boolean> {
-    return new Promise((resolve) => {
-      const dialog = new ConfirmDialog(options, (confirmed) => {
-        handle.hide();
-        this.deps.restoreFocus();
-        this.deps.renderer.requestRender();
-        resolve(confirmed);
-      });
-      const handle = this.deps.overlayStack.show(dialog, { anchor: "center" });
-      this.deps.renderer.requestRender();
-    });
+    return this.showInlineComponent((finish) => new ConfirmDialog({ ...options, minimal: true }, finish));
+  }
+
+  async pickInline(options: InlinePickerOptions): Promise<string | null> {
+    return this.showInlineComponent((finish) => new ListPicker({ ...options, minimal: true }, finish));
+  }
+
+  async promptInline(options: TextInputOptions): Promise<string | null> {
+    return this.showInlineComponent((finish) => new TextInput({ ...options, minimal: true }, finish));
   }
 
   async handleApprove(request: ApprovalRequest): Promise<ApprovalResponse> {
@@ -112,6 +118,26 @@ export class AppDialogs {
 
       this.deps.runtime.activeQuestionCancel = () => finish(null);
       this.deps.setActiveInlineQuestion(input);
+      this.deps.renderer.requestRender();
+    });
+  }
+
+  private async showInlineComponent<T>(
+    createComponent: (finish: (value: T) => void) => Component & { handleInput(data: string): void },
+  ): Promise<T> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: T) => {
+        if (settled) return;
+        settled = true;
+        this.deps.setActiveInlineQuestion(null);
+        this.deps.restoreFocus();
+        this.deps.renderer.requestRender();
+        resolve(value);
+      };
+
+      const component = createComponent(finish);
+      this.deps.setActiveInlineQuestion(component);
       this.deps.renderer.requestRender();
     });
   }
