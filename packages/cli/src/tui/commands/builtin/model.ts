@@ -42,15 +42,19 @@ export const modelCommand: Command = {
       return;
     }
 
-    // Show picker with known models, grouped by provider
+    // Show picker with models grouped by authenticated provider.
+    // If no provider is authenticated, fall back to current provider models.
     const currentModelId = ctx.config.model.id;
     const currentProvider = (ctx.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     const pm = ctx.config.providerManager;
 
-    // Sort providers: current → configured → unconfigured
-    const sortedProviders = [...PROVIDER_NAMES].sort((a, b) => {
-      const groupA = a === currentProvider ? 0 : pm.hasKeyFor(a) ? 1 : 2;
-      const groupB = b === currentProvider ? 0 : pm.hasKeyFor(b) ? 1 : 2;
+    const authenticatedProviders = PROVIDER_NAMES.filter((provider) => pm.hasKeyFor(provider));
+    const visibleProviders = authenticatedProviders.length > 0 ? authenticatedProviders : [currentProvider];
+
+    // Sort visible providers: current provider first, then others
+    const sortedProviders = [...visibleProviders].sort((a, b) => {
+      const groupA = a === currentProvider ? 0 : 1;
+      const groupB = b === currentProvider ? 0 : 1;
       return groupA - groupB;
     });
 
@@ -59,13 +63,16 @@ export const modelCommand: Command = {
     for (const prov of sortedProviders) {
       const models = KNOWN_MODELS.filter((m) => (m.provider ?? DEFAULT_PROVIDER) === prov);
       if (models.length === 0) continue;
-      const hasKey = pm.hasKeyFor(prov);
-      const headerLabel = hasKey ? prov : `${prov} (no key)`;
-      items.push({ label: headerLabel, value: "", header: true });
+      items.push({ label: prov, value: "", header: true });
       for (const m of models) {
         const aliases = m.aliases?.length ? m.aliases.join(", ") : "";
         items.push({ label: m.id, description: aliases, value: m.id });
       }
+    }
+
+    if (items.length === 0) {
+      ctx.displayError("No models available for authenticated providers. Configure one via /provider set <name>.");
+      return;
     }
 
     const selectedIdx = items.findIndex((i) => i.value === currentModelId);
