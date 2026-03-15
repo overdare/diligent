@@ -87,6 +87,7 @@ export class App {
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
   private suppressNextSteeringInjectedCommit = false;
+  private pendingAbortRestartMessage: string | null = null;
 
   constructor(
     private config: AppConfig,
@@ -177,6 +178,7 @@ export class App {
       },
       onTurnErrored: (message) => {
         this.suppressNextSteeringInjectedCommit = false;
+        this.pendingAbortRestartMessage = null;
         this.runtime.pendingTurn?.reject(new Error(message));
       },
       onUserInputRequestResolved: () => {
@@ -493,8 +495,8 @@ export class App {
       this.runtime.cancelRequested = true;
       const drainedSteers = this.chatView.consumePendingSteers();
       const drainedRuntimeSteers = this.runtime.drainPendingSteers();
-      const hadPendingSteers = drainedSteers.length > 0 || drainedRuntimeSteers.length > 0;
-      this.suppressNextSteeringInjectedCommit = hadPendingSteers;
+      this.pendingAbortRestartMessage = drainedRuntimeSteers[0] ?? drainedSteers[0] ?? null;
+      this.suppressNextSteeringInjectedCommit = this.pendingAbortRestartMessage !== null;
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -502,6 +504,8 @@ export class App {
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
         .catch(() => {
           this.runtime.cancelRequested = false;
+          this.pendingAbortRestartMessage = null;
+          this.suppressNextSteeringInjectedCommit = false;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
@@ -520,6 +524,23 @@ export class App {
       return;
     }
     this.chatView.addUserMessage(text);
+  }
+
+  private async restartFromPendingAbortSteer(threadId: string): Promise<void> {
+    const rpc = this.rpcClient;
+    const restartMessage = this.pendingAbortRestartMessage;
+    if (!rpc || !restartMessage) {
+      return;
+    }
+
+    this.pendingAbortRestartMessage = null;
+    this.commitLocalUserMessage(restartMessage);
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+      threadId,
+      message: restartMessage,
+      content: [{ type: "text", text: restartMessage }],
+      model: this.config.model.id || undefined,
+    });
   }
 
   private handleAppServerStderr(line: string): void {
@@ -548,6 +569,17 @@ export class App {
     }
 
     await this.eventController.handleServerNotification(notification);
+
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
+      notification.params.threadId === this.runtime.currentThreadId &&
+      this.pendingAbortRestartMessage
+    ) {
+      const interruptedThreadId = notification.params.threadId;
+      queueMicrotask(() => {
+        void this.restartFromPendingAbortSteer(interruptedThreadId);
+      });
+    }
   }
 
   private async syncActiveThreadState(): Promise<void> {
