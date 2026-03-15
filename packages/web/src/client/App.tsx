@@ -50,6 +50,7 @@ import {
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
+import { useSteeringQueue } from "./lib/use-steering-queue";
 import { useThreadManager } from "./lib/use-thread-manager";
 
 type PendingImage = LocalImageBlock & { webUrl: string };
@@ -232,8 +233,6 @@ export function App() {
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const pendingAbortRestartMessageRef = useRef<string | null>(null);
-  const suppressNextSteeringInjectedRef = useRef(false);
   // Build full slash command list (builtins + skills)
   const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
@@ -280,32 +279,6 @@ export function App() {
   });
 
   const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
-
-  async function restartFromPendingAbortSteer(threadId: string): Promise<void> {
-    const rpc = rpcRef.current;
-    const restartMessage = pendingAbortRestartMessageRef.current;
-    if (!rpc || !restartMessage) {
-      return;
-    }
-
-    pendingAbortRestartMessageRef.current = null;
-    const hadItemsBeforeRestart = stateRef.current.items.length > 0;
-    dispatch({ type: "consume_first_pending_steer" });
-    dispatch({ type: "local_user", payload: { text: restartMessage, images: [] } });
-    if (!hadItemsBeforeRestart) {
-      dispatch({
-        type: "optimistic_thread",
-        payload: { threadId, message: restartMessage },
-      });
-    }
-
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-      threadId,
-      message: restartMessage,
-      content: [{ type: "text" as const, text: restartMessage }],
-      model: providerMgr.currentModelRef.current || undefined,
-    });
-  }
 
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
@@ -391,9 +364,10 @@ export function App() {
       }
       const events = threadMgr.adapterRef.current.toAgentEvents(notification);
       const shouldSuppressSteeringInjected =
-        suppressNextSteeringInjectedRef.current && events.some((event) => event.type === "steering_injected");
+        steeringQueue.suppressNextSteeringInjectedRef.current &&
+        events.some((event) => event.type === "steering_injected");
       if (shouldSuppressSteeringInjected) {
-        suppressNextSteeringInjectedRef.current = false;
+        steeringQueue.suppressNextSteeringInjectedRef.current = false;
       }
       const filteredEvents = shouldSuppressSteeringInjected
         ? events.filter((event) => event.type !== "steering_injected")
@@ -405,11 +379,11 @@ export function App() {
         notificationParams &&
         typeof notificationParams.threadId === "string" &&
         notificationParams.threadId === activeThreadIdRef.current &&
-        pendingAbortRestartMessageRef.current
+        steeringQueue.pendingAbortRestartMessageRef.current
       ) {
         const interruptedThreadId = notificationParams.threadId;
         queueMicrotask(() => {
-          void restartFromPendingAbortSteer(interruptedThreadId);
+          void steeringQueue.restartFromPendingAbortSteer(interruptedThreadId);
         });
       }
     });
@@ -594,7 +568,16 @@ export function App() {
     [threadMgr.setThreadInputs],
   );
   const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
-  const canSteer = activeInput.trim().length > 0 && isBusy;
+  const steeringQueue = useSteeringQueue({
+    rpcRef,
+    stateRef,
+    dispatch,
+    activeThreadId: state.activeThreadId,
+    currentModelRef: providerMgr.currentModelRef,
+    activeInput,
+    isBusy,
+    clearThreadInput,
+  });
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
   const supportsVision = currentModelInfo?.supportsVision === true;
   const supportsThinking = currentModelInfo?.supportsThinking === true;
@@ -642,32 +625,15 @@ export function App() {
     }
   };
 
-  const steerMessage = async () => {
-    const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId || !canSteer) return;
-    const threadId = state.activeThreadId;
-    const content = activeInput.trim();
-    clearThreadInput(threadId);
-    dispatch({ type: "local_steer", payload: content });
-    try {
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
-        threadId: state.activeThreadId,
-        content,
-        followUp: false,
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const confirmDeleteThread = threadMgr.confirmDeleteThread;
 
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
     const threadId = state.activeThreadId;
     if (!rpc || !threadId) return;
-    pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0] ?? null;
-    suppressNextSteeringInjectedRef.current = pendingAbortRestartMessageRef.current !== null;
+    steeringQueue.pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0] ?? null;
+    steeringQueue.suppressNextSteeringInjectedRef.current =
+      steeringQueue.pendingAbortRestartMessageRef.current !== null;
     console.log("[App] Stop pressed — sending turn/interrupt for thread", threadId);
     try {
       const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
@@ -675,8 +641,8 @@ export function App() {
       });
       console.log("[App] turn/interrupt response:", result);
     } catch (error) {
-      pendingAbortRestartMessageRef.current = null;
-      suppressNextSteeringInjectedRef.current = false;
+      steeringQueue.pendingAbortRestartMessageRef.current = null;
+      steeringQueue.suppressNextSteeringInjectedRef.current = false;
       console.error("[App] turn/interrupt failed:", error);
     }
   };
@@ -996,9 +962,7 @@ export function App() {
   );
   const handleQuestionCancel = useCallback(() => serverRequests.resolveQuestion({}), [serverRequests]);
   const handleOpenProviders = useCallback(() => setShowProviderModal(true), []);
-  const handleSteer = () => {
-    void steerMessage();
-  };
+  const { handleSteer, canSteer } = steeringQueue;
   const handleInterrupt = () => {
     void interruptTurn();
   };
