@@ -211,19 +211,10 @@ describe("InputEditor", () => {
     expect(lines[3]).toContain("second");
   });
 
-  test("renders steering lines directly above input separator", () => {
+  test("does not render steering lines in input area", () => {
     const { editor } = create();
-    editor.setPendingSteers(["change approach", "focus root cause"]);
-
     const lines = editor.render(80);
-    const firstSteeringIndex = lines.findIndex((line) => line.includes("⚑ steering change approach"));
-    const secondSteeringIndex = lines.findIndex((line) => line.includes("⚑ steering focus root cause"));
-    const separatorIndex = lines.findIndex((line) => line.includes("─"));
-
-    expect(firstSteeringIndex).toBe(1);
-    expect(secondSteeringIndex).toBe(2);
-    expect(separatorIndex).toBe(3);
-    expect(secondSteeringIndex).toBe(separatorIndex - 1);
+    expect(lines.some((line) => line.includes("⚑ steering"))).toBe(false);
   });
 
   test("busy prompt spinner keeps cursor aligned right after prompt", () => {

@@ -1,6 +1,7 @@
-// @summary Tests steering queue indicator rendering in the TUI input editor
+// @summary Tests steering queue rendering in transcript active stack instead of the input editor
 import { describe, expect, test } from "bun:test";
-import { InputEditor } from "../src/tui/components/input-editor";
+import { renderTranscript } from "../src/tui/components/transcript-render";
+import { TranscriptStore } from "../src/tui/components/transcript-store";
 
 function stripAnsi(input: string): string {
   let out = "";
@@ -27,25 +28,19 @@ function stripAnsi(input: string): string {
   return out;
 }
 
-describe("InputEditor steering queue", () => {
-  test("renders each pending steering message on its own line", () => {
-    const editor = new InputEditor({ prompt: "❯ " }, () => {});
-    editor.focused = true;
-
-    editor.setPendingSteers(["change approach", "use tests first"]);
-    const lines = editor.render(80).map(stripAnsi);
-
+describe("Transcript steering queue", () => {
+  test("renders each pending steering message in active stack", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+    store.setPendingSteers(["change approach", "use tests first"]);
+    const lines = renderTranscript(store, 80).map(stripAnsi);
     expect(lines.some((line) => line.includes("⚑ steering change approach"))).toBe(true);
     expect(lines.some((line) => line.includes("⚑ steering use tests first"))).toBe(true);
   });
 
   test("does not render steering indicator when queue is empty", () => {
-    const editor = new InputEditor({ prompt: "❯ " }, () => {});
-    editor.focused = true;
-
-    editor.setPendingSteers([]);
-    const lines = editor.render(80).map(stripAnsi);
-
+    const store = new TranscriptStore({ requestRender: () => {} });
+    store.setPendingSteers([]);
+    const lines = renderTranscript(store, 80).map(stripAnsi);
     expect(lines.some((line) => line.includes("⚑ steering"))).toBe(false);
   });
 });
