@@ -133,6 +133,66 @@ describe("InputEditor", () => {
     expect(editor.getText()).toBe("hi\nthere");
   });
 
+  test("bracketed paste inserts placeholder token without submit", () => {
+    const submitted: string[] = [];
+    const { editor } = create({ onSubmit: (t) => submitted.push(t) });
+    editor.handleInput("\x1b[200~line 1\nline 2\nline 3\x1b[201~");
+
+    expect(submitted).toEqual([]);
+    expect(editor.getText()).toBe("[Pasted text #1 +2 lines]");
+  });
+
+  test("renders pasted placeholder token inline", () => {
+    const { editor } = create();
+    editor.handleInput("\x1b[200~line 1\nline 2\nline 3\x1b[201~");
+
+    const lines = editor.render(80);
+    expect(lines.some((line) => line.includes("[Pasted text #1 +2 lines]"))).toBe(true);
+    expect(lines.some((line) => line.includes("line 1"))).toBe(false);
+  });
+
+  test("keeps short single-line paste as raw text", () => {
+    const { editor } = create();
+    editor.handleInput("\x1b[200~short text\x1b[201~");
+    expect(editor.getText()).toBe("short text");
+  });
+
+  test("uses placeholder for long single-line paste", () => {
+    const { editor } = create();
+    const longLine = "x".repeat(120);
+    editor.handleInput(`\x1b[200~${longLine}\x1b[201~`);
+    expect(editor.getText()).toBe("[Pasted text #1 +0 lines]");
+  });
+
+  test("increments pasted placeholder count on multiple pastes", () => {
+    const { editor } = create();
+    editor.handleInput("\x1b[200~a\n\x1b[201~");
+    editor.handleInput("\x1b[200~b\n\x1b[201~");
+
+    const lines = editor.render(80);
+    expect(lines.some((line) => line.includes("[Pasted text #1 +1 line][Pasted text #2 +1 line]"))).toBe(true);
+  });
+
+  test("allows typing before and after pasted placeholder", () => {
+    const { editor } = create();
+    editor.handleInput("\x1b[200~line 1\nline 2\x1b[201~");
+    editor.handleInput("\x01");
+    editor.handleInput("A");
+    editor.handleInput("\x05");
+    editor.handleInput("B");
+
+    expect(editor.getText()).toBe("A[Pasted text #1 +1 line]B");
+  });
+
+  test("submitting placeholder expands to original pasted text", () => {
+    const submitted: string[] = [];
+    const { editor } = create({ onSubmit: (t) => submitted.push(t) });
+    editor.handleInput("\x1b[200~line 1\nline 2\x1b[201~");
+    editor.handleInput("\r");
+
+    expect(submitted).toEqual(["line 1\nline 2"]);
+  });
+
   test("enter submits multiline text", () => {
     const submitted: string[] = [];
     const { editor } = create({ onSubmit: (t) => submitted.push(t) });
@@ -149,6 +209,19 @@ describe("InputEditor", () => {
     expect(lines).toHaveLength(5); // blank + sep + 2 input lines + sep
     expect(lines[2]).toContain("first");
     expect(lines[3]).toContain("second");
+  });
+
+  test("renders steering line directly above input separator", () => {
+    const { editor } = create();
+    editor.setPendingSteers(["change approach"]);
+
+    const lines = editor.render(80);
+    const steeringIndex = lines.findIndex((line) => line.includes("⚑ steering (1)"));
+    const separatorIndex = lines.findIndex((line) => line.includes("─"));
+
+    expect(steeringIndex).toBe(1);
+    expect(separatorIndex).toBe(2);
+    expect(steeringIndex).toBe(separatorIndex - 1);
   });
 
   test("enter does nothing for empty input", () => {

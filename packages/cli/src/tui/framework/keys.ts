@@ -27,6 +27,7 @@ export type KeyId =
   | "ctrl+backspace"
   | "shift+enter"
   | "shift+tab"
+  | "bracketed_paste"
   | string;
 
 /** Legacy escape code mappings for each key */
@@ -58,6 +59,8 @@ const KEY_SEQUENCES: Record<string, string[]> = {
   "shift+enter": ["\x1b[13;2u"], // Kitty protocol
   "shift+tab": ["\x1b[Z"],
 };
+
+const BRACKETED_PASTE_RE = /^\x1b\[200~[\s\S]*\x1b\[201~$/;
 
 /** Kitty protocol key code mappings */
 const KITTY_KEY_CODES: Record<string, number> = {
@@ -101,6 +104,10 @@ export function parseKittyKey(data: string): { key: string; modifiers: number; e
 
 /** Check if raw input data matches a named key */
 export function matchesKey(data: string, keyId: KeyId): boolean {
+  if (keyId === "bracketed_paste") {
+    return BRACKETED_PASTE_RE.test(data);
+  }
+
   // Check legacy sequences
   const sequences = KEY_SEQUENCES[keyId];
   if (sequences) {

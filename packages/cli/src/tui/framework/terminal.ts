@@ -14,6 +14,8 @@ const SEQ = {
   CLEAR_TO_END: "\x1b[0J",
   KITTY_ENABLE: "\x1b[>1u",
   KITTY_DISABLE: "\x1b[<u",
+  BRACKETED_PASTE_ENABLE: "\x1b[?2004h",
+  BRACKETED_PASTE_DISABLE: "\x1b[?2004l",
 } as const;
 
 export class Terminal {
@@ -21,6 +23,7 @@ export class Terminal {
   private stdout: TerminalOptions["stdout"];
   private originalRawMode: boolean | undefined;
   private kittyEnabled = false;
+  private bracketedPasteEnabled = false;
   private inputHandler: ((data: Buffer) => void) | null = null;
   private resizeHandler: (() => void) | null = null;
 
@@ -43,8 +46,9 @@ export class Terminal {
     (stdin as NodeJS.ReadableStream).on("data", this.inputHandler);
     (this.stdout as NodeJS.WritableStream).on("resize", onResize);
 
-    // Try enabling Kitty keyboard protocol
+    // Try enabling Kitty keyboard protocol and bracketed paste mode
     this.enableKitty();
+    this.enableBracketedPaste();
 
     // Ensure cleanup on exit
     process.on("exit", () => this.cleanup());
@@ -143,7 +147,25 @@ export class Terminal {
     }
   }
 
+  private enableBracketedPaste(): void {
+    try {
+      this.write(SEQ.BRACKETED_PASTE_ENABLE);
+      this.bracketedPasteEnabled = true;
+    } catch {
+      this.bracketedPasteEnabled = false;
+    }
+  }
+
   private cleanup(): void {
+    if (this.bracketedPasteEnabled) {
+      try {
+        this.write(SEQ.BRACKETED_PASTE_DISABLE);
+      } catch {
+        // Ignore write errors during cleanup
+      }
+      this.bracketedPasteEnabled = false;
+    }
+
     if (this.kittyEnabled) {
       try {
         this.write(SEQ.KITTY_DISABLE);

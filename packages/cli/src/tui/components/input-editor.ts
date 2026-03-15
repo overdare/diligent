@@ -1,6 +1,7 @@
 // @summary Multi-line command input editor with command completion support
 import type { CompletionItem } from "../commands/registry";
 import { isPrintable, matchesKey } from "../framework/keys";
+import { BRACKETED_PASTE_END, BRACKETED_PASTE_START } from "../framework/stdin-buffer";
 import { displayWidth, sliceEndToFitWidth, sliceToFitWidth } from "../framework/string-width";
 import type { Component, Focusable } from "../framework/types";
 import { CURSOR_MARKER } from "../framework/types";
@@ -11,6 +12,7 @@ const MAX_HISTORY_SIZE = 100;
 const MAX_VISIBLE_COMPLETIONS = 8;
 const SPINNER_FRAMES = ["✶", "✳", "✢"];
 const SPINNER_INTERVAL = 120;
+const PASTE_PLACEHOLDER_MIN_CHARS = 80;
 
 export interface InputEditorOptions {
   prompt?: string;
@@ -43,6 +45,8 @@ export class InputEditor implements Component, Focusable {
   private completionVisible = false;
   private completionScrollOffset = 0;
   private pendingSteers: string[] = [];
+  private pasteCount = 0;
+  private pastedBlocks = new Map<string, string>();
 
   constructor(
     private options: InputEditorOptions,
@@ -85,7 +89,7 @@ export class InputEditor implements Component, Focusable {
   }
 
   render(width: number): string[] {
-    const sep = `${t.dim}${"─".repeat(Math.max(0, width))}${t.reset}`;
+    const sep = `${t.dim}${"─".repeat(Math.max(0, width - 1))}${t.reset}`;
     const prompt = this.busy
       ? `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset} `
       : (this.options.prompt ?? "❯ ");
@@ -99,7 +103,7 @@ export class InputEditor implements Component, Focusable {
     if (!this.focused) {
       const textLines = this.text.split("\n");
       const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
-      return ["", sep, ...steeringLine, ...renderedLines, sep];
+      return ["", ...steeringLine, sep, ...renderedLines, sep];
     }
 
     // Build line with cursor marker embedded
@@ -125,7 +129,7 @@ export class InputEditor implements Component, Focusable {
       // Render completion popup below the input
       const popupLines = this.renderCompletionPopup(width);
 
-      return ["", sep, ...steeringLine, inputLine, sep, ...popupLines];
+      return ["", ...steeringLine, sep, inputLine, sep, ...popupLines];
     }
 
     const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
@@ -136,7 +140,7 @@ export class InputEditor implements Component, Focusable {
     // Render completion popup below the input
     const popupLines = this.renderCompletionPopup(width);
 
-    return ["", sep, ...steeringLine, ...inputLines, sep, ...popupLines];
+    return ["", ...steeringLine, sep, ...inputLines, sep, ...popupLines];
   }
 
   private renderSteeringLine(width: number): string[] {
@@ -149,8 +153,23 @@ export class InputEditor implements Component, Focusable {
     return [`${t.accent}  ${prefix}${tail}${t.reset}`];
   }
 
+  private makePasteToken(index: number, extraLines: number): string {
+    const lineLabel = extraLines === 1 ? "line" : "lines";
+    return `[Pasted text #${index} +${extraLines} ${lineLabel}]`;
+  }
+
+  private expandPastedTokens(text: string): string {
+    let result = text;
+    for (const [token, content] of this.pastedBlocks.entries()) {
+      result = result.split(token).join(content);
+    }
+    return result;
+  }
+
   /** Returns true if the key was consumed by the editor, false if the caller should handle it. */
   handleInput(data: string): boolean {
+    const isBracketedPaste = matchesKey(data, "bracketed_paste");
+
     // Escape closes popup without other side effects
     if (matchesKey(data, "escape")) {
       if (this.completionVisible) {
@@ -181,16 +200,18 @@ export class InputEditor implements Component, Focusable {
         this.text = "";
         this.cursorPos = 0;
         this.historyIndex = -1;
+        this.pastedBlocks.clear();
         this.requestRender();
         this.options.onSubmit?.(submitText);
         return true;
       }
-      const text = this.text.trim();
+      const text = this.expandPastedTokens(this.text).trim();
       if (text) {
         this.addToHistory(text);
         this.text = "";
         this.cursorPos = 0;
         this.historyIndex = -1;
+        this.pastedBlocks.clear();
         this.requestRender();
         this.options.onSubmit?.(text);
       }
@@ -348,6 +369,29 @@ export class InputEditor implements Component, Focusable {
       return true;
     }
 
+    if (isBracketedPaste) {
+      const pasted = data.slice(BRACKETED_PASTE_START.length, data.length - BRACKETED_PASTE_END.length);
+      if (pasted.length > 0) {
+        const extraLines = pasted.match(/\r\n|\r|\n/g)?.length ?? 0;
+        const shouldUsePlaceholder = extraLines > 0 || pasted.length >= PASTE_PLACEHOLDER_MIN_CHARS;
+
+        if (shouldUsePlaceholder) {
+          this.pasteCount += 1;
+          const token = this.makePasteToken(this.pasteCount, extraLines);
+          this.pastedBlocks.set(token, pasted);
+          this.text = this.text.slice(0, this.cursorPos) + token + this.text.slice(this.cursorPos);
+          this.cursorPos += token.length;
+        } else {
+          this.text = this.text.slice(0, this.cursorPos) + pasted + this.text.slice(this.cursorPos);
+          this.cursorPos += pasted.length;
+        }
+
+        this.updateCompletion();
+        this.requestRender();
+      }
+      return true;
+    }
+
     // Printable character
     if (isPrintable(data)) {
       this.text = this.text.slice(0, this.cursorPos) + data + this.text.slice(this.cursorPos);
@@ -383,6 +427,7 @@ export class InputEditor implements Component, Focusable {
   clear(): void {
     this.text = "";
     this.cursorPos = 0;
+    this.pastedBlocks.clear();
     this.requestRender();
   }
 
@@ -390,6 +435,7 @@ export class InputEditor implements Component, Focusable {
   setText(text: string): void {
     this.text = text;
     this.cursorPos = text.length;
+    this.pastedBlocks.clear();
     this.updateCompletion();
   }
 
