@@ -107,6 +107,20 @@ export class App {
     this.inputEditor.setPendingSteers(this.pendingSteers);
   }
 
+  private consumePendingSteersByText(texts: string[]): string[] {
+    const consumed: string[] = [];
+    for (const text of texts) {
+      const index = this.pendingSteers.indexOf(text);
+      if (index === -1) continue;
+      this.pendingSteers.splice(index, 1);
+      consumed.push(text);
+    }
+    if (consumed.length > 0) {
+      this.syncPendingSteers();
+    }
+    return consumed;
+  }
+
   // Extracted modules
   private threadManager: ThreadManager;
   private configManager: ConfigManager;
@@ -230,6 +244,11 @@ export class App {
         this.pendingSteers = [];
         this.syncPendingSteers();
         this.statusBar.resetUsage();
+        this.chatView.addLines(this.buildWelcomeBanner());
+      },
+      clearScreenAndResetRenderer: () => {
+        this.terminal.clearScreen();
+        this.renderer.resetFrameState();
       },
       handleAgentStartEvent: () => this.chatView.handleEvent({ type: "agent_start" }),
       handleTurnError: (err) => {
@@ -417,9 +436,17 @@ export class App {
 
   private handleAgentEvent(event: AgentEvent): void {
     if (event.type === "steering_injected") {
-      const drained = this.pendingSteers.splice(0, event.messageCount);
-      this.syncPendingSteers();
-      for (const text of drained) {
+      const injectedTexts = event.messages
+        .map((message) => (message.role === "user" && typeof message.content === "string" ? message.content : null))
+        .filter((content): content is string => content !== null);
+      const consumed = this.consumePendingSteersByText(injectedTexts);
+      const fallbackCount = Math.max(0, event.messageCount - consumed.length);
+      if (fallbackCount > 0) {
+        const fallback = this.pendingSteers.splice(0, fallbackCount);
+        this.syncPendingSteers();
+        consumed.push(...fallback);
+      }
+      for (const text of consumed) {
         this.chatView.addUserMessage(text);
       }
     }
@@ -629,7 +656,7 @@ export class App {
 
     if (loopLabel || thinkingLabel) {
       this.chatView.addLines([
-        `  ${t.dim}⏱ ${loopLabel ? `Loop ${loopLabel}` : ""}${loopLabel && thinkingLabel ? " · " : ""}${thinkingLabel ? `Thinking ${thinkingLabel}` : ""}${t.reset}`,
+        `${t.dim}⏱ ${loopLabel ? `Loop ${loopLabel}` : ""}${loopLabel && thinkingLabel ? " · " : ""}${thinkingLabel ? `Thought ${thinkingLabel}` : ""}${t.reset}`,
       ]);
     }
 

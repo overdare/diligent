@@ -1,17 +1,196 @@
 // @summary Renders Markdown to ANSI-styled terminal text
 import { Marked, Renderer } from "marked";
+import { displayWidth } from "./framework/string-width";
 import { t } from "./theme";
 
-/**
- * Custom marked renderer that outputs ANSI-styled terminal text. (D047)
- * Uses marked v17 API where renderer methods receive token objects
- * and use this.parser.parseInline() for inline content.
- */
+type TableAlign = "left" | "center" | "right" | null | undefined;
+
+type TableCellToken = {
+  text?: string;
+  tokens?: unknown[];
+  align?: TableAlign;
+};
+
+type ListItemToken = {
+  tokens?: unknown[];
+  task?: boolean;
+  checked?: boolean;
+};
+
+type MarkdownToken = {
+  type?: string;
+  tokens?: unknown[];
+  text?: string;
+};
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function repeat(char: string, count: number): string {
+  return count > 0 ? char.repeat(count) : "";
+}
+
+function padText(value: string, width: number, align: TableAlign): string {
+  const visible = displayWidth(stripAnsi(value));
+  const remaining = Math.max(0, width - visible);
+
+  if (align === "right") {
+    return `${repeat(" ", remaining)}${value}`;
+  }
+
+  if (align === "center") {
+    const left = Math.floor(remaining / 2);
+    const right = remaining - left;
+    return `${repeat(" ", left)}${value}${repeat(" ", right)}`;
+  }
+
+  return `${value}${repeat(" ", remaining)}`;
+}
+
+function renderListItem(
+  parser: Renderer["parser"],
+  item: ListItemToken,
+  marker: string,
+): string {
+  const tokens = (item.tokens ?? []) as MarkdownToken[];
+  const parsed = tokens
+    .map((token) => {
+      if (token.type === "text") {
+        return parser.parseInline(token.tokens ?? []).replace(/\n+$/, "");
+      }
+      const chunk = parser.parse([token]).replace(/\n+$/, "");
+      if (token.type === "list") {
+        return `\n${chunk}`;
+      }
+      return chunk;
+    })
+    .join("")
+    .replace(/^\n+/, "");
+
+  const lines = parsed
+    .replace(/\n+$/, "")
+    .split("\n")
+    .map((line) => line.replace(/<input[^>]*>\s*/g, "").trimEnd())
+    .filter((line, index, all) => !(line === "" && index === all.length - 1));
+
+  const taskPrefix = item.task ? `[${item.checked ? "x" : " "}] ` : "";
+  if (lines.length === 0) {
+    return `${marker} ${taskPrefix}`.trimEnd();
+  }
+
+  const [first, ...rest] = lines;
+  const nested = rest.map((line) => (line ? `  ${line}` : "")).join("\n");
+  return nested
+    ? `${marker} ${taskPrefix}${first}\n${nested}`
+    : `${marker} ${taskPrefix}${first}`;
+}
+
+function terminalHyperlink(label: string, href: string): string {
+  const safeHref = href.trim();
+  if (!safeHref) {
+    return label;
+  }
+  const osc8Open = `\u001b]8;;${safeHref}\u0007`;
+  const osc8Close = "\u001b]8;;\u0007";
+  return `${osc8Open}${label}${osc8Close}`;
+}
+
+function renderAlertBlock(kind: string, bodyLines: string[]): string[] {
+  const normalized = kind.toUpperCase();
+  const style = {
+    NOTE: { icon: "ℹ", color: t.accent },
+    TIP: { icon: "✓", color: t.success },
+    IMPORTANT: { icon: "✱", color: t.accent },
+    WARNING: { icon: "⚠", color: t.warn },
+    CAUTION: { icon: "⛔", color: t.error },
+  }[normalized] ?? { icon: "•", color: t.accent };
+
+  const header = `${style.color}${t.bold}${style.icon} ${normalized}${t.boldOff}${t.reset}`;
+  const lines = bodyLines.length > 0 ? bodyLines : [""];
+  return [header, ...lines.map((line) => `${t.dim}│${t.reset} ${line}`), ""];
+}
+
+function applyGfmPostProcessing(rendered: string): string {
+  let text = rendered;
+
+  text = text.replace(/<details>\s*<summary>(.*?)<\/summary>\s*([\s\S]*?)<\/details>/gi, (_, summary, body) => {
+    const title = String(summary ?? "").trim();
+    const detailsBody = String(body ?? "")
+      .trim()
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 0)
+      .map((line) => `  ${line}`)
+      .join("\n");
+
+    if (!detailsBody) {
+      return `${t.bold}▸ ${title}${t.boldOff}`;
+    }
+
+    return `${t.bold}▸ ${title}${t.boldOff}\n${detailsBody}`;
+  });
+
+  const lines = text.split("\n");
+  const out: string[] = [];
+  const footnotes = new Map<string, string>();
+
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+    const alertMatch = line.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
+    if (alertMatch) {
+      const body: string[] = [];
+      index += 1;
+      while (index < lines.length && lines[index].trim() !== "") {
+        body.push(lines[index]);
+        index += 1;
+      }
+      out.push(...renderAlertBlock(alertMatch[1], body));
+      while (index < lines.length && lines[index].trim() === "") {
+        index += 1;
+      }
+      continue;
+    }
+
+    const footnoteMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/);
+    if (footnoteMatch) {
+      footnotes.set(footnoteMatch[1], footnoteMatch[2]);
+      index += 1;
+      continue;
+    }
+
+    out.push(line.replace(/\[\^([^\]]+)\]/g, (_, id) => `${t.dim}[${id}]${t.reset}`));
+    index += 1;
+  }
+
+  if (footnotes.size > 0) {
+    out.push("", `${t.bold}Footnotes${t.boldOff}`);
+    for (const [id, content] of footnotes.entries()) {
+      out.push(`  ${t.dim}[${id}]${t.reset} ${content}`);
+    }
+  }
+
+  return out.join("\n");
+}
+
 const renderer = new Renderer();
 
 renderer.heading = function (token) {
   const text = this.parser.parseInline(token.tokens);
-  return `\n${t.bold}${t.underline}${text}${t.underlineOff}${t.boldOff}\n\n`;
+
+  if (token.depth === 1) {
+    return `\n${t.bold}${t.underline}${text}${t.underlineOff}${t.boldOff}\n\n`;
+  }
+
+  if (token.depth === 2) {
+    return `\n${t.bold}${text}${t.boldOff}\n\n`;
+  }
+
+  if (token.depth === 3) {
+    return `\n${t.underline}${text}${t.underlineOff}\n\n`;
+  }
+
+  return `\n${text}\n\n`;
 };
 
 renderer.paragraph = function (token) {
@@ -41,23 +220,32 @@ renderer.code = (token) => {
 };
 
 renderer.list = function (token) {
-  let body = "";
-  for (const item of token.items) {
-    body += this.listitem(item);
+  const start = token.ordered ? (token.start ?? 1) : 1;
+  const lines: string[] = [];
+
+  for (let index = 0; index < token.items.length; index++) {
+    const item = token.items[index] as ListItemToken;
+    const marker = token.ordered ? `${start + index}.` : "-";
+    lines.push(renderListItem(this.parser, item, marker));
   }
-  return `${body}\n`;
+
+  return `${lines.join("\n")}\n\n`;
 };
 
 renderer.listitem = function (token) {
-  const text = this.parser.parseInline(token.tokens);
-  const cleaned = text.replace(/\n\n$/, "").replace(/\n$/, "");
-  return `  • ${cleaned}\n`;
+  return renderListItem(this.parser, token as ListItemToken, "-");
 };
 
 renderer.link = function (token) {
   const text = this.parser.parseInline(token.tokens);
-  if (text === token.href) return `${t.accent}${token.href}${t.reset}`;
-  return `${text} (${t.accent}${token.href}${t.reset})`;
+  const href = token.href;
+  const label = text === href ? href : text;
+  return terminalHyperlink(`${t.accent}${label}${t.reset}`, href);
+};
+
+renderer.image = (token) => {
+  const label = token.text && token.text.trim().length > 0 ? token.text : token.href;
+  return terminalHyperlink(`${t.accent}${label}${t.reset}`, token.href);
 };
 
 renderer.blockquote = function (token) {
@@ -68,6 +256,52 @@ renderer.blockquote = function (token) {
     .map((line: string) => `${t.dim}│ ${line}${t.reset}`)
     .join("\n");
   return `${lines}\n\n`;
+};
+
+renderer.table = function (token) {
+  const headers = token.header as TableCellToken[];
+  const rows = token.rows as TableCellToken[][];
+
+  const allRows: TableCellToken[][] = [headers, ...rows];
+  const columnCount = headers.length;
+  const widths = new Array<number>(columnCount).fill(1);
+
+  const renderedRows = allRows.map((row) =>
+    row.map((cell) => (cell.tokens ? this.parser.parseInline(cell.tokens) : (cell.text ?? ""))),
+  );
+
+  for (const row of renderedRows) {
+    for (let index = 0; index < columnCount; index++) {
+      const text = row[index] ?? "";
+      widths[index] = Math.max(widths[index], displayWidth(stripAnsi(text)));
+    }
+  }
+
+  const alignments = headers.map((cell) => cell.align ?? "left");
+
+  const top = `┌${widths.map((width) => repeat("─", width + 2)).join("┬")}┐`;
+  const middle = `├${widths.map((width) => repeat("─", width + 2)).join("┼")}┤`;
+  const bottom = `└${widths.map((width) => repeat("─", width + 2)).join("┴")}┘`;
+
+  const renderRow = (cells: string[], rowAlignments: TableAlign[]) => {
+    const segments = widths.map((width, index) => {
+      const value = cells[index] ?? "";
+      return ` ${padText(value, width, rowAlignments[index])} `;
+    });
+    return `│${segments.join("│")}│`;
+  };
+
+  const output: string[] = [top, renderRow(renderedRows[0] ?? [], alignments), middle];
+
+  for (let index = 1; index < renderedRows.length; index++) {
+    output.push(renderRow(renderedRows[index], alignments));
+    if (index < renderedRows.length - 1) {
+      output.push(middle);
+    }
+  }
+
+  output.push(bottom);
+  return `${output.join("\n")}\n\n`;
 };
 
 renderer.hr = () => `\n${"─".repeat(40)}\n\n`;
@@ -87,16 +321,12 @@ renderer.space = () => "";
 
 const marked = new Marked({ renderer, async: false });
 
-/**
- * Render markdown text as ANSI-styled terminal output.
- */
 export function renderMarkdown(text: string, _width: number): string {
   try {
     const result = marked.parse(text) as string;
-    // Clean up excessive newlines
-    return result.replace(/\n{3,}/g, "\n\n").trimEnd();
+    const postProcessed = applyGfmPostProcessing(result);
+    return postProcessed.replace(/\n{3,}/g, "\n\n").trimEnd();
   } catch {
-    // Fallback: return raw text if parsing fails
     return text;
   }
 }

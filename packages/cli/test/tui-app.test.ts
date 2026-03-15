@@ -337,6 +337,33 @@ describe("App", () => {
     expect(writes.join("")).toContain("something went wrong");
   });
 
+  test("/clear resets thread while keeping input UI visible", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
+
+    const cfg = makeConfig(streamFn);
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("/clear");
+      emitEnter();
+      await wait(160);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(writes.join(""));
+    expect(output).toContain("❯ ");
+    expect(output).not.toContain("/clear");
+  });
+
   test("Ctrl+O toggles tool result details on and off", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([

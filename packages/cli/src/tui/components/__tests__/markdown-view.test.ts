@@ -13,7 +13,7 @@ describe("MarkdownView", () => {
     mv.pushDelta("Hello ");
     // Trailing buffer is shown (better UX) but not yet committed via markdown rendering
     const beforeNewline = mv.render(80);
-    expect(beforeNewline).toEqual(["Hello "]); // Raw trailing text
+    expect(beforeNewline).toEqual(["Hello"]);
 
     mv.pushDelta("world\n");
     const afterNewline = mv.render(80);
@@ -85,5 +85,13 @@ describe("MarkdownView", () => {
     const lines = mv.render(80);
     // Should show trailing text even though no newline
     expect(lines[0]).toContain("trailing");
+  });
+
+  test("renders markdown in trailing buffer during streaming", () => {
+    const mv = new MarkdownView(() => {});
+    mv.pushDelta("**bold**");
+    const lines = mv.render(80).join(" ");
+    expect(lines).toContain("bold");
+    expect(lines).not.toContain("**bold**");
   });
 });

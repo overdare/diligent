@@ -60,6 +60,13 @@ class TerminalSim {
     const after = row.slice(this.cursorCol + 1);
     this.screen[this.cursorRow] = before + ch + after;
     this.cursorCol++;
+
+    // Simulate terminal auto-wrap when writing at right boundary.
+    if (this.cursorCol >= this.columns) {
+      this.cursorCol = 0;
+      this.cursorRow++;
+      while (this.screen.length <= this.cursorRow) this.screen.push("");
+    }
   }
 
   private _parseEscape(data: string, start: number): string {
@@ -215,26 +222,26 @@ function contentLines(screen: string[]): string[] {
 describe("Integration: full tool execution cycle", () => {
   test("prompt appears exactly once after initial render", () => {
     const { sim } = buildStack();
-    expect(sim.countOccurrences("› ")).toBe(1);
+    expect(sim.countOccurrences("❯ ")).toBe(1);
   });
 
   test("cursor is on the input row after initial render", () => {
     const { sim } = buildStack();
-    // The input row text should be "› "
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    // The input row text should be "❯ "
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
   test("user message displayed, prompt appears exactly twice (history + live)", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("hello world");
-    // "› " appears in: history line + live input
-    expect(sim.countOccurrences("› ")).toBe(2);
+    // "❯ " appears in: history line + live input
+    expect(sim.countOccurrences("❯ ")).toBe(2);
   });
 
   test("cursor stays on live input row after user message added", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("hello world");
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
   test("cursor stays on input row during tool execution (spinner active)", () => {
@@ -243,7 +250,7 @@ describe("Integration: full tool execution cycle", () => {
 
     chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
 
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
   test("cursor stays on input row after tool ends with output", () => {
@@ -262,7 +269,7 @@ describe("Integration: full tool execution cycle", () => {
       }),
     );
 
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
   test("tool result details can be toggled collapsed and expanded", () => {
@@ -340,9 +347,9 @@ describe("Integration: full tool execution cycle", () => {
       }),
     );
 
-    // Only 2 "› ": one in user message history, one live input
-    expect(sim.countOccurrences("› ")).toBe(2);
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    // Only 2 "❯ ": one in user message history, one live input
+    expect(sim.countOccurrences("❯ ")).toBe(2);
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
   test("thinking content is rendered before assistant text", () => {
@@ -368,10 +375,128 @@ describe("Integration: full tool execution cycle", () => {
     );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
 
-    expect(sim.screen.some((l) => l.includes("▸ Thinking"))).toBe(true);
+    expect(sim.screen.some((l) => l.includes("Thought for"))).toBe(true);
     expect(sim.screen.some((l) => l.includes("Considering option A and B."))).toBe(true);
     expect(sim.screen.some((l) => l.includes("Final answer."))).toBe(true);
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+  });
+
+  test("thinking content is plain text and preserves markdown markers", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("show reasoning");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m2", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m2",
+        message: {},
+        delta: { type: "thinking_delta", delta: "Use **strong** signal and `code` marker." },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m2",
+        message: {},
+        delta: { type: "text_delta", delta: "Done.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m2", message: {} }));
+
+    const allText = sim.screen.join("\n");
+    expect(allText).toContain("Use **strong** signal and `code` marker.");
+    expect(allText).toContain("Done.");
+  });
+
+  test("thinking block does not render an extra blank line for trailing newline", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("show reasoning");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m3", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m3",
+        message: {},
+        delta: { type: "thinking_delta", delta: "Line one\nLine two\n" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m3",
+        message: {},
+        delta: { type: "text_delta", delta: "Final answer.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m3", message: {} }));
+
+    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Final answer."));
+    expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
+    expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
+    expect(sim.screen[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
+    expect(sim.screen[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
+    expect(answerLineIndex - thoughtLineIndex).toBe(4);
+  });
+
+  test("chunked thinking stream ending with newline stays stable before text", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("show reasoning");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m4", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m4",
+        message: {},
+        delta: { type: "thinking_delta", delta: "Line one" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m4",
+        message: {},
+        delta: { type: "thinking_delta", delta: "\nLine two" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m4",
+        message: {},
+        delta: { type: "thinking_delta", delta: "\n" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m4",
+        message: {},
+        delta: { type: "text_delta", delta: "Answer starts now.\n" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m4",
+        message: {},
+        delta: { type: "text_delta", delta: "Second sentence.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m4", message: {} }));
+
+    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Answer starts now."));
+    expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
+    expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
+    expect(sim.screen[thoughtLineIndex + 1]?.includes("Line one")).toBe(true);
+    expect(sim.screen[thoughtLineIndex + 2]?.includes("Line two")).toBe(true);
+    expect(answerLineIndex - thoughtLineIndex).toBe(4);
+    expect(sim.countOccurrences("Line one")).toBe(1);
+    expect(sim.countOccurrences("Line two")).toBe(1);
   });
 
   test("cursor col is 0 after clearing input", () => {
@@ -380,8 +505,8 @@ describe("Integration: full tool execution cycle", () => {
     inputEditor.handleInput("i");
     inputEditor.clear();
 
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
-    expect(sim.cursorCol).toBe(2); // "› " length = 2
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.cursorCol).toBe(2); // "❯ " length = 2
   });
 
   test("cursor col advances as user types", () => {
@@ -390,7 +515,7 @@ describe("Integration: full tool execution cycle", () => {
     inputEditor.handleInput("b");
     inputEditor.handleInput("c");
 
-    // "› abc" → cursor col = 5
+    // "❯ abc" → cursor col = 5
     expect(sim.cursorCol).toBe(5);
   });
 
@@ -414,7 +539,7 @@ describe("Integration: full tool execution cycle", () => {
       );
     }
 
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 });
 
@@ -444,9 +569,9 @@ describe("Integration: streaming markdown — rapid commits", () => {
     }
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
 
-    // "› " in history (user message) + live input = 2
-    expect(sim.countOccurrences("› ")).toBe(2);
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    // "❯ " in history (user message) + live input = 2
+    expect(sim.countOccurrences("❯ ")).toBe(2);
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
     // Streamed content is visible and not duplicated
     const nonEmpty = contentLines(sim.screen);
     expect(nonEmpty.length).toBe(new Set(nonEmpty).size);
@@ -479,8 +604,8 @@ describe("Integration: streaming markdown — rapid commits", () => {
     );
     chatView.handleEvent(ev({ type: "message_end", itemId: "m1", message: {} }));
 
-    expect(sim.countOccurrences("› ")).toBe(2);
-    expect(sim.lineAt(sim.cursorRow)).toBe("› ");
+    expect(sim.countOccurrences("❯ ")).toBe(2);
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
     // The bold text should be visible on screen (no corruption → raw ** not present)
     const allText = sim.screen.join(" ");
     expect(allText).toContain("Phase 4b");

@@ -74,7 +74,8 @@ function renderTable(block: TableBlock): string[] {
     return Math.max(column.length, maxRowLen);
   });
 
-  const formatRow = (cells: string[]) => cells.map((cell, columnIndex) => cell.padEnd(colWidths[columnIndex] ?? 0)).join("  ");
+  const formatRow = (cells: string[]) =>
+    cells.map((cell, columnIndex) => cell.padEnd(colWidths[columnIndex] ?? 0)).join("  ");
 
   lines.push(`  ${t.bold}${formatRow(block.columns)}${t.reset}`);
   const separator = colWidths.map((width) => "─".repeat(width)).join("  ");
@@ -211,7 +212,8 @@ function renderDiffHunk(hunk: DiffHunk): string[] {
 
 function renderDiffFile(file: DiffFile): string[] {
   const action = file.action ?? "Update";
-  const actionColor = action === "Add" ? t.success : action === "Delete" ? t.error : action === "Move" ? t.warn : t.accent;
+  const actionColor =
+    action === "Add" ? t.success : action === "Delete" ? t.error : action === "Move" ? t.warn : t.accent;
   const path = action === "Move" && file.movedTo ? `${file.filePath} -> ${file.movedTo}` : file.filePath;
 
   const lines: string[] = [`${t.accent}✎${t.reset} ${path} ${actionColor}[${action}]${t.reset}`];

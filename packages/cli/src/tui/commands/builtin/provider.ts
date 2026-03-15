@@ -1,7 +1,7 @@
 // @summary Provider configuration command - configure LLM provider and API keys
 import { resolveModel } from "@diligent/core";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { createChatGPTOAuthBinding, saveAuthKey } from "@diligent/runtime";
+import { createChatGPTOAuthBinding, removeAuthKey, removeOAuthTokens, saveAuthKey } from "@diligent/runtime";
 import { saveModel } from "../../../config-writer";
 import {
   DEFAULT_MODELS,
@@ -76,12 +76,7 @@ function pickProvider(ctx: CommandContext): Promise<void> {
         if (value) {
           const selected = value as ProviderName;
           if (selected === currentProvider && ctx.config.providerManager.hasKeyFor(selected)) {
-            // Already active with key — offer auth change
-            if (selected === "chatgpt") {
-              await startChatGPTOAuthFlow(ctx);
-            } else {
-              await promptApiKey(selected, ctx);
-            }
+            await manageConnectedProvider(selected, ctx);
             resolve();
           } else {
             await switchProvider(selected, ctx);
@@ -90,6 +85,64 @@ function pickProvider(ctx: CommandContext): Promise<void> {
         } else {
           resolve();
         }
+      },
+    );
+    const handle = ctx.showOverlay(picker, { anchor: "center" });
+    ctx.requestRender();
+  });
+}
+
+type ConnectedProviderAction = "reconnect" | "disconnect" | null;
+
+async function manageConnectedProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
+  const action = await pickConnectedProviderAction(provider, ctx);
+  if (!action) {
+    return;
+  }
+
+  if (action === "reconnect") {
+    if (provider === "chatgpt") {
+      await startChatGPTOAuthFlow(ctx);
+      return;
+    }
+    await promptApiKey(provider, ctx);
+    return;
+  }
+
+  await disconnectProvider(provider, ctx);
+}
+
+function pickConnectedProviderAction(provider: ProviderName, ctx: CommandContext): Promise<ConnectedProviderAction> {
+  return new Promise((resolve) => {
+    const items: ListPickerItem[] = [
+      {
+        label: "Reconnect",
+        description: provider === "chatgpt" ? "Run OAuth login again" : "Replace saved API key",
+        value: "reconnect",
+      },
+      {
+        label: "Disconnect",
+        description: provider === "chatgpt" ? "Remove OAuth session" : "Remove saved API key",
+        value: "disconnect",
+      },
+      { label: "Cancel", description: "Keep current authentication", value: "cancel" },
+    ];
+
+    const picker = new ListPicker(
+      {
+        title: `${provider} is already connected`,
+        items,
+        selectedIndex: 0,
+        filterable: false,
+      },
+      (value) => {
+        handle.hide();
+        ctx.requestRender();
+        if (!value || value === "cancel") {
+          resolve(null);
+          return;
+        }
+        resolve(value as ConnectedProviderAction);
       },
     );
     const handle = ctx.showOverlay(picker, { anchor: "center" });
@@ -117,6 +170,43 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   ctx.onModelChanged(model.id);
   ctx.displayLines([`  Provider: ${t.bold}${provider}${t.reset}  Model: ${t.bold}${model.id}${t.reset}`]);
   saveModel(model.id).catch(() => {});
+}
+
+export async function disconnectProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
+  const confirmed = await ctx.app.confirm({
+    title: "Disconnect provider",
+    message:
+      provider === "chatgpt"
+        ? "Disconnect ChatGPT OAuth and remove saved authentication?"
+        : `Remove saved API key for ${provider}?`,
+    confirmLabel: "Disconnect",
+    cancelLabel: "Cancel",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const rpc = ctx.app.getRpcClient?.();
+    if (rpc) {
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE, { provider });
+    } else {
+      await removeAuthKey(provider);
+      if (provider === "chatgpt") {
+        await removeOAuthTokens();
+      }
+    }
+
+    ctx.config.providerManager.removeApiKey(provider);
+    if (provider === "chatgpt") {
+      ctx.config.providerManager.removeExternalAuth("chatgpt");
+    }
+
+    ctx.displayLines([`  ${t.success}Disconnected ${provider}.${t.reset}`]);
+  } catch (err) {
+    ctx.displayError(`Failed to disconnect ${provider}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {

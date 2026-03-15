@@ -30,6 +30,7 @@ export interface CommandHandlerDeps {
   addLines: (lines: string[]) => void;
   clearActive: () => void;
   clearChatHistory: () => void;
+  clearScreenAndResetRenderer: () => void;
   handleAgentStartEvent: () => void;
   handleTurnError: (err: unknown) => void;
   updateStatusBar: (updates: Record<string, unknown>) => void;
@@ -162,6 +163,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         currentEffort: deps.getCurrentEffort(),
         setEffort: (effort) => deps.configManager.setEffort(effort),
         clearChatHistory: () => deps.clearChatHistory(),
+        clearScreenAndResetRenderer: () => deps.clearScreenAndResetRenderer(),
         startNewThread: async () => {
           const threadId = await deps.threadManager.startNewThread();
           await deps.syncActiveThreadState();

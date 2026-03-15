@@ -50,6 +50,7 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
     currentEffort: "medium",
     setEffort: async () => {},
     clearChatHistory: () => {},
+    clearScreenAndResetRenderer: () => {},
     startNewThread: async () => "thread-1",
     resumeThread: async () => "thread-1",
     deleteThread: async () => true,

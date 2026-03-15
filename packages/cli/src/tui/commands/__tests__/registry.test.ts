@@ -48,6 +48,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     addLines: () => {},
     clearActive: () => {},
     clearChatHistory: () => {},
+    clearScreenAndResetRenderer: () => {},
     handleAgentStartEvent: () => {},
     handleTurnError: () => {},
     updateStatusBar: () => {},
@@ -223,7 +224,7 @@ describe("createCommandHandler", () => {
     const steerRequest = mock(async () => ({ accepted: true }));
     const handler = createCommandHandler(
       makeHandlerDeps({
-        getRpcClient: () => ({ request: steerRequest } as unknown as AppServerRpcClient),
+        getRpcClient: () => ({ request: steerRequest }) as unknown as AppServerRpcClient,
         queuePendingSteer,
       }),
     );

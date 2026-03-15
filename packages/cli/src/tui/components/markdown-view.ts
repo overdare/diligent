@@ -89,17 +89,16 @@ export class MarkdownView implements Component {
       return [];
     }
 
+    // While streaming trailing text, render full content as markdown so users
+    // don't see raw markdown markers (e.g. **, `) in interactive mode.
+    if (this.buffer.length > 0 && !this.finalized) {
+      return this.renderToLines(this.committedRaw + this.buffer, width);
+    }
+
     // Re-render committed content if width changed or cache is empty
     if (this.committedRaw.length > 0 && (this.committedLines.length === 0 || this.lastRenderWidth !== width)) {
       this.committedLines = this.renderToLines(this.committedRaw, width);
       this.lastRenderWidth = width;
-    }
-
-    // If we have a trailing buffer (not yet committed via newline),
-    // show committed lines + un-styled trailing text
-    if (this.buffer.length > 0 && !this.finalized) {
-      const trailingLines = this.buffer.split("\n");
-      return [...this.committedLines, ...trailingLines];
     }
 
     return this.committedLines;

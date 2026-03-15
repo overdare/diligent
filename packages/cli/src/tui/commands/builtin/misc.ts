@@ -11,7 +11,7 @@ export const clearCommand: Command = {
   handler: async (_args, ctx) => {
     await ctx.startNewThread();
     ctx.clearChatHistory();
-    ctx.displayLines(["\x1b[2J\x1b[H"]); // ANSI clear screen
+    ctx.clearScreenAndResetRenderer();
   },
 };
 

@@ -224,6 +224,16 @@ describe("InputEditor", () => {
     expect(steeringIndex).toBe(separatorIndex - 1);
   });
 
+  test("busy prompt spinner keeps cursor aligned right after prompt", () => {
+    const { editor } = create();
+    editor.setBusy(true);
+    const lines = editor.render(80);
+    const inputLine = lines[2] ?? "";
+    const markerIndex = inputLine.indexOf(CURSOR_MARKER);
+    const visiblePrefix = inputLine.slice(0, markerIndex).replace(/\x1b\[[0-9;]*m/g, "");
+    expect(visiblePrefix).toBe("✶ ");
+  });
+
   test("enter does nothing for empty input", () => {
     const submitted: string[] = [];
     const { editor } = create({ onSubmit: (t) => submitted.push(t) });

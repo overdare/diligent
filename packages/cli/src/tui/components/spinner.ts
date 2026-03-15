@@ -2,8 +2,8 @@
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 
-const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const FRAME_INTERVAL = 80;
+const FRAMES = ["✶", "✳", "✢"];
+const FRAME_INTERVAL = 120;
 
 function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);

@@ -2,6 +2,7 @@
 
 import { sep } from "node:path";
 import type { Mode, ThinkingEffort } from "@diligent/protocol";
+import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
 
@@ -43,9 +44,9 @@ function formatModeHint(mode: Mode): string {
   return `${t.boldOff}${color}${mode} mode${t.reset}${t.dim}  (shift+tab to cycle)`;
 }
 
-/** Visible length excluding ANSI escape codes */
+/** Visible length excluding ANSI escape codes with wide-char support */
 function visibleLength(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return displayWidth(s.replace(/\x1b\[[0-9;]*m/g, ""));
 }
 
 /** Bottom status bar showing model, tokens, session info */
@@ -64,6 +65,7 @@ export class StatusBar implements Component {
 
   render(width: number): string[] {
     const leftParts: string[] = [];
+    const safeWidth = Math.max(1, width - 1);
 
     if (this.info.model) {
       leftParts.push(this.info.model);
@@ -93,20 +95,27 @@ export class StatusBar implements Component {
 
     if (leftParts.length === 0 && !rightHint) return [];
 
-    const leftStr = leftParts.length > 0 ? `  ${leftParts.join(" \u00b7 ")}` : "";
+    const leftStr = leftParts.length > 0 ? `  ${leftParts.join(" · ")}` : "";
 
     if (rightHint) {
+      const leftVisible = visibleLength(leftStr);
       const rightVisible = visibleLength(rightHint);
-      const pad = Math.max(1, width - leftStr.length - rightVisible);
+      const pad = Math.max(1, safeWidth - leftVisible - rightVisible);
       const full = `${t.dim}${leftStr}${" ".repeat(pad)}${rightHint}${t.reset}`;
-      if (leftStr.length + pad + rightVisible <= width) {
+      if (leftVisible + pad + rightVisible <= safeWidth) {
         return [full];
       }
     }
 
     let line = leftStr;
-    if (line.length > width) {
-      line = `${line.slice(0, width - 1)}\u2026`;
+    if (visibleLength(line) > safeWidth) {
+      const chars = [...line];
+      let truncated = "";
+      for (const ch of chars) {
+        if (displayWidth(`${truncated + ch}…`) > safeWidth) break;
+        truncated += ch;
+      }
+      line = `${truncated}…`;
     }
 
     return [`${t.dim}${line}${t.reset}`];

@@ -1,12 +1,13 @@
 // @summary Renders the agent message history and real-time streaming output
+
+import type { ToolRenderPayload } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
 import { deriveToolRenderPayload } from "@diligent/runtime/tools";
-import type { ToolRenderPayload } from "@diligent/protocol";
 import { debugLogger } from "../framework/debug-logger";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
-import { t } from "../theme";
 import { renderToolPayload } from "../render-blocks";
+import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
 import { SpinnerComponent } from "./spinner";
 
@@ -18,6 +19,13 @@ function formatTokensCompact(n: number): string {
 
 function formatToolElapsed(ms: number): string | null {
   if (ms < 500) return null;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
+}
+
+function formatThoughtElapsed(ms: number): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -50,10 +58,8 @@ function truncateMiddle(lines: string[], max: number): string[] {
 class UserMessageView {
   constructor(private text: string) {}
 
-  render(width: number): string[] {
-    const visibleLen = 3 + displayWidth(this.text); // " › " = 3 visible chars
-    const padding = " ".repeat(Math.max(0, width - visibleLen));
-    return [`${t.bgUser} ${t.bold}${t.dim}›${t.reset}${t.bgUser} ${this.text}${padding}${t.reset}`];
+  render(_width: number): string[] {
+    return [`${t.bgUser}${t.bold}${t.dim}❯${t.reset}${t.bgUser} ${this.text}${t.reset}`];
   }
 
   invalidate(): void {}
@@ -136,6 +142,14 @@ function buildToolHeader(toolName: string, input: unknown, output: string): stri
   return toolName;
 }
 
+function splitThoughtLines(text: string): string[] {
+  const lines = text.split("\n");
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
 /** A committed item in the chat history */
 type ChatItem =
   | {
@@ -150,7 +164,7 @@ type ChatItem =
   | {
       kind: "thinking";
       header: string;
-      body: MarkdownView;
+      bodyLines: string[];
     }
   | MarkdownView
   | UserMessageView;
@@ -330,22 +344,18 @@ export class ChatView implements Component {
             if (typeof prompt === "string" && prompt.trim()) {
               const promptLines = truncateMiddle(prompt.trim().split("\n"), TOOL_MAX_LINES);
               for (let i = 0; i < promptLines.length; i++) {
-                if (i === 0) {
-                  lines.push(`${t.dim}  └ prompt: ${promptLines[i]}${t.reset}`);
-                } else {
-                  lines.push(`${t.dim}    ${promptLines[i]}${t.reset}`);
-                }
+                lines.push(`${t.dim}  ${i === 0 ? `prompt: ${promptLines[i]}` : promptLines[i]}${t.reset}`);
               }
             }
           } else if (event.toolName === "wait") {
             lines.push(`${icon} Finished waiting${elapsed}`);
             if (parsed?.summary && Array.isArray(parsed.summary)) {
               for (const entry of parsed.summary as string[]) {
-                lines.push(`${t.dim}  └ ${entry}${t.reset}`);
+                lines.push(`${t.dim}  ${entry}${t.reset}`);
               }
             }
             if (parsed?.timed_out) {
-              lines.push(`${t.warn}  └ Timed out${t.reset}`);
+              lines.push(`${t.warn}  Timed out${t.reset}`);
             }
           } else if (event.toolName === "send_input") {
             const nickname = (parsed?.nickname as string | undefined) ?? "agent";
@@ -373,13 +383,7 @@ export class ChatView implements Component {
           const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
           for (let i = 0; i < display.length; i++) {
             const isEllipsis = display[i].startsWith("… +");
-            if (isEllipsis) {
-              lines.push(`${t.dim}    ${display[i]}${t.reset}`);
-            } else if (i === 0) {
-              lines.push(`${t.dim}  └ ${display[i]}${t.reset}`);
-            } else {
-              lines.push(`${t.dim}    ${display[i]}${t.reset}`);
-            }
+            lines.push(`${t.dim}  ${display[i]}${t.reset}`);
           }
           this.items.push(this.createToolResultItem(lines));
         } else {
@@ -468,14 +472,14 @@ export class ChatView implements Component {
     this.options.requestRender();
   }
 
-  /** Add a completed thinking message from history (rendered via MarkdownView) */
+  /** Add a completed thinking message from history (rendered as plain text) */
   addThinkingMessage(text: string, elapsedMs?: number): void {
-    const view = new MarkdownView(this.options.requestRender);
-    view.pushDelta(text);
-    view.finalize();
-    const elapsedVal = elapsedMs !== undefined ? formatToolElapsed(elapsedMs) : null;
-    const elapsedStr = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
-    this.items.push({ kind: "thinking", header: `${t.dim}▸ Thinking${elapsedStr}${t.reset}`, body: view });
+    const icon = `${t.success}⏺${t.reset}`;
+    const header =
+      elapsedMs !== undefined
+        ? `${icon} ${t.bold}Thought for ${formatThoughtElapsed(elapsedMs)}${t.reset}`
+        : `${icon} ${t.bold}Thought${t.reset}`;
+    this.items.push({ kind: "thinking", header, bodyLines: splitThoughtLines(text) });
     this.options.requestRender();
   }
 
@@ -537,8 +541,8 @@ export class ChatView implements Component {
   getCommittedLineCount(width: number): number {
     let count = 0;
     for (let i = 0; i < this.items.length; i++) {
-      if (i > 0 && count > 0) count++; // blank line between items
       const item = this.items[i];
+      if (i > 0 && count > 0) count++; // blank line between items
 
       // Tool result rows are user-toggleable (Ctrl+O), so they must stay active.
       // Once we hit one, everything after it is considered active too.
@@ -549,7 +553,7 @@ export class ChatView implements Component {
       if (item instanceof MarkdownView || item instanceof UserMessageView) {
         count += item.render(width).length;
       } else if (item.kind === "thinking") {
-        count += 1 + item.body.render(width).length;
+        count += 1 + item.bodyLines.length;
       } else {
         count += item.lines.length;
       }
@@ -562,12 +566,12 @@ export class ChatView implements Component {
     const TURN_MARKER = `${t.dim}⏺${t.reset} `;
 
     for (let i = 0; i < this.items.length; i++) {
-      if (i > 0 && result.length > 0) result.push("");
       const item = this.items[i];
+      if (i > 0 && result.length > 0) result.push("");
       if (item instanceof MarkdownView) {
         const lines = item.render(width);
         if (lines.length > 0) {
-          result.push(TURN_MARKER + lines[0], ...lines.slice(1));
+          result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `  ${line}`));
         }
         continue;
       }
@@ -579,17 +583,17 @@ export class ChatView implements Component {
 
       if (item.kind === "thinking") {
         result.push(item.header);
-        const bodyLines = item.body.render(width);
-        if (bodyLines.length > 0) {
-          result.push(...bodyLines.map((line, index) => (index === 0 ? `  ${line}` : `  ${line}`)));
+        if (item.bodyLines.length > 0) {
+          result.push(...item.bodyLines.map((line) => `${t.boldOff}${t.dim}  ${line}${t.reset}`));
         }
         continue;
       }
 
       if (item.kind === "tool_result") {
-        const icon = this.toolResultsExpanded ? "▾" : "▸";
-        const hint = this.toolResultsExpanded ? "" : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
-        result.push(`${t.dim}${icon}${t.reset} ${item.header}${hint}`);
+        const hint = this.toolResultsExpanded
+          ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
+          : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
+        result.push(`${item.header}${hint}`);
         if (this.toolResultsExpanded) {
           result.push(...item.details);
         }
@@ -609,7 +613,7 @@ export class ChatView implements Component {
       const lines = this.activeMarkdown.render(width);
       if (lines.length > 0) {
         if (result.length > 0) result.push("");
-        result.push(TURN_MARKER + lines[0], ...lines.slice(1));
+        result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `  ${line}`));
       }
     }
 
@@ -646,8 +650,6 @@ export class ChatView implements Component {
     for (const item of this.items) {
       if (item instanceof MarkdownView || item instanceof UserMessageView) {
         item.invalidate();
-      } else if (item.kind === "thinking") {
-        item.body.invalidate();
       }
     }
     this.activeMarkdown?.invalidate();

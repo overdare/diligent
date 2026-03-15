@@ -75,6 +75,13 @@ export class TUIRenderer {
     this.doRender();
   }
 
+  /** Reset committed/active bookkeeping, typically before full-screen clears. */
+  resetFrameState(): void {
+    this.flushedCommittedCount = 0;
+    this.lastActiveRows = 0;
+    this.lastCursorRowInActive = 0;
+  }
+
   /** Stop rendering — clear active region, leave committed lines in scrollback */
   stop(): void {
     this.started = false;
@@ -87,9 +94,7 @@ export class TUIRenderer {
       }
       this.terminal.write("\x1b[0J");
     }
-    this.lastActiveRows = 0;
-    this.lastCursorRowInActive = 0;
-    this.flushedCommittedCount = 0;
+    this.resetFrameState();
     this.terminal.showCursor();
   }
 
@@ -105,6 +110,18 @@ export class TUIRenderer {
     return lines.reduce((sum, line) => sum + this.countTerminalRowsForLine(line, width), 0);
   }
 
+  /** Count physical terminal rows consumed, including boundary auto-wrap carry rows. */
+  private countPhysicalTerminalRows(lines: string[], width: number): number {
+    const safeWidth = Math.max(1, width);
+    return lines.reduce((sum, line) => {
+      const baseRows = this.countTerminalRowsForLine(line, safeWidth);
+      const visible = displayWidth(stripAnsi(line));
+      const boundaryCarry = visible > 0 && visible % safeWidth === 0 ? 1 : 0;
+      return sum + baseRows + boundaryCarry;
+    }, 0);
+  }
+
+
   /** Keep only the suffix of lines that fits within the terminal's visible row budget */
   private sliceLinesToTerminalRows(
     lines: string[],
@@ -115,10 +132,14 @@ export class TUIRenderer {
       return { lines: [], startIdx: lines.length };
     }
 
+    const safeWidth = Math.max(1, width);
     let usedRows = 0;
     let startIdx = lines.length;
     for (let i = lines.length - 1; i >= 0; i--) {
-      const lineRows = this.countTerminalRowsForLine(lines[i], width);
+      const baseRows = this.countTerminalRowsForLine(lines[i], safeWidth);
+      const visible = displayWidth(stripAnsi(lines[i]));
+      const boundaryCarry = visible > 0 && visible % safeWidth === 0 ? 1 : 0;
+      const lineRows = baseRows + boundaryCarry;
       if (usedRows + lineRows > maxRows) {
         break;
       }
@@ -140,8 +161,10 @@ export class TUIRenderer {
     const allLines = this.root.render(width);
 
     // Determine committed line count (monotonically increasing)
+    // Cap to current frame length because historical scrollback may already
+    // contain lines that no longer exist in the latest render output.
     let committedCount = this.root.getCommittedLineCount?.(width) ?? 0;
-    committedCount = Math.max(committedCount, this.flushedCommittedCount);
+    committedCount = Math.min(allLines.length, Math.max(committedCount, this.flushedCommittedCount));
 
     // Split into committed and active regions
     const committedLines = allLines.slice(0, committedCount);
@@ -173,13 +196,20 @@ export class TUIRenderer {
     const maxRows = Math.max(0, this.terminal.rows);
     let displayActiveLines = cleanActive;
     let displayCursorRow = cursorRow;
+    let overflowActiveLines: string[] = [];
     if (maxRows === 0) {
+      overflowActiveLines = cleanActive;
       displayActiveLines = [];
       displayCursorRow = -1;
       cursorCol = -1;
-    } else if (this.countTerminalRows(cleanActive, width) > maxRows) {
+    } else if (this.countPhysicalTerminalRows(cleanActive, width) > maxRows) {
       const { lines, startIdx } = this.sliceLinesToTerminalRows(cleanActive, width, maxRows);
       displayActiveLines = lines;
+      // Persist clipped prefix into native scrollback so past output doesn't vanish.
+      // Skip this while overlays are visible because overlay frames are transient.
+      if (!this.overlayStack?.hasVisible() && startIdx > 0) {
+        overflowActiveLines = cleanActive.slice(0, startIdx);
+      }
       if (cursorRow !== -1) {
         displayCursorRow = cursorRow - startIdx;
         if (displayCursorRow < 0 || displayCursorRow >= displayActiveLines.length) {
@@ -190,7 +220,8 @@ export class TUIRenderer {
     }
 
     // How many new committed lines to flush this frame
-    const newCommittedCount = committedCount - this.flushedCommittedCount;
+    const committedFlushStart = Math.min(this.flushedCommittedCount, committedCount);
+    const newCommittedCount = committedCount - committedFlushStart;
 
     // Erase previous active region
     if (this.lastActiveRows > 0) {
@@ -202,22 +233,27 @@ export class TUIRenderer {
     }
 
     // Write newly committed lines to scrollback (permanent)
-    if (newCommittedCount > 0) {
-      const newLines = committedLines.slice(this.flushedCommittedCount);
-      this.terminal.write(`${newLines.join("\r\n")}\r\n`);
-      this.flushedCommittedCount = committedCount;
+    if (newCommittedCount > 0 || overflowActiveLines.length > 0) {
+      const newLines = committedLines.slice(committedFlushStart);
+      const commitBatch = [...newLines, ...overflowActiveLines];
+      if (commitBatch.length > 0) {
+        this.terminal.write(`${commitBatch.join("\r\n")}\r\n`);
+      }
+      this.flushedCommittedCount = Math.max(this.flushedCommittedCount, committedCount + overflowActiveLines.length);
     }
 
     // Write active region (redrawn each frame)
     this.terminal.writeSynchronized(displayActiveLines.join("\r\n"));
 
-    const totalActiveRows = this.countTerminalRows(displayActiveLines, width);
+    const totalActiveRows = this.countPhysicalTerminalRows(displayActiveLines, width);
     this.lastActiveRows = totalActiveRows;
+    const endCursorRowInActive = Math.max(0, totalActiveRows - 1);
 
     // Position cursor within active region
     if (displayCursorRow !== -1 && cursorCol !== -1) {
-      const rowsBefore = this.countTerminalRows(displayActiveLines.slice(0, displayCursorRow), width);
-      const rowsToMoveUp = totalActiveRows - 1 - rowsBefore;
+      const linesBeforeCursor = displayActiveLines.slice(0, displayCursorRow);
+      const rowsBefore = this.countPhysicalTerminalRows(linesBeforeCursor, width);
+      const rowsToMoveUp = endCursorRowInActive - rowsBefore;
       this.terminal.write("\r");
       if (rowsToMoveUp > 0) {
         this.terminal.write(`\x1b[${rowsToMoveUp}A`);
@@ -229,7 +265,7 @@ export class TUIRenderer {
       this.lastCursorRowInActive = rowsBefore;
     } else {
       this.terminal.hideCursor();
-      this.lastCursorRowInActive = totalActiveRows - 1;
+      this.lastCursorRowInActive = endCursorRowInActive;
     }
 
     if (debugLogger.isEnabled) {

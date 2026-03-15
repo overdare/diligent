@@ -67,6 +67,13 @@ class TerminalSim {
     const after = row.slice(this.cursorCol + 1);
     this.screen[this.cursorRow] = before + ch + after;
     this.cursorCol++;
+
+    // Simulate terminal auto-wrap when writing at right boundary.
+    if (this.cursorCol >= this.columns) {
+      this.cursorCol = 0;
+      this.cursorRow++;
+      while (this.screen.length <= this.cursorRow) this.screen.push("");
+    }
   }
 
   private _parseEscape(data: string, start: number): string {
@@ -290,6 +297,24 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(sim.cursorCol).toBe(10);
   });
 
+  test("cursor col accounts for single-width dingbat prompt glyphs", () => {
+    const { terminal, sim } = createSim();
+    const container = new Container();
+    container.addChild(createStaticComponent(["chat"]));
+    container.addChild({
+      render() {
+        return [`❯ ${CURSOR_MARKER}abc`];
+      },
+      invalidate() {},
+    });
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    // cursor should sit right after "❯ " (2 columns total)
+    expect(sim.cursorCol).toBe(2);
+  });
+
   test("no duplicate input row after content changes", () => {
     const { terminal, sim } = createSim();
     let chatLines = ["welcome"];
@@ -335,6 +360,57 @@ describe("TUIRenderer — cursor position after renders", () => {
     const promptCount = sim.screen.filter((l) => l === "prompt> ").length;
     expect(promptCount).toBe(1);
     expect(sim.screen.filter((l) => l === "tail").length).toBeLessThanOrEqual(1);
+  });
+
+  test("overflowing active history is preserved in scrollback across redraws", () => {
+    const { terminal, sim } = createSim(4, 10);
+    let chatLines = ["line-1", "line-2", "line-3", "line-4", "line-5", "line-6"];
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...chatLines],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    // Oldest lines are clipped from viewport but should remain above as scrollback.
+    expect(sim.screen.some((l) => l === "line-1")).toBe(true);
+
+    chatLines = [...chatLines, "line-7"];
+    renderer.forceRender();
+
+    // Another redraw should not erase earlier clipped lines.
+    expect(sim.screen.some((l) => l === "line-1")).toBe(true);
+    expect(sim.screen.filter((l) => l === "line-7").length).toBeLessThanOrEqual(1);
+  });
+
+  test("cursor stays anchored when active content ends on wrap boundary", () => {
+    const { terminal, sim } = createSim(6, 10);
+    let chatLines = ["1234567890"]; // exactly fills one terminal row
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...chatLines],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    // Input should remain on next row, not drift upward across re-renders.
+    expect(sim.lineAt(2)).toBe("prompt> ");
+
+    renderer.forceRender();
+    expect(sim.lineAt(2)).toBe("prompt> ");
+
+    chatLines = ["1234567890", "abcdefghij"]; // both boundary-width lines
+    renderer.forceRender();
+
+    expect(sim.lineAt(4)).toBe("prompt> ");
   });
 
   test("cursor stays on input row when content shrinks (spinner → no-output tool)", () => {
