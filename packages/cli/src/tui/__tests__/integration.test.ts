@@ -6,6 +6,7 @@ import { InputEditor } from "../components/input-editor";
 import { StatusBar } from "../components/status-bar";
 import { Container } from "../framework/container";
 import { TUIRenderer } from "../framework/renderer";
+import { displayWidth } from "../framework/string-width";
 import type { Terminal } from "../framework/terminal";
 
 /** Minimal cast helper — test events don't need every field */
@@ -183,8 +184,8 @@ function makeTerminal(sim: TerminalSim): Terminal {
 // Helpers to build the component stack
 // ---------------------------------------------------------------------------
 
-function buildStack() {
-  const sim = new TerminalSim();
+function buildStack(rows = 40, columns = 120) {
+  const sim = new TerminalSim(rows, columns);
   const terminal = makeTerminal(sim);
 
   // We'll connect requestRender after renderer is created
@@ -213,6 +214,10 @@ function buildStack() {
 /** Filter lines for duplicate-content checks: exclude separators (lines of ─) and blank lines */
 function contentLines(screen: string[]): string[] {
   return screen.filter((l) => l.trim().length > 0 && !/^─+$/.test(l.trim()));
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -244,13 +249,24 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
-  test("cursor stays on input row during tool execution (spinner active)", () => {
+  test("status_change busy no longer shows Working spinner", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");
 
-    chatView.handleEvent(ev({ type: "tool_start", toolName: "bash", toolCallId: "t1", itemId: "i1", input: {} }));
+    chatView.handleEvent(ev({ type: "status_change", status: "busy" }));
 
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.screen.some((line) => line.includes("Working…"))).toBe(false);
+  });
+
+  test("compaction_start shows Compacting spinner", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("compact please");
+
+    chatView.handleEvent(ev({ type: "compaction_start", estimatedTokens: 12345 }));
+
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.screen.some((line) => line.includes("Compacting…"))).toBe(true);
   });
 
   test("cursor stays on input row after tool ends with output", () => {
@@ -499,6 +515,39 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.countOccurrences("Line two")).toBe(1);
   });
 
+  test("narrow terminal does not add ghost blank row after thought block", () => {
+    const { sim, chatView } = buildStack(20, 28);
+    chatView.addUserMessage("show reasoning");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m5", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m5",
+        message: {},
+        delta: { type: "thinking_delta", delta: "1234567890123456789012345678\n" },
+      }),
+    );
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m5",
+        message: {},
+        delta: { type: "text_delta", delta: "Answer line.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m5", message: {} }));
+
+    const thoughtLineIndex = sim.screen.findIndex((line) => line.includes("Thought for"));
+    const answerLineIndex = sim.screen.findIndex((line) => line.includes("Answer line."));
+    expect(thoughtLineIndex).toBeGreaterThanOrEqual(0);
+    expect(answerLineIndex).toBeGreaterThan(thoughtLineIndex);
+    const between = sim.screen.slice(thoughtLineIndex + 1, answerLineIndex);
+    const blankBetween = between.filter((line) => line.trim() === "").length;
+    expect(blankBetween).toBe(1);
+    expect(sim.countOccurrences("Answer line.")).toBe(1);
+  });
+
   test("cursor col is 0 after clearing input", () => {
     const { sim, inputEditor } = buildStack();
     inputEditor.handleInput("h");
@@ -544,6 +593,48 @@ describe("Integration: full tool execution cycle", () => {
 });
 
 describe("Integration: streaming markdown — rapid commits", () => {
+  test("clearing active streaming without commit discards partial markdown", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("stream and clear");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m-clear", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m-clear",
+        message: {},
+        delta: { type: "text_delta", delta: "partial response in progress\n" },
+      }),
+    );
+
+    expect(sim.screen.some((line) => line.includes("partial response in progress"))).toBe(true);
+
+    chatView.clearActive();
+    chatView.addLines(["Cancelled."]);
+
+    expect(sim.screen.some((line) => line.includes("partial response in progress"))).toBe(false);
+  });
+
+  test("clearing active streaming with commit preserves partial markdown", () => {
+    const { sim, chatView } = buildStack();
+    chatView.addUserMessage("stream and interrupt");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m-commit", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m-commit",
+        message: {},
+        delta: { type: "text_delta", delta: "partial response kept\n" },
+      }),
+    );
+
+    chatView.clearActiveWithCommit();
+
+    expect(sim.screen.some((line) => line.includes("partial response kept"))).toBe(true);
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+  });
+
   test("multi-paragraph streaming leaves no duplicate content on screen", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("explain the project");
@@ -643,6 +734,27 @@ describe("Integration: streaming markdown — rapid commits", () => {
     expect(sim.countOccurrences("First line.")).toBe(1);
     expect(sim.countOccurrences("Second line.")).toBe(1);
     expect(sim.countOccurrences("Third line.")).toBe(1);
+  });
+
+  test("wrapped markdown lines stay within terminal width with chat prefixes", () => {
+    const { chatView } = buildStack(40, 24);
+    chatView.addUserMessage("wrap check");
+
+    chatView.handleEvent(ev({ type: "message_start", itemId: "m-wrap", message: {} }));
+    chatView.handleEvent(
+      ev({
+        type: "message_delta",
+        itemId: "m-wrap",
+        message: {},
+        delta: { type: "text_delta", delta: "우리는 대개 커다란 이별만 기억한다.\n" },
+      }),
+    );
+    chatView.handleEvent(ev({ type: "message_end", itemId: "m-wrap", message: {} }));
+
+    const lines = chatView.render(24);
+    for (const line of lines) {
+      expect(displayWidth(stripAnsi(line))).toBeLessThanOrEqual(24);
+    }
   });
 
   test("markdown re-render with growing paragraph does not duplicate", () => {

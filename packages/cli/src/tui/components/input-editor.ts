@@ -98,12 +98,12 @@ export class InputEditor implements Component, Focusable {
     const continuationPrefix = " ".repeat(promptWidth);
     const maxTextWidth = width - promptWidth;
 
-    const steeringLine = this.renderSteeringLine(width);
+    const steeringLines = this.renderSteeringLines(width);
 
     if (!this.focused) {
       const textLines = this.text.split("\n");
       const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
-      return ["", ...steeringLine, sep, ...renderedLines, sep];
+      return ["", ...steeringLines, sep, ...renderedLines, sep];
     }
 
     // Build line with cursor marker embedded
@@ -129,7 +129,7 @@ export class InputEditor implements Component, Focusable {
       // Render completion popup below the input
       const popupLines = this.renderCompletionPopup(width);
 
-      return ["", ...steeringLine, sep, inputLine, sep, ...popupLines];
+      return ["", ...steeringLines, sep, inputLine, sep, ...popupLines];
     }
 
     const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
@@ -140,17 +140,18 @@ export class InputEditor implements Component, Focusable {
     // Render completion popup below the input
     const popupLines = this.renderCompletionPopup(width);
 
-    return ["", ...steeringLine, sep, ...inputLines, sep, ...popupLines];
+    return ["", ...steeringLines, sep, ...inputLines, sep, ...popupLines];
   }
 
-  private renderSteeringLine(width: number): string[] {
+  private renderSteeringLines(width: number): string[] {
     if (this.pendingSteers.length === 0) return [];
 
-    const summary = this.pendingSteers.join(" · ");
-    const prefix = `⚑ steering (${this.pendingSteers.length}) `;
+    const prefix = "⚑ steering ";
     const availableWidth = Math.max(0, width - displayWidth(prefix) - 2);
-    const tail = availableWidth > 0 ? sliceToFitWidth(summary, availableWidth) : "";
-    return [`${t.accent}  ${prefix}${tail}${t.reset}`];
+    return this.pendingSteers.map((message) => {
+      const text = availableWidth > 0 ? sliceToFitWidth(message, availableWidth) : "";
+      return `${t.accent}  ${prefix}${text}${t.reset}`;
+    });
   }
 
   private makePasteToken(index: number, extraLines: number): string {

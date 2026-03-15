@@ -35,13 +35,13 @@ import { registerBuiltinCommands } from "./commands/builtin/index";
 import { CommandRegistry } from "./commands/registry";
 import { ApprovalDialog } from "./components/approval-dialog";
 import { ChatView } from "./components/chat-view";
-import { CompactingDialog } from "./components/compacting-dialog";
 import { ConfirmDialog, type ConfirmDialogOptions } from "./components/confirm-dialog";
 import { InputEditor } from "./components/input-editor";
 import { QuestionInput } from "./components/question-input";
 import { StatusBar } from "./components/status-bar";
 import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
+import { debugLogger } from "./framework/debug-logger";
 import { matchesKey } from "./framework/keys";
 import { OverlayStack } from "./framework/overlay";
 import { TUIRenderer } from "./framework/renderer";
@@ -90,7 +90,6 @@ export class App {
     reject: (error: Error) => void;
   } | null = null;
   private activeQuestionCancel: (() => void) | null = null;
-  private compactingDialog: { dialog: CompactingDialog; handle: ReturnType<OverlayStack["show"]> } | null = null;
   private activeUserInputResolved = false;
   private activeUserInputRequestId: RequestId | null = null;
   private pendingUserInputRequestIds = new Set<RequestId>();
@@ -434,7 +433,30 @@ export class App {
     this.configManager.setMode(next);
   }
 
+  private beginCompactionIndicator(estimatedTokens: number): void {
+    this.chatView.handleEvent({ type: "compaction_start", estimatedTokens });
+    if (!this.isProcessing) {
+      this.inputEditor.setBusy(true);
+    }
+  }
+
+  private endCompactionIndicator(tokensBefore: number, tokensAfter: number, summary: string): void {
+    this.chatView.handleEvent({ type: "compaction_end", tokensBefore, tokensAfter, summary });
+    if (!this.isProcessing) {
+      this.inputEditor.setBusy(false);
+    }
+  }
+
   private handleAgentEvent(event: AgentEvent): void {
+    if (event.type === "compaction_start") {
+      this.beginCompactionIndicator(event.estimatedTokens);
+      return;
+    }
+
+    if (event.type === "compaction_end") {
+      this.endCompactionIndicator(event.tokensBefore, event.tokensAfter, event.summary);
+      return;
+    }
     if (event.type === "steering_injected") {
       const injectedTexts = event.messages
         .map((message) => (message.role === "user" && typeof message.content === "string" ? message.content : null))
@@ -481,25 +503,6 @@ export class App {
     } else if (event.type === "status_change") {
       this.statusBar.update({ status: event.status });
     }
-
-    if (event.type === "compaction_start") {
-      const msg = `Compacting context\u2026`;
-      const dialog = new CompactingDialog(() => this.renderer.requestRender(), msg);
-      const handle = this.overlayStack.show(dialog);
-      this.compactingDialog = { dialog, handle };
-      if (!this.isProcessing) {
-        this.inputEditor.setBusy(true);
-      }
-    } else if (event.type === "compaction_end") {
-      if (this.compactingDialog) {
-        this.compactingDialog.dialog.dispose();
-        this.compactingDialog.handle.hide();
-        this.compactingDialog = null;
-      }
-      if (!this.isProcessing) {
-        this.inputEditor.setBusy(false);
-      }
-    }
   }
 
   private handleCancel(): void {
@@ -507,22 +510,30 @@ export class App {
       void this.rpcClient
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.currentThreadId })
         .catch(() => {});
-      this.chatView.clearActive();
+      this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
     } else if (!this.isProcessing) {
       this.shutdown();
     }
   }
 
-  private handleAppServerStderr(_line: string): void {
-    // App-server stderr (operational logs) is intentionally suppressed in TUI.
-    // Errors surface as RPC error responses, not as raw log lines.
+  private handleAppServerStderr(line: string): void {
+    // Keep TUI clean, but persist app-server operational logs into debug JSONL.
+    debugLogger.logAgentEvent({ type: "app_server_stderr", line });
   }
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
     const threadId = "threadId" in notification.params ? notification.params.threadId : undefined;
     if (threadId && this.currentThreadId && threadId !== this.currentThreadId) {
       return;
+    }
+
+    if (
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+      notification.params.status === "busy" &&
+      !this.isProcessing
+    ) {
+      this.beginCompactionIndicator(0);
     }
 
     const agentEvents = this.notificationAdapter.toAgentEvents(notification);
@@ -848,6 +859,8 @@ export class App {
             const fullText = textBlocks.map((b) => (b as { text: string }).text).join("");
             this.chatView.addAssistantMessage(fullText);
           }
+        } else if (msg.role === "tool_result") {
+          this.chatView.addToolResultMessage(msg);
         }
       }
     }

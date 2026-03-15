@@ -1,30 +1,146 @@
 // @summary Renders Markdown to ANSI-styled terminal text
-import { Marked, Renderer } from "marked";
-import { displayWidth } from "./framework/string-width";
+import { Marked, Renderer, type Token } from "marked";
+import { charDisplayWidth, displayWidth } from "./framework/string-width";
 import { t } from "./theme";
 
 type TableAlign = "left" | "center" | "right" | null | undefined;
 
 type TableCellToken = {
   text?: string;
-  tokens?: unknown[];
+  tokens?: Token[];
   align?: TableAlign;
 };
 
 type ListItemToken = {
-  tokens?: unknown[];
+  tokens?: Token[];
   task?: boolean;
   checked?: boolean;
 };
 
-type MarkdownToken = {
-  type?: string;
-  tokens?: unknown[];
-  text?: string;
+type MarkdownToken = Token & {
+  tokens?: Token[];
 };
 
+const ANSI_CSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const ANSI_OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
 function stripAnsi(value: string): string {
-  return value.replace(/\x1b\[[0-9;]*m/g, "");
+  return value.replace(ANSI_OSC_RE, "").replace(ANSI_CSI_RE, "");
+}
+
+function readEscapeSequence(value: string, start: number): { sequence: string; nextIndex: number } {
+  if (value[start] !== "\x1b") {
+    return { sequence: value[start] ?? "", nextIndex: start + 1 };
+  }
+
+  const next = value[start + 1];
+  if (!next) {
+    return { sequence: "\x1b", nextIndex: start + 1 };
+  }
+
+  if (next === "[") {
+    let index = start + 2;
+    while (index < value.length && !/[A-Za-z]/.test(value[index])) {
+      index++;
+    }
+    if (index < value.length) {
+      index++;
+    }
+    return { sequence: value.slice(start, index), nextIndex: index };
+  }
+
+  if (next === "]") {
+    let index = start + 2;
+    while (index < value.length) {
+      if (value[index] === "\x07") {
+        index++;
+        break;
+      }
+      if (value[index] === "\x1b" && value[index + 1] === "\\") {
+        index += 2;
+        break;
+      }
+      index++;
+    }
+    return { sequence: value.slice(start, index), nextIndex: index };
+  }
+
+  return { sequence: value.slice(start, start + 2), nextIndex: start + 2 };
+}
+
+function getListContinuationIndent(line: string): string {
+  const listPrefixMatch = line.match(/^(\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?)/);
+  if (listPrefixMatch) {
+    return " ".repeat(displayWidth(stripAnsi(listPrefixMatch[1])));
+  }
+
+  const leadingWhitespace = line.match(/^\s+/)?.[0] ?? "";
+  return leadingWhitespace;
+}
+
+function wrapAnsiLine(line: string, width: number): string[] {
+  if (width <= 0 || displayWidth(stripAnsi(line)) <= width) {
+    return [line];
+  }
+
+  let continuationIndent = getListContinuationIndent(line);
+  let indentWidth = displayWidth(stripAnsi(continuationIndent));
+  if (indentWidth >= width) {
+    continuationIndent = "";
+    indentWidth = 0;
+  }
+
+  const wrapped: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+  const continuationLimit = Math.max(1, width - indentWidth);
+
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\x1b") {
+      const { sequence, nextIndex } = readEscapeSequence(line, index);
+      current += sequence;
+      index = nextIndex;
+      continue;
+    }
+
+    const codePoint = line.codePointAt(index);
+    if (codePoint === undefined) {
+      index++;
+      continue;
+    }
+    const char = String.fromCodePoint(codePoint);
+    const charWidth = charDisplayWidth(codePoint);
+
+    if (currentWidth > 0 && currentWidth + charWidth > width) {
+      wrapped.push(current);
+      current = continuationIndent;
+      currentWidth = indentWidth;
+    }
+
+    if (currentWidth > indentWidth && currentWidth - indentWidth + charWidth > continuationLimit) {
+      wrapped.push(current);
+      current = continuationIndent;
+      currentWidth = indentWidth;
+    }
+
+    current += char;
+    currentWidth += charWidth;
+    index += char.length;
+  }
+
+  wrapped.push(current);
+  return wrapped;
+}
+
+function wrapRenderedText(rendered: string, width: number): string {
+  if (width <= 0) {
+    return rendered;
+  }
+
+  return rendered
+    .split("\n")
+    .flatMap((line) => wrapAnsiLine(line, width))
+    .join("\n");
 }
 
 function repeat(char: string, count: number): string {
@@ -48,11 +164,7 @@ function padText(value: string, width: number, align: TableAlign): string {
   return `${value}${repeat(" ", remaining)}`;
 }
 
-function renderListItem(
-  parser: Renderer["parser"],
-  item: ListItemToken,
-  marker: string,
-): string {
+function renderListItem(parser: Renderer["parser"], item: ListItemToken, marker: string): string {
   const tokens = (item.tokens ?? []) as MarkdownToken[];
   const parsed = tokens
     .map((token) => {
@@ -81,9 +193,7 @@ function renderListItem(
 
   const [first, ...rest] = lines;
   const nested = rest.map((line) => (line ? `  ${line}` : "")).join("\n");
-  return nested
-    ? `${marker} ${taskPrefix}${first}\n${nested}`
-    : `${marker} ${taskPrefix}${first}`;
+  return nested ? `${marker} ${taskPrefix}${first}\n${nested}` : `${marker} ${taskPrefix}${first}`;
 }
 
 function terminalHyperlink(label: string, href: string): string {
@@ -195,7 +305,7 @@ renderer.heading = function (token) {
 
 renderer.paragraph = function (token) {
   const text = this.parser.parseInline(token.tokens);
-  return `${text}\n\n`;
+  return `${t.text}${text}${t.reset}\n\n`;
 };
 
 renderer.strong = function (token) {
@@ -208,7 +318,7 @@ renderer.em = function (token) {
   return `${t.italic}${text}${t.italicOff}`;
 };
 
-renderer.codespan = (token) => `${t.accent}${token.text}${t.reset}`;
+renderer.codespan = (token) => `${t.info}${token.text}${t.reset}`;
 
 renderer.code = (token) => {
   const header = token.lang ? `${t.dim}[${token.lang}]${t.reset}\n` : "";
@@ -216,11 +326,12 @@ renderer.code = (token) => {
     .split("\n")
     .map((line: string) => `  ${line}`)
     .join("\n");
-  return `\n${header}${t.accent}${indented}${t.reset}\n\n`;
+  return `\n${header}${t.textMuted}${indented}${t.reset}\n\n`;
 };
 
 renderer.list = function (token) {
-  const start = token.ordered ? (token.start ?? 1) : 1;
+  const orderedStart = Number(token.start ?? 1);
+  const start = token.ordered && Number.isFinite(orderedStart) ? orderedStart : 1;
   const lines: string[] = [];
 
   for (let index = 0; index < token.items.length; index++) {
@@ -253,7 +364,7 @@ renderer.blockquote = function (token) {
   const lines = text
     .trim()
     .split("\n")
-    .map((line: string) => `${t.dim}│ ${line}${t.reset}`)
+    .map((line: string) => `${t.textMuted}│ ${line}${t.reset}`)
     .join("\n");
   return `${lines}\n\n`;
 };
@@ -301,10 +412,10 @@ renderer.table = function (token) {
   }
 
   output.push(bottom);
-  return `${output.join("\n")}\n\n`;
+  return `${t.textMuted}${output.join("\n")}${t.reset}\n\n`;
 };
 
-renderer.hr = () => `\n${"─".repeat(40)}\n\n`;
+renderer.hr = () => `\n${t.textMuted}${"─".repeat(40)}${t.reset}\n\n`;
 
 renderer.br = () => "\n";
 
@@ -321,11 +432,13 @@ renderer.space = () => "";
 
 const marked = new Marked({ renderer, async: false });
 
-export function renderMarkdown(text: string, _width: number): string {
+export function renderMarkdown(text: string, width: number): string {
   try {
     const result = marked.parse(text) as string;
-    const postProcessed = applyGfmPostProcessing(result);
-    return postProcessed.replace(/\n{3,}/g, "\n\n").trimEnd();
+    const postProcessed = applyGfmPostProcessing(result)
+      .replace(/\n{3,}/g, "\n\n")
+      .trimEnd();
+    return wrapRenderedText(postProcessed, width);
   } catch {
     return text;
   }

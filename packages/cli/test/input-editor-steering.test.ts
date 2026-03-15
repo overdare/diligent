@@ -28,14 +28,15 @@ function stripAnsi(input: string): string {
 }
 
 describe("InputEditor steering queue", () => {
-  test("renders steering indicator above prompt when pending steers exist", () => {
+  test("renders each pending steering message on its own line", () => {
     const editor = new InputEditor({ prompt: "❯ " }, () => {});
     editor.focused = true;
 
-    editor.setPendingSteers(["change approach"]);
+    editor.setPendingSteers(["change approach", "use tests first"]);
     const lines = editor.render(80).map(stripAnsi);
 
-    expect(lines.some((line) => line.includes("⚑ steering (1) change approach"))).toBe(true);
+    expect(lines.some((line) => line.includes("⚑ steering change approach"))).toBe(true);
+    expect(lines.some((line) => line.includes("⚑ steering use tests first"))).toBe(true);
   });
 
   test("does not render steering indicator when queue is empty", () => {

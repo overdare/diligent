@@ -105,9 +105,33 @@ export class TUIRenderer {
     return Math.max(1, Math.ceil(visible / safeWidth));
   }
 
-  /** Count how many terminal rows a set of lines occupies given terminal width */
-  private countTerminalRows(lines: string[], width: number): number {
-    return lines.reduce((sum, line) => sum + this.countTerminalRowsForLine(line, width), 0);
+  private hasBoundaryCarry(line: string, width: number): boolean {
+    const safeWidth = Math.max(1, width);
+    const visible = displayWidth(stripAnsi(line));
+    return visible > 0 && visible % safeWidth === 0;
+  }
+
+  private serializeLinesForTerminal(lines: string[], width: number, ensureTrailingNewline = false): string {
+    if (lines.length === 0) {
+      return "";
+    }
+
+    const safeWidth = Math.max(1, width);
+    let out = "";
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      out += line;
+      const isLast = i === lines.length - 1;
+      if (!isLast) {
+        if (!this.hasBoundaryCarry(line, safeWidth)) {
+          out += "\r\n";
+        }
+      } else if (ensureTrailingNewline && !this.hasBoundaryCarry(line, safeWidth)) {
+        out += "\r\n";
+      }
+    }
+
+    return out;
   }
 
   /** Count physical terminal rows consumed, including boundary auto-wrap carry rows. */
@@ -115,14 +139,28 @@ export class TUIRenderer {
     const safeWidth = Math.max(1, width);
     return lines.reduce((sum, line) => {
       const baseRows = this.countTerminalRowsForLine(line, safeWidth);
-      const visible = displayWidth(stripAnsi(line));
-      const boundaryCarry = visible > 0 && visible % safeWidth === 0 ? 1 : 0;
+      const boundaryCarry = this.hasBoundaryCarry(line, safeWidth) ? 1 : 0;
       return sum + baseRows + boundaryCarry;
     }, 0);
   }
 
-
   /** Keep only the suffix of lines that fits within the terminal's visible row budget */
+  private truncateLineToFitRowsFromEnd(line: string, width: number, maxRows: number): string {
+    if (maxRows <= 0) {
+      return "";
+    }
+
+    const safeWidth = Math.max(1, width);
+    const visible = displayWidth(stripAnsi(line));
+    const maxVisible = Math.max(0, maxRows * safeWidth - 1);
+    if (visible <= maxVisible) {
+      return line;
+    }
+
+    const startCol = Math.max(0, visible - maxVisible);
+    return this.sliceWithAnsi(line, startCol, visible);
+  }
+
   private sliceLinesToTerminalRows(
     lines: string[],
     width: number,
@@ -137,8 +175,7 @@ export class TUIRenderer {
     let startIdx = lines.length;
     for (let i = lines.length - 1; i >= 0; i--) {
       const baseRows = this.countTerminalRowsForLine(lines[i], safeWidth);
-      const visible = displayWidth(stripAnsi(lines[i]));
-      const boundaryCarry = visible > 0 && visible % safeWidth === 0 ? 1 : 0;
+      const boundaryCarry = this.hasBoundaryCarry(lines[i], safeWidth) ? 1 : 0;
       const lineRows = baseRows + boundaryCarry;
       if (usedRows + lineRows > maxRows) {
         break;
@@ -148,7 +185,11 @@ export class TUIRenderer {
     }
 
     if (startIdx === lines.length) {
-      return { lines: [lines[lines.length - 1]], startIdx: lines.length - 1 };
+      const lastLine = lines[lines.length - 1] ?? "";
+      return {
+        lines: [this.truncateLineToFitRowsFromEnd(lastLine, safeWidth, maxRows)],
+        startIdx: lines.length - 1,
+      };
     }
 
     return { lines: lines.slice(startIdx), startIdx };
@@ -158,12 +199,24 @@ export class TUIRenderer {
    *  active lines are redrawn each frame. */
   private doRender(): void {
     const width = Math.max(1, this.terminal.columns);
-    const allLines = this.root.render(width);
+
+    let allLines: string[];
+    try {
+      allLines = this.root.render(width);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      allLines = [`[render error] ${message}`];
+    }
 
     // Determine committed line count (monotonically increasing)
     // Cap to current frame length because historical scrollback may already
     // contain lines that no longer exist in the latest render output.
-    let committedCount = this.root.getCommittedLineCount?.(width) ?? 0;
+    let committedCount = 0;
+    try {
+      committedCount = this.root.getCommittedLineCount?.(width) ?? 0;
+    } catch {
+      committedCount = 0;
+    }
     committedCount = Math.min(allLines.length, Math.max(committedCount, this.flushedCommittedCount));
 
     // Split into committed and active regions
@@ -237,13 +290,17 @@ export class TUIRenderer {
       const newLines = committedLines.slice(committedFlushStart);
       const commitBatch = [...newLines, ...overflowActiveLines];
       if (commitBatch.length > 0) {
-        this.terminal.write(`${commitBatch.join("\r\n")}\r\n`);
+        const commitPayload = this.serializeLinesForTerminal(commitBatch, width, true);
+        if (commitPayload.length > 0) {
+          this.terminal.write(commitPayload);
+        }
       }
       this.flushedCommittedCount = Math.max(this.flushedCommittedCount, committedCount + overflowActiveLines.length);
     }
 
     // Write active region (redrawn each frame)
-    this.terminal.writeSynchronized(displayActiveLines.join("\r\n"));
+    const activePayload = this.serializeLinesForTerminal(displayActiveLines, width);
+    this.terminal.writeSynchronized(activePayload);
 
     const totalActiveRows = this.countPhysicalTerminalRows(displayActiveLines, width);
     this.lastActiveRows = totalActiveRows;

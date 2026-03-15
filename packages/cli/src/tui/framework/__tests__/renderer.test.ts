@@ -387,6 +387,32 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(sim.screen.filter((l) => l === "line-7").length).toBeLessThanOrEqual(1);
   });
 
+  test("single long active line exceeding viewport rows does not erase history", () => {
+    const { terminal, sim } = createSim(3, 10);
+    let chatLines = ["short-1", "short-2", "short-3"];
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...chatLines],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    expect(sim.screen.some((l) => l === "short-1")).toBe(true);
+
+    chatLines = ["1234567890123456789012345678901234567890"];
+    renderer.forceRender();
+
+    renderer.forceRender();
+
+    // Historical rows should still be present in scrollback after repeated redraws.
+    expect(sim.screen.some((l) => l === "short-1")).toBe(true);
+    expect(sim.screen.filter((l) => l === "short-1").length).toBe(1);
+  });
+
   test("cursor stays anchored when active content ends on wrap boundary", () => {
     const { terminal, sim } = createSim(6, 10);
     let chatLines = ["1234567890"]; // exactly fills one terminal row

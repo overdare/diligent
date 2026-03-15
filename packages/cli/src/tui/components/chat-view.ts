@@ -1,5 +1,6 @@
 // @summary Renders the agent message history and real-time streaming output
 
+import type { ToolResultMessage } from "@diligent/core";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
 import { deriveToolRenderPayload } from "@diligent/runtime/tools";
@@ -9,12 +10,9 @@ import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
-import { SpinnerComponent } from "./spinner";
 
-function formatTokensCompact(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K`;
-  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+function formatTokensRoundedK(n: number): string {
+  return `${Math.round(n / 1000)}k`;
 }
 
 function formatToolElapsed(ms: number): string | null {
@@ -173,15 +171,20 @@ const TOOL_MAX_LINES = 5;
 
 /**
  * Main conversation view — message list, streaming output, tool execution display.
- * Composes MarkdownView and SpinnerComponent internally.
+ * Composes MarkdownView and internal active-status rendering.
  */
 export class ChatView implements Component {
   private items: ChatItem[] = [];
   private activeMarkdown: MarkdownView | null = null;
-  private activeSpinner: SpinnerComponent;
-  private thinkingSpinner: SpinnerComponent;
   private thinkingStartTime: number | null = null;
   private thinkingText = "";
+  private activeStatus: {
+    message: string;
+    startedAt: number;
+    blinkVisible: boolean;
+    timer: ReturnType<typeof setInterval> | null;
+  } | null = null;
+  private statusBeforeCompaction: string | null = null;
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
   private toolCallInputs = new Map<string, unknown>();
@@ -190,33 +193,30 @@ export class ChatView implements Component {
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
   private toolResultsExpanded = false;
 
-  constructor(private options: ChatViewOptions) {
-    this.activeSpinner = new SpinnerComponent(options.requestRender);
-    this.thinkingSpinner = new SpinnerComponent(options.requestRender);
-  }
+  constructor(private options: ChatViewOptions) {}
 
   /** Handle agent events to update the view */
   handleEvent(event: AgentEvent): void {
     debugLogger.logAgentEvent(event);
     switch (event.type) {
       case "agent_start":
-        this.activeSpinner.start("Thinking\u2026");
+        this.startActiveStatus("Thinking…");
         break;
 
       case "message_start":
-        this.activeSpinner.stop();
+        this.stopActiveStatus();
         this.activeMarkdown = new MarkdownView(this.options.requestRender);
         break;
 
       case "message_delta":
         if (event.delta.type === "thinking_delta") {
           this.thinkingText += event.delta.delta;
-          if (!this.thinkingSpinner.isRunning) {
+          if (this.thinkingStartTime === null) {
             this.thinkingStartTime = Date.now();
-            this.thinkingSpinner.start("Thinking\u2026");
           }
+          this.startActiveStatus("Thinking…");
         } else if (event.delta.type === "text_delta" && this.activeMarkdown) {
-          if (this.thinkingSpinner.isRunning) {
+          if (this.thinkingText.length > 0) {
             this.commitThinkingBlock();
           }
           this.activeMarkdown.pushDelta(event.delta.delta);
@@ -224,7 +224,7 @@ export class ChatView implements Component {
         break;
 
       case "message_end":
-        if (this.thinkingSpinner.isRunning) {
+        if (this.thinkingText.length > 0) {
           this.commitThinkingBlock();
         }
         if (this.activeMarkdown) {
@@ -239,7 +239,7 @@ export class ChatView implements Component {
         this.toolCallInputs.set(event.toolCallId, event.input);
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning\u2026" : "Updating plan\u2026";
-          this.activeSpinner.start(label);
+          this.startActiveStatus(label);
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const inp = event.input as Record<string, unknown> | null;
           let spinnerLabel = event.toolName;
@@ -266,9 +266,9 @@ export class ChatView implements Component {
             spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
           }
           this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel, prompt });
-          this.activeSpinner.start(spinnerLabel);
+          this.startActiveStatus(spinnerLabel);
         } else {
-          this.activeSpinner.start(event.toolName);
+          this.startActiveStatus(event.toolName);
         }
         break;
 
@@ -276,15 +276,15 @@ export class ChatView implements Component {
         if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           if (state) {
-            this.activeSpinner.setMessage(`${state.label} — ${event.partialResult}`);
+            this.setActiveStatusMessage(`${state.label} — ${event.partialResult}`);
           }
         } else {
-          this.activeSpinner.setMessage(`${event.toolName}…`);
+          this.setActiveStatusMessage(`${event.toolName}…`);
         }
         break;
 
       case "tool_end": {
-        this.activeSpinner.stop();
+        this.stopActiveStatus();
         const startTime = this.toolStartTimes.get(event.toolCallId);
         this.toolStartTimes.delete(event.toolCallId);
         const toolInput = this.toolCallInputs.get(event.toolCallId);
@@ -382,7 +382,6 @@ export class ChatView implements Component {
           const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
           const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
           for (let i = 0; i < display.length; i++) {
-            const isEllipsis = display[i].startsWith("… +");
             lines.push(`${t.dim}  ${display[i]}${t.reset}`);
           }
           this.items.push(this.createToolResultItem(lines));
@@ -395,7 +394,10 @@ export class ChatView implements Component {
       }
 
       case "status_change":
-        if (event.status === "busy") this.activeSpinner.start("Working…");
+        if (event.status === "idle") {
+          this.statusBeforeCompaction = null;
+          this.stopActiveStatus();
+        }
         break;
 
       case "usage":
@@ -408,15 +410,23 @@ export class ChatView implements Component {
         break;
 
       case "compaction_start":
-        // Compaction progress is shown via overlay dialog (managed by App)
+        this.statusBeforeCompaction = this.activeStatus?.message ?? null;
+        this.startActiveStatus("Compacting…");
         break;
 
       case "compaction_end": {
-        this.activeSpinner.stop();
+        if (this.statusBeforeCompaction) {
+          this.startActiveStatus(this.statusBeforeCompaction);
+        } else {
+          this.stopActiveStatus();
+        }
+        this.statusBeforeCompaction = null;
+        const summaryText = event.summary.trim();
+        const summaryPrefix = summaryText.length > 0 ? `${summaryText}, ` : "";
         this.items.push({
           kind: "plain",
           lines: [
-            `${t.success}⏺${t.reset} ${t.dim}compacted: ${formatTokensCompact(event.tokensBefore)} → ${formatTokensCompact(event.tokensAfter)}${t.reset}`,
+            `${t.success}⏺${t.reset} ${t.dim}Compacted: ${summaryPrefix}${formatTokensRoundedK(event.tokensBefore)} → ${formatTokensRoundedK(event.tokensAfter)} tokens${t.reset}`,
           ],
         });
         this.options.requestRender();
@@ -429,8 +439,7 @@ export class ChatView implements Component {
         break;
 
       case "error":
-        this.activeSpinner.stop();
-        this.thinkingSpinner.stop();
+        this.stopActiveStatus();
         this.thinkingStartTime = null;
         this.thinkingText = "";
         this.items.push({ kind: "plain", lines: [`${t.error}✗ ${event.error.message}${t.reset}`] });
@@ -442,7 +451,7 @@ export class ChatView implements Component {
 
       case "turn_end":
         if (event.toolResults.length > 0) {
-          this.activeSpinner.start("Thinking\u2026");
+          this.startActiveStatus("Thinking…");
         }
         break;
 
@@ -472,6 +481,38 @@ export class ChatView implements Component {
     this.options.requestRender();
   }
 
+  addToolResultMessage(message: ToolResultMessage): void {
+    const renderPayload: ToolRenderPayload | undefined = deriveToolRenderPayload(
+      message.toolName,
+      undefined,
+      message.output,
+      message.isError,
+    );
+    const icon = message.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+    const headerLabel = buildToolHeader(message.toolName, undefined, message.output);
+
+    if (renderPayload) {
+      const rendered = renderToolPayload(renderPayload);
+      const lines: string[] = [`${icon} ${headerLabel}`];
+      if (rendered.length > 0) {
+        lines.push(...rendered.map((line) => `  ${line}`));
+      }
+      this.items.push(this.createToolResultItem(lines));
+    } else if (message.output) {
+      const rawLines = message.output.split("\n");
+      const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
+      const lines: string[] = [`${icon} ${headerLabel}`];
+      for (const line of display) {
+        lines.push(`${t.dim}  ${line}${t.reset}`);
+      }
+      this.items.push(this.createToolResultItem(lines));
+    } else {
+      this.items.push({ kind: "plain", lines: [`${icon} ${headerLabel}`] });
+    }
+
+    this.options.requestRender();
+  }
+
   /** Add a completed thinking message from history (rendered as plain text) */
   addThinkingMessage(text: string, elapsedMs?: number): void {
     const icon = `${t.success}⏺${t.reset}`;
@@ -485,7 +526,7 @@ export class ChatView implements Component {
 
   /** Commit accumulated thinking block as visible content */
   private commitThinkingBlock(): void {
-    this.thinkingSpinner.stop();
+    this.stopActiveStatus();
     if (this.thinkingText.length > 0) {
       const elapsedMs = this.thinkingStartTime !== null ? Date.now() - this.thinkingStartTime : undefined;
       this.addThinkingMessage(this.thinkingText, elapsedMs);
@@ -519,18 +560,35 @@ export class ChatView implements Component {
     this.toolStartTimes.clear();
     this.options.requestRender();
   }
-  /** Stop all active spinners and discard streaming state. */
+  /** Stop active status indicators and discard transient streaming state. */
   clearActive(): void {
-    this.activeSpinner.stop();
-    this.thinkingSpinner.stop();
+    this.stopActiveStatus();
+    this.statusBeforeCompaction = null;
     this.thinkingStartTime = null;
     this.thinkingText = "";
     this.planCallCount = 0;
     this.toolCallInputs.clear();
+    this.activeMarkdown = null;
+  }
+
+  /**
+   * Commit current streaming content (if any) into history, then clear active state.
+   * Use this for explicit user interruption so partial response remains visible.
+   */
+  clearActiveWithCommit(): void {
+    this.stopActiveStatus();
+    this.statusBeforeCompaction = null;
+    if (this.thinkingText.length > 0) {
+      this.commitThinkingBlock();
+    }
+    this.planCallCount = 0;
+    this.toolCallInputs.clear();
     if (this.activeMarkdown) {
       this.activeMarkdown.finalize();
+      this.items.push(this.activeMarkdown);
       this.activeMarkdown = null;
     }
+    this.options.requestRender();
   }
 
   /** Get last usage info (for StatusBar) */
@@ -550,7 +608,12 @@ export class ChatView implements Component {
         return count;
       }
 
-      if (item instanceof MarkdownView || item instanceof UserMessageView) {
+      if (item instanceof MarkdownView) {
+        const markerPrefixWidth = displayWidth("⏺ ");
+        const continuationPrefixWidth = displayWidth("  ");
+        const markdownContentWidth = Math.max(1, width - Math.max(markerPrefixWidth, continuationPrefixWidth));
+        count += item.render(markdownContentWidth).length;
+      } else if (item instanceof UserMessageView) {
         count += item.render(width).length;
       } else if (item.kind === "thinking") {
         count += 1 + item.bodyLines.length;
@@ -563,25 +626,43 @@ export class ChatView implements Component {
 
   render(width: number): string[] {
     const result: string[] = [];
-    const TURN_MARKER = `${t.dim}⏺${t.reset} `;
+    const traceEnabled = debugLogger.isEnabled;
+    const separatorEvents: Array<{ reason: string; lineIndex: number }> = [];
+    const pushSeparator = (reason: string) => {
+      if (result.length > 0) {
+        result.push("");
+        if (traceEnabled) {
+          separatorEvents.push({ reason, lineIndex: result.length - 1 });
+        }
+      }
+    };
+
+    const TURN_MARKER_TEXT = "⏺ ";
+    const TURN_MARKER = `${t.text}${TURN_MARKER_TEXT}${t.reset}`;
+    const CONTINUATION_PREFIX = "  ";
+    const markerPrefixWidth = displayWidth(TURN_MARKER_TEXT);
+    const continuationPrefixWidth = displayWidth(CONTINUATION_PREFIX);
+    const markdownContentWidth = Math.max(1, width - Math.max(markerPrefixWidth, continuationPrefixWidth));
 
     for (let i = 0; i < this.items.length; i++) {
       const item = this.items[i];
-      if (i > 0 && result.length > 0) result.push("");
       if (item instanceof MarkdownView) {
-        const lines = item.render(width);
+        pushSeparator("item:markdown");
+        const lines = item.render(markdownContentWidth);
         if (lines.length > 0) {
-          result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `  ${line}`));
+          result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `${CONTINUATION_PREFIX}${line}`));
         }
         continue;
       }
 
       if (item instanceof UserMessageView) {
+        pushSeparator("item:user");
         result.push(...item.render(width));
         continue;
       }
 
       if (item.kind === "thinking") {
+        pushSeparator("item:thinking");
         result.push(item.header);
         if (item.bodyLines.length > 0) {
           result.push(...item.bodyLines.map((line) => `${t.boldOff}${t.dim}  ${line}${t.reset}`));
@@ -590,6 +671,7 @@ export class ChatView implements Component {
       }
 
       if (item.kind === "tool_result") {
+        pushSeparator("item:tool_result");
         const hint = this.toolResultsExpanded
           ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
           : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
@@ -598,35 +680,79 @@ export class ChatView implements Component {
           result.push(...item.details);
         }
       } else {
+        pushSeparator("item:plain");
         result.push(...item.lines);
       }
     }
 
-    // Add active thinking spinner
-    if (this.thinkingSpinner.isRunning) {
-      if (result.length > 0) result.push("");
-      result.push(...this.thinkingSpinner.render(width));
+    // Add active status
+    const activeStatusLine = this.renderActiveStatusLine();
+    if (activeStatusLine) {
+      pushSeparator("active:status");
+      result.push(activeStatusLine);
     }
 
     // Add active streaming markdown
     if (this.activeMarkdown) {
-      const lines = this.activeMarkdown.render(width);
+      const lines = this.activeMarkdown.render(markdownContentWidth);
       if (lines.length > 0) {
-        if (result.length > 0) result.push("");
-        result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `  ${line}`));
+        pushSeparator("active:markdown");
+        result.push(TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `${CONTINUATION_PREFIX}${line}`));
       }
-    }
-
-    // Add active spinner
-    if (this.activeSpinner.isRunning) {
-      if (result.length > 0) result.push("");
-      result.push(...this.activeSpinner.render(width));
     }
 
     // Add inline question input (request_user_input)
     if (this.activeQuestion) {
-      if (result.length > 0) result.push("");
+      pushSeparator("active:question");
       result.push(...this.activeQuestion.render(width));
+    }
+
+    if (traceEnabled) {
+      const blankLineIndexes: number[] = [];
+      const blankRuns: Array<{ start: number; length: number }> = [];
+      let runStart = -1;
+      let runLength = 0;
+
+      for (let index = 0; index < result.length; index++) {
+        if (result[index] === "") {
+          blankLineIndexes.push(index);
+          if (runStart === -1) {
+            runStart = index;
+            runLength = 1;
+          } else {
+            runLength++;
+          }
+        } else if (runStart !== -1) {
+          blankRuns.push({ start: runStart, length: runLength });
+          runStart = -1;
+          runLength = 0;
+        }
+      }
+
+      if (runStart !== -1) {
+        blankRuns.push({ start: runStart, length: runLength });
+      }
+
+      const itemKinds = this.items.slice(Math.max(0, this.items.length - 20)).map((item) => {
+        if (item instanceof MarkdownView) return "markdown";
+        if (item instanceof UserMessageView) return "user";
+        return item.kind;
+      });
+
+      debugLogger.logAgentEvent({
+        type: "chat_render_trace",
+        width,
+        totalLines: result.length,
+        blankLines: blankLineIndexes.length,
+        blankLineIndexes: blankLineIndexes.slice(0, 80),
+        blankRuns: blankRuns.slice(0, 40),
+        separatorEvents: separatorEvents.slice(0, 80),
+        itemCount: this.items.length,
+        itemKinds,
+        hasActiveStatus: activeStatusLine !== null,
+        hasActiveMarkdown: this.activeMarkdown !== null,
+        hasActiveQuestion: this.activeQuestion !== null,
+      });
     }
 
     return result;
@@ -653,7 +779,55 @@ export class ChatView implements Component {
       }
     }
     this.activeMarkdown?.invalidate();
-    this.thinkingSpinner.invalidate();
-    this.activeSpinner.invalidate();
+  }
+
+  private startActiveStatus(message: string): void {
+    if (this.activeStatus === null) {
+      this.activeStatus = {
+        message,
+        startedAt: Date.now(),
+        blinkVisible: true,
+        timer: null,
+      };
+      this.activeStatus.timer = setInterval(() => {
+        if (!this.activeStatus) return;
+        this.activeStatus.blinkVisible = !this.activeStatus.blinkVisible;
+        this.options.requestRender();
+      }, 500);
+      this.options.requestRender();
+      return;
+    }
+
+    const changed = this.activeStatus.message !== message;
+    this.activeStatus.message = message;
+    if (changed) {
+      this.activeStatus.startedAt = Date.now();
+      this.activeStatus.blinkVisible = true;
+    }
+    this.options.requestRender();
+  }
+
+  private setActiveStatusMessage(message: string): void {
+    if (this.activeStatus === null) {
+      this.startActiveStatus(message);
+      return;
+    }
+    this.activeStatus.message = message;
+    this.options.requestRender();
+  }
+
+  private stopActiveStatus(): void {
+    if (!this.activeStatus) return;
+    if (this.activeStatus.timer) {
+      clearInterval(this.activeStatus.timer);
+    }
+    this.activeStatus = null;
+  }
+
+  private renderActiveStatusLine(): string | null {
+    if (!this.activeStatus) return null;
+    const elapsed = formatThoughtElapsed(Date.now() - this.activeStatus.startedAt);
+    const dot = this.activeStatus.blinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
+    return `${dot} ${this.activeStatus.message} ${t.dim}(${elapsed})${t.reset}`;
   }
 }

@@ -1,5 +1,7 @@
 // @summary TUI render event logger for debugging terminal output
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * TUI debug logger. Enabled by setting DILIGENT_TUI_DEBUG=/path/to/file.jsonl
@@ -86,5 +88,21 @@ export class TUIDebugLogger {
   }
 }
 
-/** Singleton logger — initialized once from env var */
-export const debugLogger = new TUIDebugLogger(process.env.DILIGENT_TUI_DEBUG);
+function resolveDefaultDebugLogPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  const logDir = join(home, ".diligent", "logs");
+  mkdirSync(logDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[.:]/g, "-");
+  return join(logDir, `tui-${ts}.jsonl`);
+}
+
+function resolveDebugLogPath(): string | undefined {
+  const envPath = process.env.DILIGENT_TUI_DEBUG?.trim();
+  if (envPath === "0" || envPath === "false" || envPath === "off") {
+    return undefined;
+  }
+  return envPath && envPath.length > 0 ? envPath : resolveDefaultDebugLogPath();
+}
+
+/** Singleton logger — enabled by default; set DILIGENT_TUI_DEBUG=off to disable */
+export const debugLogger = new TUIDebugLogger(resolveDebugLogPath());

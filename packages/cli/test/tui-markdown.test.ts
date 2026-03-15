@@ -2,6 +2,10 @@
 import { describe, expect, test } from "bun:test";
 import { renderMarkdown } from "../src/tui/markdown";
 
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 describe("renderMarkdown", () => {
   test("renders bold text with ANSI", () => {
     const result = renderMarkdown("**bold text**", 80);
@@ -56,6 +60,28 @@ describe("renderMarkdown", () => {
     expect(result).toContain("3. Third");
   });
 
+  test("keeps continuation indentation for wrapped bullet items", () => {
+    const source = "- This bullet line is intentionally long so it wraps on narrow terminal widths.";
+    const result = stripAnsi(renderMarkdown(source, 24));
+    const lines = result.split("\n").filter((line) => line.length > 0);
+
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0]?.startsWith("- ")).toBe(true);
+    expect(lines[1]?.startsWith("  ")).toBe(true);
+    expect(lines[1]?.startsWith("- ")).toBe(false);
+  });
+
+  test("keeps continuation indentation for wrapped ordered items", () => {
+    const source = "12. This ordered item is long enough to wrap and should align after the numeric marker.";
+    const result = stripAnsi(renderMarkdown(source, 24));
+    const lines = result.split("\n").filter((line) => line.length > 0);
+
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0]?.startsWith("12. ")).toBe(true);
+    expect(lines[1]?.startsWith("    ")).toBe(true);
+    expect(lines[1]?.startsWith("12. ")).toBe(false);
+  });
+
   test("renders task list checkboxes", () => {
     const result = renderMarkdown("- [x] done\n- [ ] todo", 80);
     expect(result).toContain("[x] done");
@@ -73,7 +99,7 @@ describe("renderMarkdown", () => {
 
   test("renders second-level bullets on separate lines", () => {
     const source = "- 사과\n- 바나나\n  - 바나나-1\n  - 바나나-2\n- 오렌지";
-    const result = renderMarkdown(source, 80).replace(/\x1b\[[0-9;]*m/g, "");
+    const result = stripAnsi(renderMarkdown(source, 80));
 
     expect(result).toContain("- 사과");
     expect(result).toContain("- 바나나\n");

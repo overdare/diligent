@@ -239,6 +239,18 @@ function renderDiff(block: DiffBlock): string[] {
   return lines;
 }
 
+function safeStringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function renderUnknownBlock(block: unknown): string[] {
+  const value = block as { type?: unknown; title?: unknown };
+  const type = safeStringValue(value?.type) || "unknown";
+  const title = safeStringValue(value?.title);
+  const label = title ? `${type} — ${title}` : type;
+  return [`${t.dim}[unsupported block] ${label}${t.reset}`];
+}
+
 function renderBlock(block: ToolRenderBlock): string[] {
   switch (block.type) {
     case "summary":
@@ -260,7 +272,7 @@ function renderBlock(block: ToolRenderBlock): string[] {
     case "diff":
       return renderDiff(block);
     default:
-      return [];
+      return renderUnknownBlock(block);
   }
 }
 
@@ -268,7 +280,12 @@ export function renderToolPayload(payload: ToolRenderPayload | undefined): strin
   if (!payload || payload.blocks.length === 0) return [];
   const lines: string[] = [];
   for (const block of payload.blocks) {
-    const blockLines = renderBlock(block);
+    let blockLines: string[];
+    try {
+      blockLines = renderBlock(block);
+    } catch {
+      blockLines = [`${t.dim}[render error] ${(block as { type?: unknown })?.type ?? "unknown"}${t.reset}`];
+    }
     if (blockLines.length > 0) {
       if (lines.length > 0) lines.push("");
       lines.push(...blockLines);

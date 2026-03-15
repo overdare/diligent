@@ -1,6 +1,9 @@
 // @summary Tests for TUI structured tool payload block rendering
 import { describe, expect, test } from "bun:test";
 import type { ToolRenderPayload } from "@diligent/protocol";
+import { TUIRenderer } from "../src/tui/framework/renderer";
+import type { Terminal } from "../src/tui/framework/terminal";
+import type { Component } from "../src/tui/framework/types";
 import { renderToolPayload } from "../src/tui/render-blocks";
 
 describe("renderToolPayload", () => {
@@ -85,5 +88,91 @@ describe("renderToolPayload", () => {
     expect(lines.some((line) => line.includes("x.ts"))).toBe(true);
     expect(lines.some((line) => line.includes("pwd"))).toBe(true);
     expect(lines.some((line) => line.includes("/tmp"))).toBe(true);
+  });
+
+  test("keeps rendering when payload includes unknown block shape", () => {
+    const payload = {
+      version: 1,
+      blocks: [
+        { type: "summary", text: "ok" },
+        { type: "future_block", title: "future" },
+      ],
+    } as unknown as ToolRenderPayload;
+
+    const lines = renderToolPayload(payload);
+    expect(lines.some((line) => line.includes("ok"))).toBe(true);
+    expect(lines.some((line) => line.includes("unsupported block"))).toBe(true);
+    expect(lines.some((line) => line.includes("future_block"))).toBe(true);
+  });
+
+  test("keeps rendering when a malformed known block throws", () => {
+    const payload = {
+      version: 1,
+      blocks: [{ type: "summary", text: "ok" }, { type: "table" }],
+    } as unknown as ToolRenderPayload;
+
+    const lines = renderToolPayload(payload);
+    expect(lines.some((line) => line.includes("ok"))).toBe(true);
+    expect(lines.some((line) => line.includes("render error"))).toBe(true);
+    expect(lines.some((line) => line.includes("table"))).toBe(true);
+  });
+});
+
+describe("TUIRenderer resilience", () => {
+  function createMockTerminal(): Terminal & { output: string[]; syncOutput: string[] } {
+    const output: string[] = [];
+    const syncOutput: string[] = [];
+    return {
+      output,
+      syncOutput,
+      columns: 80,
+      rows: 24,
+      isKittyEnabled: false,
+      write(data: string) {
+        output.push(data);
+      },
+      writeSynchronized(data: string) {
+        syncOutput.push(data);
+      },
+      hideCursor() {
+        output.push("HIDE_CURSOR");
+      },
+      showCursor() {
+        output.push("SHOW_CURSOR");
+      },
+      moveCursorTo() {},
+      clearLine() {},
+      clearFromCursor() {},
+      clearScreen() {},
+      moveBy() {},
+      start() {},
+      stop() {},
+    } as unknown as Terminal & { output: string[]; syncOutput: string[] };
+  }
+
+  test("survives render exceptions and keeps frame alive", () => {
+    const terminal = createMockTerminal();
+    let throwOnce = true;
+    const component: Component = {
+      render() {
+        if (throwOnce) {
+          throwOnce = false;
+          throw new Error("boom");
+        }
+        return ["ok"];
+      },
+      invalidate() {},
+    };
+
+    const renderer = new TUIRenderer(terminal, component);
+    renderer.start();
+
+    const firstFrame = terminal.syncOutput.join("");
+    expect(firstFrame).toContain("[render error] boom");
+
+    terminal.syncOutput.length = 0;
+    renderer.forceRender();
+    const secondFrame = terminal.syncOutput.join("");
+    expect(secondFrame).toContain("ok");
   });
 });

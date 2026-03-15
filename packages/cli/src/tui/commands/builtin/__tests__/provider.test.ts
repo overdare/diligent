@@ -13,7 +13,7 @@ function makeContext(overrides?: Partial<CommandContext>): CommandContext {
       stop: () => {},
       getRpcClient: () => null,
     },
-    config: {} as CommandContext["config"],
+    config: {} as unknown as CommandContext["config"],
     threadId: null,
     skills: [],
     registry: {} as CommandContext["registry"],
@@ -100,7 +100,7 @@ describe("disconnectProvider", () => {
           removeApiKey,
           removeExternalAuth,
         },
-      } as CommandContext["config"],
+      } as unknown as CommandContext["config"],
       displayLines,
     });
 
@@ -131,7 +131,7 @@ describe("disconnectProvider", () => {
           removeApiKey,
           removeExternalAuth,
         },
-      } as CommandContext["config"],
+      } as unknown as CommandContext["config"],
     });
 
     await disconnectProvider("chatgpt", ctx);
@@ -159,7 +159,7 @@ describe("disconnectProvider", () => {
           removeApiKey,
           removeExternalAuth: () => {},
         },
-      } as CommandContext["config"],
+      } as unknown as CommandContext["config"],
       displayLines,
     });
 
