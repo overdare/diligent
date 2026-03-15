@@ -72,7 +72,12 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
     return reduceServerNotification(state, action.payload.notification, action.payload.events);
   if (action.type === "hydrate") {
     return hydrateFromThreadRead(
-      { ...state, activeThreadId: action.payload.threadId, mode: action.payload.mode },
+      {
+        ...state,
+        activeThreadId: action.payload.threadId,
+        activeThreadCwd: action.payload.history.cwd,
+        mode: action.payload.mode,
+      },
       action.payload.history,
     );
   }
@@ -949,6 +954,7 @@ export function App() {
           <MessageList
             items={state.items}
             threadStatus={state.threadStatus}
+            threadCwd={state.activeThreadCwd ?? undefined}
             onSelectPrompt={(p) => setActiveInput(p)}
             approvalPrompt={
               serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST

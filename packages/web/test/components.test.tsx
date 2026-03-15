@@ -190,7 +190,7 @@ test("knowledge manager modal renders inline overlay controls and filter UI", ()
   expect(html).toContain("Loading knowledge entries…");
   expect(html).toContain("Entries (0/0)");
   expect(html).toContain("pattern");
-  expect(html).toContain("decision");
+  expect(html).toContain("backlog");
 });
 
 test("user message renders attached images", () => {

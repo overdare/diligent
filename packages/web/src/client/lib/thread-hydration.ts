@@ -211,6 +211,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
 
   const base: ThreadState = {
     ...state,
+    activeThreadCwd: payload.cwd,
     items: [],
     seenKeys: {},
     itemSlots: {},

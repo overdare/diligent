@@ -1,7 +1,7 @@
 // @summary Tool display name, icon, and category mapping for compact ToolCallRow rendering
 
 import type { ToolRenderPayload } from "@diligent/protocol";
-import { deriveToolRenderPayload } from "@diligent/runtime/tools/render-payload";
+import { type DeriveToolRenderPayloadOptions, deriveToolRenderPayload } from "@diligent/runtime/tools/render-payload";
 
 export interface ToolInfo {
   displayName: string;
@@ -110,64 +110,50 @@ export function parseRequestUserInputTitleFromOutput(outputText: string): string
   return headerMatch?.[1]?.trim();
 }
 
-/**
- * Build the short header title shown in tool call rows.
- * Example: request_user_input -> "Ask - scope"
- */
-export function getToolHeaderTitle(toolName: string, inputText: string, outputText = ""): string {
-  const { displayName } = getToolInfo(toolName);
-  const normalizedName = toolName.toLowerCase();
-  if (normalizedName === "request_user_input") {
-    try {
-      const parsed = JSON.parse(inputText) as Record<string, unknown>;
-      const title = parseRequestUserInputTitle(parsed);
-      if (title) return `Question - ${clip(title, 72)}`;
-    } catch {
-      // Fall through to output parser
-    }
-    const outputTitle = parseRequestUserInputTitleFromOutput(outputText);
-    return outputTitle ? `Question - ${clip(outputTitle, 72)}` : "Question";
+function defaultHeaderLabelForBlockType(type: ToolRenderPayload["blocks"][number]["type"]): string {
+  switch (type) {
+    case "summary":
+      return "Summary";
+    case "key_value":
+      return "Details";
+    case "list":
+      return "List";
+    case "table":
+      return "Table";
+    case "tree":
+      return "Tree";
+    case "status_badges":
+      return "Status";
+    case "file":
+      return "File";
+    case "command":
+      return "Command";
+    case "diff":
+      return "Diff";
   }
-  if (normalizedName === "plan") {
-    return parsePlanHeaderTitle(inputText);
-  }
-  if (
-    normalizedName === "edit" ||
-    normalizedName === "multiedit" ||
-    normalizedName === "multi_edit" ||
-    normalizedName === "write"
-  ) {
-    try {
-      const parsed = JSON.parse(inputText) as Record<string, unknown>;
-      const filePath = readStringField(parsed, ["file_path"]);
-      if (filePath) return `${displayName} — ${clip(summarizePathForUi(filePath), 60)}`;
-    } catch {
-      // fall through
-    }
-  }
-  void inputText;
-  return displayName;
 }
 
-type PlanHeaderStep = { text: string; status?: "pending" | "in_progress" | "done" | "cancelled" };
+/**
+ * Build the short header title shown in tool call rows.
+ * Header is payload-first: derived from first ToolRenderPayload block type/title.
+ */
+export function getToolHeaderTitle(
+  toolName: string,
+  inputText: string,
+  outputText = "",
+  renderPayload?: ToolRenderPayload,
+  renderOptions?: DeriveToolRenderPayloadOptions,
+): string {
+  const { displayName } = getToolInfo(toolName);
+  const payload = renderPayload ?? deriveRenderPayload(toolName, inputText, outputText, renderOptions);
+  if (!payload || payload.blocks.length === 0) return displayName;
 
-function parsePlanHeaderTitle(inputText: string): string {
-  try {
-    const parsed = JSON.parse(inputText) as Record<string, unknown>;
-    const steps = parsed.steps as PlanHeaderStep[] | undefined;
-    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
-    if (!steps || !Array.isArray(steps)) return title ? `Plan — ${clip(title, 50)}` : "Plan";
-    const doneCount = steps.filter((step) => step.status === "done").length;
-    const cancelledCount = steps.filter((step) => step.status === "cancelled").length;
-    const resolvedCount = doneCount + cancelledCount;
-    const totalCount = steps.length;
-    const progress = `${doneCount}/${totalCount}`;
-    const label = resolvedCount === 0 ? "Created" : resolvedCount === totalCount ? "Done" : "Updated";
-    const suffix = title ? ` — ${clip(title, 40)}` : "";
-    return `Plan ${label} ${progress}${suffix}`;
-  } catch {
-    return "Plan";
-  }
+  const firstBlock = payload.blocks[0];
+  if (firstBlock.type === "list") return displayName;
+  const titledBlock = firstBlock as { title?: unknown };
+  const title = typeof titledBlock.title === "string" ? titledBlock.title.trim() : "";
+  const label = title || defaultHeaderLabelForBlockType(firstBlock.type);
+  return `${displayName} — ${label}`;
 }
 
 export function isContextTool(toolName: string): boolean {
@@ -280,6 +266,7 @@ export function deriveRenderPayload(
   toolName: string,
   inputText: string,
   outputText: string,
+  options?: DeriveToolRenderPayloadOptions,
 ): ToolRenderPayload | undefined {
   let parsedInput: unknown;
   try {
@@ -287,5 +274,5 @@ export function deriveRenderPayload(
   } catch {
     parsedInput = undefined;
   }
-  return deriveToolRenderPayload(toolName, parsedInput, outputText, false);
+  return deriveToolRenderPayload(toolName, parsedInput, outputText, false, options);
 }

@@ -44,16 +44,14 @@ test("summary prefers explicit intent fields for non-request tools", () => {
   expect(summarizeInput("spawn_agent", input)).toContain("Refactor the sidebar");
 });
 
-test("plan header uses status-based progress for modern plan payloads", () => {
+test("summary-first payload header becomes summary label for grep", () => {
   const input = JSON.stringify({
-    title: "Ship fix",
-    steps: [
-      { text: "Investigate", status: "done" },
-      { text: "Implement", status: "in_progress" },
-      { text: "Verify", status: "pending" },
-    ],
+    pattern: "TODO",
+    path: "/Users/me/project/src/main.ts",
+    include: "*.ts",
   });
-  expect(getToolHeaderTitle("plan", input)).toBe("Plan Updated 1/3 — Ship fix");
+  const output = "/Users/me/project/src/main.ts:1:// TODO";
+  expect(getToolHeaderTitle("grep", input, output)).toBe("Grep — Summary");
 });
 
 test("summarizeInput shows read target path", () => {
@@ -61,11 +59,30 @@ test("summarizeInput shows read target path", () => {
   expect(summarizeInput("read", input)).toBe("Read client/App.tsx");
 });
 
-test("summarizeInput shows patch target path", () => {
+test("header title uses block title when provided by payload", () => {
   const input = JSON.stringify({
-    patch: "*** Begin Patch\n*** Update File: packages/web/src/client/lib/tool-info.ts\n*** End Patch",
+    action: "upsert",
+    id: "k1",
+    type: "pattern",
+    content: "x",
+    confidence: 0.9,
+    tags: [],
   });
-  expect(summarizeInput("apply_patch", input)).toBe("Patch lib/tool-info.ts");
+  const output = "saved";
+  expect(getToolHeaderTitle("update_knowledge", input, output)).toBe("Knowledge — Details");
+});
+
+test("update_knowledge payload-first header remains details with enriched blocks", () => {
+  const input = JSON.stringify({
+    action: "upsert",
+    id: "k1",
+    type: "pattern",
+    content: "Prefer batched tool calls for independent reads",
+    confidence: 0.91,
+    tags: ["workflow", "perf"],
+  });
+  const output = "Knowledge saved: [pattern] Prefer batched tool calls";
+  expect(getToolHeaderTitle("update_knowledge", input, output)).toBe("Knowledge — Details");
 });
 
 test("summarizeInput falls back to compact single-line JSON for generic tools", () => {

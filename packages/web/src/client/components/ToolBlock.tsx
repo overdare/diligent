@@ -17,13 +17,18 @@ import { ToolRenderBlocks } from "./ToolRenderBlocks";
 
 interface ToolBlockProps {
   item: Extract<RenderItem, { kind: "tool" }>;
+  threadCwd?: string;
 }
 
 /* ── Tool-specific expanded content ───────────────────────────────── */
 
-function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) {
-  const render = item.render ?? deriveRenderPayload(item.toolName, item.inputText, item.outputText);
-
+function ToolContent({
+  item,
+  render,
+}: {
+  item: Extract<RenderItem, { kind: "tool" }>;
+  render?: import("@diligent/protocol").ToolRenderPayload;
+}) {
   if (render) {
     return <ToolRenderBlocks payload={render} />;
   }
@@ -39,10 +44,14 @@ function ToolContent({ item }: { item: Extract<RenderItem, { kind: "tool" }> }) 
 
 /* ── Main ToolBlock ─────────────────────────────────────────────── */
 
-export function ToolBlock({ item }: ToolBlockProps) {
+export function ToolBlock({ item, threadCwd }: ToolBlockProps) {
   const [open, setOpen] = useState(false);
   const { icon, category } = getToolInfo(item.toolName);
-  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText);
+  const renderPayload =
+    item.render ?? deriveRenderPayload(item.toolName, item.inputText, item.outputText, { cwd: threadCwd });
+  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText, renderPayload, {
+    cwd: threadCwd,
+  });
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
   const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
   const outputSummary =
@@ -119,7 +128,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
 
         {open && (
           <div className="pt-2 pb-3">
-            <ToolContent item={item} />
+            <ToolContent item={item} render={renderPayload} />
           </div>
         )}
       </div>

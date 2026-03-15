@@ -127,6 +127,7 @@ export const TranscriptEntrySchema = z.discriminatedUnion("type", [
 export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
 
 export const ThreadReadResponseSchema = z.object({
+  cwd: z.string(),
   messages: z.array(MessageSchema),
   transcript: z.array(TranscriptEntrySchema).optional(),
   errors: z

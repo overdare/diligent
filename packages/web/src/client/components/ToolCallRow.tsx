@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import { getToolHeaderTitle, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
+import {
+  deriveRenderPayload,
+  getToolHeaderTitle,
+  getToolInfo,
+  summarizeInput,
+  summarizeOutput,
+} from "../lib/tool-info";
 import { SectionLabel } from "./SectionLabel";
 import { StatusDot } from "./StatusDot";
 
@@ -14,7 +20,8 @@ interface ToolCallRowProps {
 export function ToolCallRow({ item }: ToolCallRowProps) {
   const [open, setOpen] = useState(false);
   const { icon } = getToolInfo(item.toolName);
-  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText);
+  const renderPayload = item.render ?? deriveRenderPayload(item.toolName, item.inputText, item.outputText);
+  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
   const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
   const outputSummary =

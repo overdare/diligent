@@ -208,6 +208,7 @@ export async function handleThreadRead(
   ctx: ThreadHandlersContext,
   threadId?: string,
 ): Promise<{
+  cwd: string;
   messages: unknown[];
   transcript?: unknown[];
   errors: unknown[];
@@ -246,6 +247,7 @@ export async function handleThreadRead(
   }
 
   return {
+    cwd: runtime.cwd,
     messages,
     transcript,
     errors: runtime.manager.getErrors(),

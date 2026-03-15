@@ -28,6 +28,7 @@ function ErrorMessage({ item }: { item: Extract<RenderItem, { kind: "error" }> }
 interface MessageListProps {
   items: RenderItem[];
   threadStatus: ThreadStatus;
+  threadCwd?: string;
   onSelectPrompt: (prompt: string) => void;
   approvalPrompt?: { request: ApprovalRequest; onDecide: (decision: "once" | "always" | "reject") => void } | null;
   questionPrompt?: {
@@ -42,7 +43,7 @@ interface MessageListProps {
 type CollabItem = Extract<RenderItem, { kind: "collab" }>;
 
 /** Group consecutive collab items, render everything else individually. */
-function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
+function renderGroupedItems(items: RenderItem[], threadCwd?: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
   let collabBuf: CollabItem[] = [];
 
@@ -65,7 +66,7 @@ function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
     } else if (item.kind === "error") {
       result.push(<ErrorMessage key={item.id} item={item} />);
     } else if (item.kind === "tool") {
-      result.push(<ToolBlock key={item.id} item={item} />);
+      result.push(<ToolBlock key={item.id} item={item} threadCwd={threadCwd} />);
     } else if (item.kind === "user") {
       result.push(<UserMessage key={item.id} text={item.text} images={item.images} />);
     } else if (item.kind === "assistant") {
@@ -80,7 +81,14 @@ function renderGroupedItems(items: RenderItem[]): React.ReactNode[] {
   return result;
 }
 
-export function MessageList({ items, threadStatus, onSelectPrompt, approvalPrompt, questionPrompt }: MessageListProps) {
+export function MessageList({
+  items,
+  threadStatus,
+  threadCwd,
+  onSelectPrompt,
+  approvalPrompt,
+  questionPrompt,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -134,7 +142,7 @@ export function MessageList({ items, threadStatus, onSelectPrompt, approvalPromp
           <EmptyState onSelectPrompt={onSelectPrompt} />
         ) : (
           <div className="space-y-1">
-            {renderGroupedItems(items)}
+            {renderGroupedItems(items, threadCwd)}
 
             {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (
               <div className="py-1">

@@ -2,14 +2,26 @@
 
 import type { DiffFile, ToolRenderPayload } from "@diligent/protocol";
 
+export interface DeriveToolRenderPayloadOptions {
+  cwd?: string;
+}
+
 export function deriveToolRenderPayload(
   toolName: string,
   input: unknown,
   outputText: string,
   isError: boolean,
+  options?: DeriveToolRenderPayloadOptions,
 ): ToolRenderPayload | undefined {
   const name = toolName.toLowerCase();
   const parsed = toRecord(input);
+  debugRenderPayload("start", {
+    toolName,
+    normalizedName: name,
+    inputKeys: parsed ? Object.keys(parsed).sort() : [],
+    outputLines: outputText ? outputText.split("\n").length : 0,
+    isError,
+  });
 
   if (name === "bash" && parsed) {
     const command = typeof parsed.command === "string" ? parsed.command : undefined;
@@ -110,10 +122,28 @@ export function deriveToolRenderPayload(
 
   if (name === "glob") {
     const basePath = readAbsolutePathFromInput(parsed, "path");
-    const items = relativizeGlobOutputLines(toOutputLines(outputText), basePath);
-    if (items.length > 0) {
-      return { version: 1, blocks: [{ type: "list", title: "Files", items }] };
+    const pattern = readStringFromInput(parsed, "pattern");
+    const searchPath = readStringFromInput(parsed, "path");
+    const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
+    const rawItems = toOutputLines(outputText);
+    const items = relativizeGlobOutputLines(rawItems, basePath);
+    const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
+    debugRenderPayload("glob_paths", {
+      basePath: basePath ?? null,
+      itemCount: items.length,
+      changedCount: countChangedItems(rawItems, items),
+      sampleBefore: rawItems.slice(0, 3),
+      sampleAfter: items.slice(0, 3),
+    });
+
+    const blocks: ToolRenderPayload["blocks"] = [
+      { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+      { type: "list", title: buildFoundTitle(items.length, "file"), items },
+    ];
+    if (queryItems.length > 0) {
+      blocks.push({ type: "key_value", title: "Query", items: queryItems });
     }
+    return { version: 1, blocks };
   }
 
   if (name === "ls") {
@@ -125,31 +155,86 @@ export function deriveToolRenderPayload(
 
   if (name === "grep") {
     const basePath = readAbsolutePathFromInput(parsed, "path");
-    const items = relativizeGrepOutputLines(toOutputLines(outputText), basePath).filter(
-      (line) => !line.startsWith("..."),
-    );
-    if (items.length > 0) {
-      return { version: 1, blocks: [{ type: "list", items }] };
+    const pattern = readStringFromInput(parsed, "pattern");
+    const searchPath = readStringFromInput(parsed, "path");
+    const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
+    const rawItems = toOutputLines(outputText);
+    const relativizedItems = relativizeGrepOutputLines(rawItems, basePath);
+    const items = relativizedItems.filter((line) => !line.startsWith("..."));
+    const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
+    debugRenderPayload("grep_paths", {
+      basePath: basePath ?? null,
+      rawCount: rawItems.length,
+      itemCount: items.length,
+      changedCount: countChangedItems(rawItems, relativizedItems),
+      sampleBefore: rawItems.slice(0, 3),
+      sampleAfter: relativizedItems.slice(0, 3),
+    });
+
+    const blocks: ToolRenderPayload["blocks"] = [
+      { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+      { type: "list", title: buildFoundTitle(items.length, "match"), items },
+    ];
+    if (queryItems.length > 0) {
+      blocks.push({ type: "key_value", title: "Query", items: queryItems });
     }
+    return { version: 1, blocks };
   }
 
   if (name === "update_knowledge" && parsed) {
-    const action = typeof parsed.action === "string" ? parsed.action : "upsert";
-    const id = typeof parsed.id === "string" ? parsed.id : "";
-    const typeValue = typeof parsed.type === "string" ? parsed.type : "";
+    const actionValue = typeof parsed.action === "string" ? parsed.action : "upsert";
+    const action = actionValue === "delete" ? "delete" : "upsert";
+    const id = typeof parsed.id === "string" ? parsed.id.trim() : "";
+    const typeValue = typeof parsed.type === "string" ? parsed.type.trim() : "";
     const content = typeof parsed.content === "string" ? parsed.content : "";
-    const confidence = typeof parsed.confidence === "number" ? String(parsed.confidence) : "";
-    const tags = Array.isArray(parsed.tags) ? parsed.tags.map((v) => String(v)).join(", ") : "";
+    const confidenceValue =
+      typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence) ? parsed.confidence.toFixed(2) : "";
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags
+          .map((value) => String(value).trim())
+          .filter(Boolean)
+          .slice(0, 10)
+      : [];
+
+    const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " ").trim(), 140) : "";
+
     const items = [
       { key: "action", value: action },
       ...(id ? [{ key: "id", value: id }] : []),
       ...(typeValue ? [{ key: "type", value: typeValue }] : []),
-      ...(content ? [{ key: "content", value: content }] : []),
-      ...(confidence ? [{ key: "confidence", value: confidence }] : []),
-      ...(tags ? [{ key: "tags", value: tags }] : []),
-    ].filter((item) => item.value);
+      ...(confidenceValue ? [{ key: "confidence", value: confidenceValue }] : []),
+      ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
+      ...(tags.length > 0 ? [{ key: "tags", value: tags.join(", ") }] : []),
+    ];
+
+    const outputSummary = outputText
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean);
+    const blocks: ToolRenderPayload["blocks"] = [];
+
     if (items.length > 0) {
-      return { version: 1, blocks: [{ type: "key_value", items }] };
+      blocks.push({ type: "key_value", items });
+    }
+
+    if (tags.length > 0) {
+      blocks.push({
+        type: "status_badges",
+        title: "Tags",
+        items: tags.map((tag) => ({ label: tag })),
+      });
+    }
+
+    if (outputSummary) {
+      blocks.push({
+        type: "summary",
+        text: outputSummary,
+        tone: isError ? "danger" : "success",
+      });
+    }
+
+    if (blocks.length > 0) {
+      return { version: 1, blocks };
     }
   }
 
@@ -161,6 +246,80 @@ export function deriveToolRenderPayload(
   }
 
   return undefined;
+}
+
+function clipInlineText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function countChangedItems(before: string[], after: string[]): number {
+  const limit = Math.min(before.length, after.length);
+  let changedCount = 0;
+  for (let index = 0; index < limit; index += 1) {
+    if (before[index] !== after[index]) changedCount += 1;
+  }
+  changedCount += Math.abs(before.length - after.length);
+  return changedCount;
+}
+
+function isRenderPayloadDebugEnabled(): boolean {
+  const value = readProcessEnv("DILIGENT_DEBUG_RENDER_PAYLOAD");
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(normalized);
+}
+
+function debugRenderPayload(event: string, data: Record<string, unknown>): void {
+  if (!isRenderPayloadDebugEnabled()) return;
+  console.debug("[render-payload]", event, data);
+}
+
+function buildSearchSummary(pattern?: string, path?: string): string {
+  const parts: string[] = [];
+  if (pattern) parts.push(`pattern: ${JSON.stringify(pattern)}`);
+  if (path) parts.push(`path: ${JSON.stringify(path)}`);
+  if (parts.length === 0) return "Search";
+  return `Search(${parts.join(", ")})`;
+}
+
+function buildFoundTitle(count: number, singularNoun: string): string {
+  const noun = pluralizeNoun(singularNoun, count);
+  return `└ Found ${count} ${noun}`;
+}
+
+function pluralizeNoun(singularNoun: string, count: number): string {
+  if (count === 1) return singularNoun;
+  if (singularNoun === "match") return "matches";
+  return `${singularNoun}s`;
+}
+
+function buildQueryItems(values: { pattern?: string; path?: string }): Array<{ key: string; value: string }> {
+  const items: Array<{ key: string; value: string }> = [];
+  if (values.pattern) items.push({ key: "pattern", value: values.pattern });
+  if (values.path) items.push({ key: "path", value: values.path });
+  return items;
+}
+
+function relativizePathAgainstCwd(pathValue: string | undefined, cwdOverride?: string): string | undefined {
+  if (!pathValue) return undefined;
+  const normalized = normalizePath(pathValue);
+  if (!isAbsolutePath(normalized)) return pathValue;
+  if (!cwdOverride) return normalized;
+  return maybeRelativePath(normalized, cwdOverride);
+}
+
+function readProcessEnv(name: string): string | undefined {
+  const proc = typeof process !== "undefined" ? process : undefined;
+  const value = proc?.env?.[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringFromInput(parsed: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = parsed?.[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {

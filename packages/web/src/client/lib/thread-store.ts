@@ -118,6 +118,7 @@ export type RenderItem =
 
 export interface ThreadState {
   activeThreadId: string | null;
+  activeThreadCwd: string | null;
   mode: Mode;
   threadStatus: ThreadStatus;
   items: RenderItem[];
@@ -139,6 +140,7 @@ export interface ThreadState {
 
 export const initialThreadState: ThreadState = {
   activeThreadId: null,
+  activeThreadCwd: null,
   mode: "default",
   threadStatus: "idle",
   items: [],
