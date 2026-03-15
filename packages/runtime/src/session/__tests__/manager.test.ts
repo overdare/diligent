@@ -223,7 +223,7 @@ describe("SessionManager", () => {
     expect(mgr.getContext().map((msg) => msg.role)).toEqual(["user"]);
     expect(mgr.entryCount).toBe(1);
 
-    releaseDone?.();
+    if (releaseDone) releaseDone();
     await runPromise;
     await mgr.waitForWrites();
 

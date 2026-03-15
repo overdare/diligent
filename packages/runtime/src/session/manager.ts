@@ -1,12 +1,7 @@
 // @summary Session manager orchestrating agent loop, persistence, compaction, and steering
 
 import type { CoreAgentEvent } from "@diligent/core/agent";
-import {
-  type Agent,
-  buildMessagesFromCompaction,
-  selectForCompaction,
-  toSerializableError,
-} from "@diligent/core/agent";
+import { type Agent, selectForCompaction, toSerializableError } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/types";
 import type { ModeKind } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
@@ -14,6 +9,8 @@ import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
 import { listSessions, readSessionFile, SessionWriter } from "./persistence";
+import { SessionStateStore } from "./state-store";
+import { TurnStager } from "./turn-stager";
 import type {
   CollabSessionMeta,
   CompactionEntry,
@@ -49,12 +46,8 @@ export interface ResumeSessionOptions {
 }
 
 export class SessionManager {
-  private entries: SessionEntry[] = [];
-  private leafId: string | null = null;
-  private pendingEntries: SessionEntry[] = [];
-  private pendingLeafId: string | null = null;
+  private state = new SessionStateStore();
   private writer: SessionWriter;
-  private byId = new Map<string, SessionEntry>();
   private writeQueue: Promise<void> = Promise.resolve();
   /** Pre-agent steering queue — drained into agent at start of run() */
   private pendingMessages: Message[] = [];
@@ -79,10 +72,7 @@ export class SessionManager {
 
   /** Create a new session */
   async create(): Promise<void> {
-    this.entries = [];
-    this.leafId = null;
-    this.clearPendingEntries();
-    this.byId.clear();
+    this.state.reset();
     this.prevCacheReadBySession.clear();
     this.writeQueue = Promise.resolve();
     this._initializedAgent = null;
@@ -114,14 +104,8 @@ export class SessionManager {
     if (!sessionPath) return false;
 
     const { entries } = await readSessionFile(sessionPath);
-    this.entries = entries;
-    this.byId.clear();
-    for (const entry of entries) {
-      this.byId.set(entry.id, entry);
-    }
-    this.leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+    this.state.replaceCommitted(entries);
     this.writeQueue = Promise.resolve();
-    this.clearPendingEntries();
     this._initializedAgent = null;
     this.writer = new SessionWriter(this.config.paths.sessions, this.config.cwd, sessionPath);
 
@@ -132,7 +116,7 @@ export class SessionManager {
 
   /** Repair orphaned tool_calls on resume — inject synthetic "interrupted" tool_results. */
   private repairEntries(): void {
-    const path = this.getPathEntries();
+    const path = this.state.getPathEntries();
     if (path.length === 0) return;
 
     const last = path[path.length - 1];
@@ -142,7 +126,6 @@ export class SessionManager {
     const toolCalls = assistantMsg.content.filter((b) => b.type === "tool_call");
     if (toolCalls.length === 0) return;
 
-    // Check which tool_calls have matching tool_results
     const toolCallIds = new Set(toolCalls.map((b) => (b as { id: string }).id));
     for (const entry of path) {
       if (entry.type === "message" && entry.message.role === "tool_result") {
@@ -150,7 +133,6 @@ export class SessionManager {
       }
     }
 
-    // Inject synthetic cancel results for orphaned tool_calls
     for (const id of toolCallIds) {
       const block = toolCalls.find((b) => (b as { id: string }).id === id);
       this.appendMessageEntry({
@@ -172,7 +154,7 @@ export class SessionManager {
   /** Scan session entries for spawn_agent tool results to restore collab thread IDs on resume. */
   getHistoricalCollabAgents(): Array<{ threadId: string; nickname: string }> {
     const results: Array<{ threadId: string; nickname: string }> = [];
-    for (const entry of this.entries) {
+    for (const entry of this.state.getCommittedEntries()) {
       if (
         entry.type === "message" &&
         entry.message.role === "tool_result" &&
@@ -194,14 +176,14 @@ export class SessionManager {
 
   /** Get the current message context for display (e.g., after resume) */
   getContext(): Message[] {
-    const { entries, leafId } = this.getVisibleSessionState();
+    const { entries, leafId } = this.state.getVisibleState();
     const context = buildSessionContext(entries, leafId, {});
     return context.messages;
   }
 
   /** Get the full raw transcript for human-facing UIs. */
   getTranscript() {
-    const { entries, leafId } = this.getVisibleSessionState();
+    const { entries, leafId } = this.state.getVisibleState();
     return buildSessionTranscript(entries, leafId);
   }
 
@@ -210,7 +192,7 @@ export class SessionManager {
   }
 
   getCurrentModel(): { provider: string; modelId: string } | undefined {
-    return buildSessionContext(this.entries, this.leafId, {}).currentModel;
+    return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentModel;
   }
 
   /**
@@ -230,10 +212,11 @@ export class SessionManager {
     diskTailMessage: string;
   }> {
     const sessionPath = this.writer.path;
-    const memoryEntries = this.entries.length;
-    const memoryLeafId = this.leafId;
-    const memoryTailEntryIds = summarizeTailEntryIds(this.entries);
-    const memoryTailMessage = summarizeLastPersistedMessage(this.entries);
+    const committedEntries = this.state.getCommittedEntries();
+    const memoryEntries = committedEntries.length;
+    const memoryLeafId = this.state.getCommittedLeafId();
+    const memoryTailEntryIds = summarizeTailEntryIds(committedEntries);
+    const memoryTailMessage = summarizeLastPersistedMessage(committedEntries);
 
     if (!sessionPath) {
       return {
@@ -258,7 +241,7 @@ export class SessionManager {
     const diskTailEntryIds = summarizeTailEntryIds(entries);
     const diskTailMessage = summarizeLastPersistedMessage(entries);
 
-    if (entries.length < this.entries.length) {
+    if (entries.length < committedEntries.length) {
       return {
         changed: false,
         reason: "memory_newer",
@@ -273,7 +256,7 @@ export class SessionManager {
         diskTailMessage,
       };
     }
-    if (entries.length === this.entries.length && diskLeafId === this.leafId) {
+    if (entries.length === committedEntries.length && diskLeafId === this.state.getCommittedLeafId()) {
       return {
         changed: false,
         reason: "already_equal",
@@ -289,12 +272,7 @@ export class SessionManager {
       };
     }
 
-    this.entries = entries;
-    this.byId.clear();
-    for (const entry of entries) {
-      this.byId.set(entry.id, entry);
-    }
-    this.leafId = diskLeafId;
+    this.state.replaceCommitted(entries);
     return {
       changed: true,
       reason: "updated_from_disk",
@@ -311,12 +289,12 @@ export class SessionManager {
   }
 
   getCurrentEffort(): "none" | "low" | "medium" | "high" | "max" | undefined {
-    return buildSessionContext(this.entries, this.leafId, {}).currentEffort;
+    return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentEffort;
   }
 
   async compactNow(): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
     await this.waitForWrites();
-    const context = buildSessionContext(this.entries, this.leafId, {});
+    const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
     const compactionConfig = this.config.compaction ?? { enabled: true, reservePercent: 16, keepRecentTokens: 20000 };
 
     const agentResult = this.resolveAgent();
@@ -359,14 +337,12 @@ export class SessionManager {
     const entry: ModelChangeEntry = {
       type: "model_change",
       id: generateEntryId(),
-      parentId: this.leafId,
+      parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       provider,
       modelId,
     };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
+    this.state.appendCommitted([entry]);
     this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
   }
 
@@ -387,41 +363,23 @@ export class SessionManager {
   async run(userMessage: Message, opts?: { signal?: AbortSignal }): Promise<void> {
     for (const fn of this.listeners) fn({ type: "status_change", status: "busy" });
 
-    // 0. Repair orphaned tool_calls from a previous abort
     this.repairEntries();
 
-    // 1. Build context from tree BEFORE persisting user message (for agent restore)
-    const context = buildSessionContext(this.entries, this.leafId, {});
-    const stagedEntries: SessionEntry[] = [];
-    let stagedLeafId = this.leafId;
-    let stagedConversation = [...context.messages, userMessage];
-    const stageEntry = (entry: SessionEntry) => {
-      stagedEntries.push(entry);
-      stagedLeafId = entry.id;
-    };
-    const stageMessageEntry = (message: Message) => stageEntry(this.createMessageEntry(message, stagedLeafId));
-    const stageCompaction = (event: {
-      summary: string;
-      recentUserMessages: Message[];
-      tokensBefore: number;
-      tokensAfter: number;
-    }) => stageEntry(this.createCompactionEntry(event, stagedLeafId));
-    stageMessageEntry(userMessage);
-    this.setPendingEntries(stagedEntries, stagedLeafId);
+    const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
+    const turnStager = new TurnStager(this.state.getCommittedLeafId(), context.messages, userMessage);
+    let snapshot = turnStager.getSnapshot();
+    this.state.setPending(snapshot.entries, snapshot.leafId);
 
-    // 3. Resolve agent — may be sync or async
     const agentResult = this.resolveAgent();
     const agent = agentResult instanceof Promise ? await agentResult : agentResult;
     this._agent = agent;
 
     agent.setSessionId(this.writer.id);
 
-    // 4. Drain pre-agent pending messages into agent steering queue
     for (const msg of this.pendingMessages.splice(0)) {
       agent.steer(msg);
     }
 
-    // 5. Apply compaction config to agent
     const compactionConfig = this.config.compaction;
     if (compactionConfig?.enabled) {
       agent.setCompactionConfig({
@@ -430,42 +388,27 @@ export class SessionManager {
       });
     }
 
-    // 6. Restore historical context once per agent instance
     if (agent !== this._initializedAgent) {
       agent.restore(context.messages);
       this._initializedAgent = agent;
     }
 
-    // 6. Subscribe to agent events — persist + relay, handle compaction_end for persistence
     let currentTurnId: string | undefined;
     const unsub = agent.subscribe((event: CoreAgentEvent) => {
       if (event.type === "turn_start") currentTurnId = event.turnId;
       if (event.type === "usage") {
         this.handleUsageEvent(event.usage);
       }
-      this.stageAgentEvent(event, (message) => {
-        stagedConversation.push(message);
-        stageMessageEntry(message);
-      });
+      const keepRecentTokens = compactionConfig?.keepRecentTokens ?? 20_000;
+      turnStager.handleEvent(event, keepRecentTokens);
       this.emitToListeners(event);
-
-      if (event.type === "compaction_end") {
-        const keepRecentTokens = compactionConfig?.keepRecentTokens ?? 20_000;
-        const recentUserMessages = selectForCompaction(stagedConversation, keepRecentTokens).recentUserMessages;
-        stagedConversation = buildMessagesFromCompaction(recentUserMessages, event.summary, Date.now());
-        stageCompaction({
-          summary: event.summary,
-          recentUserMessages,
-          tokensBefore: event.tokensBefore,
-          tokensAfter: event.tokensAfter,
-        });
-      }
-      this.setPendingEntries(stagedEntries, stagedLeafId);
+      snapshot = turnStager.getSnapshot();
+      this.state.setPending(snapshot.entries, snapshot.leafId);
     });
 
     try {
       await agent.prompt(userMessage, opts?.signal);
-      this.appendEntries(stagedEntries);
+      this.appendEntries(turnStager.getSnapshot().entries);
     } catch (err) {
       const serializable = toSerializableError(err);
       console.error(
@@ -473,11 +416,11 @@ export class SessionManager {
         this.writer.id,
         serializable.name,
         serializable.message,
-        summarizeLastPersistedMessage(this.entries),
+        summarizeLastPersistedMessage(this.state.getCommittedEntries()),
       );
       this.appendError(serializable, { fatal: true, turnId: currentTurnId });
     } finally {
-      this.clearPendingEntries();
+      this.state.clearPending();
       unsub();
     }
 
@@ -500,31 +443,15 @@ export class SessionManager {
     const entry: CompactionEntry = {
       type: "compaction",
       id: generateEntryId(),
-      parentId: this.leafId,
+      parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       summary: event.summary,
       recentUserMessages: event.recentUserMessages,
       tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter,
     };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
+    this.state.appendCommitted([entry]);
     this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
-  }
-
-  /** Get the linear path of entries from root to leaf */
-  private getPathEntries(): SessionEntry[] {
-    if (this.entries.length === 0 || !this.leafId) return [];
-
-    const path: SessionEntry[] = [];
-    let current: SessionEntry | undefined = this.byId.get(this.leafId);
-    while (current) {
-      path.push(current);
-      current = current.parentId ? this.byId.get(current.parentId) : undefined;
-    }
-    path.reverse();
-    return path;
   }
 
   /** Queue a steering message. If agent is active, steers directly; otherwise queues locally. */
@@ -551,12 +478,10 @@ export class SessionManager {
   popPendingMessages(): string[] | null {
     const msgs: Message[] = [];
 
-    // Drain from agent's steering queue first (unconsumed after last run)
     if (this._agent) {
       msgs.push(...this._agent.drainPendingMessages());
     }
 
-    // Then drain any pre-agent local queue
     msgs.push(...this.pendingMessages.splice(0));
 
     if (msgs.length === 0) return null;
@@ -567,14 +492,12 @@ export class SessionManager {
     const entry: ModeChangeEntry = {
       type: "mode_change",
       id: generateEntryId(),
-      parentId: this.leafId,
+      parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       mode,
       changedBy,
     };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
+    this.state.appendCommitted([entry]);
     this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
   }
 
@@ -585,14 +508,12 @@ export class SessionManager {
     const entry: EffortChangeEntry = {
       type: "effort_change",
       id: generateEntryId(),
-      parentId: this.leafId,
+      parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       effort,
       changedBy,
     };
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
+    this.state.appendCommitted([entry]);
     this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
   }
 
@@ -600,7 +521,7 @@ export class SessionManager {
     const entry: ErrorEntry = {
       type: "error",
       id: generateEntryId(),
-      parentId: this.leafId,
+      parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       turnId: options?.turnId,
       fatal: options?.fatal ?? false,
@@ -610,7 +531,7 @@ export class SessionManager {
   }
 
   private appendMessageEntry(message: Message): SessionEntry {
-    const entry = this.createMessageEntry(message, this.leafId);
+    const entry = this.createMessageEntry(message, this.state.getCommittedLeafId());
     this.appendEntries([entry]);
     return entry;
   }
@@ -628,44 +549,6 @@ export class SessionManager {
     this.prevCacheReadBySession.set(this.writer.id, usage.cacheReadTokens);
   }
 
-  /** Stage relevant CoreAgentEvents until the turn commits successfully. */
-  private stageAgentEvent(event: CoreAgentEvent, appendMessage: (message: Message) => void): void {
-    if (event.type === "turn_end") {
-      appendMessage(event.message);
-
-      for (const toolResult of event.toolResults) {
-        appendMessage(toolResult);
-      }
-      // Mirror the live conversation shape so compaction snapshots remain correct mid-run.
-      return;
-    } else if (event.type === "steering_injected") {
-      for (const msg of event.messages) {
-        appendMessage(msg);
-      }
-    }
-  }
-
-  private createCompactionEntry(
-    event: {
-      summary: string;
-      recentUserMessages: Message[];
-      tokensBefore: number;
-      tokensAfter: number;
-    },
-    parentId: string | null,
-  ): CompactionEntry {
-    return {
-      type: "compaction",
-      id: generateEntryId(),
-      parentId,
-      timestamp: new Date().toISOString(),
-      summary: event.summary,
-      recentUserMessages: event.recentUserMessages,
-      tokensBefore: event.tokensBefore,
-      tokensAfter: event.tokensAfter,
-    };
-  }
-
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {
     return {
       type: "message",
@@ -678,9 +561,7 @@ export class SessionManager {
 
   private appendEntries(entries: SessionEntry[]): void {
     for (const entry of entries) {
-      this.entries.push(entry);
-      this.byId.set(entry.id, entry);
-      this.leafId = entry.id;
+      this.state.appendCommitted([entry]);
       this.writeQueue = this.writeQueue
         .then(async () => {
           await this.writer.write(entry);
@@ -713,23 +594,6 @@ export class SessionManager {
     return typeof this.config.agent === "function" ? this.config.agent() : this.config.agent;
   }
 
-  private getVisibleSessionState(): { entries: SessionEntry[]; leafId: string | null } {
-    if (this.pendingEntries.length === 0) {
-      return { entries: this.entries, leafId: this.leafId };
-    }
-    return { entries: [...this.entries, ...this.pendingEntries], leafId: this.pendingLeafId };
-  }
-
-  private setPendingEntries(entries: SessionEntry[], leafId: string | null): void {
-    this.pendingEntries = [...entries];
-    this.pendingLeafId = leafId;
-  }
-
-  private clearPendingEntries(): void {
-    this.pendingEntries = [];
-    this.pendingLeafId = null;
-  }
-
   get sessionPath(): string | null {
     return this.writer.path;
   }
@@ -739,7 +603,7 @@ export class SessionManager {
   }
 
   get entryCount(): number {
-    return this.getVisibleSessionState().entries.length;
+    return this.state.entryCount;
   }
 }
 
