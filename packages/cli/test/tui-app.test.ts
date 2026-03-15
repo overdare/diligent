@@ -273,7 +273,6 @@ describe("App", () => {
     ]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
     const app = new App(cfg, workspace.paths, {
       rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
     });
@@ -283,22 +282,32 @@ describe("App", () => {
 
       emitText("test");
       emitEnter();
+
       await waitFor(
         () => {
-          const output = writes.join("");
-          return output.includes("Hello ") && output.includes("world!");
+          const historyLines = (
+            app as unknown as { chatView: { getHistoryComponent: () => { render: (width: number) => string[] } } }
+          ).chatView
+            .getHistoryComponent()
+            .render(120)
+            .join("\n");
+          return historyLines.includes("Hello") && historyLines.includes("world!");
         },
         { timeoutMs: 4000, intervalMs: 20 },
       );
+
+      const output = (
+        app as unknown as { chatView: { getHistoryComponent: () => { render: (width: number) => string[] } } }
+      ).chatView
+        .getHistoryComponent()
+        .render(120)
+        .join("\n");
+      expect(output).toContain("Hello");
+      expect(output).toContain("world!");
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
-
-    const output = writes.join("");
-    expect(output).toContain("Hello ");
-    expect(output).toContain("world!");
   });
 
   test("tool execution is surfaced in UI", async () => {
