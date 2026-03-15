@@ -87,6 +87,7 @@ export class Agent {
       return result;
     } finally {
       this._running = false;
+      this.drainPendingMessages();
     }
   }
 

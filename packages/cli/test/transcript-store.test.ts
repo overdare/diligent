@@ -138,6 +138,29 @@ describe("TranscriptStore", () => {
     expect(after.some((line) => line.includes("Working…"))).toBe(false);
   });
 
+  test("tool_end restores Working status while thread remains busy", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "status_change", status: "busy" });
+    store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
+    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
+
+    const lines = renderTranscript(store, 80).map(stripAnsi);
+    expect(lines.some((line) => line.includes("Working…"))).toBe(true);
+  });
+
+  test("idle status after tool_end keeps Working status cleared", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "status_change", status: "busy" });
+    store.handleEvent({ type: "status_change", status: "idle" });
+    store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
+    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
+
+    const lines = renderTranscript(store, 80).map(stripAnsi);
+    expect(lines.some((line) => line.includes("Working…"))).toBe(false);
+  });
+
   test("read tool result header is renderpayload-first and cwd-relative", () => {
     const store = new TranscriptStore({ requestRender: () => {}, cwd: "/Users/devbv-mini4/git/diligent" });
 

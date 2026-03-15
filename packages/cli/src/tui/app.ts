@@ -86,6 +86,8 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
+  private pendingAbortRestartMessage: string | null = null;
+  private suppressNextSteeringInjectedCommit = false;
 
   constructor(
     private config: AppConfig,
@@ -173,8 +175,11 @@ export class App {
         this.appendLocalTurnTimingLine();
         this.runtime.cancelRequested = false;
         this.runtime.pendingTurn?.resolve();
+        this.restartFromPendingAbortSteer();
       },
       onTurnErrored: (message) => {
+        this.pendingAbortRestartMessage = null;
+        this.suppressNextSteeringInjectedCommit = false;
         this.runtime.pendingTurn?.reject(new Error(message));
       },
       onUserInputRequestResolved: () => {
@@ -420,16 +425,34 @@ export class App {
       return;
     }
     if (event.type === "steering_injected") {
-      const injectedTexts = event.messages
-        .map((message) => (message.role === "user" && typeof message.content === "string" ? message.content : null))
-        .filter((content): content is string => content !== null);
-      const consumed = this.runtime.consumePendingSteersByText(injectedTexts);
-      const fallbackCount = Math.max(0, event.messageCount - consumed.length);
-      if (fallbackCount > 0) {
-        const fallback = this.runtime.consumePendingSteersFallback(fallbackCount);
-        consumed.push(...fallback);
+      const queuedSteers = this.runtime.drainPendingSteers();
+      this.viewModel.prompt.setPendingSteers([]);
+
+      if (this.suppressNextSteeringInjectedCommit) {
+        this.suppressNextSteeringInjectedCommit = false;
+        return;
       }
-      this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteers);
+
+      const injectedTexts = event.messages
+        .map((message) => {
+          if (message.role !== "user") return null;
+          if (typeof message.content === "string") return message.content;
+          const text = message.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+            .trim();
+          return text.length > 0 ? text : null;
+        })
+        .filter((content): content is string => content !== null);
+
+      const expectedCount = Math.max(0, event.messageCount);
+      const consumed = queuedSteers.slice(0, expectedCount);
+      const fallbackCount = Math.max(0, (expectedCount > 0 ? expectedCount : injectedTexts.length) - consumed.length);
+      if (fallbackCount > 0) {
+        consumed.push(...injectedTexts.slice(0, fallbackCount));
+      }
+
       for (const text of consumed) {
         this.commitLocalUserMessage(text);
       }
@@ -472,12 +495,10 @@ export class App {
       }
       this.runtime.cancelRequested = true;
       const drainedSteers = this.chatView.consumePendingSteers();
-      this.runtime.drainPendingSteers();
-      if (drainedSteers.length > 0) {
-        for (const text of drainedSteers) {
-          this.commitLocalUserMessage(text);
-        }
-      }
+      const drainedRuntimeSteers = this.runtime.drainPendingSteers();
+      const restartMessage = drainedSteers[0] ?? drainedRuntimeSteers[0] ?? null;
+      this.pendingAbortRestartMessage = restartMessage;
+      this.suppressNextSteeringInjectedCommit = restartMessage !== null;
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -485,10 +506,29 @@ export class App {
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
         .catch(() => {
           this.runtime.cancelRequested = false;
+          this.pendingAbortRestartMessage = null;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
     }
+  }
+
+  private restartFromPendingAbortSteer(): void {
+    const restartMessage = this.pendingAbortRestartMessage;
+    if (!restartMessage) {
+      return;
+    }
+
+    const attemptRestart = () => {
+      if (this.runtime.isProcessing) {
+        setTimeout(attemptRestart, 0);
+        return;
+      }
+      this.pendingAbortRestartMessage = null;
+      void this.commandHandler.handleSubmit(restartMessage);
+    };
+
+    queueMicrotask(attemptRestart);
   }
 
   private commitLocalUserMessage(text: string): void {

@@ -688,6 +688,14 @@ function settleInFlightItems(state: ThreadState): ThreadState {
   };
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function toThreadStatus(value: unknown): ThreadStatus | undefined {
+  return value === "idle" || value === "busy" ? value : undefined;
+}
+
 export function reduceServerNotification(
   state: ThreadState,
   notification: DiligentServerNotification,
@@ -695,28 +703,32 @@ export function reduceServerNotification(
 ): ThreadState {
   // Ignore notifications that belong to a different thread than the one currently displayed.
   // thread/started and thread/resumed are exempt — they establish the active thread.
+  const params = asObject(notification.params);
+
   if (
     notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED &&
     notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED &&
-    "threadId" in notification.params &&
+    params &&
+    typeof params.threadId === "string" &&
     state.activeThreadId !== null &&
-    notification.params.threadId !== state.activeThreadId
+    params.threadId !== state.activeThreadId
   ) {
     return state;
   }
 
-  const authoritativeStatus =
-    "threadStatus" in notification.params && typeof notification.params.threadStatus === "string"
-      ? notification.params.threadStatus
-      : undefined;
+  const authoritativeStatus = toThreadStatus(params?.threadStatus);
   const stateWithAuthoritativeStatus = authoritativeStatus ? { ...state, threadStatus: authoritativeStatus } : state;
 
   // Thread-level notifications handled directly
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
-    return { ...stateWithAuthoritativeStatus, activeThreadId: notification.params.threadId };
+    return typeof params?.threadId === "string"
+      ? { ...stateWithAuthoritativeStatus, activeThreadId: params.threadId }
+      : stateWithAuthoritativeStatus;
   }
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
-    return { ...stateWithAuthoritativeStatus, activeThreadId: notification.params.threadId };
+    return typeof params?.threadId === "string"
+      ? { ...stateWithAuthoritativeStatus, activeThreadId: params.threadId }
+      : stateWithAuthoritativeStatus;
   }
 
   // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
@@ -734,6 +746,7 @@ export function reduceServerNotification(
     let next = settleInFlightItems({
       ...stateWithAuthoritativeStatus,
       threadStatus: "idle",
+      itemSlots: {},
       activeTurnId: null,
       activeTurnStartedAt: null,
       activeReasoningStartedAt: null,
@@ -768,15 +781,16 @@ export function reduceServerNotification(
         ? stateWithAuthoritativeStatus.activeReasoningDurationMs +
           (now - stateWithAuthoritativeStatus.activeReasoningStartedAt)
         : stateWithAuthoritativeStatus.activeReasoningDurationMs;
-    let next: ThreadState = {
+    let next: ThreadState = settleInFlightItems({
       ...stateWithAuthoritativeStatus,
+      itemSlots: {},
       activeTurnId:
         stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnId,
       activeTurnStartedAt:
         stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnStartedAt,
       activeReasoningStartedAt: null,
       activeReasoningDurationMs: 0,
-    };
+    });
 
     for (let i = next.items.length - 1; i >= 0; i--) {
       const item = next.items[i];

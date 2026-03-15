@@ -63,6 +63,7 @@ type AppAction =
   | { type: "set_mode"; payload: Mode }
   | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
   | { type: "local_steer"; payload: string }
+  | { type: "consume_first_pending_steer" }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
   | { type: "clear_toast" };
@@ -111,6 +112,9 @@ function appReducer(state: ThreadState, action: AppAction): ThreadState {
   }
   if (action.type === "local_steer") {
     return { ...state, pendingSteers: [...state.pendingSteers, action.payload] };
+  }
+  if (action.type === "consume_first_pending_steer") {
+    return state.pendingSteers.length === 0 ? state : { ...state, pendingSteers: state.pendingSteers.slice(1) };
   }
   if (action.type === "optimistic_thread") {
     const { threadId, message } = action.payload;
@@ -228,6 +232,8 @@ export function App() {
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const pendingAbortRestartMessageRef = useRef<string | null>(null);
+  const suppressNextSteeringInjectedRef = useRef(false);
   // Build full slash command list (builtins + skills)
   const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
@@ -275,6 +281,32 @@ export function App() {
 
   const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
 
+  async function restartFromPendingAbortSteer(threadId: string): Promise<void> {
+    const rpc = rpcRef.current;
+    const restartMessage = pendingAbortRestartMessageRef.current;
+    if (!rpc || !restartMessage) {
+      return;
+    }
+
+    pendingAbortRestartMessageRef.current = null;
+    const hadItemsBeforeRestart = stateRef.current.items.length > 0;
+    dispatch({ type: "consume_first_pending_steer" });
+    dispatch({ type: "local_user", payload: { text: restartMessage, images: [] } });
+    if (!hadItemsBeforeRestart) {
+      dispatch({
+        type: "optimistic_thread",
+        payload: { threadId, message: restartMessage },
+      });
+    }
+
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+      threadId,
+      message: restartMessage,
+      content: [{ type: "text" as const, text: restartMessage }],
+      model: providerMgr.currentModelRef.current || undefined,
+    });
+  }
+
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
   // biome-ignore lint/correctness/useExhaustiveDependencies: adapterRef.current methods are accessed via ref intentionally
@@ -283,6 +315,11 @@ export function App() {
     if (!rpc) return;
 
     rpc.onNotification((notification: DiligentServerNotification) => {
+      const notificationParams =
+        notification.params !== null && typeof notification.params === "object"
+          ? (notification.params as Record<string, unknown>)
+          : null;
+
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED) {
         const params = notification.params;
         if (params.success) {
@@ -302,26 +339,30 @@ export function App() {
       // Mark non-active threads as needing attention when their turn completes
       if (
         notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
-        "threadId" in notification.params &&
+        notificationParams &&
+        typeof notificationParams.threadId === "string" &&
         activeThreadIdRef.current &&
-        notification.params.threadId !== activeThreadIdRef.current
+        notificationParams.threadId !== activeThreadIdRef.current
       ) {
-        markAttention(notification.params.threadId);
+        markAttention(notificationParams.threadId);
       }
 
       // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
+        if (!notificationParams) {
+          return;
+        }
         console.log("[App][thread-status] notification", {
-          notificationThreadId: notification.params.threadId,
-          status: notification.params.status,
+          notificationThreadId: notificationParams.threadId,
+          status: notificationParams.status,
           activeThreadId: activeThreadIdRef.current,
           currentUiThreadStatus: stateRef.current.threadStatus,
           itemCount: stateRef.current.items.length,
         });
         void threadMgr.refreshThreadList(rpc);
         // Re-hydrate if any items are still showing as in-flight (notifications missed during disconnect)
-        const params = notification.params as { status?: string };
-        if (params.status === "idle") {
+        const status = typeof notificationParams.status === "string" ? notificationParams.status : undefined;
+        if (status === "idle") {
           const hasInFlightItems = stateRef.current.items.some(
             (i) =>
               (i.kind === "tool" && i.status === "streaming") ||
@@ -349,7 +390,28 @@ export function App() {
         }
       }
       const events = threadMgr.adapterRef.current.toAgentEvents(notification);
-      dispatch({ type: "notification", payload: { notification, events } });
+      const shouldSuppressSteeringInjected =
+        suppressNextSteeringInjectedRef.current && events.some((event) => event.type === "steering_injected");
+      if (shouldSuppressSteeringInjected) {
+        suppressNextSteeringInjectedRef.current = false;
+      }
+      const filteredEvents = shouldSuppressSteeringInjected
+        ? events.filter((event) => event.type !== "steering_injected")
+        : events;
+      dispatch({ type: "notification", payload: { notification, events: filteredEvents } });
+
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
+        notificationParams &&
+        typeof notificationParams.threadId === "string" &&
+        notificationParams.threadId === activeThreadIdRef.current &&
+        pendingAbortRestartMessageRef.current
+      ) {
+        const interruptedThreadId = notificationParams.threadId;
+        queueMicrotask(() => {
+          void restartFromPendingAbortSteer(interruptedThreadId);
+        });
+      }
     });
     rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
   }, [
@@ -602,14 +664,19 @@ export function App() {
 
   const interruptTurn = async () => {
     const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId) return;
-    console.log("[App] Stop pressed — sending turn/interrupt for thread", state.activeThreadId);
+    const threadId = state.activeThreadId;
+    if (!rpc || !threadId) return;
+    pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0] ?? null;
+    suppressNextSteeringInjectedRef.current = pendingAbortRestartMessageRef.current !== null;
+    console.log("[App] Stop pressed — sending turn/interrupt for thread", threadId);
     try {
       const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
-        threadId: state.activeThreadId,
+        threadId,
       });
       console.log("[App] turn/interrupt response:", result);
     } catch (error) {
+      pendingAbortRestartMessageRef.current = null;
+      suppressNextSteeringInjectedRef.current = false;
       console.error("[App] turn/interrupt failed:", error);
     }
   };

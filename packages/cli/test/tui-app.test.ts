@@ -29,6 +29,7 @@ interface ScriptStep {
   message?: AssistantMessage;
   error?: Error;
   awaitAbort?: boolean;
+  abortMessage?: string;
 }
 
 function createAssistantMessage(args: {
@@ -76,9 +77,11 @@ function createScriptedStreamFunction(steps: ScriptStep[], calls: StreamContext[
 
     if (step.awaitAbort) {
       const onAbort = () => {
-        const error = new Error("aborted");
-        stream.push({ type: "error", error });
-        stream.error(error);
+        const message = step.abortMessage ?? "aborted";
+        stream.push({ type: "error", error: new Error(message) });
+        const doneMessage = createAssistantMessage({ text: message });
+        stream.push({ type: "done", stopReason: doneMessage.stopReason, message: doneMessage });
+        stream.end({ message: doneMessage });
       };
 
       if (options.signal?.aborted) {
@@ -443,6 +446,48 @@ describe("App", () => {
     expect(output).not.toContain("[steering] change approach");
   });
 
+  test("steering UI is always cleared after steering_injected even when queued text mismatches", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
+
+    const cfg = makeConfig(streamFn);
+    const { writes, restore } = captureStdout();
+    const app = new App(cfg, workspace.paths, {
+      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+    });
+
+    try {
+      await app.start();
+      await wait(30);
+
+      emitText("slow");
+      emitEnter();
+      await wait(80);
+
+      emitText("change approach quickly");
+      emitEnter();
+      await wait(40);
+
+      emitCtrlC();
+      await wait(40);
+
+      emitText("next turn");
+      emitEnter();
+      await wait(220);
+    } finally {
+      app.stop();
+      restore();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(writes.join(""));
+    const lastSteeringIndex = output.lastIndexOf("⚑ steering");
+    const nextTurnIndex = output.lastIndexOf("next turn");
+
+    expect(nextTurnIndex).toBeGreaterThan(-1);
+    expect(lastSteeringIndex).toBeLessThan(nextTurnIndex);
+  });
+
   test("Ctrl+C during active turn cancels processing", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
@@ -471,9 +516,13 @@ describe("App", () => {
     expect(writes.join("")).toContain("Cancelled");
   });
 
-  test("Ctrl+C cancel immediately commits pending steering as user message", async () => {
+  test("Ctrl+C cancel restarts with one pending steering message as next user turn", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
-    const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
 
     const cfg = makeConfig(streamFn);
     const { writes, restore } = captureStdout();
@@ -493,7 +542,7 @@ describe("App", () => {
       await wait(40);
 
       emitCtrlC();
-      await wait(120);
+      await wait(240);
     } finally {
       app.stop();
       restore();
@@ -501,8 +550,17 @@ describe("App", () => {
     }
 
     const output = stripAnsi(writes.join(""));
-    expect(output).toContain("change approach now");
     expect(output).toContain("Cancelled");
+
+    const resumedCall = calls.find((call) =>
+      call.messages.some((message) => message.role === "user" && message.content === "change approach now"),
+    );
+    expect(resumedCall).toBeDefined();
+
+    const resumedUserMentions =
+      resumedCall?.messages.filter((message) => message.role === "user" && message.content === "change approach now")
+        .length ?? 0;
+    expect(resumedUserMentions).toBe(1);
   });
 
   test("rings terminal bell when turn completes", async () => {

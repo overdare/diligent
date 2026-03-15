@@ -185,6 +185,7 @@ export class TranscriptStore {
   private thinkingText = "";
   private activeStatus: ActiveStatus | null = null;
   private statusBeforeCompaction: string | null = null;
+  private isThreadBusy = false;
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
   private toolCallInputs = new Map<string, unknown>();
@@ -327,7 +328,8 @@ export class TranscriptStore {
         this.handleToolEnd(event);
         break;
       case "status_change":
-        if (event.status === "busy") {
+        this.isThreadBusy = event.status === "busy";
+        if (this.isThreadBusy) {
           this.startActiveStatus("Working…");
           break;
         }
@@ -379,6 +381,7 @@ export class TranscriptStore {
       case "turn_start":
         break;
       case "turn_end":
+        this.isThreadBusy = false;
         this.statusBeforeCompaction = null;
         this.stopActiveStatus();
         this.options.requestRender();
@@ -463,6 +466,7 @@ export class TranscriptStore {
   }
 
   clearActive(): void {
+    this.isThreadBusy = false;
     this.stopActiveStatus();
     this.statusBeforeCompaction = null;
     this.thinkingStartTime = null;
@@ -473,6 +477,7 @@ export class TranscriptStore {
   }
 
   clearActiveWithCommit(): void {
+    this.isThreadBusy = false;
     this.stopActiveStatus();
     this.statusBeforeCompaction = null;
     if (this.thinkingText.length > 0) {
@@ -658,6 +663,7 @@ export class TranscriptStore {
       const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
       this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
     }
+    this.resumeBusyStatusIfNeeded();
     this.options.requestRender();
   }
 
@@ -782,5 +788,10 @@ export class TranscriptStore {
       clearInterval(this.activeStatus.timer);
     }
     this.activeStatus = null;
+  }
+
+  private resumeBusyStatusIfNeeded(): void {
+    if (!this.isThreadBusy) return;
+    this.startActiveStatus("Working…");
   }
 }

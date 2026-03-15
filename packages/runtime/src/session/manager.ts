@@ -482,12 +482,6 @@ export class SessionManager {
     }
 
     if (opts?.signal?.aborted) {
-      const pending = this.popPendingMessages();
-      if (pending?.length) {
-        const followup: Message = { role: "user", content: pending.join("\n"), timestamp: Date.now() };
-        await this.run(followup);
-        return;
-      }
       throw new Error("Aborted");
     }
   }
