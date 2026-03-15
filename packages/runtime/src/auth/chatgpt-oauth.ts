@@ -1,6 +1,6 @@
 // @summary Interactive ChatGPT OAuth flow built on core protocol helpers
 import type { OpenAIOAuthTokens } from "@diligent/core/auth";
-import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "@diligent/core/auth/oauth";
+import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "@diligent/core/auth/chatgpt-oauth";
 import { openBrowser as defaultOpenBrowser } from "./browser";
 import { waitForCallback } from "./callback-server";
 

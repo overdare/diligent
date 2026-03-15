@@ -1,7 +1,7 @@
 // @summary Interactive ChatGPT OAuth example that signs in and sends one message without persisting tokens
 import { spawn } from "node:child_process";
 import { Agent } from "../agent/agent";
-import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "../auth/oauth";
+import { buildOAuthTokens, createChatGPTOAuthRequest, exchangeCodeForTokens } from "../auth/chatgpt-oauth";
 import { createChatGPTNativeCompaction, createChatGPTStream } from "../llm/provider/chatgpt";
 import { ProviderManager } from "../llm/provider-manager";
 

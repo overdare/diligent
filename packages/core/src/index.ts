@@ -9,8 +9,12 @@ export {
   Agent,
   toSerializableError,
 } from "./agent/index";
-export type { OpenAIOAuthTokens } from "./auth/index";
-export type { ChatGPTOAuthRequest, ChatGPTOAuthUrlOptions, PKCEPair, RawTokenResponse } from "./auth/oauth/index";
+export type {
+  ChatGPTOAuthRequest,
+  ChatGPTOAuthUrlOptions,
+  PKCEPair,
+  RawTokenResponse,
+} from "./auth/chatgpt-oauth/index";
 export {
   buildChatGPTOAuthUrl,
   buildOAuthTokens,
@@ -23,7 +27,8 @@ export {
   generatePKCE,
   refreshOAuthTokens,
   shouldRefresh,
-} from "./auth/oauth/index";
+} from "./auth/chatgpt-oauth/index";
+export type { OpenAIOAuthTokens } from "./auth/index";
 export { EventStream } from "./event-stream";
 export type {
   Model,

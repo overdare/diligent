@@ -1,6 +1,6 @@
 // @summary ChatGPT OAuth provider auth binding for core ProviderManager injection
 import type { OpenAIOAuthTokens } from "@diligent/core/auth";
-import { refreshOAuthTokens, shouldRefresh } from "@diligent/core/auth/oauth";
+import { refreshOAuthTokens, shouldRefresh } from "@diligent/core/auth/chatgpt-oauth";
 import { createChatGPTNativeCompaction, createChatGPTStream } from "@diligent/core/llm/provider/chatgpt";
 import type { ExternalProviderAuth } from "@diligent/core/llm/provider-manager";
 
