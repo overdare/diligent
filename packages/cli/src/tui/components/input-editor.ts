@@ -9,8 +9,8 @@ import { t } from "../theme";
 
 const MAX_HISTORY_SIZE = 100;
 const MAX_VISIBLE_COMPLETIONS = 8;
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL = 80;
+const SPINNER_FRAMES = ["✶", "✳", "✢"];
+const SPINNER_INTERVAL = 120;
 
 export interface InputEditorOptions {
   prompt?: string;
@@ -42,6 +42,7 @@ export class InputEditor implements Component, Focusable {
   private completionIndex = 0;
   private completionVisible = false;
   private completionScrollOffset = 0;
+  private pendingSteers: string[] = [];
 
   constructor(
     private options: InputEditorOptions,
@@ -78,20 +79,27 @@ export class InputEditor implements Component, Focusable {
     }
   }
 
+  setPendingSteers(steers: string[]): void {
+    this.pendingSteers = [...steers];
+    this.requestRender();
+  }
+
   render(width: number): string[] {
     const sep = `${t.dim}${"─".repeat(Math.max(0, width))}${t.reset}`;
     const prompt = this.busy
       ? `${t.accent}${SPINNER_FRAMES[this.spinnerIndex]}${t.reset} `
-      : (this.options.prompt ?? "› ");
+      : (this.options.prompt ?? "❯ ");
     const promptPrefix = `${t.bold}${t.dim}${prompt}${t.reset}`;
     const promptWidth = displayWidth(prompt);
     const continuationPrefix = " ".repeat(promptWidth);
     const maxTextWidth = width - promptWidth;
 
+    const steeringLine = this.renderSteeringLine(width);
+
     if (!this.focused) {
       const textLines = this.text.split("\n");
       const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
-      return ["", sep, ...renderedLines, sep];
+      return ["", sep, ...steeringLine, ...renderedLines, sep];
     }
 
     // Build line with cursor marker embedded
@@ -117,7 +125,7 @@ export class InputEditor implements Component, Focusable {
       // Render completion popup below the input
       const popupLines = this.renderCompletionPopup(width);
 
-      return ["", sep, inputLine, sep, ...popupLines];
+      return ["", sep, ...steeringLine, inputLine, sep, ...popupLines];
     }
 
     const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
@@ -128,7 +136,17 @@ export class InputEditor implements Component, Focusable {
     // Render completion popup below the input
     const popupLines = this.renderCompletionPopup(width);
 
-    return ["", sep, ...inputLines, sep, ...popupLines];
+    return ["", sep, ...steeringLine, ...inputLines, sep, ...popupLines];
+  }
+
+  private renderSteeringLine(width: number): string[] {
+    if (this.pendingSteers.length === 0) return [];
+
+    const summary = this.pendingSteers.join(" · ");
+    const prefix = `⚑ steering (${this.pendingSteers.length}) `;
+    const availableWidth = Math.max(0, width - displayWidth(prefix) - 2);
+    const tail = availableWidth > 0 ? sliceToFitWidth(summary, availableWidth) : "";
+    return [`${t.accent}  ${prefix}${tail}${t.reset}`];
   }
 
   /** Returns true if the key was consumed by the editor, false if the caller should handle it. */

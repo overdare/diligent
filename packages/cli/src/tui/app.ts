@@ -103,6 +103,10 @@ export class App {
   private shouldBellOnComplete: boolean;
   private pendingSteers: string[] = [];
 
+  private syncPendingSteers(): void {
+    this.inputEditor.setPendingSteers(this.pendingSteers);
+  }
+
   // Extracted modules
   private threadManager: ThreadManager;
   private configManager: ConfigManager;
@@ -223,6 +227,8 @@ export class App {
       clearActive: () => this.chatView.clearActive(),
       clearChatHistory: () => {
         this.chatView.clearHistory();
+        this.pendingSteers = [];
+        this.syncPendingSteers();
         this.statusBar.resetUsage();
       },
       handleAgentStartEvent: () => this.chatView.handleEvent({ type: "agent_start" }),
@@ -257,6 +263,7 @@ export class App {
       syncActiveThreadState: () => this.syncActiveThreadState(),
       queuePendingSteer: (text) => {
         this.pendingSteers.push(text);
+        this.syncPendingSteers();
       },
       threadManager: this.threadManager,
       configManager: this.configManager,
@@ -411,6 +418,7 @@ export class App {
   private handleAgentEvent(event: AgentEvent): void {
     if (event.type === "steering_injected") {
       const drained = this.pendingSteers.splice(0, event.messageCount);
+      this.syncPendingSteers();
       for (const text of drained) {
         this.chatView.addUserMessage(text);
       }
