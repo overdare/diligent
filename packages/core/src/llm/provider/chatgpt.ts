@@ -10,6 +10,7 @@ import type { NativeCompactFn } from "./native-compaction";
 import {
   buildResponsesRequestBody,
   convertMessages,
+  describeCompactionPayload,
   extractCompactionSummary,
   handleResponsesAPIEvents,
 } from "./openai-shared";
@@ -173,6 +174,46 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
   };
 }
 
+function truncateErrorBody(value: string, maxLen = 400): string {
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, maxLen)}…`;
+}
+
+function stringifyErrorPayload(payload: Record<string, unknown>): string {
+  const errorValue = payload.error;
+  if (typeof errorValue === "string") {
+    return truncateErrorBody(errorValue);
+  }
+  if (errorValue && typeof errorValue === "object") {
+    const err = errorValue as Record<string, unknown>;
+    const code = typeof err.code === "string" ? err.code : undefined;
+    const type = typeof err.type === "string" ? err.type : undefined;
+    const message = typeof err.message === "string" ? err.message : undefined;
+    const fields = [code, type, message].filter((field): field is string => Boolean(field));
+    if (fields.length > 0) {
+      return truncateErrorBody(fields.join(" | "));
+    }
+  }
+  return truncateErrorBody(JSON.stringify(payload));
+}
+
+async function readCompactErrorBody(response: Response): Promise<string> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = (await response.json()) as unknown;
+      if (payload && typeof payload === "object") {
+        return stringifyErrorPayload(payload as Record<string, unknown>);
+      }
+    } catch {
+      // fall through to text path
+    }
+  }
+
+  const text = await response.text().catch(() => "");
+  return truncateErrorBody(text.trim());
+}
+
 export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens): NativeCompactFn {
   return async (input) => {
     const tokens = getTokens();
@@ -190,7 +231,6 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
 
     const body: Record<string, unknown> = {
       model: resolveChatGPTModelId(input.model.id),
-      store: false,
       input: await convertMessages(input.messages),
     };
     if (input.systemPrompt.length > 0) body.instructions = flattenSections(input.systemPrompt);
@@ -203,15 +243,19 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
     });
 
     if (!response.ok) {
-      if (response.status === 400 || response.status === 404 || response.status === 405) {
+      const errorBody = await readCompactErrorBody(response);
+      if (response.status === 404 || response.status === 405) {
         return { status: "unsupported", reason: `status_${response.status}` };
       }
-      throw new Error(`ChatGPT native compaction failed (${response.status})`);
+      const suffix = errorBody ? ` body=${errorBody}` : "";
+      throw new Error(`ChatGPT native compaction failed (${response.status})${suffix}`);
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
     const summary = extractCompactionSummary(payload);
-    if (!summary?.trim()) return { status: "unsupported", reason: "missing_summary" };
+    if (!summary?.trim()) {
+      return { status: "unsupported", reason: `missing_summary ${describeCompactionPayload(payload)}` };
+    }
     return { status: "ok", summary };
   };
 }
