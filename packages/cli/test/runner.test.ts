@@ -160,25 +160,34 @@ function captureOutput(): {
 } {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  const origStdout = process.stdout.write;
-  const origStderr = process.stderr.write;
+  const prevStdoutWrite = process.stdout.write;
+  const prevStderrWrite = process.stderr.write;
 
-  process.stdout.write = ((chunk: string | Uint8Array) => {
+  const captureStdoutWrite = ((...args: Parameters<typeof process.stdout.write>) => {
+    const [chunk] = args;
     stdout.push(typeof chunk === "string" ? chunk : chunk.toString());
-    return true;
+    return prevStdoutWrite.apply(process.stdout, args);
   }) as typeof process.stdout.write;
 
-  process.stderr.write = ((chunk: string | Uint8Array) => {
+  const captureStderrWrite = ((...args: Parameters<typeof process.stderr.write>) => {
+    const [chunk] = args;
     stderr.push(typeof chunk === "string" ? chunk : chunk.toString());
-    return true;
+    return prevStderrWrite.apply(process.stderr, args);
   }) as typeof process.stderr.write;
+
+  process.stdout.write = captureStdoutWrite;
+  process.stderr.write = captureStderrWrite;
 
   return {
     stdout,
     stderr,
     restore: () => {
-      process.stdout.write = origStdout;
-      process.stderr.write = origStderr;
+      if (process.stdout.write === captureStdoutWrite) {
+        process.stdout.write = prevStdoutWrite;
+      }
+      if (process.stderr.write === captureStderrWrite) {
+        process.stderr.write = prevStderrWrite;
+      }
     },
   };
 }
