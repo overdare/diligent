@@ -1,5 +1,5 @@
 // @summary Tests for TUI app behavior through app-server JSON-RPC integration
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -233,11 +233,6 @@ async function waitFor(check: () => boolean, options?: { timeoutMs?: number; int
 
   throw new Error(`waitFor timeout after ${timeoutMs}ms`);
 }
-
-afterEach(() => {
-  process.stdin.removeAllListeners("data");
-  process.stdout.removeAllListeners("resize");
-});
 
 describe("App", () => {
   test("input -> request reaches model context through app-server", async () => {
@@ -543,7 +538,7 @@ describe("App", () => {
     expect(writes.join("")).toContain("Cancelled");
   });
 
-  test("Ctrl+C cancel drops pending steering messages", async () => {
+  test("Ctrl+C cancel restarts turn with first pending steering message", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const calls: StreamContext[] = [];
     const streamFn = createScriptedStreamFunction(
@@ -580,9 +575,17 @@ describe("App", () => {
     expect(output).toContain("Cancelled");
 
     const resumedCall = calls.find((call) =>
-      call.messages.some((message) => message.role === "user" && message.content === "change approach now"),
+      call.messages.some((message) => {
+        if (message.role !== "user") return false;
+        if (typeof message.content === "string") return message.content === "change approach now";
+        const text = message.content
+          .filter((block): block is { type: "text"; text: string } => block.type === "text")
+          .map((block) => block.text)
+          .join("\n");
+        return text === "change approach now";
+      }),
     );
-    expect(resumedCall).toBeUndefined();
+    expect(resumedCall).toBeDefined();
   });
 
   test("rings terminal bell when turn completes", async () => {

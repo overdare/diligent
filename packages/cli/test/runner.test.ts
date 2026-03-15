@@ -1,5 +1,5 @@
 // @summary Tests for non-interactive runner behavior via app-server JSON-RPC path
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -182,11 +182,6 @@ function captureOutput(): {
     },
   };
 }
-
-afterEach(() => {
-  process.stdin.removeAllListeners("data");
-  process.stdout.removeAllListeners("resize");
-});
 
 describe("NonInteractiveRunner", () => {
   test("returns exit 1 when .diligent paths are unavailable", async () => {
