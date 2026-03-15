@@ -34,6 +34,8 @@ PATCH_BLOCK
     tail -n +2 "$hook"
   } > "$tmpfile" && mv "$tmpfile" "$hook"
 
+  chmod +x "$hook"
+
   echo "Patched: $hook"
 }
 
