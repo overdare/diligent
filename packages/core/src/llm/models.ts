@@ -181,7 +181,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "chatgpt-5.4",
     provider: "chatgpt",
-    contextWindow: 400_000,
+    contextWindow: 300_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportedEfforts: THINKING_EFFORTS_WITH_NONE,
@@ -191,7 +191,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "chatgpt-5.3-codex",
     provider: "chatgpt",
-    contextWindow: 400_000,
+    contextWindow: 300_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportedEfforts: THINKING_EFFORTS_WITH_NONE,
@@ -201,7 +201,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "chatgpt-5.1-codex-mini",
     provider: "chatgpt",
-    contextWindow: 400_000,
+    contextWindow: 300_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportedEfforts: THINKING_EFFORTS_WITHOUT_NONE,

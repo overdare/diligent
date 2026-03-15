@@ -35,7 +35,7 @@ export class Agent {
     this.tools = tools;
     this.effort = opts?.effort ?? "medium";
     this.compactionConfig = opts?.compaction ?? {
-      reservePercent: 16,
+      reservePercent: 14,
       keepRecentTokens: 20_000,
     };
     this.retryConfig = opts?.retry ?? {
