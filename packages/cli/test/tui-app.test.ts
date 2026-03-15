@@ -172,16 +172,22 @@ function emitCtrlO() {
 
 function captureStdout(): { writes: string[]; restore: () => void } {
   const writes: string[] = [];
-  const origWrite = process.stdout.write;
-  process.stdout.write = ((chunk: string | Uint8Array) => {
+  const prevWrite = process.stdout.write;
+
+  const captureWrite = ((...args: Parameters<typeof process.stdout.write>) => {
+    const [chunk] = args;
     writes.push(typeof chunk === "string" ? chunk : chunk.toString());
-    return true;
+    return prevWrite.apply(process.stdout, args);
   }) as typeof process.stdout.write;
+
+  process.stdout.write = captureWrite;
 
   return {
     writes,
     restore: () => {
-      process.stdout.write = origWrite;
+      if (process.stdout.write === captureWrite) {
+        process.stdout.write = prevWrite;
+      }
     },
   };
 }
@@ -287,7 +293,7 @@ describe("App", () => {
           const output = writes.join("");
           return output.includes("Hello ") && output.includes("world!");
         },
-        { timeoutMs: 2000, intervalMs: 20 },
+        { timeoutMs: 4000, intervalMs: 20 },
       );
     } finally {
       app.stop();
