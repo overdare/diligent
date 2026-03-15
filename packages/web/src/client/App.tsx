@@ -971,6 +971,84 @@ export function App() {
 
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();
+  const contextWindow = useMemo(
+    () => providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0,
+    [providerMgr.availableModels, providerMgr.currentModel],
+  );
+  const hasProvider = useMemo(() => providerMgr.providers.some((p) => p.configured), [providerMgr.providers]);
+  const pendingImagePreviews = useMemo(
+    () =>
+      pendingImages.map((image) => ({
+        path: image.path,
+        url: image.webUrl,
+        fileName: image.fileName,
+      })),
+    [pendingImages],
+  );
+  const handleSelectPrompt = useCallback((prompt: string) => setActiveInput(prompt), [setActiveInput]);
+  const handleQuestionAnswerChange = useCallback(
+    (id: string, val: string | string[]) => serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
+    [serverRequests.setAnswers],
+  );
+  const handleQuestionSubmit = useCallback(
+    () => serverRequests.resolveQuestion(serverRequests.answers),
+    [serverRequests],
+  );
+  const handleQuestionCancel = useCallback(() => serverRequests.resolveQuestion({}), [serverRequests]);
+  const handleOpenProviders = useCallback(() => setShowProviderModal(true), []);
+  const handleSteer = () => {
+    void steerMessage();
+  };
+  const handleInterrupt = () => {
+    void interruptTurn();
+  };
+  const handleModeChange = (mode: Mode) => {
+    void setMode(mode);
+  };
+  const handleEffortChange = useCallback(
+    (nextEffort: ThinkingEffort) => {
+      void setEffort(nextEffort);
+    },
+    [setEffort],
+  );
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      void providerMgr.changeModel(modelId);
+    },
+    [providerMgr],
+  );
+  const handleAddImagesToDock = (files: FileList | File[]) => {
+    void handleAddImages(files);
+  };
+  const approvalPrompt = useMemo(
+    () =>
+      serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
+        ? {
+            request: serverRequests.approvalPrompt.request.params.request,
+            onDecide: serverRequests.resolveApproval,
+          }
+        : null,
+    [serverRequests.approvalPrompt, serverRequests.resolveApproval],
+  );
+  const questionPrompt = useMemo(
+    () =>
+      serverRequests.questionPrompt
+        ? {
+            request: serverRequests.questionPrompt.request,
+            answers: serverRequests.answers,
+            onAnswerChange: handleQuestionAnswerChange,
+            onSubmit: handleQuestionSubmit,
+            onCancel: handleQuestionCancel,
+          }
+        : null,
+    [
+      serverRequests.questionPrompt,
+      serverRequests.answers,
+      handleQuestionAnswerChange,
+      handleQuestionSubmit,
+      handleQuestionCancel,
+    ],
+  );
 
   return (
     <div className="h-screen bg-bg text-text">
@@ -1022,26 +1100,9 @@ export function App() {
             items={state.items}
             threadStatus={state.threadStatus}
             threadCwd={state.activeThreadCwd ?? undefined}
-            onSelectPrompt={(p) => setActiveInput(p)}
-            approvalPrompt={
-              serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
-                ? {
-                    request: serverRequests.approvalPrompt.request.params.request,
-                    onDecide: serverRequests.resolveApproval,
-                  }
-                : null
-            }
-            questionPrompt={
-              serverRequests.questionPrompt
-                ? {
-                    request: serverRequests.questionPrompt.request,
-                    answers: serverRequests.answers,
-                    onAnswerChange: (id, val) => serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
-                    onSubmit: () => serverRequests.resolveQuestion(serverRequests.answers),
-                    onCancel: () => serverRequests.resolveQuestion({}),
-                  }
-                : null
-            }
+            onSelectPrompt={handleSelectPrompt}
+            approvalPrompt={approvalPrompt}
+            questionPrompt={questionPrompt}
           />
 
           {showPlan && <PlanPanel planState={state.planState!} />}
@@ -1052,36 +1113,30 @@ export function App() {
             input={activeInput}
             onInputChange={setActiveInput}
             onSend={handleSend}
-            onSteer={() => void steerMessage()}
-            onInterrupt={() => void interruptTurn()}
+            onSteer={handleSteer}
+            onInterrupt={handleInterrupt}
             onCompactionClick={handleCompactionClick}
             isCompacting={isCompacting}
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}
             mode={state.mode}
-            onModeChange={(m) => void setMode(m)}
+            onModeChange={handleModeChange}
             effort={effort}
-            onEffortChange={(e) => void setEffort(e)}
+            onEffortChange={handleEffortChange}
             currentModel={providerMgr.currentModel}
             availableModels={providerMgr.availableModels}
-            onModelChange={(m) => void providerMgr.changeModel(m)}
+            onModelChange={handleModelChange}
             usage={state.usage}
             currentContextTokens={state.currentContextTokens}
-            contextWindow={
-              providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0
-            }
-            hasProvider={providerMgr.providers.some((p) => p.configured)}
-            onOpenProviders={() => setShowProviderModal(true)}
+            contextWindow={contextWindow}
+            hasProvider={hasProvider}
+            onOpenProviders={handleOpenProviders}
             supportsVision={supportsVision}
             supportsThinking={supportsThinking}
-            pendingImages={pendingImages.map((image) => ({
-              path: image.path,
-              url: image.webUrl,
-              fileName: image.fileName,
-            }))}
+            pendingImages={pendingImagePreviews}
             isUploadingImages={isUploadingImages}
-            onAddImages={(files) => void handleAddImages(files)}
+            onAddImages={handleAddImagesToDock}
             onRemoveImage={handleRemovePendingImage}
             onSlashCommand={handleSlashCommand}
             slashCommands={slashCommands}

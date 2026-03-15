@@ -213,6 +213,16 @@ function stripAnsi(input: string): string {
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+async function waitForCondition(predicate: () => boolean, timeoutMs = 1500, intervalMs = 20): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+    await wait(intervalMs);
+  }
+}
+
 afterEach(() => {
   process.stdin.removeAllListeners("data");
   process.stdout.removeAllListeners("resize");
@@ -267,7 +277,10 @@ describe("App", () => {
 
       emitText("test");
       emitEnter();
-      await wait(180);
+      await waitForCondition(() => {
+        const output = writes.join("");
+        return output.includes("Hello ") && output.includes("world!");
+      });
     } finally {
       app.stop();
       restore();

@@ -1,10 +1,12 @@
 // @summary Pending steering panel rendering queued messages as stacked single lines above InputDock
 
+import { memo } from "react";
+
 interface SteeringQueuePanelProps {
   pendingSteers: string[];
 }
 
-export function SteeringQueuePanel({ pendingSteers }: SteeringQueuePanelProps) {
+function SteeringQueuePanelImpl({ pendingSteers }: SteeringQueuePanelProps) {
   if (pendingSteers.length === 0) return null;
 
   return (
@@ -19,3 +21,5 @@ export function SteeringQueuePanel({ pendingSteers }: SteeringQueuePanelProps) {
     </div>
   );
 }
+
+export const SteeringQueuePanel = memo(SteeringQueuePanelImpl);

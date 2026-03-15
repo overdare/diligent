@@ -11,6 +11,7 @@ export {
   SessionWriter,
 } from "./persistence";
 export { SessionStateStore } from "./state-store";
+export { SessionTurnRunner } from "./turn-runner";
 export { TurnStager } from "./turn-stager";
 export type {
   CompactionEntry,

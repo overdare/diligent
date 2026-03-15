@@ -1,7 +1,8 @@
 // @summary Persistent plan progress panel displayed between MessageList and InputDock
+import { memo } from "react";
 import type { PlanState } from "../lib/thread-store";
 
-export function PlanPanel({ planState }: { planState: PlanState }) {
+function PlanPanelImpl({ planState }: { planState: PlanState }) {
   const doneCount = planState.steps.filter((s) => s.status === "done").length;
   const activeSteps = planState.steps.filter((s) => s.status !== "cancelled");
   const totalCount = activeSteps.length;
@@ -36,3 +37,5 @@ export function PlanPanel({ planState }: { planState: PlanState }) {
     </div>
   );
 }
+
+export const PlanPanel = memo(PlanPanelImpl);

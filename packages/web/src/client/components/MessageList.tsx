@@ -1,7 +1,7 @@
 // @summary Scrollable message feed with auto-scroll, scroll-to-bottom button, and inline prompts
 
 import type { ApprovalRequest, ThreadStatus, UserInputRequest } from "@diligent/protocol";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
 import { ApprovalCard } from "./ApprovalCard";
 import { AssistantMessage } from "./AssistantMessage";
@@ -81,7 +81,7 @@ function renderGroupedItems(items: RenderItem[], threadCwd?: string): React.Reac
   return result;
 }
 
-export function MessageList({
+function MessageListImpl({
   items,
   threadStatus,
   threadCwd,
@@ -134,6 +134,7 @@ export function MessageList({
   }, []);
 
   const hasPrompt = approvalPrompt || questionPrompt;
+  const groupedItems = useMemo(() => renderGroupedItems(items, threadCwd), [items, threadCwd]);
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -142,7 +143,7 @@ export function MessageList({
           <EmptyState onSelectPrompt={onSelectPrompt} />
         ) : (
           <div className="space-y-1">
-            {renderGroupedItems(items, threadCwd)}
+            {groupedItems}
 
             {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (
               <div className="py-1">
@@ -179,3 +180,5 @@ export function MessageList({
     </div>
   );
 }
+
+export const MessageList = memo(MessageListImpl);

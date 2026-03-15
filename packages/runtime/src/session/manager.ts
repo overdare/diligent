@@ -1,7 +1,7 @@
 // @summary Session manager orchestrating agent loop, persistence, compaction, and steering
 
 import type { CoreAgentEvent } from "@diligent/core/agent";
-import { type Agent, selectForCompaction, toSerializableError } from "@diligent/core/agent";
+import { type Agent, selectForCompaction } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/types";
 import type { ModeKind } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
@@ -10,7 +10,7 @@ import type { DiligentPaths } from "../infrastructure";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
 import { listSessions, readSessionFile, SessionWriter } from "./persistence";
 import { SessionStateStore } from "./state-store";
-import { TurnStager } from "./turn-stager";
+import { SessionTurnRunner } from "./turn-runner";
 import type {
   CollabSessionMeta,
   CompactionEntry,
@@ -365,68 +365,35 @@ export class SessionManager {
 
     this.repairEntries();
 
-    const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
-    const turnStager = new TurnStager(this.state.getCommittedLeafId(), context.messages, userMessage);
-    let snapshot = turnStager.getSnapshot();
-    this.state.setPending(snapshot.entries, snapshot.leafId);
-
-    const agentResult = this.resolveAgent();
-    const agent = agentResult instanceof Promise ? await agentResult : agentResult;
-    this._agent = agent;
-
-    agent.setSessionId(this.writer.id);
-
-    for (const msg of this.pendingMessages.splice(0)) {
-      agent.steer(msg);
-    }
-
-    const compactionConfig = this.config.compaction;
-    if (compactionConfig?.enabled) {
-      agent.setCompactionConfig({
-        reservePercent: compactionConfig.reservePercent,
-        keepRecentTokens: compactionConfig.keepRecentTokens,
-      });
-    }
-
-    if (agent !== this._initializedAgent) {
-      agent.restore(context.messages);
-      this._initializedAgent = agent;
-    }
-
-    let currentTurnId: string | undefined;
-    const unsub = agent.subscribe((event: CoreAgentEvent) => {
-      if (event.type === "turn_start") currentTurnId = event.turnId;
-      if (event.type === "usage") {
-        this.handleUsageEvent(event.usage);
-      }
-      const keepRecentTokens = compactionConfig?.keepRecentTokens ?? 20_000;
-      turnStager.handleEvent(event, keepRecentTokens);
-      this.emitToListeners(event);
-      snapshot = turnStager.getSnapshot();
-      this.state.setPending(snapshot.entries, snapshot.leafId);
+    const turnRunner = new SessionTurnRunner({
+      state: this.state,
+      resolveAgent: () => this.resolveAgent(),
+      sessionId: this.writer.id,
+      compaction: this.config.compaction,
+      drainPendingMessages: () => this.pendingMessages.splice(0),
+      getInitializedAgent: () => this._initializedAgent,
+      setInitializedAgent: (agent) => {
+        this._initializedAgent = agent;
+      },
+      setActiveAgent: (agent) => {
+        this._agent = agent;
+      },
+      emitEvent: (event) => {
+        this.emitToListeners(event);
+      },
+      handleUsage: (usage) => {
+        this.handleUsageEvent(usage);
+      },
+      commitEntries: (entries) => {
+        this.appendEntries(entries);
+      },
+      onFatalError: (error, options) => {
+        this.appendError(error, options);
+      },
+      summarizeLastPersistedMessage: () => summarizeLastPersistedMessage(this.state.getCommittedEntries()),
     });
 
-    try {
-      await agent.prompt(userMessage, opts?.signal);
-      this.appendEntries(turnStager.getSnapshot().entries);
-    } catch (err) {
-      const serializable = toSerializableError(err);
-      console.error(
-        "[SessionManager] Run error session=%s name=%s message=%s lastPersisted=%s",
-        this.writer.id,
-        serializable.name,
-        serializable.message,
-        summarizeLastPersistedMessage(this.state.getCommittedEntries()),
-      );
-      this.appendError(serializable, { fatal: true, turnId: currentTurnId });
-    } finally {
-      this.state.clearPending();
-      unsub();
-    }
-
-    if (opts?.signal?.aborted) {
-      throw new Error("Aborted");
-    }
+    await turnRunner.run(userMessage, opts);
   }
 
   /** Wait for all pending writes to complete. */

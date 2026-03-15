@@ -1,6 +1,7 @@
 // @summary Sidebar with thread list, new thread button, and relative timestamps
 
 import type { ProviderAuthStatus, SessionSummary } from "@diligent/protocol";
+import { memo } from "react";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 
@@ -24,7 +25,7 @@ interface SidebarProps {
   onOpenKnowledge?: () => void;
 }
 
-export function Sidebar({
+function SidebarImpl({
   cwd,
   threadList,
   activeThreadId,
@@ -186,3 +187,5 @@ export function Sidebar({
     </Panel>
   );
 }
+
+export const Sidebar = memo(SidebarImpl);
