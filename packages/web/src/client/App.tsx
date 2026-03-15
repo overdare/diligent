@@ -948,7 +948,7 @@ export function App() {
 
           <MessageList
             items={state.items}
-            threadStatus={showCompactingIndicator ? "busy" : state.threadStatus}
+            threadStatus={state.threadStatus}
             onSelectPrompt={(p) => setActiveInput(p)}
             approvalPrompt={
               serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST

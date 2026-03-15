@@ -257,7 +257,14 @@ test("steering injected", () => {
   const adapter = makeAdapter();
   const notification: DiligentServerNotification = {
     method: "steering/injected",
-    params: { threadId: "t1", messageCount: 2 },
+    params: {
+      threadId: "t1",
+      messageCount: 2,
+      messages: [
+        { role: "user", content: "change approach", timestamp: 1 },
+        { role: "user", content: "use simpler plan", timestamp: 2 },
+      ],
+    },
   };
 
   const events = adapter.toAgentEvents(notification);
@@ -265,7 +272,29 @@ test("steering injected", () => {
   expect(events[0].type).toBe("steering_injected");
   if (events[0].type === "steering_injected") {
     expect(events[0].messageCount).toBe(2);
-    expect(events[0].messages).toEqual([]);
+    expect(events[0].messages).toEqual(notification.params.messages);
+  }
+});
+
+test("thread compacted maps to compaction_end", () => {
+  const adapter = makeAdapter();
+  const notification: DiligentServerNotification = {
+    method: "thread/compacted",
+    params: {
+      threadId: "t1",
+      entryCount: 3,
+      tokensBefore: 15000,
+      tokensAfter: 9000,
+    },
+  };
+
+  const events = adapter.toAgentEvents(notification);
+  expect(events).toHaveLength(1);
+  expect(events[0].type).toBe("compaction_end");
+  if (events[0].type === "compaction_end") {
+    expect(events[0].tokensBefore).toBe(15000);
+    expect(events[0].tokensAfter).toBe(9000);
+    expect(events[0].summary).toBe("3 entries");
   }
 });
 

@@ -315,7 +315,11 @@ export const AgentEventSchema = z.union([
     summary: z.string(),
   }),
   z.object({ type: z.literal("knowledge_saved"), knowledgeId: z.string(), content: z.string() }),
-  z.object({ type: z.literal("steering_injected"), messageCount: z.number().int().nonnegative() }),
+  z.object({
+    type: z.literal("steering_injected"),
+    messageCount: z.number().int().nonnegative(),
+    messages: z.array(MessageSchema),
+  }),
   // Collab — sub-agent orchestration events (3 pairs of begin/end)
   z.object({
     type: z.literal("collab_spawn_begin"),

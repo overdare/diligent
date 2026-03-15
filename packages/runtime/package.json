@@ -17,7 +17,8 @@
     "./rpc": "./src/rpc/index.ts",
     "./session": "./src/session/index.ts",
     "./skills": "./src/skills/index.ts",
-    "./tools": "./src/tools/index.ts"
+    "./tools": "./src/tools/index.ts",
+    "./tools/render-payload": "./src/tools/render-payload.ts"
   },
   "dependencies": {
     "@diligent/core": "workspace:*",

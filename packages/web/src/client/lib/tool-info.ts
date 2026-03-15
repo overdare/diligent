@@ -1,6 +1,7 @@
 // @summary Tool display name, icon, and category mapping for compact ToolCallRow rendering
-import { deriveToolRenderPayload } from "@diligent/runtime/tools";
+
 import type { ToolRenderPayload } from "@diligent/protocol";
+import { deriveToolRenderPayload } from "@diligent/runtime/tools/render-payload";
 
 export interface ToolInfo {
   displayName: string;

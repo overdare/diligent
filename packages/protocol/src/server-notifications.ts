@@ -10,6 +10,7 @@ import {
   ThreadItemSchema,
   ThreadStatusSchema,
   UsageSchema,
+  UserMessageSchema,
 } from "./data-model";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "./methods";
 
@@ -187,7 +188,12 @@ export type AccountUpdatedNotification = z.infer<typeof AccountUpdatedNotificati
 
 export const SteeringInjectedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED),
-  params: z.object({ threadId: z.string(), messageCount: z.number().int(), ...ThreadStatusSnapshotFields }),
+  params: z.object({
+    threadId: z.string(),
+    messageCount: z.number().int(),
+    messages: z.array(UserMessageSchema),
+    ...ThreadStatusSnapshotFields,
+  }),
 });
 export type SteeringInjectedNotification = z.infer<typeof SteeringInjectedNotificationSchema>;
 

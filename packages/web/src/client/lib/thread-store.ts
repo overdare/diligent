@@ -416,7 +416,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 status: "done" as const,
                 durationMs: Date.now() - current.startedAt,
                 render: current.render,
-
               }
             : current,
         ),
@@ -474,7 +473,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     case "compaction_start":
       return {
         ...state,
-        threadStatus: "busy",
         toast: {
           id: `compaction-start-${Date.now()}`,
           kind: "info",
@@ -494,8 +492,12 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "steering_injected": {
-      const drained = state.pendingSteers.slice(0, event.messageCount);
+      const drainedFromQueue = state.pendingSteers.slice(0, event.messageCount);
       const remaining = state.pendingSteers.slice(event.messageCount);
+      const fallbackFromEvent = event.messages
+        .map((message) => (message.role === "user" && typeof message.content === "string" ? message.content : ""))
+        .filter((text) => text.length > 0);
+      const drained = drainedFromQueue.length > 0 ? drainedFromQueue : fallbackFromEvent.slice(0, event.messageCount);
       const newItems: RenderItem[] = drained.map((text, i) => ({
         id: `steer-injected-${Date.now()}-${i}`,
         kind: "user" as const,

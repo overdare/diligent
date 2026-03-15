@@ -1500,6 +1500,80 @@ describe("DiligentAppServer", () => {
     }
   });
 
+  it("emits thread status busy->idle around manual thread compaction", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      cwd: projectRoot,
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      createAgent: () =>
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "hello" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+
+            return stream as never;
+          }),
+        }),
+    });
+
+    const connection = connectTestPeer(server);
+
+    const start = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 300,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const startResult = readResult(start) as { threadId: string };
+
+    const compactResponse = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 301,
+      method: "thread/compact/start",
+      params: { threadId: startResult.threadId },
+    });
+    const compactResult = readResult(compactResponse) as {
+      compacted: boolean;
+      entryCount: number;
+      tokensBefore: number;
+      tokensAfter: number;
+    };
+    expect(typeof compactResult.compacted).toBe("boolean");
+
+    const statusEvents = connection.notifications.filter(
+      (
+        notification,
+      ): notification is Extract<
+        DiligentServerNotification,
+        { method: typeof DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED }
+      > =>
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+        notification.params.threadId === startResult.threadId,
+    );
+
+    expect(statusEvents.length).toBeGreaterThanOrEqual(2);
+    expect(statusEvents[0]?.params.status).toBe("busy");
+    expect(statusEvents[statusEvents.length - 1]?.params.status).toBe("idle");
+  });
+
   it("rebinds collab handler when registry instance changes between turns", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const paths = await ensureDiligentDir(projectRoot);

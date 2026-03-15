@@ -1,7 +1,6 @@
 export type { CollabToolDeps } from "../collab";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, createCollabTools } from "../collab";
-export { createUpdateKnowledgeTool } from "./update-knowledge";
 export { createApplyPatchTool } from "./apply-patch";
 export { createBashTool, filterSensitiveEnv } from "./bash";
 // Tool catalog (P032)
@@ -21,5 +20,6 @@ export { createReadTool } from "./read";
 export { deriveToolRenderPayload } from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
 export { createSkillTool, registerSkillTool } from "./skill";
+export { createUpdateKnowledgeTool } from "./update-knowledge";
 export type { UserInputQuestion, UserInputRequest, UserInputResponse, UserInputSource } from "./user-input-types";
 export { createWriteAbsoluteTool, createWriteTool } from "./write";

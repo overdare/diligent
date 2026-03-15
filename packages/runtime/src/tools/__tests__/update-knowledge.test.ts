@@ -47,9 +47,19 @@ describe("update_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
     const tool = createUpdateKnowledgeTool(tmpDir);
 
-    await tool.execute({ action: "upsert", id: "k-1", type: "backlog", content: "Investigate flaky test", confidence: 0.7 }, makeCtx());
+    await tool.execute(
+      { action: "upsert", id: "k-1", type: "backlog", content: "Investigate flaky test", confidence: 0.7 },
+      makeCtx(),
+    );
     const updateResult = await tool.execute(
-      { action: "upsert", id: "k-1", type: "backlog", content: "Investigate flaky test in CI", confidence: 0.95, tags: ["ci"] },
+      {
+        action: "upsert",
+        id: "k-1",
+        type: "backlog",
+        content: "Investigate flaky test in CI",
+        confidence: 0.95,
+        tags: ["ci"],
+      },
       makeCtx(),
     );
 
@@ -67,7 +77,10 @@ describe("update_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
     const tool = createUpdateKnowledgeTool(tmpDir);
 
-    await tool.execute({ action: "upsert", id: "k-2", type: "preference", content: "Prefer concise responses" }, makeCtx());
+    await tool.execute(
+      { action: "upsert", id: "k-2", type: "preference", content: "Prefer concise responses" },
+      makeCtx(),
+    );
     const deleteResult = await tool.execute({ action: "delete", id: "k-2" }, makeCtx());
 
     expect(deleteResult.output).toContain("Knowledge deleted");
@@ -79,7 +92,10 @@ describe("update_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
     const tool = createUpdateKnowledgeTool(tmpDir);
 
-    const result = await tool.execute({ action: "upsert", type: "pattern", content: "No approval required", confidence: 0.9 }, makeCtx());
+    const result = await tool.execute(
+      { action: "upsert", type: "pattern", content: "No approval required", confidence: 0.9 },
+      makeCtx(),
+    );
 
     expect(result.output).toContain("Knowledge saved");
     const entries = await readKnowledge(tmpDir);

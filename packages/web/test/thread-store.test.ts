@@ -261,6 +261,51 @@ test("creates a new assistant item when same itemId appears in a new turn", () =
   expect(assistants[1] && assistants[1].kind === "assistant" ? assistants[1].text : "").toBe("second");
 });
 
+test("steering_injected clears pending steers by count even when event text differs", () => {
+  resetAdapter();
+  const startState = {
+    ...initialThreadState,
+    pendingSteers: ["change approach", "focus root cause"],
+  };
+
+  const notification: DiligentServerNotification = {
+    method: "steering/injected",
+    params: {
+      threadId: "t1",
+      messageCount: 1,
+      messages: [{ role: "user", content: "change approach (normalized)", timestamp: 1 }],
+    },
+  };
+
+  const next = reduce(startState, notification);
+  expect(next.pendingSteers).toEqual(["focus root cause"]);
+
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe("change approach");
+});
+
+test("steering_injected falls back to event text when local queue is empty", () => {
+  resetAdapter();
+  const notification: DiligentServerNotification = {
+    method: "steering/injected",
+    params: {
+      threadId: "t1",
+      messageCount: 1,
+      messages: [{ role: "user", content: "server-injected steer", timestamp: 2 }],
+    },
+  };
+
+  const next = reduce(initialThreadState, notification);
+  expect(next.pendingSteers).toEqual([]);
+
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe(
+    "server-injected steer",
+  );
+});
+
 test("hydrateFromThreadRead restores user images from local_image blocks", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

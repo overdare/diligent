@@ -48,7 +48,10 @@ const updateKnowledgeSchema = z
     }
   });
 
-export function createUpdateKnowledgeTool(knowledgePath: string, sessionId?: string): Tool<typeof updateKnowledgeSchema> {
+export function createUpdateKnowledgeTool(
+  knowledgePath: string,
+  sessionId?: string,
+): Tool<typeof updateKnowledgeSchema> {
   return {
     name: "update_knowledge",
     description:

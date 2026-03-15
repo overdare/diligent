@@ -63,13 +63,7 @@ function toDraft(entry: KnowledgeEntry): EntryDraft {
   };
 }
 
-export function KnowledgeManagerModal({
-  threadId,
-  onList,
-  onUpdate,
-  onClose,
-  className,
-}: KnowledgeManagerModalProps) {
+export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, className }: KnowledgeManagerModalProps) {
   const idPrefix = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);

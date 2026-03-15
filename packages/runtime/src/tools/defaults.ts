@@ -6,7 +6,6 @@ import { createCollabTools } from "../collab";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
-import { createUpdateKnowledgeTool } from "./update-knowledge";
 import { createBashTool } from "./bash";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
@@ -19,6 +18,7 @@ import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { createRequestUserInputTool } from "./request-user-input";
 import { createSkillTool } from "./skill";
+import { createUpdateKnowledgeTool } from "./update-knowledge";
 import { createWriteAbsoluteTool } from "./write";
 
 export interface BuildDefaultToolsResult {

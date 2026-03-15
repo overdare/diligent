@@ -109,7 +109,8 @@ export function deriveToolRenderPayload(
   }
 
   if (name === "glob") {
-    const items = toOutputLines(outputText);
+    const basePath = readAbsolutePathFromInput(parsed, "path");
+    const items = relativizeGlobOutputLines(toOutputLines(outputText), basePath);
     if (items.length > 0) {
       return { version: 1, blocks: [{ type: "list", title: "Files", items }] };
     }
@@ -123,7 +124,10 @@ export function deriveToolRenderPayload(
   }
 
   if (name === "grep") {
-    const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
+    const basePath = readAbsolutePathFromInput(parsed, "path");
+    const items = relativizeGrepOutputLines(toOutputLines(outputText), basePath).filter(
+      (line) => !line.startsWith("..."),
+    );
     if (items.length > 0) {
       return { version: 1, blocks: [{ type: "list", items }] };
     }
@@ -169,6 +173,109 @@ function toOutputLines(outputText: string): string[] {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function readAbsolutePathFromInput(parsed: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = parsed?.[key];
+  if (typeof value !== "string") return undefined;
+  const normalized = normalizePath(value);
+  return isAbsolutePath(normalized) ? normalized : undefined;
+}
+
+function relativizeGlobOutputLines(lines: string[], basePath?: string): string[] {
+  if (!basePath) return lines;
+  return lines.map((line) => {
+    if (line.startsWith("...")) return line;
+    return maybeRelativePath(line, basePath);
+  });
+}
+
+function relativizeGrepOutputLines(lines: string[], basePath?: string): string[] {
+  if (!basePath) return lines;
+  return lines.map((line) => {
+    if (line.startsWith("...")) return line;
+    const parsedLine = splitGrepOutputLine(line);
+    if (!parsedLine) return line;
+    const relativePath = maybeRelativePathAgainstSearchScope(parsedLine.path, basePath);
+    return `${relativePath}${parsedLine.suffix}`;
+  });
+}
+
+function splitGrepOutputLine(line: string): { path: string; suffix: string } | undefined {
+  const markerRegex = /([:-])\d+([:-])/g;
+  for (const match of line.matchAll(markerRegex)) {
+    const markerStart = match.index;
+    if (markerStart === undefined || markerStart <= 0) continue;
+    const candidatePath = line.slice(0, markerStart);
+    if (!isAbsolutePath(candidatePath)) continue;
+    return { path: candidatePath, suffix: line.slice(markerStart) };
+  }
+  return undefined;
+}
+
+function maybeRelativePathAgainstSearchScope(absPath: string, searchPath: string): string {
+  const fromSearchPath = maybeRelativePath(absPath, searchPath);
+  if (fromSearchPath !== absPath && fromSearchPath !== ".") {
+    return fromSearchPath;
+  }
+
+  const parent = dirname(searchPath);
+  if (!parent) return absPath;
+  const fromParent = maybeRelativePath(absPath, parent);
+  return fromParent === "." ? absPath : fromParent;
+}
+
+function maybeRelativePath(value: string, basePath: string): string {
+  const path = normalizePath(value);
+  const base = normalizePath(basePath);
+  if (!isAbsolutePath(path) || !isAbsolutePath(base)) return value;
+
+  const pathDrive = getDrive(path);
+  const baseDrive = getDrive(base);
+  if (pathDrive && baseDrive && pathDrive.toLowerCase() !== baseDrive.toLowerCase()) {
+    return value;
+  }
+
+  const normalizedBase = trimTrailingSlash(base);
+  if (path === normalizedBase) return ".";
+
+  const comparePath = pathDrive ? path.toLowerCase() : path;
+  const compareBase = pathDrive ? normalizedBase.toLowerCase() : normalizedBase;
+  const prefix = `${compareBase}/`;
+  if (!comparePath.startsWith(prefix)) return value;
+
+  return path.slice(normalizedBase.length + 1);
+}
+
+function dirname(pathValue: string): string | undefined {
+  const path = trimTrailingSlash(normalizePath(pathValue));
+  const slash = path.lastIndexOf("/");
+  if (slash < 0) return undefined;
+  if (slash === 0) return "/";
+  if (/^[a-zA-Z]:$/.test(path.slice(0, slash))) {
+    return `${path.slice(0, slash)}/`;
+  }
+  return path.slice(0, slash);
+}
+
+function trimTrailingSlash(pathValue: string): string {
+  if (pathValue === "/") return pathValue;
+  if (/^[a-zA-Z]:\/$/.test(pathValue)) return pathValue;
+  return pathValue.endsWith("/") ? pathValue.slice(0, -1) : pathValue;
+}
+
+function normalizePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+}
+
+function getDrive(pathValue: string): string | undefined {
+  const match = pathValue.match(/^([a-zA-Z]:)\//);
+  return match?.[1];
+}
+
+function isAbsolutePath(pathValue: string): boolean {
+  if (pathValue.startsWith("/")) return true;
+  return /^[a-zA-Z]:\//.test(pathValue);
 }
 
 function parsePatchForRender(patch: string): DiffFile[] {

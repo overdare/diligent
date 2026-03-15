@@ -142,7 +142,6 @@ export type {
 export {
   buildDefaultTools,
   buildToolCatalog,
-  createUpdateKnowledgeTool,
   createApplyPatchTool,
   createBashTool,
   createEditTool,
@@ -154,6 +153,7 @@ export {
   createReadTool,
   createRequestUserInputTool,
   createSkillTool,
+  createUpdateKnowledgeTool,
   createWriteAbsoluteTool,
   createWriteTool,
   getGlobalPluginPath,

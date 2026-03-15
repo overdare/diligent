@@ -1,6 +1,6 @@
 // @summary Pure function mapping AgentEvent to DiligentServerNotification for independent testability
 
-import type { Model } from "@diligent/core/llm/types";
+import type { Message, Model, UserMessage } from "@diligent/core";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "../protocol/index";
@@ -181,7 +181,14 @@ export function agentEventToNotification(
     case "steering_injected":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED,
-        params: withThreadStatus({ threadId, messageCount: event.messageCount }, context),
+        params: withThreadStatus(
+          {
+            threadId,
+            messageCount: event.messageCount,
+            messages: event.messages.filter((message: Message): message is UserMessage => message.role === "user"),
+          },
+          context,
+        ),
       };
 
     // Collab — sub-agent orchestration boundary events

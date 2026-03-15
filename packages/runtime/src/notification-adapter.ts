@@ -85,7 +85,17 @@ export class ProtocolNotificationAdapter {
           {
             type: "steering_injected",
             messageCount: notification.params.messageCount,
-            messages: [], // Messages handled server-side via event-ordered persistence
+            messages: notification.params.messages,
+          },
+        ];
+
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED:
+        return [
+          {
+            type: "compaction_end",
+            tokensBefore: notification.params.tokensBefore,
+            tokensAfter: notification.params.tokensAfter,
+            summary: `${notification.params.entryCount} entries`,
           },
         ];
 
