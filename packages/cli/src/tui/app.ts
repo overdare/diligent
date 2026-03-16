@@ -33,7 +33,7 @@ import { Container } from "./framework/container";
 import { matchesKey } from "./framework/keys";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
-import { Terminal } from "./framework/terminal";
+import { Terminal, type TerminalOptions } from "./framework/terminal";
 import { InputHistory } from "./input-history";
 import type { SpawnedAppServer } from "./rpc-client";
 import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
@@ -46,6 +46,7 @@ export interface AppOptions {
   resume?: boolean;
   resumeId?: string;
   rpcClientFactory?: (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer>;
+  terminalOptions?: TerminalOptions;
 }
 
 export class App {
@@ -100,7 +101,7 @@ export class App {
     this.runtime = new AppRuntimeState(config.mode, config.diligent.effort ?? "medium");
     this.streamRenderBatchMs = App.resolveStreamRenderBatchMs();
     this.shouldBellOnComplete = config.diligent.terminalBell !== false;
-    this.terminal = new Terminal();
+    this.terminal = new Terminal(this.options?.terminalOptions);
     this.stdinBuffer = new StdinBuffer();
 
     // Initialize command registry

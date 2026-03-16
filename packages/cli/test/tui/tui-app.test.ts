@@ -15,6 +15,7 @@ import { EventStream, ensureDiligentDir } from "@diligent/runtime";
 import type { AppConfig } from "../../src/config";
 import { ProviderManager } from "../../src/provider-manager";
 import { App } from "../../src/tui/app";
+import { createFakeTerminalHarness } from "../helpers/fake-terminal";
 import { createInProcessRpcClientFactory } from "../helpers/in-process-server";
 
 const TEST_MODEL: Model = {
@@ -133,63 +134,26 @@ function makeConfig(streamFunction: StreamFunction, opts?: { diligent?: AppConfi
   };
 }
 
-async function setupWorkspace(prefix: string): Promise<{ paths: DiligentPaths; cleanup: () => void }> {
-  const prevCwd = process.cwd();
+async function setupWorkspace(prefix: string): Promise<{ root: string; paths: DiligentPaths; cleanup: () => void }> {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  process.chdir(dir);
   const paths = await ensureDiligentDir(dir);
 
   return {
+    root: dir,
     paths,
     cleanup: () => {
-      process.chdir(prevCwd);
       rmSync(dir, { recursive: true, force: true });
     },
   };
 }
 
-function emitChar(ch: string) {
-  process.stdin.emit("data", Buffer.from(ch, "utf-8"));
-}
-
-function emitText(text: string) {
-  for (const ch of text) {
-    emitChar(ch);
-  }
-}
-
-function emitEnter() {
-  process.stdin.emit("data", Buffer.from("\r"));
-}
-
-function emitCtrlC() {
-  process.stdin.emit("data", Buffer.from("\x03"));
-}
-
-function emitCtrlO() {
-  process.stdin.emit("data", Buffer.from("\x0f"));
-}
-
-function captureStdout(): { writes: string[]; restore: () => void } {
-  const writes: string[] = [];
-  const prevWrite = process.stdout.write;
-
-  const captureWrite = ((...args: Parameters<typeof process.stdout.write>) => {
-    const [chunk] = args;
-    writes.push(typeof chunk === "string" ? chunk : chunk.toString());
-    return prevWrite.apply(process.stdout, args);
-  }) as typeof process.stdout.write;
-
-  process.stdout.write = captureWrite;
-
-  return {
-    writes,
-    restore: () => {
-      if (process.stdout.write === captureWrite) {
-        process.stdout.write = prevWrite;
-      }
-    },
-  };
+function createAppHarness(cfg: AppConfig, workspace: { paths: DiligentPaths }) {
+  const terminal = createFakeTerminalHarness();
+  const app = new App(cfg, workspace.paths, {
+    rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
+    terminalOptions: { stdin: terminal.stdin, stdout: terminal.stdout },
+  });
+  return { app, terminal };
 }
 
 function stripAnsi(input: string): string {
@@ -241,15 +205,13 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }], calls);
 
     const cfg = makeConfig(streamFn);
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("hello");
-      emitEnter();
+      terminal.emitText("hello");
+      terminal.emitEnter();
       await wait(150);
 
       expect(calls.length).toBeGreaterThan(0);
@@ -273,15 +235,13 @@ describe("App", () => {
     ]);
 
     const cfg = makeConfig(streamFn);
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("test");
-      emitEnter();
+      terminal.emitText("test");
+      terminal.emitEnter();
 
       const renderOutput = () =>
         ((app as unknown as { root: { render: (width: number) => string[] } }).root.render(120) ?? []).join("\n");
@@ -318,24 +278,20 @@ describe("App", () => {
     ]);
 
     const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("run it");
-      emitEnter();
+      terminal.emitText("run it");
+      terminal.emitEnter();
       await wait(220);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    const output = stripAnsi(writes.join(""));
+    const output = stripAnsi(terminal.stdout.writes.join(""));
     expect(output).toContain("bash");
   });
 
@@ -344,24 +300,20 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ error: new Error("something went wrong") }]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("fail");
-      emitEnter();
+      terminal.emitText("fail");
+      terminal.emitEnter();
       await wait(180);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    expect(writes.join("")).toContain("something went wrong");
+    expect(terminal.stdout.writes.join("")).toContain("something went wrong");
   });
 
   test("/clear resets thread while keeping input UI visible", async () => {
@@ -369,24 +321,20 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("/clear");
-      emitEnter();
+      terminal.emitText("/clear");
+      terminal.emitEnter();
       await wait(160);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    const output = stripAnsi(writes.join(""));
+    const output = stripAnsi(terminal.stdout.writes.join(""));
     expect(output).toContain("❯ ");
     expect(output).not.toContain("/clear");
   });
@@ -406,26 +354,22 @@ describe("App", () => {
     ]);
 
     const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("run");
-      emitEnter();
+      terminal.emitText("run");
+      terminal.emitEnter();
       await wait(240);
 
-      emitCtrlO();
+      terminal.emitCtrlO();
       await wait(60);
-      const output = stripAnsi(writes.join(""));
+      const output = stripAnsi(terminal.stdout.writes.join(""));
       expect(output).toContain("(ctrl+o to expand)");
       expect(output).not.toContain("line1");
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
   });
@@ -444,28 +388,24 @@ describe("App", () => {
     ]);
 
     const cfg = makeConfig(streamFn, { diligent: { yolo: true } });
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("start");
-      emitEnter();
+      terminal.emitText("start");
+      terminal.emitEnter();
       await wait(60);
 
-      emitText("change approach");
-      emitEnter();
+      terminal.emitText("change approach");
+      terminal.emitEnter();
       await wait(360);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    const output = stripAnsi(writes.join(""));
+    const output = stripAnsi(terminal.stdout.writes.join(""));
     expect(output).toContain("change approach");
     expect(output).not.toContain("[steering] change approach");
   });
@@ -475,36 +415,32 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
 
     try {
       await app.start();
       await wait(30);
 
-      emitText("slow");
-      emitEnter();
+      terminal.emitText("slow");
+      terminal.emitEnter();
       await wait(80);
 
-      emitText("change approach quickly");
-      emitEnter();
+      terminal.emitText("change approach quickly");
+      terminal.emitEnter();
       await wait(40);
 
-      emitCtrlC();
+      terminal.emitCtrlC();
       await wait(40);
 
-      emitText("next turn");
-      emitEnter();
+      terminal.emitText("next turn");
+      terminal.emitEnter();
       await wait(220);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    const output = stripAnsi(writes.join(""));
+    const output = stripAnsi(terminal.stdout.writes.join(""));
     const lastSteeringIndex = output.lastIndexOf("⚑ ");
     const nextTurnIndex = output.lastIndexOf("next turn");
 
@@ -517,27 +453,23 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("slow");
-      emitEnter();
+      terminal.emitText("slow");
+      terminal.emitEnter();
       await wait(80);
 
-      emitCtrlC();
+      terminal.emitCtrlC();
       await wait(120);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    expect(writes.join("")).toContain("Cancelled");
+    expect(terminal.stdout.writes.join("")).toContain("Cancelled");
   });
 
   test("Ctrl+C cancel restarts turn with first pending steering message", async () => {
@@ -549,31 +481,27 @@ describe("App", () => {
     );
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("slow");
-      emitEnter();
+      terminal.emitText("slow");
+      terminal.emitEnter();
       await wait(80);
 
-      emitText("change approach now");
-      emitEnter();
+      terminal.emitText("change approach now");
+      terminal.emitEnter();
       await wait(40);
 
-      emitCtrlC();
+      terminal.emitCtrlC();
       await wait(240);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    const output = stripAnsi(writes.join(""));
+    const output = stripAnsi(terminal.stdout.writes.join(""));
     expect(output).toContain("Cancelled");
 
     const resumedCall = calls.find((call) =>
@@ -595,24 +523,20 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
 
     const cfg = makeConfig(streamFn);
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("ring");
-      emitEnter();
+      terminal.emitText("ring");
+      terminal.emitEnter();
       await wait(180);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    expect(writes.join("")).toContain("\x07");
+    expect(terminal.stdout.writes.join("")).toContain("\x07");
   });
 
   test("terminal bell can be disabled via config", async () => {
@@ -620,23 +544,19 @@ describe("App", () => {
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
 
     const cfg = makeConfig(streamFn, { diligent: { terminalBell: false } });
-    const { writes, restore } = captureStdout();
-    const app = new App(cfg, workspace.paths, {
-      rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
-    });
+    const { app, terminal } = createAppHarness(cfg, workspace);
     try {
       await app.start();
       await wait(30);
 
-      emitText("ring");
-      emitEnter();
+      terminal.emitText("ring");
+      terminal.emitEnter();
       await wait(180);
     } finally {
       app.stop();
-      restore();
       workspace.cleanup();
     }
 
-    expect(writes.join("")).not.toContain("\x07");
+    expect(terminal.stdout.writes.join("")).not.toContain("\x07");
   });
 });

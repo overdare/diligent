@@ -20,11 +20,12 @@ import type { SpawnRpcClientOptions } from "../../src/tui/rpc-framed-client";
 export function createInProcessRpcClientFactory(
   config: AppConfig,
   paths: DiligentPaths,
+  cwd: string,
 ): (options: SpawnRpcClientOptions) => Promise<SpawnedAppServer> {
   return async (_options: SpawnRpcClientOptions): Promise<SpawnedAppServer> => {
     const { RuntimeAgent } = await import("@diligent/runtime");
     const server = new DiligentAppServer({
-      cwd: process.cwd(),
+      cwd,
       resolvePaths: async () => paths,
       createAgent: () =>
         new RuntimeAgent(config.model, config.systemPrompt, [], {

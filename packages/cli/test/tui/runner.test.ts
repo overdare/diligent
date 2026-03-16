@@ -138,16 +138,14 @@ function makeConfig(streamFunction: StreamFunction): AppConfig {
   };
 }
 
-async function setupWorkspace(prefix: string): Promise<{ paths: DiligentPaths; cleanup: () => void }> {
-  const prevCwd = process.cwd();
+async function setupWorkspace(prefix: string): Promise<{ root: string; paths: DiligentPaths; cleanup: () => void }> {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  process.chdir(dir);
   const paths = await ensureDiligentDir(dir);
 
   return {
+    root: dir,
     paths,
     cleanup: () => {
-      process.chdir(prevCwd);
       rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -221,7 +219,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("say hello");
       expect(exitCode).toBe(0);
@@ -254,7 +252,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("run echo");
       expect(exitCode).toBe(0);
@@ -279,7 +277,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("fail");
       expect(exitCode).toBe(1);
@@ -300,7 +298,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       await runner.run("hello agent");
     } finally {
@@ -332,7 +330,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       await runner.run("think");
     } finally {
@@ -360,7 +358,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("list files");
       expect(exitCode).toBe(0);
@@ -380,7 +378,7 @@ describe("NonInteractiveRunner", () => {
     try {
       const cfg = makeConfig(streamFn);
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("ping");
       expect(exitCode).toBe(0);
@@ -401,7 +399,7 @@ describe("NonInteractiveRunner", () => {
       const cfg = makeConfig(streamFn);
       cfg.diligent = { ...cfg.diligent, terminalBell: false };
       const runner = new NonInteractiveRunner(cfg, workspace.paths, {
-        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths),
+        rpcClientFactory: createInProcessRpcClientFactory(cfg, workspace.paths, workspace.root),
       });
       const exitCode = await runner.run("ping");
       expect(exitCode).toBe(0);
