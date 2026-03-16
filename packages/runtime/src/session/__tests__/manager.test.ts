@@ -291,6 +291,40 @@ describe("SessionManager", () => {
     expect(() => mgr.appendModeChange("execute")).not.toThrow();
   });
 
+  test("appendModelChange() persists model_change entry payload", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendModelChange("openai", "gpt-5");
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    const modelEntry = entries.find((entry) => entry.type === "model_change");
+    expect(modelEntry).toBeDefined();
+    if (modelEntry && modelEntry.type === "model_change") {
+      expect(modelEntry.provider).toBe("openai");
+      expect(modelEntry.modelId).toBe("gpt-5");
+    }
+  });
+
+  test("appendEffortChange() persists effort_change entry payload", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendEffortChange("high", "command");
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    const effortEntry = entries.find((entry) => entry.type === "effort_change");
+    expect(effortEntry).toBeDefined();
+    if (effortEntry && effortEntry.type === "effort_change") {
+      expect(effortEntry.effort).toBe("high");
+      expect(effortEntry.changedBy).toBe("command");
+    }
+  });
+
   test("compactNow() appends compaction entry", async () => {
     const dir = await setupDir();
     const mgr = new SessionManager(

@@ -342,8 +342,7 @@ export class SessionManager {
       provider,
       modelId,
     };
-    this.state.appendCommitted([entry]);
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.appendAndPersist(entry);
   }
 
   /**
@@ -361,8 +360,33 @@ export class SessionManager {
    * Compaction is handled by the Agent internally.
    */
   async run(userMessage: Message, opts?: { signal?: AbortSignal }): Promise<void> {
-    for (const fn of this.listeners) fn({ type: "status_change", status: "busy" });
+    this.emitBusyStatus();
 
+    const prepared = await this.prepareRun(userMessage);
+    const { unsubscribe, getCurrentTurnId } = this.subscribeRunEvents(prepared);
+
+    try {
+      await this.executeRun(prepared.agent, userMessage, opts?.signal);
+      this.commitRun(prepared.turnStager);
+    } catch (err) {
+      this.handleRunError(err, getCurrentTurnId());
+    } finally {
+      this.finishRun(unsubscribe);
+    }
+
+    this.throwIfAborted(opts?.signal);
+  }
+
+  /** Wait for all pending writes to complete. */
+  async waitForWrites(): Promise<void> {
+    await this.writeQueue;
+  }
+
+  private emitBusyStatus(): void {
+    for (const fn of this.listeners) fn({ type: "status_change", status: "busy" });
+  }
+
+  private async prepareRun(userMessage: Message): Promise<{ agent: Agent; turnStager: TurnStager }> {
     this.repairEntries();
 
     const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
@@ -393,45 +417,65 @@ export class SessionManager {
       this._initializedAgent = agent;
     }
 
+    return { agent, turnStager };
+  }
+
+  private subscribeRunEvents(prepared: { agent: Agent; turnStager: TurnStager }): {
+    unsubscribe: () => void;
+    getCurrentTurnId: () => string | undefined;
+  } {
+    const { agent, turnStager } = prepared;
     let currentTurnId: string | undefined;
-    const unsub = agent.subscribe((event: CoreAgentEvent) => {
+
+    const unsubscribe = agent.subscribe((event: CoreAgentEvent) => {
       if (event.type === "turn_start") currentTurnId = event.turnId;
       if (event.type === "usage") {
         this.handleUsageEvent(event.usage);
       }
-      const keepRecentTokens = compactionConfig?.keepRecentTokens ?? 20_000;
+
+      const keepRecentTokens = this.config.compaction?.keepRecentTokens ?? 20_000;
       turnStager.handleEvent(event, keepRecentTokens);
       this.emitToListeners(event);
-      snapshot = turnStager.getSnapshot();
+
+      const snapshot = turnStager.getSnapshot();
       this.state.setPending(snapshot.entries, snapshot.leafId);
     });
 
-    try {
-      await agent.prompt(userMessage, opts?.signal);
-      this.appendEntries(turnStager.getSnapshot().entries);
-    } catch (err) {
-      const serializable = toSerializableError(err);
-      console.error(
-        "[SessionManager] Run error session=%s name=%s message=%s lastPersisted=%s",
-        this.writer.id,
-        serializable.name,
-        serializable.message,
-        summarizeLastPersistedMessage(this.state.getCommittedEntries()),
-      );
-      this.appendError(serializable, { fatal: true, turnId: currentTurnId });
-    } finally {
-      this.state.clearPending();
-      unsub();
-    }
-
-    if (opts?.signal?.aborted) {
-      throw new Error("Aborted");
-    }
+    return {
+      unsubscribe,
+      getCurrentTurnId: () => currentTurnId,
+    };
   }
 
-  /** Wait for all pending writes to complete. */
-  async waitForWrites(): Promise<void> {
-    await this.writeQueue;
+  private async executeRun(agent: Agent, userMessage: Message, signal?: AbortSignal): Promise<void> {
+    await agent.prompt(userMessage, signal);
+  }
+
+  private commitRun(turnStager: TurnStager): void {
+    this.appendEntries(turnStager.getSnapshot().entries);
+  }
+
+  private handleRunError(err: unknown, turnId?: string): void {
+    const serializable = toSerializableError(err);
+    console.error(
+      "[SessionManager] Run error session=%s name=%s message=%s lastPersisted=%s",
+      this.writer.id,
+      serializable.name,
+      serializable.message,
+      summarizeLastPersistedMessage(this.state.getCommittedEntries()),
+    );
+    this.appendError(serializable, { fatal: true, turnId });
+  }
+
+  private finishRun(unsubscribe: () => void): void {
+    this.state.clearPending();
+    unsubscribe();
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new Error("Aborted");
+    }
   }
 
   private persistCompactionEntry(event: {
@@ -450,8 +494,7 @@ export class SessionManager {
       tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter,
     };
-    this.state.appendCommitted([entry]);
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.appendAndPersist(entry);
   }
 
   /** Queue a steering message. If agent is active, steers directly; otherwise queues locally. */
@@ -497,8 +540,7 @@ export class SessionManager {
       mode,
       changedBy,
     };
-    this.state.appendCommitted([entry]);
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.appendAndPersist(entry);
   }
 
   appendEffortChange(
@@ -513,8 +555,7 @@ export class SessionManager {
       effort,
       changedBy,
     };
-    this.state.appendCommitted([entry]);
-    this.writeQueue = this.writeQueue.then(() => this.writer.write(entry)).catch(() => {});
+    this.appendAndPersist(entry);
   }
 
   appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string }): void {
@@ -559,22 +600,26 @@ export class SessionManager {
     };
   }
 
+  private appendAndPersist(entry: SessionEntry): void {
+    this.state.appendCommitted([entry]);
+    this.writeQueue = this.writeQueue
+      .then(async () => {
+        await this.writer.write(entry);
+      })
+      .catch((error) => {
+        const detail = entry.type === "message" ? entry.message.role : entry.type;
+        console.error(
+          "[SessionManager] Failed to persist %s for session=%s: %s",
+          detail,
+          this.writer.id,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+  }
+
   private appendEntries(entries: SessionEntry[]): void {
     for (const entry of entries) {
-      this.state.appendCommitted([entry]);
-      this.writeQueue = this.writeQueue
-        .then(async () => {
-          await this.writer.write(entry);
-        })
-        .catch((error) => {
-          const detail = entry.type === "message" ? entry.message.role : entry.type;
-          console.error(
-            "[SessionManager] Failed to persist %s for session=%s: %s",
-            detail,
-            this.writer.id,
-            error instanceof Error ? error.message : String(error),
-          );
-        });
+      this.appendAndPersist(entry);
     }
   }
 
