@@ -8,7 +8,7 @@ import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
-import { listSessions, readSessionFile, SessionWriter } from "./persistence";
+import { SessionPersistence, type SessionReconcileResult } from "./persistence";
 import { SessionStateStore } from "./state-store";
 import { TurnStager } from "./turn-stager";
 import type {
@@ -47,8 +47,7 @@ export interface ResumeSessionOptions {
 
 export class SessionManager {
   private state = new SessionStateStore();
-  private writer: SessionWriter;
-  private writeQueue: Promise<void> = Promise.resolve();
+  private persistence: SessionPersistence;
   /** Pre-agent steering queue — drained into agent at start of run() */
   private pendingMessages: Message[] = [];
   private memoryErrors: ErrorEntry[] = [];
@@ -60,54 +59,32 @@ export class SessionManager {
   private _initializedAgent: Agent | null = null;
 
   constructor(private config: SessionManagerConfig) {
-    this.writer = new SessionWriter(
-      config.paths.sessions,
-      config.cwd,
-      undefined,
-      config.parentSession,
-      config.collabMeta,
-      config.sessionId,
-    );
+    this.persistence = new SessionPersistence({
+      sessionsDir: config.paths.sessions,
+      cwd: config.cwd,
+      parentSession: config.parentSession,
+      collabMeta: config.collabMeta,
+      sessionId: config.sessionId,
+    });
   }
 
   /** Create a new session */
   async create(): Promise<void> {
     this.state.reset();
     this.prevCacheReadBySession.clear();
-    this.writeQueue = Promise.resolve();
     this._initializedAgent = null;
-    this.writer = new SessionWriter(
-      this.config.paths.sessions,
-      this.config.cwd,
-      undefined,
-      this.config.parentSession,
-      this.config.collabMeta,
-      this.config.sessionId ?? this.writer.id,
-    );
-    await this.writer.create();
+    this.persistence.resetForCreate();
+    await this.persistence.create();
   }
 
   /** Resume an existing session */
   async resume(options: ResumeSessionOptions): Promise<boolean> {
     this.prevCacheReadBySession.clear();
-    let sessionPath: string | undefined;
+    const entries = await this.persistence.resume(options);
+    if (!entries) return false;
 
-    if (options.sessionId) {
-      const sessions = await listSessions(this.config.paths.sessions);
-      const session = sessions.find((s) => s.id === options.sessionId);
-      sessionPath = session?.path;
-    } else if (options.mostRecent) {
-      const sessions = await listSessions(this.config.paths.sessions);
-      sessionPath = sessions.find((s) => !s.parentSession)?.path;
-    }
-
-    if (!sessionPath) return false;
-
-    const { entries } = await readSessionFile(sessionPath);
     this.state.replaceCommitted(entries);
-    this.writeQueue = Promise.resolve();
     this._initializedAgent = null;
-    this.writer = new SessionWriter(this.config.paths.sessions, this.config.cwd, sessionPath);
 
     this.repairEntries();
 
@@ -148,7 +125,7 @@ export class SessionManager {
 
   /** List available sessions */
   async list(): Promise<SessionInfo[]> {
-    return listSessions(this.config.paths.sessions);
+    return this.persistence.list();
   }
 
   /** Scan session entries for spawn_agent tool results to restore collab thread IDs on resume. */
@@ -198,94 +175,19 @@ export class SessionManager {
   /**
    * Reconcile in-memory entries with the persisted session file.
    */
-  async reconcileFromDisk(): Promise<{
-    changed: boolean;
-    reason: "no_session_path" | "memory_newer" | "already_equal" | "updated_from_disk";
-    sessionPath: string | null;
-    memoryEntries: number;
-    diskEntries: number;
-    memoryLeafId: string | null;
-    diskLeafId: string | null;
-    memoryTailEntryIds: string;
-    diskTailEntryIds: string;
-    memoryTailMessage: string;
-    diskTailMessage: string;
-  }> {
-    const sessionPath = this.writer.path;
-    const committedEntries = this.state.getCommittedEntries();
-    const memoryEntries = committedEntries.length;
-    const memoryLeafId = this.state.getCommittedLeafId();
-    const memoryTailEntryIds = summarizeTailEntryIds(committedEntries);
-    const memoryTailMessage = summarizeLastPersistedMessage(committedEntries);
+  async reconcileFromDisk(): Promise<SessionReconcileResult> {
+    const reconciled = await this.persistence.reconcile({
+      committedEntries: this.state.getCommittedEntries(),
+      committedLeafId: this.state.getCommittedLeafId(),
+      summarizeTailEntryIds,
+      summarizeLastPersistedMessage,
+    });
 
-    if (!sessionPath) {
-      return {
-        changed: false,
-        reason: "no_session_path",
-        sessionPath: null,
-        memoryEntries,
-        diskEntries: 0,
-        memoryLeafId,
-        diskLeafId: null,
-        memoryTailEntryIds,
-        diskTailEntryIds: "-",
-        memoryTailMessage,
-        diskTailMessage: "-",
-      };
+    if (reconciled.entries) {
+      this.state.replaceCommitted(reconciled.entries);
     }
 
-    await this.writeQueue.catch(() => {});
-
-    const { entries } = await readSessionFile(sessionPath);
-    const diskLeafId = entries.length > 0 ? entries[entries.length - 1].id : null;
-    const diskTailEntryIds = summarizeTailEntryIds(entries);
-    const diskTailMessage = summarizeLastPersistedMessage(entries);
-
-    if (entries.length < committedEntries.length) {
-      return {
-        changed: false,
-        reason: "memory_newer",
-        sessionPath,
-        memoryEntries,
-        diskEntries: entries.length,
-        memoryLeafId,
-        diskLeafId,
-        memoryTailEntryIds,
-        diskTailEntryIds,
-        memoryTailMessage,
-        diskTailMessage,
-      };
-    }
-    if (entries.length === committedEntries.length && diskLeafId === this.state.getCommittedLeafId()) {
-      return {
-        changed: false,
-        reason: "already_equal",
-        sessionPath,
-        memoryEntries,
-        diskEntries: entries.length,
-        memoryLeafId,
-        diskLeafId,
-        memoryTailEntryIds,
-        diskTailEntryIds,
-        memoryTailMessage,
-        diskTailMessage,
-      };
-    }
-
-    this.state.replaceCommitted(entries);
-    return {
-      changed: true,
-      reason: "updated_from_disk",
-      sessionPath,
-      memoryEntries,
-      diskEntries: entries.length,
-      memoryLeafId,
-      diskLeafId,
-      memoryTailEntryIds,
-      diskTailEntryIds,
-      memoryTailMessage,
-      diskTailMessage,
-    };
+    return reconciled.result;
   }
 
   getCurrentEffort(): "none" | "low" | "medium" | "high" | "max" | undefined {
@@ -379,7 +281,7 @@ export class SessionManager {
 
   /** Wait for all pending writes to complete. */
   async waitForWrites(): Promise<void> {
-    await this.writeQueue;
+    await this.persistence.waitForWrites();
   }
 
   private emitBusyStatus(): void {
@@ -391,14 +293,14 @@ export class SessionManager {
 
     const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
     const turnStager = new TurnStager(this.state.getCommittedLeafId(), context.messages, userMessage);
-    let snapshot = turnStager.getSnapshot();
+    const snapshot = turnStager.getSnapshot();
     this.state.setPending(snapshot.entries, snapshot.leafId);
 
     const agentResult = this.resolveAgent();
     const agent = agentResult instanceof Promise ? await agentResult : agentResult;
     this._agent = agent;
 
-    agent.setSessionId(this.writer.id);
+    agent.setSessionId(this.persistence.sessionId);
 
     for (const msg of this.pendingMessages.splice(0)) {
       agent.steer(msg);
@@ -459,7 +361,7 @@ export class SessionManager {
     const serializable = toSerializableError(err);
     console.error(
       "[SessionManager] Run error session=%s name=%s message=%s lastPersisted=%s",
-      this.writer.id,
+      this.persistence.sessionId,
       serializable.name,
       serializable.message,
       summarizeLastPersistedMessage(this.state.getCommittedEntries()),
@@ -578,16 +480,16 @@ export class SessionManager {
   }
 
   private handleUsageEvent(usage: { cacheReadTokens: number }): void {
-    const prevCacheRead = this.prevCacheReadBySession.get(this.writer.id) ?? 0;
+    const prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
     if (usage.cacheReadTokens < prevCacheRead) {
       console.error(
         "[SessionManager] Cache drop session=%s: %d -> %d",
-        this.writer.id,
+        this.persistence.sessionId,
         prevCacheRead,
         usage.cacheReadTokens,
       );
     }
-    this.prevCacheReadBySession.set(this.writer.id, usage.cacheReadTokens);
+    this.prevCacheReadBySession.set(this.persistence.sessionId, usage.cacheReadTokens);
   }
 
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {
@@ -602,25 +504,28 @@ export class SessionManager {
 
   private appendAndPersist(entry: SessionEntry): void {
     this.state.appendCommitted([entry]);
-    this.writeQueue = this.writeQueue
-      .then(async () => {
-        await this.writer.write(entry);
-      })
-      .catch((error) => {
-        const detail = entry.type === "message" ? entry.message.role : entry.type;
-        console.error(
-          "[SessionManager] Failed to persist %s for session=%s: %s",
-          detail,
-          this.writer.id,
-          error instanceof Error ? error.message : String(error),
-        );
-      });
+    this.persistence.append(entry, (error) => {
+      const detail = entry.type === "message" ? entry.message.role : entry.type;
+      console.error(
+        "[SessionManager] Failed to persist %s for session=%s: %s",
+        detail,
+        this.persistence.sessionId,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
   }
 
   private appendEntries(entries: SessionEntry[]): void {
-    for (const entry of entries) {
-      this.appendAndPersist(entry);
-    }
+    this.state.appendCommitted(entries);
+    this.persistence.appendMany(entries, (error, entry) => {
+      const detail = entry.type === "message" ? entry.message.role : entry.type;
+      console.error(
+        "[SessionManager] Failed to persist %s for session=%s: %s",
+        detail,
+        this.persistence.sessionId,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
   }
 
   private emitToListeners(event: CoreAgentEvent): void {
@@ -640,11 +545,11 @@ export class SessionManager {
   }
 
   get sessionPath(): string | null {
-    return this.writer.path;
+    return this.persistence.sessionPath;
   }
 
   get sessionId(): string {
-    return this.writer.id;
+    return this.persistence.sessionId;
   }
 
   get entryCount(): number {

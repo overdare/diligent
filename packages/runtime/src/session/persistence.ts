@@ -142,6 +142,202 @@ export interface ChildSessionData {
   created: string; // ISO 8601
 }
 
+export interface SessionPersistenceConfig {
+  sessionsDir: string;
+  cwd: string;
+  parentSession?: string;
+  collabMeta?: CollabSessionMeta;
+  sessionId?: string;
+}
+
+export interface SessionReconcileResult {
+  changed: boolean;
+  reason: "no_session_path" | "memory_newer" | "already_equal" | "updated_from_disk";
+  sessionPath: string | null;
+  memoryEntries: number;
+  diskEntries: number;
+  memoryLeafId: string | null;
+  diskLeafId: string | null;
+  memoryTailEntryIds: string;
+  diskTailEntryIds: string;
+  memoryTailMessage: string;
+  diskTailMessage: string;
+}
+
+export class SessionPersistence {
+  private writer: SessionWriter;
+  private writeQueue: Promise<void> = Promise.resolve();
+
+  constructor(private readonly config: SessionPersistenceConfig) {
+    this.writer = this.createWriter(config.sessionId);
+  }
+
+  resetForCreate(): void {
+    this.writeQueue = Promise.resolve();
+    this.writer = this.createWriter(this.config.sessionId ?? this.writer.id);
+  }
+
+  async create(): Promise<void> {
+    await this.writer.create();
+  }
+
+  async resume(options: { sessionId?: string; mostRecent?: boolean }): Promise<SessionEntry[] | null> {
+    let sessionPath: string | undefined;
+
+    if (options.sessionId) {
+      const sessions = await listSessions(this.config.sessionsDir);
+      const session = sessions.find((s) => s.id === options.sessionId);
+      sessionPath = session?.path;
+    } else if (options.mostRecent) {
+      const sessions = await listSessions(this.config.sessionsDir);
+      sessionPath = sessions.find((s) => !s.parentSession)?.path;
+    }
+
+    if (!sessionPath) return null;
+
+    const { entries } = await readSessionFile(sessionPath);
+    this.writeQueue = Promise.resolve();
+    this.writer = new SessionWriter(this.config.sessionsDir, this.config.cwd, sessionPath);
+    return entries;
+  }
+
+  async list(): Promise<SessionInfo[]> {
+    return listSessions(this.config.sessionsDir);
+  }
+
+  append(entry: SessionEntry, onError: (error: unknown) => void): void {
+    this.writeQueue = this.writeQueue
+      .then(async () => {
+        await this.writer.write(entry);
+      })
+      .catch(onError);
+  }
+
+  appendMany(entries: SessionEntry[], onError: (error: unknown, entry: SessionEntry) => void): void {
+    for (const entry of entries) {
+      this.writeQueue = this.writeQueue
+        .then(async () => {
+          await this.writer.write(entry);
+        })
+        .catch((error) => onError(error, entry));
+    }
+  }
+
+  async waitForWrites(): Promise<void> {
+    await this.writeQueue;
+  }
+
+  async reconcile(args: {
+    committedEntries: SessionEntry[];
+    committedLeafId: string | null;
+    summarizeTailEntryIds: (entries: SessionEntry[]) => string;
+    summarizeLastPersistedMessage: (entries: SessionEntry[]) => string;
+  }): Promise<{ result: SessionReconcileResult; entries?: SessionEntry[] }> {
+    const sessionPath = this.writer.path;
+    const memoryEntries = args.committedEntries.length;
+    const memoryLeafId = args.committedLeafId;
+    const memoryTailEntryIds = args.summarizeTailEntryIds(args.committedEntries);
+    const memoryTailMessage = args.summarizeLastPersistedMessage(args.committedEntries);
+
+    if (!sessionPath) {
+      return {
+        result: {
+          changed: false,
+          reason: "no_session_path",
+          sessionPath: null,
+          memoryEntries,
+          diskEntries: 0,
+          memoryLeafId,
+          diskLeafId: null,
+          memoryTailEntryIds,
+          diskTailEntryIds: "-",
+          memoryTailMessage,
+          diskTailMessage: "-",
+        },
+      };
+    }
+
+    await this.writeQueue.catch(() => {});
+
+    const { entries } = await readSessionFile(sessionPath);
+    const diskLeafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+    const diskTailEntryIds = args.summarizeTailEntryIds(entries);
+    const diskTailMessage = args.summarizeLastPersistedMessage(entries);
+
+    if (entries.length < args.committedEntries.length) {
+      return {
+        result: {
+          changed: false,
+          reason: "memory_newer",
+          sessionPath,
+          memoryEntries,
+          diskEntries: entries.length,
+          memoryLeafId,
+          diskLeafId,
+          memoryTailEntryIds,
+          diskTailEntryIds,
+          memoryTailMessage,
+          diskTailMessage,
+        },
+      };
+    }
+
+    if (entries.length === args.committedEntries.length && diskLeafId === args.committedLeafId) {
+      return {
+        result: {
+          changed: false,
+          reason: "already_equal",
+          sessionPath,
+          memoryEntries,
+          diskEntries: entries.length,
+          memoryLeafId,
+          diskLeafId,
+          memoryTailEntryIds,
+          diskTailEntryIds,
+          memoryTailMessage,
+          diskTailMessage,
+        },
+      };
+    }
+
+    return {
+      result: {
+        changed: true,
+        reason: "updated_from_disk",
+        sessionPath,
+        memoryEntries,
+        diskEntries: entries.length,
+        memoryLeafId,
+        diskLeafId,
+        memoryTailEntryIds,
+        diskTailEntryIds,
+        memoryTailMessage,
+        diskTailMessage,
+      },
+      entries,
+    };
+  }
+
+  get sessionPath(): string | null {
+    return this.writer.path;
+  }
+
+  get sessionId(): string {
+    return this.writer.id;
+  }
+
+  private createWriter(sessionId?: string): SessionWriter {
+    return new SessionWriter(
+      this.config.sessionsDir,
+      this.config.cwd,
+      undefined,
+      this.config.parentSession,
+      this.config.collabMeta,
+      sessionId,
+    );
+  }
+}
+
 /**
  * Find and read all child sessions belonging to a parent session.
  * Returns child session data sorted by creation time (oldest first).
@@ -190,6 +386,10 @@ export async function deleteSession(sessionsDir: string, sessionId: string): Pro
 /**
  * Immediate persistence manager.
  * Creates the session file up front and appends every entry directly.
+ */
+/**
+ * Immediate persistence manager for session files.
+ * SessionPersistence builds on top of this lower-level writer.
  */
 export class SessionWriter {
   private sessionPath: string | null = null;

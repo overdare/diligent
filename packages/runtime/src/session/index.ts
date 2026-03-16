@@ -2,12 +2,14 @@ export type { SessionContext, SessionTranscriptEntry } from "./context-builder";
 export { buildSessionContext, buildSessionTranscript } from "./context-builder";
 export type { ResumeSessionOptions, SessionManagerConfig } from "./manager";
 export { SessionManager } from "./manager";
+export type { SessionPersistenceConfig, SessionReconcileResult } from "./persistence";
 export {
   appendEntry,
   createSessionFile,
   deleteSession,
   listSessions,
   readSessionFile,
+  SessionPersistence,
   SessionWriter,
 } from "./persistence";
 export { SessionStateStore } from "./state-store";
