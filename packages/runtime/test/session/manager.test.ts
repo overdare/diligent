@@ -1,0 +1,441 @@
+// @summary Tests for session manager creation, persistence, and resumption
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Agent } from "@diligent/core/agent";
+import { EventStream } from "@diligent/core/event-stream";
+import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
+import type { Tool } from "@diligent/core/tool/types";
+import type { AssistantMessage, Message } from "@diligent/core/types";
+import { resolvePaths } from "@diligent/runtime/infrastructure";
+import type { SessionManagerConfig } from "@diligent/runtime/session";
+import { readSessionFile, SessionManager } from "@diligent/runtime/session";
+import { z } from "zod";
+import type { AgentEvent } from "../../src/agent-event";
+
+const TEST_ROOT = join(tmpdir(), `diligent-sm-test-${Date.now()}`);
+
+const TEST_MODEL: Model = {
+  id: "test-model",
+  provider: "test",
+  contextWindow: 100_000,
+  maxOutputTokens: 4096,
+  supportsThinking: false,
+};
+
+function makeAssistant(text: string = "hi"): AssistantMessage {
+  return makeAssistantMessage([{ type: "text", text }]);
+}
+
+function makeAssistantMessage(
+  content: AssistantMessage["content"],
+  stopReason: AssistantMessage["stopReason"] = "end_turn",
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content,
+    model: TEST_MODEL.id,
+    usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
+
+function createProviderEventStream(outcome: AssistantMessage | Error): EventStream<ProviderEvent, ProviderResult> {
+  const stream = new EventStream<ProviderEvent, ProviderResult>(
+    (event) => event.type === "done" || event.type === "error",
+    (event) => {
+      if (event.type === "done") return { message: event.message };
+      throw (event as { type: "error"; error: Error }).error;
+    },
+  );
+
+  queueMicrotask(() => {
+    stream.push({ type: "start" });
+    if (outcome instanceof Error) {
+      stream.push({ type: "error", error: outcome });
+      return;
+    }
+    const firstText = outcome.content[0];
+    if (firstText?.type === "text") {
+      stream.push({ type: "text_delta", delta: firstText.text });
+    }
+    stream.push({ type: "done", stopReason: outcome.stopReason, message: outcome });
+  });
+
+  return stream;
+}
+
+function createMockStreamFn(responses: AssistantMessage[]): StreamFunction {
+  let callIndex = 0;
+  return (_model, _context, _options) => createProviderEventStream(responses[callIndex++] ?? makeAssistant());
+}
+
+async function setupDir(): Promise<string> {
+  const dir = join(TEST_ROOT, `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  const paths = resolvePaths(dir);
+  await mkdir(paths.sessions, { recursive: true });
+  await mkdir(paths.knowledge, { recursive: true });
+  await mkdir(paths.skills, { recursive: true });
+  return dir;
+}
+
+function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManagerConfig {
+  return {
+    cwd: dir,
+    paths: resolvePaths(dir),
+    agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+    }),
+  };
+}
+
+/** Collect events via subscribe, run, return events. */
+async function runCollecting(mgr: SessionManager, userMsg: Message): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  const unsub = mgr.subscribe((e) => events.push(e));
+  await mgr.run(userMsg).catch(() => {});
+  unsub();
+  return events;
+}
+
+afterEach(async () => {
+  try {
+    await rm(TEST_ROOT, { recursive: true, force: true });
+  } catch {}
+});
+
+describe("SessionManager", () => {
+  test("create() starts with empty session", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+    expect(mgr.entryCount).toBe(0);
+    expect(mgr.getContext()).toEqual([]);
+  });
+
+  test("run() calls agentLoop and persists messages", async () => {
+    const dir = await setupDir();
+    const response = makeAssistant("hello!");
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([response])));
+    await mgr.create();
+
+    const userMsg: Message = { role: "user", content: "test", timestamp: Date.now() };
+    const events = await runCollecting(mgr, userMsg);
+
+    // Wait for async writes to complete
+    await mgr.waitForWrites();
+
+    // Should have persisted user + assistant messages
+    expect(mgr.entryCount).toBeGreaterThanOrEqual(2);
+
+    // Session file should exist after session creation
+    expect(mgr.sessionPath).not.toBeNull();
+
+    // Read back from disk
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    expect(entries[0].type).toBe("message");
+
+    // Events should include turn lifecycle
+    expect(events.some((e) => e.type === "turn_start")).toBe(true);
+  });
+
+  test("run() preserves conversation context across turns", async () => {
+    const dir = await setupDir();
+    const r1 = makeAssistant("first response");
+    const r2 = makeAssistant("second response");
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([r1, r2])));
+    await mgr.create();
+
+    // First message
+    await mgr.run({ role: "user", content: "hello", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    // Second message
+    await mgr.run({ role: "user", content: "more", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    // Context should have all messages
+    const ctx = mgr.getContext();
+    expect(ctx.length).toBeGreaterThanOrEqual(4); // user, assistant, user, assistant
+  });
+
+  test("run() does not persist staged user message when the turn fails", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        llmMsgStreamFn: () => {
+          throw new Error("provider failed");
+        },
+      }),
+    });
+    await mgr.create();
+
+    await mgr.run({ role: "user", content: "will fail", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    expect(mgr.entryCount).toBe(0);
+    expect(mgr.getContext()).toEqual([]);
+    expect(mgr.getErrors()).toHaveLength(1);
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries).toHaveLength(0);
+  });
+
+  test("getContext() exposes staged turn messages while a turn is running", async () => {
+    const dir = await setupDir();
+    let releaseDone: (() => void) | null = null;
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        llmMsgStreamFn: () => {
+          const stream = new EventStream<ProviderEvent, ProviderResult>(
+            (event) => event.type === "done" || event.type === "error",
+            (event) => {
+              if (event.type === "done") return { message: event.message };
+              throw (event as { type: "error"; error: Error }).error;
+            },
+          );
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({ type: "text_delta", delta: "partial" });
+          });
+          releaseDone = () => {
+            stream.push({ type: "done", stopReason: "end_turn", message: makeAssistant("completed") });
+          };
+          return stream;
+        },
+      }),
+    });
+    await mgr.create();
+
+    const runPromise = mgr.run({ role: "user", content: "in flight", timestamp: Date.now() });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mgr.getContext().map((msg) => msg.role)).toEqual(["user"]);
+    expect(mgr.entryCount).toBe(1);
+
+    if (releaseDone) releaseDone();
+    await runPromise;
+    await mgr.waitForWrites();
+
+    expect(mgr.getContext().map((msg) => msg.role)).toEqual(["user", "assistant"]);
+    expect(mgr.entryCount).toBe(2);
+  });
+
+  test("resume() loads session from disk", async () => {
+    const dir = await setupDir();
+    const response = makeAssistant("remembered");
+    const mgr1 = new SessionManager(makeManagerConfig(dir, createMockStreamFn([response])));
+    await mgr1.create();
+
+    // Run a conversation
+    await mgr1.run({ role: "user", content: "remember this", timestamp: Date.now() });
+    await mgr1.waitForWrites();
+
+    // Create new manager and resume
+    const mgr2 = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+    const resumed = await mgr2.resume({ mostRecent: true });
+    expect(resumed).toBe(true);
+
+    // Should have loaded the previous entries
+    const ctx = mgr2.getContext();
+    expect(ctx.length).toBeGreaterThanOrEqual(2);
+    expect(ctx[0].role).toBe("user");
+  });
+
+  test("resume() returns false when no sessions exist", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    const resumed = await mgr.resume({ mostRecent: true });
+    expect(resumed).toBe(false);
+  });
+
+  test("list() returns available sessions", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+    await mgr.create();
+
+    // Run to create a persisted session
+    await mgr.run({ role: "user", content: "test", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    const sessions = await mgr.list();
+    expect(sessions.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("appendModeChange() persists mode_change entry", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendModeChange("plan", "command");
+    await mgr.waitForWrites();
+
+    expect(mgr.entryCount).toBe(1);
+  });
+
+  test("appendModeChange() defaults changedBy to 'command'", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    expect(() => mgr.appendModeChange("execute")).not.toThrow();
+  });
+
+  test("appendModelChange() persists model_change entry payload", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendModelChange("openai", "gpt-5");
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    const modelEntry = entries.find((entry) => entry.type === "model_change");
+    expect(modelEntry).toBeDefined();
+    if (modelEntry && modelEntry.type === "model_change") {
+      expect(modelEntry.provider).toBe("openai");
+      expect(modelEntry.modelId).toBe("gpt-5");
+    }
+  });
+
+  test("appendEffortChange() persists effort_change entry payload", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));
+    await mgr.create();
+
+    mgr.appendEffortChange("high", "command");
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    const effortEntry = entries.find((entry) => entry.type === "effort_change");
+    expect(effortEntry).toBeDefined();
+    if (effortEntry && effortEntry.type === "effort_change") {
+      expect(effortEntry.effort).toBe("high");
+      expect(effortEntry.changedBy).toBe("command");
+    }
+  });
+
+  test("compactNow() appends compaction entry", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager(
+      makeManagerConfig(dir, createMockStreamFn([makeAssistant("hello"), makeAssistant("## Goal\ncompact")])),
+    );
+    await mgr.create();
+
+    await mgr.run({ role: "user", content: "please compact this thread", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    const result = await mgr.compactNow();
+    expect(result.compacted).toBe(true);
+    expect(result.entryCount).toBeGreaterThanOrEqual(3);
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries.some((entry) => entry.type === "compaction")).toBe(true);
+  });
+
+  test("aborted signal settles run() without hanging", async () => {
+    const dir = await setupDir();
+    const controller = new AbortController();
+    controller.abort();
+
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        llmMsgStreamFn: createMockStreamFn([makeAssistant("should not run")]),
+      }),
+    });
+    await mgr.create();
+
+    // Keep pending queue non-empty: this used to trigger re-entry with an already-aborted signal.
+    mgr.steer("queued while aborting");
+
+    // run() should throw (aborted), not hang
+    await mgr
+      .run({ role: "user", content: "hi", timestamp: Date.now() }, { signal: controller.signal })
+      .catch(() => {});
+
+    const settled = await Promise.race([
+      mgr.waitForWrites().then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+    ]);
+
+    expect(settled).toBe(true);
+  });
+
+  test("run() compacts between tool turn and next LLM call (proactive via Agent)", async () => {
+    const dir = await setupDir();
+    const compactingTool: Tool = {
+      name: "inflate",
+      description: "Inflate context",
+      parameters: z.object({}),
+      async execute() {
+        return { output: `tool-result-${"x".repeat(400)}` };
+      },
+    };
+
+    let providerCallCount = 0;
+    const providerContexts: Message[][] = [];
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      compaction: { enabled: true, reservePercent: 20, keepRecentTokens: 200 },
+      agent: new Agent({ ...TEST_MODEL, contextWindow: 120 }, [{ label: "test", content: "test" }], [compactingTool], {
+        effort: "medium",
+        llmMsgStreamFn: ((_model, context, _options) => {
+          if (context.systemPrompt.some((section) => section.label === "test")) {
+            providerContexts.push([...context.messages]);
+          }
+          if (providerCallCount++ === 0) {
+            return createProviderEventStream(
+              makeAssistantMessage([{ type: "tool_call", id: "tc_1", name: "inflate", input: {} }], "tool_use"),
+            );
+          }
+          return createProviderEventStream(makeAssistant("after compaction"));
+        }) as StreamFunction,
+      }),
+    });
+    await mgr.create();
+
+    const events: AgentEvent[] = [];
+    const unsub = mgr.subscribe((e) => events.push(e));
+    await mgr.run({ role: "user", content: "start compacting", timestamp: Date.now() });
+    unsub();
+
+    const compactionStartIndex = events.findIndex((event) => event.type === "compaction_start");
+    const firstTurnEndIndex = events.findIndex((event) => event.type === "turn_end");
+    expect(compactionStartIndex).toBeGreaterThan(firstTurnEndIndex);
+
+    const result = mgr.getContext();
+    const summaryIndex = result.findIndex(
+      (msg) =>
+        msg.role === "user" &&
+        typeof msg.content === "string" &&
+        msg.content.includes("Another language model started to solve this problem"),
+    );
+    expect(providerContexts).toHaveLength(2);
+    expect(providerContexts[0].some((msg) => msg.role === "tool_result")).toBe(false);
+    expect(providerContexts[1].some((msg) => msg.role === "tool_result")).toBe(false);
+    expect(
+      providerContexts[1].some(
+        (msg) =>
+          msg.role === "user" &&
+          typeof msg.content === "string" &&
+          msg.content.includes("Another language model started to solve this problem"),
+      ),
+    ).toBe(true);
+    expect(events.some((event) => event.type === "tool_end")).toBe(true);
+    expect(summaryIndex).toBeGreaterThan(-1);
+  });
+});

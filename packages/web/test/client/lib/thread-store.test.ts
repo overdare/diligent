@@ -1,0 +1,1346 @@
+// @summary Tests for thread-state reducer behavior over item lifecycle notifications
+import { expect, test } from "bun:test";
+import type { DiligentServerNotification } from "@diligent/protocol";
+import { ProtocolNotificationAdapter } from "@diligent/runtime/client";
+import {
+  hydrateFromThreadRead,
+  initialThreadState,
+  reduceServerNotification,
+} from "../../../src/client/lib/thread-store";
+import { WEB_IMAGE_ROUTE_PREFIX } from "../../../src/shared/image-routes";
+
+function reduce(state: typeof initialThreadState, notification: DiligentServerNotification) {
+  const adapter = adapterInstance;
+  const events = adapter.toAgentEvents(notification);
+  return reduceServerNotification(state, notification, events);
+}
+
+// Shared adapter instance for tests that need stateful item tracking
+let adapterInstance: ProtocolNotificationAdapter;
+
+function resetAdapter() {
+  adapterInstance = new ProtocolNotificationAdapter();
+}
+
+// Reset before each test sequence
+resetAdapter();
+
+test("merges item started/delta/completed into single assistant item", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+
+  const delta: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      itemId: "item1",
+      delta: {
+        type: "messageText",
+        itemId: "item1",
+        delta: "hello",
+      },
+    },
+  };
+
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 2,
+        },
+      },
+    },
+  };
+
+  const a = reduce(initialThreadState, started);
+  const b = reduce(a, delta);
+  const c = reduce(b, completed);
+
+  const assistant = c.items.find((item) => item.kind === "assistant");
+  expect(assistant).toBeDefined();
+  expect(assistant && assistant.kind === "assistant" ? assistant.text : "").toBe("hello");
+});
+
+test("ignores duplicate started item events", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tool1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+      },
+    },
+  };
+
+  const a = reduce(initialThreadState, started);
+  const b = reduce(a, started);
+
+  expect(a.items.length).toBe(1);
+  expect(b.items.length).toBe(1);
+});
+
+test("computes tool duration when tool completes", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tool1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tool1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+        output: "done",
+        isError: false,
+      },
+    },
+  };
+
+  const realNow = Date.now;
+  let now = 400;
+  Date.now = () => now;
+  try {
+    const startedState = reduce(initialThreadState, started);
+    now = 700;
+    const completedState = reduce(startedState, completed);
+    const tool = completedState.items.find((item) => item.kind === "tool");
+
+    expect(tool && tool.kind === "tool" ? tool.durationMs : undefined).toBe(300);
+    expect(tool && tool.kind === "tool" ? tool.status : "").toBe("done");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("creates a new assistant item when same itemId appears in a new turn", () => {
+  resetAdapter();
+  const startedTurn1: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+
+  const deltaTurn1: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      itemId: "item1",
+      delta: {
+        type: "messageText",
+        itemId: "item1",
+        delta: "first",
+      },
+    },
+  };
+
+  const completedTurn1: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+
+  const startedTurn2: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn2",
+      item: {
+        type: "agentMessage",
+        itemId: "item1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 2,
+        },
+      },
+    },
+  };
+
+  const deltaTurn2: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId: "t1",
+      turnId: "turn2",
+      itemId: "item1",
+      delta: {
+        type: "messageText",
+        itemId: "item1",
+        delta: "second",
+      },
+    },
+  };
+
+  const s1 = reduce(initialThreadState, startedTurn1);
+  const s2 = reduce(s1, deltaTurn1);
+  const s3 = reduce(s2, completedTurn1);
+  const s4 = reduce(s3, startedTurn2);
+  const s5 = reduce(s4, deltaTurn2);
+
+  const assistants = s5.items.filter((item) => item.kind === "assistant");
+  expect(assistants.length).toBe(2);
+  expect(assistants[0] && assistants[0].kind === "assistant" ? assistants[0].text : "").toBe("first");
+  expect(assistants[1] && assistants[1].kind === "assistant" ? assistants[1].text : "").toBe("second");
+});
+
+test("steering_injected clears pending steers by count even when event text differs", () => {
+  resetAdapter();
+  const startState = {
+    ...initialThreadState,
+    pendingSteers: ["change approach", "focus root cause"],
+  };
+
+  const notification: DiligentServerNotification = {
+    method: "steering/injected",
+    params: {
+      threadId: "t1",
+      messageCount: 1,
+      messages: [{ role: "user", content: "change approach (normalized)", timestamp: 1 }],
+    },
+  };
+
+  const next = reduce(startState, notification);
+  expect(next.pendingSteers).toEqual(["focus root cause"]);
+
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe("change approach");
+});
+
+test("steering_injected falls back to event text when local queue is empty", () => {
+  resetAdapter();
+  const notification: DiligentServerNotification = {
+    method: "steering/injected",
+    params: {
+      threadId: "t1",
+      messageCount: 1,
+      messages: [{ role: "user", content: "server-injected steer", timestamp: 2 }],
+    },
+  };
+
+  const next = reduce(initialThreadState, notification);
+  expect(next.pendingSteers).toEqual([]);
+
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe(
+    "server-injected steer",
+  );
+});
+
+test("hydrateFromThreadRead restores user images from local_image blocks", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this screenshot?" },
+          {
+            type: "local_image",
+            path: "/repo/.diligent/images/thread-1/shot.png",
+            mediaType: "image/png",
+            fileName: "shot.png",
+          },
+        ],
+        timestamp: 100,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+    currentEffort: "medium",
+  });
+
+  const user = hydrated.items.find((item) => item.kind === "user");
+  expect(user && user.kind === "user" ? user.text : "").toBe("What is in this screenshot?");
+  expect(user && user.kind === "user" ? user.images : []).toEqual([
+    { url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`, fileName: "shot.png", mediaType: "image/png" },
+  ]);
+});
+
+test("hydrateFromThreadRead converts persisted local images to browser-safe route URLs", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "local_image",
+            path: "/repo/.diligent/images/thread-1/shot 1.png",
+            mediaType: "image/png",
+            fileName: "shot 1.png",
+          },
+        ],
+        timestamp: 101,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+    currentEffort: "medium",
+  });
+
+  const user = hydrated.items.find((item) => item.kind === "user");
+  expect(user && user.kind === "user" ? user.images : []).toEqual([
+    {
+      url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot%201.png`,
+      fileName: "shot 1.png",
+      mediaType: "image/png",
+    },
+  ]);
+});
+
+test("hydrateFromThreadRead restores tool_call input and merges matching tool_result output", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "tc-read-1", name: "read", input: { file_path: "/repo/src/app.ts" } },
+          { type: "text", text: "Reading file" },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-read-1",
+        toolName: "read",
+        output: "1| const x = 1;",
+        isError: false,
+        timestamp: 101,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 2,
+    currentEffort: "medium",
+  });
+
+  const tool = hydrated.items.find((item) => item.kind === "tool" && item.toolCallId === "tc-read-1");
+  expect(tool && tool.kind === "tool" ? tool.toolName : "").toBe("read");
+  expect(tool && tool.kind === "tool" ? tool.inputText : "").toContain("file_path");
+  expect(tool && tool.kind === "tool" ? tool.outputText : "").toContain("const x = 1");
+});
+
+test("hydrateFromThreadRead prefers raw transcript over compacted context for post-compaction history", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "user",
+        content: "recent user",
+        timestamp: 300,
+      },
+      {
+        role: "user",
+        content:
+          "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n\nCompacted summary",
+        timestamp: 400,
+      },
+    ],
+    transcript: [
+      {
+        type: "message",
+        id: "a1",
+        timestamp: "2026-02-25T10:00:00.000Z",
+        message: {
+          role: "user",
+          content: "old user",
+          timestamp: 100,
+        },
+      },
+      {
+        type: "message",
+        id: "a2",
+        timestamp: "2026-02-25T10:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "old assistant" }],
+          model: "x",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 200,
+        },
+      },
+      {
+        type: "compaction",
+        id: "c1",
+        timestamp: "2026-02-25T10:00:02.000Z",
+        summary: "Compacted summary",
+      },
+      {
+        type: "message",
+        id: "a3",
+        timestamp: "2026-02-25T10:00:03.000Z",
+        message: {
+          role: "user",
+          content: "new user",
+          timestamp: 500,
+        },
+      },
+    ],
+    errors: [],
+    hasFollowUp: false,
+    entryCount: 4,
+    isRunning: false,
+    currentEffort: "medium",
+    currentModel: "x",
+    totalCost: 0,
+  });
+
+  const userTexts = hydrated.items
+    .filter((item) => item.kind === "user")
+    .map((item) => (item.kind === "user" ? item.text : ""));
+  const assistantTexts = hydrated.items
+    .filter((item) => item.kind === "assistant")
+    .map((item) => (item.kind === "assistant" ? item.text : ""));
+  const contexts = hydrated.items.filter((item) => item.kind === "context");
+
+  expect(userTexts).toEqual(["old user", "new user"]);
+  expect(assistantTexts).toEqual(["old assistant"]);
+  expect(contexts).toHaveLength(1);
+  expect(contexts[0] && contexts[0].kind === "context" ? contexts[0].summary : "").toBe("Compacted summary");
+});
+
+test("hydrateFromThreadRead keeps tool_result even without prior tool_call block", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "tool_result",
+        toolCallId: "tc-ls-1",
+        toolName: "ls",
+        output: "src/\nREADME.md",
+        isError: false,
+        timestamp: 200,
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    currentEffort: "medium",
+  });
+
+  const tool = hydrated.items.find((item) => item.kind === "tool" && item.toolCallId === "tc-ls-1");
+  expect(tool).toBeDefined();
+  expect(tool && tool.kind === "tool" ? tool.toolName : "").toBe("ls");
+  expect(tool && tool.kind === "tool" ? tool.outputText : "").toContain("README.md");
+});
+
+test("hydrateFromThreadRead shows running sub-agent as running when parent isRunning and not yet waited", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: true,
+    hasFollowUp: false,
+    entryCount: 2,
+    currentEffort: "medium",
+  });
+
+  const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(collab).toBeDefined();
+  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
+});
+
+test("hydrateFromThreadRead shows wait-derived final status on spawn item", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-wait-1",
+            name: "wait",
+            input: { ids: ["ses-child-1"] },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 102,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-wait-1",
+        toolName: "wait",
+        output: JSON.stringify({
+          status: { "ses-child-1": { kind: "completed", output: "done" } },
+          timed_out: false,
+        }),
+        isError: false,
+        timestamp: 103,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+
+        nickname: "Cleo",
+        description: "do work",
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "I finished the work." }],
+            model: "x",
+            usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+            stopReason: "end_turn",
+            timestamp: 102,
+          },
+        ],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: true,
+    hasFollowUp: false,
+    entryCount: 4,
+    currentEffort: "medium",
+  });
+
+  const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("completed");
+
+  // Should also have childMessages from child session
+  expect(spawn && spawn.kind === "collab" ? spawn.childMessages : []).toEqual(["I finished the work."]);
+});
+
+test("hydrateFromThreadRead shows close-derived final status on spawn item", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-close-1",
+            name: "close_agent",
+            input: { id: "ses-child-1" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 102,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-close-1",
+        toolName: "close_agent",
+        output: JSON.stringify({
+          thread_id: "ses-child-1",
+          nickname: "Cleo",
+          final_status: { kind: "shutdown" },
+        }),
+        isError: false,
+        timestamp: 103,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 4,
+    currentEffort: "medium",
+  });
+
+  const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("shutdown");
+});
+
+test("turn/interrupted settles in-flight thinking and streaming tool items", () => {
+  resetAdapter();
+
+  // Simulate: assistant thinking is in-flight (thinkingDone=false, no text yet)
+  const itemStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+  const thinkingDelta: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      itemId: "msg1",
+      delta: { type: "messageThinking", itemId: "msg1", delta: "hmm..." },
+    },
+  };
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tc1",
+        toolName: "bash",
+        input: { cmd: "sleep 10" },
+      },
+    },
+  };
+
+  let state = reduce({ ...initialThreadState, activeThreadId: "t1", threadStatus: "busy" }, itemStarted);
+  state = reduce(state, thinkingDelta);
+  state = reduce(state, toolStarted);
+
+  // Verify in-flight state before interrupt
+  const thinkingBefore = state.items.find((i) => i.kind === "assistant");
+  expect(thinkingBefore && thinkingBefore.kind === "assistant" ? thinkingBefore.thinkingDone : true).toBe(false);
+  const toolBefore = state.items.find((i) => i.kind === "tool");
+  expect(toolBefore && toolBefore.kind === "tool" ? toolBefore.status : "done").toBe("streaming");
+  expect(state.threadStatus).toBe("busy");
+
+  // Now send turn/interrupted
+  const interrupted: DiligentServerNotification = {
+    method: "turn/interrupted",
+    params: { threadId: "t1", turnId: "turn1" },
+  };
+  const after = reduce(state, interrupted);
+
+  // threadStatus should be idle
+  expect(after.threadStatus).toBe("idle");
+  // assistant thinking should be settled
+  const thinkingAfter = after.items.find((i) => i.kind === "assistant");
+  expect(thinkingAfter && thinkingAfter.kind === "assistant" ? thinkingAfter.thinkingDone : false).toBe(true);
+  // tool should be done
+  const toolAfter = after.items.find((i) => i.kind === "tool");
+  expect(toolAfter && toolAfter.kind === "tool" ? toolAfter.status : "streaming").toBe("done");
+  // itemSlots should be cleared
+  expect(Object.keys(after.itemSlots).length).toBe(0);
+});
+
+test("turn/completed locally computes final loop and reasoning duration on latest assistant item", () => {
+  resetAdapter();
+
+  const realNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+      },
+    },
+  };
+
+  const completedMessage: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "msg1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 2,
+        },
+      },
+    },
+  };
+
+  const turnCompleted: DiligentServerNotification = {
+    method: "turn/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+    },
+  };
+
+  try {
+    let state = reduce(
+      { ...initialThreadState, activeThreadId: "t1" },
+      {
+        method: "turn/started",
+        params: { threadId: "t1", turnId: "turn1" },
+      },
+    );
+    state = reduce(state, started);
+    now = 1_400;
+    state = reduce(state, {
+      method: "item/delta",
+      params: {
+        threadId: "t1",
+        turnId: "turn1",
+        itemId: "msg1",
+        delta: { type: "messageThinking", itemId: "msg1", delta: "thinking..." },
+      },
+    });
+    now = 2_000;
+    state = reduce(state, {
+      method: "item/delta",
+      params: {
+        threadId: "t1",
+        turnId: "turn1",
+        itemId: "msg1",
+        delta: { type: "messageText", itemId: "msg1", delta: "done" },
+      },
+    });
+    state = reduce(state, completedMessage);
+    now = 3_500;
+    state = reduce(state, turnCompleted);
+
+    const assistant = state.items.find((item) => item.kind === "assistant");
+    expect(assistant && assistant.kind === "assistant" ? assistant.turnDurationMs : undefined).toBe(2500);
+    expect(assistant && assistant.kind === "assistant" ? assistant.reasoningDurationMs : undefined).toBe(600);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("collab_spawn_begin creates spawn item so child events stream in real-time", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-1";
+  const base = { ...initialThreadState, activeThreadId: threadId };
+
+  // 1. collab_spawn_begin → eagerly creates the spawn item
+  const spawnBegin: DiligentServerNotification = {
+    method: "collab/spawn/begin",
+    params: {
+      threadId,
+      callId: childThreadId,
+      prompt: "do something",
+    },
+  };
+  let state = reduce(base, spawnBegin);
+  const earlyItem = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(earlyItem).toBeDefined();
+  expect(earlyItem && earlyItem.kind === "collab" ? earlyItem.childThreadId : "").toBe(childThreadId);
+  expect(earlyItem && earlyItem.kind === "collab" ? earlyItem.status : "").toBe("running");
+
+  // 2. Child tool_start before collab_spawn_end — should nest into the spawn item
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolStarted);
+  const afterStart = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools.length : 0).toBe(1);
+
+  // 3. Child tool_update — streams before spawn_end arrives
+  const toolDelta: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "streaming!" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta);
+  const afterDelta = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta && afterDelta.kind === "collab" ? afterDelta.childTools[0].outputText : "").toBe("streaming!");
+
+  // 4. collab_spawn_end → should update (not duplicate) the existing item
+  const spawnEnd: DiligentServerNotification = {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Fern",
+      description: "worker",
+      prompt: "do something",
+      status: "running",
+    },
+  };
+  state = reduce(state, spawnEnd);
+  const collabItems = state.items.filter((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(collabItems.length).toBe(1); // No duplicate
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].nickname : "").toBe("Fern");
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].description : "").toBe("worker");
+  // childTools should be preserved
+  expect(collabItems[0] && collabItems[0].kind === "collab" ? collabItems[0].childTools.length : 0).toBe(1);
+});
+
+test("child tool_update streams into collab spawn item childTools", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-1";
+  const base = { ...initialThreadState, activeThreadId: threadId };
+
+  // 1. collab_spawn_begin → create the spawn item
+  const spawnBegin: DiligentServerNotification = {
+    method: "collab/spawn/begin",
+    params: {
+      threadId,
+      callId: childThreadId,
+      prompt: "do work",
+    },
+  };
+  let state = reduce(base, spawnBegin);
+  const spawnItem = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawnItem).toBeDefined();
+
+  // 2. item/started (toolCall with childThreadId) → add to childTools
+  const toolStarted: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolStarted);
+  const afterStart = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools.length : 0).toBe(1);
+  expect(afterStart && afterStart.kind === "collab" ? afterStart.childTools[0].status : "").toBe("running");
+
+  // 3. item/delta (toolOutput with childThreadId) → stream into childTools
+  const toolDelta1: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "file1.ts\n" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta1);
+  const afterDelta1 = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta1 && afterDelta1.kind === "collab" ? afterDelta1.childTools[0].outputText : "").toBe("file1.ts\n");
+
+  // 4. Another delta — should append
+  const toolDelta2: DiligentServerNotification = {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-tool-1",
+      delta: { type: "toolOutput", itemId: "child-tool-1", delta: "file2.ts\n" },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolDelta2);
+  const afterDelta2 = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterDelta2 && afterDelta2.kind === "collab" ? afterDelta2.childTools[0].outputText : "").toBe(
+    "file1.ts\nfile2.ts\n",
+  );
+
+  // 5. item/completed → finalize the tool
+  const toolCompleted: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "child-tool-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "ls" },
+        output: "file1.ts\nfile2.ts\n",
+        isError: false,
+      },
+      childThreadId,
+      nickname: "Fern",
+    },
+  };
+  state = reduce(state, toolCompleted);
+  const afterEnd = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(afterEnd && afterEnd.kind === "collab" ? afterEnd.childTools[0].status : "").toBe("done");
+  expect(afterEnd && afterEnd.kind === "collab" ? afterEnd.childTools[0].outputText : "").toBe("file1.ts\nfile2.ts\n");
+});
+
+test("collab_spawn_end updates same spawn item to errored status", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-err-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "read 3 markdown files",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Broom",
+      prompt: "read 3 markdown files",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Broom",
+      prompt: "read 3 markdown files",
+      status: "errored",
+      message: "400 The requested model 'codex-mini-latest' does not exist.",
+    },
+  });
+
+  const collabItems = state.items.filter((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(collabItems.length).toBe(1);
+  const spawn = collabItems[0];
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("errored");
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toContain("does not exist");
+});
+
+test("collab spawn item keeps original spawn prompt for detail display", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-prompt-1";
+  const prompt = "check auth flow\nthen summarize issues";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt,
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Fern",
+      prompt,
+      status: "running",
+    },
+  });
+
+  const spawn = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawn && spawn.kind === "collab" ? spawn.prompt : "").toBe(prompt);
+});
+
+test("collab_wait_end keeps spawn status running when timed out snapshot reports pending", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-pending-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "long task",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Moss",
+      prompt: "long task",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/wait/end",
+    params: {
+      threadId,
+      callId: "wait-1",
+      agentStatuses: [
+        {
+          threadId: childThreadId,
+          nickname: "Moss",
+          status: "pending",
+          message: undefined,
+        },
+      ],
+      timedOut: true,
+    },
+  });
+
+  const spawn = state.items.find((i) => i.kind === "collab" && i.eventType === "spawn");
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
+});
+
+test("authoritative thread status from item notifications updates header state", () => {
+  resetAdapter();
+  const threadId = "t1";
+
+  let state = {
+    ...initialThreadState,
+    activeThreadId: threadId,
+    threadStatus: "idle" as const,
+  };
+
+  state = reduce(state, {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      threadStatus: "busy",
+      item: {
+        type: "agentMessage",
+        itemId: "assistant-1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp: 10,
+        },
+      },
+    },
+  });
+
+  expect(state.threadStatus).toBe("busy");
+});
+
+test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 2,
+    currentEffort: "medium",
+  });
+
+  const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(collab).toBeDefined();
+  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
+});
+
+test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pending snapshot", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "tc-spawn-1",
+            name: "spawn_agent",
+            input: { description: "do work" },
+          },
+        ],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 100,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-spawn-1",
+        toolName: "spawn_agent",
+        output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
+        isError: false,
+        timestamp: 101,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc-wait-1",
+        toolName: "wait",
+        output: JSON.stringify({
+          status: {
+            "ses-child-1": { kind: "pending" },
+          },
+          timed_out: true,
+        }),
+        isError: false,
+        timestamp: 102,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 3,
+    currentEffort: "medium",
+  });
+
+  const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(collab).toBeDefined();
+  expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
+});
