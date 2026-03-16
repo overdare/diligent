@@ -61,6 +61,12 @@ describe("renderMarkdown", () => {
     expect(result).toContain("3. Third");
   });
 
+  test("renders loose list items without blank lines between bullets", () => {
+    const result = stripAnsi(renderMarkdown("- a\n\n- b\n\n- c", 80));
+    expect(result).toContain("- a\n- b\n- c");
+    expect(result).not.toContain("- a\n\n- b");
+  });
+
   test("keeps continuation indentation for wrapped bullet items", () => {
     const source = "- This bullet line is intentionally long so it wraps on narrow terminal widths.";
     const result = stripAnsi(renderMarkdown(source, 24));

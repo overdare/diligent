@@ -171,6 +171,11 @@ function renderListItem(parser: Renderer["parser"], item: ListItemToken, marker:
       if (token.type === "text") {
         return parser.parseInline(token.tokens ?? []).replace(/\n+$/, "");
       }
+
+      if (token.type === "paragraph") {
+        return parser.parseInline(token.tokens ?? []).replace(/\n+$/, "");
+      }
+
       const chunk = parser.parse([token]).replace(/\n+$/, "");
       if (token.type === "list") {
         return `\n${chunk}`;
@@ -306,7 +311,7 @@ renderer.heading = function (token) {
 
 renderer.paragraph = function (token) {
   const text = this.parser.parseInline(token.tokens);
-  return `${t.text}${text}${t.reset}\n\n`;
+  return `${t.text}${text}${t.reset}\n`;
 };
 
 renderer.strong = function (token) {
