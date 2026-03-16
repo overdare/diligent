@@ -67,6 +67,9 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers["x-client-request-id"] = options.sessionId;
           headers.conversation_id = options.sessionId;
         }
+        if (options.turnStateRef?.value !== undefined) {
+          headers["x-codex-turn-state"] = options.turnStateRef.value;
+        }
 
         const effort = options.effort;
         const useReasoning = model.supportsThinking;
@@ -105,6 +108,12 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
             undefined,
             response.status,
           );
+        }
+
+        // Capture sticky routing token on first successful response
+        const turnStateHeader = response.headers.get("x-codex-turn-state");
+        if (turnStateHeader && options.turnStateRef && options.turnStateRef.value === undefined) {
+          options.turnStateRef.value = turnStateHeader;
         }
 
         stream.push({ type: "start" });

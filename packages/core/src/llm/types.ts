@@ -73,6 +73,9 @@ export interface StreamOptions {
   temperature?: number;
   sessionId?: string;
   effort?: ThinkingEffort;
+  /** Sticky routing token shared across retries within a single turn. Set once from the
+   *  first successful response header; replayed on subsequent requests in the same turn. */
+  turnStateRef?: { value: string | undefined };
 }
 
 export interface ToolDefinition {

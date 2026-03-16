@@ -63,11 +63,13 @@ export async function streamAssistantMessage(
     tools: runtime.tools.map(toToolDefinition),
   };
 
+  const turnStateRef: { value: string | undefined } = { value: undefined };
   const providerStream = runtime.providerStream(request.config.model, context, {
     signal: request.signal,
     effort: request.config.effort,
     sessionId: request.sessionId,
     maxTokens: resolveMaxTokens(request.config.model),
+    turnStateRef,
   });
 
   const _requestStartedAt = Date.now();
