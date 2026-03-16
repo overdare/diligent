@@ -64,7 +64,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
         if (options.sessionId) {
-          headers.session_id = options.sessionId;
+          headers["x-client-request-id"] = options.sessionId;
           headers.conversation_id = options.sessionId;
         }
 
@@ -76,7 +76,6 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
           tools: context.tools,
-          sessionId: options.sessionId,
           useReasoning,
           effort,
           store: false,

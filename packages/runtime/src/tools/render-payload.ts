@@ -161,7 +161,7 @@ export function createGlobRenderPayload(
   });
 
   const blocks: ToolRenderPayload["blocks"] = [
-    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+    { type: "summary", text: buildSearchHeader(pattern, displaySearchPath), tone: "info" },
     { type: "list", title: buildFoundTitle(items.length, "file"), items },
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
@@ -196,7 +196,7 @@ export function createGrepRenderPayload(
   });
 
   const blocks: ToolRenderPayload["blocks"] = [
-    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+    { type: "summary", text: buildSearchHeader(pattern, displaySearchPath), tone: "info" },
     { type: "list", title: buildFoundTitle(items.length, "match"), items },
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
@@ -291,11 +291,15 @@ function debugRenderPayload(event: string, data: Record<string, unknown>): void 
 }
 
 function buildSearchSummary(pattern?: string, path?: string): string {
-  const searchLabel = pattern ? `Search ${pattern}` : "Search";
-  if (path) {
-    return `${searchLabel} in ${path}`;
-  }
-  return searchLabel;
+  const parts: string[] = [];
+  if (pattern) parts.push(`pattern: ${JSON.stringify(pattern)}`);
+  if (path) parts.push(`path: ${JSON.stringify(path)}`);
+  if (parts.length === 0) return "Search";
+  return `Search(${parts.join(", ")})`;
+}
+
+function buildSearchHeader(pattern?: string, path?: string): string {
+  return buildSearchSummary(pattern, path);
 }
 
 function buildFoundTitle(count: number, singularNoun: string): string {
