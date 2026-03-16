@@ -191,6 +191,18 @@ describe("TranscriptStore", () => {
     expect(lines[completeIndex]).not.toMatch(/\([0-9]+(?:\.[0-9]+)?s\)/);
   });
 
+  test("tool progress overlay uses white tone while active", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "tool_1", input: { command: "echo hi" } });
+
+    const lines = renderTranscript(store, 80);
+    const toolLine = lines.find((line) => line.includes("bash"));
+    expect(toolLine).toBeDefined();
+    if (!toolLine) throw new Error("Expected tool overlay line");
+    expect(toolLine).toContain("\x1b[38;5;15m");
+  });
+
   test("busy status persists under overlay and clears on idle", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
 
