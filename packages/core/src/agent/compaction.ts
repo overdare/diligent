@@ -21,6 +21,9 @@ export const COMPACTION_SUMMARY_PREFIX =
 /**
  * Check if compaction should trigger.
  * D038: contextTokens > contextWindow * (1 - reservePercent / 100)
+ *
+ * Uses the last assistant message's actual provider usage tokens when available,
+ * falling back to the chars/4 heuristic.
  */
 export interface CompactionDecision {
   estimatedTokens: number;
@@ -43,7 +46,7 @@ function getLastAssistantMessage(messages: Message[]): AssistantMessage | undefi
 function getAssistantContextWindowUsage(message: AssistantMessage | undefined): number | undefined {
   if (!message) return undefined;
   const usage = message.usage;
-  const total = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+  const total = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
   return Number.isFinite(total) ? total : undefined;
 }
 
