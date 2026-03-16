@@ -1,6 +1,5 @@
 // @summary Factory that builds a DiligentAppServerConfig from a RuntimeConfig, eliminating Web/CLI duplication
 import { getModelInfoList, resolveModel } from "@diligent/core/llm/models";
-import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compaction";
 import type { ProviderName } from "@diligent/core/llm/types";
 import { MODE_SYSTEM_PROMPT_SUFFIXES, type ModeKind, PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
 import { RuntimeAgent } from "../agent/runtime-agent";
@@ -68,7 +67,7 @@ async function createRuntimeAgent(args: {
 
   const activeMode = (mode ?? "default") as ModeKind;
   const model = resolveModel(modelId);
-  const llmCompactionFn: NativeCompactFn | undefined = runtimeConfig.providerManager.createNativeCompactionForProvider(
+  const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
     model.provider as ProviderName,
   );
   return new RuntimeAgent(
@@ -121,6 +120,9 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     resolvePaths: (requestCwd) => ensureDiligentDir(requestCwd),
     createAgent: (args: CreateAgentArgs): Promise<RuntimeAgent> =>
       createRuntimeAgent({ request: args, runtimeConfig, getPaths }),
+    streamFunction: runtimeConfig.streamFunction,
+    createNativeCompaction: (provider: ProviderName) =>
+      runtimeConfig.providerManager.createNativeCompactionForProvider(provider),
     compaction: runtimeConfig.compaction,
     toolConfig: {
       getTools: () => runtimeConfig.diligent.tools,

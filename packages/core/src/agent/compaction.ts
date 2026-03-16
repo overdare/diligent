@@ -4,7 +4,7 @@ import { compact as llmCompact } from "../llm/compaction";
 import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import { estimateTokens } from "../llm/tokens";
 import type { Model, StreamFunction, SystemSection } from "../llm/types";
-import type { Message } from "../types";
+import type { AssistantMessage, Message } from "../types";
 import type { AgentStream, CompactionConfig } from "./types";
 
 export type { CompactionPrompts, CompactMessagesResult } from "../llm/compaction";
@@ -22,10 +22,58 @@ export const COMPACTION_SUMMARY_PREFIX =
  * Check if compaction should trigger.
  * D038: contextTokens > contextWindow * (1 - reservePercent / 100)
  */
-export function shouldCompact(allMessages: Message[], contextWindow: number, reservePercent: number): boolean {
-  const estimatedTokens = estimateTokens(allMessages);
+export interface CompactionDecision {
+  estimatedTokens: number;
+  reserveTokens: number;
+  thresholdTokens: number;
+  shouldCompact: boolean;
+  source: "assistant_usage" | "estimated_messages";
+}
+
+function getLastAssistantMessage(messages: Message[]): AssistantMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "assistant") {
+      return message;
+    }
+  }
+  return undefined;
+}
+
+function getAssistantContextWindowUsage(message: AssistantMessage | undefined): number | undefined {
+  if (!message) return undefined;
+  const usage = message.usage;
+  const total = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+  return Number.isFinite(total) ? total : undefined;
+}
+
+export function getCompactionDecision(
+  allMessages: Message[],
+  contextWindow: number,
+  reservePercent: number,
+): CompactionDecision {
+  const assistantUsageTokens = getAssistantContextWindowUsage(getLastAssistantMessage(allMessages));
+  const messageEstimatedTokens = estimateTokens(allMessages);
+  const estimatedTokens =
+    assistantUsageTokens !== undefined
+      ? Math.max(assistantUsageTokens, messageEstimatedTokens)
+      : messageEstimatedTokens;
   const reserveTokens = Math.floor(contextWindow * (reservePercent / 100));
-  return estimatedTokens > contextWindow - reserveTokens;
+  const thresholdTokens = contextWindow - reserveTokens;
+  return {
+    estimatedTokens,
+    reserveTokens,
+    thresholdTokens,
+    shouldCompact: estimatedTokens > thresholdTokens,
+    source:
+      assistantUsageTokens !== undefined && assistantUsageTokens >= messageEstimatedTokens
+        ? "assistant_usage"
+        : "estimated_messages",
+  };
+}
+
+export function shouldCompact(allMessages: Message[], contextWindow: number, reservePercent: number): boolean {
+  return getCompactionDecision(allMessages, contextWindow, reservePercent).shouldCompact;
 }
 
 function truncateUserMessage(msg: Message, maxTokens: number): Message {
@@ -70,6 +118,7 @@ export interface RunCompactionInput {
   messages: Message[];
   model: Model;
   systemPrompt: SystemSection[];
+  sessionId?: string;
   compactionConfig: CompactionConfig;
   llmMsgStreamFn: StreamFunction;
   llmCompactionFn?: NativeCompactFn;
@@ -116,11 +165,17 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     input.messages,
     input.compactionConfig.keepRecentTokens,
   );
-  input.stream.emit({ type: "compaction_start", estimatedTokens: estimateTokens(input.messages) });
+  const tokensBefore = estimateTokens(input.messages);
+  const recentUserTokens = estimateTokens(recentUserMessages);
+  console.info(
+    `[compaction:debug] run=start session=${input.sessionId ?? "-"} provider=${input.model.provider} model=${input.model.id} messages=${input.messages.length} summarize_messages=${messagesToSummarize.length} recent_user_messages=${recentUserMessages.length} tokens_before=${tokensBefore} keep_recent_tokens=${input.compactionConfig.keepRecentTokens} recent_user_tokens=${recentUserTokens}`,
+  );
+  input.stream.emit({ type: "compaction_start", estimatedTokens: tokensBefore });
   const result = await llmCompact({
     model: input.model,
     messages: messagesToSummarize,
     systemPrompt: input.systemPrompt,
+    sessionId: input.sessionId,
     config: input.compactionConfig,
     signal: input.signal,
     streamFn: input.llmMsgStreamFn,
@@ -128,10 +183,14 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
   });
   const summary = `${COMPACTION_SUMMARY_PREFIX}\n\n${result}`;
   const messages = buildMessagesFromCompaction(recentUserMessages, summary, Date.now());
+  const tokensAfter = estimateTokens(messages);
+  console.info(
+    `[compaction:debug] run=end session=${input.sessionId ?? "-"} provider=${input.model.provider} model=${input.model.id} tokens_before=${tokensBefore} tokens_after=${tokensAfter} summary_chars=${summary.length}`,
+  );
   input.stream.emit({
     type: "compaction_end",
-    tokensBefore: estimateTokens(input.messages),
-    tokensAfter: estimateTokens(messages),
+    tokensBefore: tokensBefore,
+    tokensAfter,
     summary,
   });
   return { summary, messages };

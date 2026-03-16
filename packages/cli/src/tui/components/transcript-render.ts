@@ -1,6 +1,5 @@
 // @summary Rendering helpers for transcript store items within the legacy TUI renderer
 
-import { debugLogger } from "../framework/debug-logger";
 import { displayWidth, sliceToFitWidth } from "../framework/string-width";
 import type { Component, RenderBlock } from "../framework/types";
 import { t } from "../theme";
@@ -34,67 +33,7 @@ export function renderTranscriptLiveStackBlocks(store: TranscriptStore, width: n
 }
 
 export function renderTranscript(store: TranscriptStore, width: number): string[] {
-  const liveStackLines = renderTranscriptLiveStack(store, width);
-  const { liveStackStatusLines, steeringLines, activeMarkdown, activeQuestion, separatorEvents } =
-    renderTranscriptSections(store, width, { includeActiveMarkdown: false });
-  const traceEnabled = debugLogger.isEnabled;
-  const result = [...liveStackLines];
-
-  if (traceEnabled) {
-    const blankLineIndexes: number[] = [];
-    const blankRuns: Array<{ start: number; length: number }> = [];
-    let runStart = -1;
-    let runLength = 0;
-
-    for (let index = 0; index < result.length; index++) {
-      if (result[index] === "") {
-        blankLineIndexes.push(index);
-        if (runStart === -1) {
-          runStart = index;
-          runLength = 1;
-        } else {
-          runLength++;
-        }
-      } else if (runStart !== -1) {
-        blankRuns.push({ start: runStart, length: runLength });
-        runStart = -1;
-        runLength = 0;
-      }
-    }
-
-    if (runStart !== -1) {
-      blankRuns.push({ start: runStart, length: runLength });
-    }
-
-    const itemKinds = store
-      .getItems()
-      .slice(Math.max(0, store.getItems().length - 20))
-      .map((item) => {
-        if (item instanceof MarkdownView) return "markdown";
-        if (item instanceof UserMessageView) return "user";
-        return item.kind;
-      });
-
-    debugLogger.logAgentEvent({
-      type: "chat_render_trace",
-      width,
-      totalLines: result.length,
-      historyLineCount: 0,
-      liveStackLineCount: liveStackLines.length,
-      blankLines: blankLineIndexes.length,
-      blankLineIndexes: blankLineIndexes.slice(0, 80),
-      blankRuns: blankRuns.slice(0, 40),
-      separatorEvents: separatorEvents.slice(0, 80),
-      itemCount: store.getItems().length,
-      itemKinds,
-      hasLiveStackStatus: liveStackStatusLines.length > 0,
-      hasSteering: steeringLines.length > 0,
-      hasActiveMarkdown: activeMarkdown !== null,
-      hasActiveQuestion: activeQuestion !== null,
-    });
-  }
-
-  return result;
+  return renderTranscriptLiveStack(store, width);
 }
 
 export function renderCommittedTranscriptItems(
@@ -108,7 +47,8 @@ export function renderCommittedTranscriptItems(
     if (itemLines.length === 0) {
       continue;
     }
-    const shouldSeparate = !(item instanceof MarkdownView);
+    const shouldSeparate =
+      !(item instanceof MarkdownView) && !("kind" in item && item.kind === "assistant_chunk" && item.continued);
     if (shouldSeparate && (lines.length > 0 || options?.includeLeadingSeparator === true)) {
       lines.push("");
     }
@@ -205,14 +145,10 @@ export function renderTranscriptSections(
   const historyLines: string[] = [];
   const liveStackLines: string[] = [];
   const liveStackBlocks: RenderBlock[] = [];
-  const traceEnabled = debugLogger.isEnabled;
   const separatorEvents: Array<{ reason: string; lineIndex: number }> = [];
-  const pushSeparator = (target: string[], reason: string) => {
+  const pushSeparator = (target: string[], _reason: string) => {
     if (target.length > 0) {
       target.push("");
-      if (traceEnabled) {
-        separatorEvents.push({ reason, lineIndex: target.length - 1 });
-      }
     }
   };
 
@@ -237,7 +173,9 @@ export function renderTranscriptSections(
     }
 
     if (item.kind === "assistant_chunk") {
-      pushSeparator(historyLines, "item:assistant_chunk");
+      if (!item.continued) {
+        pushSeparator(historyLines, "item:assistant_chunk");
+      }
       historyLines.push(...renderAssistantChunkLines(item.text, width, item.continued));
       continue;
     }

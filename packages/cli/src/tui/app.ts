@@ -1,5 +1,6 @@
 // @summary Main TUI application component managing the agent loop and interface
 
+import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -29,7 +30,6 @@ import { InputEditor } from "./components/input-editor";
 import { StatusBar } from "./components/status-bar";
 import { type ConfigManager, createConfigManager } from "./config-manager";
 import { Container } from "./framework/container";
-import { debugLogger } from "./framework/debug-logger";
 import { matchesKey } from "./framework/keys";
 import { TUIRenderer } from "./framework/renderer";
 import { StdinBuffer } from "./framework/stdin-buffer";
@@ -88,6 +88,9 @@ export class App {
   private pendingUserMessageAcks: string[] = [];
   private suppressNextSteeringInjectedCommit = false;
   private pendingAbortRestartMessage: string | null = null;
+  private appServerLogDirInitialized = false;
+  private pendingAppServerLogLines: string[] = [];
+  private currentAppServerLogSessionId: string | null = null;
 
   constructor(
     private config: AppConfig,
@@ -198,6 +201,7 @@ export class App {
       getModelId: () => this.config.model.id,
       setCurrentThreadId: (id) => {
         this.runtime.currentThreadId = id;
+        this.updateAppServerLogSession(id);
       },
       updateStatusBar: (updates) => this.statusBar.update(updates),
     });
@@ -544,8 +548,60 @@ export class App {
   }
 
   private handleAppServerStderr(line: string): void {
-    // Keep TUI clean, but persist app-server operational logs into debug JSONL.
-    debugLogger.logAgentEvent({ type: "app_server_stderr", line });
+    const trimmed = line.trim();
+    if (!trimmed || !this.paths) {
+      return;
+    }
+
+    if (!this.runtime.currentThreadId) {
+      this.pendingAppServerLogLines.push(trimmed);
+      return;
+    }
+
+    this.updateAppServerLogSession(this.runtime.currentThreadId);
+    this.appendToCurrentAppServerLog(trimmed);
+  }
+
+  private updateAppServerLogSession(sessionId: string | null): void {
+    if (!sessionId || !this.paths) {
+      return;
+    }
+    if (this.currentAppServerLogSessionId === sessionId) {
+      return;
+    }
+
+    const logsDir = join(this.paths.root, "logs");
+    if (!this.appServerLogDirInitialized) {
+      mkdirSync(logsDir, { recursive: true });
+      this.appServerLogDirInitialized = true;
+    }
+
+    this.currentAppServerLogSessionId = sessionId;
+    const logPath = this.getCurrentAppServerLogPath();
+    if (logPath) {
+      appendFileSync(logPath, "");
+    }
+    if (this.pendingAppServerLogLines.length > 0) {
+      for (const pendingLine of this.pendingAppServerLogLines) {
+        this.appendToCurrentAppServerLog(pendingLine);
+      }
+      this.pendingAppServerLogLines = [];
+    }
+  }
+
+  private getCurrentAppServerLogPath(): string | null {
+    if (!this.paths || !this.currentAppServerLogSessionId) {
+      return null;
+    }
+    return join(this.paths.root, "logs", `${this.currentAppServerLogSessionId}.app-server.log`);
+  }
+
+  private appendToCurrentAppServerLog(line: string): void {
+    const logPath = this.getCurrentAppServerLogPath();
+    if (!logPath) {
+      return;
+    }
+    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
   }
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {

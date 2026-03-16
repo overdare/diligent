@@ -1,10 +1,11 @@
 // @summary Agent loop coordinating compaction, streaming, tools, and loop safety
 
+import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "../llm/types";
 import type { Tool } from "../tool/types";
 import type { Message, ToolCallBlock } from "../types";
 import { streamAssistantMessage } from "./assistant";
-import { runCompaction, shouldCompact } from "./compaction";
+import { getCompactionDecision, runCompaction } from "./compaction";
 import { runToolCalls } from "./tool";
 import type { AgentStream, CompactionConfig } from "./types";
 import { DoomLoopDetector } from "./util/doom-loop";
@@ -22,6 +23,7 @@ interface LoopConfig {
 export interface LoopRuntime {
   config: LoopConfig;
   streamFunction: StreamFunction;
+  llmCompactionFn?: NativeCompactFn;
   stream: AgentStream;
   sessionId?: string;
   hooks: {
@@ -39,7 +41,13 @@ export async function runAgentLoop(
   const toolAbortController = new AbortController();
   const signal = AbortSignal.any([toolAbortController.signal, userSignal].filter((s): s is AbortSignal => s != null));
 
-  const loopRequest = { config, streamFunction, sessionId: runtime.sessionId, signal };
+  const loopRequest = {
+    config,
+    streamFunction,
+    llmCompactionFn: runtime.llmCompactionFn,
+    sessionId: runtime.sessionId,
+    signal,
+  };
   const conversation = [...messages];
   const doomLoopTracker = new DoomLoopDetector();
   const registry = new Map(config.tools.map((tool) => [tool.name, tool]));
@@ -125,21 +133,34 @@ async function compactIfNeeded(
   request: {
     config: LoopConfig;
     streamFunction: StreamFunction;
+    llmCompactionFn?: NativeCompactFn;
     sessionId?: string;
     signal?: AbortSignal;
   },
   stream: AgentStream,
 ): Promise<void> {
   const config = request.config.compaction;
-  if (!config) return;
-  if (!shouldCompact(messages, request.config.model.contextWindow, config.reservePercent)) return;
+  if (!config) {
+    console.info(
+      `[compaction:debug] decision=skip reason=config_missing session=${request.sessionId ?? "-"} provider=${request.config.model.provider} model=${request.config.model.id}`,
+    );
+    return;
+  }
+
+  const decision = getCompactionDecision(messages, request.config.model.contextWindow, config.reservePercent);
+  console.info(
+    `[compaction:debug] decision=${decision.shouldCompact ? "run" : "skip"} reason=${decision.shouldCompact ? "threshold_exceeded" : "below_threshold"} session=${request.sessionId ?? "-"} provider=${request.config.model.provider} model=${request.config.model.id} messages=${messages.length} estimated_tokens=${decision.estimatedTokens} token_source=${decision.source} context_window=${request.config.model.contextWindow} reserve_percent=${config.reservePercent} reserve_tokens=${decision.reserveTokens} threshold_tokens=${decision.thresholdTokens} keep_recent_tokens=${config.keepRecentTokens}`,
+  );
+  if (!decision.shouldCompact) return;
 
   const result = await runCompaction({
     messages,
     model: request.config.model,
     systemPrompt: request.config.systemPrompt,
+    sessionId: request.sessionId,
     compactionConfig: config,
     llmMsgStreamFn: request.streamFunction,
+    llmCompactionFn: request.llmCompactionFn,
     stream,
     signal: request.signal,
   });

@@ -5,6 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { createTextRenderPayload, summarizeRenderText } from "./render-payload";
 
 const WriteParams = z.object({
   file_path: z.string().describe("The relative path to the file to write"),
@@ -20,7 +21,8 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
     async execute(args, ctx): Promise<ToolResult> {
       const { file_path, content } = args;
       if (isAbsolute(file_path)) {
-        return { output: `Error: file_path must be relative: ${file_path}`, metadata: { error: true } };
+        const output = `Error: file_path must be relative: ${file_path}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
       const targetPath = resolve(cwd, file_path);
 
@@ -32,7 +34,11 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
       });
       if (approval === "reject") {
         ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
+        return {
+          output: "[Rejected by user]",
+          render: createTextRenderPayload(undefined, "[Rejected by user]", true),
+          metadata: { error: true },
+        };
       }
 
       try {
@@ -44,10 +50,21 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
 
         // 3. Return summary
         const bytes = new TextEncoder().encode(content).length;
-        return { output: `Wrote ${bytes} bytes to ${targetPath}` };
-      } catch (err) {
+        const output = `Wrote ${bytes} bytes to ${targetPath}`;
         return {
-          output: `Error writing file: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: {
+            version: 2,
+            inputSummary: summarizeRenderText(targetPath),
+            outputSummary: summarizeRenderText(output),
+            blocks: [{ type: "file", filePath: targetPath, content }],
+          },
+        };
+      } catch (err) {
+        const output = `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
+        return {
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }
@@ -77,7 +94,8 @@ Usage:
     async execute(args, ctx): Promise<ToolResult> {
       const { file_path, content } = args;
       if (!isAbsolute(file_path)) {
-        return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };
+        const output = `Error: file_path must be absolute: ${file_path}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
       const approval = await requestToolApproval(host, {
@@ -88,17 +106,32 @@ Usage:
       });
       if (approval === "reject") {
         ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
+        return {
+          output: "[Rejected by user]",
+          render: createTextRenderPayload(undefined, "[Rejected by user]", true),
+          metadata: { error: true },
+        };
       }
 
       try {
         await mkdir(dirname(file_path), { recursive: true });
         await Bun.write(file_path, content);
         const bytes = new TextEncoder().encode(content).length;
-        return { output: `Wrote ${bytes} bytes to ${file_path}` };
-      } catch (err) {
+        const output = `Wrote ${bytes} bytes to ${file_path}`;
         return {
-          output: `Error writing file: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: {
+            version: 2,
+            inputSummary: summarizeRenderText(file_path),
+            outputSummary: summarizeRenderText(output),
+            blocks: [{ type: "file", filePath: file_path, content }],
+          },
+        };
+      } catch (err) {
+        const output = `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
+        return {
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }

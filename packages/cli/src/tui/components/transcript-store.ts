@@ -3,8 +3,7 @@
 import type { ToolResultMessage } from "@diligent/core";
 import { type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
-import { createTextRenderPayload } from "@diligent/runtime/tools";
-import { debugLogger } from "../framework/debug-logger";
+import { createGrepRenderPayload, createTextRenderPayload } from "@diligent/runtime/tools";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
@@ -68,7 +67,7 @@ export class UserMessageView {
 
 function buildToolHeader(toolName: string, payload?: ToolRenderPayload): string {
   const inputSummary = payload?.inputSummary?.trim();
-  return inputSummary ? `${toolName} - ${inputSummary}` : toolName;
+  return inputSummary ? `Summary — ${inputSummary}` : toolName;
 }
 
 function stringifyToolInput(input: unknown): string | undefined {
@@ -213,7 +212,6 @@ export class TranscriptStore {
   }
 
   handleEvent(event: AgentEvent): void {
-    debugLogger.logAgentEvent(event);
     switch (event.type) {
       case "agent_start":
         this.startOverlayStatus("Thinking…");
@@ -359,8 +357,9 @@ export class TranscriptStore {
       case "turn_end":
         this.isThreadBusy = false;
         this.busyStartedAt = null;
-        this.statusBeforeCompaction = null;
-        this.stopOverlayStatus();
+        if (!this.statusBeforeCompaction && this.overlayStatus?.message === "Compacting…") {
+          this.stopOverlayStatus();
+        }
         this.cleanupStatusTimersIfIdle();
         this.options.requestRender();
         break;
@@ -539,7 +538,9 @@ export class TranscriptStore {
     const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
     const renderPayload: ToolRenderPayload | undefined =
       toProtocolRenderPayload(event.render) ??
-      createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError);
+      (event.toolName === "grep"
+        ? createGrepRenderPayload(toolInput as { pattern?: string; path?: string }, event.output)
+        : createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError));
 
     if (event.toolName === "plan") {
       this.planCallCount++;

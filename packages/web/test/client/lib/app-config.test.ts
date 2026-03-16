@@ -51,7 +51,7 @@ test("compaction defaults when not configured", async () => {
     const config = await loadRuntimeConfig(base, paths);
 
     expect(config.compaction.enabled).toBe(true);
-    expect(config.compaction.reservePercent).toBe(16);
+    expect(config.compaction.reservePercent).toBe(14);
     expect(config.compaction.keepRecentTokens).toBe(20000);
   } finally {
     rmSync(base, { recursive: true, force: true });

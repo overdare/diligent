@@ -1,6 +1,5 @@
 // @summary Renders components to the terminal with diff-based updates
 import { Container } from "./container";
-import { debugLogger } from "./debug-logger";
 import { charDisplayWidth, displayWidth } from "./string-width";
 import type { Terminal } from "./terminal";
 import type { Component, Focusable, RenderBlock } from "./types";
@@ -323,10 +322,6 @@ export class TUIRenderer {
     }
 
     const renderBlocks = this.getRenderBlocks(this.root, width);
-    const allLines = renderBlocks.flatMap((block) => block.lines);
-    const persistentCount = renderBlocks
-      .filter((block) => block.persistence === "persistent")
-      .reduce((sum, block) => sum + block.lines.length, 0);
 
     const persistentFlushLines: string[] = [];
     const activeBlocks = renderBlocks
@@ -507,21 +502,6 @@ export class TUIRenderer {
       this.terminal.writeSynchronized(framePayload);
     }
 
-    if (debugLogger.isEnabled) {
-      debugLogger.logRender({
-        termCols: this.terminal.columns,
-        termRows: this.terminal.rows,
-        newLines: allLines,
-        cleanLines: displayActiveLines,
-        committedCount: persistentCount,
-        activeCount: activeBlocks.reduce((sum, block) => sum + block.lines.length, 0),
-        activeDisplayCount: displayActiveLines.length,
-        overflowCount: overflowFlushLines.length,
-        cursorRow: displayCursorRow,
-        cursorCol,
-        fullOutput: displayActiveLines.join("\n"),
-      });
-    }
     this.lastRenderAt = Date.now();
     this.lastViewportWidth = width;
     this.lastViewportRows = rows;

@@ -42,6 +42,15 @@ export const ThreadCompactedNotificationSchema = z.object({
 });
 export type ThreadCompactedNotification = z.infer<typeof ThreadCompactedNotificationSchema>;
 
+export const ThreadCompactionStartedNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED),
+  params: z.object({
+    threadId: z.string(),
+    estimatedTokens: z.number().int().nonnegative(),
+  }),
+});
+export type ThreadCompactionStartedNotification = z.infer<typeof ThreadCompactionStartedNotificationSchema>;
+
 const ThreadStatusSnapshotFields = {
   threadStatus: ThreadStatusSchema.optional(),
 };
@@ -308,6 +317,7 @@ export const DiligentServerNotificationSchema = z.union([
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
   ThreadCompactedNotificationSchema,
+  ThreadCompactionStartedNotificationSchema,
   ThreadStatusChangedNotificationSchema,
   TurnStartedNotificationSchema,
   ItemStartedNotificationSchema,

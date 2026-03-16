@@ -7,14 +7,38 @@
  * where the cursor ended up and whether content duplicated.
  *
  * Usage:
- *   DILIGENT_TUI_DEBUG=/tmp/tui.jsonl diligent   # capture
  *   bun packages/cli/src/tui/tools/replay-debug.ts /tmp/tui.jsonl
  *   bun packages/cli/src/tui/tools/replay-debug.ts /tmp/tui.jsonl --from=10 --to=20
  *   bun packages/cli/src/tui/tools/replay-debug.ts /tmp/tui.jsonl --anomalies-only
  */
 
 import { readFileSync } from "node:fs";
-import type { DebugEntry, RenderEntry } from "../framework/debug-logger";
+
+interface RenderEntry {
+  type: "render";
+  seq: number;
+  ts: number;
+  termCols: number;
+  termRows: number;
+  newLines: string[];
+  cleanLines: string[];
+  committedCount?: number;
+  activeCount?: number;
+  activeDisplayCount?: number;
+  overflowCount?: number;
+  cursorRow: number;
+  cursorCol: number;
+  fullOutput: string;
+}
+
+interface EventEntry {
+  type: "agent_event";
+  seq: number;
+  ts: number;
+  event: unknown;
+}
+
+type DebugEntry = RenderEntry | EventEntry;
 
 // ---------------------------------------------------------------------------
 // TerminalSim — same parser as tests

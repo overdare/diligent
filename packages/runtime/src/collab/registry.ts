@@ -145,7 +145,6 @@ export class AgentRegistry {
           result.registry,
         );
       },
-      compaction: { enabled: true, reservePercent: 16, keepRecentTokens: 20000 },
       parentSession: this.deps.getParentSessionId?.(),
       collabMeta: {
         nickname,

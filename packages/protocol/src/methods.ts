@@ -42,6 +42,7 @@ export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   THREAD_STARTED: "thread/started",
   THREAD_RESUMED: "thread/resumed",
   THREAD_COMPACTED: "thread/compacted",
+  THREAD_COMPACTION_STARTED: "thread/compaction/started",
   THREAD_STATUS_CHANGED: "thread/status/changed",
   TURN_STARTED: "turn/started",
   ITEM_STARTED: "item/started",

@@ -89,6 +89,14 @@ export class ProtocolNotificationAdapter {
           },
         ];
 
+      case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED:
+        return [
+          {
+            type: "compaction_start",
+            estimatedTokens: notification.params.estimatedTokens,
+          },
+        ];
+
       case DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED:
         return [
           {

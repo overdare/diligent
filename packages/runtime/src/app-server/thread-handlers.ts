@@ -275,6 +275,10 @@ export async function handleThreadCompactStart(
   });
 
   try {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED,
+      params: { threadId: runtime.id, estimatedTokens: 0 },
+    });
     const result = await runtime.manager.compactNow();
     await ctx.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED,

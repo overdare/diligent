@@ -101,6 +101,7 @@ export class Agent {
         compaction: this.compactionConfig,
       },
       streamFunction: this.llmMsgStreamFn,
+      llmCompactionFn: this.llmCompactionFn,
       stream: this.agentStream,
       sessionId: this.sessionId,
       hooks: {

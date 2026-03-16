@@ -291,11 +291,11 @@ function debugRenderPayload(event: string, data: Record<string, unknown>): void 
 }
 
 function buildSearchSummary(pattern?: string, path?: string): string {
-  const parts: string[] = [];
-  if (pattern) parts.push(`pattern: ${JSON.stringify(pattern)}`);
-  if (path) parts.push(`path: ${JSON.stringify(path)}`);
-  if (parts.length === 0) return "Search";
-  return `Search(${parts.join(", ")})`;
+  const searchLabel = pattern ? `Search ${pattern}` : "Search";
+  if (path) {
+    return `${searchLabel} in ${path}`;
+  }
+  return searchLabel;
 }
 
 function buildFoundTitle(count: number, singularNoun: string): string {

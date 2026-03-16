@@ -3,6 +3,7 @@
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
+import { createTextRenderPayload, summarizeRenderText } from "./render-payload";
 
 const ReadParams = z.object({
   file_path: z.string().describe("The absolute path to the file to read"),
@@ -92,19 +93,30 @@ export function createReadTool(): Tool<typeof ReadParams> {
     async execute(args): Promise<ToolResult> {
       const { file_path, offset, limit } = args;
       if (!isAbsolute(file_path)) {
-        return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };
+        const output = `Error: file_path must be absolute: ${file_path}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
       // 1. Check file exists
       const file = Bun.file(file_path);
       if (!(await file.exists())) {
-        return { output: `Error: File not found: ${file_path}`, metadata: { error: true } };
+        const output = `Error: File not found: ${file_path}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
       // 2. Binary detection by extension
       if (isBinaryByExtension(file_path)) {
         const size = file.size;
-        return { output: `Binary file (${size} bytes). Cannot display contents.` };
+        const output = `Binary file (${size} bytes). Cannot display contents.`;
+        return {
+          output,
+          render: {
+            version: 2,
+            inputSummary: summarizeRenderText(file_path),
+            outputSummary: summarizeRenderText(output),
+            blocks: [{ type: "text", title: file_path, text: output }],
+          },
+        };
       }
 
       // 3. Binary detection by content sampling
@@ -112,7 +124,16 @@ export function createReadTool(): Tool<typeof ReadParams> {
         const sample = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
         if (isBinaryByContent(sample)) {
           const size = file.size;
-          return { output: `Binary file (${size} bytes). Cannot display contents.` };
+          const output = `Binary file (${size} bytes). Cannot display contents.`;
+          return {
+            output,
+            render: {
+              version: 2,
+              inputSummary: summarizeRenderText(file_path),
+              outputSummary: summarizeRenderText(output),
+              blocks: [{ type: "text", title: file_path, text: output }],
+            },
+          };
         }
       } catch {
         // If content check fails, continue as text
@@ -123,8 +144,10 @@ export function createReadTool(): Tool<typeof ReadParams> {
       try {
         content = await file.text();
       } catch (err) {
+        const output = `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
         return {
-          output: `Error reading file: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }
@@ -147,7 +170,24 @@ export function createReadTool(): Tool<typeof ReadParams> {
         output += `\n\n... (showing lines ${startLine + 1}-${startLine + selectedLines.length} of ${totalLines} total)`;
       }
 
-      return { output, truncateDirection: "head" };
+      return {
+        output,
+        render: {
+          version: 2,
+          inputSummary: summarizeRenderText(file_path),
+          outputSummary: summarizeRenderText(output),
+          blocks: [
+            {
+              type: "file",
+              filePath: file_path,
+              content,
+              offset,
+              limit: maxLines,
+            },
+          ],
+        },
+        truncateDirection: "head",
+      };
     },
   };
 }

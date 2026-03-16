@@ -185,6 +185,15 @@ export function agentEventToNotification(
         ),
       };
 
+    case "compaction_start":
+      return {
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED,
+        params: {
+          threadId,
+          estimatedTokens: event.estimatedTokens,
+        },
+      };
+
     case "steering_injected":
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.STEERING_INJECTED,
