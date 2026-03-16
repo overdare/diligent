@@ -6,17 +6,22 @@ import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
 import { type TranscriptItem, type TranscriptStore, UserMessageView } from "./transcript-store";
 
-function getCollapsedToolPreviewLines(details: string[]): string[] {
+function stripAnsi(line: string): string {
+  return line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
+}
+
+function getCollapsedToolPreviewLines(item: Extract<TranscriptItem, { kind: "tool_result" }>): string[] {
+  if (item.summaryLine?.trim()) {
+    return [item.summaryLine];
+  }
+
   const previewLines: string[] = [];
-  for (const line of details) {
-    const plain = line
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
-      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-      .trim();
+  for (const line of item.details) {
+    const plain = stripAnsi(line).trim();
     if (!plain) continue;
     if (plain.startsWith("└ Found ")) {
       const sanitized = plain.replace(/^└\s*/, "");
-      previewLines.push(sanitized);
+      previewLines.push(`⎿  ${sanitized}`);
       break;
     }
   }
@@ -28,7 +33,7 @@ export function renderTranscriptLiveStack(store: TranscriptStore, width: number)
 }
 
 export function renderTranscriptLiveStackBlocks(store: TranscriptStore, width: number): RenderBlock[] {
-  const { liveStackBlocks } = renderTranscriptSections(store, width, { includeActiveMarkdown: false });
+  const { liveStackBlocks } = renderTranscriptSections(store, width, { includeActiveMarkdown: true });
   return liveStackBlocks;
 }
 
@@ -113,14 +118,9 @@ function renderTranscriptItemLines(item: TranscriptItem, width: number, toolResu
     if (toolResultsExpanded) {
       return [`${item.header}${hint}`, ...item.details];
     }
-    const previewLines = getCollapsedToolPreviewLines(item.details);
+    const previewLines = getCollapsedToolPreviewLines(item);
     if (previewLines.length > 0) {
-      const previewWithArrow = previewLines.map((line, index) => {
-        if (index !== 0) return line;
-        const trimmed = line.trim();
-        return `  ⎿  ${trimmed}`;
-      });
-      return [`${item.header}${hint}`, ...previewWithArrow];
+      return [`${item.header}${hint}`, ...previewLines.map((line) => `  ${line}`)];
     }
     return [`${item.header}${hint}`];
   }
@@ -198,14 +198,9 @@ export function renderTranscriptSections(
       if (store.isToolResultsExpanded()) {
         historyLines.push(...item.details);
       } else {
-        const previewLines = getCollapsedToolPreviewLines(item.details);
+        const previewLines = getCollapsedToolPreviewLines(item);
         if (previewLines.length > 0) {
-          const previewWithArrow = previewLines.map((line, index) => {
-            if (index !== 0) return line;
-            const trimmed = line.trim();
-            return `  ⎿  ${trimmed}`;
-          });
-          historyLines.push(...previewWithArrow);
+          historyLines.push(...previewLines.map((line) => `  ${line}`));
         }
       }
     } else {

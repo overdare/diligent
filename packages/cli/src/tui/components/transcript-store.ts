@@ -67,7 +67,12 @@ export class UserMessageView {
 
 function buildToolHeader(toolName: string, payload?: ToolRenderPayload): string {
   const inputSummary = payload?.inputSummary?.trim();
-  return inputSummary ? `Summary — ${inputSummary}` : toolName;
+  return inputSummary ? `${toolName} - ${inputSummary}` : toolName;
+}
+
+function buildToolSummaryLine(payload?: ToolRenderPayload): string | undefined {
+  const outputSummary = payload?.outputSummary?.trim();
+  return outputSummary ? `⎿  ${outputSummary}` : undefined;
 }
 
 function stringifyToolInput(input: unknown): string | undefined {
@@ -106,6 +111,7 @@ export type TranscriptItem =
   | {
       kind: "tool_result";
       header: string;
+      summaryLine?: string;
       details: string[];
     }
   | {
@@ -233,7 +239,6 @@ export class TranscriptStore {
             this.commitThinkingBlock();
           }
           this.activeMarkdown.pushDelta(event.delta.delta);
-          this.commitAssistantChunk(this.activeMarkdown);
         }
         break;
       case "message_end":
@@ -396,15 +401,16 @@ export class TranscriptStore {
       if (rendered.length > 0) {
         lines.push(...rendered.map((line) => `  ${line}`));
       }
-      this.items.push(this.createToolResultItem(lines));
+      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(renderPayload)));
     } else if (message.output) {
+      const fallbackPayload = createTextRenderPayload(undefined, message.output, message.isError);
       const rawLines = message.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
       const lines: string[] = [`${icon} ${headerLabel}`];
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines));
+      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(fallbackPayload)));
     } else {
       this.items.push({ kind: "plain", lines: [`${icon} ${headerLabel}`] });
     }
@@ -517,13 +523,14 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
-  private createToolResultItem(lines: string[]): TranscriptItem {
+  private createToolResultItem(lines: string[], summaryLine?: string): TranscriptItem {
     if (lines.length === 0) {
       return { kind: "plain", lines };
     }
     return {
       kind: "tool_result",
       header: lines[0],
+      summaryLine,
       details: lines.slice(1),
     };
   }
@@ -619,19 +626,17 @@ export class TranscriptStore {
       if (rendered.length > 0) {
         lines.push(...rendered.map((line) => `  ${line}`));
       }
-      this.items.push(this.createToolResultItem(lines));
+      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(renderPayload)));
     } else if (event.output) {
-      const headerLabel = buildToolHeader(
-        event.toolName,
-        createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError),
-      );
+      const fallbackPayload = createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError);
+      const headerLabel = buildToolHeader(event.toolName, fallbackPayload);
       const rawLines = event.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
       const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines));
+      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(fallbackPayload)));
     } else {
       const headerLabel = buildToolHeader(event.toolName);
       this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });

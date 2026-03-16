@@ -41,6 +41,26 @@ describe("TranscriptStore", () => {
     expect(items[0]).toMatchObject({ kind: "assistant_chunk", text: "hello", continued: false });
   });
 
+  test("keeps streamed markdown as a single committed assistant item at message end", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "message_start" });
+    store.handleEvent({ type: "message_delta", delta: { type: "text_delta", delta: "- item 1\n" } });
+    store.handleEvent({ type: "message_delta", delta: { type: "text_delta", delta: "- item 2" } });
+
+    expect(store.getItems()).toEqual([]);
+
+    store.handleEvent({ type: "message_end" });
+
+    const items = store.getItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "assistant_chunk",
+      text: "- item 1\n- item 2",
+      continued: false,
+    });
+  });
+
   test("tracks active question independently from transcript items", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
     const question = {
@@ -221,5 +241,7 @@ describe("TranscriptStore", () => {
     const readHeader = stripAnsi(toolItem.header);
     expect(readHeader).toContain("read - {");
     expect(readHeader).not.toContain("File —");
+    expect(toolItem.summaryLine).toBeDefined();
+    expect(stripAnsi(toolItem.summaryLine ?? "")).toContain("⎿  1\tline one");
   });
 });
