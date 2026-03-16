@@ -233,9 +233,18 @@ export class TranscriptStore {
 
   renderLiveStackStatusLine(): string | null {
     if (!this.activeStatus) return null;
-    const elapsed = formatThoughtElapsed(Date.now() - this.activeStatus.startedAt);
     const dot = this.activeStatus.blinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
+    if (this.isCompleteStatusMessage(this.activeStatus.message)) {
+      return `${dot} ${this.activeStatus.message}`;
+    }
+    const elapsed = formatThoughtElapsed(Date.now() - this.activeStatus.startedAt);
     return `${dot} ${this.activeStatus.message} ${t.dim}(${elapsed})${t.reset}`;
+  }
+
+  shouldPadBelowLiveStatusLine(): boolean {
+    if (!this.activeStatus) return false;
+    const message = this.activeStatus.message.trim();
+    return this.isWorkingStatusMessage(message) || this.isCompleteStatusMessage(message);
   }
 
   handleEvent(event: AgentEvent): void {
@@ -703,7 +712,16 @@ export class TranscriptStore {
   }
 
   private isWorkingStatusActive(): boolean {
-    return this.activeStatus?.message === "Working…";
+    return this.activeStatus !== null && this.isWorkingStatusMessage(this.activeStatus.message);
+  }
+
+  private isWorkingStatusMessage(message: string): boolean {
+    return message === "Working…" || message === "Working...";
+  }
+
+  private isCompleteStatusMessage(message: string): boolean {
+    const normalized = message.trim();
+    return normalized === "Complete" || normalized.startsWith("Complete") || normalized.includes("Complete");
   }
 
   private commitAssistantChunk(markdown: MarkdownView): void {

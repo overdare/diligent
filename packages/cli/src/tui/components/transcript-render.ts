@@ -297,12 +297,12 @@ export function renderTranscriptSections(
     }
     liveStackLines.push(liveStackStatusLine);
     liveStackBlocks.push({ key: "status", lines: [liveStackStatusLine], persistence: "volatile" });
+    if (store.shouldPadBelowLiveStatusLine()) {
+      liveStackLines.push("");
+      liveStackBlocks.push({ key: "status-bottom-padding", lines: [""], persistence: "volatile" });
+    }
   }
   if (steeringLines.length > 0) {
-    if (liveStackBlocks.length > 0) {
-      pushSeparator(liveStackLines, "live:steering");
-      liveStackBlocks.push({ key: "steering-separator", lines: [""], persistence: "volatile" });
-    }
     liveStackLines.push(...steeringLines);
     liveStackBlocks.push({ key: "steering", lines: [...steeringLines], persistence: "volatile" });
   }

@@ -146,7 +146,22 @@ describe("TranscriptStore", () => {
     store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
 
     const lines = renderTranscript(store, 80).map(stripAnsi);
-    expect(lines.some((line) => line.includes("Working…"))).toBe(true);
+    const workingIndex = lines.findIndex((line) => line.includes("Working…"));
+    expect(workingIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[workingIndex + 1]).toBe("");
+  });
+
+  test("Complete status omits elapsed time and keeps blank line below", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "tool_start", toolName: "wait", toolCallId: "t1", input: { ids: ["a1"] } });
+    store.handleEvent({ type: "tool_update", toolName: "wait", toolCallId: "t1", partialResult: "Complete" });
+
+    const lines = renderTranscript(store, 80).map(stripAnsi);
+    const completeIndex = lines.findIndex((line) => line.includes("Complete"));
+    expect(completeIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[completeIndex]).not.toMatch(/\([0-9]+(?:\.[0-9]+)?s\)/);
+    expect(lines[completeIndex + 1]).toBe("");
   });
 
   test("idle status after tool_end keeps Working status cleared", () => {

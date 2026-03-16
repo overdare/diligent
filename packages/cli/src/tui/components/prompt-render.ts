@@ -16,7 +16,7 @@ export function renderPromptEditor(store: PromptStore, width: number, promptText
   if (!store.focused) {
     const textLines = store.text.split("\n");
     const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
-    return ["", sep, ...renderedLines, sep];
+    return [sep, ...renderedLines, sep];
   }
 
   const before = store.text.slice(0, store.cursorPos);
@@ -37,7 +37,7 @@ export function renderPromptEditor(store: PromptStore, width: number, promptText
 
     const inputLine = `${promptPrefix}${displayBefore}${CURSOR_MARKER}${displayAfter}`;
     const popupLines = renderCompletionPopup(store, width);
-    return ["", sep, inputLine, sep, ...popupLines];
+    return [sep, inputLine, sep, ...popupLines];
   }
 
   const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
@@ -45,7 +45,7 @@ export function renderPromptEditor(store: PromptStore, width: number, promptText
     (line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`,
   );
   const popupLines = renderCompletionPopup(store, width);
-  return ["", sep, ...inputLines, sep, ...popupLines];
+  return [sep, ...inputLines, sep, ...popupLines];
 }
 
 function renderCompletionPopup(store: PromptStore, width: number): string[] {
