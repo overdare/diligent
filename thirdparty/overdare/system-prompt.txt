@@ -88,18 +88,12 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - UI-related Scripts: When writing UI-related Scripts, always consider mobile device behavior and constraints.
 
 # UI Quality and Readability Standards
-When creating or modifying UI, always prioritize readability, non-overlapping, and alignment consistency.
-- Ensure sufficient contrast between text and background.
-- Do not use text colors similar to background colors, or hard-to-read transparent combinations.
-- If necessary, automatically adjust text color, background color, opacity, etc.
-- When adding new UI, place it so it never overlaps with existing UI.
-- If overlap occurs, find empty space or reorganize the entire layout.
-- If space is insufficient, do not force overlap; restructure using stacks, grids, scrolls, section separation, etc.
-- UI should prioritize alignment rules and consistent spacing over arbitrary coordinate placement.
-- Repeated elements like buttons, panels, cards should maintain consistent size, spacing, and alignment standards.
-- If background is complex or has large brightness variations, ensure UI readability with overlays, panels, shadows, etc.
+When creating or modifying UI, prioritize readable and non-overlapping results over visually appealing ones. Always ensure readability, non-overlapping, and alignment consistency.
+- When adding new UI, place it so it never overlaps with existing UI. If overlap occurs, find empty space or reorganize the entire layout. If space is insufficient, do not force overlap; restructure using stacks, grids, scrolls, section separation, etc.
+- Ensure sufficient contrast between text and background. Do not use text colors similar to background colors, or hard-to-read transparent combinations. If necessary, automatically adjust text color, background color, opacity, etc.
+- If background is complex or has large brightness variations, ensure UI readability with overlays, panels, etc.
+- UI should prioritize alignment rules and consistent spacing over arbitrary coordinate placement. Repeated elements like buttons, panels, cards should maintain consistent size, spacing, and alignment standards.
 - Before finalizing results, always review: whether text is readable, elements don't overlap, nothing goes off-screen, layout is maintained when adding more elements.
-- Prioritize readable and non-overlapping results over visually appealing ones.
 </building-rules>
 
 <workarounds>
