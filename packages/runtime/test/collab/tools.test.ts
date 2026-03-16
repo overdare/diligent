@@ -128,6 +128,28 @@ describe("wait tool", () => {
     // onUpdate may or may not be called depending on timing, but should not error
   });
 
+  it("truncates nested agent output to keep wait result JSON parseable", async () => {
+    const longOutput = "x".repeat(2_500);
+    const { tools } = createCollabTools(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant(longOutput)),
+      }),
+    );
+    const spawnTool = tools.find((t) => t.name === "spawn_agent")!;
+    const waitTool = tools.find((t) => t.name === "wait")!;
+
+    const spawned = JSON.parse((await spawnTool.execute({ message: "task" }, makeCtx())).output);
+    const result = await waitTool.execute({ ids: [spawned.thread_id] }, makeCtx());
+    const parsed = JSON.parse(result.output) as {
+      status: Record<string, { kind: string; output?: string }>;
+    };
+
+    const status = parsed.status[spawned.thread_id];
+    expect(status.kind).toBe("completed");
+    expect(status.output?.length).toBeLessThanOrEqual(1_100);
+    expect(status.output).toContain("[truncated");
+  });
+
   it("throws for unknown agent ID", async () => {
     const { tools } = createCollabTools(makeCollabDeps());
     const waitTool = tools.find((t) => t.name === "wait")!;

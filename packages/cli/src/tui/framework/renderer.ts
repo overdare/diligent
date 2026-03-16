@@ -27,6 +27,8 @@ export class TUIRenderer {
   private lastRenderAt = 0;
   private lastOverflowFlushAt = 0;
   private readonly minRenderIntervalMs: number;
+  private lastViewportWidth: number | null = null;
+  private lastViewportRows: number | null = null;
   private focusedComponent: (Component & Focusable) | null = null;
   private started = false;
   private pendingHistoryLines: string[] = [];
@@ -34,6 +36,7 @@ export class TUIRenderer {
   private overflowFlushedCounts = new Map<string, number>();
   private lastActiveRows = 0; // terminal rows occupied by previous active region
   private lastCursorRowInActive = 0; // cursor row within active region (for rewind)
+  private cursorVisible = true;
 
   constructor(
     private terminal: Terminal,
@@ -102,7 +105,7 @@ export class TUIRenderer {
   /** Start the render loop */
   start(): void {
     this.started = true;
-    this.terminal.hideCursor();
+    this.setCursorVisible(false);
     this.doRender();
   }
 
@@ -113,6 +116,8 @@ export class TUIRenderer {
     this.overflowFlushedCounts.clear();
     this.lastActiveRows = 0;
     this.lastCursorRowInActive = 0;
+    this.lastViewportWidth = null;
+    this.lastViewportRows = null;
   }
 
   /** Stop rendering — clear active region, leave committed lines in scrollback */
@@ -128,33 +133,39 @@ export class TUIRenderer {
       this.clearPreviousActiveRegion();
     }
     this.resetFrameState();
-    this.terminal.showCursor();
+    this.setCursorVisible(true);
   }
 
-  private clearPreviousActiveRegion(): void {
-    if (this.lastActiveRows <= 0) return;
+  private buildClearPreviousActiveRegionOutput(rowsToClear = this.lastActiveRows): string {
+    if (rowsToClear <= 0) return "";
 
-    // Rewind from current cursor position (within active region) back to the
-    // first physical row of the previous active frame.
-    this.terminal.write("\r");
+    let out = "\r";
     if (this.lastCursorRowInActive > 0) {
-      this.terminal.write(`\x1b[${this.lastCursorRowInActive}A`);
+      out += `\x1b[${this.lastCursorRowInActive}A`;
     }
 
     // Clear only rows that belonged to the previous active region instead of
     // clearing to end-of-screen, which causes visible terminal chrome flicker.
-    for (let i = 0; i < this.lastActiveRows; i++) {
-      this.terminal.write("\x1b[2K\r");
-      if (i < this.lastActiveRows - 1) {
-        this.terminal.write("\x1b[1B");
+    for (let i = 0; i < rowsToClear; i++) {
+      out += "\x1b[2K\r";
+      if (i < rowsToClear - 1) {
+        out += "\x1b[1B";
       }
     }
 
     // Return cursor to the top row where the next active frame will be drawn.
-    if (this.lastActiveRows > 1) {
-      this.terminal.write(`\x1b[${this.lastActiveRows - 1}A`);
+    if (rowsToClear > 1) {
+      out += `\x1b[${rowsToClear - 1}A`;
     }
-    this.terminal.write("\r");
+    out += "\r";
+    return out;
+  }
+
+  private clearPreviousActiveRegion(rowsToClear = this.lastActiveRows): void {
+    const out = this.buildClearPreviousActiveRegionOutput(rowsToClear);
+    if (out.length > 0) {
+      this.terminal.write(out);
+    }
   }
 
   /** Count how many terminal rows a single line occupies given terminal width */
@@ -298,6 +309,17 @@ export class TUIRenderer {
   /** Render using component-defined persistent/volatile blocks. */
   private doRender(): void {
     const width = Math.max(1, this.terminal.columns);
+    const rows = Math.max(0, this.terminal.rows);
+    const viewportChanged =
+      (this.lastViewportWidth !== null && this.lastViewportWidth !== width) ||
+      (this.lastViewportRows !== null && this.lastViewportRows !== rows);
+
+    if (viewportChanged) {
+      this.terminal.clearScreen();
+      this.lastActiveRows = 0;
+      this.lastCursorRowInActive = 0;
+    }
+
     const renderBlocks = this.getRenderBlocks(this.root, width);
     const allLines = renderBlocks.flatMap((block) => block.lines);
     const persistentCount = renderBlocks
@@ -345,7 +367,7 @@ export class TUIRenderer {
       this.overflowFlushedCounts.delete(block.key);
     }
 
-    const maxRows = Math.max(0, this.terminal.rows);
+    const maxRows = rows;
     const displayBlocks: Array<{
       component: Component;
       key: string;
@@ -421,11 +443,6 @@ export class TUIRenderer {
       linesBeforeCursor += block.lines.length;
     }
 
-    // Erase previous active region
-    if (this.lastActiveRows > 0) {
-      this.clearPreviousActiveRegion();
-    }
-
     const now = Date.now();
     const allowOverflowFlush =
       overflowFlushLines.length > 0 &&
@@ -433,6 +450,13 @@ export class TUIRenderer {
 
     const historyFlushLines = this.pendingHistoryLines;
     this.pendingHistoryLines = [];
+
+    let framePayload = "";
+
+    // Erase previous active region
+    if (this.lastActiveRows > 0) {
+      framePayload += this.buildClearPreviousActiveRegionOutput();
+    }
 
     if (historyFlushLines.length > 0 || persistentFlushLines.length > 0 || allowOverflowFlush) {
       const commitBatch = [
@@ -443,7 +467,7 @@ export class TUIRenderer {
       if (commitBatch.length > 0) {
         const commitPayload = this.serializeLinesForTerminal(commitBatch, width, true);
         if (commitPayload.length > 0) {
-          this.terminal.write(commitPayload);
+          framePayload += commitPayload;
         }
       }
       if (allowOverflowFlush) {
@@ -453,29 +477,32 @@ export class TUIRenderer {
 
     // Write active region (redrawn each frame)
     const activePayload = this.serializeLinesForTerminal(displayActiveLines, width);
-    this.terminal.writeSynchronized(activePayload);
+    framePayload += activePayload;
 
     const totalActiveRows = this.countPhysicalTerminalRows(displayActiveLines, width);
     this.lastActiveRows = totalActiveRows;
     const endCursorRowInActive = Math.max(0, totalActiveRows - 1);
-
-    // Position cursor within active region
+    // Position cursor within active region and apply cursor visibility once per frame.
     if (displayCursorRow !== -1 && cursorCol !== -1) {
       const linesBeforeCursor = displayActiveLines.slice(0, displayCursorRow);
       const rowsBefore = this.countPhysicalTerminalRows(linesBeforeCursor, width);
       const rowsToMoveUp = endCursorRowInActive - rowsBefore;
-      this.terminal.write("\r");
+      framePayload += "\r";
       if (rowsToMoveUp > 0) {
-        this.terminal.write(`\x1b[${rowsToMoveUp}A`);
+        framePayload += `\x1b[${rowsToMoveUp}A`;
       }
       if (cursorCol > 0) {
-        this.terminal.write(`\x1b[${cursorCol}C`);
+        framePayload += `\x1b[${cursorCol}C`;
       }
-      this.terminal.showCursor();
       this.lastCursorRowInActive = rowsBefore;
+      this.setCursorVisible(true);
     } else {
-      this.terminal.hideCursor();
       this.lastCursorRowInActive = endCursorRowInActive;
+      this.setCursorVisible(false);
+    }
+
+    if (framePayload.length > 0) {
+      this.terminal.writeSynchronized(framePayload);
     }
 
     if (debugLogger.isEnabled) {
@@ -494,6 +521,8 @@ export class TUIRenderer {
       });
     }
     this.lastRenderAt = Date.now();
+    this.lastViewportWidth = width;
+    this.lastViewportRows = rows;
   }
 
   private resolveMinRenderIntervalMs(): number {
@@ -503,6 +532,16 @@ export class TUIRenderer {
       return Math.round(1000 / TUIRenderer.DEFAULT_MAX_FPS);
     }
     return Math.max(1, Math.round(1000 / maxFps));
+  }
+
+  private setCursorVisible(nextVisible: boolean): void {
+    if (this.cursorVisible === nextVisible) return;
+    this.cursorVisible = nextVisible;
+    if (nextVisible) {
+      this.terminal.showCursor();
+      return;
+    }
+    this.terminal.hideCursor();
   }
 
   /** Slice a string with ANSI codes by visible column positions */

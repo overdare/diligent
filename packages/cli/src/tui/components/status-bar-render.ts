@@ -2,7 +2,6 @@
 
 import { sep } from "node:path";
 import type { Mode } from "@diligent/protocol";
-import { displayWidth } from "../framework/string-width";
 import { t } from "../theme";
 import type { StatusBarStore } from "./status-bar-store";
 
@@ -17,9 +16,59 @@ function shortenPath(cwd: string): string {
   const p = home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
   const parts = p.split(sep).filter(Boolean);
   if (parts.length > 3) {
-    return `…${sep}${parts.slice(-2).join(sep)}`;
+    return `...${sep}${parts.slice(-2).join(sep)}`;
   }
   return p;
+}
+
+const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, "");
+}
+
+function toAsciiFixed(text: string): string {
+  return stripAnsi(text)
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "?");
+}
+
+function fitAsciiToWidth(text: string, width: number): string {
+  if (width <= 0) {
+    return "";
+  }
+  const ascii = toAsciiFixed(text);
+  if (ascii.length === width) {
+    return ascii;
+  }
+  if (ascii.length < width) {
+    return `${ascii}${" ".repeat(width - ascii.length)}`;
+  }
+  if (width <= 3) {
+    return ascii.slice(0, width);
+  }
+  return `${ascii.slice(0, width - 3)}...`;
+}
+
+function renderAsciiStatusLine(left: string, right: string, width: number): string {
+  if (width <= 0) {
+    return "";
+  }
+
+  const leftAscii = toAsciiFixed(left);
+  const rightAscii = toAsciiFixed(right);
+  if (!rightAscii) {
+    return fitAsciiToWidth(leftAscii, width);
+  }
+
+  const reserved = rightAscii.length + 1;
+  if (reserved >= width) {
+    return fitAsciiToWidth(rightAscii, width);
+  }
+
+  const leftWidth = width - reserved;
+  const leftFitted = fitAsciiToWidth(leftAscii, leftWidth);
+  return `${leftFitted} ${rightAscii}`;
 }
 
 const MODE_COLORS: Record<string, string> = {
@@ -30,10 +79,6 @@ const MODE_COLORS: Record<string, string> = {
 function formatModeHint(mode: Mode): string {
   const color = MODE_COLORS[mode] ?? "";
   return `${t.boldOff}${color}${mode} mode${t.reset}${t.dim}  (shift+tab to cycle)`;
-}
-
-function visibleLength(s: string): number {
-  return displayWidth(s.replace(/\x1b\[[0-9;]*m/g, ""));
 }
 
 export function renderStatusBar(store: StatusBarStore, width: number): string[] {
@@ -61,34 +106,14 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
     leftParts.push(`thinking:${info.effortLabel ?? info.effort}`);
   }
 
-  const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying…" : "";
+  const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";
   const modeHint = !statusHint && info.mode && info.mode !== "default" ? formatModeHint(info.mode) : "";
   const rightHint = statusHint || modeHint;
 
   if (leftParts.length === 0 && !rightHint) return [];
 
-  const leftStr = leftParts.length > 0 ? `  ${leftParts.join(" · ")}` : "";
+  const leftStr = leftParts.length > 0 ? `  ${leftParts.join(" | ")}` : "";
+  const fullLine = renderAsciiStatusLine(leftStr, rightHint, safeWidth);
 
-  if (rightHint) {
-    const leftVisible = visibleLength(leftStr);
-    const rightVisible = visibleLength(rightHint);
-    const pad = Math.max(1, safeWidth - leftVisible - rightVisible);
-    const full = `${t.dim}${leftStr}${" ".repeat(pad)}${rightHint}${t.reset}`;
-    if (leftVisible + pad + rightVisible <= safeWidth) {
-      return [full];
-    }
-  }
-
-  let line = leftStr;
-  if (visibleLength(line) > safeWidth) {
-    const chars = [...line];
-    let truncated = "";
-    for (const ch of chars) {
-      if (displayWidth(`${truncated + ch}…`) > safeWidth) break;
-      truncated += ch;
-    }
-    line = `${truncated}…`;
-  }
-
-  return [`${t.dim}${line}${t.reset}`];
+  return [`${t.dim}${fullLine}${t.reset}`];
 }

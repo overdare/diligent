@@ -22,6 +22,7 @@ export class Terminal {
   private originalRawMode: boolean | undefined;
   private kittyEnabled = false;
   private bracketedPasteEnabled = false;
+  private cursorVisible = true;
   private inputHandler: ((data: Buffer) => void) | null = null;
   private resizeHandler: (() => void) | null = null;
 
@@ -80,9 +81,10 @@ export class Terminal {
     this.write("\x07");
   }
 
-  /** Write batched render payload to stdout */
+  /** Write batched render payload to stdout using synchronized update markers when possible */
   writeSynchronized(data: string): void {
-    (this.stdout as NodeJS.WritableStream).write(data);
+    if (!data) return;
+    (this.stdout as NodeJS.WritableStream).write(`\x1b[?2026h${data}\x1b[?2026l`);
   }
 
   /** Terminal dimensions */
@@ -96,11 +98,19 @@ export class Terminal {
 
   /** Cursor control */
   hideCursor(): void {
+    if (!this.cursorVisible) {
+      return;
+    }
     this.write(SEQ.HIDE_CURSOR);
+    this.cursorVisible = false;
   }
 
   showCursor(): void {
+    if (this.cursorVisible) {
+      return;
+    }
     this.write(SEQ.SHOW_CURSOR);
+    this.cursorVisible = true;
   }
 
   moveCursorTo(row: number, col: number): void {

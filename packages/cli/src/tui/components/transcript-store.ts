@@ -30,6 +30,12 @@ function formatThoughtElapsed(ms: number): string {
   return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
 }
 
+function getWorkingSpinnerFrame(nowMs: number): string {
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const frameIndex = Math.floor(nowMs / 120) % frames.length;
+  return frames[frameIndex] ?? "⠋";
+}
+
 function parseCollabOutput(output: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(output);
@@ -166,12 +172,9 @@ export type TranscriptItem =
     }
   | UserMessageView;
 
-type ActiveStatus = {
+type OverlayStatus = {
   message: string;
   startedAt: number;
-  blinkVisible: boolean;
-  blinkTimer: ReturnType<typeof setInterval> | null;
-  refreshTimer: ReturnType<typeof setInterval> | null;
 };
 
 export interface TranscriptStoreOptions {
@@ -184,9 +187,13 @@ export class TranscriptStore {
   private activeMarkdown: MarkdownView | null = null;
   private thinkingStartTime: number | null = null;
   private thinkingText = "";
-  private activeStatus: ActiveStatus | null = null;
+  private overlayStatus: OverlayStatus | null = null;
   private statusBeforeCompaction: string | null = null;
   private isThreadBusy = false;
+  private busyStartedAt: number | null = null;
+  private statusBlinkVisible = true;
+  private statusBlinkTimer: ReturnType<typeof setInterval> | null = null;
+  private statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
   private toolCallInputs = new Map<string, unknown>();
@@ -232,14 +239,29 @@ export class TranscriptStore {
     return this.pendingSteers;
   }
 
-  renderLiveStackStatusLine(): string | null {
-    if (!this.activeStatus) return null;
-    const dot = this.activeStatus.blinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
-    if (this.isCompleteStatusMessage(this.activeStatus.message)) {
-      return `${dot} ${this.activeStatus.message}`;
+  renderLiveStackStatusLines(): string[] {
+    const lines: string[] = [];
+    const nowMs = Date.now();
+    const overlayDot = this.statusBlinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
+
+    if (this.overlayStatus) {
+      if (this.isCompleteStatusMessage(this.overlayStatus.message)) {
+        lines.push(`${overlayDot} ${this.overlayStatus.message}`);
+      } else {
+        const overlayElapsed = formatThoughtElapsed(nowMs - this.overlayStatus.startedAt);
+        lines.push(`${overlayDot} ${this.overlayStatus.message} ${t.dim}(${overlayElapsed})${t.reset}`);
+      }
     }
-    const elapsed = formatThoughtElapsed(Date.now() - this.activeStatus.startedAt);
-    return `${dot} ${this.activeStatus.message} ${t.dim}(${elapsed})${t.reset}`;
+
+    if (this.busyStartedAt !== null) {
+      if (lines.length > 0) {
+        lines.push("");
+      }
+      const spinner = `${t.accent}${getWorkingSpinnerFrame(nowMs)}${t.reset}`;
+      lines.push(`${spinner} Working…`);
+    }
+
+    return lines;
   }
 
   shouldPadBelowLiveStatusLine(): boolean {
@@ -250,12 +272,10 @@ export class TranscriptStore {
     debugLogger.logAgentEvent(event);
     switch (event.type) {
       case "agent_start":
-        this.startActiveStatus("Thinking…");
+        this.startOverlayStatus("Thinking…");
         break;
       case "message_start":
-        if (!this.isWorkingStatusActive()) {
-          this.stopActiveStatus();
-        }
+        this.stopOverlayStatus();
         this.hasCommittedAssistantChunkInMessage = false;
         this.activeMarkdown = new MarkdownView(this.options.requestRender);
         break;
@@ -265,7 +285,7 @@ export class TranscriptStore {
           if (this.thinkingStartTime === null) {
             this.thinkingStartTime = Date.now();
           }
-          this.startActiveStatus("Thinking…");
+          this.startOverlayStatus("Thinking…");
         } else if (event.delta.type === "text_delta" && this.activeMarkdown) {
           if (this.thinkingText.length > 0) {
             this.commitThinkingBlock();
@@ -290,7 +310,7 @@ export class TranscriptStore {
         this.toolCallInputs.set(event.toolCallId, event.input);
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning…" : "Updating plan…";
-          this.startActiveStatus(label);
+          this.startOverlayStatus(label);
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const inp = event.input as Record<string, unknown> | null;
           let spinnerLabel = event.toolName;
@@ -317,19 +337,19 @@ export class TranscriptStore {
             spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
           }
           this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel, prompt });
-          this.startActiveStatus(spinnerLabel);
+          this.startOverlayStatus(spinnerLabel);
         } else {
-          this.startActiveStatus(event.toolName);
+          this.startOverlayStatus(event.toolName);
         }
         break;
       case "tool_update":
         if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           if (state) {
-            this.setActiveStatusMessage(`${state.label} — ${event.partialResult}`);
+            this.setOverlayStatusMessage(`${state.label} — ${event.partialResult}`);
           }
         } else {
-          this.setActiveStatusMessage(`${event.toolName}…`);
+          this.setOverlayStatusMessage(`${event.toolName}…`);
         }
         break;
       case "tool_end":
@@ -338,13 +358,17 @@ export class TranscriptStore {
       case "status_change":
         this.isThreadBusy = event.status === "busy";
         if (this.isThreadBusy) {
-          this.startActiveStatus("Working…");
+          if (this.busyStartedAt === null) {
+            this.busyStartedAt = Date.now();
+          }
+          this.ensureStatusTimers();
+          this.options.requestRender();
           break;
         }
+        this.busyStartedAt = null;
         this.statusBeforeCompaction = null;
-        if (!this.isWorkingStatusActive()) {
-          this.stopActiveStatus();
-        }
+        this.cleanupStatusTimersIfIdle();
+        this.options.requestRender();
         break;
       case "usage":
         this.lastUsage = {
@@ -354,14 +378,14 @@ export class TranscriptStore {
         };
         break;
       case "compaction_start":
-        this.statusBeforeCompaction = this.activeStatus?.message ?? null;
-        this.startActiveStatus("Compacting…");
+        this.statusBeforeCompaction = this.overlayStatus?.message ?? null;
+        this.startOverlayStatus("Compacting…");
         break;
       case "compaction_end": {
         if (this.statusBeforeCompaction) {
-          this.startActiveStatus(this.statusBeforeCompaction);
+          this.startOverlayStatus(this.statusBeforeCompaction);
         } else {
-          this.stopActiveStatus();
+          this.stopOverlayStatus();
         }
         this.statusBeforeCompaction = null;
         const summaryText = event.summary.trim();
@@ -380,7 +404,7 @@ export class TranscriptStore {
         this.options.requestRender();
         break;
       case "error":
-        this.stopActiveStatus();
+        this.stopOverlayStatus();
         this.thinkingStartTime = null;
         this.thinkingText = "";
         this.items.push({ kind: "plain", lines: [`${t.error}✗ ${event.error.message}${t.reset}`] });
@@ -390,8 +414,10 @@ export class TranscriptStore {
         break;
       case "turn_end":
         this.isThreadBusy = false;
+        this.busyStartedAt = null;
         this.statusBeforeCompaction = null;
-        this.stopActiveStatus();
+        this.stopOverlayStatus();
+        this.cleanupStatusTimersIfIdle();
         this.options.requestRender();
         break;
       default:
@@ -475,7 +501,9 @@ export class TranscriptStore {
 
   clearActive(): void {
     this.isThreadBusy = false;
-    this.stopActiveStatus();
+    this.busyStartedAt = null;
+    this.stopOverlayStatus();
+    this.cleanupStatusTimersIfIdle();
     this.statusBeforeCompaction = null;
     this.thinkingStartTime = null;
     this.thinkingText = "";
@@ -486,7 +514,9 @@ export class TranscriptStore {
 
   clearActiveWithCommit(): void {
     this.isThreadBusy = false;
-    this.stopActiveStatus();
+    this.busyStartedAt = null;
+    this.stopOverlayStatus();
+    this.cleanupStatusTimersIfIdle();
     this.statusBeforeCompaction = null;
     if (this.thinkingText.length > 0) {
       this.commitThinkingBlock();
@@ -541,7 +571,7 @@ export class TranscriptStore {
   }
 
   private commitThinkingBlock(): void {
-    this.stopActiveStatus();
+    this.stopOverlayStatus();
     if (this.thinkingText.length > 0) {
       const elapsedMs = this.thinkingStartTime !== null ? Date.now() - this.thinkingStartTime : undefined;
       this.addThinkingMessage(this.thinkingText, elapsedMs);
@@ -563,7 +593,7 @@ export class TranscriptStore {
   }
 
   private handleToolEnd(event: Extract<AgentEvent, { type: "tool_end" }>): void {
-    this.stopActiveStatus();
+    this.stopOverlayStatus();
     const startTime = this.toolStartTimes.get(event.toolCallId);
     this.toolStartTimes.delete(event.toolCallId);
     const toolInput = this.toolCallInputs.get(event.toolCallId);
@@ -671,56 +701,40 @@ export class TranscriptStore {
       const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
       this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
     }
-    this.resumeBusyStatusIfNeeded();
+    if (this.isThreadBusy) {
+      this.ensureStatusTimers();
+    }
     this.options.requestRender();
   }
 
-  private startActiveStatus(message: string): void {
-    if (this.activeStatus === null) {
-      this.activeStatus = {
+  private startOverlayStatus(message: string): void {
+    if (this.overlayStatus === null) {
+      this.overlayStatus = {
         message,
         startedAt: Date.now(),
-        blinkVisible: true,
-        blinkTimer: null,
-        refreshTimer: null,
       };
-      this.activeStatus.blinkTimer = setInterval(() => {
-        if (!this.activeStatus) return;
-        this.activeStatus.blinkVisible = !this.activeStatus.blinkVisible;
-        this.options.requestRender();
-      }, 500);
-      this.activeStatus.refreshTimer = setInterval(() => {
-        if (!this.activeStatus) return;
-        this.options.requestRender();
-      }, 150);
+      this.ensureStatusTimers();
       this.options.requestRender();
       return;
     }
 
-    const changed = this.activeStatus.message !== message;
-    this.activeStatus.message = message;
+    const changed = this.overlayStatus.message !== message;
+    this.overlayStatus.message = message;
     if (changed) {
-      this.activeStatus.startedAt = Date.now();
-      this.activeStatus.blinkVisible = true;
+      this.overlayStatus.startedAt = Date.now();
+      this.statusBlinkVisible = true;
     }
+    this.ensureStatusTimers();
     this.options.requestRender();
   }
 
-  private setActiveStatusMessage(message: string): void {
-    if (this.activeStatus === null) {
-      this.startActiveStatus(message);
+  private setOverlayStatusMessage(message: string): void {
+    if (this.overlayStatus === null) {
+      this.startOverlayStatus(message);
       return;
     }
-    this.activeStatus.message = message;
+    this.overlayStatus.message = message;
     this.options.requestRender();
-  }
-
-  private isWorkingStatusActive(): boolean {
-    return this.activeStatus !== null && this.isWorkingStatusMessage(this.activeStatus.message);
-  }
-
-  private isWorkingStatusMessage(message: string): boolean {
-    return message === "Working…" || message === "Working...";
   }
 
   private isCompleteStatusMessage(message: string): boolean {
@@ -804,19 +818,43 @@ export class TranscriptStore {
     }
   }
 
-  private stopActiveStatus(): void {
-    if (!this.activeStatus) return;
-    if (this.activeStatus.blinkTimer) {
-      clearInterval(this.activeStatus.blinkTimer);
-    }
-    if (this.activeStatus.refreshTimer) {
-      clearInterval(this.activeStatus.refreshTimer);
-    }
-    this.activeStatus = null;
+  private stopOverlayStatus(): void {
+    if (!this.overlayStatus) return;
+    this.overlayStatus = null;
+    this.cleanupStatusTimersIfIdle();
   }
 
-  private resumeBusyStatusIfNeeded(): void {
-    if (!this.isThreadBusy) return;
-    this.startActiveStatus("Working…");
+  private hasVisibleStatus(): boolean {
+    return this.overlayStatus !== null || this.busyStartedAt !== null;
+  }
+
+  private ensureStatusTimers(): void {
+    if (!this.hasVisibleStatus()) return;
+    if (this.statusBlinkTimer === null) {
+      this.statusBlinkTimer = setInterval(() => {
+        if (!this.hasVisibleStatus()) return;
+        this.statusBlinkVisible = !this.statusBlinkVisible;
+        this.options.requestRender();
+      }, 500);
+    }
+    if (this.statusRefreshTimer === null) {
+      this.statusRefreshTimer = setInterval(() => {
+        if (!this.hasVisibleStatus()) return;
+        this.options.requestRender();
+      }, 150);
+    }
+  }
+
+  private cleanupStatusTimersIfIdle(): void {
+    if (this.hasVisibleStatus()) return;
+    if (this.statusBlinkTimer !== null) {
+      clearInterval(this.statusBlinkTimer);
+      this.statusBlinkTimer = null;
+    }
+    if (this.statusRefreshTimer !== null) {
+      clearInterval(this.statusRefreshTimer);
+      this.statusRefreshTimer = null;
+    }
+    this.statusBlinkVisible = true;
   }
 }

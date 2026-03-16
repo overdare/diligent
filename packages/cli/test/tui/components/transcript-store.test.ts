@@ -67,6 +67,7 @@ describe("TranscriptStore", () => {
 
   test("orders live stack so status is below streaming markdown", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
+    store.handleEvent({ type: "status_change", status: "busy" });
     store.handleEvent({ type: "message_start" });
     store.handleEvent({ type: "message_delta", delta: { type: "text_delta", delta: `${"s".repeat(1100)} streaming` } });
     store.handleEvent({ type: "tool_start", toolName: "plan", toolCallId: "plan_1", input: {} });
@@ -78,12 +79,14 @@ describe("TranscriptStore", () => {
     });
 
     const lines = renderTranscript(store, 100).map(stripAnsi);
-    const statusIndex = lines.findIndex((line) => line.includes("Planning"));
+    const planningIndex = lines.findIndex((line) => line.includes("Planning"));
+    const workingIndex = lines.findIndex((line) => line.includes("Working…"));
     const steeringIndex = lines.findIndex((line) => line.includes("⚑ change approach"));
     const questionIndex = lines.findIndex((line) => line.includes("question prompt"));
 
-    expect(statusIndex).toBeGreaterThanOrEqual(0);
-    expect(steeringIndex).toBeGreaterThan(statusIndex);
+    expect(planningIndex).toBeGreaterThanOrEqual(0);
+    expect(workingIndex).toBeGreaterThan(planningIndex);
+    expect(steeringIndex).toBeGreaterThan(workingIndex);
     expect(questionIndex).toBeGreaterThan(steeringIndex);
   });
 
@@ -108,7 +111,6 @@ describe("TranscriptStore", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
-    store.handleEvent({ type: "status_change", status: "idle" });
 
     const before = renderTranscript(store, 80).map(stripAnsi);
     expect(before.some((line) => line.includes("Working…"))).toBe(true);
@@ -162,16 +164,23 @@ describe("TranscriptStore", () => {
     expect(lines[completeIndex]).not.toMatch(/\([0-9]+(?:\.[0-9]+)?s\)/);
   });
 
-  test("idle status after tool_end keeps Working status cleared", () => {
+  test("busy status persists under overlay and clears on idle", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
-    store.handleEvent({ type: "status_change", status: "idle" });
     store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
-    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
 
-    const lines = renderTranscript(store, 80).map(stripAnsi);
-    expect(lines.some((line) => line.includes("Working…"))).toBe(false);
+    const whileOverlay = renderTranscript(store, 80).map(stripAnsi);
+    expect(whileOverlay.some((line) => line.includes("bash"))).toBe(true);
+    expect(whileOverlay.some((line) => line.includes("Working…"))).toBe(true);
+
+    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
+    const afterOverlay = renderTranscript(store, 80).map(stripAnsi);
+    expect(afterOverlay.some((line) => line.includes("Working…"))).toBe(true);
+
+    store.handleEvent({ type: "status_change", status: "idle" });
+    const afterIdle = renderTranscript(store, 80).map(stripAnsi);
+    expect(afterIdle.some((line) => line.includes("Working…"))).toBe(false);
   });
 
   test("read tool result header is renderpayload-first and cwd-relative", () => {

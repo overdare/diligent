@@ -1,51 +1,89 @@
 // @summary Rendering helpers for the legacy prompt editor view
 
-import { displayWidth, sliceEndToFitWidth, sliceToFitWidth } from "../framework/string-width";
+import { displayWidth } from "../framework/string-width";
 import { CURSOR_MARKER } from "../framework/types";
 import { t } from "../theme";
 import { PromptStore } from "./prompt-store";
 
-export function renderPromptEditor(store: PromptStore, width: number, promptText?: string): string[] {
-  const sep = `${t.dim}${"─".repeat(Math.max(0, width - 1))}${t.reset}`;
+export function renderPromptEditor(
+  store: PromptStore,
+  width: number,
+  promptText?: string,
+  topSeparatorLine?: string,
+  bottomSeparatorLine?: string,
+): string[] {
+  const editorWidth = Math.max(1, width - 1);
+  const sep = `${t.dim}${"─".repeat(Math.max(0, editorWidth))}${t.reset}`;
   const prompt = promptText ?? "❯ ";
   const promptPrefix = `${t.bold}${t.dim}${prompt}${t.reset}`;
   const promptWidth = displayWidth(prompt);
   const continuationPrefix = " ".repeat(promptWidth);
-  const maxTextWidth = width - promptWidth;
+  const maxTextWidth = Math.max(1, editorWidth - promptWidth);
 
   if (!store.focused) {
-    const textLines = store.text.split("\n");
-    const renderedLines = textLines.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
-    return [sep, ...renderedLines, sep];
+    const wrapped = wrapInputTextWithCursor(store.text, maxTextWidth, false);
+    const renderedLines = wrapped.map((line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`);
+    return [topSeparatorLine ?? sep, ...renderedLines, bottomSeparatorLine ?? sep];
   }
 
   const before = store.text.slice(0, store.cursorPos);
   const after = store.text.slice(store.cursorPos);
-  const hasMultilineInput = store.text.includes("\n");
-
-  if (!hasMultilineInput) {
-    let displayBefore = before;
-    let displayAfter = after;
-    const beforeWidth = displayWidth(before);
-    const afterWidth = displayWidth(after);
-    if (beforeWidth + afterWidth > maxTextWidth && maxTextWidth > 0) {
-      const targetBeforeWidth = Math.floor(maxTextWidth * 0.7);
-      displayBefore = beforeWidth > targetBeforeWidth ? sliceEndToFitWidth(before, targetBeforeWidth) : before;
-      const remaining = maxTextWidth - displayWidth(displayBefore);
-      displayAfter = sliceToFitWidth(after, Math.max(0, remaining));
-    }
-
-    const inputLine = `${promptPrefix}${displayBefore}${CURSOR_MARKER}${displayAfter}`;
-    const popupLines = renderCompletionPopup(store, width);
-    return [sep, inputLine, sep, ...popupLines];
-  }
-
-  const cursorEmbeddedLines = `${before}${CURSOR_MARKER}${after}`.split("\n");
+  const cursorEmbeddedText = `${before}${CURSOR_MARKER}${after}`;
+  const cursorEmbeddedLines = wrapInputTextWithCursor(cursorEmbeddedText, maxTextWidth, true);
   const inputLines = cursorEmbeddedLines.map(
     (line, index) => `${index === 0 ? promptPrefix : continuationPrefix}${line}`,
   );
-  const popupLines = renderCompletionPopup(store, width);
-  return [sep, ...inputLines, sep, ...popupLines];
+  const popupLines = renderCompletionPopup(store, editorWidth);
+  return [topSeparatorLine ?? sep, ...inputLines, bottomSeparatorLine ?? sep, ...popupLines];
+}
+
+function wrapInputTextWithCursor(text: string, maxTextWidth: number, includesCursorMarker: boolean): string[] {
+  const source = includesCursorMarker ? text : `${text}${CURSOR_MARKER}`;
+  const logicalLines = source.split("\n");
+  const wrapped: string[] = [];
+  for (const line of logicalLines) {
+    wrapped.push(...wrapLogicalLine(line, maxTextWidth));
+  }
+  if (!includesCursorMarker && wrapped.length > 0) {
+    const lastIndex = wrapped.length - 1;
+    wrapped[lastIndex] = wrapped[lastIndex].replace(CURSOR_MARKER, "");
+  }
+  return wrapped.length > 0 ? wrapped : [includesCursorMarker ? CURSOR_MARKER : ""];
+}
+
+function wrapLogicalLine(line: string, maxTextWidth: number): string[] {
+  if (line.length === 0) return [""];
+  const segments: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+
+  for (let i = 0; i < line.length; ) {
+    if (line.startsWith(CURSOR_MARKER, i)) {
+      current += CURSOR_MARKER;
+      i += CURSOR_MARKER.length;
+      continue;
+    }
+
+    const codePoint = line.codePointAt(i);
+    if (codePoint === undefined) break;
+    const ch = String.fromCodePoint(codePoint);
+    const chWidth = Math.max(0, displayWidth(ch));
+    const nextWidth = currentWidth + chWidth;
+
+    if (nextWidth > maxTextWidth && currentWidth > 0) {
+      segments.push(current);
+      current = ch;
+      currentWidth = chWidth;
+    } else {
+      current += ch;
+      currentWidth = nextWidth;
+    }
+
+    i += ch.length;
+  }
+
+  segments.push(current);
+  return segments;
 }
 
 function renderCompletionPopup(store: PromptStore, width: number): string[] {

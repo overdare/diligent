@@ -2,6 +2,7 @@
 import type { CompletionItem } from "../commands/registry";
 import type { Component, Focusable } from "../framework/types";
 import type { InputHistory } from "../input-history";
+import { t } from "../theme";
 import { handlePromptInput } from "./prompt-keymap";
 import { renderPromptEditor } from "./prompt-render";
 import { PromptStore } from "./prompt-store";
@@ -49,7 +50,13 @@ export class InputEditor implements Component, Focusable {
   }
 
   render(width: number): string[] {
-    return renderPromptEditor(this.store, width, this.options.prompt);
+    return renderPromptEditor(
+      this.store,
+      width,
+      this.options.prompt,
+      this.getTopSeparatorLine(width),
+      this.getBottomSeparatorLine(width),
+    );
   }
 
   handleInput(data: string): boolean {
@@ -64,6 +71,16 @@ export class InputEditor implements Component, Focusable {
   }
 
   invalidate(): void {}
+
+  private getTopSeparatorLine(width: number): string {
+    const editorWidth = Math.max(1, width - 1);
+    return `${t.dim}${"─".repeat(Math.max(0, editorWidth))}${t.reset}`;
+  }
+
+  private getBottomSeparatorLine(width: number): string {
+    const editorWidth = Math.max(1, width - 1);
+    return `${t.dim}${"─".repeat(Math.max(0, editorWidth))}${t.reset}`;
+  }
 
   clear(): void {
     this.store.clear();

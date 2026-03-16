@@ -548,6 +548,25 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(sim.screen.some((line) => line === "prompt> ")).toBe(true);
   });
 
+  test("viewport shrink redraw does not duplicate bottom status line", () => {
+    const { terminal, sim } = createSim(8, 120);
+    const statusLine = "chatgpt-5.3-codex · 0 / 300K (0%) · ~/git/diligent · thinking:low";
+    const container = new Container();
+    container.addChild(createStaticComponent(["history line"]));
+    container.addChild(createInputComponent());
+    container.addChild(createStaticComponent([statusLine]));
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    // Simulate terminal width shrink then redraw.
+    sim.columns = 90;
+    renderer.forceRender();
+
+    const duplicatedLines = sim.visibleLines().filter((line) => line.includes(statusLine));
+    expect(duplicatedLines.length).toBe(1);
+  });
+
   test("cursor stays on the next logical row when active content ends on wrap boundary", () => {
     const { terminal, sim } = createSim(6, 10);
     let chatLines = ["1234567890"]; // exactly fills one terminal row

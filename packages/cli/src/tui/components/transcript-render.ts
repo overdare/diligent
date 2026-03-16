@@ -35,7 +35,7 @@ export function renderTranscriptLiveStackBlocks(store: TranscriptStore, width: n
 
 export function renderTranscript(store: TranscriptStore, width: number): string[] {
   const liveStackLines = renderTranscriptLiveStack(store, width);
-  const { liveStackStatusLine, steeringLines, activeMarkdown, activeQuestion, separatorEvents } =
+  const { liveStackStatusLines, steeringLines, activeMarkdown, activeQuestion, separatorEvents } =
     renderTranscriptSections(store, width, { includeActiveMarkdown: false });
   const traceEnabled = debugLogger.isEnabled;
   const result = [...liveStackLines];
@@ -87,7 +87,7 @@ export function renderTranscript(store: TranscriptStore, width: number): string[
       separatorEvents: separatorEvents.slice(0, 80),
       itemCount: store.getItems().length,
       itemKinds,
-      hasLiveStackStatus: liveStackStatusLine !== null,
+      hasLiveStackStatus: liveStackStatusLines.length > 0,
       hasSteering: steeringLines.length > 0,
       hasActiveMarkdown: activeMarkdown !== null,
       hasActiveQuestion: activeQuestion !== null,
@@ -196,7 +196,7 @@ export function renderTranscriptSections(
   historyLines: string[];
   liveStackLines: string[];
   liveStackBlocks: RenderBlock[];
-  liveStackStatusLine: string | null;
+  liveStackStatusLines: string[];
   steeringLines: string[];
   activeMarkdown: MarkdownView | null;
   activeQuestion: (Component & { handleInput(data: string): void }) | null;
@@ -278,7 +278,7 @@ export function renderTranscriptSections(
 
   // Live Stack order is top -> bottom within the bottom pane so only that
   // mutable region needs redraw while committed transcript continues to append.
-  const liveStackStatusLine = store.renderLiveStackStatusLine();
+  const liveStackStatusLines = store.renderLiveStackStatusLines();
   const steeringLines = renderSteeringLines();
   const activeMarkdown = store.getActiveMarkdown();
   const activeQuestion = store.getActiveQuestion();
@@ -290,13 +290,13 @@ export function renderTranscriptSections(
       liveStackLines.push(...activeLines);
     }
   }
-  if (liveStackStatusLine) {
+  if (liveStackStatusLines.length > 0) {
     if (liveStackBlocks.length > 0) {
       liveStackBlocks.push({ key: "status-separator", lines: [""], persistence: "volatile" });
       pushSeparator(liveStackLines, "live:status");
     }
-    liveStackLines.push(liveStackStatusLine);
-    liveStackBlocks.push({ key: "status", lines: [liveStackStatusLine], persistence: "volatile" });
+    liveStackLines.push(...liveStackStatusLines);
+    liveStackBlocks.push({ key: "status", lines: [...liveStackStatusLines], persistence: "volatile" });
     if (store.shouldPadBelowLiveStatusLine()) {
       liveStackLines.push("");
       liveStackBlocks.push({ key: "status-bottom-padding", lines: [""], persistence: "volatile" });
@@ -321,7 +321,7 @@ export function renderTranscriptSections(
     historyLines,
     liveStackLines,
     liveStackBlocks,
-    liveStackStatusLine,
+    liveStackStatusLines,
     steeringLines,
     activeMarkdown,
     activeQuestion,

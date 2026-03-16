@@ -36,7 +36,6 @@ export function buildWelcomeBanner(args: {
     `${t.dim}╰${"─".repeat(boxWidth - 2)}╯${t.reset}`,
     "",
     `${t.dim}  Tip: /help · ctrl+o toggle tool details · ctrl+c cancel · ctrl+d exit${t.reset}`,
-    "",
   ];
 }
 

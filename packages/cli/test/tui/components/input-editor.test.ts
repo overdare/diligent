@@ -221,7 +221,7 @@ describe("InputEditor", () => {
     const { editor } = create();
     editor.setBusy(true);
     const lines = editor.render(80);
-    const inputLine = lines[1] ?? "";
+    const inputLine = lines.find((line) => line.includes(CURSOR_MARKER)) ?? "";
     const markerIndex = inputLine.indexOf(CURSOR_MARKER);
     const visiblePrefix = inputLine.slice(0, markerIndex).replace(/\x1b\[[0-9;]*m/g, "");
     expect(visiblePrefix).toBe("> ");

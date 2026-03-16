@@ -1,10 +1,27 @@
 // @summary Tests for status bar mode display and rendering
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { StatusBar } from "../../src/tui/components/status-bar";
 
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
+
+const originalRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "rows");
+
+function setTerminalRows(rows: number | undefined): void {
+  Object.defineProperty(process.stdout, "rows", {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: rows,
+  });
+}
+
+afterEach(() => {
+  if (originalRowsDescriptor) {
+    Object.defineProperty(process.stdout, "rows", originalRowsDescriptor);
+  }
+});
 
 describe("StatusBar context window display", () => {
   test("shows Xk / Yk (X%) format when contextWindow is set", () => {
@@ -30,6 +47,20 @@ describe("StatusBar context window display", () => {
 });
 
 describe("StatusBar mode hint (right side)", () => {
+  test("recomputes when terminal height changes between renders", () => {
+    const bar = new StatusBar();
+    bar.update({ model: "test-model", mode: "plan", status: "idle" });
+
+    setTerminalRows(24);
+    const first = bar.render(120);
+
+    setTerminalRows(40);
+    const second = bar.render(120);
+
+    expect(second).not.toBe(first);
+    expect(stripAnsi(second.join(""))).toContain("plan mode  (shift+tab to cycle)");
+  });
+
   test("mode 'default' shows no mode hint", () => {
     const bar = new StatusBar();
     bar.update({ model: "test-model", mode: "default", status: "idle" });
