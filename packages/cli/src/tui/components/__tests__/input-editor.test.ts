@@ -20,9 +20,9 @@ describe("InputEditor", () => {
   test("renders empty input with cursor", () => {
     const { editor } = create();
     const lines = editor.render(80);
-    expect(lines).toHaveLength(4); // blank + top separator + input line + bottom separator
-    expect(lines[2]).toContain(">");
-    expect(lines[2]).toContain(CURSOR_MARKER);
+    expect(lines).toHaveLength(3); // top separator + input line + bottom separator
+    expect(lines[1]).toContain(">");
+    expect(lines[1]).toContain(CURSOR_MARKER);
   });
 
   test("inserts printable characters", () => {
@@ -206,9 +206,9 @@ describe("InputEditor", () => {
     const { editor } = create();
     editor.setText("first\nsecond");
     const lines = editor.render(80);
-    expect(lines).toHaveLength(5); // blank + sep + 2 input lines + sep
-    expect(lines[2]).toContain("first");
-    expect(lines[3]).toContain("second");
+    expect(lines).toHaveLength(4); // sep + 2 input lines + sep
+    expect(lines[1]).toContain("first");
+    expect(lines[2]).toContain("second");
   });
 
   test("does not render steering lines in input area", () => {
@@ -221,7 +221,7 @@ describe("InputEditor", () => {
     const { editor } = create();
     editor.setBusy(true);
     const lines = editor.render(80);
-    const inputLine = lines[2] ?? "";
+    const inputLine = lines[1] ?? "";
     const markerIndex = inputLine.indexOf(CURSOR_MARKER);
     const visiblePrefix = inputLine.slice(0, markerIndex).replace(/\x1b\[[0-9;]*m/g, "");
     expect(visiblePrefix).toBe("> ");
@@ -352,8 +352,8 @@ describe("InputEditor", () => {
       const { editor } = createWithCompletion();
       editor.handleInput("/");
       const lines = editor.render(80);
-      // base 4 lines + 3 popup items
-      expect(lines).toHaveLength(7);
+      // base 3 lines + 3 popup items
+      expect(lines).toHaveLength(6);
     });
 
     test("popup filters as more characters are typed", () => {
@@ -361,23 +361,23 @@ describe("InputEditor", () => {
       editor.handleInput("/");
       editor.handleInput("h");
       const lines = editor.render(80);
-      // base 4 + 2 items (help, history)
-      expect(lines).toHaveLength(6);
+      // base 3 + 2 items (help, history)
+      expect(lines).toHaveLength(5);
     });
 
     test("up/down navigates selection index", () => {
       const { editor } = createWithCompletion();
       editor.handleInput("/");
-      // Layout: blank, sep, input, sep, popup items...
+      // Layout: sep, input, sep, popup items...
       // Initially selected index is 0
       let lines = editor.render(80);
-      expect(lines[4]).toContain("\u25b8"); // first item selected
-      expect(lines[4]).toContain("help");
+      expect(lines[3]).toContain("\u25b8"); // first item selected
+      expect(lines[3]).toContain("help");
 
       editor.handleInput("\x1b[B"); // down
       lines = editor.render(80);
-      expect(lines[5]).toContain("\u25b8"); // second item selected
-      expect(lines[5]).toContain("history");
+      expect(lines[4]).toContain("\u25b8"); // second item selected
+      expect(lines[4]).toContain("history");
     });
 
     test("tab accepts completion and fills text with trailing space", () => {
@@ -405,15 +405,15 @@ describe("InputEditor", () => {
       editor.handleInput("\x1b"); // escape
       expect(editor.getText()).toBe("/h");
       const lines = editor.render(80);
-      // base 4 lines, no popup
-      expect(lines).toHaveLength(4);
+      // base 3 lines, no popup
+      expect(lines).toHaveLength(3);
     });
 
     test("popup hidden when text does not start with /", () => {
       const { editor } = createWithCompletion();
       editor.handleInput("h");
       const lines = editor.render(80);
-      expect(lines).toHaveLength(4);
+      expect(lines).toHaveLength(3);
     });
 
     test("popup hidden after space in input", () => {
@@ -425,8 +425,8 @@ describe("InputEditor", () => {
       editor.handleInput("p");
       editor.handleInput(" ");
       const lines = editor.render(80);
-      // base 4 lines, no popup (space dismisses it)
-      expect(lines).toHaveLength(4);
+      // base 3 lines, no popup (space dismisses it)
+      expect(lines).toHaveLength(3);
     });
 
     test("popup hidden for // prefix", () => {
@@ -434,7 +434,7 @@ describe("InputEditor", () => {
       editor.handleInput("/");
       editor.handleInput("/");
       const lines = editor.render(80);
-      expect(lines).toHaveLength(4);
+      expect(lines).toHaveLength(3);
     });
 
     test("up at top of list stays at top", () => {
@@ -442,8 +442,8 @@ describe("InputEditor", () => {
       editor.handleInput("/");
       editor.handleInput("\x1b[A"); // up when already at index 0
       const lines = editor.render(80);
-      expect(lines[4]).toContain("\u25b8");
-      expect(lines[4]).toContain("help");
+      expect(lines[3]).toContain("\u25b8");
+      expect(lines[3]).toContain("help");
     });
 
     test("down at bottom of list stays at bottom", () => {
@@ -453,16 +453,16 @@ describe("InputEditor", () => {
       editor.handleInput("\x1b[B"); // model
       editor.handleInput("\x1b[B"); // try to go past end
       const lines = editor.render(80);
-      expect(lines[6]).toContain("\u25b8");
-      expect(lines[6]).toContain("model");
+      expect(lines[5]).toContain("\u25b8");
+      expect(lines[5]).toContain("model");
     });
 
     test("popup renders correct number of lines", () => {
       const { editor } = createWithCompletion();
       editor.handleInput("/");
       const lines = editor.render(80);
-      // blank + 3 popup items + top sep + input line + bottom sep = 7
-      expect(lines).toHaveLength(7);
+      // 3 popup items + top sep + input line + bottom sep = 6
+      expect(lines).toHaveLength(6);
     });
   });
 });
