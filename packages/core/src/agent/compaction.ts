@@ -166,10 +166,6 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     input.compactionConfig.keepRecentTokens,
   );
   const tokensBefore = estimateTokens(input.messages);
-  const recentUserTokens = estimateTokens(recentUserMessages);
-  console.info(
-    `[compaction:debug] run=start session=${input.sessionId ?? "-"} provider=${input.model.provider} model=${input.model.id} messages=${input.messages.length} summarize_messages=${messagesToSummarize.length} recent_user_messages=${recentUserMessages.length} tokens_before=${tokensBefore} keep_recent_tokens=${input.compactionConfig.keepRecentTokens} recent_user_tokens=${recentUserTokens}`,
-  );
   input.stream.emit({ type: "compaction_start", estimatedTokens: tokensBefore });
   const result = await llmCompact({
     model: input.model,
@@ -184,9 +180,6 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
   const summary = `${COMPACTION_SUMMARY_PREFIX}\n\n${result}`;
   const messages = buildMessagesFromCompaction(recentUserMessages, summary, Date.now());
   const tokensAfter = estimateTokens(messages);
-  console.info(
-    `[compaction:debug] run=end session=${input.sessionId ?? "-"} provider=${input.model.provider} model=${input.model.id} tokens_before=${tokensBefore} tokens_after=${tokensAfter} summary_chars=${summary.length}`,
-  );
   input.stream.emit({
     type: "compaction_end",
     tokensBefore: tokensBefore,

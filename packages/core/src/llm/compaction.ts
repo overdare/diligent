@@ -165,29 +165,11 @@ export async function compact(input: LLMCompactInput): Promise<string> {
         signal: input.signal,
       });
       if (nativeResult.status === "ok") {
-        console.info(
-          `[compaction:debug] native_compaction=ok provider=${input.model.provider} model=${input.model.id} session=${input.sessionId ?? "-"}`,
-        );
         return nativeResult.summary.trim();
       }
-      console.info(
-        `[compaction:debug] native_compaction=unsupported provider=${input.model.provider} model=${input.model.id} session=${input.sessionId ?? "-"} reason=${nativeResult.reason ?? "-"}`,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.info(
-        `[compaction:debug] native_compaction=error provider=${input.model.provider} model=${input.model.id} session=${input.sessionId ?? "-"} error=${message}`,
-      );
-    }
-  } else {
-    console.info(
-      `[compaction:debug] native_compaction=missing provider=${input.model.provider} model=${input.model.id} session=${input.sessionId ?? "-"}`,
-    );
+    } catch {}
   }
 
-  console.info(
-    `[compaction:debug] fallback_compaction=local provider=${input.model.provider} model=${input.model.id} session=${input.sessionId ?? "-"}`,
-  );
   const streamFunction = input.streamFn ?? resolveStream(input.model.provider as ProviderName);
   const local = await compactMessages(
     input.messages,

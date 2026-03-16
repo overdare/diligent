@@ -141,16 +141,10 @@ async function compactIfNeeded(
 ): Promise<void> {
   const config = request.config.compaction;
   if (!config) {
-    console.info(
-      `[compaction:debug] decision=skip reason=config_missing session=${request.sessionId ?? "-"} provider=${request.config.model.provider} model=${request.config.model.id}`,
-    );
     return;
   }
 
   const decision = getCompactionDecision(messages, request.config.model.contextWindow, config.reservePercent);
-  console.info(
-    `[compaction:debug] decision=${decision.shouldCompact ? "run" : "skip"} reason=${decision.shouldCompact ? "threshold_exceeded" : "below_threshold"} session=${request.sessionId ?? "-"} provider=${request.config.model.provider} model=${request.config.model.id} messages=${messages.length} estimated_tokens=${decision.estimatedTokens} token_source=${decision.source} context_window=${request.config.model.contextWindow} reserve_percent=${config.reservePercent} reserve_tokens=${decision.reserveTokens} threshold_tokens=${decision.thresholdTokens} keep_recent_tokens=${config.keepRecentTokens}`,
-  );
   if (!decision.shouldCompact) return;
 
   const result = await runCompaction({
