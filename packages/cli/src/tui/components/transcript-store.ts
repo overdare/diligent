@@ -13,19 +13,13 @@ function formatTokensRoundedK(n: number): string {
   return `${Math.round(n / 1000)}k`;
 }
 
-function formatToolElapsed(ms: number): string | null {
-  if (ms < 500) return null;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
-}
-
-function formatThoughtElapsed(ms: number): string {
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
+function formatElapsedSeconds(ms: number): string | null {
+  if (ms < 1000) return null;
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
 function getWorkingSpinnerFrame(nowMs: number): string {
@@ -121,9 +115,12 @@ export type TranscriptItem =
     }
   | UserMessageView;
 
+type OverlayStatusKind = "default" | "tool";
+
 type OverlayStatus = {
   message: string;
   startedAt: number;
+  kind: OverlayStatusKind;
 };
 
 export interface TranscriptStoreOptions {
@@ -141,6 +138,7 @@ export class TranscriptStore {
   private isThreadBusy = false;
   private busyStartedAt: number | null = null;
   private statusBlinkVisible = true;
+  private statusBlinkStartedAt = Date.now();
   private statusBlinkTimer: ReturnType<typeof setInterval> | null = null;
   private statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private lastUsage: { input: number; output: number; cost: number } | null = null;
@@ -191,14 +189,24 @@ export class TranscriptStore {
   renderLiveStackStatusLines(): string[] {
     const lines: string[] = [];
     const nowMs = Date.now();
-    const overlayDot = this.statusBlinkVisible ? `${t.dim}⏺${t.reset}` : `${t.dim} ${t.reset}`;
-
     if (this.overlayStatus) {
+      const overlayDot =
+        this.overlayStatus.kind === "tool"
+          ? this.statusBlinkVisible
+            ? `${t.text}⏺${t.reset}`
+            : `${t.text} ${t.reset}`
+          : this.statusBlinkVisible
+            ? `${t.dim}⏺${t.reset}`
+            : `${t.dim} ${t.reset}`;
+      const message =
+        this.overlayStatus.kind === "tool"
+          ? `${t.text}${this.overlayStatus.message}${t.reset}`
+          : this.overlayStatus.message;
       if (this.isCompleteStatusMessage(this.overlayStatus.message)) {
-        lines.push(`${overlayDot} ${this.overlayStatus.message}`);
+        lines.push(`${overlayDot} ${message}`);
       } else {
-        const overlayElapsed = formatThoughtElapsed(nowMs - this.overlayStatus.startedAt);
-        lines.push(`${overlayDot} ${this.overlayStatus.message} ${t.dim}(${overlayElapsed})${t.reset}`);
+        const overlayElapsed = formatElapsedSeconds(nowMs - this.overlayStatus.startedAt) ?? "0s";
+        lines.push(`${overlayDot} ${message} ${t.dim}(${overlayElapsed})${t.reset}`);
       }
     }
 
@@ -257,7 +265,7 @@ export class TranscriptStore {
         this.toolCallInputs.set(event.toolCallId, event.input);
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning…" : "Updating plan…";
-          this.startOverlayStatus(label);
+          this.startOverlayStatus(label, "tool");
         } else if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const inp = event.input as Record<string, unknown> | null;
           let spinnerLabel = event.toolName;
@@ -284,9 +292,9 @@ export class TranscriptStore {
             spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
           }
           this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel, prompt });
-          this.startOverlayStatus(spinnerLabel);
+          this.startOverlayStatus(spinnerLabel, "tool");
         } else {
-          this.startOverlayStatus(event.toolName);
+          this.startOverlayStatus(event.toolName, "tool");
         }
         break;
       case "tool_update":
@@ -296,7 +304,7 @@ export class TranscriptStore {
             this.setOverlayStatusMessage(`${state.label} — ${event.partialResult}`);
           }
         } else {
-          this.setOverlayStatusMessage(`${event.toolName}…`);
+          this.startOverlayStatus(`${event.toolName}…`, "tool");
         }
         break;
       case "tool_end":
@@ -422,7 +430,7 @@ export class TranscriptStore {
     const icon = `${t.success}⏺${t.reset}`;
     const header =
       elapsedMs !== undefined
-        ? `${icon} ${t.bold}Thought for ${formatThoughtElapsed(elapsedMs)}${t.reset}`
+        ? `${icon} ${t.bold}Thought for ${formatElapsedSeconds(elapsedMs) ?? "0s"}${t.reset}`
         : `${icon} ${t.bold}Thought${t.reset}`;
     this.items.push({ kind: "thinking", header, bodyLines: splitThoughtLines(text) });
     this.options.requestRender();
@@ -541,7 +549,7 @@ export class TranscriptStore {
     this.toolStartTimes.delete(event.toolCallId);
     const toolInput = this.toolCallInputs.get(event.toolCallId);
     this.toolCallInputs.delete(event.toolCallId);
-    const elapsedVal = startTime !== undefined ? formatToolElapsed(Date.now() - startTime) : null;
+    const elapsedVal = startTime !== undefined ? formatElapsedSeconds(Date.now() - startTime) : null;
     const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
     const renderPayload: ToolRenderPayload | undefined =
       toProtocolRenderPayload(event.render) ??
@@ -647,22 +655,25 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
-  private startOverlayStatus(message: string): void {
+  private startOverlayStatus(message: string, kind: OverlayStatusKind = "default"): void {
     if (this.overlayStatus === null) {
       this.overlayStatus = {
         message,
         startedAt: Date.now(),
+        kind,
       };
       this.ensureStatusTimers();
       this.options.requestRender();
       return;
     }
 
-    const changed = this.overlayStatus.message !== message;
+    const changed = this.overlayStatus.message !== message || this.overlayStatus.kind !== kind;
     this.overlayStatus.message = message;
+    this.overlayStatus.kind = kind;
     if (changed) {
       this.overlayStatus.startedAt = Date.now();
       this.statusBlinkVisible = true;
+      this.statusBlinkStartedAt = Date.now();
     }
     this.ensureStatusTimers();
     this.options.requestRender();
@@ -708,15 +719,16 @@ export class TranscriptStore {
     if (this.statusBlinkTimer === null) {
       this.statusBlinkTimer = setInterval(() => {
         if (!this.hasVisibleStatus()) return;
-        this.statusBlinkVisible = !this.statusBlinkVisible;
+        const phaseMs = (Date.now() - this.statusBlinkStartedAt) % 1500;
+        this.statusBlinkVisible = phaseMs < 1000;
         this.options.requestRender();
-      }, 500);
+      }, 100);
     }
     if (this.statusRefreshTimer === null) {
       this.statusRefreshTimer = setInterval(() => {
         if (!this.hasVisibleStatus()) return;
         this.options.requestRender();
-      }, 150);
+      }, 120);
     }
   }
 
@@ -731,5 +743,6 @@ export class TranscriptStore {
       this.statusRefreshTimer = null;
     }
     this.statusBlinkVisible = true;
+    this.statusBlinkStartedAt = Date.now();
   }
 }
