@@ -201,6 +201,49 @@ function renderListItem(parser: Renderer["parser"], item: ListItemToken, marker:
   return nested ? `${marker} ${taskPrefix}${first}\n${nested}` : `${marker} ${taskPrefix}${first}`;
 }
 
+function endsWithListBlock(rendered: string): boolean {
+  const trimmed = rendered.trimEnd();
+  if (!trimmed) {
+    return false;
+  }
+
+  const lines = trimmed.split("\n");
+  let index = lines.length - 1;
+  let sawListItem = false;
+
+  while (index >= 0) {
+    const plainLine = stripAnsi(lines[index] ?? "").trimEnd();
+    if (plainLine.length === 0) {
+      break;
+    }
+
+    if (/^\s*(?:[-*+]|\d+\.)\s+/.test(plainLine)) {
+      sawListItem = true;
+      index -= 1;
+      continue;
+    }
+
+    if (sawListItem && /^\s+/.test(plainLine)) {
+      index -= 1;
+      continue;
+    }
+
+    return false;
+  }
+
+  return sawListItem;
+}
+
+function finalizeRenderedMarkdown(rendered: string): string {
+  const collapsed = applyGfmPostProcessing(rendered).replace(/\n{3,}/g, "\n\n");
+  const trimmed = collapsed.trimEnd();
+  if (!trimmed) {
+    return "";
+  }
+
+  return endsWithListBlock(collapsed) ? `${trimmed}\n` : trimmed;
+}
+
 function terminalHyperlink(label: string, href: string): string {
   const safeHref = href.trim();
   if (!safeHref) {
@@ -441,10 +484,7 @@ const marked = new Marked({ renderer, async: false });
 export function renderMarkdown(text: string, width: number): string {
   try {
     const result = marked.parse(text) as string;
-    const postProcessed = applyGfmPostProcessing(result)
-      .replace(/\n{3,}/g, "\n\n")
-      .trimEnd();
-    return wrapRenderedText(postProcessed, width);
+    return wrapRenderedText(finalizeRenderedMarkdown(result), width);
   } catch {
     return text;
   }

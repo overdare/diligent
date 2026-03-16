@@ -67,6 +67,12 @@ describe("renderMarkdown", () => {
     expect(result).not.toContain("- a\n\n- b");
   });
 
+  test("keeps exactly one trailing blank line after the final bullet item", () => {
+    const result = stripAnsi(renderMarkdown("- a\n- b\n- c", 80));
+    expect(result.endsWith("- c\n")).toBe(true);
+    expect(result.endsWith("- c\n\n")).toBe(false);
+  });
+
   test("keeps continuation indentation for wrapped bullet items", () => {
     const source = "- This bullet line is intentionally long so it wraps on narrow terminal widths.";
     const result = stripAnsi(renderMarkdown(source, 24));

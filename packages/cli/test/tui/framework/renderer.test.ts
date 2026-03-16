@@ -174,7 +174,9 @@ function createSim(rows = 24, columns = 80): { terminal: Terminal; sim: Terminal
     },
     clearLine() {},
     clearFromCursor() {},
-    clearScreen() {},
+    clearScreen() {
+      sim.feed("\x1b[2J\x1b[H");
+    },
     moveBy() {},
     start() {},
     stop() {},
@@ -567,6 +569,32 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(duplicatedLines.length).toBe(1);
   });
 
+  test("viewport redraw replays persistent history before bottom input pane", () => {
+    const { terminal, sim } = createSim(8, 80);
+    const container = new Container();
+    const historyComponent: Component = {
+      render: () => ["welcome line", "older message"],
+      renderBlocks: () => [{ key: "history", lines: ["welcome line", "older message"], persistence: "persistent" }],
+      invalidate: () => {},
+    };
+    container.addChild(historyComponent);
+    container.addChild(createInputComponent());
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    expect(sim.lineAt(0)).toBe("welcome line");
+    expect(sim.lineAt(2)).toBe("prompt> ");
+
+    sim.columns = 60;
+    renderer.forceRender();
+
+    expect(sim.lineAt(0)).toBe("welcome line");
+    expect(sim.lineAt(1)).toBe("older message");
+    expect(sim.lineAt(2)).toBe("prompt> ");
+    expect(sim.cursorRow).toBe(2);
+  });
+
   test("cursor stays on the next logical row when active content ends on wrap boundary", () => {
     const { terminal, sim } = createSim(6, 10);
     let chatLines = ["1234567890"]; // exactly fills one terminal row
@@ -685,7 +713,9 @@ describe("TUIRenderer — original tests", () => {
       moveCursorTo(_row: number, _col: number) {},
       clearLine() {},
       clearFromCursor() {},
-      clearScreen() {},
+      clearScreen() {
+        output.push("CLEAR_SCREEN");
+      },
       moveBy(_lines: number) {},
       start() {},
       stop() {},

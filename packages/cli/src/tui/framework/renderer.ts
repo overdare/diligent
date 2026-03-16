@@ -316,6 +316,8 @@ export class TUIRenderer {
 
     if (viewportChanged) {
       this.terminal.clearScreen();
+      this.persistentFlushedCounts.clear();
+      this.overflowFlushedCounts.clear();
       this.lastActiveRows = 0;
       this.lastCursorRowInActive = 0;
     }
