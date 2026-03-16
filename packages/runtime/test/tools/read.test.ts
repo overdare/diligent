@@ -34,6 +34,8 @@ describe("read tool", () => {
     expect(result.output).toContain("1\tline one");
     expect(result.output).toContain("2\tline two");
     expect(result.output).toContain("3\tline three");
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "file", filePath });
     expect(result.truncateDirection).toBe("head");
   });
 
@@ -62,6 +64,7 @@ describe("read tool", () => {
   test("returns error for missing file", async () => {
     const result = await tool.execute({ file_path: join(tmpDir, "nonexistent.txt") }, makeCtx());
     expect(result.output).toContain("Error: File not found");
+    expect(result.render?.blocks[0]).toMatchObject({ type: "text", title: "Output" });
     expect(result.metadata?.error).toBe(true);
   });
 

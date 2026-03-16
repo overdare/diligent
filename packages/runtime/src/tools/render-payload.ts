@@ -1,9 +1,23 @@
-// @summary Runtime utility deriving ToolRenderPayload from tool name/input/output for unified Web/TUI rendering
+// @summary Runtime helpers for generic text payloads and tool-specific producer render block builders
 
 import type { DiffFile, ToolRenderPayload } from "@diligent/protocol";
 
-export interface DeriveToolRenderPayloadOptions {
+export interface SearchRenderPayloadOptions {
   cwd?: string;
+}
+
+export interface SearchRenderInput {
+  pattern?: string;
+  path?: string;
+}
+
+export interface UpdateKnowledgeRenderInput {
+  action?: string;
+  id?: string;
+  type?: string;
+  content?: string;
+  confidence?: number;
+  tags?: string[];
 }
 
 export function summarizeRenderText(text: string | undefined, maxLength = 80): string | undefined {
@@ -24,299 +38,229 @@ export function createTextRenderPayload(
   const inputSummary = summarizeRenderText(inputText);
   const outputSummary = summarizeRenderText(outputText);
   const blocks: ToolRenderPayload["blocks"] = [];
-  if (inputText?.trim()) {
-    blocks.push({ type: "text", title: "Input", text: inputText });
-  }
-  if (outputText?.trim()) {
-    blocks.push({ type: "text", title: "Output", text: outputText, isError });
-  }
+  if (inputText?.trim()) blocks.push({ type: "text", title: "Input", text: inputText });
+  if (outputText?.trim()) blocks.push({ type: "text", title: "Output", text: outputText, isError });
   if (!inputSummary && !outputSummary && blocks.length === 0) return undefined;
+  return { version: 2, inputSummary, outputSummary, blocks };
+}
+
+export function createCommandRenderPayload(command: string, outputText: string, isError: boolean): ToolRenderPayload {
   return {
     version: 2,
-    inputSummary,
-    outputSummary,
+    inputSummary: summarizeRenderText(command, 120),
+    outputSummary: summarizeRenderText(outputText, 120),
+    blocks: [{ type: "command", command, output: outputText || undefined, isError }],
+  };
+}
+
+export function createFileRenderPayload(args: {
+  filePath: string;
+  content?: string;
+  offset?: number;
+  limit?: number;
+  isError?: boolean;
+  outputText?: string;
+}): ToolRenderPayload {
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(args.filePath),
+    outputSummary: summarizeRenderText(args.outputText),
+    blocks: [
+      {
+        type: "file",
+        filePath: args.filePath,
+        content: args.content,
+        offset: args.offset,
+        limit: args.limit,
+        isError: args.isError,
+      },
+    ],
+  };
+}
+
+export function createEditDiffRenderPayload(args: {
+  filePath: string;
+  oldString?: string;
+  newString?: string;
+  outputText: string;
+}): ToolRenderPayload {
+  const action = args.oldString === "" ? ("Add" as const) : undefined;
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(args.filePath),
+    outputSummary: summarizeRenderText(args.outputText),
+    blocks: [
+      {
+        type: "diff",
+        files: [
+          {
+            filePath: args.filePath,
+            action,
+            hunks: [{ oldString: args.oldString || undefined, newString: args.newString }],
+          },
+        ],
+        output: args.outputText.split("\n")[0] || undefined,
+      },
+    ],
+  };
+}
+
+export function createMultiEditDiffRenderPayload(args: {
+  filePath: string;
+  edits: Array<{ old_string: string; new_string: string }>;
+  outputText: string;
+}): ToolRenderPayload {
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(args.filePath),
+    outputSummary: summarizeRenderText(args.outputText),
+    blocks: [
+      {
+        type: "diff",
+        files: [
+          {
+            filePath: args.filePath,
+            hunks: args.edits.map((edit) => ({ oldString: edit.old_string || undefined, newString: edit.new_string })),
+          },
+        ],
+        output: args.outputText.split("\n")[0] || undefined,
+      },
+    ],
+  };
+}
+
+export function createPatchDiffRenderPayload(patch: string, outputText: string): ToolRenderPayload | undefined {
+  const files = parsePatchForRender(patch);
+  if (files.length === 0) return undefined;
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(patch, 120),
+    outputSummary: summarizeRenderText(outputText),
+    blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
+  };
+}
+
+export function createGlobRenderPayload(
+  input: SearchRenderInput,
+  outputText: string,
+  options?: SearchRenderPayloadOptions,
+): ToolRenderPayload {
+  const basePath = readAbsolutePath(input.path);
+  const pattern = readTrimmedString(input.pattern);
+  const searchPath = readTrimmedString(input.path);
+  const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
+  const rawItems = toOutputLines(outputText);
+  const items = relativizeGlobOutputLines(rawItems, basePath);
+  const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
+  debugRenderPayload("glob_paths", {
+    basePath: basePath ?? null,
+    itemCount: items.length,
+    changedCount: countChangedItems(rawItems, items),
+    sampleBefore: rawItems.slice(0, 3),
+    sampleAfter: items.slice(0, 3),
+  });
+
+  const blocks: ToolRenderPayload["blocks"] = [
+    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+    { type: "list", title: buildFoundTitle(items.length, "file"), items },
+  ];
+  if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
+    outputSummary: summarizeRenderText(outputText),
     blocks,
   };
 }
 
-export function deriveToolRenderPayload(
-  toolName: string,
-  input: unknown,
+export function createGrepRenderPayload(
+  input: SearchRenderInput,
   outputText: string,
-  isError: boolean,
-  options?: DeriveToolRenderPayloadOptions,
-): ToolRenderPayload | undefined {
-  const name = toolName.toLowerCase();
-  const parsed = toRecord(input);
-  debugRenderPayload("start", {
-    toolName,
-    normalizedName: name,
-    inputKeys: parsed ? Object.keys(parsed).sort() : [],
-    outputLines: outputText ? outputText.split("\n").length : 0,
-    isError,
+  options?: SearchRenderPayloadOptions,
+): ToolRenderPayload {
+  const basePath = readAbsolutePath(input.path);
+  const pattern = readTrimmedString(input.pattern);
+  const searchPath = readTrimmedString(input.path);
+  const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
+  const rawItems = toOutputLines(outputText);
+  const relativizedItems = relativizeGrepOutputLines(rawItems, basePath);
+  const items = relativizedItems.filter((line) => !line.startsWith("..."));
+  const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
+  debugRenderPayload("grep_paths", {
+    basePath: basePath ?? null,
+    rawCount: rawItems.length,
+    itemCount: items.length,
+    changedCount: countChangedItems(rawItems, relativizedItems),
+    sampleBefore: rawItems.slice(0, 3),
+    sampleAfter: relativizedItems.slice(0, 3),
   });
 
-  if (name === "bash" && parsed) {
-    const command = typeof parsed.command === "string" ? parsed.command : undefined;
-    if (command) {
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(command, 120),
-        outputSummary: summarizeRenderText(outputText, 120),
-        blocks: [{ type: "command", command, output: outputText || undefined, isError }],
-      };
-    }
+  const blocks: ToolRenderPayload["blocks"] = [
+    { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
+    { type: "list", title: buildFoundTitle(items.length, "match"), items },
+  ];
+  if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
+    outputSummary: summarizeRenderText(outputText),
+    blocks,
+  };
+}
+
+export function createListRenderPayload(outputText: string): ToolRenderPayload | undefined {
+  const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
+  if (items.length === 0) return undefined;
+  return { version: 2, outputSummary: summarizeRenderText(outputText), blocks: [{ type: "list", items }] };
+}
+
+export function createUpdateKnowledgeRenderPayload(
+  input: UpdateKnowledgeRenderInput,
+  outputText: string,
+  isError: boolean,
+): ToolRenderPayload | undefined {
+  const actionValue = typeof input.action === "string" ? input.action : "upsert";
+  const action = actionValue === "delete" ? "delete" : "upsert";
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  const typeValue = typeof input.type === "string" ? input.type.trim() : "";
+  const content = typeof input.content === "string" ? input.content : "";
+  const confidenceValue =
+    typeof input.confidence === "number" && Number.isFinite(input.confidence) ? input.confidence.toFixed(2) : "";
+  const tags = Array.isArray(input.tags)
+    ? input.tags
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
+
+  const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " ").trim(), 140) : "";
+  const items = [
+    { key: "action", value: action },
+    ...(id ? [{ key: "id", value: id }] : []),
+    ...(typeValue ? [{ key: "type", value: typeValue }] : []),
+    ...(confidenceValue ? [{ key: "confidence", value: confidenceValue }] : []),
+    ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
+    ...(tags.length > 0 ? [{ key: "tags", value: tags.join(", ") }] : []),
+  ];
+
+  const outputSummary = outputText
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  const blocks: ToolRenderPayload["blocks"] = [];
+  if (items.length > 0) blocks.push({ type: "key_value", items });
+  if (tags.length > 0) {
+    blocks.push({ type: "status_badges", title: "Tags", items: tags.map((tag) => ({ label: tag })) });
   }
+  if (outputSummary) blocks.push({ type: "summary", text: outputSummary, tone: isError ? "danger" : "success" });
+  if (blocks.length === 0) return undefined;
 
-  if (name === "read" && parsed) {
-    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
-    if (filePath) {
-      const rawContent = outputText
-        .split("\n")
-        .map((line) => line.replace(/^\s*\d+\t/, ""))
-        .join("\n");
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(filePath),
-        outputSummary: summarizeRenderText(outputText),
-        blocks: [
-          {
-            type: "file",
-            filePath,
-            content: rawContent || undefined,
-            offset: typeof parsed.offset === "number" ? parsed.offset : undefined,
-            limit: typeof parsed.limit === "number" ? parsed.limit : undefined,
-            isError,
-          },
-        ],
-      };
-    }
-  }
-
-  if (name === "write" && parsed) {
-    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
-    const content = typeof parsed.content === "string" ? parsed.content : undefined;
-    if (filePath) {
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(filePath),
-        outputSummary: summarizeRenderText(outputText),
-        blocks: [{ type: "file", filePath, content, isError }],
-      };
-    }
-  }
-
-  if (name === "edit" && parsed) {
-    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
-    const oldString = typeof parsed.old_string === "string" ? parsed.old_string : undefined;
-    const newString = typeof parsed.new_string === "string" ? parsed.new_string : undefined;
-    if (filePath) {
-      const action = oldString === "" ? ("Add" as const) : undefined;
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(filePath),
-        outputSummary: summarizeRenderText(outputText),
-        blocks: [
-          {
-            type: "diff",
-            files: [{ filePath, action, hunks: [{ oldString: oldString || undefined, newString }] }],
-            output: outputText.split("\n")[0] || undefined,
-          },
-        ],
-      };
-    }
-  }
-
-  if ((name === "multi_edit" || name === "multiedit") && parsed) {
-    const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
-    const edits = Array.isArray(parsed.edits) ? parsed.edits : undefined;
-    if (filePath && edits) {
-      const hunks = edits
-        .map((edit) => toRecord(edit))
-        .filter((edit): edit is Record<string, unknown> => !!edit)
-        .map((edit) => ({
-          oldString: typeof edit.old_string === "string" ? edit.old_string : undefined,
-          newString: typeof edit.new_string === "string" ? edit.new_string : undefined,
-        }));
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(filePath),
-        outputSummary: summarizeRenderText(outputText),
-        blocks: [
-          {
-            type: "diff",
-            files: [{ filePath, hunks }],
-            output: outputText.split("\n")[0] || undefined,
-          },
-        ],
-      };
-    }
-  }
-
-  if (name === "apply_patch" && parsed) {
-    const patch = typeof parsed.patch === "string" ? parsed.patch : undefined;
-    if (patch) {
-      const files = parsePatchForRender(patch);
-      if (files.length > 0) {
-        return {
-          version: 2,
-          inputSummary: summarizeRenderText(patch, 120),
-          outputSummary: summarizeRenderText(outputText),
-          blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
-        };
-      }
-    }
-  }
-
-  if (name === "glob") {
-    const basePath = readAbsolutePathFromInput(parsed, "path");
-    const pattern = readStringFromInput(parsed, "pattern");
-    const searchPath = readStringFromInput(parsed, "path");
-    const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
-    const rawItems = toOutputLines(outputText);
-    const items = relativizeGlobOutputLines(rawItems, basePath);
-    const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
-    debugRenderPayload("glob_paths", {
-      basePath: basePath ?? null,
-      itemCount: items.length,
-      changedCount: countChangedItems(rawItems, items),
-      sampleBefore: rawItems.slice(0, 3),
-      sampleAfter: items.slice(0, 3),
-    });
-
-    const blocks: ToolRenderPayload["blocks"] = [
-      { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
-      { type: "list", title: buildFoundTitle(items.length, "file"), items },
-    ];
-    if (queryItems.length > 0) {
-      blocks.push({ type: "key_value", title: "Query", items: queryItems });
-    }
-    return {
-      version: 2,
-      inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
-      outputSummary: summarizeRenderText(outputText),
-      blocks,
-    };
-  }
-
-  if (name === "ls") {
-    const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
-    if (items.length > 0) {
-      return {
-        version: 2,
-        outputSummary: summarizeRenderText(outputText),
-        blocks: [{ type: "list", items }],
-      };
-    }
-  }
-
-  if (name === "grep") {
-    const basePath = readAbsolutePathFromInput(parsed, "path");
-    const pattern = readStringFromInput(parsed, "pattern");
-    const searchPath = readStringFromInput(parsed, "path");
-    const displaySearchPath = relativizePathAgainstCwd(searchPath, options?.cwd);
-    const rawItems = toOutputLines(outputText);
-    const relativizedItems = relativizeGrepOutputLines(rawItems, basePath);
-    const items = relativizedItems.filter((line) => !line.startsWith("..."));
-    const queryItems = buildQueryItems({ pattern, path: displaySearchPath });
-    debugRenderPayload("grep_paths", {
-      basePath: basePath ?? null,
-      rawCount: rawItems.length,
-      itemCount: items.length,
-      changedCount: countChangedItems(rawItems, relativizedItems),
-      sampleBefore: rawItems.slice(0, 3),
-      sampleAfter: relativizedItems.slice(0, 3),
-    });
-
-    const blocks: ToolRenderPayload["blocks"] = [
-      { type: "summary", text: buildSearchSummary(pattern, displaySearchPath), tone: "info" },
-      { type: "list", title: buildFoundTitle(items.length, "match"), items },
-    ];
-    if (queryItems.length > 0) {
-      blocks.push({ type: "key_value", title: "Query", items: queryItems });
-    }
-    return {
-      version: 2,
-      inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
-      outputSummary: summarizeRenderText(outputText),
-      blocks,
-    };
-  }
-
-  if (name === "update_knowledge" && parsed) {
-    const actionValue = typeof parsed.action === "string" ? parsed.action : "upsert";
-    const action = actionValue === "delete" ? "delete" : "upsert";
-    const id = typeof parsed.id === "string" ? parsed.id.trim() : "";
-    const typeValue = typeof parsed.type === "string" ? parsed.type.trim() : "";
-    const content = typeof parsed.content === "string" ? parsed.content : "";
-    const confidenceValue =
-      typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence) ? parsed.confidence.toFixed(2) : "";
-    const tags = Array.isArray(parsed.tags)
-      ? parsed.tags
-          .map((value) => String(value).trim())
-          .filter(Boolean)
-          .slice(0, 10)
-      : [];
-
-    const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " ").trim(), 140) : "";
-
-    const items = [
-      { key: "action", value: action },
-      ...(id ? [{ key: "id", value: id }] : []),
-      ...(typeValue ? [{ key: "type", value: typeValue }] : []),
-      ...(confidenceValue ? [{ key: "confidence", value: confidenceValue }] : []),
-      ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
-      ...(tags.length > 0 ? [{ key: "tags", value: tags.join(", ") }] : []),
-    ];
-
-    const outputSummary = outputText
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean);
-    const blocks: ToolRenderPayload["blocks"] = [];
-
-    if (items.length > 0) {
-      blocks.push({ type: "key_value", items });
-    }
-
-    if (tags.length > 0) {
-      blocks.push({
-        type: "status_badges",
-        title: "Tags",
-        items: tags.map((tag) => ({ label: tag })),
-      });
-    }
-
-    if (outputSummary) {
-      blocks.push({
-        type: "summary",
-        text: outputSummary,
-        tone: isError ? "danger" : "success",
-      });
-    }
-
-    if (blocks.length > 0) {
-      return {
-        version: 2,
-        inputSummary: summarizeRenderText(action),
-        outputSummary: summarizeRenderText(outputSummary),
-        blocks,
-      };
-    }
-  }
-
-  if (["spawn_agent", "wait", "close_agent", "send_input"].includes(name)) {
-    const firstLine = outputText.split("\n")[0]?.trim();
-    if (firstLine) {
-      return {
-        version: 2,
-        outputSummary: summarizeRenderText(firstLine),
-        blocks: [{ type: "summary", text: firstLine, tone: "info" }],
-      };
-    }
-  }
-
-  return undefined;
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(action),
+    outputSummary: summarizeRenderText(outputSummary),
+    blocks,
+  };
 }
 
 function clipInlineText(value: string, maxLength: number): string {
@@ -386,16 +330,10 @@ function readProcessEnv(name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function readStringFromInput(parsed: Record<string, unknown> | undefined, key: string): string | undefined {
-  const value = parsed?.[key];
+function readTrimmedString(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  return value as Record<string, unknown>;
 }
 
 function toOutputLines(outputText: string): string[] {
@@ -405,8 +343,7 @@ function toOutputLines(outputText: string): string[] {
     .filter(Boolean);
 }
 
-function readAbsolutePathFromInput(parsed: Record<string, unknown> | undefined, key: string): string | undefined {
-  const value = parsed?.[key];
+function readAbsolutePath(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = normalizePath(value);
   return isAbsolutePath(normalized) ? normalized : undefined;
@@ -414,10 +351,7 @@ function readAbsolutePathFromInput(parsed: Record<string, unknown> | undefined, 
 
 function relativizeGlobOutputLines(lines: string[], basePath?: string): string[] {
   if (!basePath) return lines;
-  return lines.map((line) => {
-    if (line.startsWith("...")) return line;
-    return maybeRelativePath(line, basePath);
-  });
+  return lines.map((line) => (line.startsWith("...") ? line : maybeRelativePath(line, basePath)));
 }
 
 function relativizeGrepOutputLines(lines: string[], basePath?: string): string[] {
@@ -445,9 +379,7 @@ function splitGrepOutputLine(line: string): { path: string; suffix: string } | u
 
 function maybeRelativePathAgainstSearchScope(absPath: string, searchPath: string): string {
   const fromSearchPath = maybeRelativePath(absPath, searchPath);
-  if (fromSearchPath !== absPath && fromSearchPath !== ".") {
-    return fromSearchPath;
-  }
+  if (fromSearchPath !== absPath && fromSearchPath !== ".") return fromSearchPath;
 
   const parent = dirname(searchPath);
   if (!parent) return absPath;
@@ -462,9 +394,7 @@ function maybeRelativePath(value: string, basePath: string): string {
 
   const pathDrive = getDrive(path);
   const baseDrive = getDrive(base);
-  if (pathDrive && baseDrive && pathDrive.toLowerCase() !== baseDrive.toLowerCase()) {
-    return value;
-  }
+  if (pathDrive && baseDrive && pathDrive.toLowerCase() !== baseDrive.toLowerCase()) return value;
 
   const normalizedBase = trimTrailingSlash(base);
   if (path === normalizedBase) return ".";
@@ -482,9 +412,7 @@ function dirname(pathValue: string): string | undefined {
   const slash = path.lastIndexOf("/");
   if (slash < 0) return undefined;
   if (slash === 0) return "/";
-  if (/^[a-zA-Z]:$/.test(path.slice(0, slash))) {
-    return `${path.slice(0, slash)}/`;
-  }
+  if (/^[a-zA-Z]:$/.test(path.slice(0, slash))) return `${path.slice(0, slash)}/`;
   return path.slice(0, slash);
 }
 
@@ -560,22 +488,18 @@ function parsePatchForRender(patch: string): DiffFile[] {
     }
 
     if (!current) continue;
-
     if (line.startsWith("@@")) {
       flushHunk();
       continue;
     }
-
     if (line.startsWith("+")) {
       newLines.push(line.slice(1));
       continue;
     }
-
     if (line.startsWith("-")) {
       oldLines.push(line.slice(1));
       continue;
     }
-
     if (line.startsWith(" ")) {
       oldLines.push(line.slice(1));
       newLines.push(line.slice(1));

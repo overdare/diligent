@@ -5,6 +5,7 @@ import { z } from "zod";
 import { readKnowledge, writeKnowledge } from "../knowledge/store";
 import type { KnowledgeEntry, KnowledgeType } from "../knowledge/types";
 import { generateEntryId } from "../session/types";
+import { createUpdateKnowledgeRenderPayload } from "./render-payload";
 
 const knowledgeTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
 
@@ -66,13 +67,17 @@ export function createUpdateKnowledgeTool(
         const deleted = nextEntries.length !== entries.length;
         if (deleted) {
           await writeKnowledge(knowledgePath, nextEntries);
+          const output = `Knowledge deleted: ${args.id}`;
           return {
-            output: `Knowledge deleted: ${args.id}`,
+            output,
+            render: createUpdateKnowledgeRenderPayload(args, output, false),
             metadata: { action: "delete", id: args.id, deleted: true },
           };
         }
+        const output = `Knowledge not found: ${args.id}`;
         return {
-          output: `Knowledge not found: ${args.id}`,
+          output,
+          render: createUpdateKnowledgeRenderPayload(args, output, false),
           metadata: { action: "delete", id: args.id, deleted: false },
         };
       }
@@ -94,8 +99,10 @@ export function createUpdateKnowledgeTool(
           };
           entries[index] = updated;
           await writeKnowledge(knowledgePath, entries);
+          const output = `Knowledge updated: [${updated.type}] ${updated.content}`;
           return {
-            output: `Knowledge updated: [${updated.type}] ${updated.content}`,
+            output,
+            render: createUpdateKnowledgeRenderPayload(args, output, false),
             metadata: { action: "upsert", knowledgeId: updated.id, updated: true },
           };
         }
@@ -113,8 +120,10 @@ export function createUpdateKnowledgeTool(
       entries.push(entry);
       await writeKnowledge(knowledgePath, entries);
 
+      const output = `Knowledge saved: [${entry.type}] ${entry.content}`;
       return {
-        output: `Knowledge saved: [${entry.type}] ${entry.content}`,
+        output,
+        render: createUpdateKnowledgeRenderPayload(args, output, false),
         metadata: { action: "upsert", knowledgeId: entry.id, updated: false },
       };
     },

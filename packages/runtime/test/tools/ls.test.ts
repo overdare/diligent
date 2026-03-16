@@ -31,6 +31,8 @@ describe("ls tool", () => {
     await mkdir(join(tmpDir, "subdir"));
 
     const result = await tool.execute({ path: tmpDir }, makeCtx());
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "list" });
     expect(result.output).toContain("file.txt");
     expect(result.output).toContain("subdir/");
   });
@@ -61,6 +63,7 @@ describe("ls tool", () => {
 
   test("returns error for relative path", async () => {
     const result = await tool.execute({ path: "." }, makeCtx());
+    expect(result.render?.blocks[0]).toMatchObject({ type: "text", title: "Output" });
     expect(result.output).toContain("path must be absolute");
     expect(result.metadata?.error).toBe(true);
   });

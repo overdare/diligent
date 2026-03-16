@@ -5,6 +5,11 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import {
+  createEditDiffRenderPayload,
+  createMultiEditDiffRenderPayload,
+  createTextRenderPayload,
+} from "./render-payload";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -146,7 +151,16 @@ Usage:
         try {
           await mkdir(dirname(file_path), { recursive: true });
           await Bun.write(file_path, new_string);
-          return { output: `Created ${file_path}` };
+          const output = `Created ${file_path}`;
+          return {
+            output,
+            render: createEditDiffRenderPayload({
+              filePath: file_path,
+              oldString: old_string,
+              newString: new_string,
+              outputText: output,
+            }),
+          };
         } catch (err) {
           return {
             output: `Error creating file: ${err instanceof Error ? err.message : String(err)}`,
@@ -190,7 +204,16 @@ Usage:
 
       try {
         await Bun.write(file_path, result);
-        return { output: `Edited ${file_path}: replaced ${count} occurrence(s)` };
+        const output = `Edited ${file_path}: replaced ${count} occurrence(s)`;
+        return {
+          output,
+          render: createEditDiffRenderPayload({
+            filePath: file_path,
+            oldString: old_string,
+            newString: new_string,
+            outputText: output,
+          }),
+        };
       } catch (err) {
         return {
           output: `Error writing file: ${err instanceof Error ? err.message : String(err)}`,
@@ -269,10 +292,8 @@ If you want to create a new file, use:
           current = result;
           totalCount += count;
         } catch (err) {
-          return {
-            output: `Error in edit ${i + 1}/${edits.length}: ${err instanceof Error ? err.message : String(err)}`,
-            metadata: { error: true },
-          };
+          const output = `Error in edit ${i + 1}/${edits.length}: ${err instanceof Error ? err.message : String(err)}`;
+          return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
         }
       }
 
@@ -289,8 +310,10 @@ If you want to create a new file, use:
 
       try {
         await Bun.write(file_path, current);
+        const output = `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total`;
         return {
-          output: `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total`,
+          output,
+          render: createMultiEditDiffRenderPayload({ filePath: file_path, edits, outputText: output }),
         };
       } catch (err) {
         return {

@@ -34,6 +34,8 @@ describe("write tool", () => {
     expect(result.output).toContain("Wrote");
     expect(result.output).toContain("11 bytes");
     expect(result.output).toContain("new.txt");
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "file" });
 
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("hello world");
@@ -69,6 +71,7 @@ describe("write tool", () => {
   test("returns error for absolute file_path", async () => {
     const result = await tool.execute({ file_path: join(tmpDir, "absolute.txt"), content: "hello" }, makeCtx());
     expect(result.output).toContain("file_path must be relative");
+    expect(result.render?.blocks[0]).toMatchObject({ type: "text", title: "Output" });
     expect(result.metadata?.error).toBe(true);
   });
 });

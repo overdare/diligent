@@ -47,6 +47,8 @@ describe("apply_patch tool", () => {
 
     const result = await tool.execute({ patch }, makeCtx());
 
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "diff" });
     expect(result.output).toContain("Success. Updated the following files:");
     expect(result.output).toContain("A nested/new.txt");
     expect(result.output).toContain("M modify.txt");
@@ -79,6 +81,7 @@ describe("apply_patch tool", () => {
 
   test("rejects malformed patch envelope", async () => {
     const result = await tool.execute({ patch: "*** Begin Patch\n*** Add File: x.txt\n+hi" }, makeCtx());
+    expect(result.render?.blocks[0]).toMatchObject({ type: "text", title: "Input" });
     expect(result.metadata?.error).toBe(true);
     expect(result.output).toContain("apply_patch verification failed");
   });

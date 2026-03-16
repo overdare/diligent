@@ -5,6 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
+import { createPatchDiffRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const ApplyPatchParams = z.object({
   patch: z.string().describe("The full patch text to apply, including *** Begin Patch and *** End Patch markers"),
@@ -109,8 +110,10 @@ It is important to remember:
       try {
         hunks = parsePatch(args.patch);
       } catch (error) {
+        const output = `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`;
         return {
-          output: `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`,
+          output,
+          render: createTextRenderPayload(args.patch, output, true),
           metadata: { error: true },
         };
       }
@@ -118,6 +121,7 @@ It is important to remember:
       if (hunks.length === 0) {
         return {
           output: "patch rejected: empty patch",
+          render: createTextRenderPayload(args.patch, "patch rejected: empty patch", true),
           metadata: { error: true },
         };
       }
@@ -126,8 +130,10 @@ It is important to remember:
       try {
         changes = await verifyAndPlanChanges(hunks, cwd);
       } catch (error) {
+        const output = `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`;
         return {
-          output: `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`,
+          output,
+          render: createTextRenderPayload(args.patch, output, true),
           metadata: { error: true },
         };
       }
@@ -144,14 +150,20 @@ It is important to remember:
       });
       if (approval === "reject") {
         ctx.abort();
-        return { output: "[Rejected by user]", metadata: { error: true } };
+        return {
+          output: "[Rejected by user]",
+          render: createTextRenderPayload(args.patch, "[Rejected by user]", true),
+          metadata: { error: true },
+        };
       }
 
       try {
         await applyChanges(changes);
       } catch (error) {
+        const output = `Error applying patch: ${error instanceof Error ? error.message : String(error)}`;
         return {
-          output: `Error applying patch: ${error instanceof Error ? error.message : String(error)}`,
+          output,
+          render: createTextRenderPayload(args.patch, output, true),
           metadata: { error: true },
         };
       }
@@ -165,8 +177,10 @@ It is important to remember:
         return `M ${relTarget}`;
       });
 
+      const output = `Success. Updated the following files:\n${summaryLines.join("\n")}`;
       return {
-        output: `Success. Updated the following files:\n${summaryLines.join("\n")}`,
+        output,
+        render: createPatchDiffRenderPayload(args.patch, output),
       };
     },
   };

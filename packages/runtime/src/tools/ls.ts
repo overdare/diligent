@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
+import { createListRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const LsParams = z.object({
   path: z.string().describe("The absolute directory path to list"),
@@ -19,7 +20,8 @@ export function createLsTool(): Tool<typeof LsParams> {
     async execute(args): Promise<ToolResult> {
       const { path } = args;
       if (!isAbsolute(path)) {
-        return { output: `Error: path must be absolute: ${path}`, metadata: { error: true } };
+        const output = `Error: path must be absolute: ${path}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
       try {
@@ -38,10 +40,12 @@ export function createLsTool(): Tool<typeof LsParams> {
           output += `\n\n... (${overflow} more entries not shown)`;
         }
 
-        return { output };
+        return { output, render: createListRenderPayload(output) };
       } catch (err) {
+        const output = `Error listing directory: ${err instanceof Error ? err.message : String(err)}`;
         return {
-          output: `Error listing directory: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }

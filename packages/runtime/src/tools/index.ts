@@ -17,7 +17,19 @@ export { createPlanTool } from "./plan";
 export type { PluginLoadResult, PluginManifest } from "./plugin-loader";
 export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-loader";
 export { createReadTool } from "./read";
-export { createTextRenderPayload, deriveToolRenderPayload, summarizeRenderText } from "./render-payload";
+export {
+  createCommandRenderPayload,
+  createEditDiffRenderPayload,
+  createFileRenderPayload,
+  createGlobRenderPayload,
+  createGrepRenderPayload,
+  createListRenderPayload,
+  createMultiEditDiffRenderPayload,
+  createPatchDiffRenderPayload,
+  createTextRenderPayload,
+  createUpdateKnowledgeRenderPayload,
+  summarizeRenderText,
+} from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
 export { createSkillTool, registerSkillTool } from "./skill";
 export { createUpdateKnowledgeTool } from "./update-knowledge";

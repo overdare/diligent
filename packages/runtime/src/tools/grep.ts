@@ -4,6 +4,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { spawnCollect } from "../util/process";
+import { createGrepRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const GrepParams = z.object({
   pattern: z.string().describe("Regex pattern to search for in file contents"),
@@ -44,7 +45,11 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
         const [stdout, , exitCode] = await spawnCollect(rgArgs);
 
         if (exitCode !== 0 && !stdout.trim()) {
-          return { output: "No matches found." };
+          const output = "No matches found.";
+          return {
+            output,
+            render: createGrepRenderPayload({ ...args, path: searchPath }, output, { cwd }),
+          };
         }
 
         // Parse and limit output
@@ -62,10 +67,16 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
           output += `\n\n... (${overflow} more matches not shown)`;
         }
 
-        return { output, truncateDirection: "head" };
-      } catch (err) {
         return {
-          output: `Error running grep: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: createGrepRenderPayload({ ...args, path: searchPath }, output, { cwd }),
+          truncateDirection: "head",
+        };
+      } catch (err) {
+        const output = `Error running grep: ${err instanceof Error ? err.message : String(err)}`;
+        return {
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }

@@ -5,6 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { spawnCollect } from "../util/process";
+import { createGlobRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const GlobParams = z.object({
   pattern: z.string().describe("Glob pattern to match files (e.g., '**/*.ts', 'src/**/*.test.ts')"),
@@ -29,7 +30,8 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     async execute(args): Promise<ToolResult> {
       const searchPath = (args.path ?? cwd).replace(/\\/g, "/").replace(/\/{2,}/g, "/");
       if (!isAbsolute(searchPath)) {
-        return { output: `Error: path must be absolute: ${searchPath}`, metadata: { error: true } };
+        const output = `Error: path must be absolute: ${searchPath}`;
+        return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
       try {
@@ -37,7 +39,11 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
         const [stdout, , exitCode] = await spawnCollect([rgBin, "--files", "--glob", args.pattern, searchPath]);
 
         if (exitCode !== 0 && !stdout.trim()) {
-          return { output: "No files found matching pattern." };
+          const output = "No files found matching pattern.";
+          return {
+            output,
+            render: createGlobRenderPayload({ ...args, path: searchPath }, output, { cwd }),
+          };
         }
 
         const files = stdout.trim().split("\n").filter(Boolean);
@@ -65,10 +71,15 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
           output += `\n\n... (${overflow} more files not shown)`;
         }
 
-        return { output };
-      } catch (err) {
         return {
-          output: `Error running glob: ${err instanceof Error ? err.message : String(err)}`,
+          output,
+          render: createGlobRenderPayload({ ...args, path: searchPath }, output, { cwd }),
+        };
+      } catch (err) {
+        const output = `Error running glob: ${err instanceof Error ? err.message : String(err)}`;
+        return {
+          output,
+          render: createTextRenderPayload(undefined, output, true),
           metadata: { error: true },
         };
       }

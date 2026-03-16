@@ -17,11 +17,13 @@ describe("bash tool", () => {
   test("simple command (echo hello)", async () => {
     const result = await bashTool.execute({ command: "echo hello" }, makeCtx());
     expect(result.output.trim()).toBe("hello");
+    expect(result.render?.blocks[0]).toMatchObject({ type: "command", command: "echo hello" });
   });
 
   test("non-zero exit code → exit code in header", async () => {
     const result = await bashTool.execute({ command: "exit 42" }, makeCtx());
     expect(result.output).toContain("[Exit code: 42]");
+    expect(result.render?.blocks[0]).toMatchObject({ type: "command", isError: true });
     expect(result.metadata?.exitCode).toBe(42);
   });
 

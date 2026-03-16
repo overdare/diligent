@@ -34,6 +34,8 @@ describe("update_knowledge tool", () => {
 
     expect(result.output).toContain("Knowledge saved");
     expect(result.output).toContain("pattern");
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "key_value" });
 
     const entries = await readKnowledge(tmpDir);
     expect(entries).toHaveLength(1);
@@ -64,6 +66,7 @@ describe("update_knowledge tool", () => {
     );
 
     expect(updateResult.output).toContain("Knowledge updated");
+    expect(updateResult.render?.version).toBe(2);
 
     const entries = await readKnowledge(tmpDir);
     expect(entries).toHaveLength(1);
@@ -84,6 +87,7 @@ describe("update_knowledge tool", () => {
     const deleteResult = await tool.execute({ action: "delete", id: "k-2" }, makeCtx());
 
     expect(deleteResult.output).toContain("Knowledge deleted");
+    expect(deleteResult.render?.version).toBe(2);
     const entries = await readKnowledge(tmpDir);
     expect(entries).toHaveLength(0);
   });

@@ -44,6 +44,8 @@ describe("grep tool", () => {
 
     const tool = createGrepTool(tmpDir);
     const result = await tool.execute({ pattern: "foo" }, makeCtx());
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "summary" });
     expect(result.output).toContain("foo");
     expect(result.output).toContain(":1:");
     expect(result.output).toContain(":3:");
@@ -93,6 +95,7 @@ describe("grep tool", () => {
 
     const tool = createGrepTool(tmpDir);
     const result = await tool.execute({ pattern: "nonexistent" }, makeCtx());
+    expect(result.render?.version).toBe(2);
     expect(result.output).toContain("No matches found");
   });
 

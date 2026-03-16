@@ -47,6 +47,8 @@ describe("glob tool", () => {
 
     const tool = createGlobTool(tmpDir);
     const result = await tool.execute({ pattern: "*.ts" }, makeCtx());
+    expect(result.render?.version).toBe(2);
+    expect(result.render?.blocks[0]).toMatchObject({ type: "summary" });
     expect(result.output).toContain("app.ts");
     expect(result.output).not.toContain("app.js");
     expect(result.output).not.toContain("readme.md");
@@ -91,6 +93,7 @@ describe("glob tool", () => {
 
     const tool = createGlobTool(tmpDir);
     const result = await tool.execute({ pattern: "*.ts", path: "." }, makeCtx());
+    expect(result.render?.blocks[0]).toMatchObject({ type: "text", title: "Output" });
     expect(result.output).toContain("path must be absolute");
     expect(result.metadata?.error).toBe(true);
   });
