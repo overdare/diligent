@@ -170,7 +170,8 @@ type ActiveStatus = {
   message: string;
   startedAt: number;
   blinkVisible: boolean;
-  timer: ReturnType<typeof setInterval> | null;
+  blinkTimer: ReturnType<typeof setInterval> | null;
+  refreshTimer: ReturnType<typeof setInterval> | null;
 };
 
 export interface TranscriptStoreOptions {
@@ -242,9 +243,7 @@ export class TranscriptStore {
   }
 
   shouldPadBelowLiveStatusLine(): boolean {
-    if (!this.activeStatus) return false;
-    const message = this.activeStatus.message.trim();
-    return this.isWorkingStatusMessage(message) || this.isCompleteStatusMessage(message);
+    return false;
   }
 
   handleEvent(event: AgentEvent): void {
@@ -682,13 +681,18 @@ export class TranscriptStore {
         message,
         startedAt: Date.now(),
         blinkVisible: true,
-        timer: null,
+        blinkTimer: null,
+        refreshTimer: null,
       };
-      this.activeStatus.timer = setInterval(() => {
+      this.activeStatus.blinkTimer = setInterval(() => {
         if (!this.activeStatus) return;
         this.activeStatus.blinkVisible = !this.activeStatus.blinkVisible;
         this.options.requestRender();
       }, 500);
+      this.activeStatus.refreshTimer = setInterval(() => {
+        if (!this.activeStatus) return;
+        this.options.requestRender();
+      }, 150);
       this.options.requestRender();
       return;
     }
@@ -802,8 +806,11 @@ export class TranscriptStore {
 
   private stopActiveStatus(): void {
     if (!this.activeStatus) return;
-    if (this.activeStatus.timer) {
-      clearInterval(this.activeStatus.timer);
+    if (this.activeStatus.blinkTimer) {
+      clearInterval(this.activeStatus.blinkTimer);
+    }
+    if (this.activeStatus.refreshTimer) {
+      clearInterval(this.activeStatus.refreshTimer);
     }
     this.activeStatus = null;
   }
