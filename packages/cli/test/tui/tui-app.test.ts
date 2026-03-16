@@ -283,25 +283,18 @@ describe("App", () => {
       emitText("test");
       emitEnter();
 
+      const renderOutput = () =>
+        ((app as unknown as { root: { render: (width: number) => string[] } }).root.render(120) ?? []).join("\n");
+
       await waitFor(
         () => {
-          const historyLines = (
-            app as unknown as { chatView: { getHistoryComponent: () => { render: (width: number) => string[] } } }
-          ).chatView
-            .getHistoryComponent()
-            .render(120)
-            .join("\n");
-          return historyLines.includes("Hello") && historyLines.includes("world!");
+          const output = renderOutput();
+          return output.includes("Hello") && output.includes("world!");
         },
         { timeoutMs: 4000, intervalMs: 20 },
       );
 
-      const output = (
-        app as unknown as { chatView: { getHistoryComponent: () => { render: (width: number) => string[] } } }
-      ).chatView
-        .getHistoryComponent()
-        .render(120)
-        .join("\n");
+      const output = renderOutput();
       expect(output).toContain("Hello");
       expect(output).toContain("world!");
     } finally {
