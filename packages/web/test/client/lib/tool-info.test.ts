@@ -1,10 +1,12 @@
 // @summary Tests for tool header and summary generation in tool-info helpers
 import { expect, test } from "bun:test";
 import {
+  deriveRenderPayload,
   getToolHeaderTitle,
   parseRequestUserInputTitle,
   parseRequestUserInputTitleFromOutput,
   summarizeInput,
+  summarizeOutput,
 } from "../../../src/client/lib/tool-info";
 
 test("request_user_input: question text is preferred over header", () => {
@@ -36,63 +38,32 @@ test("request_user_input: returns undefined for empty output", () => {
   expect(parseRequestUserInputTitleFromOutput("")).toBeUndefined();
 });
 
-test("summary prefers explicit intent fields for non-request tools", () => {
-  const input = JSON.stringify({
-    prompt: "Refactor the sidebar list interaction to preserve keyboard focus.",
-    path: "/tmp/ignored.txt",
-  });
-  expect(summarizeInput("spawn_agent", input)).toContain("Refactor the sidebar");
-});
-
-test("summary-first payload header becomes summary label for grep", () => {
-  const input = JSON.stringify({
-    pattern: "TODO",
-    path: "/Users/me/project/src/main.ts",
-    include: "*.ts",
-  });
-  const output = "/Users/me/project/src/main.ts:1:// TODO";
-  expect(getToolHeaderTitle("grep", input, output)).toBe("Grep — Summary");
-});
-
-test("summarizeInput shows read target path", () => {
-  const input = JSON.stringify({ file_path: "/Users/alice/git/diligent/packages/web/src/client/App.tsx" });
-  expect(summarizeInput("read", input)).toBe("Read client/App.tsx");
-});
-
-test("header title uses block title when provided by payload", () => {
-  const input = JSON.stringify({
-    action: "upsert",
-    id: "k1",
-    type: "pattern",
-    content: "x",
-    confidence: 0.9,
-    tags: [],
-  });
-  const output = "saved";
-  expect(getToolHeaderTitle("update_knowledge", input, output)).toBe("Knowledge — Details");
-});
-
-test("update_knowledge payload-first header remains details with enriched blocks", () => {
-  const input = JSON.stringify({
-    action: "upsert",
-    id: "k1",
-    type: "pattern",
-    content: "Prefer batched tool calls for independent reads",
-    confidence: 0.91,
-    tags: ["workflow", "perf"],
-  });
-  const output = "Knowledge saved: [pattern] Prefer batched tool calls";
-  expect(getToolHeaderTitle("update_knowledge", input, output)).toBe("Knowledge — Details");
-});
-
-test("summarizeInput falls back to compact single-line JSON for generic tools", () => {
-  const input = JSON.stringify(
-    {
-      alpha: 1,
-      nested: { beta: true },
-    },
-    null,
-    2,
+test("generic fallback payload uses raw input/output summaries", () => {
+  const payload = deriveRenderPayload(
+    '{\n  "prompt": "Refactor the sidebar list interaction to preserve keyboard focus."\n}',
+    "Done successfully",
   );
-  expect(summarizeInput("custom_tool", input)).toBe('{"alpha":1,"nested":{"beta":true}}');
+  expect(summarizeInput(payload)).toBe("{");
+  expect(summarizeOutput(payload)).toBe("Done successfully");
+});
+
+test("header title uses toolName - inputSummary rule", () => {
+  const payload = {
+    version: 2 as const,
+    inputSummary: "src/client/App.tsx",
+    blocks: [],
+  };
+  expect(getToolHeaderTitle("read", payload)).toBe("Read - src/client/App.tsx");
+});
+
+test("header title falls back to tool display name without summary", () => {
+  expect(getToolHeaderTitle("update_knowledge", undefined)).toBe("Knowledge");
+});
+
+test("generic fallback emits text blocks for input and output", () => {
+  const payload = deriveRenderPayload('{"alpha":1}', "ok");
+  expect(payload?.blocks).toEqual([
+    { type: "text", title: "Input", text: '{"alpha":1}' },
+    { type: "text", title: "Output", text: "ok", isError: false },
+  ]);
 });

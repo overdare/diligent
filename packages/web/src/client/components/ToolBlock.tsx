@@ -44,18 +44,14 @@ function ToolContent({
 
 /* ── Main ToolBlock ─────────────────────────────────────────────── */
 
-export function ToolBlock({ item, threadCwd }: ToolBlockProps) {
+export function ToolBlock({ item }: ToolBlockProps) {
   const [open, setOpen] = useState(false);
   const { icon, category } = getToolInfo(item.toolName);
-  const renderPayload =
-    item.render ?? deriveRenderPayload(item.toolName, item.inputText, item.outputText, { cwd: threadCwd });
-  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText, renderPayload, {
-    cwd: threadCwd,
-  });
+  const renderPayload = item.render ?? deriveRenderPayload(item.inputText, item.outputText, item.isError);
+  const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
-  const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
-  const outputSummary =
-    !isUserInput && item.status === "done" && item.outputText ? summarizeOutput(item.toolName, item.outputText) : "";
+  const inputSummary = !isUserInput ? summarizeInput(renderPayload) : "";
+  const outputSummary = !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
   const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;
 
   const isStreaming = item.status === "streaming";

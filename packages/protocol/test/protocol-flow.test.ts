@@ -394,9 +394,12 @@ describe("protocol/flow", () => {
 
   it("accepts and validates ToolRenderPayload with all block kinds", () => {
     const payload = ToolRenderPayloadSchema.safeParse({
-      version: 1,
+      version: 2,
+      inputSummary: "Inspect files",
+      outputSummary: "Done",
       blocks: [
         { type: "summary", text: "Done", tone: "success" },
+        { type: "text", title: "Input", text: "files" },
         { type: "key_value", title: "Info", items: [{ key: "Count", value: "42" }] },
         { type: "list", title: "Files", ordered: false, items: ["a.ts", "b.ts"] },
         { type: "table", title: "Results", columns: ["Name", "Status"], rows: [["foo", "ok"]] },
@@ -409,7 +412,7 @@ describe("protocol/flow", () => {
 
   it("rejects ToolRenderPayload with unknown block type (discriminated union)", () => {
     const bad = ToolRenderPayloadSchema.safeParse({
-      version: 1,
+      version: 2,
       blocks: [{ type: "chart", data: [] }],
     });
     expect(bad.success).toBe(false);
@@ -423,6 +426,12 @@ describe("protocol/flow", () => {
       output: "hello",
       isError: false,
       timestamp: 1000,
+      render: {
+        version: 2,
+        inputSummary: "echo hello",
+        outputSummary: "hello",
+        blocks: [{ type: "text", title: "Output", text: "hello" }],
+      },
     });
     expect(msg.success).toBe(true);
   });

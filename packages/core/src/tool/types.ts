@@ -18,8 +18,16 @@ export interface ToolContext {
 }
 
 // D020: Tool result
+export interface ToolRenderPayloadLike {
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
+  blocks: unknown[];
+}
+
 export interface ToolResult {
   output: string;
+  render?: ToolRenderPayloadLike;
   abortRequested?: boolean; // When true, tool signals the agent loop to stop after this result
   metadata?: Record<string, unknown>;
   truncateDirection?: "head" | "tail" | "head_tail"; // D025: hint for auto-truncation. Default: "tail"

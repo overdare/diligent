@@ -47,6 +47,13 @@ export interface AssistantMessage {
   timestamp: number;
 }
 
+export interface ToolRenderPayloadLike {
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
+  blocks: unknown[];
+}
+
 export interface ToolResultMessage {
   role: "tool_result";
   toolCallId: string;
@@ -54,6 +61,7 @@ export interface ToolResultMessage {
   output: string;
   isError: boolean;
   timestamp: number;
+  render?: ToolRenderPayloadLike;
 }
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;

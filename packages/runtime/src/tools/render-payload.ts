@@ -6,6 +6,39 @@ export interface DeriveToolRenderPayloadOptions {
   cwd?: string;
 }
 
+export function summarizeRenderText(text: string | undefined, maxLength = 80): string | undefined {
+  if (!text) return undefined;
+  const firstLine = text
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return undefined;
+  return clipInlineText(firstLine, maxLength);
+}
+
+export function createTextRenderPayload(
+  inputText?: string,
+  outputText?: string,
+  isError = false,
+): ToolRenderPayload | undefined {
+  const inputSummary = summarizeRenderText(inputText);
+  const outputSummary = summarizeRenderText(outputText);
+  const blocks: ToolRenderPayload["blocks"] = [];
+  if (inputText?.trim()) {
+    blocks.push({ type: "text", title: "Input", text: inputText });
+  }
+  if (outputText?.trim()) {
+    blocks.push({ type: "text", title: "Output", text: outputText, isError });
+  }
+  if (!inputSummary && !outputSummary && blocks.length === 0) return undefined;
+  return {
+    version: 2,
+    inputSummary,
+    outputSummary,
+    blocks,
+  };
+}
+
 export function deriveToolRenderPayload(
   toolName: string,
   input: unknown,
@@ -27,7 +60,9 @@ export function deriveToolRenderPayload(
     const command = typeof parsed.command === "string" ? parsed.command : undefined;
     if (command) {
       return {
-        version: 1,
+        version: 2,
+        inputSummary: summarizeRenderText(command, 120),
+        outputSummary: summarizeRenderText(outputText, 120),
         blocks: [{ type: "command", command, output: outputText || undefined, isError }],
       };
     }
@@ -41,7 +76,9 @@ export function deriveToolRenderPayload(
         .map((line) => line.replace(/^\s*\d+\t/, ""))
         .join("\n");
       return {
-        version: 1,
+        version: 2,
+        inputSummary: summarizeRenderText(filePath),
+        outputSummary: summarizeRenderText(outputText),
         blocks: [
           {
             type: "file",
@@ -60,7 +97,12 @@ export function deriveToolRenderPayload(
     const filePath = typeof parsed.file_path === "string" ? parsed.file_path : undefined;
     const content = typeof parsed.content === "string" ? parsed.content : undefined;
     if (filePath) {
-      return { version: 1, blocks: [{ type: "file", filePath, content, isError }] };
+      return {
+        version: 2,
+        inputSummary: summarizeRenderText(filePath),
+        outputSummary: summarizeRenderText(outputText),
+        blocks: [{ type: "file", filePath, content, isError }],
+      };
     }
   }
 
@@ -71,7 +113,9 @@ export function deriveToolRenderPayload(
     if (filePath) {
       const action = oldString === "" ? ("Add" as const) : undefined;
       return {
-        version: 1,
+        version: 2,
+        inputSummary: summarizeRenderText(filePath),
+        outputSummary: summarizeRenderText(outputText),
         blocks: [
           {
             type: "diff",
@@ -95,7 +139,9 @@ export function deriveToolRenderPayload(
           newString: typeof edit.new_string === "string" ? edit.new_string : undefined,
         }));
       return {
-        version: 1,
+        version: 2,
+        inputSummary: summarizeRenderText(filePath),
+        outputSummary: summarizeRenderText(outputText),
         blocks: [
           {
             type: "diff",
@@ -113,7 +159,9 @@ export function deriveToolRenderPayload(
       const files = parsePatchForRender(patch);
       if (files.length > 0) {
         return {
-          version: 1,
+          version: 2,
+          inputSummary: summarizeRenderText(patch, 120),
+          outputSummary: summarizeRenderText(outputText),
           blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
         };
       }
@@ -143,13 +191,22 @@ export function deriveToolRenderPayload(
     if (queryItems.length > 0) {
       blocks.push({ type: "key_value", title: "Query", items: queryItems });
     }
-    return { version: 1, blocks };
+    return {
+      version: 2,
+      inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
+      outputSummary: summarizeRenderText(outputText),
+      blocks,
+    };
   }
 
   if (name === "ls") {
     const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
     if (items.length > 0) {
-      return { version: 1, blocks: [{ type: "list", items }] };
+      return {
+        version: 2,
+        outputSummary: summarizeRenderText(outputText),
+        blocks: [{ type: "list", items }],
+      };
     }
   }
 
@@ -178,7 +235,12 @@ export function deriveToolRenderPayload(
     if (queryItems.length > 0) {
       blocks.push({ type: "key_value", title: "Query", items: queryItems });
     }
-    return { version: 1, blocks };
+    return {
+      version: 2,
+      inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
+      outputSummary: summarizeRenderText(outputText),
+      blocks,
+    };
   }
 
   if (name === "update_knowledge" && parsed) {
@@ -234,14 +296,23 @@ export function deriveToolRenderPayload(
     }
 
     if (blocks.length > 0) {
-      return { version: 1, blocks };
+      return {
+        version: 2,
+        inputSummary: summarizeRenderText(action),
+        outputSummary: summarizeRenderText(outputSummary),
+        blocks,
+      };
     }
   }
 
   if (["spawn_agent", "wait", "close_agent", "send_input"].includes(name)) {
     const firstLine = outputText.split("\n")[0]?.trim();
     if (firstLine) {
-      return { version: 1, blocks: [{ type: "summary", text: firstLine, tone: "info" }] };
+      return {
+        version: 2,
+        outputSummary: summarizeRenderText(firstLine),
+        blocks: [{ type: "summary", text: firstLine, tone: "info" }],
+      };
     }
   }
 

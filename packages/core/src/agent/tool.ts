@@ -108,6 +108,7 @@ function toToolCallExecution(
     output: result.output,
     isError: !!result.metadata?.error,
     timestamp: Date.now(),
+    render: result.render,
   };
 
   stream.emit({
@@ -117,6 +118,7 @@ function toToolCallExecution(
     toolName: toolCall.name,
     output: result.output,
     isError: toolResult.isError,
+    render: result.render,
   });
 
   return { toolCall, toolResult };

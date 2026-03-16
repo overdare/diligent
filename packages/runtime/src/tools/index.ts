@@ -17,7 +17,7 @@ export { createPlanTool } from "./plan";
 export type { PluginLoadResult, PluginManifest } from "./plugin-loader";
 export { getGlobalPluginPath, getGlobalPluginRoot, loadPlugin } from "./plugin-loader";
 export { createReadTool } from "./read";
-export { deriveToolRenderPayload } from "./render-payload";
+export { createTextRenderPayload, deriveToolRenderPayload, summarizeRenderText } from "./render-payload";
 export { createRequestUserInputTool } from "./request-user-input";
 export { createSkillTool, registerSkillTool } from "./skill";
 export { createUpdateKnowledgeTool } from "./update-knowledge";

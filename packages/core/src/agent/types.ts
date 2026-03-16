@@ -55,6 +55,7 @@ export type CoreAgentEvent =
       toolName: string;
       output: string;
       isError: boolean;
+      render?: ToolResultMessage["render"];
       childThreadId?: string;
       nickname?: string;
     }

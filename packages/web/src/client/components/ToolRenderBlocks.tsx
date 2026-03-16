@@ -12,6 +12,7 @@ import type {
   TableBlock,
   ToolRenderBlock,
   ToolRenderPayload,
+  ToolRenderTextBlock,
   TreeBlock,
   TreeNode,
 } from "@diligent/protocol";
@@ -54,6 +55,23 @@ function toneText(tone?: string) {
 
 function RenderSummary({ block }: { block: SummaryBlock }) {
   return <div className={cn("px-3 py-2 font-mono text-xs", toneText(block.tone))}>{block.text}</div>;
+}
+
+/* ── TextBlock ─────────────────────────────────────────────────────── */
+
+function RenderText({ block }: { block: ToolRenderTextBlock }) {
+  return (
+    <BlockShell title={block.title} copyText={block.text}>
+      <pre
+        className={cn(
+          "overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed",
+          block.isError ? "text-danger/90" : "text-text/80",
+        )}
+      >
+        {block.text}
+      </pre>
+    </BlockShell>
+  );
 }
 
 /* ── KeyValueBlock ────────────────────────────────────────────────── */
@@ -416,6 +434,8 @@ function RenderBlock({ block }: { block: ToolRenderBlock }) {
   switch (block.type) {
     case "summary":
       return <RenderSummary block={block} />;
+    case "text":
+      return <RenderText block={block} />;
     case "key_value":
       return <RenderKeyValue block={block} />;
     case "list":

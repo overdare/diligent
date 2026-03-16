@@ -98,6 +98,14 @@ export const SummaryBlockSchema = z.object({
 });
 export type SummaryBlock = z.infer<typeof SummaryBlockSchema>;
 
+export const ToolRenderTextBlockSchema = z.object({
+  type: z.literal("text"),
+  title: z.string().optional(),
+  text: z.string(),
+  isError: z.boolean().optional(),
+});
+export type ToolRenderTextBlock = z.infer<typeof ToolRenderTextBlockSchema>;
+
 export const KeyValueBlockSchema = z.object({
   type: z.literal("key_value"),
   title: z.string().optional(),
@@ -186,6 +194,7 @@ export type DiffBlock = z.infer<typeof DiffBlockSchema>;
 
 export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
   SummaryBlockSchema,
+  ToolRenderTextBlockSchema,
   KeyValueBlockSchema,
   ListBlockSchema,
   TableBlockSchema,
@@ -198,7 +207,9 @@ export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
 export type ToolRenderBlock = z.infer<typeof ToolRenderBlockSchema>;
 
 export const ToolRenderPayloadSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
+  inputSummary: z.string().optional(),
+  outputSummary: z.string().optional(),
   blocks: z.array(ToolRenderBlockSchema),
 });
 export type ToolRenderPayload = z.infer<typeof ToolRenderPayloadSchema>;
@@ -212,6 +223,7 @@ export const ToolResultMessageSchema = z.object({
   output: z.string(),
   isError: z.boolean(),
   timestamp: z.number().int(),
+  render: ToolRenderPayloadSchema.optional(),
 });
 export type ToolResultMessage = z.infer<typeof ToolResultMessageSchema>;
 
@@ -298,6 +310,7 @@ export const AgentEventSchema = z.union([
     toolName: z.string(),
     output: z.string(),
     isError: z.boolean(),
+    render: ToolRenderPayloadSchema.optional(),
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
   }),
@@ -404,6 +417,7 @@ export const ThreadItemSchema = z.union([
     input: z.unknown(),
     output: z.string().optional(),
     isError: z.boolean().optional(),
+    render: ToolRenderPayloadSchema.optional(),
   }),
   z.object({
     type: z.literal("compaction"),

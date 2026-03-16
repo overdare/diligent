@@ -1,6 +1,7 @@
 // @summary Pure function mapping AgentEvent to DiligentServerNotification for independent testability
 
 import type { Message, Model, UserMessage } from "@diligent/core";
+import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "../protocol/index";
@@ -13,6 +14,11 @@ interface NotificationContext {
 type ThreadStatusSnapshot = {
   threadStatus?: "idle" | "busy";
 };
+
+function toProtocolRenderPayload(value: unknown) {
+  const parsed = ToolRenderPayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
 
 function withThreadStatus<T extends { threadId: string }>(
   params: T,
@@ -140,6 +146,7 @@ export function agentEventToNotification(
               input: {},
               output: event.output,
               isError: event.isError,
+              render: toProtocolRenderPayload(event.render),
             },
             ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },

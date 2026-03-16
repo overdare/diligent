@@ -20,14 +20,11 @@ interface ToolCallRowProps {
 export function ToolCallRow({ item }: ToolCallRowProps) {
   const [open, setOpen] = useState(false);
   const { icon } = getToolInfo(item.toolName);
-  const renderPayload = item.render ?? deriveRenderPayload(item.toolName, item.inputText, item.outputText);
-  const headerTitle = getToolHeaderTitle(item.toolName, item.inputText, item.outputText, renderPayload);
+  const renderPayload = item.render ?? deriveRenderPayload(item.inputText, item.outputText, item.isError);
+  const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
-  const inputSummary = !isUserInput && item.inputText ? summarizeInput(item.toolName, item.inputText) : "";
-  const outputSummary =
-    !isUserInput && item.status === "done" && !item.isError && item.outputText
-      ? summarizeOutput(item.toolName, item.outputText)
-      : "";
+  const inputSummary = !isUserInput ? summarizeInput(renderPayload) : "";
+  const outputSummary = !isUserInput && item.status === "done" && !item.isError ? summarizeOutput(renderPayload) : "";
 
   const statusEl = item.isError ? (
     <span className="shrink-0 text-xs text-danger">error</span>

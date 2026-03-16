@@ -1,10 +1,9 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
-import path from "node:path";
 import type { ToolResultMessage } from "@diligent/core";
-import type { ToolRenderBlock, ToolRenderPayload } from "@diligent/protocol";
+import { type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
-import { deriveToolRenderPayload } from "@diligent/runtime/tools";
+import { createTextRenderPayload } from "@diligent/runtime/tools";
 import { debugLogger } from "../framework/debug-logger";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
@@ -67,79 +66,24 @@ export class UserMessageView {
   invalidate(): void {}
 }
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+function buildToolHeader(toolName: string, payload?: ToolRenderPayload): string {
+  const inputSummary = payload?.inputSummary?.trim();
+  return inputSummary ? `${toolName} - ${inputSummary}` : toolName;
 }
 
-function summarizePathForUi(value: string): string {
-  const path = value.trim();
-  if (!path) return path;
-  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
-  if (parts.length === 0) return "/";
-  if (parts.length === 1) return parts[0];
-  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
-}
-
-function summarizeToolInput(toolName: string, input: unknown): string {
-  const normalizedName = toolName.toLowerCase();
-  if (input === null || input === undefined) return "";
-
-  if (normalizedName === "plan") return "";
-
-  if (typeof input === "string") {
-    const firstLine = input
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean);
-    return firstLine ? clip(firstLine, normalizedName === "bash" ? 120 : 80) : "";
-  }
-
-  if (typeof input !== "object") {
-    return clip(String(input), 80);
-  }
-
-  const parsed = input as Record<string, unknown>;
-  const filePath = typeof parsed.file_path === "string" ? parsed.file_path.trim() : "";
-  if (normalizedName === "read" && filePath) return `Read ${clip(summarizePathForUi(filePath), 72)}`;
-  if (normalizedName === "write" && filePath) return `Write ${clip(summarizePathForUi(filePath), 72)}`;
-  if ((normalizedName === "edit" || normalizedName === "multi_edit" || normalizedName === "multiedit") && filePath) {
-    return `Edit ${clip(summarizePathForUi(filePath), 72)}`;
-  }
-
-  const intentKeys = ["description", "question", "message", "command", "path", "query", "prompt"];
-  for (const key of intentKeys) {
-    const value = parsed[key];
-    if (typeof value === "string" && value.trim()) {
-      return clip(value.trim(), normalizedName === "bash" ? 120 : 80);
-    }
-  }
-
+function stringifyToolInput(input: unknown): string | undefined {
+  if (input === null || input === undefined) return undefined;
+  if (typeof input === "string") return input;
   try {
-    return clip(JSON.stringify(parsed), normalizedName === "bash" ? 120 : 80);
+    return JSON.stringify(input, null, 2);
   } catch {
-    return "";
+    return String(input);
   }
 }
 
-function summarizeToolOutput(toolName: string, output: string): string {
-  if (!output.trim()) return "";
-  const normalizedName = toolName.toLowerCase();
-  const firstLine = output
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean);
-  if (!firstLine) return "";
-  return clip(firstLine, normalizedName === "bash" ? 120 : 80);
-}
-
-function buildToolHeader(toolName: string, input: unknown, output: string): string {
-  const normalizedName = toolName.toLowerCase();
-  if (normalizedName === "bash") return toolName;
-  const inputSummary = summarizeToolInput(toolName, input);
-  if (inputSummary) return `${toolName} — ${inputSummary}`;
-  const outputSummary = summarizeToolOutput(toolName, output);
-  if (outputSummary) return `${toolName} — ${outputSummary}`;
-  return toolName;
+function toProtocolRenderPayload(value: unknown): ToolRenderPayload | undefined {
+  const parsed = ToolRenderPayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function splitThoughtLines(text: string): string[] {
@@ -442,17 +386,10 @@ export class TranscriptStore {
   }
 
   addToolResultMessage(message: ToolResultMessage): void {
-    const renderPayload: ToolRenderPayload | undefined = deriveToolRenderPayload(
-      message.toolName,
-      undefined,
-      message.output,
-      message.isError,
-      { cwd: this.options.cwd },
-    );
+    const renderPayload: ToolRenderPayload | undefined =
+      toProtocolRenderPayload(message.render) ?? createTextRenderPayload(undefined, message.output, message.isError);
     const icon = message.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
-    const headerLabel =
-      this.buildToolHeaderFromRenderPayload(renderPayload) ??
-      buildToolHeader(message.toolName, undefined, message.output);
+    const headerLabel = buildToolHeader(message.toolName, renderPayload);
 
     if (renderPayload) {
       const rendered = renderToolPayload(renderPayload);
@@ -600,13 +537,9 @@ export class TranscriptStore {
     this.toolCallInputs.delete(event.toolCallId);
     const elapsedVal = startTime !== undefined ? formatToolElapsed(Date.now() - startTime) : null;
     const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
-    const renderPayload: ToolRenderPayload | undefined = deriveToolRenderPayload(
-      event.toolName,
-      toolInput,
-      event.output,
-      event.isError,
-      { cwd: this.options.cwd },
-    );
+    const renderPayload: ToolRenderPayload | undefined =
+      toProtocolRenderPayload(event.render) ??
+      createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError);
 
     if (event.toolName === "plan") {
       this.planCallCount++;
@@ -679,9 +612,7 @@ export class TranscriptStore {
 
       this.items.push(this.createToolResultItem(lines));
     } else if (renderPayload) {
-      const headerLabel =
-        this.buildToolHeaderFromRenderPayload(renderPayload) ??
-        buildToolHeader(event.toolName, toolInput, event.output);
+      const headerLabel = buildToolHeader(event.toolName, renderPayload);
       const rendered = renderToolPayload(renderPayload);
       const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
       if (rendered.length > 0) {
@@ -689,7 +620,10 @@ export class TranscriptStore {
       }
       this.items.push(this.createToolResultItem(lines));
     } else if (event.output) {
-      const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
+      const headerLabel = buildToolHeader(
+        event.toolName,
+        createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError),
+      );
       const rawLines = event.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
       const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
@@ -698,7 +632,7 @@ export class TranscriptStore {
       }
       this.items.push(this.createToolResultItem(lines));
     } else {
-      const headerLabel = buildToolHeader(event.toolName, toolInput, event.output);
+      const headerLabel = buildToolHeader(event.toolName);
       this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
     }
     if (this.isThreadBusy) {
@@ -751,71 +685,6 @@ export class TranscriptStore {
       continued: this.hasCommittedAssistantChunkInMessage,
     });
     this.hasCommittedAssistantChunkInMessage = true;
-  }
-
-  private buildToolHeaderFromRenderPayload(payload: ToolRenderPayload | undefined): string | null {
-    if (!payload || payload.blocks.length === 0) return null;
-    const firstBlock = payload.blocks[0];
-    const label = this.describeRenderBlock(firstBlock);
-    return label ? `${label}` : null;
-  }
-
-  private describeRenderBlock(block: ToolRenderBlock): string | null {
-    switch (block.type) {
-      case "summary": {
-        const humanized = this.humanizeSearchSummary(block.text);
-        return humanized ? `Summary — ${humanized}` : `Summary — ${block.text}`;
-      }
-      case "file":
-        return `File — ${this.formatPathForHeader(block.filePath)}`;
-      case "command":
-        return null;
-      case "diff": {
-        const firstFile = block.files[0];
-        if (!firstFile) return "Diff";
-        return `Diff — ${this.formatPathForHeader(firstFile.filePath)}`;
-      }
-      case "key_value":
-        return block.title ? `Details — ${block.title}` : "Details";
-      case "list":
-        return block.title ? `List — ${block.title}` : "List";
-      case "table":
-        return block.title ? `Table — ${block.title}` : "Table";
-      case "tree":
-        return block.title ? `Tree — ${block.title}` : "Tree";
-      case "status_badges":
-        return block.title ? `Status — ${block.title}` : "Status";
-      default:
-        return null;
-    }
-  }
-
-  private formatPathForHeader(filePath: string): string {
-    if (!this.options.cwd) return filePath;
-    if (!path.isAbsolute(filePath)) return filePath;
-    const relative = path.relative(this.options.cwd, filePath);
-    if (!relative || relative.startsWith("..")) return filePath;
-    return relative.split(path.sep).join("/");
-  }
-
-  private humanizeSearchSummary(summaryText: string): string | null {
-    if (!summaryText.startsWith("Search(")) return null;
-    const patternMatch = summaryText.match(/pattern:\s*("(?:[^"\\]|\\.)*")/);
-    if (!patternMatch) return null;
-    let pattern = "";
-    try {
-      pattern = JSON.parse(patternMatch[1]) as string;
-    } catch {
-      return null;
-    }
-    const pathMatch = summaryText.match(/path:\s*("(?:[^"\\]|\\.)*")/);
-    if (!pathMatch) return `Search ${pattern}`;
-    try {
-      const searchPath = JSON.parse(pathMatch[1]) as string;
-      return `Search ${pattern} in ${searchPath}`;
-    } catch {
-      return `Search ${pattern}`;
-    }
   }
 
   private stopOverlayStatus(): void {

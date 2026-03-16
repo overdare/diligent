@@ -12,6 +12,7 @@ import type {
   TableBlock,
   ToolRenderBlock,
   ToolRenderPayload,
+  ToolRenderTextBlock,
   TreeBlock,
   TreeNode,
 } from "@diligent/protocol";
@@ -44,6 +45,15 @@ function blockTitle(title?: string): string[] {
 function renderSummary(block: SummaryBlock): string[] {
   const color = toneAnsi(block.tone);
   return [`${color}${block.text}${t.reset}`];
+}
+
+function renderText(block: ToolRenderTextBlock): string[] {
+  const lines: string[] = [...blockTitle(block.title)];
+  const color = block.isError ? t.error : t.dim;
+  for (const line of block.text.split("\n")) {
+    lines.push(`${color}${lines.length > 0 ? "  " : ""}${line}${t.reset}`);
+  }
+  return lines;
 }
 
 function renderKeyValue(block: KeyValueBlock): string[] {
@@ -255,6 +265,8 @@ function renderBlock(block: ToolRenderBlock): string[] {
   switch (block.type) {
     case "summary":
       return renderSummary(block);
+    case "text":
+      return renderText(block);
     case "key_value":
       return renderKeyValue(block);
     case "list":

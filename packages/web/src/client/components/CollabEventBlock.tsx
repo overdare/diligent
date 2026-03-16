@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import { getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
+import { deriveRenderPayload, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { StatusDot } from "./StatusDot";
 
 interface CollabEventBlockProps {
@@ -168,9 +168,9 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                   {item.childTools.map((tool) => {
                     const info = getToolInfo(tool.toolName);
                     const isRunning = tool.status === "running";
-                    const inputSummary = tool.inputText ? summarizeInput(tool.toolName, tool.inputText) : "";
-                    const outputSummary =
-                      tool.status === "done" && tool.outputText ? summarizeOutput(tool.toolName, tool.outputText) : "";
+                    const payload = deriveRenderPayload(tool.inputText, tool.outputText, tool.isError);
+                    const inputSummary = summarizeInput(payload);
+                    const outputSummary = tool.status === "done" ? summarizeOutput(payload) : "";
                     return (
                       <div key={tool.toolCallId} className="flex flex-col gap-0.5 text-xs">
                         <div className="flex items-center gap-1.5">

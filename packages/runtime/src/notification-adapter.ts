@@ -295,6 +295,7 @@ export class ProtocolNotificationAdapter {
           toolName: started?.toolName ?? item.toolName,
           output: item.output ?? "",
           isError: item.isError ?? false,
+          render: item.render,
           ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];

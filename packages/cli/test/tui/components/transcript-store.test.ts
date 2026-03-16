@@ -145,7 +145,14 @@ describe("TranscriptStore", () => {
 
     store.handleEvent({ type: "status_change", status: "busy" });
     store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
-    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "t1",
+      toolName: "bash",
+      output: "hi",
+      isError: false,
+      render: undefined,
+    });
 
     const lines = renderTranscript(store, 80).map(stripAnsi);
     const workingIndex = lines.findIndex((line) => line.includes("Working…"));
@@ -174,7 +181,14 @@ describe("TranscriptStore", () => {
     expect(whileOverlay.some((line) => line.includes("bash"))).toBe(true);
     expect(whileOverlay.some((line) => line.includes("Working…"))).toBe(true);
 
-    store.handleEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", output: "hi", isError: false });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "t1",
+      toolName: "bash",
+      output: "hi",
+      isError: false,
+      render: undefined,
+    });
     const afterOverlay = renderTranscript(store, 80).map(stripAnsi);
     expect(afterOverlay.some((line) => line.includes("Working…"))).toBe(true);
 
@@ -205,7 +219,7 @@ describe("TranscriptStore", () => {
     if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     const readHeader = stripAnsi(toolItem.header);
-    expect(readHeader).toContain("File — packages/runtime/src/tools/render-payload.ts");
-    expect(readHeader).not.toContain("Read — ");
+    expect(readHeader).toContain("read - {");
+    expect(readHeader).not.toContain("File —");
   });
 });

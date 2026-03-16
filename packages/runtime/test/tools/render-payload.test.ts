@@ -20,6 +20,8 @@ describe("deriveToolRenderPayload path formatting", () => {
       { cwd },
     );
 
+    expect(payload?.version).toBe(2);
+    expect(payload?.inputSummary).toBe('Search(pattern: "**/*.ts", path: ".")');
     expect(payload?.blocks[0]?.type).toBe("summary");
     const summaryBlock = payload?.blocks[0];
     if (!summaryBlock || summaryBlock.type !== "summary") throw new Error("Expected summary block");
@@ -48,6 +50,8 @@ describe("deriveToolRenderPayload path formatting", () => {
       { cwd },
     );
 
+    expect(payload?.version).toBe(2);
+    expect(payload?.inputSummary).toBe('Search(pattern: "TODO", path: ".")');
     expect(payload?.blocks[0]?.type).toBe("summary");
     const summaryBlock = payload?.blocks[0];
     if (!summaryBlock || summaryBlock.type !== "summary") throw new Error("Expected summary block");
@@ -167,6 +171,9 @@ describe("deriveToolRenderPayload update_knowledge", () => {
     );
 
     expect(payload).toBeDefined();
+    expect(payload?.version).toBe(2);
+    expect(payload?.inputSummary).toBe("upsert");
+    expect(payload?.outputSummary).toBe("Knowledge saved: [pattern] Prefer batched tool calls");
     expect(payload?.blocks[0]).toEqual({
       type: "key_value",
       items: [
@@ -199,6 +206,9 @@ describe("deriveToolRenderPayload update_knowledge", () => {
     );
 
     expect(payload).toBeDefined();
+    expect(payload?.version).toBe(2);
+    expect(payload?.inputSummary).toBe("delete");
+    expect(payload?.outputSummary).toBe("Knowledge delete failed: missing id");
 
     const detailBlock = payload?.blocks[0];
     if (!detailBlock || detailBlock.type !== "key_value") throw new Error("Expected key_value block");
