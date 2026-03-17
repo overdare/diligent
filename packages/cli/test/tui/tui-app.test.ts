@@ -367,7 +367,7 @@ describe("App", () => {
       await wait(60);
       const output = stripAnsi(terminal.stdout.writes.join(""));
       expect(output).toContain("(ctrl+o to expand)");
-      expect(output).not.toContain("line1");
+      expect(output).not.toContain("(ctrl+o to collapse)");
     } finally {
       app.stop();
       workspace.cleanup();
