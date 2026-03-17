@@ -115,7 +115,7 @@ fn deploy_plugins(src: &Path, dest: &Path, log: &mut String) -> std::io::Result<
     Ok(())
 }
 
-/// Run first-time setup. Non-fatal: logs errors but never blocks the app.
+/// Deploy bundled defaults on every app startup. Non-fatal: logs errors but never blocks the app.
 pub fn run(app: &tauri::App) {
     let mut log = String::new();
 
@@ -147,13 +147,16 @@ pub fn run(app: &tauri::App) {
                     let src = entry.path();
                     let dest = global.join(&name);
                     if src.is_file() {
-                        if !dest.exists() {
-                            match fs::copy(&src, &dest) {
-                                Ok(_) => { let _ = writeln!(log, "[init] Created {}", dest.display()); }
-                                Err(e) => { let _ = writeln!(log, "[init] Failed to copy {}: {e}", name.to_string_lossy()); }
+                        let existed_before = dest.exists();
+                        match fs::copy(&src, &dest) {
+                            Ok(_) => {
+                                if existed_before {
+                                    let _ = writeln!(log, "[init] Overwrote {}", dest.display());
+                                } else {
+                                    let _ = writeln!(log, "[init] Created {}", dest.display());
+                                }
                             }
-                        } else {
-                            let _ = writeln!(log, "[init] Skipped (exists) {}", dest.display());
+                            Err(e) => { let _ = writeln!(log, "[init] Failed to copy {}: {e}", name.to_string_lossy()); }
                         }
                     } else if src.is_dir() {
                         if name.to_string_lossy() == "plugins" {
@@ -163,12 +166,16 @@ pub fn run(app: &tauri::App) {
                                 Err(e) => { let _ = writeln!(log, "[init] Failed to deploy plugins/: {e}"); }
                             }
                         } else {
-                            if let Err(e) = fs::create_dir_all(&dest) {
-                                let _ = writeln!(log, "[init] Cannot create {}: {e}", dest.display());
-                                continue;
+                            if dest.exists() {
+                                if let Err(e) = fs::remove_dir_all(&dest) {
+                                    let _ = writeln!(log, "[init] Cannot replace {}: {e}", dest.display());
+                                    continue;
+                                }
                             }
                             match copy_dir_recursive(&src, &dest) {
-                                Ok(_) => { let _ = writeln!(log, "[init] Deployed {}/", name.to_string_lossy()); }
+                                Ok(_) => {
+                                    let _ = writeln!(log, "[init] Deployed {}/", name.to_string_lossy());
+                                }
                                 Err(e) => { let _ = writeln!(log, "[init] Failed to deploy {}/: {e}", name.to_string_lossy()); }
                             }
                         }
