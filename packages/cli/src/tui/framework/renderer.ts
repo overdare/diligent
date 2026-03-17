@@ -418,6 +418,7 @@ export class TUIRenderer {
     }
 
     const overflowFlushLines: string[] = [];
+    const nextOverflowFlushedCounts = new Map<string, number>();
     for (let i = 0; i < activeBlocks.length; i++) {
       const block = activeBlocks[i];
       const hiddenCount = displayBlocks[i]?.hiddenCount ?? 0;
@@ -425,7 +426,7 @@ export class TUIRenderer {
       if (hiddenCount > previousHiddenCount) {
         overflowFlushLines.push(...block.lines.slice(previousHiddenCount, hiddenCount));
       }
-      this.overflowFlushedCounts.set(block.key, hiddenCount);
+      nextOverflowFlushedCounts.set(block.key, previousHiddenCount);
     }
 
     const displayActiveLines = displayBlocks.flatMap((block) => block.lines);
@@ -468,9 +469,17 @@ export class TUIRenderer {
         }
       }
       if (allowOverflowFlush) {
+        for (let i = 0; i < activeBlocks.length; i++) {
+          const block = activeBlocks[i];
+          const hiddenCount = displayBlocks[i]?.hiddenCount ?? 0;
+          const previousHiddenCount = nextOverflowFlushedCounts.get(block.key) ?? 0;
+          nextOverflowFlushedCounts.set(block.key, Math.max(previousHiddenCount, hiddenCount));
+        }
         this.lastOverflowFlushAt = now;
       }
     }
+
+    this.overflowFlushedCounts = nextOverflowFlushedCounts;
 
     // Write active region (redrawn each frame)
     const activePayload = this.serializeLinesForTerminal(displayActiveLines, width);

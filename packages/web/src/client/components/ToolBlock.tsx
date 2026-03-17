@@ -7,7 +7,6 @@ import {
   deriveRenderPayload,
   formatToolDurationMs,
   getToolHeaderTitle,
-  getToolInfo,
   summarizeInput,
   summarizeOutput,
 } from "../lib/tool-info";
@@ -46,7 +45,6 @@ function ToolContent({
 
 export function ToolBlock({ item }: ToolBlockProps) {
   const [open, setOpen] = useState(false);
-  const { icon, category } = getToolInfo(item.toolName);
   const renderPayload = item.render ?? deriveRenderPayload(item.inputText, item.outputText, item.isError);
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
@@ -55,7 +53,6 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;
 
   const isStreaming = item.status === "streaming";
-  const isAction = category === "action";
 
   const statusEl = isStreaming ? (
     <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
@@ -77,48 +74,32 @@ export function ToolBlock({ item }: ToolBlockProps) {
     </span>
   ) : null;
 
-  const iconColorClass = isAction
-    ? isStreaming
-      ? "text-accent"
-      : item.isError
-        ? "text-danger"
-        : "text-text/60"
-    : "text-muted";
-
   return (
     <div className="pb-4">
-      <div className="min-w-0">
+      <div className="min-w-0 rounded-xl bg-surface-dark">
         <button
           type="button"
           onClick={() => !isStreaming && setOpen((v) => !v)}
           disabled={isStreaming}
-          className="flex max-w-full flex-col gap-0.5 rounded-md py-0.5 pr-2 text-left"
+          className="flex max-w-full flex-col gap-1 rounded-md text-left"
         >
-          {/* Header row: icon + name + chevron + status */}
+          {/* Header row */}
           <div className="flex items-center gap-2 leading-none">
-            <span
-              className={cn(
-                "inline-flex h-4 w-4 shrink-0 items-center justify-center font-mono text-sm leading-none",
-                iconColorClass,
-              )}
-            >
-              {icon}
-            </span>
-            <span className="text-sm font-medium leading-none text-muted">{headerTitle}</span>
+            <span className="text-sm font-medium leading-none text-text-soft">{headerTitle}</span>
             {durationLabel ? <span className="text-xs leading-none text-text/35">{durationLabel}</span> : null}
             {chevronEl}
             {statusEl}
           </div>
           {/* Summary rows */}
           {showOutputSummary ? (
-            <div className="ml-6 flex flex-col gap-0.5">
-              <span className="max-w-[64ch] truncate font-mono text-xs text-accent/70">↳ {outputSummary}</span>
+            <div className="flex flex-col gap-0.5">
+              <span className="max-w-[64ch] truncate font-mono text-xs text-text-tertiary">↳ {outputSummary}</span>
             </div>
           ) : null}
         </button>
 
         {open && (
-          <div className="pt-2 pb-3">
+          <div>
             <ToolContent item={item} render={renderPayload} />
           </div>
         )}

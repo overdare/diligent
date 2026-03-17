@@ -11,7 +11,7 @@ export function ExpandButton({ expanded, onToggle, detail }: ExpandButtonProps) 
     <button
       type="button"
       onClick={onToggle}
-      className="w-full border-t border-text/10 py-1.5 text-center font-mono text-2xs text-muted transition hover:text-text"
+      className="w-full border-t border-border/10 py-1.5 text-center font-mono text-2xs text-muted transition hover:text-text"
     >
       {expanded ? "Show less ▴" : `Show more ▾${detail ? ` (${detail})` : ""}`}
     </button>

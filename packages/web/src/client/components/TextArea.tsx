@@ -24,7 +24,7 @@ export function TextArea({ maxRows = 6, className, onChange, value, ...props }: 
       rows={1}
       value={value}
       className={cn(
-        "w-full resize-none overflow-y-auto rounded-md border border-text/20 bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "w-full resize-none overflow-y-auto rounded-md border border-border/20 bg-bg px-3 py-2 text-sm text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         className,
       )}
       onChange={onChange}

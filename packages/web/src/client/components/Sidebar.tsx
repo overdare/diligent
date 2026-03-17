@@ -6,10 +6,13 @@ import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 
 const PROVIDER_STYLE: Record<string, { label: string; className: string }> = {
-  anthropic: { label: "Anthropic", className: "border-orange-400/30 bg-orange-400/10 text-orange-400" },
-  openai: { label: "OpenAI", className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
-  chatgpt: { label: "ChatGPT", className: "border-sky-400/30 bg-sky-400/10 text-sky-400" },
-  gemini: { label: "Gemini", className: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
+  anthropic: {
+    label: "Anthropic",
+    className: "border-provider-anthropic/30 bg-provider-anthropic/10 text-provider-anthropic",
+  },
+  openai: { label: "OpenAI", className: "border-provider-openai/30 bg-provider-openai/10 text-provider-openai" },
+  chatgpt: { label: "ChatGPT", className: "border-provider-chatgpt/30 bg-provider-chatgpt/10 text-provider-chatgpt" },
+  gemini: { label: "Gemini", className: "border-provider-gemini/30 bg-provider-gemini/10 text-provider-gemini" },
 };
 
 interface SidebarProps {
@@ -42,12 +45,12 @@ function SidebarImpl({
   const cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
 
   return (
-    <Panel className="flex min-h-0 flex-col overflow-hidden">
+    <Panel className="flex min-h-0 flex-col overflow-hidden border-border/100 bg-surface-default">
       {/* Header */}
-      <div className="relative border-b border-text/10 px-4 py-3">
+      <div className="relative border-b border-border/100 bg-surface-dark px-5 py-4">
         <div className="pr-24">
-          <span className="font-mono text-sm font-bold text-accent">diligent</span>
-          <p className="mt-1 truncate font-mono text-xs- text-muted" title={cwd}>
+          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.22em] text-[#FE0041]">DILIGENT</span>
+          <p className="mt-1 truncate font-mono text-xs- text-muted/90" title={cwd}>
             {cwdShort}
           </p>
         </div>
@@ -58,7 +61,7 @@ function SidebarImpl({
               onClick={onOpenKnowledge}
               aria-label="Open knowledge"
               title="Knowledge"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#a78bfa]/35 bg-[#8b5cf6]/12 text-sm text-[#c4b5fd] transition hover:border-[#c4b5fd]/55 hover:bg-[#8b5cf6]/18 hover:text-[#ddd6fe]"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
             >
               <span className="block leading-none">✦</span>
             </button>
@@ -69,7 +72,7 @@ function SidebarImpl({
               onClick={onOpenTools}
               aria-label="Open config"
               title="Config"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-text/15 bg-surface/60 text-sm text-muted transition hover:border-text/25 hover:bg-surface hover:text-text"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/100 bg-surface-light text-sm text-muted transition hover:border-border-strong/100 hover:bg-surface-strong hover:text-text"
             >
               <span className="block leading-none">⚙</span>
             </button>
@@ -78,11 +81,11 @@ function SidebarImpl({
       </div>
 
       {/* Thread list */}
-      <div className="flex-1 space-y-1 overflow-y-auto p-2">
+      <div className="flex-1 space-y-2 overflow-y-auto bg-bg-sunken px-3 py-3">
         <button
           type="button"
           onClick={onNewThread}
-          className="flex w-full items-center gap-2 rounded-md border border-dashed border-accent/35 bg-accent/8 px-3 py-2.5 text-left text-sm font-medium text-accent transition hover:border-accent/50 hover:bg-accent/12 hover:text-accent"
+          className="flex w-full items-center gap-2 rounded-lg border border-border/100 bg-surface-light px-3.5 py-3 text-left text-sm font-medium text-text transition hover:border-selection/50 hover:text-selection"
         >
           <span className="text-lg leading-none">+</span>
           <span>New conversation</span>
@@ -99,24 +102,21 @@ function SidebarImpl({
               <button
                 type="button"
                 onClick={() => onOpenThread(thread.id)}
-                className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                className={`w-full rounded-xl px-3.5 py-3 text-left transition ${
                   isActive
-                    ? "border-accent/30 bg-accent/5 text-text"
+                    ? "bg-surface-light text-text"
                     : needsAttention
-                      ? "border-orange-400/30 bg-orange-400/5 hover:bg-orange-400/10"
-                      : "border-transparent hover:border-text/15 hover:bg-surface/50"
+                      ? "bg-bg-sunken hover:bg-surface-light"
+                      : "bg-bg-sunken hover:bg-surface-light"
                 }`}
               >
                 <div className="flex items-center gap-2 pr-5">
                   {needsAttention ? (
-                    <span
-                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-orange-400"
-                      title="Needs attention"
-                    />
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-attention" title="Needs attention" />
                   ) : null}
                   <span className="truncate text-sm leading-snug text-text">{title}</span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-xs- text-muted">
+                <div className="mt-1 flex items-center gap-1.5 text-xs- text-muted/85">
                   <span>{time}</span>
                   <span className="opacity-40">·</span>
                   <span>{thread.messageCount} msg</span>
@@ -142,7 +142,7 @@ function SidebarImpl({
 
       {/* Settings footer */}
       {providers && onOpenProviders ? (
-        <div className="space-y-2 border-t border-text/10 px-3 py-2.5">
+        <div className="space-y-2 border-t border-border/100 bg-surface-dark px-4 py-3">
           {(() => {
             const connected = providers.filter((p) => p.configured);
             return (
@@ -165,7 +165,7 @@ function SidebarImpl({
                           key={p.provider}
                           type="button"
                           onClick={() => onOpenProviders(p.provider)}
-                          className={`rounded border px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${style?.className ?? "border-text/20 bg-surface text-muted"}`}
+                          className={`rounded border px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${style?.className ?? "border-border/20 bg-surface text-muted"}`}
                         >
                           {style?.label ?? p.provider}
                         </button>
@@ -174,7 +174,7 @@ function SidebarImpl({
                     <button
                       type="button"
                       onClick={() => onOpenProviders()}
-                      className="rounded border border-dashed border-text/20 px-2 py-0.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
+                      className="rounded border border-dashed border-border/20 px-2 py-0.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
                     >
                       + Connect
                     </button>

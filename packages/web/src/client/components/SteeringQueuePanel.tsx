@@ -10,7 +10,7 @@ function SteeringQueuePanelImpl({ pendingSteers }: SteeringQueuePanelProps) {
   if (pendingSteers.length === 0) return null;
 
   return (
-    <div className="shrink-0 border-t border-text/10 pl-6 pr-4 py-2">
+    <div className="shrink-0 border-t border-border/10 pl-6 pr-4 py-2">
       <div className="space-y-1 font-mono text-xs text-accent/90">
         {pendingSteers.map((text, i) => (
           <div key={`${i}-${text.slice(0, 16)}`} className="truncate">

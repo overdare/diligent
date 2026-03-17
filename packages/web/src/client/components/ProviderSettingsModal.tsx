@@ -99,7 +99,7 @@ export function ProviderSettingsModal({
           return (
             <div
               key={p.provider}
-              className={`rounded-md border px-3 py-2.5 ${isFocused ? "border-accent/40 bg-accent/5" : "border-text/10"}`}
+              className={`rounded-md border px-3 py-2.5 ${isFocused ? "border-accent/40 bg-fill-ghost-hover" : "border-border/100 bg-surface-dark"}`}
             >
               <div className="flex items-center gap-2.5">
                 <StatusDot color={isConnected(p) ? "success" : "danger"} size="md" />

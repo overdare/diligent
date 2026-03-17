@@ -11,9 +11,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const intentClasses: Record<Intent, string> = {
-  primary: "bg-accent text-bg hover:opacity-90",
-  danger: "bg-danger text-white hover:opacity-90",
-  ghost: "bg-surface text-text border border-text/15 hover:border-accent",
+  primary: "border border-transparent bg-fill-primary text-text hover:bg-fill-active",
+  danger: "border border-transparent bg-danger text-text hover:opacity-90",
+  ghost:
+    "border border-border/100 bg-fill-secondary text-text hover:border-border-strong/100 hover:bg-fill-ghost-hover",
 };
 
 const sizeClasses: Record<Size, string> = {

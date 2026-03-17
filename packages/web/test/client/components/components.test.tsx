@@ -233,7 +233,7 @@ test("assistant message renders completed footer when turn duration is available
 
   expect(html).toContain("Completed in 4.2s");
   expect(html).not.toContain("Reasoned for");
-  expect(html).toContain('class="pb-4"');
+  expect(html).toContain('class="pb-2 pt-3"');
 });
 
 test("assistant message keeps divider even when persisted duration is unavailable", () => {
@@ -250,7 +250,7 @@ test("assistant message keeps divider even when persisted duration is unavailabl
     />,
   );
 
-  expect(html).toContain("h-px w-full bg-white/10");
+  expect(html).toContain("h-px w-full bg-border/10");
   expect(html).not.toContain("Completed in");
 });
 

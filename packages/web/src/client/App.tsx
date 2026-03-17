@@ -34,7 +34,6 @@ import { Panel } from "./components/Panel";
 import { PlanPanel } from "./components/PlanPanel";
 import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
-import { StatusDot } from "./components/StatusDot";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
@@ -929,10 +928,6 @@ export function App() {
     return raw.length > 40 ? `${raw.slice(0, 40)}…` : raw;
   }, [state.activeThreadId, state.threadList, state.items]);
 
-  const statusDotColor: "success" | "accent" | "danger" =
-    state.threadStatus === "idle" ? "success" : state.threadStatus === "busy" ? "accent" : "danger";
-  const statusDotPulse = state.threadStatus !== "idle";
-
   const showPlan = state.planState?.steps.some((s) => s.status !== "done");
 
   const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
@@ -1016,7 +1011,7 @@ export function App() {
 
   return (
     <div className="h-screen bg-bg text-text">
-      <div className="mx-auto grid h-full max-w-app grid-cols-1 gap-2 p-2 lg:grid-cols-[280px_1fr]">
+      <div className="mx-auto grid h-full max-w-[1480px] grid-cols-1 gap-3 px-3 py-3 lg:grid-cols-[300px_1fr] lg:px-4 lg:py-4">
         <Sidebar
           cwd={cwd}
           threadList={state.threadList}
@@ -1040,13 +1035,13 @@ export function App() {
           }}
         />
 
-        <Panel className="relative flex min-h-0 flex-col overflow-hidden">
+        <Panel className="relative flex min-h-0 flex-col overflow-hidden border-border/100 bg-surface-dark">
           {/* Thread title bar */}
-          <div className="flex shrink-0 items-center gap-2.5 border-b border-text/10 px-4 py-2.5">
-            <StatusDot color={statusDotColor} pulse={statusDotPulse} size="md" />
+          <div className="flex shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5 py-3">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-icon-success)]" aria-hidden="true" />
             {(state.threadStatus !== "idle" || showCompactingIndicator) && (
               <span
-                className={`shrink-0 font-mono text-xs ${showCompactingIndicator || state.threadStatus === "busy" ? "text-accent" : "text-danger"}`}
+                className={`shrink-0 font-mono text-xs ${showCompactingIndicator || state.threadStatus === "busy" ? "text-text-success" : "text-danger"}`}
               >
                 {showCompactingIndicator
                   ? "Compacting..."
@@ -1055,7 +1050,7 @@ export function App() {
                     : state.threadStatus}
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs uppercase tracking-[0.12em] text-muted/90">
               {threadTitle || "new conversation"}
             </span>
           </div>
@@ -1112,7 +1107,7 @@ export function App() {
               onList={listTools}
               onSave={saveTools}
               onClose={() => setShowToolModal(false)}
-              className="absolute inset-0 z-40 bg-black/35"
+              className="absolute inset-0 z-40 bg-overlay/35"
             />
           ) : null}
 
@@ -1122,7 +1117,7 @@ export function App() {
               onList={listKnowledge}
               onUpdate={updateKnowledge}
               onClose={() => setShowKnowledgeModal(false)}
-              className="absolute inset-0 z-40 bg-black/35"
+              className="absolute inset-0 z-40 bg-overlay/35"
             />
           ) : null}
         </Panel>
@@ -1132,8 +1127,8 @@ export function App() {
         <div
           className={`toast-animate fixed bottom-12 left-1/2 -translate-x-1/2 rounded-md border px-3 py-2 text-sm shadow-panel ${
             state.toast.kind === "error"
-              ? "border-danger/40 bg-surface text-danger"
-              : "border-accent/40 bg-surface text-accent"
+              ? "border-danger/40 bg-surface-default text-danger"
+              : "border-accent/40 bg-surface-default text-accent"
           } ${state.toast.fatal ? "cursor-pointer" : ""}`}
           onClick={state.toast.fatal ? () => dispatch({ type: "clear_toast" }) : undefined}
         >

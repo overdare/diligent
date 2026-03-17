@@ -268,14 +268,14 @@ export function ToolSettingsModal({
   };
 
   return (
-    <div className={className ?? "fixed inset-0 z-50 bg-black/35"} role="presentation" onClick={onClose}>
+    <div className={className ?? "fixed inset-0 z-50 bg-overlay/35"} role="presentation" onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Config"
         tabIndex={-1}
-        className="absolute inset-0 z-10 flex flex-col rounded-lg border border-text/20 bg-surface p-4 shadow-panel"
+        className="absolute inset-0 z-10 flex flex-col rounded-xl border border-border/100 bg-surface-default p-5 shadow-panel"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -288,7 +288,7 @@ export function ToolSettingsModal({
             type="button"
             aria-label="Close tools panel"
             onClick={onClose}
-            className="rounded-md border border-text/15 px-2 py-1 text-xs text-muted transition hover:border-accent/40 hover:text-accent"
+            className="rounded-md border border-border/100 bg-fill-secondary px-2 py-1 text-xs text-muted transition hover:bg-fill-ghost-hover hover:text-text"
           >
             ✕
           </button>
@@ -317,7 +317,7 @@ export function ToolSettingsModal({
                       return (
                         <label
                           key={tool.name}
-                          className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                          className="flex items-start gap-3 rounded-lg border border-border/100 bg-surface-dark px-3 py-2.5"
                         >
                           <input
                             type="checkbox"
@@ -330,7 +330,7 @@ export function ToolSettingsModal({
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-text">{tool.name}</span>
                               {tool.immutable ? (
-                                <span className="rounded border border-text/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                                <span className="rounded border border-border/100 bg-surface-light px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
                                   Locked
                                 </span>
                               ) : null}
@@ -371,7 +371,7 @@ export function ToolSettingsModal({
                 </div>
 
                 {currentPluginDrafts.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-text/15 px-3 py-3 text-sm text-muted">
+                  <div className="rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 py-3 text-sm text-muted">
                     No plugin packages configured.
                   </div>
                 ) : (
@@ -381,7 +381,10 @@ export function ToolSettingsModal({
                       const pluginTools = pluginToolsByPackage.get(pluginDraft.package) ?? [];
                       const canShowRuntimeState = Boolean(pluginState);
                       return (
-                        <div key={pluginDraft.package} className="rounded-md border border-text/10 px-3 py-3">
+                        <div
+                          key={pluginDraft.package}
+                          className="rounded-lg border border-border/100 bg-surface-dark px-3 py-3"
+                        >
                           <div className="flex items-start gap-3">
                             <input
                               type="checkbox"
@@ -393,7 +396,7 @@ export function ToolSettingsModal({
                               <div className="flex items-center gap-2">
                                 <span className="truncate text-sm font-medium text-text">{pluginDraft.package}</span>
                                 {!pluginState ? (
-                                  <span className="rounded border border-accent/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                                  <span className="rounded border border-accent/30 bg-fill-ghost-hover px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
                                     Pending save
                                   </span>
                                 ) : null}
@@ -407,7 +410,7 @@ export function ToolSettingsModal({
                                 <p className="mt-1 text-xs text-danger">{pluginState.loadError}</p>
                               ) : null}
                               {pluginState?.warnings.map((warning) => (
-                                <p key={warning} className="mt-1 text-xs text-yellow-300">
+                                <p key={warning} className="mt-1 text-xs text-warning">
                                   {warning}
                                 </p>
                               ))}
@@ -418,14 +421,14 @@ export function ToolSettingsModal({
                           </div>
 
                           {canShowRuntimeState && pluginTools.length > 0 ? (
-                            <div className="mt-3 space-y-2 border-t border-text/10 pt-3">
+                            <div className="mt-3 space-y-2 border-t border-border/10 pt-3">
                               {pluginTools.map((tool) => {
                                 const checked = pluginDraft.tools[tool.name] ?? tool.enabled;
                                 const disabled = !tool.configurable || !tool.available;
                                 return (
                                   <label
                                     key={tool.name}
-                                    className="flex items-start gap-3 rounded-md border border-text/10 px-3 py-2"
+                                    className="flex items-start gap-3 rounded-lg border border-border/100 bg-surface-default px-3 py-2.5"
                                   >
                                     <input
                                       type="checkbox"

@@ -17,9 +17,9 @@ import { UserMessage } from "./UserMessage";
 function ErrorMessage({ item }: { item: Extract<RenderItem, { kind: "error" }> }) {
   return (
     <div className="py-1">
-      <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+      <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-text-soft">
         <div className="font-medium">{item.name ? `${item.name}: ${item.message}` : item.message}</div>
-        {item.turnId ? <div className="mt-1 text-xs text-red-200/80">Turn: {item.turnId}</div> : null}
+        {item.turnId ? <div className="mt-1 text-xs text-danger/80">Turn: {item.turnId}</div> : null}
       </div>
     </div>
   );
@@ -137,12 +137,12 @@ function MessageListImpl({
   const groupedItems = useMemo(() => renderGroupedItems(items, threadCwd), [items, threadCwd]);
 
   return (
-    <div className="relative min-h-0 flex-1">
-      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto px-6 py-4">
+    <div className="relative min-h-0 flex-1 bg-bg-sunken">
+      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto bg-bg-sunken px-7 py-6">
         {items.length === 0 && !hasPrompt ? (
           <EmptyState onSelectPrompt={onSelectPrompt} />
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-3">
             {groupedItems}
 
             {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (

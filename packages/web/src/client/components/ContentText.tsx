@@ -26,13 +26,13 @@ export function ContentText({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/40">
-      <div className="flex items-center justify-between border-b border-text/10 px-2 py-1">
+    <div className="overflow-hidden rounded-xl border border-border/10 bg-bg/34">
+      <div className="flex items-center justify-between border-b border-border/10 px-3 py-2">
         {label ? <span className="font-mono text-2xs uppercase tracking-wider text-muted">{label}</span> : <span />}
         <CopyButton text={text} />
       </div>
       <pre
-        className={`overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono leading-relaxed ${isError ? "text-danger/80" : "text-text/80"} ${compact ? "text-xs-" : "text-xs"}`}
+        className={`overflow-x-auto whitespace-pre-wrap px-3 py-3 font-mono leading-relaxed ${isError ? "text-danger/80" : "text-text/80"} ${compact ? "text-xs-" : "text-xs"}`}
         style={!expanded && isLong ? { maxHeight: `${maxLines * 1.5}em`, overflow: "hidden" } : undefined}
       >
         {text}

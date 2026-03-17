@@ -34,17 +34,17 @@ export function ApprovalCard({ request, onDecide }: ApprovalCardProps) {
   return (
     <SystemCard>
       <SectionLabel>Permission request</SectionLabel>
-      <p className="mb-1 text-sm text-text">
+      <p className="mb-2 text-sm leading-6 text-text">
         <span className="font-semibold text-accent">{request.toolName}</span>
         {" wants "}
         <span className="font-medium">{request.permission}</span>
       </p>
       {request.description ? (
-        <pre className="mb-3 whitespace-pre-wrap rounded border border-text/10 bg-bg/40 px-2 py-1.5 font-mono text-xs text-muted">
+        <pre className="mb-4 whitespace-pre-wrap rounded-xl border border-border/10 bg-bg/34 px-3 py-2 font-mono text-xs leading-relaxed text-muted">
           {request.description}
         </pre>
       ) : null}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" intent="ghost" onClick={() => onDecide("once")}>
           Once
         </Button>

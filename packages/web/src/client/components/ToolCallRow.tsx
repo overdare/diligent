@@ -3,13 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import {
-  deriveRenderPayload,
-  getToolHeaderTitle,
-  getToolInfo,
-  summarizeInput,
-  summarizeOutput,
-} from "../lib/tool-info";
+import { deriveRenderPayload, getToolHeaderTitle, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { SectionLabel } from "./SectionLabel";
 import { StatusDot } from "./StatusDot";
 
@@ -19,7 +13,6 @@ interface ToolCallRowProps {
 
 export function ToolCallRow({ item }: ToolCallRowProps) {
   const [open, setOpen] = useState(false);
-  const { icon } = getToolInfo(item.toolName);
   const renderPayload = item.render ?? deriveRenderPayload(item.inputText, item.outputText, item.isError);
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
@@ -48,34 +41,33 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
 
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-tool-row rounded-lg border border-text/10 bg-bg/40">
+      <div className="w-full max-w-tool-row rounded-lg bg-surface-dark">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex max-w-full flex-col gap-0.5 px-3 py-2 text-left"
+          className="flex max-w-full flex-col gap-0.5 text-left"
           disabled={item.status === "streaming"}
         >
-          {/* Header row: icon + name + chevron + status */}
+          {/* Header row */}
           <div className="flex items-center gap-1.5">
-            <span className="shrink-0 font-mono text-sm text-muted">{icon}</span>
             <span className="text-xs font-semibold text-muted">{headerTitle}</span>
             {chevronEl}
             {statusEl}
           </div>
           {/* Summary rows */}
           {showOutputSummary ? (
-            <div className="ml-5 flex flex-col gap-0.5">
-              <span className="max-w-[64ch] truncate font-mono text-xs text-accent/70">↳ {outputSummary}</span>
+            <div className="flex flex-col gap-0.5">
+              <span className="max-w-[64ch] truncate font-mono text-xs text-text-tertiary">↳ {outputSummary}</span>
             </div>
           ) : null}
         </button>
 
         {open ? (
-          <div className="border-t border-text/10 px-3 pb-3 pt-2">
+          <div>
             {item.inputText ? (
               <div className="mb-2">
                 <SectionLabel>Input</SectionLabel>
-                <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-text/10 bg-surface/50 p-2 font-mono text-xs text-muted">
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-border/10 bg-surface/50 p-2 font-mono text-xs text-muted">
                   {item.inputText}
                 </pre>
               </div>
@@ -83,7 +75,7 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
             {item.outputText ? (
               <div>
                 <SectionLabel>Output</SectionLabel>
-                <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-text/10 bg-surface/50 p-2 font-mono text-xs text-text">
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-border/10 bg-surface/50 p-2 font-mono text-xs text-text">
                   {item.outputText}
                 </pre>
               </div>

@@ -28,9 +28,9 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
   if (!hasThinking && !hasText) return null;
 
   return (
-    <div>
+    <div className="pb-1">
       {hasThinking && (
-        <div className="pb-4">
+        <div className="pb-3">
           <ThinkingBlock
             text={item.thinking}
             streaming={!item.thinkingDone}
@@ -38,16 +38,12 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
           />
         </div>
       )}
-      {hasText && (
-        <div className="pb-4">
-          <MarkdownContent text={item.text} />
-        </div>
-      )}
+      {hasText && <MarkdownContent text={item.text} />}
       {showTurnDivider ? (
-        <div className="pb-6 pt-1">
-          <div className="h-px w-full bg-white/10" />
+        <div className="pb-2 pt-3">
+          <div className="h-px w-full bg-border/10" />
           {turnDuration ? (
-            <div className="pt-3 text-xs text-muted">
+            <div className="pt-2 text-xs uppercase tracking-[0.08em] text-muted/80">
               <span>{`Completed in ${turnDuration}`}</span>
             </div>
           ) : null}

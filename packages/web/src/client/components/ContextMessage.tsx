@@ -26,13 +26,13 @@ export function ContextMessage({ summary }: ContextMessageProps) {
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-sky-400/25 bg-sky-400/10 text-[13px] text-sky-200">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-info/25 bg-info/10 text-[13px] text-info/90">
             ⟳
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/80">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-info/80">
               <span>Context checkpoint</span>
-              <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-2 py-0.5 text-[10px] tracking-normal text-sky-100/80">
+              <span className="rounded-full border border-info/20 bg-info/10 px-2 py-0.5 text-[10px] tracking-normal text-text-soft/80">
                 Compacted
               </span>
             </div>
@@ -50,7 +50,7 @@ export function ContextMessage({ summary }: ContextMessageProps) {
         </button>
 
         {open ? (
-          <div className="rounded-md border border-border/40 bg-black/10 px-4 py-3">
+          <div className="rounded-md border border-border/40 bg-overlay/10 px-4 py-3">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Summary details</div>
             <MarkdownContent text={summary} />
           </div>

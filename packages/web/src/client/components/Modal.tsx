@@ -51,7 +51,7 @@ export function Modal({ title, description, children, onConfirm, onCancel }: Mod
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/70 p-4" role="presentation">
       <div
         ref={dialogRef}
         role="dialog"
@@ -59,7 +59,7 @@ export function Modal({ title, description, children, onConfirm, onCancel }: Mod
         aria-label={title}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        className="w-full max-w-lg rounded-lg border border-text/20 bg-surface p-4 shadow-panel"
+        className="w-full max-w-lg rounded-xl border border-border/100 bg-surface-default p-5 shadow-panel"
       >
         <h2 className="text-lg font-semibold text-text">{title}</h2>
         {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}

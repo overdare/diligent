@@ -18,11 +18,11 @@ interface KnowledgeManagerModalProps {
 const KNOWLEDGE_TYPES: KnowledgeType[] = ["pattern", "discovery", "preference", "correction", "backlog"];
 
 const KNOWLEDGE_TYPE_STYLES: Record<KnowledgeType, string> = {
-  pattern: "border-blue-400/30 bg-blue-400/10 text-blue-300",
-  backlog: "border-violet-400/30 bg-violet-400/10 text-violet-300",
-  discovery: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-  preference: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-  correction: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+  pattern: "border-knowledge-pattern/30 bg-knowledge-pattern/10 text-knowledge-pattern",
+  backlog: "border-knowledge-backlog/30 bg-knowledge-backlog/10 text-knowledge-backlog",
+  discovery: "border-knowledge-discovery/30 bg-knowledge-discovery/10 text-knowledge-discovery",
+  preference: "border-knowledge-preference/30 bg-knowledge-preference/10 text-knowledge-preference",
+  correction: "border-knowledge-correction/30 bg-knowledge-correction/10 text-knowledge-correction",
 };
 
 interface EntryDraft {
@@ -205,14 +205,14 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
   };
 
   return (
-    <div className={className ?? "fixed inset-0 z-50 bg-black/35"} role="presentation" onClick={onClose}>
+    <div className={className ?? "fixed inset-0 z-50 bg-overlay/35"} role="presentation" onClick={onClose}>
       <div
         ref={containerRef}
         role="dialog"
         aria-modal="true"
         aria-label="Knowledge"
         tabIndex={-1}
-        className="absolute inset-0 z-10 flex flex-col rounded-lg border border-text/20 bg-surface p-4 shadow-panel"
+        className="absolute inset-0 z-10 flex flex-col rounded-xl border border-border/100 bg-surface-default p-5 shadow-panel"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-1 flex items-start justify-between gap-2">
@@ -224,7 +224,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
             type="button"
             aria-label="Close knowledge panel"
             onClick={onClose}
-            className="rounded-md border border-text/15 px-2 py-1 text-xs text-muted transition hover:border-accent/40 hover:text-accent"
+            className="rounded-md border border-border/100 bg-fill-secondary px-2 py-1 text-xs text-muted transition hover:bg-fill-ghost-hover hover:text-text"
           >
             ✕
           </button>
@@ -259,7 +259,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
                 <select
                   id={typeFilterId}
                   aria-label="Filter knowledge type"
-                  className="mt-1 h-10 w-full rounded-md border border-text/20 bg-surface px-2 text-sm text-text"
+                  className="mt-1 h-10 w-full rounded-md border border-border/100 bg-surface-dark px-2 text-sm text-text"
                   value={typeFilter}
                   onChange={(event) => setTypeFilter(event.target.value as KnowledgeType | "all")}
                 >
@@ -276,7 +276,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
                 <select
                   id={sortModeId}
                   aria-label="Sort knowledge entries"
-                  className="mt-1 h-10 w-full rounded-md border border-text/20 bg-surface px-2 text-sm text-text"
+                  className="mt-1 h-10 w-full rounded-md border border-border/100 bg-surface-dark px-2 text-sm text-text"
                   value={sortMode}
                   onChange={(event) => setSortMode(event.target.value as SortMode)}
                 >
@@ -291,14 +291,14 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
             {loading ? <p className="text-sm text-muted">Loading knowledge entries…</p> : null}
 
             {!loading && filteredEntries.length === 0 ? (
-              <div className="rounded-md border border-dashed border-text/15 px-3 py-3 text-sm text-muted">
+              <div className="rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 py-3 text-sm text-muted">
                 {entries.length === 0 ? "No knowledge entries yet." : "No entries match the current filters."}
               </div>
             ) : null}
 
             <div className="space-y-2">
               {filteredEntries.map((entry) => (
-                <div key={entry.id} className="rounded-md border border-text/10 px-3 py-2">
+                <div key={entry.id} className="rounded-lg border border-border/100 bg-surface-dark px-3 py-3">
                   {editing?.id === entry.id ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
@@ -316,7 +316,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
                         <label className="text-xs text-muted">
                           Type
                           <select
-                            className="mt-1 h-10 w-full rounded-md border border-text/20 bg-surface px-2 text-sm text-text"
+                            className="mt-1 h-10 w-full rounded-md border border-border/100 bg-surface-default px-2 text-sm text-text"
                             value={editing.draft.type}
                             onChange={(event) =>
                               updateEntryDraft((current) => ({ ...current, type: event.target.value as KnowledgeType }))
@@ -380,7 +380,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
                             title="Edit"
                             onClick={() => beginEdit(entry)}
                             disabled={saving}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-text/15 text-sm text-muted transition hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/100 bg-fill-secondary text-sm text-muted transition hover:bg-fill-ghost-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             ✎
                           </button>
@@ -390,7 +390,7 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
                             title="Delete"
                             onClick={() => setPendingDeleteId(entry.id)}
                             disabled={saving}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-text/15 text-sm text-muted transition hover:border-danger/40 hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/100 bg-fill-secondary text-sm text-muted transition hover:border-danger/40 hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             🗑
                           </button>

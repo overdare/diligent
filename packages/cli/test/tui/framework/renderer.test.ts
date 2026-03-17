@@ -389,6 +389,48 @@ describe("TUIRenderer — cursor position after renders", () => {
     expect(sim.screen.filter((l) => l === "line-7").length).toBeLessThanOrEqual(1);
   });
 
+  test("deferred overflow flush does not drop clipped lines on rapid redraws", () => {
+    const { terminal, sim } = createSim(4, 10);
+    let chatLines = ["line-1", "line-2", "line-3", "line-4", "line-5", "line-6"];
+    const container = new Container();
+    const chatComponent: Component = {
+      render: () => [...chatLines],
+      invalidate: () => {},
+    };
+    container.addChild(chatComponent);
+    container.addChild(createInputComponent());
+
+    const originalNow = Date.now;
+    let now = 1000;
+    Date.now = () => now;
+
+    try {
+      const renderer = new TUIRenderer(terminal, container);
+      renderer.start();
+
+      expect(sim.screen.some((line) => line === "line-1")).toBe(true);
+
+      chatLines = [...chatLines, "line-7"];
+      now += 10;
+      renderer.forceRender();
+
+      chatLines = [...chatLines, "line-8"];
+      now += 10;
+      renderer.forceRender();
+
+      now += 50;
+      renderer.forceRender();
+
+      expect(sim.screen.some((line) => line === "line-1")).toBe(true);
+      expect(sim.screen.some((line) => line === "line-2")).toBe(true);
+      expect(sim.screen.some((line) => line === "line-3")).toBe(true);
+      expect(sim.screen.some((line) => line === "line-4")).toBe(true);
+      expect(sim.screen.some((line) => line === "line-5")).toBe(true);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   test("single long active line exceeding viewport rows does not erase history", () => {
     const { terminal, sim } = createSim(3, 10);
     let chatLines = ["short-1", "short-2", "short-3"];

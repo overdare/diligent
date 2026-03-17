@@ -14,19 +14,23 @@ function summarize(text: string): string {
 
 export function ThinkingBlock({ text, streaming = false, duration = null }: ThinkingBlockProps) {
   if (streaming) {
-    return <div className="opacity-30 font-mono text-xs leading-relaxed whitespace-pre-wrap">{text}</div>;
+    return (
+      <div className="whitespace-pre-wrap rounded-lg bg-transparent px-1 py-1 font-mono text-xs leading-relaxed text-muted/65">
+        {text}
+      </div>
+    );
   }
 
   const summary = summarize(text);
 
   return (
-    <details className="opacity-40 hover:opacity-60 transition-opacity">
-      <summary className="cursor-pointer select-none font-mono text-xs list-none inline-flex items-center gap-1.5">
-        <span className="text-muted">Thought</span>
+    <details className="rounded-lg bg-transparent px-1 py-1 opacity-70 transition hover:opacity-100">
+      <summary className="inline-flex list-none cursor-pointer select-none items-center gap-2 font-mono text-xs uppercase tracking-[0.12em]">
+        <span className="text-text-secondary">Thought</span>
         {duration ? <span className="text-muted/70">{duration}</span> : null}
-        {summary && <span className="text-muted/70 truncate max-w-[40ch]">{summary}</span>}
+        {summary && <span className="max-w-[40ch] truncate normal-case tracking-normal text-muted/80">{summary}</span>}
       </summary>
-      <pre className="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed">{text}</pre>
+      <pre className="mt-2 whitespace-pre-wrap font-mono text-xs leading-relaxed text-text/78">{text}</pre>
     </details>
   );
 }

@@ -25,9 +25,9 @@ import { ExpandButton } from "./ExpandButton";
 
 function BlockShell({ title, copyText, children }: { title?: string; copyText?: string; children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/40">
+    <div className="overflow-hidden rounded-xl border border-border/100 bg-surface-dark">
       {title && (
-        <div className="flex items-center justify-between border-b border-text/10 bg-surface/60 px-3 py-1.5">
+        <div className="flex items-center justify-between border-b border-border/100 bg-surface-default px-3 py-2">
           <span className="font-mono text-2xs uppercase tracking-wider text-muted">{title}</span>
           {copyText && <CopyButton text={copyText} />}
         </div>
@@ -42,9 +42,9 @@ function BlockShell({ title, copyText, children }: { title?: string; copyText?: 
 const TONE_TEXT: Record<string, string> = {
   default: "text-text/80",
   success: "text-success",
-  warning: "text-warn",
+  warning: "text-warning",
   danger: "text-danger",
-  info: "text-accent",
+  info: "text-text-secondary",
 };
 
 function toneText(tone?: string) {
@@ -139,7 +139,7 @@ function RenderTable({ block }: { block: TableBlock }) {
           <tbody>
             {block.rows.map((row, ri) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: static rows
-              <tr key={ri} className="border-t border-text/5">
+              <tr key={ri} className="border-t border-border/5">
                 {block.columns.map((_, ci) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: static cells
                   <td key={ci} className="py-0.5 pr-4 text-text/80 last:pr-0">
@@ -197,11 +197,11 @@ function RenderTree({ block }: { block: TreeBlock }) {
 /* ── StatusBadgesBlock ────────────────────────────────────────────── */
 
 const TONE_BADGE: Record<string, string> = {
-  default: "bg-text/10 text-text/70",
-  success: "bg-success/15 text-success",
-  warning: "bg-warn/15 text-warn",
-  danger: "bg-danger/15 text-danger",
-  info: "bg-accent/15 text-accent",
+  default: "bg-fill-secondary text-text/70",
+  success: "bg-fill-secondary text-success",
+  warning: "bg-fill-secondary text-warning",
+  danger: "bg-fill-secondary text-danger",
+  info: "bg-fill-active text-text",
 };
 
 function toneBadge(tone?: string) {
@@ -243,9 +243,9 @@ function RenderFile({ block }: { block: FileBlock }) {
           : "";
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
-      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
-        <span className="shrink-0 text-accent/70">↗</span>
+    <div className="overflow-hidden rounded-lg border border-border/100 bg-surface-dark font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-border/100 bg-surface-default px-3 py-2">
+        <span className="shrink-0 text-text-secondary">↗</span>
         <span className="min-w-0 flex-1 truncate text-text/80">{block.filePath}</span>
         {rangeLabel ? <span className="shrink-0 text-muted/70">{rangeLabel}</span> : null}
         {block.content ? <CopyButton text={block.content} /> : null}
@@ -284,8 +284,8 @@ function RenderCommand({ block }: { block: CommandBlock }) {
   const visibleOutput = !expanded && isLong ? outputLines.slice(0, CMD_PREVIEW_LINES).join("\n") : block.output;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
-      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
+    <div className="overflow-hidden rounded-lg border border-border/100 bg-surface-dark font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-border/100 bg-surface-default px-3 py-2">
         <span className="shrink-0 text-muted">$</span>
         <pre className="min-w-0 flex-1 whitespace-pre-wrap text-text">{block.command}</pre>
         <CopyButton text={block.command} />
@@ -338,13 +338,13 @@ function DiffHunkView({ oldString, newString }: { oldString?: string; newString?
     const isLong = lines.length > DIFF_PREVIEW_LINES;
     const visible = !expanded && isLong ? lines.slice(0, DIFF_PREVIEW_LINES).join("\n") : text;
     const prefix = color === "danger" ? "−" : "+";
-    const borderCls = color === "danger" ? "border-danger/20" : "border-emerald-400/30";
-    const bgCls = color === "danger" ? "bg-danger/10" : "bg-emerald-400/10";
-    const textCls = color === "danger" ? "text-danger/80" : "text-emerald-400";
-    const labelCls = color === "danger" ? "text-danger/70" : "text-emerald-400";
+    const borderCls = color === "danger" ? "border-danger/20" : "border-success/30";
+    const bgCls = color === "danger" ? "bg-danger/10" : "bg-success/10";
+    const textCls = color === "danger" ? "text-danger/80" : "text-success";
+    const labelCls = color === "danger" ? "text-danger/70" : "text-success";
     return (
       <div className={cn("overflow-hidden rounded border", borderCls, bgCls)}>
-        <div className="flex items-center justify-between border-b border-text/10 px-2 py-1">
+        <div className="flex items-center justify-between border-b border-border/10 px-2 py-1">
           <span className={cn("font-mono text-2xs uppercase tracking-wider", labelCls)}>
             {prefix} {label}
           </span>
@@ -381,10 +381,10 @@ function DiffHunkView({ oldString, newString }: { oldString?: string; newString?
 }
 
 const ACTION_BADGE: Record<string, string> = {
-  Add: "bg-emerald-400/15 text-emerald-400",
-  Update: "bg-accent/10 text-accent/80",
-  Delete: "bg-danger/15 text-danger",
-  Move: "bg-warn/15 text-warn",
+  Add: "bg-fill-secondary text-success",
+  Update: "bg-fill-active text-text",
+  Delete: "bg-fill-secondary text-danger",
+  Move: "bg-fill-secondary text-warning",
 };
 
 function DiffFileView({ file }: { file: DiffFile }) {
@@ -392,9 +392,9 @@ function DiffFileView({ file }: { file: DiffFile }) {
   const displayPath = file.action === "Move" && file.movedTo ? `${file.filePath} → ${file.movedTo}` : file.filePath;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
-      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
-        <span className="shrink-0 text-accent/70">✎</span>
+    <div className="overflow-hidden rounded-lg border border-border/100 bg-surface-dark font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-border/100 bg-surface-default px-3 py-2">
+        <span className="shrink-0 text-text-secondary">✎</span>
         <span className="min-w-0 flex-1 truncate text-text/80">{displayPath}</span>
         {file.action ? (
           <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium", badgeCls)}>{file.action}</span>

@@ -92,7 +92,7 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((open) => !open)}
         className={cn(
-          "inline-flex h-7 w-full items-center justify-between gap-1 rounded-md border border-text/15 bg-bg px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+          "inline-flex h-7 w-full items-center justify-between gap-1 rounded-md border border-border/100 bg-surface-dark px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
           disabled && "cursor-not-allowed opacity-40",
           triggerClassName,
         )}
@@ -107,7 +107,7 @@ export function Select({
         <div
           role="listbox"
           className={cn(
-            "absolute z-30 min-w-full overflow-hidden rounded-md border border-text/15 bg-bg shadow-panel",
+            "absolute z-30 min-w-full overflow-hidden rounded-md border border-border/100 bg-surface-dark shadow-panel",
             openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1",
             menuClassName,
           )}
@@ -132,7 +132,9 @@ export function Select({
                     }}
                     className={cn(
                       "block w-full px-2 py-1.5 text-left text-xs transition",
-                      option.value === value ? "bg-accent/15 text-text" : "text-muted hover:bg-surface hover:text-text",
+                      option.value === value
+                        ? "bg-fill-active text-text"
+                        : "text-muted hover:bg-fill-ghost-hover hover:text-text",
                       option.disabled && "cursor-not-allowed opacity-40",
                     )}
                   >

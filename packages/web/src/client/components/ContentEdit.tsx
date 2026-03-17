@@ -24,14 +24,14 @@ function DiffBlock({ label, text, color }: { label: string; text: string; color:
   const isLong = lines.length > PREVIEW_LINES;
   const visible = !expanded && isLong ? lines.slice(0, PREVIEW_LINES).join("\n") : text;
   const prefix = color === "danger" ? "−" : "+";
-  const borderClass = color === "danger" ? "border-danger/20" : "border-emerald-400/30";
-  const bgClass = color === "danger" ? "bg-danger/10" : "bg-emerald-400/10";
-  const textClass = color === "danger" ? "text-danger/80" : "text-emerald-400";
-  const labelClass = color === "danger" ? "text-danger/70" : "text-emerald-400";
+  const borderClass = color === "danger" ? "border-danger/20" : "border-success/30";
+  const bgClass = color === "danger" ? "bg-danger/10" : "bg-success/10";
+  const textClass = color === "danger" ? "text-danger/80" : "text-success";
+  const labelClass = color === "danger" ? "text-danger/70" : "text-success";
 
   return (
     <div className={`overflow-hidden rounded border ${borderClass} ${bgClass}`}>
-      <div className="flex items-center justify-between border-b border-text/10 px-2 py-1">
+      <div className="flex items-center justify-between border-b border-border/10 px-2 py-1">
         <span className={`font-mono text-2xs uppercase tracking-wider ${labelClass}`}>
           {prefix} {label}
         </span>
@@ -55,12 +55,12 @@ export function ContentEdit({
   isError = false,
 }: ContentEditProps) {
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
+    <div className="overflow-hidden rounded-lg border border-border/100 bg-surface-dark font-mono text-xs">
       {/* File header */}
-      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
-        <span className="shrink-0 text-accent/70">✎</span>
+      <div className="flex items-center gap-2 border-b border-border/100 bg-surface-default px-3 py-2">
+        <span className="shrink-0 text-text-secondary">✎</span>
         <span className="min-w-0 flex-1 truncate text-text/80">{filePath ?? "file"}</span>
-        <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-2xs text-accent/80">
+        <span className="shrink-0 rounded bg-fill-active px-1.5 py-0.5 text-2xs text-text">
           {mode === "edit" ? "edit" : "write"}
         </span>
       </div>
@@ -82,7 +82,7 @@ export function ContentEdit({
 
       {/* Result message */}
       {output ? (
-        <div className={`border-t border-text/10 px-3 py-1.5 ${isError ? "text-danger/80" : "text-muted/80"}`}>
+        <div className={`border-t border-border/10 px-3 py-1.5 ${isError ? "text-danger/80" : "text-muted/80"}`}>
           {output.split("\n")[0]}
         </div>
       ) : null}
@@ -97,8 +97,8 @@ function ContentPreview({ text, isError }: { text: string; isError: boolean }) {
   const visible = !expanded && isLong ? lines.slice(0, PREVIEW_LINES).join("\n") : text;
 
   return (
-    <div className="overflow-hidden rounded border border-text/10 bg-bg/40">
-      <div className="flex items-center justify-end border-b border-text/10 px-2 py-1">
+    <div className="overflow-hidden rounded border border-border/100 bg-surface-default">
+      <div className="flex items-center justify-end border-b border-border/10 px-2 py-1">
         <CopyButton text={text} />
       </div>
       <pre

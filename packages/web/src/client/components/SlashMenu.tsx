@@ -29,7 +29,7 @@ export function SlashMenu({ commands, selectedIndex, onSelect }: SlashMenuProps)
       ref={listRef}
       role="listbox"
       aria-label="Slash commands"
-      className="absolute bottom-full left-0 z-30 mb-2 w-[280px] overflow-hidden rounded-xl border border-text/10 bg-bg/95 shadow-panel backdrop-blur"
+      className="absolute bottom-full left-0 z-30 mb-2 w-[280px] overflow-hidden rounded-xl border border-border/100 bg-surface-dark shadow-panel"
     >
       <div className="max-h-[240px] overflow-y-auto py-1">
         {commands.map((cmd, i) => {
@@ -44,7 +44,7 @@ export function SlashMenu({ commands, selectedIndex, onSelect }: SlashMenuProps)
               aria-selected={isSelected}
               onClick={() => onSelect(cmd)}
               className={`flex w-full items-center gap-3 px-3 py-2 text-left text-xs transition ${
-                isSelected ? "bg-accent/15 text-text" : "text-muted hover:bg-surface/80 hover:text-text"
+                isSelected ? "bg-fill-active text-text" : "text-muted hover:bg-fill-ghost-hover hover:text-text"
               }`}
             >
               <span className="shrink-0 font-mono font-medium text-text">/{cmd.name}</span>

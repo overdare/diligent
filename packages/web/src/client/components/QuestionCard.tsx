@@ -23,7 +23,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
   return (
     <SystemCard>
       <SectionLabel>Input required</SectionLabel>
-      <div className="space-y-4">
+      <div className="space-y-5">
         {request.questions.map((question) => {
           const rawSelected = answers[question.id];
           const selected = toStringArray(rawSelected);
@@ -34,8 +34,8 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
           const customValue = selected.find((value) => !question.options.some((o) => o.label === value)) ?? "";
 
           return (
-            <div key={question.id}>
-              <p className="mb-2 text-sm font-semibold text-text">{question.question}</p>
+            <div key={question.id} className="rounded-xl border border-border/100 bg-surface-dark px-4 py-4">
+              <p className="mb-3 text-sm font-semibold leading-6 text-text">{question.question}</p>
 
               {hasOptions
                 ? question.options.map((opt, i) => {
@@ -52,8 +52,8 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                           }
                           onAnswerChange(question.id, opt.label);
                         }}
-                        className={`flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm transition ${
-                          checked ? "bg-accent/10 text-text" : "text-muted hover:bg-surface/60 hover:text-text"
+                        className={`flex w-full items-baseline gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
+                          checked ? "bg-fill-active text-text" : "text-muted hover:bg-fill-ghost-hover hover:text-text"
                         }`}
                       >
                         <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>
@@ -76,7 +76,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                       {question.options.length + 1}
                     </span>
                   ) : null}
-                  <div className="flex flex-1 flex-col">
+                  <div className="flex flex-1 flex-col rounded-lg bg-transparent">
                     <input
                       id={question.id}
                       aria-label={question.header}
@@ -99,7 +99,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                       }}
                       className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
                     />
-                    <div className="border-b border-text/10" />
+                    <div className="border-b border-border/10 pt-1" />
                   </div>
                 </div>
               ) : null}
@@ -107,7 +107,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
           );
         })}
       </div>
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-5 flex justify-end gap-2">
         <Button size="sm" intent="ghost" onClick={onCancel}>
           Cancel
         </Button>

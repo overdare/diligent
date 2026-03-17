@@ -81,7 +81,7 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
 
   return (
     <div className="pb-4">
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-3 rounded-2xl border border-border/10 bg-surface/28 px-4 py-3">
         <span
           className={cn(
             "inline-flex h-4 w-4 shrink-0 items-center justify-center font-mono text-sm",
@@ -93,7 +93,7 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
         <div className="min-w-0 flex-1">
           {/* Header row */}
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted">{title}</span>
+            <span className="text-sm font-medium text-text-soft">{title}</span>
             {badge && <span className={cn("text-xs", badge.className)}>{badge.text}</span>}
             {hasRunningTool && <StatusDot color="accent" pulse />}
             {turnInfo && <span className="text-xs text-text/30">{turnInfo}</span>}
@@ -101,16 +101,16 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
           </div>
 
           {/* Description */}
-          {details && <p className="mt-0.5 text-xs text-text/50">{details}</p>}
+          {details && <p className="mt-1 text-xs leading-5 text-text/55">{details}</p>}
 
           {/* Final message for non-wait events */}
           {item.message && !agentStatuses && (
-            <p className="mt-0.5 max-w-[80ch] truncate text-xs text-text/50">{item.message}</p>
+            <p className="mt-1 max-w-[80ch] truncate text-xs text-text/50">{item.message}</p>
           )}
 
           {/* Per-agent status for wait events */}
           {agentStatuses && (
-            <div className="mt-1 space-y-0.5">
+            <div className="mt-2 space-y-1">
               {item.agents!.map((agent) => {
                 const aBadge = statusBadge(agent.status);
                 return (
@@ -127,7 +127,7 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
 
           {/* Expandable detail section: tools + messages */}
           {detailCount > 0 && (
-            <div className="mt-1.5 space-y-0.5">
+            <div className="mt-2.5 space-y-1">
               {!expanded ? (
                 <button
                   type="button"
@@ -175,14 +175,6 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                       <div key={tool.toolCallId} className="flex flex-col gap-0.5 text-xs">
                         <div className="flex items-center gap-1.5">
                           <span className="w-3 text-right text-text/25">├</span>
-                          <span
-                            className={cn(
-                              "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[10px] leading-none",
-                              isRunning ? "text-accent" : tool.isError ? "text-danger" : "text-text/40",
-                            )}
-                          >
-                            {info.icon}
-                          </span>
                           <span className={cn("leading-none", isRunning ? "text-text/70" : "text-text/40")}>
                             {info.displayName}
                           </span>
@@ -193,11 +185,11 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                           {tool.isError && <span className="text-danger">✗</span>}
                         </div>
                         {outputSummary ? (
-                          <div className="ml-8 flex items-center gap-1">
+                          <div className="ml-4 flex items-center gap-1">
                             <span
                               className={cn(
                                 "max-w-[56ch] truncate font-mono",
-                                tool.isError ? "text-danger/60" : "text-accent/50",
+                                tool.isError ? "text-danger/60" : "text-text-tertiary",
                               )}
                             >
                               ↳ {outputSummary}

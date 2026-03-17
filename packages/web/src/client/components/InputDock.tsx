@@ -249,8 +249,10 @@ export function InputDock({
   };
 
   const topLevelMenuItemClass = (menuKey: ComposerMenuKey): string =>
-    `flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
-      activeSubmenu === menuKey ? "bg-surface text-text shadow-sm" : "text-muted hover:bg-surface/80 hover:text-text"
+    `flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition ${
+      activeSubmenu === menuKey
+        ? "border border-border/100 bg-fill-secondary text-text"
+        : "border border-transparent text-muted hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
     }`;
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -308,12 +310,12 @@ export function InputDock({
   };
 
   return (
-    <div className="border-t border-text/10 bg-surface/40 px-6 pb-3 pt-3">
+    <div className="bg-surface-dark px-6 pb-4 pt-2">
       <div
-        className={`rounded-3xl border px-3 py-2.5 shadow-panel ${hasProvider ? "border-text/15 bg-bg/60" : "border-danger/20 bg-bg/60"}${isBusy ? " input-dock-glow" : ""}`}
+        className={`rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
       >
         {isCompacting ? (
-          <div className="mb-2 rounded-xl border border-accent/20 bg-accent/10 px-3 py-2 text-xs text-accent">
+          <div className="mb-3 rounded-lg border border-accent/30 bg-surface-dark px-3 py-2 text-xs text-accent">
             Compacting context…
           </div>
         ) : null}
@@ -333,7 +335,7 @@ export function InputDock({
                 {pendingImages.map((image) => (
                   <div
                     key={image.path}
-                    className="group relative overflow-hidden rounded-xl border border-text/10 bg-surface/70"
+                    className="group relative overflow-hidden rounded-lg border border-border/100 bg-surface-light"
                   >
                     <img src={image.url} alt={image.fileName ?? "Attached image"} className="h-20 w-20 object-cover" />
                     <button
@@ -341,20 +343,20 @@ export function InputDock({
                       aria-label={`Remove ${image.fileName ?? "image"}`}
                       onClick={() => onRemoveImage(image.path)}
                       disabled={isUploadingImages}
-                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50"
+                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       ×
                     </button>
                   </div>
                 ))}
                 {isUploadingImages ? (
-                  <div className="flex h-20 min-w-[120px] items-center justify-center rounded-xl border border-dashed border-text/10 bg-surface/40 px-3 text-xs text-muted">
+                  <div className="flex h-20 min-w-[120px] items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
                     Uploading images…
                   </div>
                 ) : null}
               </div>
             ) : isUploadingImages ? (
-              <div className="mb-3 flex h-20 items-center justify-center rounded-xl border border-dashed border-text/10 bg-surface/40 px-3 text-xs text-muted">
+              <div className="mb-3 flex h-20 items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
                 Uploading images…
               </div>
             ) : null}
@@ -416,8 +418,8 @@ export function InputDock({
                 onClick={togglePlusMenu}
                 className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
                   isPlusMenuOpen
-                    ? "border-text/10 bg-surface text-text shadow-sm"
-                    : "border-transparent bg-transparent text-muted/80 hover:border-text/10 hover:bg-surface/80 hover:text-text"
+                    ? "border-border/100 bg-fill-secondary text-text"
+                    : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
                 }`}
               >
                 +
@@ -426,7 +428,7 @@ export function InputDock({
               {isPlusMenuOpen ? (
                 <div
                   role="menu"
-                  className="absolute bottom-full left-0 z-30 mb-2 min-w-[150px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur"
+                  className="absolute bottom-full left-0 z-30 mb-2 min-w-[150px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel"
                 >
                   <div className="relative">
                     <div className="relative">
@@ -441,7 +443,7 @@ export function InputDock({
                         disabled={!supportsVision || isUploadingImages}
                         className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
                           supportsVision && !isUploadingImages
-                            ? "text-muted hover:bg-surface/80 hover:text-text"
+                            ? "text-muted hover:bg-fill-ghost-hover hover:text-text"
                             : "cursor-not-allowed text-muted/40"
                         }`}
                       >
@@ -463,7 +465,7 @@ export function InputDock({
                       </button>
 
                       {activeSubmenu === "mode" ? (
-                        <div className="absolute left-full top-0 ml-1 min-w-[132px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur">
+                        <div className="absolute left-full top-0 ml-1 min-w-[132px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
                           {modeMenuOptions.map((option) => (
                             <button
                               key={option.value}
@@ -477,8 +479,8 @@ export function InputDock({
                               }}
                               className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
                                 option.value === mode
-                                  ? "bg-accent/15 text-text shadow-sm"
-                                  : "text-muted hover:bg-surface/80 hover:text-text"
+                                  ? "bg-fill-active text-text"
+                                  : "text-muted hover:bg-fill-ghost-hover hover:text-text"
                               }`}
                             >
                               {option.label}
@@ -504,7 +506,7 @@ export function InputDock({
                       </button>
 
                       {activeSubmenu === "compaction" ? (
-                        <div className="absolute left-full top-0 ml-1 min-w-[156px] rounded-xl border border-text/10 bg-bg/95 p-1 shadow-panel backdrop-blur">
+                        <div className="absolute left-full top-0 ml-1 min-w-[156px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
                           <button
                             type="button"
                             role="menuitem"
@@ -517,7 +519,7 @@ export function InputDock({
                             className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
                               isCompacting
                                 ? "cursor-not-allowed text-muted/40"
-                                : "text-muted hover:bg-surface/80 hover:text-text"
+                                : "text-muted hover:bg-fill-ghost-hover hover:text-text"
                             }`}
                           >
                             {isCompacting ? "Compacting…" : "Compact now"}
@@ -571,7 +573,7 @@ export function InputDock({
                     if (!composingRef.current) onSteer();
                   }}
                   disabled={!canSteer}
-                  className="rounded-full bg-accent/80 px-3 py-1.5 text-xs font-semibold text-bg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="rounded-full bg-fill-secondary px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-fill-ghost-hover disabled:cursor-not-allowed disabled:opacity-30"
                 >
                   Steer
                 </button>
@@ -592,7 +594,7 @@ export function InputDock({
                   if (!composingRef.current) onSend();
                 }}
                 disabled={!canSend}
-                className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-bg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+                className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-fill-active disabled:cursor-not-allowed disabled:opacity-30"
               >
                 Send
               </button>

@@ -24,10 +24,10 @@ export function ContentRead({ filePath, offset, limit, output, isError = false }
     offset && limit ? `L${offset}–${offset + limit - 1}` : offset ? `from L${offset}` : limit ? `${limit} lines` : "";
 
   return (
-    <div className="overflow-hidden rounded-lg border border-text/10 bg-bg/60 font-mono text-xs">
+    <div className="overflow-hidden rounded-lg border border-border/10 bg-bg/60 font-mono text-xs">
       {/* File header */}
-      <div className="flex items-center gap-2 border-b border-text/10 bg-surface/60 px-3 py-2">
-        <span className="shrink-0 text-accent/70">↗</span>
+      <div className="flex items-center gap-2 border-b border-border/10 bg-surface/60 px-3 py-2">
+        <span className="shrink-0 text-text-secondary">↗</span>
         <span className="min-w-0 flex-1 truncate text-text/80">{filePath ?? "file"}</span>
         {rangeLabel ? <span className="shrink-0 text-muted/70">{rangeLabel}</span> : null}
         {output ? <CopyButton text={output} /> : null}
