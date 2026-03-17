@@ -17,7 +17,10 @@ function createEmptyAssistantMessage(model = "unknown"): AssistantMessage {
 
 export class ProtocolNotificationAdapter {
   private agentMessageByItemId = new Map<string, AssistantMessage>();
-  private toolCallByItemId = new Map<string, { toolCallId: string; toolName: string; input: unknown }>();
+  private toolCallByItemId = new Map<
+    string,
+    { toolCallId: string; toolName: string; input: unknown; render?: import("@diligent/protocol").ToolRenderPayload }
+  >();
 
   toAgentEvents(notification: DiligentServerNotification): AgentEvent[] {
     switch (notification.method) {
@@ -219,6 +222,7 @@ export class ProtocolNotificationAdapter {
         toolCallId: item.toolCallId,
         toolName: item.toolName,
         input: item.input,
+        render: item.render,
       });
       return [
         {
@@ -304,7 +308,7 @@ export class ProtocolNotificationAdapter {
           toolName: started?.toolName ?? item.toolName,
           output: item.output ?? "",
           isError: item.isError ?? false,
-          render: item.render,
+          render: item.render ?? started?.render,
           ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];

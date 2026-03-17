@@ -85,6 +85,16 @@ describe("TranscriptStore", () => {
     expect(lines.some((line) => line.includes("⚑ change approach"))).toBe(true);
   });
 
+  test("renders multiline pending steering as first-line preview with more suffix", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+    store.setPendingSteers(["line 1\nline 2"]);
+
+    const lines = renderTranscript(store, 80).map(stripAnsi);
+    expect(lines.some((line) => line.includes("⚑ line 1 ... (more)"))).toBe(true);
+    expect(lines.some((line) => line.includes("line 2"))).toBe(false);
+    expect(lines.some((line) => line.includes("\n"))).toBe(false);
+  });
+
   test("orders live stack so status is below streaming markdown", () => {
     const store = new TranscriptStore({ requestRender: () => {} });
     store.handleEvent({ type: "status_change", status: "busy" });

@@ -157,12 +157,33 @@ export function renderTranscriptSections(
     if (pendingSteers.length === 0) return [];
     const prefix = "  ";
     const label = "⚑ ";
+    const moreSuffix = " ... (more)";
     const availableWidth = Math.max(0, width - displayWidth(prefix) - displayWidth(label));
-    return pendingSteers.map((message) => {
-      const clipped = availableWidth > 0 ? sliceToFitWidth(message, availableWidth) : "";
-      const text = clipped.length < message.length ? `${clipped.slice(0, Math.max(0, clipped.length - 1))}…` : clipped;
-      return `${t.accent}${prefix}${label}${text}${t.reset}`;
-    });
+
+    const renderPreview = (message: string): string => {
+      const normalized = message.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const firstLine = normalized.split("\n", 1)[0] ?? "";
+      const hasMoreLines = normalized.includes("\n");
+      const isFirstLineTooWide = displayWidth(firstLine) > availableWidth;
+
+      if (!hasMoreLines && !isFirstLineTooWide) {
+        return firstLine;
+      }
+
+      if (availableWidth <= 0) {
+        return "";
+      }
+
+      const suffixWidth = displayWidth(moreSuffix);
+      if (suffixWidth >= availableWidth) {
+        return sliceToFitWidth(moreSuffix, availableWidth);
+      }
+
+      const head = sliceToFitWidth(firstLine, availableWidth - suffixWidth);
+      return `${head}${moreSuffix}`;
+    };
+
+    return pendingSteers.map((message) => `${t.accent}${prefix}${label}${renderPreview(message)}${t.reset}`);
   };
 
   for (const item of store.getItems()) {

@@ -16,8 +16,7 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
   const renderPayload = item.render;
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
-  const outputSummary =
-    renderPayload && !isUserInput && item.status === "done" && !item.isError ? summarizeOutput(renderPayload) : "";
+  const outputSummary = renderPayload && !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
   const showOutputSummary = Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
 
   const statusEl = item.isError ? (
