@@ -6,6 +6,7 @@ import {
   createGrepRenderPayload,
   createPatchDiffRenderPayload,
   createPlanRenderPayload,
+  createToolEndRenderPayloadFromInput,
   createToolStartRenderPayload,
   createUpdateKnowledgeRenderPayload,
 } from "../../src/tools/render-payload";
@@ -230,5 +231,55 @@ describe("tool start render payload builder", () => {
       description: "Print working directory",
     });
     expect(payload?.inputSummary).toBe("pwd");
+  });
+});
+
+describe("tool end render payload builder", () => {
+  test("creates read error payload with file input summary", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "read",
+      input: { file_path: "README.md" },
+      output: "Error: ENOENT",
+      isError: true,
+    });
+
+    expect(payload).toBeDefined();
+    expect(payload?.inputSummary).toBe("README.md");
+    expect(payload?.outputSummary).toBe("Read failed");
+  });
+
+  test("creates write error payload with file input summary", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "write",
+      input: { file_path: "src/app.ts" },
+      output: "Error: Permission denied",
+      isError: true,
+    });
+
+    expect(payload).toBeDefined();
+    expect(payload?.inputSummary).toBe("src/app.ts");
+    expect(payload?.outputSummary).toBe("Write failed");
+  });
+
+  test("creates apply_patch error payload from patch input", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "apply_patch",
+      input: {
+        patch: [
+          "*** Begin Patch",
+          "*** Update File: src/a.ts",
+          "@@",
+          "-const a = 1;",
+          "+const a = 2;",
+          "*** End Patch",
+        ].join("\n"),
+      },
+      output: "Patch failed: context mismatch",
+      isError: true,
+    });
+
+    expect(payload).toBeDefined();
+    expect(payload?.inputSummary).toBe("src/a.ts");
+    expect(payload?.outputSummary).toBe("Patch failed");
   });
 });

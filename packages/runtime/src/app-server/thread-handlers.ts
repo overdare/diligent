@@ -27,7 +27,7 @@ import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
-import { createToolStartRenderPayload } from "../tools/render-payload";
+import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-payload";
 
 export interface ThreadRuntime {
   id: string;
@@ -283,6 +283,12 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
 
     if (message.role === "tool_result") {
       const start = toolStartsByCallId.get(message.toolCallId);
+      const derivedRender = createToolEndRenderPayloadFromInput({
+        toolName: message.toolName,
+        input: start?.input ?? {},
+        output: message.output,
+        isError: message.isError,
+      });
       items.push({
         type: "toolCall",
         itemId: start?.itemId ?? `tool:${message.toolCallId}`,
@@ -294,7 +300,7 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
         durationMs: Math.max(0, message.timestamp - (start?.startedAt ?? message.timestamp)),
         output: message.output,
         isError: message.isError,
-        render: message.render,
+        render: message.render ?? derivedRender,
       });
     }
   }

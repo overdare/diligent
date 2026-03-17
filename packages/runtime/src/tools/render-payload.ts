@@ -61,6 +61,64 @@ export function createToolStartRenderPayload(toolName: string, input: unknown): 
   };
 }
 
+export function createToolEndRenderPayloadFromInput(args: {
+  toolName: string;
+  input: unknown;
+  output: string;
+  isError: boolean;
+}): ToolRenderPayload | undefined {
+  const normalizedToolName = args.toolName.trim().toLowerCase();
+  const parsedInput = readRecordInput(args.input);
+
+  if (normalizedToolName === "bash") {
+    const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
+    if (command?.trim()) return createCommandRenderPayload(command, args.output, args.isError);
+  }
+
+  if (normalizedToolName === "read") {
+    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+    const summary = summarizeRenderText(filePath, 120);
+    const outputSummary = args.isError ? "Read failed" : (summarizeRenderText(args.output) ?? "Read completed");
+    return {
+      version: 2,
+      inputSummary: summary,
+      outputSummary,
+      blocks: [{ type: "text", title: filePath ?? "read", text: args.output, isError: args.isError }],
+    };
+  }
+
+  if (normalizedToolName === "write") {
+    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+    const summary = summarizeRenderText(filePath, 120);
+    return {
+      version: 2,
+      inputSummary: summary,
+      outputSummary: args.isError ? "Write failed" : "Write completed",
+      blocks: [{ type: "text", title: filePath ?? "write", text: args.output, isError: args.isError }],
+    };
+  }
+
+  if (normalizedToolName === "apply_patch") {
+    const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
+    if (patch) {
+      const payload = createPatchDiffRenderPayload(patch, args.output, args.isError ? "Patch failed" : undefined);
+      if (payload) return payload;
+    }
+    return {
+      version: 2,
+      inputSummary: summarizeRenderText(stringifyInputPreview(args.input), 120),
+      outputSummary: args.isError ? "Patch failed" : summarizeRenderText(args.output),
+      blocks: [{ type: "text", title: "patch", text: args.output, isError: args.isError }],
+    };
+  }
+
+  return createTextRenderPayload(
+    summarizeRenderText(stringifyInputPreview(args.input), 120),
+    args.output,
+    args.isError,
+  );
+}
+
 export function summarizeRenderText(text: string | undefined, maxLength = 80): string | undefined {
   if (!text) return undefined;
   const firstLine = text

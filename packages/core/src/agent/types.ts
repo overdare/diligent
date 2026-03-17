@@ -2,7 +2,7 @@
 
 import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import type { ProviderErrorType, StreamFunction, ThinkingEffort } from "../llm/types";
-import type { AssistantMessage, Message, ToolResultMessage, ToolStartRenderPayloadLike, Usage } from "../types";
+import type { AssistantMessage, Message, ToolResultMessage, Usage } from "../types";
 
 export type MessageDelta = { type: "text_delta"; delta: string } | { type: "thinking_delta"; delta: string };
 
@@ -36,7 +36,6 @@ export type CoreAgentEvent =
       toolCallId: string;
       toolName: string;
       input: unknown;
-      render?: ToolStartRenderPayloadLike;
       childThreadId?: string;
       nickname?: string;
     }
@@ -56,7 +55,6 @@ export type CoreAgentEvent =
       toolName: string;
       output: string;
       isError: boolean;
-      render?: ToolResultMessage["render"];
       childThreadId?: string;
       nickname?: string;
     }

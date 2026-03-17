@@ -1,9 +1,14 @@
 // @summary AgentEvent union — CoreAgentEvent extended with runtime-emitted events
 import type { CoreAgentEvent } from "@diligent/core/agent/types";
 import type { Usage } from "@diligent/core/types";
-import type { CollabAgentRef, CollabAgentStatus, CollabAgentStatusEntry } from "@diligent/protocol";
+import type { CollabAgentRef, CollabAgentStatus, CollabAgentStatusEntry, ToolRenderPayload } from "@diligent/protocol";
+
+type RuntimeToolStartEvent = Extract<CoreAgentEvent, { type: "tool_start" }> & { render?: ToolRenderPayload };
+type RuntimeToolEndEvent = Extract<CoreAgentEvent, { type: "tool_end" }> & { render?: ToolRenderPayload };
 
 export type RuntimeAgentEvent =
+  | RuntimeToolStartEvent
+  | RuntimeToolEndEvent
   | { type: "usage"; usage: Usage; cost: number }
   | { type: "knowledge_saved"; knowledgeId: string; content: string }
   | { type: "collab_spawn_begin"; callId: string; prompt: string; agentType: string }
@@ -45,4 +50,4 @@ export type RuntimeAgentEvent =
       status: CollabAgentStatus;
     };
 
-export type AgentEvent = Exclude<CoreAgentEvent, { type: "usage" }> | RuntimeAgentEvent;
+export type AgentEvent = Exclude<CoreAgentEvent, { type: "usage" | "tool_start" | "tool_end" }> | RuntimeAgentEvent;
