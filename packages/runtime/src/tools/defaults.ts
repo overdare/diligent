@@ -62,7 +62,7 @@ export async function buildDefaultTools(
   }
 
   // 2. Run catalog resolution (applies config toggles, loads plugins, enforces immutables)
-  const catalog = await buildToolCatalog(builtinTools, toolsConfig, cwd);
+  const catalog = await buildToolCatalog(builtinTools, toolsConfig, cwd, host);
 
   // 3. Add collab tools (always enabled, not user-configurable)
   if (paths && collabDeps) {

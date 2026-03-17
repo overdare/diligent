@@ -5,7 +5,10 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Tool } from "@diligent/core/tool/types";
+import type { Tool, ToolContext } from "@diligent/core/tool/types";
+import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
+import type { RuntimeToolHost } from "./capabilities";
+import type { UserInputRequest, UserInputResponse } from "./user-input-types";
 
 const GLOBAL_PLUGIN_DIR_SEGMENTS = [".diligent", "plugins"] as const;
 
@@ -27,6 +30,11 @@ export interface PluginLoadResult {
   error?: string;
   warnings?: string[];
   invalidTools?: InvalidPluginTool[];
+}
+
+interface LegacyPluginToolContext extends ToolContext {
+  approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
+  ask: (request: UserInputRequest) => Promise<UserInputResponse | null>;
 }
 
 /**
@@ -93,7 +101,7 @@ export async function discoverGlobalPlugins(): Promise<string[]> {
  *
  * Never throws — returns error string on fatal failure and warnings for partial validation issues.
  */
-export async function loadPlugin(packageName: string, cwd: string): Promise<PluginLoadResult> {
+export async function loadPlugin(packageName: string, cwd: string, host?: RuntimeToolHost): Promise<PluginLoadResult> {
   const fail = (error: string): PluginLoadResult => ({
     package: packageName,
     tools: [],
@@ -164,7 +172,7 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
       continue;
     }
 
-    const typedTool = tool as Tool;
+    const typedTool = wrapPluginTool(tool as Tool, host);
     if (seenNames.has(typedTool.name)) {
       const error = `Plugin '${packageName}' exports duplicate tool name '${typedTool.name}'. Later duplicates are ignored.`;
       invalidTools.push({ name: typedTool.name, error });
@@ -182,6 +190,25 @@ export async function loadPlugin(packageName: string, cwd: string): Promise<Plug
     tools: validTools,
     warnings,
     invalidTools,
+  };
+}
+
+function wrapPluginTool(tool: Tool, host?: RuntimeToolHost): Tool {
+  return {
+    ...tool,
+    execute: async (args, ctx) => {
+      const legacyContext: LegacyPluginToolContext = Object.assign({}, ctx, {
+        approve: async (request: ApprovalRequest) => {
+          if (!host?.approve) return "once";
+          return host.approve(request);
+        },
+        ask: async (request: UserInputRequest) => {
+          if (!host?.ask) return null;
+          return host.ask(request);
+        },
+      });
+      return tool.execute(args, legacyContext);
+    },
   };
 }
 

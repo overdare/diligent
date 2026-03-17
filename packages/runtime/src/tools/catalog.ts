@@ -3,6 +3,7 @@
 import type { Tool } from "@diligent/core/tool/types";
 import { COLLAB_TOOL_NAMES } from "../collab";
 import type { DiligentConfig } from "../config/schema";
+import type { RuntimeToolHost } from "./capabilities";
 import { isImmutableTool } from "./immutable";
 import { discoverGlobalPlugins, loadPlugin } from "./plugin-loader";
 
@@ -80,6 +81,7 @@ export async function buildToolCatalog(
   builtinTools: Tool[],
   toolsConfig: DiligentConfig["tools"],
   cwd: string,
+  host?: RuntimeToolHost,
 ): Promise<ToolCatalogResult> {
   const config = toolsConfig ?? {};
   const conflictPolicy = config.conflictPolicy ?? "error";
@@ -161,7 +163,7 @@ export async function buildToolCatalog(
       continue;
     }
 
-    const result = await loadPlugin(pluginConfig.package, cwd);
+    const result = await loadPlugin(pluginConfig.package, cwd, host);
     pluginState.loaded = !result.error;
     pluginState.toolCount = result.tools.length;
 
