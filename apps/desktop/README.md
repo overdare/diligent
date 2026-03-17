@@ -52,4 +52,4 @@ When running desktop packaging with `--package <dir>`, you can override app bran
 ```
 
 - `projectName`: bundle/app display name override
-- `desktopIcons`: icon file paths relative to the package directory; only existing files are applied
+- `desktopIcons`: icon file paths relative to the package directory; only existing files are applied. Packaging copies them to a temporary Tauri icon directory, so existing `src-tauri/icons/*` files are not overwritten.

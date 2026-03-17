@@ -13,7 +13,8 @@ import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } fro
 const ROOT = join(import.meta.dir, "../../..");
 const DESKTOP = join(import.meta.dir, "..");
 const DIST = join(ROOT, "dist");
-const TAURI_ICONS_DIR = join(DESKTOP, "src-tauri/icons");
+const TAURI_TEMP_ICONS_REL_DIR = ".diligent-packaging-icons";
+const TAURI_TEMP_ICONS_DIR = join(DESKTOP, "src-tauri", TAURI_TEMP_ICONS_REL_DIR);
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -212,16 +213,27 @@ function buildDesktop(plat: PlatformTarget): void {
 function applyDesktopIconOverrides(iconPaths: string[] | undefined): string[] | undefined {
   if (!iconPaths || iconPaths.length === 0) return undefined;
 
+  if (existsSync(TAURI_TEMP_ICONS_DIR)) {
+    rmSync(TAURI_TEMP_ICONS_DIR, { recursive: true, force: true });
+  }
+  mkdirSync(TAURI_TEMP_ICONS_DIR, { recursive: true });
+
   const copiedIcons: string[] = [];
-  for (const sourcePath of iconPaths) {
+  for (const [index, sourcePath] of iconPaths.entries()) {
     const fileName = sourcePath.split(/[/\\]/).at(-1);
     if (!fileName) continue;
-    const destPath = join(TAURI_ICONS_DIR, fileName);
+    const targetName = `${index + 1}-${fileName}`;
+    const destPath = join(TAURI_TEMP_ICONS_DIR, targetName);
     cpSync(sourcePath, destPath);
-    copiedIcons.push(`icons/${fileName}`);
+    copiedIcons.push(`${TAURI_TEMP_ICONS_REL_DIR}/${targetName}`);
   }
 
   return copiedIcons.length > 0 ? copiedIcons : undefined;
+}
+
+function cleanupDesktopIconOverrides(): void {
+  if (!existsSync(TAURI_TEMP_ICONS_DIR)) return;
+  rmSync(TAURI_TEMP_ICONS_DIR, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +390,7 @@ const allArtifacts: Record<string, string[]> = {};
 let backup: VersionBackup | undefined;
 
 try {
+  cleanupDesktopIconOverrides();
   const desktopIcons = applyDesktopIconOverrides(desktopIconPaths);
 
   // Inject version into protocol + tauri.conf.json
@@ -420,6 +433,7 @@ try {
     console.log("♻️  Restoring version files...");
     restoreVersion(backup);
   }
+  cleanupDesktopIconOverrides();
 }
 
 // ---------------------------------------------------------------------------
