@@ -15,7 +15,7 @@ function summarize(text: string): string {
 export function ThinkingBlock({ text, streaming = false, duration = null }: ThinkingBlockProps) {
   if (streaming) {
     return (
-      <div className="whitespace-pre-wrap rounded-lg bg-transparent px-1 py-1 font-mono text-xs leading-relaxed text-muted/65">
+      <div className="whitespace-pre-wrap rounded-lg bg-transparent py-1 font-mono text-xs leading-relaxed text-muted/65">
         {text}
       </div>
     );
@@ -24,7 +24,7 @@ export function ThinkingBlock({ text, streaming = false, duration = null }: Thin
   const summary = summarize(text);
 
   return (
-    <details className="rounded-lg bg-transparent px-1 py-1 opacity-70 transition hover:opacity-100">
+    <details className="rounded-lg bg-transparent py-1 opacity-70 transition hover:opacity-100">
       <summary className="inline-flex list-none cursor-pointer select-none items-center gap-2 font-mono text-xs uppercase tracking-[0.12em]">
         <span className="text-text-secondary">Thought</span>
         {duration ? <span className="text-muted/70">{duration}</span> : null}
