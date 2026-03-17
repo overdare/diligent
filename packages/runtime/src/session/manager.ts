@@ -482,9 +482,11 @@ export class SessionManager {
   private handleUsageEvent(usage: { cacheReadTokens: number }): void {
     const prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
     if (usage.cacheReadTokens < prevCacheRead) {
+      const sessionEntryCount = this.state.getCommittedEntries().length;
       console.error(
-        "[SessionManager] Cache drop session=%s: %d -> %d",
+        "[SessionManager] Cache drop session=%s entries=%d: %d -> %d",
         this.persistence.sessionId,
+        sessionEntryCount,
         prevCacheRead,
         usage.cacheReadTokens,
       );
