@@ -1,11 +1,14 @@
 {
-  "model": "gpt-5.3-codex",
+  "model": "gpt-5.4",
   "effort": "low",
   "systemPromptFile": "system-prompt.txt",
   "yolo": true,
   "tools": {
     "builtin": {
-      "bash": false
+      "bash": false,
+      "edit": false,
+      "multi_edit": false,
+      "write": false
     }
   }
 }

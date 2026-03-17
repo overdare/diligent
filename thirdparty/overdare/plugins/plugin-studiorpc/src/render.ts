@@ -198,6 +198,15 @@ export function buildAssetManagerImageImportRender(
   };
 }
 
+export function buildLevelApplyRender(output: string): ToolRenderPayload {
+  return {
+    version: 2,
+    inputSummary: "apply map data",
+    outputSummary: summarizeText(output, "Map data applied."),
+    blocks: [{ type: "summary", text: firstLine(output, "Map data applied."), tone: "success" }],
+  };
+}
+
 export function buildActionSequencerApplyJsonRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const instanceGuid = readString(args.instanceGuid) ?? "";
   const jsonFilePath = readString(args.jsonFilePath) ?? "";

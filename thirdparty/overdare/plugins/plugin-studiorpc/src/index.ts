@@ -7,6 +7,7 @@ import * as gameStop from "./methods/game.stop.ts";
 import * as instanceAdd from "./methods/instance.add.ts";
 import * as instanceDelete from "./methods/instance.delete.ts";
 // ── Method modules ────────────────────────────────────────────────────────────
+import * as levelApply from "./methods/level.apply.ts";
 import * as levelBrowse from "./methods/level.browse.ts";
 import * as scriptAdd from "./methods/script.add.ts";
 import * as scriptDelete from "./methods/script.delete.ts";
@@ -18,6 +19,7 @@ import {
   buildGamePlayRender,
   buildGameStopRender,
   buildInstanceAddRender,
+  buildLevelApplyRender,
   buildLevelBrowseRender,
   buildScriptAddRender,
 } from "./render.ts";
@@ -84,6 +86,7 @@ const methodModules: MethodModule[] = [
   assetDrawerImport,
   assetManagerImageImport,
   actionSequencerApplyJson,
+  levelApply,
   levelBrowse,
   scriptAdd,
   scriptDelete,
@@ -142,21 +145,23 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
               ? buildAssetManagerImageImportRender(result, normalizedArgs, output)
               : toolName === "studiorpc_action_sequencer_service_apply_json"
                 ? buildActionSequencerApplyJsonRender(normalizedArgs, output)
-                : toolName === "studiorpc_level_browse"
-                  ? buildLevelBrowseRender(result)
-                  : toolName === "studiorpc_script_add"
-                    ? buildScriptAddRender(normalizedArgs, output)
-                    : toolName === "studiorpc_script_delete"
-                      ? buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output)
-                      : toolName === "studiorpc_instance_delete"
-                        ? buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output)
-                        : toolName === "studiorpc_instance_add"
-                          ? buildInstanceAddRender(normalizedArgs, output)
-                          : toolName === "studiorpc_game_play"
-                            ? buildGamePlayRender(normalizedArgs, output)
-                            : toolName === "studiorpc_game_stop"
-                              ? buildGameStopRender(output)
-                              : undefined;
+                : toolName === "studiorpc_level_apply"
+                  ? buildLevelApplyRender(output)
+                  : toolName === "studiorpc_level_browse"
+                    ? buildLevelBrowseRender(result)
+                    : toolName === "studiorpc_script_add"
+                      ? buildScriptAddRender(normalizedArgs, output)
+                      : toolName === "studiorpc_script_delete"
+                        ? buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output)
+                        : toolName === "studiorpc_instance_delete"
+                          ? buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output)
+                          : toolName === "studiorpc_instance_add"
+                            ? buildInstanceAddRender(normalizedArgs, output)
+                            : toolName === "studiorpc_game_play"
+                              ? buildGamePlayRender(normalizedArgs, output)
+                              : toolName === "studiorpc_game_stop"
+                                ? buildGameStopRender(output)
+                                : undefined;
 
         return {
           output,
