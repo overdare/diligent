@@ -143,3 +143,78 @@ export function buildGameStopRender(output: string): ToolRenderPayload {
     blocks: [{ type: "summary", text: firstLine(output, "Game stopped."), tone: "warning" }],
   };
 }
+
+export function buildAssetDrawerImportRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const assetId = readString(args.assetid) ?? "";
+  const assetName = readString(args.assetName) ?? "unnamed";
+  const assetType = readString(args.assetType) ?? "MODEL";
+  return {
+    version: 2,
+    inputSummary: clip(`${assetType} ${assetName}`),
+    outputSummary: summarizeText(output, "Asset imported."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Asset Drawer import",
+        items: [
+          { key: "assetName", value: assetName },
+          { key: "assetType", value: assetType },
+          { key: "assetid", value: assetId },
+        ].filter((item) => item.value.length > 0),
+      },
+      { type: "summary", text: firstLine(output, "Asset imported."), tone: "success" },
+    ],
+  };
+}
+
+export function buildAssetManagerImageImportRender(
+  result: unknown,
+  args: Record<string, unknown>,
+  output: string,
+): ToolRenderPayload {
+  const file = readString(args.file) ?? "";
+  const asset = isRecord(result) && isRecord(result.asset) ? result.asset : undefined;
+  const returnedAssetId = asset ? readString(asset.assetid) : undefined;
+  const returnedFile = asset ? readString(asset.file) : undefined;
+  return {
+    version: 2,
+    inputSummary: clip(file || "image file"),
+    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Asset manager image import",
+        items: [
+          { key: "file", value: returnedFile ?? file },
+          { key: "assetid", value: returnedAssetId ?? "" },
+        ].filter((item) => item.value.length > 0),
+      },
+      {
+        type: "summary",
+        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
+        tone: "success",
+      },
+    ],
+  };
+}
+
+export function buildActionSequencerApplyJsonRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const instanceGuid = readString(args.instanceGuid) ?? "";
+  const jsonFilePath = readString(args.jsonFilePath) ?? "";
+  return {
+    version: 2,
+    inputSummary: clip(jsonFilePath || instanceGuid || "apply sequencer json"),
+    outputSummary: summarizeText(output, "Sequencer JSON applied."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Action sequencer apply JSON",
+        items: [
+          { key: "instanceGuid", value: instanceGuid },
+          { key: "jsonFilePath", value: jsonFilePath },
+        ].filter((item) => item.value.length > 0),
+      },
+      { type: "summary", text: firstLine(output, "Sequencer JSON applied."), tone: "success" },
+    ],
+  };
+}

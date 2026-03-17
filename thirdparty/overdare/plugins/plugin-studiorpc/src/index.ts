@@ -1,4 +1,7 @@
 import type { z } from "zod";
+import * as actionSequencerApplyJson from "./methods/action-sequencer-service.apply-json.ts";
+import * as assetDrawerImport from "./methods/asset-drawer.import.ts";
+import * as assetManagerImageImport from "./methods/asset-manager.image.import.ts";
 import * as gamePlay from "./methods/game.play.ts";
 import * as gameStop from "./methods/game.stop.ts";
 import * as instanceAdd from "./methods/instance.add.ts";
@@ -8,6 +11,9 @@ import * as levelBrowse from "./methods/level.browse.ts";
 import * as scriptAdd from "./methods/script.add.ts";
 import * as scriptDelete from "./methods/script.delete.ts";
 import {
+  buildActionSequencerApplyJsonRender,
+  buildAssetDrawerImportRender,
+  buildAssetManagerImageImportRender,
   buildDeleteRender,
   buildGamePlayRender,
   buildGameStopRender,
@@ -75,6 +81,9 @@ export const manifest = {
 // ── Tool factory ──────────────────────────────────────────────────────────────
 
 const methodModules: MethodModule[] = [
+  assetDrawerImport,
+  assetManagerImageImport,
+  actionSequencerApplyJson,
   levelBrowse,
   scriptAdd,
   scriptDelete,
@@ -127,21 +136,27 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
         const result = await call(rpcMethod, normalizedArgs);
         const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         const render =
-          toolName === "studiorpc_level_browse"
-            ? buildLevelBrowseRender(result)
-            : toolName === "studiorpc_script_add"
-              ? buildScriptAddRender(normalizedArgs, output)
-              : toolName === "studiorpc_script_delete"
-                ? buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output)
-                : toolName === "studiorpc_instance_delete"
-                  ? buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output)
-                  : toolName === "studiorpc_instance_add"
-                    ? buildInstanceAddRender(normalizedArgs, output)
-                    : toolName === "studiorpc_game_play"
-                      ? buildGamePlayRender(normalizedArgs, output)
-                      : toolName === "studiorpc_game_stop"
-                        ? buildGameStopRender(output)
-                        : undefined;
+          toolName === "studiorpc_asset_drawer_import"
+            ? buildAssetDrawerImportRender(normalizedArgs, output)
+            : toolName === "studiorpc_asset_manager_image_import"
+              ? buildAssetManagerImageImportRender(result, normalizedArgs, output)
+              : toolName === "studiorpc_action_sequencer_service_apply_json"
+                ? buildActionSequencerApplyJsonRender(normalizedArgs, output)
+                : toolName === "studiorpc_level_browse"
+                  ? buildLevelBrowseRender(result)
+                  : toolName === "studiorpc_script_add"
+                    ? buildScriptAddRender(normalizedArgs, output)
+                    : toolName === "studiorpc_script_delete"
+                      ? buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output)
+                      : toolName === "studiorpc_instance_delete"
+                        ? buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output)
+                        : toolName === "studiorpc_instance_add"
+                          ? buildInstanceAddRender(normalizedArgs, output)
+                          : toolName === "studiorpc_game_play"
+                            ? buildGamePlayRender(normalizedArgs, output)
+                            : toolName === "studiorpc_game_stop"
+                              ? buildGameStopRender(output)
+                              : undefined;
 
         return {
           output,
