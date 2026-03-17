@@ -1,7 +1,7 @@
 // @summary Factory that builds a DiligentAppServerConfig from a RuntimeConfig, eliminating Web/CLI duplication
 import { getModelInfoList, resolveModel } from "@diligent/core/llm/models";
 import type { ProviderName } from "@diligent/core/llm/types";
-import { MODE_SYSTEM_PROMPT_SUFFIXES, type ModeKind, PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
+import { MODE_SYSTEM_PROMPT_SUFFIXES, type Mode, PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import type { RuntimeConfig } from "../config/runtime";
 import { type DiligentPaths, ensureDiligentDir } from "../infrastructure";
@@ -27,14 +27,14 @@ function withSkillGuardrail(runtimeConfig: RuntimeConfig) {
   ];
 }
 
-function applyModeToPrompt(mode: ModeKind, systemPrompt: RuntimeConfig["systemPrompt"]) {
+function applyModeToPrompt(mode: Mode, systemPrompt: RuntimeConfig["systemPrompt"]) {
   if (mode === "default") {
     return systemPrompt;
   }
   return [...systemPrompt, { tag: "collaboration_mode", label: "mode", content: MODE_SYSTEM_PROMPT_SUFFIXES[mode] }];
 }
 
-function filterToolsByMode(mode: ModeKind, tools: Awaited<ReturnType<typeof buildDefaultTools>>["tools"]) {
+function filterToolsByMode(mode: Mode, tools: Awaited<ReturnType<typeof buildDefaultTools>>["tools"]) {
   return mode === "plan" ? tools.filter((tool) => PLAN_MODE_ALLOWED_TOOLS.has(tool.name)) : tools;
 }
 
@@ -65,7 +65,7 @@ async function createRuntimeAgent(args: {
     { approve, ask },
   );
 
-  const activeMode = (mode ?? "default") as ModeKind;
+  const activeMode = (mode ?? "default") as Mode;
   const model = resolveModel(modelId);
   const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
     model.provider as ProviderName,

@@ -1,3 +1,4 @@
+import type { ProviderName as ProtocolProviderName } from "@diligent/protocol";
 import type { EventStream } from "../event-stream";
 import type { AssistantMessage, Message, StopReason, Usage } from "../types";
 
@@ -11,7 +12,7 @@ export interface SystemSection {
 
 export type ThinkingEffort = "none" | "low" | "medium" | "high" | "max";
 
-export type ProviderName = "anthropic" | "openai" | "chatgpt" | "gemini";
+export type ProviderName = ProtocolProviderName;
 
 export interface ModelInfo {
   id: string;

@@ -1,7 +1,7 @@
 import type { SerializableError } from "@diligent/core/agent";
 import type { ThinkingEffort } from "@diligent/core/llm/types";
 import type { Message } from "@diligent/core/types";
-import type { ModeKind } from "../agent/mode";
+import type { Mode } from "../agent/mode";
 
 /** Session file format version. Increment when entry schema changes. */
 export const SESSION_VERSION = 8;
@@ -88,7 +88,7 @@ export interface ModeChangeEntry {
   id: string;
   parentId: string | null;
   timestamp: string;
-  mode: ModeKind;
+  mode: Mode;
   /** Who triggered the change */
   changedBy: "cli" | "command" | "config";
 }

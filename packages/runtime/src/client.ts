@@ -23,6 +23,6 @@ export type {
   Usage,
   UserMessage,
 } from "@diligent/core/types";
-export type { ModeKind } from "./agent/mode";
+export type { Mode } from "./agent/mode";
 export type { AgentEvent, RuntimeAgentEvent } from "./agent-event";
 export { ProtocolNotificationAdapter } from "./notification-adapter";

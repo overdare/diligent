@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { DILIGENT_VERSION } from "@diligent/protocol";
-import type { ModeKind } from "@diligent/runtime";
+import { DILIGENT_VERSION, type Mode } from "@diligent/protocol";
 import { ensureDiligentDir, listSessions } from "@diligent/runtime";
 import { runAppServerStdio } from "./app-server-stdio";
 import { loadConfig } from "./config";
@@ -56,12 +55,12 @@ async function main() {
 
   // D087: Apply --mode CLI override
   if (values.mode) {
-    const valid: ModeKind[] = ["default", "plan", "execute"];
-    if (!valid.includes(values.mode as ModeKind)) {
+    const valid: Mode[] = ["default", "plan", "execute"];
+    if (!valid.includes(values.mode as Mode)) {
       console.error(`Error: invalid mode "${values.mode}". Valid modes: ${valid.join(", ")}`);
       process.exit(1);
     }
-    config.mode = values.mode as ModeKind;
+    config.mode = values.mode as Mode;
   }
 
   // Apply --yolo: override config to auto-approve all permissions

@@ -3,7 +3,7 @@
 import type { CoreAgentEvent } from "@diligent/core/agent";
 import { type Agent, selectForCompaction, toSerializableError } from "@diligent/core/agent";
 import type { Message } from "@diligent/core/types";
-import type { ModeKind } from "../agent/mode";
+import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
@@ -433,7 +433,7 @@ export class SessionManager {
     return msgs.map((m) => (m.role === "user" && typeof m.content === "string" ? m.content : ""));
   }
 
-  appendModeChange(mode: ModeKind, changedBy: ModeChangeEntry["changedBy"] = "command"): void {
+  appendModeChange(mode: Mode, changedBy: ModeChangeEntry["changedBy"] = "command"): void {
     const entry: ModeChangeEntry = {
       type: "mode_change",
       id: generateEntryId(),

@@ -1,6 +1,6 @@
 // @summary Tests for provider command parsing and execution
 import { describe, expect, test } from "bun:test";
-import type { ModeKind } from "@diligent/runtime";
+import type { Mode } from "@diligent/protocol";
 import type { AppConfig } from "../../../../src/config";
 import { ProviderManager } from "../../../../src/provider-manager";
 import { providerCommand } from "../../../../src/tui/commands/builtin/provider";
@@ -41,7 +41,7 @@ function createMockContext(pm: ProviderManager): {
       diligent: {},
       sources: [],
       skills: [],
-      mode: "default" as ModeKind,
+      mode: "default" as Mode,
       providerManager: pm,
     },
     sessionManager: null,
@@ -52,7 +52,7 @@ function createMockContext(pm: ProviderManager): {
     displayError: (msg: string) => errors.push(msg),
     runAgent: async () => {},
     reload: async () => {},
-    currentMode: "default" as ModeKind,
+    currentMode: "default" as Mode,
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},

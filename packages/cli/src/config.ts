@@ -1,8 +1,8 @@
 // @summary Loads and validates the CLI configuration from disk
+import type { Mode } from "@diligent/protocol";
 import type {
   DiligentConfig,
   DiligentPaths,
-  ModeKind,
   Model,
   SkillMetadata,
   StreamFunction,
@@ -19,7 +19,7 @@ export interface AppConfig {
   diligent: DiligentConfig;
   sources: string[];
   skills: SkillMetadata[];
-  mode: ModeKind; // D087: always set, defaults to "default"
+  mode: Mode; // D087: always set, defaults to "default"
   compaction: {
     enabled: boolean;
     reservePercent: number;

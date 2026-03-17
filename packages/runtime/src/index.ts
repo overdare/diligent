@@ -32,7 +32,7 @@ export {
   resolveModel,
   supportsThinkingNone,
 } from "@diligent/core";
-export type { ModeKind } from "./agent/mode";
+export type { Mode } from "./agent/mode";
 export { RuntimeAgent } from "./agent/runtime-agent";
 export type { AgentEvent, RuntimeAgentEvent } from "./agent-event";
 export type { CreateAgentArgs, CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
