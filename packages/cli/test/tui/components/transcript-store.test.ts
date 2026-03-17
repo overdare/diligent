@@ -294,4 +294,31 @@ describe("TranscriptStore", () => {
     expect(detailLines.some((line) => line.includes("$ pwd"))).toBe(true);
     expect(detailLines.some((line) => line.includes("/repo"))).toBe(true);
   });
+
+  test("error tool_end still uses render header summary when payload exists", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "tool_start", toolCallId: "bash_err_1", toolName: "bash", input: { command: "exit 1" } });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "bash_err_1",
+      toolName: "bash",
+      output: "[Exit code: 1]",
+      isError: true,
+      render: {
+        version: 2,
+        inputSummary: "exit 1",
+        outputSummary: "Command failed (exit 1)",
+        blocks: [{ type: "command", command: "exit 1", output: "[Exit code: 1]", isError: true }],
+      },
+    });
+
+    const toolItem = store.getItems().find((item) => item.kind === "tool_result");
+    expect(toolItem).toBeDefined();
+    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+
+    const header = stripAnsi(toolItem.header);
+    expect(header).toContain("✗ bash - exit 1");
+    expect(toolItem.summaryLine).toBe("⎿  Command failed (exit 1)");
+  });
 });

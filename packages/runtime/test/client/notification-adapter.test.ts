@@ -148,6 +148,50 @@ test("item lifecycle: toolCall started → delta → completed", () => {
   }
 });
 
+test("toolCall completed falls back to started render when completed render is missing", () => {
+  const adapter = makeAdapter();
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tc1",
+        toolName: "bash",
+        input: { cmd: "ls" },
+        render: { version: 2, inputSummary: "ls", blocks: [] },
+      },
+    },
+  };
+
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool1",
+        toolCallId: "tc1",
+        toolName: "bash",
+        output: "done",
+        isError: true,
+      },
+    },
+  };
+
+  adapter.toAgentEvents(started);
+  const events = adapter.toAgentEvents(completed);
+  expect(events).toHaveLength(1);
+  expect(events[0].type).toBe("tool_end");
+  if (events[0].type === "tool_end") {
+    expect(events[0].render).toEqual({ version: 2, inputSummary: "ls", blocks: [] });
+  }
+});
+
 test("delta without started returns empty for toolOutput", () => {
   const adapter = makeAdapter();
 

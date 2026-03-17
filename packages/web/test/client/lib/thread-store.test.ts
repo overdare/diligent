@@ -218,6 +218,48 @@ test("uses completed tool render payload so live read blocks match hydrated bloc
   expect(tool && tool.kind === "tool" ? tool.render : undefined).toEqual(completed.params.item.render);
 });
 
+test("keeps started render summary on error completion when completed render is missing", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool-err-1",
+        toolCallId: "tool-err-1",
+        toolName: "bash",
+        input: { command: "exit 1" },
+        render: { version: 2, inputSummary: "exit 1", blocks: [] },
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool-err-1",
+        toolCallId: "tool-err-1",
+        toolName: "bash",
+        output: "[Exit code: 1]",
+        isError: true,
+      },
+    },
+  };
+
+  const startedState = reduce(initialThreadState, started);
+  const completedState = reduce(startedState, completed);
+  const tool = completedState.items.find((item) => item.kind === "tool");
+
+  expect(tool).toBeDefined();
+  expect(tool && tool.kind === "tool" ? tool.isError : false).toBe(true);
+  expect(tool && tool.kind === "tool" ? tool.render?.inputSummary : undefined).toBe("exit 1");
+});
+
 test("creates a new assistant item when same itemId appears in a new turn", () => {
   resetAdapter();
   const startedTurn1: DiligentServerNotification = {

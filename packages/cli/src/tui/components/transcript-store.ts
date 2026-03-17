@@ -616,7 +616,8 @@ export class TranscriptStore {
     } else if (renderPayload) {
       const headerLabel = buildToolHeader(event.toolName, renderPayload);
       const rendered = renderToolPayload(renderPayload);
-      const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
+      const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+      const lines: string[] = [`${icon} ${headerLabel}${elapsed}`];
       if (rendered.length > 0) {
         lines.push(...rendered.map((line) => `  ${line}`));
       }
@@ -625,14 +626,16 @@ export class TranscriptStore {
       const headerLabel = buildToolHeader(event.toolName);
       const rawLines = event.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
-      const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
+      const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+      const lines: string[] = [`${icon} ${headerLabel}${elapsed}`];
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
       this.items.push(this.createToolResultItem(lines));
     } else {
       const headerLabel = buildToolHeader(event.toolName);
-      this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
+      const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+      this.items.push({ kind: "plain", lines: [`${icon} ${headerLabel}${elapsed}`] });
     }
     if (this.isThreadBusy) {
       this.ensureStatusTimers();
