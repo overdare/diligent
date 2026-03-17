@@ -54,6 +54,12 @@ export interface ToolRenderPayloadLike {
   blocks: unknown[];
 }
 
+export interface ToolStartRenderPayloadLike {
+  version: 2;
+  inputSummary?: string;
+  blocks: unknown[];
+}
+
 export interface ToolResultMessage {
   role: "tool_result";
   toolCallId: string;

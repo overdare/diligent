@@ -5,6 +5,49 @@ import type { ToolContext, ToolRegistry } from "../tool/types";
 import type { ToolCallBlock, ToolResultMessage } from "../types";
 import type { AgentStream } from "./types";
 
+function buildToolStartRender(input: unknown): { version: 2; inputSummary?: string; blocks: unknown[] } | undefined {
+  let summary: string | undefined;
+  if (typeof input === "string") {
+    summary = input.trim().split("\n").find(Boolean);
+  } else if (input && typeof input === "object" && !Array.isArray(input)) {
+    const recordInput = input as Record<string, unknown>;
+    const patchValue = recordInput.patch;
+    if (typeof patchValue === "string") {
+      const patchLine = patchValue
+        .split("\n")
+        .map((line) => line.trim())
+        .find(
+          (line) =>
+            line.startsWith("*** Add File:") ||
+            line.startsWith("*** Update File:") ||
+            line.startsWith("*** Delete File:"),
+        );
+      if (patchLine) {
+        summary = patchLine
+          .replace("*** Add File:", "")
+          .replace("*** Update File:", "")
+          .replace("*** Delete File:", "")
+          .trim();
+      }
+    }
+    if (!summary) {
+      const filePath = recordInput.file_path;
+      if (typeof filePath === "string" && filePath.trim()) summary = filePath.trim();
+    }
+    if (!summary) {
+      const command = recordInput.command;
+      if (typeof command === "string" && command.trim()) summary = command.trim();
+    }
+    if (!summary) {
+      const action = recordInput.action;
+      if (typeof action === "string" && action.trim()) summary = action.trim();
+    }
+  }
+
+  if (!summary) return undefined;
+  return { version: 2, inputSummary: summary, blocks: [] };
+}
+
 export async function runToolCalls(
   toolCalls: ToolCallBlock[],
   signal: AbortSignal | undefined,
@@ -54,6 +97,7 @@ export async function runToolCalls(
         toolCallId: toolCalls[index].id,
         toolName: toolCalls[index].name,
         input: toolCalls[index].input,
+        render: buildToolStartRender(toolCalls[index].input),
       });
     }
 
@@ -81,6 +125,7 @@ export async function runToolCalls(
       toolCallId: toolCall.id,
       toolName: toolCall.name,
       input: toolCall.input,
+      render: buildToolStartRender(toolCall.input),
     });
 
     const result = await executeTool(registry, toolCall, buildToolContext(toolCall, itemIds[index]));

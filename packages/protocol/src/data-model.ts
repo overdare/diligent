@@ -291,6 +291,7 @@ export const AgentEventSchema = z.union([
     toolCallId: z.string(),
     toolName: z.string(),
     input: z.unknown(),
+    render: ToolRenderPayloadSchema.optional(),
     childThreadId: z.string().optional(),
     nickname: z.string().optional(),
   }),

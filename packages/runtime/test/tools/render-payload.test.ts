@@ -5,6 +5,8 @@ import {
   createGlobRenderPayload,
   createGrepRenderPayload,
   createPatchDiffRenderPayload,
+  createPlanRenderPayload,
+  createToolStartRenderPayload,
   createUpdateKnowledgeRenderPayload,
 } from "../../src/tools/render-payload";
 
@@ -60,6 +62,19 @@ describe("search render payload builders", () => {
     if (summaryBlock?.type !== "summary") throw new Error("Expected summary block");
     expect(summaryBlock.text).toBe(`Search(pattern: "**/*.ts", path: ${JSON.stringify(cwd)})`);
   });
+
+  test("summaries strip cwd prefix and show relative path", () => {
+    const payload = createGlobRenderPayload(
+      { pattern: "**/*.ts", path: cwd },
+      `${cwd}/src/main.ts\n${cwd}/package.json`,
+      { cwd },
+    );
+
+    expect(payload.blocks[1]).toMatchObject({
+      type: "list",
+      items: ["src/main.ts", "package.json"],
+    });
+  });
 });
 
 describe("update knowledge render payload builder", () => {
@@ -79,7 +94,7 @@ describe("update knowledge render payload builder", () => {
 
     expect(payload).toBeDefined();
     expect(payload?.version).toBe(2);
-    expect(payload?.inputSummary).toBe("upsert");
+    expect(payload?.inputSummary).toBe("pattern: Prefer batched tool calls for independent reads");
     expect(payload?.outputSummary).toBe("1 knowledge entry updated");
     expect(payload?.blocks[0]).toEqual({
       type: "key_value",
@@ -96,6 +111,8 @@ describe("update knowledge render payload builder", () => {
 });
 
 describe("patch render payload builder", () => {
+  const cwd = process.cwd().replace(/\\/g, "/");
+
   test("creates diff block from codex patch text", () => {
     const patch = [
       "*** Begin Patch",
@@ -108,8 +125,102 @@ describe("patch render payload builder", () => {
 
     const payload = createPatchDiffRenderPayload(patch, "Success. Updated the following files:\nM src/a.ts");
     expect(payload?.version).toBe(2);
+    expect(payload?.inputSummary).toBe("src/a.ts");
     const diffBlock = payload?.blocks[0];
     if (!diffBlock || diffBlock.type !== "diff") throw new Error("Expected diff block");
     expect(diffBlock.files[0]?.filePath).toBe("src/a.ts");
+  });
+
+  test("input summary includes first target and extra count", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: src/a.ts",
+      "@@",
+      "-const a = 1;",
+      "+const a = 2;",
+      "*** Add File: src/b.ts",
+      "+export const b = 1;",
+      "*** End Patch",
+    ].join("\n");
+
+    const payload = createPatchDiffRenderPayload(
+      patch,
+      "Success. Updated the following files:\nM src/a.ts\nA src/b.ts",
+    );
+    expect(payload?.inputSummary).toBe("src/a.ts (+1 more)");
+  });
+
+  test("summary removes cwd prefix from patch file path", () => {
+    const payload = createPatchDiffRenderPayload(
+      [
+        "*** Begin Patch",
+        `*** Update File: ${cwd}/src/a.ts`,
+        "@@",
+        "-const a = 1;",
+        "+const a = 2;",
+        "*** End Patch",
+      ].join("\n"),
+      "Success. Updated the following files:\nM src/a.ts",
+    );
+
+    expect(payload?.inputSummary).toBe("src/a.ts");
+  });
+});
+
+describe("plan render payload builder", () => {
+  test("creates progress, ordered list, and hint summary", () => {
+    const payload = createPlanRenderPayload({
+      title: "Fix Render",
+      steps: [
+        { text: "Inspect current output", status: "done" },
+        { text: "Patch summary format", status: "in_progress" },
+        { text: "Run tests", status: "pending" },
+      ],
+      hint: "1/3 done, 1 in progress, 1 pending. Continue working.",
+    });
+
+    expect(payload.inputSummary).toBe("Fix Render (3 steps)");
+    expect(payload.outputSummary).toBe("1/3 done");
+    expect(payload.blocks[0]).toEqual({
+      type: "key_value",
+      title: "Progress",
+      items: [
+        { key: "done", value: "1" },
+        { key: "in_progress", value: "1" },
+        { key: "pending", value: "1" },
+        { key: "cancelled", value: "0" },
+      ],
+    });
+
+    const listBlock = payload.blocks[1];
+    if (listBlock?.type !== "list") throw new Error("Expected list block");
+    expect(listBlock.ordered).toBe(true);
+    expect(listBlock.items).toEqual(["☑ Inspect current output", "▶ Patch summary format", "☐ Run tests"]);
+  });
+});
+
+describe("tool start render payload builder", () => {
+  test("uses file target summary for apply_patch request", () => {
+    const payload = createToolStartRenderPayload("apply_patch", {
+      patch: [
+        "*** Begin Patch",
+        "*** Update File: src/a.ts",
+        "@@",
+        "-const a = 1;",
+        "+const a = 2;",
+        "*** End Patch",
+      ].join("\n"),
+    });
+
+    expect(payload?.inputSummary).toBe("src/a.ts");
+  });
+
+  test("uses typed summary for update_knowledge request", () => {
+    const payload = createToolStartRenderPayload("update_knowledge", {
+      action: "upsert",
+      type: "pattern",
+      content: "Prefer concise answers",
+    });
+    expect(payload?.inputSummary).toBe("pattern: Prefer concise answers");
   });
 });

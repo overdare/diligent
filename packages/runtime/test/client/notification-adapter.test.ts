@@ -91,6 +91,7 @@ test("item lifecycle: toolCall started → delta → completed", () => {
         toolCallId: "tc1",
         toolName: "bash",
         input: { cmd: "ls" },
+        render: { version: 2, inputSummary: "ls", blocks: [] },
       },
     },
   };
@@ -101,6 +102,7 @@ test("item lifecycle: toolCall started → delta → completed", () => {
   if (events1[0].type === "tool_start") {
     expect(events1[0].toolName).toBe("bash");
     expect(events1[0].toolCallId).toBe("tc1");
+    expect(events1[0].render).toEqual({ version: 2, inputSummary: "ls", blocks: [] });
   }
 
   const delta: DiligentServerNotification = {

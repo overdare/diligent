@@ -227,6 +227,7 @@ export class ProtocolNotificationAdapter {
           toolCallId: item.toolCallId,
           toolName: item.toolName,
           input: item.input,
+          render: item.render,
           ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];

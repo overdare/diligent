@@ -3,6 +3,7 @@
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import planDescription from "./default/plan-description.txt" with { type: "text" };
+import { createPlanRenderPayload } from "./render-payload";
 
 const PlanStep = z.object({
   text: z.string().describe("Step description"),
@@ -51,6 +52,11 @@ export function createPlanTool(): Tool<typeof PlanParams> {
       return {
         output: JSON.stringify({
           title: args.title ?? "Plan",
+          steps,
+          hint,
+        }),
+        render: createPlanRenderPayload({
+          title: args.title,
           steps,
           hint,
         }),

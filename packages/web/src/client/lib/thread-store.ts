@@ -317,6 +317,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                     isError: false,
                     inputText: stringifyUnknown(event.input),
                     outputText: "",
+                    render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
                   },
                 ],
               }
@@ -344,7 +345,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             timestamp: now,
             toolCallId: event.toolCallId,
             startedAt: now,
-            render: "render" in event ? toToolRenderPayload(event.render) : undefined,
+            render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
           },
         ],
       };

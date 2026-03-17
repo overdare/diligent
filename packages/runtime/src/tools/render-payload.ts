@@ -20,6 +20,44 @@ export interface UpdateKnowledgeRenderInput {
   tags?: string[];
 }
 
+export interface PlanRenderStepInput {
+  text: string;
+  status?: "pending" | "in_progress" | "done" | "cancelled";
+}
+
+export function createToolStartRenderPayload(toolName: string, input: unknown): ToolRenderPayload | undefined {
+  const parsedInput = readRecordInput(input);
+  const normalizedToolName = toolName.trim().toLowerCase();
+
+  let inputSummary: string | undefined;
+  if (normalizedToolName === "apply_patch") {
+    const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
+    if (patch) {
+      const files = parsePatchForRender(patch);
+      inputSummary = buildPatchInputSummary(files);
+    }
+  } else if (normalizedToolName === "update_knowledge") {
+    const contentPreview =
+      typeof parsedInput?.content === "string"
+        ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
+        : "";
+    inputSummary = buildKnowledgeInputSummary(parsedInput ?? {}, contentPreview);
+  } else if (normalizedToolName === "plan") {
+    const title = typeof parsedInput?.title === "string" ? parsedInput.title : "Plan";
+    const stepCount = Array.isArray(parsedInput?.steps) ? parsedInput.steps.length : 0;
+    inputSummary = summarizeRenderText(`${title} (${stepCount} steps)`, 120);
+  } else {
+    inputSummary = summarizeRenderText(stringifyInputPreview(input), 120);
+  }
+
+  if (!inputSummary) return undefined;
+  return {
+    version: 2,
+    inputSummary,
+    blocks: [],
+  };
+}
+
 export function summarizeRenderText(text: string | undefined, maxLength = 80): string | undefined {
   if (!text) return undefined;
   const firstLine = text
@@ -27,7 +65,8 @@ export function summarizeRenderText(text: string | undefined, maxLength = 80): s
     .map((line) => line.trim())
     .find(Boolean);
   if (!firstLine) return undefined;
-  return clipInlineText(firstLine, maxLength);
+  const relativized = relativizeCwdPrefixInSummary(firstLine);
+  return clipInlineText(relativized, maxLength);
 }
 
 export function createTextRenderPayload(
@@ -141,9 +180,61 @@ export function createPatchDiffRenderPayload(
   if (files.length === 0) return undefined;
   return {
     version: 2,
-    inputSummary: summarizeRenderText(patch, 120),
+    inputSummary: buildPatchInputSummary(files),
     outputSummary: actionSummary ?? summarizeRenderText(outputText),
     blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
+  };
+}
+
+export function createPlanRenderPayload(args: {
+  title?: string;
+  steps: PlanRenderStepInput[];
+  hint?: string;
+}): ToolRenderPayload {
+  const title = readTrimmedString(args.title) ?? "Plan";
+  const steps = args.steps.map((step) => ({
+    text: readTrimmedString(step.text) ?? "(empty)",
+    status: step.status ?? "pending",
+  }));
+  const pending = steps.filter((step) => step.status === "pending").length;
+  const inProgress = steps.filter((step) => step.status === "in_progress").length;
+  const done = steps.filter((step) => step.status === "done").length;
+  const cancelled = steps.filter((step) => step.status === "cancelled").length;
+  const allResolved = pending + inProgress === 0;
+  const items = steps.map((step) => `${statusIcon(step.status)} ${step.text}`);
+  const blocks: ToolRenderPayload["blocks"] = [
+    {
+      type: "key_value",
+      title: "Progress",
+      items: [
+        { key: "done", value: String(done) },
+        { key: "in_progress", value: String(inProgress) },
+        { key: "pending", value: String(pending) },
+        { key: "cancelled", value: String(cancelled) },
+      ],
+    },
+    {
+      type: "list",
+      title,
+      ordered: true,
+      items,
+    },
+  ];
+
+  const hintText = readTrimmedString(args.hint);
+  if (hintText) {
+    blocks.push({
+      type: "summary",
+      text: hintText,
+      tone: allResolved ? "success" : "info",
+    });
+  }
+
+  return {
+    version: 2,
+    inputSummary: summarizeRenderText(`${title} (${steps.length} steps)`, 120),
+    outputSummary: allResolved ? "All steps resolved" : `${done}/${steps.length} done`,
+    blocks,
   };
 }
 
@@ -268,15 +359,92 @@ export function createUpdateKnowledgeRenderPayload(
 
   return {
     version: 2,
-    inputSummary: summarizeRenderText(action),
+    inputSummary: buildKnowledgeInputSummary(input, contentPreview),
     outputSummary: buildKnowledgeSummary(input, outputSummary),
     blocks,
   };
 }
 
+function buildPatchInputSummary(files: DiffFile[]): string | undefined {
+  if (files.length === 0) return undefined;
+  const first = buildPatchFileLabel(files[0]);
+  if (files.length === 1) return summarizeRenderText(first, 120);
+  return summarizeRenderText(`${first} (+${files.length - 1} more)`, 120);
+}
+
+function buildPatchFileLabel(file: DiffFile): string {
+  if (file.action === "Move" && file.movedTo) {
+    return `${file.filePath} -> ${file.movedTo}`;
+  }
+  return file.filePath;
+}
+
+function statusIcon(status: PlanRenderStepInput["status"]): string {
+  if (status === "done") return "☑";
+  if (status === "in_progress") return "▶";
+  if (status === "cancelled") return "⊘";
+  return "☐";
+}
+
+function buildKnowledgeInputSummary(input: UpdateKnowledgeRenderInput, contentPreview: string): string | undefined {
+  const actionValue = typeof input.action === "string" ? input.action : "upsert";
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  if (actionValue === "delete") {
+    if (id) return summarizeRenderText(`delete ${id}`, 120);
+    return "delete";
+  }
+
+  const typeValue = typeof input.type === "string" ? input.type.trim() : "";
+  if (typeValue && contentPreview) {
+    return summarizeRenderText(`${typeValue}: ${contentPreview}`, 120);
+  }
+  if (typeValue) return summarizeRenderText(typeValue, 120);
+  if (id) return summarizeRenderText(`upsert ${id}`, 120);
+  return "upsert";
+}
+
 function clipInlineText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function readRecordInput(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function stringifyInputPreview(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function relativizeCwdPrefixInSummary(value: string): string {
+  const cwd = readProcessCwd();
+  if (!cwd) return value;
+
+  const normalizedCwd = trimTrailingSlash(normalizePath(cwd));
+  if (!normalizedCwd) return value;
+
+  const candidates = new Set<string>([normalizedCwd, cwd, cwd.replace(/\\/g, "/"), cwd.replace(/\//g, "\\")]);
+
+  let nextValue = value;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    nextValue = replaceCwdPrefix(nextValue, candidate);
+  }
+  return nextValue;
+}
+
+function replaceCwdPrefix(value: string, cwdPrefix: string): string {
+  let nextValue = value;
+  nextValue = nextValue.replaceAll(`${cwdPrefix}/`, "");
+  nextValue = nextValue.replaceAll(`${cwdPrefix}\\`, "");
+  nextValue = nextValue.replaceAll(cwdPrefix, ".");
+  return nextValue;
 }
 
 function countChangedItems(before: string[], after: string[]): number {
@@ -375,6 +543,17 @@ function readProcessEnv(name: string): string | undefined {
   const proc = typeof process !== "undefined" ? process : undefined;
   const value = proc?.env?.[name];
   return typeof value === "string" ? value : undefined;
+}
+
+function readProcessCwd(): string | undefined {
+  const proc = typeof process !== "undefined" ? process : undefined;
+  if (!proc || typeof proc.cwd !== "function") return undefined;
+  try {
+    const value = proc.cwd();
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readTrimmedString(value: string | undefined): string | undefined {

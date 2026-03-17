@@ -5,6 +5,7 @@ import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "../protocol/index";
+import { createToolStartRenderPayload } from "../tools/render-payload";
 
 interface NotificationContext {
   threadStatus?: "idle" | "busy";
@@ -109,6 +110,9 @@ export function agentEventToNotification(
               toolCallId: event.toolCallId,
               toolName: event.toolName,
               input: event.input,
+              render:
+                toProtocolRenderPayload("render" in event ? event.render : undefined) ??
+                createToolStartRenderPayload(event.toolName, event.input),
             },
             ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
