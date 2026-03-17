@@ -31,6 +31,7 @@ export function withRetry(
     (async () => {
       for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
         if (signal?.aborted) {
+          console.log(`[llm:retry] aborted before attempt=${attempt}/${config.maxAttempts}`);
           stream.push({
             type: "error",
             error: new ProviderError("Aborted", "unknown", false),
@@ -51,11 +52,17 @@ export function withRetry(
               err instanceof ProviderError
                 ? err
                 : new ProviderError(err instanceof Error ? err.message : String(err), "unknown", false);
+            console.log(
+              `[llm:retry] stream error attempt=${attempt}/${config.maxAttempts} retryable=${errorEvent.isRetryable} type=${errorEvent.errorType} status=${errorEvent.statusCode ?? "n/a"} message=${errorEvent.message}`,
+            );
             break;
           }
 
           if (event.type === "done") {
             // Success — forward the done event and return
+            if (attempt > 1) {
+              console.log(`[llm:retry] recovered on attempt=${attempt}/${config.maxAttempts}`);
+            }
             stream.push(event);
             return;
           }
@@ -72,6 +79,7 @@ export function withRetry(
 
         // If no error captured from events, check if stream completed normally
         if (!errorEvent) {
+          console.log(`[llm:retry] stream ended without terminal event attempt=${attempt}/${config.maxAttempts}`);
           stream.push({
             type: "error",
             error: new ProviderError("Provider stream ended without producing a terminal event", "unknown", false),
@@ -83,6 +91,14 @@ export function withRetry(
         // Never retry after streaming has started: the consumer already received
         // partial deltas and a retry would produce duplicate/corrupted output.
         if (hasSentDelta || !errorEvent.isRetryable || attempt >= config.maxAttempts) {
+          const reason = hasSentDelta
+            ? "delta_already_sent"
+            : !errorEvent.isRetryable
+              ? "not_retryable"
+              : "max_attempts_reached";
+          console.log(
+            `[llm:retry] giving up attempt=${attempt}/${config.maxAttempts} reason=${reason} type=${errorEvent.errorType} status=${errorEvent.statusCode ?? "n/a"}`,
+          );
           stream.push({ type: "error", error: errorEvent });
           return;
         }
@@ -91,6 +107,9 @@ export function withRetry(
         const exponentialDelay = config.baseDelayMs * 2 ** (attempt - 1);
         const delayMs = Math.min(Math.max(exponentialDelay, errorEvent.retryAfterMs ?? 0), config.maxDelayMs);
 
+        console.log(
+          `[llm:retry] retrying nextAttempt=${attempt + 1}/${config.maxAttempts} delayMs=${delayMs} type=${errorEvent.errorType}`,
+        );
         onRetry?.(attempt, delayMs, errorEvent);
 
         // Wait with abort support
@@ -110,6 +129,9 @@ export function withRetry(
         err instanceof ProviderError
           ? err
           : new ProviderError(err instanceof Error ? err.message : String(err), "unknown", false);
+      console.log(
+        `[llm:retry] wrapper exception retryable=${providerErr.isRetryable} type=${providerErr.errorType} status=${providerErr.statusCode ?? "n/a"} message=${providerErr.message}`,
+      );
       stream.push({ type: "error", error: providerErr });
     });
 
