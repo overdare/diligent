@@ -174,28 +174,19 @@ export class TUIRenderer {
     return Math.max(1, Math.ceil(visible / safeWidth));
   }
 
-  private hasBoundaryCarry(line: string, width: number): boolean {
-    const safeWidth = Math.max(1, width);
-    const visible = displayWidth(stripAnsi(line));
-    return visible > 0 && visible % safeWidth === 0;
-  }
-
-  private serializeLinesForTerminal(lines: string[], width: number, ensureTrailingNewline = false): string {
+  private serializeLinesForTerminal(lines: string[], _width: number, ensureTrailingNewline = false): string {
     if (lines.length === 0) {
       return "";
     }
 
-    const safeWidth = Math.max(1, width);
     let out = "";
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
       out += line;
       const isLast = i === lines.length - 1;
       if (!isLast) {
-        if (!this.hasBoundaryCarry(line, safeWidth)) {
-          out += "\r\n";
-        }
-      } else if (ensureTrailingNewline && !this.hasBoundaryCarry(line, safeWidth)) {
+        out += "\r\n";
+      } else if (ensureTrailingNewline) {
         out += "\r\n";
       }
     }
@@ -203,14 +194,10 @@ export class TUIRenderer {
     return out;
   }
 
-  /** Count physical terminal rows consumed, including boundary auto-wrap carry rows. */
+  /** Count physical terminal rows consumed by rendered lines. */
   private countPhysicalTerminalRows(lines: string[], width: number): number {
     const safeWidth = Math.max(1, width);
-    return lines.reduce((sum, line) => {
-      const baseRows = this.countTerminalRowsForLine(line, safeWidth);
-      const boundaryCarry = this.hasBoundaryCarry(line, safeWidth) ? 1 : 0;
-      return sum + baseRows + boundaryCarry;
-    }, 0);
+    return lines.reduce((sum, line) => sum + this.countTerminalRowsForLine(line, safeWidth), 0);
   }
 
   /** Keep only the suffix of lines that fits within the terminal's visible row budget */
@@ -221,7 +208,7 @@ export class TUIRenderer {
 
     const safeWidth = Math.max(1, width);
     const visible = displayWidth(stripAnsi(line));
-    const maxVisible = Math.max(0, maxRows * safeWidth - 1);
+    const maxVisible = Math.max(0, maxRows * safeWidth);
     if (visible <= maxVisible) {
       return line;
     }
@@ -243,9 +230,7 @@ export class TUIRenderer {
     let usedRows = 0;
     let startIdx = lines.length;
     for (let i = lines.length - 1; i >= 0; i--) {
-      const baseRows = this.countTerminalRowsForLine(lines[i], safeWidth);
-      const boundaryCarry = this.hasBoundaryCarry(lines[i], safeWidth) ? 1 : 0;
-      const lineRows = baseRows + boundaryCarry;
+      const lineRows = this.countTerminalRowsForLine(lines[i], safeWidth);
       if (usedRows + lineRows > maxRows) {
         break;
       }

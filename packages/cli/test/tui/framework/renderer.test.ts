@@ -17,6 +17,7 @@ class TerminalSim {
   screen: string[];
   cursorRow = 0;
   cursorCol = 0;
+  wrapPending = false;
 
   constructor(rows = 24, columns = 80) {
     this.rows = rows;
@@ -36,9 +37,11 @@ class TerminalSim {
         i += seq.length;
       } else if (data[i] === "\r") {
         this.cursorCol = 0;
+        this.wrapPending = false;
         i++;
       } else if (data[i] === "\n") {
         this.cursorRow++;
+        this.wrapPending = false;
         if (this.cursorRow >= this.screen.length) {
           this.screen.push("");
         }
@@ -61,6 +64,12 @@ class TerminalSim {
   }
 
   private _writeChar(ch: string): void {
+    if (this.wrapPending) {
+      this.cursorCol = 0;
+      this.cursorRow++;
+      this.wrapPending = false;
+    }
+
     while (this.screen.length <= this.cursorRow) this.screen.push("");
     const row = this.screen[this.cursorRow];
     const before = row.slice(0, this.cursorCol);
@@ -68,11 +77,11 @@ class TerminalSim {
     this.screen[this.cursorRow] = before + ch + after;
     this.cursorCol++;
 
-    // Simulate terminal auto-wrap when writing at right boundary.
+    // Simulate real terminal auto-wrap: after the last cell is filled, the
+    // cursor stays on that row with a pending wrap until the next printable.
     if (this.cursorCol >= this.columns) {
-      this.cursorCol = 0;
-      this.cursorRow++;
-      while (this.screen.length <= this.cursorRow) this.screen.push("");
+      this.cursorCol = Math.max(0, this.columns - 1);
+      this.wrapPending = true;
     }
   }
 
@@ -100,6 +109,7 @@ class TerminalSim {
     // CSI sequences only
     const csi = seq.match(/^\x1b\[(\??[0-9;]*)([A-Za-z])$/);
     if (!csi) return;
+    this.wrapPending = false;
     const params = csi[1].replace("?", "");
     const cmd = csi[2];
     const n = parseInt(params !== "" ? params : "1", 10) || 1;
@@ -661,6 +671,40 @@ describe("TUIRenderer — cursor position after renders", () => {
     renderer.forceRender();
 
     expect(sim.lineAt(2)).toBe("prompt> ");
+  });
+
+  test("wrapped streaming redraw does not erase the committed line above it", () => {
+    const { terminal, sim } = createSim(6, 10);
+    let activeLine = "1234567890";
+    const container = new Container();
+    container.addChild({
+      renderBlocks() {
+        return [{ key: "history", lines: ["history"], persistence: "persistent" } satisfies RenderBlock];
+      },
+      render() {
+        return [];
+      },
+      invalidate() {},
+    });
+    container.addChild({
+      render() {
+        return [activeLine];
+      },
+      invalidate() {},
+    });
+
+    const renderer = new TUIRenderer(terminal, container);
+    renderer.start();
+
+    expect(sim.lineAt(0)).toBe("history");
+    expect(sim.lineAt(1)).toBe("1234567890");
+
+    activeLine = "12345678901";
+    renderer.forceRender();
+
+    expect(sim.lineAt(0)).toBe("history");
+    expect(sim.lineAt(1)).toBe("1234567890");
+    expect(sim.lineAt(2)).toBe("1");
   });
 
   test("cursor stays on input row when content shrinks (spinner → no-output tool)", () => {
