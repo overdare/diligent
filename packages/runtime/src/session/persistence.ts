@@ -1,5 +1,5 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
-import { unlink } from "node:fs/promises";
+import { appendFile, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { buildSessionContext } from "./context-builder";
 import type {
@@ -43,9 +43,7 @@ export async function createSessionFile(
  * Append-only: never modifies existing lines.
  */
 export async function appendEntry(sessionPath: string, entry: SessionEntry): Promise<void> {
-  const file = Bun.file(sessionPath);
-  const existing = await file.text();
-  await Bun.write(sessionPath, `${existing}${JSON.stringify(entry)}\n`);
+  await appendFile(sessionPath, `${JSON.stringify(entry)}\n`, "utf8");
 }
 
 /**
