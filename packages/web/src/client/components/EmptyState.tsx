@@ -27,7 +27,6 @@ export function EmptyState({ onSelectPrompt }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 py-16">
       <div className="mb-8 rounded-xl border border-border/100 bg-surface-default px-8 py-7 text-center shadow-panel">
-        <div className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-accent/75">Diligent workspace</div>
         <h2 className="mb-2 text-xl font-semibold text-text">What can I help you with?</h2>
         <p className="text-sm leading-6 text-muted">Ask a question or pick an example below</p>
       </div>
