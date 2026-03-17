@@ -18,34 +18,64 @@ interface RagResult {
   script?: string;
 }
 
+interface AssetResult {
+  text: string;
+  score: number;
+  title: string;
+  keywords: string[];
+  assetId: string;
+  assetType: string;
+  categoryId: string;
+  subCategoryId: string;
+}
+
 interface RagResponse {
-  results: RagResult[];
+  results: Array<RagResult | AssetResult>;
   totalCount: number;
+}
+
+function isAssetResult(result: RagResult | AssetResult): result is AssetResult {
+  return "assetId" in result;
+}
+
+function normalizeAssetResult(result: AssetResult): AssetResult {
+  return {
+    text: result.text,
+    score: result.score,
+    title: result.title,
+    keywords: result.keywords,
+    assetId: result.assetId,
+    assetType: result.assetType,
+    categoryId: result.categoryId,
+    subCategoryId: result.subCategoryId,
+  };
 }
 
 export const name = "overdaresearch";
 
-export const description = `Searches OVERDARE documentation and code examples using RAG.
-Use this tool to find relevant OVERDARE API references, guides, code examples, and Lua scripts.
+export const description = `Searches OVERDARE documentation, code examples, and assets using RAG.
+Use this tool to find relevant OVERDARE API references, guides, code examples, Lua scripts, and asset metadata.
 
 When to use each source:
   - Always start with topK=3~5; only increase if results are insufficient — do NOT start with topK=5 or higher
   - "docs": API references, conceptual guides, configuration details, service descriptions
   - "code": Working Lua implementation examples, proven patterns, real script snippets
-  - When writing or modifying code, search BOTH sources in parallel (two calls: one for docs, one for code) to get API shape + implementation patterns simultaneously
+  - "assets": Asset catalog search returning asset metadata such as title, keywords, assetId, assetType, categoryId, and subCategoryId
+  - When writing or modifying code, search BOTH docs and code in parallel (two calls: one for docs, one for code) to get API shape + implementation patterns simultaneously
 
 Query tips:
   - Provide a clear, specific RAG-friendly query describing what you want to find
   - Never include "OVERDARE" in query — all content is already scoped to OVERDARE
   - When querying for docs, do not include keywords like "doc" or "documentation" in the query — the source already targets the documentation store
-  - When querying for code, do not include keywords like "Lua", "example", or "script" in the query — the source already targets the Lua code store`;
+  - When querying for code, do not include keywords like "Lua", "example", or "script" in the query — the source already targets the Lua code store
+  - When querying for assets, use short noun-based queries such as item names, themes, categories, or use cases`;
 
 export const parameters = z.object({
   query: z.string().describe("Search query for OVERDARE (English only)"),
   source: z
-    .enum(["docs", "code"])
+    .enum(["docs", "code", "assets"])
     .describe(
-      "docs = API references, guides, conceptual documentation. code = working Lua implementation examples and patterns. When generating code, search BOTH sources.",
+      "docs = API references and guides. code = working Lua implementation examples and patterns. assets = asset catalog search with asset metadata fields.",
     ),
   topK: z
     .number()
@@ -133,12 +163,25 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     }
 
     const data = (await response.json()) as RagResponse;
-    const results = (data?.results ?? []).filter((r) => r.text.length > 0);
+    const results = (data?.results ?? []).filter((result) => result.text.length > 0);
+
+    if (args.source === "assets") {
+      const assetResults = results.filter(isAssetResult).map(normalizeAssetResult);
+      return {
+        output: assetResults.length
+          ? JSON.stringify({ results: assetResults, totalCount: data?.totalCount ?? assetResults.length }, null, 2)
+          : "No results found.",
+        render: buildSearchRender({ source: args.source, query: args.query }, assetResults),
+        metadata: { resultCount: assetResults.length, results: assetResults },
+      };
+    }
+
+    const ragResults = results.filter((result): result is RagResult => !isAssetResult(result));
 
     return {
-      output: results.length ? JSON.stringify(results, null, 2) : "No results found.",
-      render: buildSearchRender({ source: args.source, query: args.query }, results),
-      metadata: { resultCount: results.length, results },
+      output: ragResults.length ? JSON.stringify(ragResults, null, 2) : "No results found.",
+      render: buildSearchRender({ source: args.source, query: args.query }, ragResults),
+      metadata: { resultCount: ragResults.length, results: ragResults },
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {

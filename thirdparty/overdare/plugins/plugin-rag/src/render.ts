@@ -13,6 +13,17 @@ interface RagResult {
   script?: string;
 }
 
+interface AssetResult {
+  text: string;
+  score: number;
+  title: string;
+  keywords: string[];
+  assetId: string;
+  assetType: string;
+  categoryId: string;
+  subCategoryId: string;
+}
+
 interface OriginFileResult {
   originFileUrl: string;
   content: string | null;
@@ -32,6 +43,48 @@ function summarizeCount(count: number, singular: string, plural = `${singular}s`
 }
 
 export function buildSearchRender(args: { source: string; query: string }, results: RagResult[]): ToolRenderPayload {
+  if (args.source === "assets") {
+    const assetResults = results as unknown as AssetResult[];
+    const rows = assetResults
+      .slice(0, 10)
+      .map((entry) => [
+        clip(entry.title, 28),
+        clip(entry.assetType, 12),
+        clip(entry.categoryId, 18),
+        clip(entry.subCategoryId, 24),
+        clip(String(entry.score), 8),
+      ]);
+    return {
+      version: 2,
+      inputSummary: clip(`${args.source}: ${args.query}`, 100),
+      outputSummary: assetResults.length === 0 ? "No results found." : summarizeCount(assetResults.length, "asset"),
+      blocks: [
+        {
+          type: "key_value",
+          title: "OVERDARE search",
+          items: [
+            { key: "source", value: args.source },
+            { key: "query", value: args.query },
+            { key: "results", value: String(assetResults.length) },
+          ],
+        },
+        ...(assetResults.length === 0
+          ? [{ type: "summary" as const, text: "No results found.", tone: "warning" as const }]
+          : []),
+        ...(rows.length > 0
+          ? [
+              {
+                type: "table" as const,
+                title: "Assets",
+                columns: ["Title", "Type", "Category", "Subcategory", "Score"],
+                rows,
+              },
+            ]
+          : []),
+      ],
+    };
+  }
+
   const rows = results.slice(0, 10).map((entry) => [clip(entry.text ?? "", 96), clip(entry.originFileUrl ?? "", 56)]);
   return {
     version: 2,
