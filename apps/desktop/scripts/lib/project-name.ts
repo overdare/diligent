@@ -1,4 +1,4 @@
-// @summary Resolves user-visible project naming from root or package metadata for packaging
+// @summary Resolves project branding metadata (name/icons) from root or package metadata for packaging
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ const DEFAULT_PROJECT_NAME = "Diligent";
 
 interface DiligentPackageConfig {
   projectName?: string;
+  desktopIcons?: string[];
 }
 
 interface PackageJsonShape {
@@ -45,4 +46,20 @@ export function toProjectArtifactName(projectName: string): string {
     .toLowerCase();
 
   return normalized.length > 0 ? normalized : DEFAULT_PROJECT_NAME.toLowerCase();
+}
+
+export function resolveDesktopIconPaths(packageDir?: string): string[] | undefined {
+  if (!packageDir) return undefined;
+
+  const packageConfig = readPackageJson(join(packageDir, "package.json"))?.diligent;
+  if (!Array.isArray(packageConfig?.desktopIcons)) return undefined;
+
+  const iconPaths = packageConfig.desktopIcons
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map((value) => join(packageDir, value))
+    .filter((value) => existsSync(value));
+
+  return iconPaths.length > 0 ? iconPaths : undefined;
 }

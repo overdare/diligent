@@ -12,6 +12,11 @@ export interface VersionBackup {
   tauriOriginal: string;
 }
 
+interface InjectVersionOptions {
+  projectName?: string;
+  desktopIcons?: string[];
+}
+
 /**
  * Strip pre-release and build metadata from a semver string, keeping only X.Y.Z.
  * MSI (and NSIS) bundle targets require a purely numeric version.
@@ -22,7 +27,7 @@ export function toTauriVersion(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
 
-export function injectVersion(version: string, projectName?: string): VersionBackup {
+export function injectVersion(version: string, options?: InjectVersionOptions): VersionBackup {
   const protocolOriginal = readFileSync(PROTOCOL_PATH, "utf-8");
   const tauriOriginal = readFileSync(TAURI_CONF_PATH, "utf-8");
 
@@ -39,6 +44,7 @@ export function injectVersion(version: string, projectName?: string): VersionBac
   // Patch Tauri version — MSI/NSIS only accept numeric X.Y.Z, strip pre-release
   const tauriConf = JSON.parse(tauriOriginal);
   tauriConf.version = toTauriVersion(version);
+  const projectName = options?.projectName;
   if (projectName) {
     tauriConf.productName = projectName;
     if (Array.isArray(tauriConf.app?.windows)) {
@@ -48,6 +54,11 @@ export function injectVersion(version: string, projectName?: string): VersionBac
         }
       }
     }
+  }
+  const desktopIcons = options?.desktopIcons;
+  if (desktopIcons && desktopIcons.length > 0) {
+    tauriConf.bundle ??= {};
+    tauriConf.bundle.icon = desktopIcons;
   }
   writeFileSync(TAURI_CONF_PATH, `${JSON.stringify(tauriConf, null, 2)}\n`);
 

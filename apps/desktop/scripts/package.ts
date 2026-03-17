@@ -6,13 +6,14 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
-import { resolveProjectName, toProjectArtifactName } from "./lib/project-name";
+import { resolveDesktopIconPaths, resolveProjectName, toProjectArtifactName } from "./lib/project-name";
 import { rustSourcesChanged, saveRustHash } from "./lib/rust-cache";
 import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
 
 const ROOT = join(import.meta.dir, "../../..");
 const DESKTOP = join(import.meta.dir, "..");
 const DIST = join(ROOT, "dist");
+const TAURI_ICONS_DIR = join(DESKTOP, "src-tauri/icons");
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -42,6 +43,7 @@ const platforms = filterPlatforms(platformIds);
 const extraPackageDir: string | undefined = values.package ? resolve(ROOT, values.package) : undefined;
 const projectName = resolveProjectName(extraPackageDir);
 const projectArtifactName = toProjectArtifactName(projectName);
+const desktopIconPaths = resolveDesktopIconPaths(extraPackageDir);
 
 // ---------------------------------------------------------------------------
 // OS detection — Tauri can only produce native bundles for the current OS
@@ -207,6 +209,21 @@ function buildDesktop(plat: PlatformTarget): void {
   }
 }
 
+function applyDesktopIconOverrides(iconPaths: string[] | undefined): string[] | undefined {
+  if (!iconPaths || iconPaths.length === 0) return undefined;
+
+  const copiedIcons: string[] = [];
+  for (const sourcePath of iconPaths) {
+    const fileName = sourcePath.split(/[/\\]/).at(-1);
+    if (!fileName) continue;
+    const destPath = join(TAURI_ICONS_DIR, fileName);
+    cpSync(sourcePath, destPath);
+    copiedIcons.push(`icons/${fileName}`);
+  }
+
+  return copiedIcons.length > 0 ? copiedIcons : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Artifact collection helpers
 // ---------------------------------------------------------------------------
@@ -327,6 +344,9 @@ console.log(`   App name  : ${projectName}`);
 if (extraPackageDir) {
   console.log(`   Package   : ${extraPackageDir}`);
 }
+if (desktopIconPaths) {
+  console.log(`   Icons     : ${desktopIconPaths.length} custom icon(s)`);
+}
 const tauriVer = toTauriVersion(version);
 if (tauriVer !== version) {
   console.log(`   Tauri version: ${tauriVer} (pre-release stripped for MSI/NSIS compatibility)`);
@@ -358,9 +378,11 @@ const allArtifacts: Record<string, string[]> = {};
 let backup: VersionBackup | undefined;
 
 try {
+  const desktopIcons = applyDesktopIconOverrides(desktopIconPaths);
+
   // Inject version into protocol + tauri.conf.json
   console.log(`⚙️  Injecting version ${version}...`);
-  backup = injectVersion(version, projectName);
+  backup = injectVersion(version, { projectName, desktopIcons });
 
   // Build web frontend once (embedded in desktop)
   console.log("\n🌐 Building web frontend...");

@@ -31,3 +31,25 @@ Or from repo root:
 bun run desktop:dev
 bun run desktop:build
 ```
+
+## Packaging customization via `--package`
+
+When running desktop packaging with `--package <dir>`, you can override app branding from `<dir>/package.json`:
+
+```json
+{
+  "diligent": {
+    "projectName": "OVERDARE Agent",
+    "desktopIcons": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
+```
+
+- `projectName`: bundle/app display name override
+- `desktopIcons`: icon file paths relative to the package directory; only existing files are applied
