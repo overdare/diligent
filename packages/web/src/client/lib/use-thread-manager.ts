@@ -2,9 +2,9 @@
 
 import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { ProtocolNotificationAdapter } from "@diligent/runtime/client";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
+import { ProtocolNotificationAdapter } from "./protocol-notification-adapter";
 import type { WebRpcClient } from "./rpc-client";
 
 type ThreadHydrateAction = {

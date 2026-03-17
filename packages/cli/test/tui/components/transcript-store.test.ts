@@ -229,7 +229,7 @@ describe("TranscriptStore", () => {
     expect(afterIdle.some((line) => line.includes("Working…"))).toBe(false);
   });
 
-  test("read tool result header is renderpayload-first and cwd-relative", () => {
+  test("read tool result header does not synthesize client render payloads", () => {
     const store = new TranscriptStore({ requestRender: () => {}, cwd: "/Users/devbv-mini4/git/diligent" });
 
     store.handleEvent({
@@ -251,9 +251,37 @@ describe("TranscriptStore", () => {
     if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
 
     const readHeader = stripAnsi(toolItem.header);
-    expect(readHeader).toContain("read - {");
-    expect(readHeader).not.toContain("File —");
-    expect(toolItem.summaryLine).toBeDefined();
-    expect(stripAnsi(toolItem.summaryLine ?? "")).toContain("⎿  1\tline one");
+    expect(readHeader).toBe("⏺ read");
+    expect(toolItem.summaryLine).toBeUndefined();
+    expect(toolItem.details.some((line) => stripAnsi(line).includes("line one"))).toBe(true);
+  });
+
+  test("bash tool result uses producer command render payload", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "tool_start", toolCallId: "bash_1", toolName: "bash", input: { command: "pwd" } });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "bash_1",
+      toolName: "bash",
+      output: "/repo",
+      isError: false,
+      render: {
+        version: 2,
+        inputSummary: "pwd",
+        outputSummary: "Command completed",
+        blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],
+      },
+    });
+
+    const toolItem = store.getItems().find((item) => item.kind === "tool_result");
+    expect(toolItem).toBeDefined();
+    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+
+    expect(stripAnsi(toolItem.header)).toContain("bash - pwd");
+    expect(toolItem.summaryLine).toBe("⎿  Command completed");
+    const detailLines = toolItem.details.map(stripAnsi);
+    expect(detailLines.some((line) => line.includes("$ pwd"))).toBe(true);
+    expect(detailLines.some((line) => line.includes("/repo"))).toBe(true);
   });
 });

@@ -1,7 +1,9 @@
 // @summary Hydrates web thread render state from thread/read payload history
 
-import type { ChildSession, ThreadReadResponse, TranscriptEntry } from "@diligent/protocol";
+import type { ChildSession, ThreadItem, ThreadReadResponse, TranscriptEntry } from "@diligent/protocol";
+import { ProtocolNotificationAdapter } from "./protocol-notification-adapter";
 import type { PlanState, ThreadState, UsageState } from "./thread-store";
+import { reduceServerNotification } from "./thread-store";
 import {
   COLLAB_RENDERED_TOOLS,
   extractUserTextAndImages,
@@ -18,7 +20,7 @@ type DisplayMessage =
       type: "message";
       id: string;
       timestamp: string;
-      message: ThreadReadResponse["messages"][number];
+      message: NonNullable<ThreadReadResponse["messages"]>[number];
     };
 
 function extractChildTools(child: ChildSession): Array<{
@@ -127,7 +129,7 @@ function getDisplayMessages(payload: ThreadReadResponse): DisplayMessage[] {
     return payload.transcript;
   }
 
-  return payload.messages.map((message, index) => ({
+  return (payload.messages ?? []).map((message, index) => ({
     type: "message" as const,
     id: `legacy:${message.role}:${message.timestamp}:${index}`,
     timestamp: new Date(message.timestamp).toISOString(),
@@ -135,11 +137,91 @@ function getDisplayMessages(payload: ThreadReadResponse): DisplayMessage[] {
   }));
 }
 
+function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadResponse): ThreadState {
+  const adapter = new ProtocolNotificationAdapter();
+  let current: ThreadState = {
+    ...state,
+    activeThreadCwd: payload.cwd,
+    items: [],
+    seenKeys: {},
+    itemSlots: {},
+    pendingSteers: [],
+    activeTurnId: null,
+    activeTurnStartedAt: null,
+    activeReasoningStartedAt: null,
+    activeReasoningDurationMs: 0,
+    threadStatus: payload.isRunning ? "busy" : "idle",
+    planState: null,
+  };
+
+  const applyItem = (method: "item/started" | "item/completed", item: ThreadItem): void => {
+    const notification = {
+      method,
+      params: {
+        threadId: state.activeThreadId ?? "hydrate",
+        turnId: "hydrate",
+        item,
+      },
+    } as const;
+    const events = adapter.toAgentEvents(notification);
+    current = reduceServerNotification(current, notification, events);
+  };
+
+  for (const item of payload.items ?? []) {
+    if (item.type === "userMessage") {
+      applyItem("item/started", item);
+      continue;
+    }
+    if (item.type === "agentMessage") {
+      applyItem("item/started", item);
+      applyItem("item/completed", item);
+      continue;
+    }
+    if (item.type === "toolCall") {
+      applyItem("item/started", item);
+      if (typeof item.output === "string") {
+        applyItem("item/completed", item);
+      }
+      continue;
+    }
+    if (item.type === "compaction") {
+      current = withItem(current, `history:context:${item.itemId}`, {
+        id: `history:context:${item.itemId}`,
+        kind: "context",
+        summary: item.summary,
+        timestamp: item.timestamp ?? Date.now(),
+      });
+      continue;
+    }
+    if (item.type === "collabEvent") {
+      current = withItem(current, `history:collab:${item.itemId}`, {
+        id: `history:collab:${item.itemId}`,
+        kind: "collab",
+        eventType: item.eventKind,
+        childThreadId: item.childThreadId,
+        nickname: item.nickname,
+        description: item.description,
+        status: item.status,
+        message: item.message,
+        agents: item.agents,
+        timedOut: item.timedOut,
+        childTools: [],
+        timestamp: item.timestamp ?? Date.now(),
+      });
+    }
+  }
+
+  return current;
+}
+
 export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadResponse): ThreadState {
+  if (payload.items && payload.items.length > 0) {
+    return hydrateFromSnapshotItems(state, payload);
+  }
   const displayMessages = getDisplayMessages(payload);
   const resolvedToolCallIds = new Set<string>();
   if (payload.isRunning) {
-    for (const message of payload.messages) {
+    for (const message of payload.messages ?? []) {
       if (message.role === "tool_result") {
         resolvedToolCallIds.add((message as { toolCallId: string }).toolCallId);
       }
@@ -156,7 +238,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   const spawnResultByToolCallId = new Map<string, { threadId: string; nickname?: string; child?: ChildSession }>();
   const settledThreadIds = new Set<string>();
   const finalStatusByThreadId = new Map<string, string>();
-  for (const message of payload.messages) {
+  for (const message of payload.messages ?? []) {
     if (message.role === "tool_result" && message.toolName === "spawn_agent") {
       const { threadId, nickname } = parseSpawnOutput(message.output);
       if (threadId) {
@@ -190,7 +272,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
 
   const hydratedUsage: UsageState = { ...zeroUsage };
   let lastInputTokens = 0;
-  for (const message of payload.messages) {
+  for (const message of payload.messages ?? []) {
     if (message.role === "assistant") {
       const u = (
         message as {
@@ -414,7 +496,7 @@ export function hydrateFromThreadRead(state: ThreadState, payload: ThreadReadRes
   }
 
   let lastPlan: PlanState | null = null;
-  for (const message of payload.messages) {
+  for (const message of payload.messages ?? []) {
     if (message.role === "tool_result" && message.toolName === "plan") {
       const plan = parsePlanOutput(message.output);
       if (plan) {

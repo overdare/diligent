@@ -27,6 +27,7 @@ import {
   RuntimeAgent,
 } from "@diligent/runtime";
 import { createAppServerConfig, DiligentAppServer } from "@diligent/runtime/app-server";
+import { agentEventToNotification } from "@diligent/runtime/app-server/event-mapper";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
@@ -864,6 +865,320 @@ describe("DiligentAppServer", () => {
       content: Array<{ type: string; text?: string }>;
     };
     expect(secondLast.content.find((b) => b.type === "text")?.text).toBe("from-disk");
+  });
+
+  it("thread/read includes snapshot items with tool input/output/render", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig: makeFactoryRuntimeConfig() }),
+    );
+
+    connectTestPeer(server);
+
+    const paths = await ensureDiligentDir(projectRoot);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1901,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const now = new Date();
+    const ts = now.toISOString();
+    const timestamp = now.getTime();
+    const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+    const entries = [
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: ts,
+        message: { role: "user", content: "read readme", timestamp },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: ts,
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "tc-read-1", name: "read", input: { file_path: "README.md" } }],
+          model: "fake-model",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp,
+        },
+      },
+      {
+        type: "message",
+        id: "tr1",
+        parentId: "a1",
+        timestamp: ts,
+        message: {
+          role: "tool_result",
+          toolCallId: "tc-read-1",
+          toolName: "read",
+          output: "# README",
+          isError: false,
+          timestamp,
+          render: { version: 2, outputSummary: "Read README.md", blocks: [{ type: "summary", text: "ok" }] },
+        },
+      },
+    ];
+    const existing = await readFile(sessionPath, "utf8");
+    await writeFile(sessionPath, `${existing}${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1903,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    const result = readResult(read) as {
+      items: Array<{
+        type: string;
+        itemId: string;
+        toolCallId?: string;
+        input?: unknown;
+        output?: string;
+        render?: { version: number };
+      }>;
+    };
+
+    const toolItems = result.items.filter((item) => item.type === "toolCall" && item.toolCallId === "tc-read-1");
+    expect(toolItems.length).toBe(2);
+    expect(toolItems[0]?.input).toMatchObject({ file_path: "README.md" });
+    const completed = toolItems.find((item) => item.output === "# README");
+    expect(completed?.output).toBe("# README");
+    expect(completed?.render?.version).toBe(2);
+  });
+
+  it("thread/read preserves bash start render and command result render", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig: makeFactoryRuntimeConfig() }),
+    );
+
+    connectTestPeer(server);
+
+    const paths = await ensureDiligentDir(projectRoot);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1911,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const now = new Date();
+    const ts = now.toISOString();
+    const timestamp = now.getTime();
+    const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+    const entries = [
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: ts,
+        message: { role: "user", content: "run pwd", timestamp },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: ts,
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "tc-bash-1", name: "bash", input: { command: "pwd" } }],
+          model: "fake-model",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp,
+        },
+      },
+      {
+        type: "message",
+        id: "tr1",
+        parentId: "a1",
+        timestamp: ts,
+        message: {
+          role: "tool_result",
+          toolCallId: "tc-bash-1",
+          toolName: "bash",
+          output: "/tmp/project",
+          isError: false,
+          timestamp,
+          render: {
+            version: 2,
+            inputSummary: "pwd",
+            outputSummary: "Command completed",
+            blocks: [{ type: "command", command: "pwd", output: "/tmp/project", isError: false }],
+          },
+        },
+      },
+    ];
+    const existing = await readFile(sessionPath, "utf8");
+    await writeFile(sessionPath, `${existing}${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1913,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    const result = readResult(read) as {
+      items: Array<{
+        type: string;
+        toolCallId?: string;
+        output?: string;
+        render?: {
+          version: number;
+          inputSummary?: string;
+          outputSummary?: string;
+          blocks?: Array<{ type: string; command?: string; output?: string; isError?: boolean }>;
+        };
+      }>;
+    };
+
+    const toolItems = result.items.filter((item) => item.type === "toolCall" && item.toolCallId === "tc-bash-1");
+    expect(toolItems.length).toBe(2);
+
+    const startedItem = toolItems.find((item) => item.output === undefined);
+    expect(startedItem?.render).toMatchObject({
+      version: 2,
+      inputSummary: "pwd",
+    });
+    expect(startedItem?.startedAt).toBe(timestamp);
+
+    const completedItem = toolItems.find((item) => item.output === "/tmp/project");
+    expect(completedItem?.render).toMatchObject({
+      version: 2,
+      inputSummary: "pwd",
+      outputSummary: "Command completed",
+    });
+    expect(completedItem?.durationMs).toBe(0);
+    expect(completedItem?.render?.blocks?.[0]).toMatchObject({
+      type: "command",
+      command: "pwd",
+      output: "/tmp/project",
+      isError: false,
+    });
+  });
+
+  it("event mapper and thread/read snapshot use the same bash start render summary", () => {
+    const notification = agentEventToNotification(
+      "thread-1",
+      "turn-1",
+      {
+        type: "tool_start",
+        itemId: "item-bash-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "pwd", description: "Print working directory" },
+      },
+      { threadStatus: "busy" },
+    );
+
+    expect(notification).not.toBeNull();
+    if (!notification || notification.method !== "item/started") {
+      throw new Error("Expected item/started notification");
+    }
+
+    expect(notification.params.item).toMatchObject({
+      type: "toolCall",
+      toolCallId: "tc-bash-1",
+      render: {
+        version: 2,
+        inputSummary: "pwd",
+      },
+    });
+  });
+
+  it("thread/read preserves tool duration from assistant timestamp to tool result timestamp", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig: makeFactoryRuntimeConfig() }),
+    );
+
+    connectTestPeer(server);
+
+    const paths = await ensureDiligentDir(projectRoot);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1915,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const startTimestamp = 1_000;
+    const endTimestamp = 2_350;
+    const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+    const entries = [
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: new Date(startTimestamp).toISOString(),
+        message: { role: "user", content: "run pwd", timestamp: startTimestamp },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: new Date(startTimestamp).toISOString(),
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "tc-bash-2", name: "bash", input: { command: "pwd" } }],
+          model: "fake-model",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp: startTimestamp,
+        },
+      },
+      {
+        type: "message",
+        id: "tr1",
+        parentId: "a1",
+        timestamp: new Date(endTimestamp).toISOString(),
+        message: {
+          role: "tool_result",
+          toolCallId: "tc-bash-2",
+          toolName: "bash",
+          output: "/tmp/project",
+          isError: false,
+          timestamp: endTimestamp,
+          render: {
+            version: 2,
+            inputSummary: "pwd",
+            outputSummary: "Command completed",
+            blocks: [{ type: "command", command: "pwd", output: "/tmp/project", isError: false }],
+          },
+        },
+      },
+    ];
+    const existing = await readFile(sessionPath, "utf8");
+    await writeFile(sessionPath, `${existing}${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1917,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    const result = readResult(read) as {
+      items: Array<{ type: string; toolCallId?: string; output?: string; startedAt?: number; durationMs?: number }>;
+    };
+
+    const completedItem = result.items.find(
+      (item) => item.type === "toolCall" && item.toolCallId === "tc-bash-2" && item.output,
+    );
+    expect(completedItem?.startedAt).toBe(startTimestamp);
+    expect(completedItem?.durationMs).toBe(1_350);
   });
 
   it("reads image fallback preview from persisted thread list data when first turn is image-only", async () => {

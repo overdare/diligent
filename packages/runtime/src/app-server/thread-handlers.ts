@@ -8,21 +8,26 @@ import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
 import {
+  type AssistantMessage,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   type DiligentServerNotification,
   type Mode,
   type PluginDescriptor,
   type SessionSummary,
   type ThinkingEffort,
+  type ThreadItem,
   type ToolConflictPolicy,
   type ToolDescriptor,
+  type ToolResultMessage,
   type TurnStartParams,
+  type UserMessage,
 } from "../protocol/index";
 import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
+import { createToolStartRenderPayload } from "../tools/render-payload";
 
 export interface ThreadRuntime {
   id: string;
@@ -204,11 +209,105 @@ export async function handleThreadList(
   return { data: filtered.slice(0, limit ?? 100) };
 }
 
+type ThreadReadTranscriptEntry =
+  | { type: "compaction"; id: string; timestamp: string; summary: string }
+  | { type: "message"; id: string; timestamp: string; message: UserMessage | AssistantMessage | ToolResultMessage };
+
+function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadItem[] {
+  const items: ThreadItem[] = [];
+  const toolStartsByCallId = new Map<
+    string,
+    {
+      itemId: string;
+      toolCallId: string;
+      toolName: string;
+      input: unknown;
+      startedAt: number;
+    }
+  >();
+
+  const parseEntryTimestamp = (value: string): number => {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  for (const entry of transcript) {
+    const entryTimestamp = parseEntryTimestamp(entry.timestamp);
+    if (entry.type === "compaction") {
+      items.push({
+        type: "compaction",
+        itemId: entry.id,
+        summary: typeof entry.summary === "string" ? entry.summary : "",
+        timestamp: entryTimestamp,
+        tokensBefore: 0,
+        tokensAfter: 0,
+      });
+      continue;
+    }
+
+    if (entry.type !== "message") continue;
+    const message = entry.message;
+
+    if (message.role === "user") {
+      items.push({ type: "userMessage", itemId: entry.id, message, timestamp: message.timestamp });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const assistantTimestamp = message.timestamp;
+      items.push({ type: "agentMessage", itemId: entry.id, message, timestamp: assistantTimestamp });
+
+      for (const block of message.content) {
+        if (block.type !== "tool_call") continue;
+        const toolItem = {
+          itemId: `tool:${block.id}`,
+          toolCallId: block.id,
+          toolName: block.name,
+          input: block.input,
+          startedAt: assistantTimestamp,
+        };
+        toolStartsByCallId.set(block.id, toolItem);
+        items.push({
+          type: "toolCall",
+          itemId: toolItem.itemId,
+          toolCallId: toolItem.toolCallId,
+          toolName: toolItem.toolName,
+          input: toolItem.input,
+          timestamp: toolItem.startedAt,
+          startedAt: toolItem.startedAt,
+          render: createToolStartRenderPayload(toolItem.toolName, toolItem.input),
+        });
+      }
+      continue;
+    }
+
+    if (message.role === "tool_result") {
+      const start = toolStartsByCallId.get(message.toolCallId);
+      items.push({
+        type: "toolCall",
+        itemId: start?.itemId ?? `tool:${message.toolCallId}`,
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        input: start?.input ?? {},
+        timestamp: message.timestamp,
+        startedAt: start?.startedAt ?? message.timestamp,
+        durationMs: Math.max(0, message.timestamp - (start?.startedAt ?? message.timestamp)),
+        output: message.output,
+        isError: message.isError,
+        render: message.render,
+      });
+    }
+  }
+
+  return items;
+}
+
 export async function handleThreadRead(
   ctx: ThreadHandlersContext,
   threadId?: string,
 ): Promise<{
   cwd: string;
+  items: ThreadItem[];
   messages: unknown[];
   transcript?: unknown[];
   errors: unknown[];
@@ -233,6 +332,7 @@ export async function handleThreadRead(
 
   const messages = runtime.manager.getContext();
   const transcript = runtime.manager.getTranscript();
+  const items = buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]);
 
   let totalCost = 0;
   for (const msg of messages) {
@@ -248,6 +348,7 @@ export async function handleThreadRead(
 
   return {
     cwd: runtime.cwd,
+    items,
     messages,
     transcript,
     errors: runtime.manager.getErrors(),

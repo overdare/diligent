@@ -461,6 +461,97 @@ test("hydrateFromThreadRead restores tool_call input and merges matching tool_re
   expect(tool && tool.kind === "tool" ? tool.outputText : "").toContain("const x = 1");
 });
 
+test("hydrateFromThreadRead reuses snapshot tool renders for bash start and completion", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    cwd: "/repo",
+    items: [
+      {
+        type: "toolCall",
+        itemId: "tool:tc-bash-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "pwd" },
+        timestamp: 1_000,
+        startedAt: 1_000,
+        render: {
+          version: 2,
+          inputSummary: "pwd",
+          blocks: [],
+        },
+      },
+      {
+        type: "toolCall",
+        itemId: "tool:tc-bash-1",
+        toolCallId: "tc-bash-1",
+        toolName: "bash",
+        input: { command: "pwd" },
+        output: "/repo",
+        isError: false,
+        timestamp: 2_350,
+        startedAt: 1_000,
+        durationMs: 1_350,
+        render: {
+          version: 2,
+          inputSummary: "pwd",
+          outputSummary: "Command completed",
+          blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],
+        },
+      },
+    ],
+    messages: [],
+    hasFollowUp: false,
+    entryCount: 2,
+    isRunning: false,
+    currentEffort: "medium",
+  });
+
+  const tool = hydrated.items.find((item) => item.kind === "tool" && item.toolCallId === "tc-bash-1");
+  expect(tool).toBeDefined();
+  if (!tool || tool.kind !== "tool") throw new Error("Expected hydrated tool item");
+
+  expect(tool.inputText).toContain('"command": "pwd"');
+  expect(tool.outputText).toBe("/repo");
+  expect(tool.status).toBe("done");
+  expect(tool.startedAt).toBe(1_000);
+  expect(tool.durationMs).toBe(1_350);
+  expect(tool.render).toEqual({
+    version: 2,
+    inputSummary: "pwd",
+    outputSummary: "Command completed",
+    blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],
+  });
+});
+
+test("hydrateFromThreadRead keeps assistant text when snapshot has message_end only (no deltas)", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    cwd: "/repo",
+    items: [
+      {
+        type: "agentMessage",
+        itemId: "a-1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "assistant from snapshot" }],
+          model: "x",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 123,
+        },
+      },
+    ],
+    messages: [],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+    currentEffort: "medium",
+  });
+
+  const assistant = hydrated.items.find((item) => item.kind === "assistant");
+  expect(assistant).toBeDefined();
+  expect(assistant && assistant.kind === "assistant" ? assistant.text : "").toBe("assistant from snapshot");
+  expect(assistant && assistant.kind === "assistant" ? assistant.thinkingDone : false).toBe(true);
+});
+
 test("hydrateFromThreadRead prefers raw transcript over compacted context for post-compaction history", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
     messages: [

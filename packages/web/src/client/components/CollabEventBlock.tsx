@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
-import { deriveRenderPayload, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
+import { getToolInfo } from "../lib/tool-info";
 import { StatusDot } from "./StatusDot";
 
 interface CollabEventBlockProps {
@@ -168,9 +168,6 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                   {item.childTools.map((tool) => {
                     const info = getToolInfo(tool.toolName);
                     const isRunning = tool.status === "running";
-                    const payload = deriveRenderPayload(tool.inputText, tool.outputText, tool.isError);
-                    const inputSummary = summarizeInput(payload);
-                    const outputSummary = tool.status === "done" ? summarizeOutput(payload) : "";
                     return (
                       <div key={tool.toolCallId} className="flex flex-col gap-0.5 text-xs">
                         <div className="flex items-center gap-1.5">
@@ -178,24 +175,9 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                           <span className={cn("leading-none", isRunning ? "text-text/70" : "text-text/40")}>
                             {info.displayName}
                           </span>
-                          {inputSummary ? (
-                            <span className="max-w-[56ch] truncate font-mono text-text/30">{inputSummary}</span>
-                          ) : null}
                           {isRunning && <StatusDot color="accent" pulse />}
                           {tool.isError && <span className="text-danger">✗</span>}
                         </div>
-                        {outputSummary ? (
-                          <div className="ml-4 flex items-center gap-1">
-                            <span
-                              className={cn(
-                                "max-w-[56ch] truncate font-mono",
-                                tool.isError ? "text-danger/60" : "text-text-tertiary",
-                              )}
-                            >
-                              ↳ {outputSummary}
-                            </span>
-                          </div>
-                        ) : null}
                       </div>
                     );
                   })}

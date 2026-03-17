@@ -223,4 +223,12 @@ describe("tool start render payload builder", () => {
     });
     expect(payload?.inputSummary).toBe("pattern: Prefer concise answers");
   });
+
+  test("uses command summary for bash request", () => {
+    const payload = createToolStartRenderPayload("bash", {
+      command: "pwd",
+      description: "Print working directory",
+    });
+    expect(payload?.inputSummary).toBe("pwd");
+  });
 });

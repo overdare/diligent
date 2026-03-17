@@ -147,6 +147,10 @@ async function compactIfNeeded(
   const decision = getCompactionDecision(messages, request.config.model.contextWindow, config.reservePercent);
   if (!decision.shouldCompact) return;
 
+  console.log(
+    `[agent:compaction] triggered source=${decision.source} estimatedTokens=${decision.estimatedTokens} thresholdTokens=${decision.thresholdTokens} reserveTokens=${decision.reserveTokens}`,
+  );
+
   const result = await runCompaction({
     messages,
     model: request.config.model,

@@ -1,6 +1,7 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type {
+  AgentEvent,
   DiligentServerNotification,
   InitializeResponse,
   KnowledgeEntry,
@@ -22,8 +23,6 @@ import {
   DILIGENT_SERVER_REQUEST_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
-import type { AgentEvent } from "@diligent/runtime/client";
-import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "@diligent/runtime/client";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
@@ -37,6 +36,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { APP_PROJECT_NAME } from "./lib/app-config";
+import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./lib/protocol-notification-adapter";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import type { SlashCommand } from "./lib/slash-commands";
 import { buildCommandList, parseSlashCommand } from "./lib/slash-commands";
@@ -355,7 +355,7 @@ export function App() {
                   console.log("[App][thread-status] rehydrate after idle notification", {
                     threadId,
                     isRunning: history.isRunning,
-                    messageCount: history.messages.length,
+                    messageCount: history.messages?.length ?? 0,
                     entryCount: history.entryCount,
                   });
                   threadMgr.adapterRef.current.reset();

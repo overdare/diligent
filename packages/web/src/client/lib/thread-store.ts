@@ -1,7 +1,9 @@
 // @summary Protocol event reducer and view-state normalization for Web CLI thread rendering
 
 import type {
+  AgentEvent,
   ApprovalRequest,
+  AssistantMessage,
   DiligentServerNotification,
   Mode,
   SessionSummary,
@@ -9,7 +11,6 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, ToolRenderPayloadSchema } from "@diligent/protocol";
-import type { AgentEvent } from "@diligent/runtime/client";
 import {
   COLLAB_RENDERED_TOOLS,
   extractUserTextAndImages,
@@ -210,6 +211,25 @@ function toToolRenderPayload(value: unknown): import("@diligent/protocol").ToolR
   return parsed.success ? parsed.data : undefined;
 }
 
+function extractAssistantTextFromMessage(message: AssistantMessage): { text: string; thinking: string } {
+  type AssistantContentBlock = AssistantMessage["content"][number];
+  const text = message.content
+    .filter(
+      (block: AssistantContentBlock): block is Extract<AssistantContentBlock, { type: "text" }> =>
+        block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("");
+  const thinking = message.content
+    .filter(
+      (block: AssistantContentBlock): block is Extract<AssistantContentBlock, { type: "thinking" }> =>
+        block.type === "thinking",
+    )
+    .map((block) => block.thinking)
+    .join("");
+  return { text, thinking };
+}
+
 function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
   switch (event.type) {
     case "message_start": {
@@ -226,7 +246,10 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             text: "",
             thinking: "",
             thinkingDone: false,
-            timestamp: event.message.timestamp,
+            timestamp:
+              typeof (event as { timestamp?: number }).timestamp === "number"
+                ? (event as { timestamp?: number }).timestamp!
+                : event.message.timestamp,
             reasoningDurationMs: 0,
           },
         ],
@@ -267,6 +290,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
       const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
+      const { text: finalText, thinking: finalThinking } = extractAssistantTextFromMessage(event.message);
       const nextState =
         state.activeReasoningStartedAt !== null
           ? {
@@ -282,8 +306,19 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             ? {
                 ...current,
                 thinkingDone: true,
-                timestamp: event.message.timestamp,
-                reasoningDurationMs: nextState.activeReasoningDurationMs,
+                timestamp:
+                  typeof (event as { timestamp?: number }).timestamp === "number"
+                    ? (event as { timestamp?: number }).timestamp!
+                    : event.message.timestamp,
+                text: current.text.length > 0 ? current.text : finalText,
+                thinking: current.thinking.length > 0 ? current.thinking : finalThinking,
+                reasoningDurationMs:
+                  typeof (event as { reasoningDurationMs?: number }).reasoningDurationMs === "number"
+                    ? (event as { reasoningDurationMs?: number }).reasoningDurationMs!
+                    : nextState.activeReasoningDurationMs,
+                ...(typeof (event as { turnDurationMs?: number }).turnDurationMs === "number"
+                  ? { turnDurationMs: (event as { turnDurationMs?: number }).turnDurationMs }
+                  : {}),
               }
             : current,
         ),
@@ -342,9 +377,15 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             outputText: "",
             isError: false,
             status: "streaming",
-            timestamp: now,
+            timestamp:
+              typeof (event as { timestamp?: number }).timestamp === "number"
+                ? (event as { timestamp?: number }).timestamp!
+                : now,
             toolCallId: event.toolCallId,
-            startedAt: now,
+            startedAt:
+              typeof (event as { startedAt?: number }).startedAt === "number"
+                ? (event as { startedAt?: number }).startedAt!
+                : now,
             render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
           },
         ],
@@ -423,7 +464,14 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 outputText: event.output || current.outputText,
                 isError: event.isError,
                 status: "done" as const,
-                durationMs: Date.now() - current.startedAt,
+                timestamp:
+                  typeof (event as { timestamp?: number }).timestamp === "number"
+                    ? (event as { timestamp?: number }).timestamp!
+                    : current.timestamp,
+                durationMs:
+                  typeof (event as { durationMs?: number }).durationMs === "number"
+                    ? (event as { durationMs?: number }).durationMs!
+                    : Date.now() - current.startedAt,
                 render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? current.render,
               }
             : current,

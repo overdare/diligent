@@ -150,39 +150,56 @@ export class AppSessionLifecycle {
 
   private async hydrateThreadHistory(): Promise<void> {
     const thread = await this.deps.threadManager.readThread();
-    if (!thread?.transcript?.length) return;
+    if (!thread) return;
+
+    const hasSnapshotItems = Array.isArray(thread.items) && thread.items.length > 0;
+    if (!hasSnapshotItems) return;
 
     this.deps.chatView.addLines([`  ${t.dim}─── Resuming session ───${t.reset}`, ""]);
 
-    for (const entry of thread.transcript) {
-      if (entry.type === "compaction") {
-        this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${entry.summary}]${t.reset}`, ""]);
-      } else if (entry.type === "message") {
-        const msg = entry.message;
-        if (msg.role === "user") {
-          const text =
-            typeof msg.content === "string"
-              ? msg.content
-              : msg.content
-                  .filter((b) => b.type === "text")
-                  .map((b) => (b as { text: string }).text)
-                  .join("");
-          if (text.trim()) this.deps.chatView.addUserMessage(text);
-        } else if (msg.role === "assistant") {
-          const thinkingBlocks = msg.content.filter((b) => b.type === "thinking");
-          if (thinkingBlocks.length > 0) {
-            const fullThinking = thinkingBlocks.map((b) => (b as { thinking: string }).thinking).join("");
-            if (fullThinking.trim()) this.deps.chatView.addThinkingMessage(fullThinking);
-          }
+    for (const item of thread.items) {
+      if (item.type === "compaction") {
+        this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${item.summary}]${t.reset}`, ""]);
+        continue;
+      }
+      if (item.type === "userMessage") {
+        const text =
+          typeof item.message.content === "string"
+            ? item.message.content
+            : item.message.content
+                .filter((block) => block.type === "text")
+                .map((block) => block.text)
+                .join("");
+        if (text.trim()) this.deps.chatView.addUserMessage(text);
+        continue;
+      }
+      if (item.type === "agentMessage") {
+        const thinking = item.message.content
+          .filter((block) => block.type === "thinking")
+          .map((block) => block.thinking)
+          .join("");
+        if (thinking.trim()) this.deps.chatView.addThinkingMessage(thinking, item.reasoningDurationMs);
 
-          const textBlocks = msg.content.filter((b) => b.type === "text");
-          if (textBlocks.length > 0) {
-            const fullText = textBlocks.map((b) => (b as { text: string }).text).join("");
-            this.deps.chatView.addAssistantMessage(fullText);
-          }
-        } else if (msg.role === "tool_result") {
-          this.deps.chatView.addToolResultMessage(msg);
-        }
+        const text = item.message.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("");
+        if (text.length > 0) this.deps.chatView.addAssistantMessage(text);
+        continue;
+      }
+      if (item.type === "toolCall" && typeof item.output === "string") {
+        this.deps.chatView.addToolResultMessage({
+          role: "tool_result",
+          toolCallId: item.toolCallId,
+          toolName: item.toolName,
+          output: item.output,
+          isError: item.isError ?? false,
+          timestamp:
+            typeof item.startedAt === "number" && typeof item.durationMs === "number"
+              ? item.startedAt + item.durationMs
+              : (item.timestamp ?? Date.now()),
+          render: item.render,
+        });
       }
     }
 

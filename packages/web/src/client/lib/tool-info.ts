@@ -1,7 +1,6 @@
 // @summary Tool display name, icon, and category mapping for compact ToolCallRow rendering
 
 import type { ToolRenderPayload } from "@diligent/protocol";
-import { createTextRenderPayload } from "@diligent/runtime/tools/render-payload";
 
 export interface ToolInfo {
   displayName: string;
@@ -91,17 +90,4 @@ export function summarizeOutput(renderPayload?: ToolRenderPayload): string {
 
 export function summarizeInput(renderPayload?: ToolRenderPayload): string {
   return renderPayload?.inputSummary?.trim() ?? "";
-}
-
-export function deriveRenderPayload(
-  inputText: string,
-  outputText: string,
-  isError = false,
-): ToolRenderPayload | undefined {
-  const payload = createTextRenderPayload(inputText, outputText, isError);
-  if (!payload) return undefined;
-  return {
-    ...payload,
-    outputSummary: undefined,
-  };
 }

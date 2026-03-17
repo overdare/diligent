@@ -13,6 +13,7 @@ import {
   SerializableErrorSchema,
   SessionSummarySchema,
   ThinkingEffortSchema,
+  ThreadItemSchema,
 } from "./data-model";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
 
@@ -128,7 +129,8 @@ export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
 
 export const ThreadReadResponseSchema = z.object({
   cwd: z.string(),
-  messages: z.array(MessageSchema),
+  items: z.array(ThreadItemSchema),
+  messages: z.array(MessageSchema).optional(),
   transcript: z.array(TranscriptEntrySchema).optional(),
   errors: z
     .array(

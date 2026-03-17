@@ -394,7 +394,7 @@ describe("Integration: full tool execution cycle", () => {
 
     let plainLines = sim.screen.map(stripAnsi);
     expect(plainLines.some((l) => l.includes("⏺ bash"))).toBe(true);
-    expect(plainLines.some((l) => l.includes("⎿  line1"))).toBe(true);
+    expect(plainLines.some((l) => l.includes("line1"))).toBe(false);
     expect(plainLines.some((l) => l.includes("line2"))).toBe(false);
     expect(plainLines.some((l) => l.includes("line3"))).toBe(false);
     expect(plainLines.some((l) => l.includes("ctrl+o to expand"))).toBe(true);
@@ -402,7 +402,7 @@ describe("Integration: full tool execution cycle", () => {
     chatView.toggleToolResultsCollapsed();
 
     plainLines = sim.screen.map(stripAnsi);
-    expect(plainLines.some((l) => l.includes("line1"))).toBe(true);
+    expect(plainLines.some((l) => l.includes("line1"))).toBe(false);
   });
 
   test("collapsed grep tool header is renderpayload-first", () => {
@@ -430,10 +430,10 @@ describe("Integration: full tool execution cycle", () => {
 
     const plainLines = sim.screen.map(stripAnsi);
     expect(plainLines.some((l) => l.includes("grep — /Users/me/project/src/main.ts"))).toBe(false);
-    expect(
-      plainLines.some((l) => l.includes('grep - Search(pattern: "TODO", path: "/Users/me/project/src/main.ts")')),
-    ).toBe(true);
-    expect(plainLines.some((l) => l.includes("⎿  1 match found"))).toBe(true);
+    expect(plainLines.some((l) => l.includes("grep -"))).toBe(false);
+    expect(plainLines.some((l) => l.includes("⏺ grep"))).toBe(true);
+    expect(plainLines.some((l) => l.includes("src/main.ts:1:// TODO"))).toBe(false);
+    expect(plainLines.some((l) => l.includes("ctrl+o to expand"))).toBe(true);
   });
 
   test("prompt count stays at 2 after full tool + response cycle", () => {

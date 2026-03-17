@@ -1,164 +1,448 @@
 # Architecture
 
-Diligent is a transparent, debuggable coding agent built with Bun + TypeScript (strict mode).
+Diligent is a transparent, debuggable coding agent built as a Bun + TypeScript strict-mode monorepo.
 
-## Runtime & Stack
+This document describes the architecture that exists in the repository today. It is intentionally implementation-oriented: package boundaries, runtime flows, protocol surfaces, and frontend/backend responsibilities are described based on the current codebase rather than historical phase plans.
 
-- **Runtime**: Bun (fast startup, native TS, Bun.spawn, Bun test runner)
-- **Language**: TypeScript in strict mode
-- **Monorepo**: Bun workspaces
-- **External dependency**: ripgrep (`rg`) required for glob and grep tools (D022)
+## Goals
 
-## Packages
+The architecture is organized around four product goals:
 
-| Package | Purpose |
+- **Continuity without hidden state** — long-running work should survive compaction, resume, and multi-turn collaboration.
+- **Project-local transparency** — sessions, knowledge, config, and instructions live with the project in `.diligent/`.
+- **One runtime, multiple clients** — CLI/TUI, Web, and Desktop should share the same backend behavior.
+- **Debuggable layers** — provider calls, tool execution, session persistence, and protocol traffic should be inspectable and testable.
+
+## Stack
+
+- **Runtime:** Bun
+- **Language:** TypeScript with strict mode
+- **Workspace model:** Bun workspaces / monorepo packages
+- **Validation:** Zod schemas across config, tools, and protocol boundaries
+- **External CLI dependency:** `rg` (ripgrep) for `glob` and `grep` tools
+
+## Repository Structure
+
+| Path | Responsibility |
 |---|---|
-| `packages/core` | Reusable agent engine: provider abstraction, agent loop, tool interfaces, auth primitives |
-| `packages/runtime` | Diligent runtime: built-in tools, app-server, RPC, sessions, config, knowledge, skills, approval, collab |
-| `packages/protocol` | Shared Zod schemas for JSON-RPC messages, events, and domain models |
-| `packages/cli` | CLI entry point, TUI rendering, user interaction |
-| `packages/web` | React + Tailwind web frontend with WebSocket transport |
-| `apps/desktop` | Tauri v2 desktop app wrapping `@diligent/web` with Bun sidecar |
-| `packages/debug-viewer` | Standalone web UI for inspecting `.diligent/` session data |
-| `packages/e2e` | End-to-end tests against the full agent |
+| `packages/core` | Reusable agent engine: providers, model registry, agent loop, tool interfaces, shared LLM-facing types |
+| `packages/runtime` | Diligent runtime assembly: app server, sessions, tools, approval, knowledge, skills, config, collaboration |
+| `packages/protocol` | Shared JSON-RPC method constants and schema-only frontend/backend contract |
+| `packages/cli` | Bun CLI entrypoint, stdio app-server transport, TUI client |
+| `packages/web` | Bun web server + React web client over WebSocket JSON-RPC |
+| `apps/desktop` | Tauri shell around the web frontend and Bun sidecar |
+| `packages/debug-viewer` | Viewer for inspecting `.diligent/` data |
+| `packages/e2e` | End-to-end tests spanning protocol and runtime behavior |
 
-## Layer Architecture (11 layers, L0-L10)
+## Architecture Overview
 
-Each layer is a functional subsystem. Layers are progressively deepened across implementation phases.
+At a high level, Diligent is split into four layers:
 
-| Layer | Name | Status | Key Decisions |
-|---|---|---|---|
-| L0 | Provider | 4 providers (Anthropic, OpenAI, ChatGPT OAuth, Gemini) + ProviderManager | D001, D003, D009, D010 |
-| L1 | Agent Loop | Full events, compaction, context headroom, mode filtering, loop detection, steering | D004, D007, D008, D087 |
-| L2 | Tool System | Truncation, progress, tool execution interfaces | D013, D014, D015, D025 |
-| L3 | Runtime Tools | 11 built-in tools (bash, read, write, edit, glob, grep, ls, plan, skill, add_knowledge, request_user_input) | D017-D024, D082, D088 |
-| L4 | Approval | Rule-based permissions + blocking approval flow + session memory | D027-D031 |
-| L5 | Config | 3-layer JSONC + knowledge/compaction wiring | D032-D035 |
-| L6 | Session | Persistent + compaction + knowledge + steering + session list/switch/delete | D036-REV, D037-D043, D080-D084 |
-| L7 | TUI & Commands | Component framework + overlay + slash commands + collaboration modes | D045-D051, D087 |
-| L8 | Skills | Discovery, frontmatter, system prompt injection | D052-D053 |
-| L9 | MCP | Planned | D056-D061 |
-| L10 | Multi-Agent | Done (task tool, agent types, permission isolation, result format, surfaced child errors) | D062-D065 |
+1. **Core engine** — model/provider abstraction, agent loop, tool contract
+2. **Runtime assembly** — session orchestration, prompt building, built-in tools, approvals, knowledge, collaboration
+3. **Protocol contract** — typed JSON-RPC requests, notifications, and shared data models
+4. **Thin clients** — CLI/TUI, Web, Desktop
 
-Deep research per layer: `docs/research/layers/NN-*.md`
+```text
+CLI/TUI                         Web UI                         Desktop UI
+   │                              │                                │
+   │ stdio JSON-RPC               │ WebSocket JSON-RPC             │ Tauri shell
+   │                              │                                │
+   ├───────────────┬──────────────┴───────────────┬────────────────┤
+   │               │                              │                │
+   │         DiligentAppServer (@diligent/runtime)                │
+   │      thread/session orchestration, RPC dispatch,             │
+   │      approvals, user input, tool/runtime integration         │
+   │               │                                              │
+   │         SessionManager + RuntimeAgent                        │
+   │               │                                              │
+   │         Agent loop + providers (@diligent/core)              │
+   │               │                                              │
+   └──────────── model providers / file system / shell ───────────┘
+```
 
 ## Frontend Protocol Philosophy
 
-Inspired by codex-rs's architecture: **one protocol, multiple transports**.
+Diligent uses **one backend protocol with multiple transports**.
 
-`DiligentAppServer` is the single source of truth for agent logic. All frontends — TUI, Web, Desktop — are thin protocol clients that differ only in transport and rendering.
+`DiligentAppServer` in `packages/runtime` is the source of truth for thread lifecycle, turn execution, approvals, user-input requests, and event broadcasting. Frontends differ mainly in transport and presentation:
 
-```
-TUI                           Web                       Desktop
- │                             │                         │
- │  stdio JSON-RPC             │  WebSocket JSON-RPC     │  Tauri + Bun sidecar
- │  (StdioAppServerRpcClient   │  (RpcBridge → ws://)   │  (same WebSocket as Web)
- │   → diligent app-server     │
- │     --stdio child process)  │
- └──────────────┬──────────────┴────────────┬────────────┘
-                │                           │
-      DiligentAppServer  (@diligent/runtime)
-      SessionManager, built-in Tools, RPC binding
-                │
-         AgentLoop + Providers
-           (@diligent/core)
-```
+- **CLI/TUI** launches `diligent app-server --stdio` and speaks NDJSON-framed JSON-RPC over stdio.
+- **Web** runs a Bun server exposing `/rpc` as a WebSocket JSON-RPC endpoint.
+- **Desktop** packages the web frontend and sidecar server inside Tauri; it does not introduce a separate agent runtime.
 
-Both transports use raw JSON-RPC 2.0 messages with no custom wrapper envelopes. `@diligent/runtime` provides transport-neutral RPC binding helpers and the in-process app-server used by CLI/Web/Desktop.
+Practical consequences:
 
-**Rules that follow from this:**
+1. **Server logic is shared.** Session lifecycle, provider auth wiring, tool execution, mode changes, effort changes, approvals, and steering belong in runtime, not in individual frontends.
+2. **Protocol is the contract.** Anything that crosses the frontend/backend boundary should be modeled in `@diligent/protocol`.
+3. **Desktop is not a fourth backend.** It reuses the web stack rather than forking agent behavior.
+4. **Transport adapters stay small.** Stdio and WebSocket layers only adapt messages; they should not own business logic.
 
-1. **Web server = simple runner.** `packages/web/src/server` does exactly three things: start `DiligentAppServer`, open a WebSocket endpoint, serve static files. No agent logic, no custom auth flow, no provider management lives here.
-
-2. **All flows are shared.** Provider management, auth, model resolution, system prompt construction, session lifecycle, tool building — every agent logic flow is identical for TUI and Web. Reusable engine concerns live in `packages/core`; Diligent-specific runtime concerns live in `packages/runtime`. When adding or changing a flow, implement it once at the right layer and wire it through both frontends together.
-
-3. **Protocol is the boundary.** `@diligent/protocol` defines every message that crosses the frontend/backend boundary. TUI's `StdioAppServerRpcClient` and Web's `RpcBridge` are both implementations of the same raw JSON-RPC protocol — not separate systems.
-
-4. **No frontend differentiation in the server.** If logic is only needed by Web (e.g. serving static assets), it belongs in the transport layer. If logic belongs to the reusable engine (e.g. agent loop, provider streaming, tool interfaces), it belongs in core. If logic belongs to Diligent's shared runtime (e.g. sessions, app-server, built-in tools, approval engine), it belongs in runtime.
-
-5. **Desktop = Web in a native shell.** `apps/desktop` uses Tauri v2 with a Bun sidecar. The Tauri frontend loads the same React app; the sidecar runs the same web server. No desktop-specific agent logic.
-
-6. **stdout is protocol-only in stdio mode.** When `diligent app-server --stdio` runs as a child process, stdout is reserved exclusively for NDJSON-framed JSON-RPC messages. All diagnostics go to stderr.
-
-## Key Design Patterns
-
-- **EventStream** (D007): Custom async iterable for streaming LLM responses and agent events. Producer pushes events, consumer uses `for await`, completion via `.result()` promise. ~86 lines.
-- **AgentEvent union** (D004): 20 tagged-union event types covering lifecycle, turns, message streaming, tool execution, status, usage, errors, compaction, knowledge, loop detection, and steering. `MessageDelta` type prevents provider events leaking into L1.
-- **Tool interface** (D013): `{ name, description, parameters (Zod schema), execute(args, ctx) }`. Framework types and execution live in `packages/core/src/tool/`; built-in tool implementations live in `packages/runtime/src/tools/`.
-- **TurnContext** (D008): Immutable per-turn config (model, tools, policies) separated from mutable session state. Agent loop is a pure stateless function.
-- **Provider abstraction** (D003): Common `StreamFunction` interface. `ProviderManager` dispatches to Anthropic, OpenAI (Responses API), ChatGPT (OAuth), Gemini based on model prefix. Model registry with alias resolution. Provider/auth primitives live in core; higher-level runtime wiring lives in runtime.
-- **Session persistence** (D006/D036-REV): JSONL append-only files with tree structure (id/parentId). Project-local at `.diligent/sessions/`. SESSION_VERSION 4 with CompactionEntry, ModeChangeEntry, SteeringEntry. Session list/switch/delete via protocol. Session orchestration lives in `packages/runtime/src/session/`.
-- **Compaction** (D037-D039): Token-based trigger with reserved context headroom and LLM summarization. Proactive (pre-turn check) and reactive (context_overflow recovery). File operation tracking across compactions.
-- **Knowledge** (D081-D083): JSONL append-only store with 5 typed entries. Ranked injection into system prompt with 30-day time decay and token budget. `add_knowledge` tool for autonomous recording.
-- **Collaboration modes** (D087): ModeKind ("default" | "plan" | "execute"). Plan mode filters tools to read-only set. Mode-specific system prompt prefixes. ModeChangeEntry in session history.
-- **Approval system** (D027-D031, D070): Rule-based permission engine with wildcard matching, inline blocking approvals, Once / Always / Reject responses, session-scoped remembered rules, and tool-call hooks before execution. Approval implementation lives in `packages/runtime/src/approval/`; the core agent loop consumes hooks instead of a concrete engine.
-- **Steering queue**: `steer()` injects mid-task messages; `followUp()` queues post-task messages. SteeringEntry persisted in session JSONL. Drained before/after LLM calls.
-- **Loop detection**: Tracks tool call signatures in sliding window, detects repeating patterns (length 1-3, 3 repetitions), injects warning message.
-- **Project data directory** (D080): `.diligent/` stores sessions, knowledge, and skills. Auto-generated `.gitignore` excludes sessions and knowledge.
-- **Diligent Protocol** (`@diligent/protocol`): JSON-RPC v2 protocol with Zod-validated schemas. 11 client request methods (initialize, thread/start, thread/resume, thread/list, thread/read, thread/delete, turn/start, turn/interrupt, turn/steer, mode/set, knowledge/list). 12 server notification types. 2 server request types (approval, user input). All domain models (Message, AgentEvent, ThreadItem, SessionSummary, ProviderAuthStatus) defined as Zod schemas. Raw JSON-RPC 2.0 messages are used on both CLI stdio and Web WebSocket transports with no custom wrapper envelopes.
-- **Sub-agent results**: Parent threads preserve sub-agent summaries together with child tool failure details so nested-agent debugging stays visible in both Web and TUI.
-- **RPC transport layer** (`packages/runtime/src/rpc/`): Transport-neutral JSON-RPC helpers — `channel.ts` (RpcPeer interface), `framing.ts` (NDJSON framing for stdio), `server-binding.ts` (binds `DiligentAppServer` to any message stream), `client.ts` (request correlation and server-request handling). These primitives are reused by both CLI stdio transport and Web WebSocket bridge.
-
-## Package Boundary
-
-The desired package layering is:
-
-```text
-@diligent/core
-    ↓
-@diligent/runtime
-    ↓
-@diligent/protocol
-    ↓
-@diligent/cli, @diligent/web
-```
-
-The current codebase is mid-migration: `core` and `runtime` were already separated, but some protocol-owned boundary types still leak downward. See `docs/plan/refactor/P046-protocol-above-core-runtime.md` for the next-stage cleanup plan.
+## Package Responsibilities
 
 ### `@diligent/core`
 
-Keep only reusable engine concerns here:
+`packages/core` contains reusable agent-engine concerns that are intentionally not Diligent-app specific:
 
-- provider abstraction and model registry
-- agent loop and event types
-- tool interfaces / executor / truncation
-- auth primitives shared by provider management
-- shared message types and `EventStream`
+- provider abstraction and model resolution
+- `ProviderManager` and stream proxying
+- agent loop and core event stream
+- tool interfaces and execution contracts
+- shared LLM message types
+- provider/auth primitives used by runtime wiring
+
+Core should not know about project-local persistence, `.diligent/`, JSON-RPC transport, or frontend behavior.
 
 ### `@diligent/runtime`
 
-Keep Diligent-specific runtime assembly here:
+`packages/runtime` is the main integration layer. It composes core primitives into a working coding agent runtime:
+
+- `DiligentAppServer`
+- `SessionManager`
+- runtime-owned `AgentEvent` extensions
+- built-in tools and plugin loading
+- config loading and system prompt construction
+- approval engine and user-input bridging
+- knowledge store and prompt injection
+- skill discovery and rendering
+- collaboration/sub-agent orchestration
+- infrastructure around `.diligent/` paths
+- transport-neutral RPC helpers and bindings
+
+Runtime is where shared product behavior should be added when both Web and TUI must behave the same way.
+
+### `@diligent/protocol`
+
+`packages/protocol` is the shared frontend/backend contract. It contains:
+
+- JSON-RPC method constants
+- request/response schemas
+- notification schemas
+- shared UI-facing data models
+
+This package should remain schema/model oriented. Behavioral adapters and runtime-specific mapping logic should live outside protocol.
+
+### `@diligent/cli`
+
+`packages/cli` provides:
+
+- the `diligent` executable
+- stdio app-server launching for local child-process transport
+- interactive TUI
+- non-interactive runner for piped/flag-driven execution
+
+The CLI is both a client and a launcher, but not a separate source of agent truth.
+
+### `@diligent/web`
+
+`packages/web` contains two pieces:
+
+- a Bun server that creates `DiligentAppServer`, exposes `/rpc`, serves static assets, and hosts persisted images
+- a React client that renders thread state and communicates over JSON-RPC
+
+The web server should stay thin: runtime behavior belongs in `@diligent/runtime`.
+
+### `@diligent/desktop`
+
+`apps/desktop` wraps the web client in Tauri and builds a Bun sidecar. Desktop intentionally reuses the same server and frontend architecture rather than maintaining a native-only agent path.
+
+## Current Runtime Flow
+
+### 1. Startup and config assembly
+
+Both CLI and Web load a shared `RuntimeConfig` through `packages/runtime/src/config/runtime.ts`.
+
+That loader is responsible for:
+
+- reading merged config sources
+- discovering `AGENTS.md` instructions
+- building the system prompt
+- loading knowledge for prompt injection
+- discovering skills
+- constructing the `ProviderManager`
+- loading API keys and ChatGPT OAuth tokens
+- creating the shared stream function
+- creating the permission engine
+
+This keeps startup behavior aligned across frontends.
+
+### 2. App-server construction
+
+`createAppServerConfig()` in runtime builds a `DiligentAppServerConfig` from `RuntimeConfig` and wires:
+
+- agent creation
+- model availability
+- tool configuration getters/setters
+- provider auth integration
+- compaction settings
+- permission engine
+- skill names
+
+Both CLI and Web reuse this factory to avoid diverging initialization logic.
+
+### 3. Connection and transport handling
+
+`DiligentAppServer` supports multiple concurrent connections. Each connection tracks:
+
+- current cwd
+- selected mode
+- selected effort
+- thread subscriptions
+- pending server requests
+
+The app server accepts client requests, injects session defaults when needed, dispatches thread/turn/config/auth/tool handlers, and broadcasts notifications to subscribed peers.
+
+### 4. Thread and turn execution
+
+Per thread, runtime maintains a `ThreadRuntime` that centers on `SessionManager`.
+
+`SessionManager` is responsible for:
+
+- session create/resume/list/reconcile
+- append-only persistence
+- visible context/transcript building
+- agent reuse across turns
+- compaction orchestration
+- steering queues
+- model/mode/effort change persistence
+- in-memory error tracking
+- relaying runtime/core events to subscribers
+
+It is a central coordination point in the current implementation.
+
+### 5. Event publication
+
+Core/runtime agent events are mapped into protocol notifications by `app-server/event-mapper.ts`.
+
+Clients consume those notifications and may adapt them again into local UI events. Runtime also provides `ProtocolNotificationAdapter` so both Web and TUI can share protocol-to-agent-event mapping logic on the client side.
+
+## Session Model and Persistence
+
+Sessions are project-local and live under `.diligent/`.
+
+Key characteristics:
+
+- **Storage format:** append-only JSONL
+- **Location:** `.diligent/sessions/`
+- **Shape:** tree-structured entries with `id` / `parentId`
+- **Capabilities:** resume, branching history, compaction entries, mode/model/effort changes, steering persistence, collab metadata
+
+Runtime derives two different views from session data:
+
+- **context view** for future model calls
+- **transcript view** for human-facing UI/history rendering
+
+This split is important because raw persisted entries are not identical to the display-oriented event stream used during live turns.
+
+## Prompt Construction
+
+System prompt construction happens in runtime, not in the frontends.
+
+The effective prompt is assembled from:
+
+- base prompt template
+- environment variables such as current date, cwd, and platform
+- discovered `AGENTS.md` instructions
+- optional config-level custom instructions
+- ranked knowledge injection
+- discovered skills section
+- mode-specific suffixes (`default`, `plan`, `execute`)
+
+This ensures prompt behavior stays consistent no matter which client starts the turn.
+
+## Model and Provider Layer
+
+Providers are abstracted in core behind a shared stream interface. Runtime wires real auth and config into that abstraction.
+
+Current provider-related behavior includes:
+
+- known model registry and model resolution
+- provider-specific streaming through `ProviderManager`
+- API-key-backed providers from `~/.diligent/auth.jsonc`
+- ChatGPT OAuth via runtime-managed external auth binding
+- shared stream proxy creation for agent execution
+- provider-aware native compaction support where available
+
+The design goal is to keep provider-specific mechanics reusable while leaving user-facing auth flows to runtime.
+
+## Tool System
+
+### Tool contract
+
+At the core level, tools follow a schema-driven interface with a name, description, input schema, and async execution function.
+
+### Built-in runtime tools
+
+Runtime assembles the default tool set, including:
+
+- `bash`
+- `read`
+- `apply_patch`
+- `ls`
+- `glob`
+- `grep`
+- `plan`
+- `skill`
+- `request_user_input`
+- `update_knowledge` (when knowledge storage is available)
+- collaboration tools such as `spawn_agent`, `wait`, `send_input`, `close_agent`
+
+Tool availability is mode-sensitive and config-sensitive.
+
+### Tool catalog and plugins
+
+Runtime resolves the final catalog by combining:
 
 - built-in tools
-- app-server and RPC binding
-- sessions, compaction, persistence
-- config loading and prompt construction
-- knowledge, skills, approval, collaboration
-- infrastructure helpers and client-side notification adapter
+- immutable tool rules
+- project/global tool toggles
+- auto-discovered and explicitly configured plugins
+- plugin conflict policy
 
-## Key Decisions Summary
+This produces both:
 
-| ID | Decision | Rationale |
-|---|---|---|
-| D001 | Bun + TypeScript strict | Fast startup, native TS, good DX |
-| D003 | Custom provider abstraction (not ai-sdk) | Full control, no heavy dependency |
-| D004 | 18 AgentEvent types (tagged union) | Middle ground between codex-rs (40+) and pi-agent (12). Grew from 15 base via compaction (2), knowledge (1), loop detection (1), steering (1) |
-| D006 | JSONL append-only sessions | Simple, no data loss, supports branching |
-| D008 | Immutable TurnContext + mutable SessionState | Prevents accidental mutation during tool execution |
-| D013 | Tool = object with Zod schema + execute() | Clean, testable, one file per tool |
-| D036-REV | Sessions in `.diligent/sessions/` (project-local) | Portable, shareable, easy backup |
-| D080 | `.diligent/` project data directory | Separates config (global) from data (project-local) |
-| D086 | Codex protocol alignment (SessionManager + itemId + serialization) | Future web UI as thin wrapper, not deep refactor |
-| D087 | Collaboration modes (plan/execute) | Tool filtering + system prompt prefix per mode |
-| D088 | request_user_input tool | Separate from approval — agent-initiated clarification in all modes |
+- the final enabled tool list for the agent
+- rich state metadata for UI display and debugging
 
-Full decision log: `docs/plan/decisions.md` (D001-D088)
+## Collaboration and Modes
 
-## Dev Commands
+Diligent has two related runtime concepts:
+
+### Collaboration modes
+
+Thread mode changes how the agent is expected to behave:
+
+- `default`
+- `plan`
+- `execute`
+
+Mode affects system-prompt suffixes and tool filtering. For example, `plan` mode narrows the tool set to a read-oriented subset.
+
+### Sub-agent collaboration
+
+Runtime also supports non-blocking multi-agent work through collaboration tools backed by `AgentRegistry`.
+
+That layer handles:
+
+- child agent spawn
+- wait/join behavior
+- steering messages to running children
+- child shutdown
+- restoration of historical sub-agent references on resume
+
+These flows are surfaced through both tool results and dedicated collaboration notifications.
+
+## Approval and User Input
+
+Approval and clarification are separate mechanisms.
+
+### Approval
+
+The approval system is a rule-based permission engine in runtime. It supports:
+
+- configured permission rules
+- session-scoped remembered decisions
+- blocking approval requests sent from server to client
+- yolo/auto-approve mode
+
+Core consumes approval hooks; it does not own the policy engine.
+
+### User input
+
+`request_user_input` is a general clarification tool, not an approval substitute. It pauses execution and asks the connected frontend to collect structured answers from the user.
+
+## Knowledge and Skills
+
+### Knowledge
+
+Knowledge is persisted separately from sessions and injected back into the system prompt.
+
+- storage: append-only JSONL
+- API surface: `knowledge/list` and `knowledge/update`
+- write actions: `upsert` and `delete`
+- runtime tool: `update_knowledge`
+
+Knowledge ranking and injection are runtime concerns, not frontend concerns.
+
+### Skills
+
+Skills are discovered from configured directories and rendered into the prompt as an indexed capability layer. The `skill` tool loads skill content into context without exposing it as ordinary file reads.
+
+## Protocol Surface
+
+The shared protocol is JSON-RPC based and currently includes requests such as:
+
+- lifecycle: `initialize`
+- threads: `thread/start`, `thread/resume`, `thread/list`, `thread/read`, `thread/delete`, `thread/compact/start`
+- turns: `turn/start`, `turn/interrupt`, `turn/steer`
+- thread state: `mode/set`, `effort/set`
+- knowledge: `knowledge/list`, `knowledge/update`
+- tools: `tools/list`, `tools/set`
+- auth/config: `config/set`, `auth/list`, `auth/set`, `auth/remove`, `auth/oauth/start`
+- subscriptions: `thread/subscribe`, `thread/unsubscribe`
+- assets: `image/upload`
+
+Server-driven protocol messages include:
+
+- thread lifecycle notifications
+- thread status changes
+- item start/delta/completion notifications
+- turn completion/interruption notifications
+- approval and user-input server requests
+- usage, error, knowledge, steering, and collaboration notifications
+
+The protocol layer is shared by TUI and Web, even if each client renders the data differently.
+
+## Data Locality and `.diligent/`
+
+Project-local data is a first-class architectural decision.
+
+`.diligent/` is used for runtime data such as:
+
+- sessions
+- knowledge
+- project config
+- generated ignore rules
+- persisted images and related runtime artifacts
+
+User-global auth remains under `~/.diligent/`, while project continuity stays inside the repository boundary.
+
+## Important Boundaries
+
+When changing the system, these boundaries matter most:
+
+- **Core vs Runtime** — reusable engine logic belongs in core; Diligent product assembly belongs in runtime.
+- **Runtime vs Protocol** — protocol defines transport-facing schemas; runtime owns mapping and behavior.
+- **Runtime vs Frontends** — frontends should render and collect input, not duplicate backend business logic.
+- **Web vs Desktop** — desktop should reuse web/server behavior rather than fork it.
+
+## Current Architectural Realities
+
+Some important implementation realities are worth calling out explicitly:
+
+- `SessionManager` is currently a major orchestration hub and coupling point.
+- `thread/read` and live notifications are not yet perfectly symmetrical in shape; clients still perform some hydration work.
+- Runtime already contains client-facing helpers such as notification adapters to reduce duplicated frontend logic.
+- Tool rendering and UI presentation continue to evolve independently from the protocol schema itself.
+
+These are not necessarily problems, but they are useful context when planning refactors.
+
+## Development Commands
 
 ```bash
-bun test                  # Run all tests (Bun test runner)
-bun run lint              # Lint (Biome)
-bun run lint:fix          # Lint + auto-fix
-bun run typecheck         # TypeScript type checking
+bun test
+bun run lint
+bun run lint:fix
+bun run typecheck
 ```
+
+## Summary
+
+The current architecture is best understood as:
+
+- a **shared core agent engine**,
+- assembled by a **Diligent runtime**,
+- exposed through a **single JSON-RPC protocol**,
+- and consumed by **thin CLI, Web, and Desktop clients**.
+
+If a new feature must behave the same in TUI and Web, it almost certainly belongs in `@diligent/runtime` and should cross the client boundary through `@diligent/protocol`.

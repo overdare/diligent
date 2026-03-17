@@ -3,7 +3,6 @@
 import type { ToolResultMessage } from "@diligent/core";
 import { type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime";
-import { createGrepRenderPayload, createTextRenderPayload } from "@diligent/runtime/tools";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
@@ -67,16 +66,6 @@ function buildToolHeader(toolName: string, payload?: ToolRenderPayload): string 
 function buildToolSummaryLine(payload?: ToolRenderPayload): string | undefined {
   const outputSummary = payload?.outputSummary?.trim();
   return outputSummary ? `⎿  ${outputSummary}` : undefined;
-}
-
-function stringifyToolInput(input: unknown): string | undefined {
-  if (input === null || input === undefined) return undefined;
-  if (typeof input === "string") return input;
-  try {
-    return JSON.stringify(input, null, 2);
-  } catch {
-    return String(input);
-  }
 }
 
 function toProtocolRenderPayload(value: unknown): ToolRenderPayload | undefined {
@@ -400,8 +389,7 @@ export class TranscriptStore {
   }
 
   addToolResultMessage(message: ToolResultMessage): void {
-    const renderPayload: ToolRenderPayload | undefined =
-      toProtocolRenderPayload(message.render) ?? createTextRenderPayload(undefined, message.output, message.isError);
+    const renderPayload: ToolRenderPayload | undefined = toProtocolRenderPayload(message.render);
     const icon = message.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
     const headerLabel = buildToolHeader(message.toolName, renderPayload);
 
@@ -413,14 +401,13 @@ export class TranscriptStore {
       }
       this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(renderPayload)));
     } else if (message.output) {
-      const fallbackPayload = createTextRenderPayload(undefined, message.output, message.isError);
       const rawLines = message.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
       const lines: string[] = [`${icon} ${headerLabel}`];
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(fallbackPayload)));
+      this.items.push(this.createToolResultItem(lines));
     } else {
       this.items.push({ kind: "plain", lines: [`${icon} ${headerLabel}`] });
     }
@@ -551,15 +538,10 @@ export class TranscriptStore {
     this.stopOverlayStatus();
     const startTime = this.toolStartTimes.get(event.toolCallId);
     this.toolStartTimes.delete(event.toolCallId);
-    const toolInput = this.toolCallInputs.get(event.toolCallId);
     this.toolCallInputs.delete(event.toolCallId);
     const elapsedVal = startTime !== undefined ? formatElapsedSeconds(Date.now() - startTime) : null;
     const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
-    const renderPayload: ToolRenderPayload | undefined =
-      toProtocolRenderPayload(event.render) ??
-      (event.toolName === "grep"
-        ? createGrepRenderPayload(toolInput as { pattern?: string; path?: string }, event.output)
-        : createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError));
+    const renderPayload: ToolRenderPayload | undefined = toProtocolRenderPayload(event.render);
 
     if (event.toolName === "plan") {
       this.planCallCount++;
@@ -640,15 +622,14 @@ export class TranscriptStore {
       }
       this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(renderPayload)));
     } else if (event.output) {
-      const fallbackPayload = createTextRenderPayload(stringifyToolInput(toolInput), event.output, event.isError);
-      const headerLabel = buildToolHeader(event.toolName, fallbackPayload);
+      const headerLabel = buildToolHeader(event.toolName);
       const rawLines = event.output.split("\n");
       const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
       const lines: string[] = [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`];
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines, buildToolSummaryLine(fallbackPayload)));
+      this.items.push(this.createToolResultItem(lines));
     } else {
       const headerLabel = buildToolHeader(event.toolName);
       this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${headerLabel}${elapsed}`] });
