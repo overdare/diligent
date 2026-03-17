@@ -1,6 +1,9 @@
 {
   "name": "diligent",
   "private": true,
+  "diligent": {
+    "projectName": "Diligent"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"

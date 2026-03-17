@@ -2,6 +2,7 @@
 
 import type { ProviderAuthStatus, SessionSummary } from "@diligent/protocol";
 import { memo } from "react";
+import { APP_PROJECT_MARK } from "../lib/app-config";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 
@@ -49,7 +50,9 @@ function SidebarImpl({
       {/* Header */}
       <div className="relative border-b border-border/100 bg-surface-dark px-5 py-4">
         <div className="pr-24">
-          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.22em] text-[#FE0041]">DILIGENT</span>
+          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.22em] text-[#FE0041]">
+            {APP_PROJECT_MARK}
+          </span>
           <p className="mt-1 truncate font-mono text-xs- text-muted/90" title={cwd}>
             {cwdShort}
           </p>

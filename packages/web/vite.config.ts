@@ -2,6 +2,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const DEFAULT_PROJECT_NAME = "Diligent";
+
 export default defineConfig({
   plugins: [
     {
@@ -10,6 +12,13 @@ export default defineConfig({
         if (id.endsWith(".md")) {
           return `export default ${JSON.stringify(code)};`;
         }
+      },
+    },
+    {
+      name: "app-project-name",
+      transformIndexHtml(html) {
+        const projectName = process.env.VITE_APP_PROJECT_NAME?.trim() || DEFAULT_PROJECT_NAME;
+        return html.replace(/%VITE_APP_PROJECT_NAME%/g, projectName);
       },
     },
     react(),

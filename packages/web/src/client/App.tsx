@@ -36,6 +36,7 @@ import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
+import { APP_PROJECT_NAME } from "./lib/app-config";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import type { SlashCommand } from "./lib/slash-commands";
 import { buildCommandList, parseSlashCommand } from "./lib/slash-commands";
@@ -206,6 +207,10 @@ export function normalizeImageFileName(file: File, index: number, timestamp = Da
 }
 
 export function App() {
+  useEffect(() => {
+    document.title = APP_PROJECT_NAME;
+  }, []);
+
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
   const providerMgr = useProviderManager(rpcRef);

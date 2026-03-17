@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
+import { resolveProjectName, toProjectArtifactName } from "./lib/project-name";
 import { rustSourcesChanged, saveRustHash } from "./lib/rust-cache";
 import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
 
@@ -39,6 +40,8 @@ const platforms = filterPlatforms(platformIds);
 
 // Optional extra package directory passed via --package (resolved relative to repo root)
 const extraPackageDir: string | undefined = values.package ? resolve(ROOT, values.package) : undefined;
+const projectName = resolveProjectName(extraPackageDir);
+const projectArtifactName = toProjectArtifactName(projectName);
 
 // ---------------------------------------------------------------------------
 // OS detection — Tauri can only produce native bundles for the current OS
@@ -59,7 +62,9 @@ function run(cmd: string, cwd: string = ROOT, env?: NodeJS.ProcessEnv): void {
 }
 
 function buildWebFrontend(): void {
-  run("bun run build", join(ROOT, "packages/web"));
+  run("bun run build", join(ROOT, "packages/web"), {
+    VITE_APP_PROJECT_NAME: projectName,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -188,11 +193,17 @@ function buildDesktop(plat: PlatformTarget): void {
 
   if (rustSourcesChanged(tauriDir)) {
     console.log("   Rust sources changed — full compile");
-    run("bunx tauri build", DESKTOP, { TAURI_TARGET_TRIPLE: plat.tauriTriple });
+    run("bunx tauri build", DESKTOP, {
+      TAURI_TARGET_TRIPLE: plat.tauriTriple,
+      DILIGENT_APP_PROJECT_NAME: projectName,
+    });
     saveRustHash(tauriDir);
   } else {
     console.log("   Rust sources unchanged — skipping compile, bundling only");
-    run("bunx tauri bundle", DESKTOP, { TAURI_TARGET_TRIPLE: plat.tauriTriple });
+    run("bunx tauri bundle", DESKTOP, {
+      TAURI_TARGET_TRIPLE: plat.tauriTriple,
+      DILIGENT_APP_PROJECT_NAME: projectName,
+    });
   }
 }
 
@@ -233,25 +244,25 @@ function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: st
   // Raw binary
   const rawBin = join(releaseDir, `diligent-desktop${plat.ext}`);
   if (existsSync(rawBin)) {
-    copyArtifact(rawBin, platDir, `diligent-desktop-${version}-${plat.id}${plat.ext}`, list);
+    copyArtifact(rawBin, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}${plat.ext}`, list);
   }
 
   for (const bundleType of plat.desktopBundleTypes) {
     if (bundleType === "app") {
-      const src = join(bundleDir, "macos/Diligent.app");
-      if (existsSync(src)) copyArtifact(src, platDir, `Diligent-${version}.app`, list);
+      const src = join(bundleDir, "macos", `${projectName}.app`);
+      if (existsSync(src)) copyArtifact(src, platDir, `${projectName}-${version}.app`, list);
     } else if (bundleType === "AppImage") {
       const src = findFirst(join(bundleDir, "appimage"), ".AppImage");
-      if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.AppImage`, list);
+      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.AppImage`, list);
     } else if (bundleType === "deb") {
       const src = findFirst(join(bundleDir, "deb"), ".deb");
-      if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.deb`, list);
+      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.deb`, list);
     } else if (bundleType === "dmg") {
       const src = findFirst(join(bundleDir, "dmg"), ".dmg");
-      if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}.dmg`, list);
+      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.dmg`, list);
     } else if (bundleType === "nsis") {
       const src = findFirst(join(bundleDir, "nsis"), "-setup.exe");
-      if (src) copyArtifact(src, platDir, `diligent-desktop-${version}-${plat.id}-setup.exe`, list);
+      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}-setup.exe`, list);
     }
   }
 }
@@ -310,8 +321,9 @@ function writeReleaseMeta(distDir: string, plats: PlatformTarget[], artifacts: R
 // Main orchestration
 // ---------------------------------------------------------------------------
 
-console.log(`\n📦 Packaging Diligent v${version} (desktop)`);
+console.log(`\n📦 Packaging ${projectName} v${version} (desktop)`);
 console.log(`   Platforms : ${platforms.map((p) => p.id).join(", ")}`);
+console.log(`   App name  : ${projectName}`);
 if (extraPackageDir) {
   console.log(`   Package   : ${extraPackageDir}`);
 }
@@ -348,7 +360,7 @@ let backup: VersionBackup | undefined;
 try {
   // Inject version into protocol + tauri.conf.json
   console.log(`⚙️  Injecting version ${version}...`);
-  backup = injectVersion(version);
+  backup = injectVersion(version, projectName);
 
   // Build web frontend once (embedded in desktop)
   console.log("\n🌐 Building web frontend...");
@@ -392,7 +404,7 @@ try {
 // Summary
 // ---------------------------------------------------------------------------
 
-console.log(`\n✓ Packaging complete: Diligent v${version}\n`);
+console.log(`\n✓ Packaging complete: ${projectName} v${version}\n`);
 for (const plat of platforms) {
   const names = allArtifacts[plat.id] ?? [];
   if (names.length === 0) continue;

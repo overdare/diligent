@@ -1,6 +1,9 @@
 {
   "name": "@overdare/workspace",
   "private": true,
+  "diligent": {
+    "projectName": "OVERDARE Agent"
+  },
   "workspaces": [
     "plugins/*"
   ],

@@ -6,6 +6,11 @@ use sidecar::{start_sidecar, stop_sidecar, SidecarState};
 use std::sync::Mutex;
 use tauri::Manager;
 
+const APP_PROJECT_NAME: &str = match option_env!("DILIGENT_APP_PROJECT_NAME") {
+    Some(name) => name,
+    None => "Diligent",
+};
+
 /// Open a native folder picker and return the selected path (or null if cancelled).
 #[tauri::command]
 async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -37,7 +42,7 @@ async fn launch_server(app: tauri::AppHandle, cwd: String) -> Result<(), String>
     // Create the app window BEFORE closing the splash so there is
     // never a zero-window gap that would trigger Tauri's auto-quit.
     tauri::WebviewWindowBuilder::new(&app, "app", tauri::WebviewUrl::External(parsed))
-        .title("Diligent")
+        .title(APP_PROJECT_NAME)
         .inner_size(1200.0, 800.0)
         .min_inner_size(1200.0, 800.0)
         .resizable(true)

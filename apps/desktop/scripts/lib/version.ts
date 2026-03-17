@@ -22,7 +22,7 @@ export function toTauriVersion(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
 
-export function injectVersion(version: string): VersionBackup {
+export function injectVersion(version: string, projectName?: string): VersionBackup {
   const protocolOriginal = readFileSync(PROTOCOL_PATH, "utf-8");
   const tauriOriginal = readFileSync(TAURI_CONF_PATH, "utf-8");
 
@@ -39,6 +39,16 @@ export function injectVersion(version: string): VersionBackup {
   // Patch Tauri version — MSI/NSIS only accept numeric X.Y.Z, strip pre-release
   const tauriConf = JSON.parse(tauriOriginal);
   tauriConf.version = toTauriVersion(version);
+  if (projectName) {
+    tauriConf.productName = projectName;
+    if (Array.isArray(tauriConf.app?.windows)) {
+      for (const window of tauriConf.app.windows) {
+        if (window?.label === "main") {
+          window.title = projectName;
+        }
+      }
+    }
+  }
   writeFileSync(TAURI_CONF_PATH, `${JSON.stringify(tauriConf, null, 2)}\n`);
 
   return { protocolOriginal, tauriOriginal };

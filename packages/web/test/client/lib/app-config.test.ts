@@ -25,7 +25,6 @@ test("loads model from config.jsonc and returns required fields", async () => {
   mkdirSync(base, { recursive: true });
   const paths = makeTmpEnv(base);
 
-  // Write an explicit config so the test is not affected by global ~/.diligent/config.jsonc
   await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
   try {
