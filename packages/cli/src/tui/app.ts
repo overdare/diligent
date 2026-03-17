@@ -457,8 +457,9 @@ export class App {
         consumed.push(...injectedTexts.slice(0, fallbackCount));
       }
 
-      for (const text of consumed) {
-        this.commitLocalUserMessage(text);
+      if (consumed.length > 0) {
+        this.chatView.commitSteeringMessages(consumed);
+        this.pendingUserMessageAcks.push(...consumed);
       }
     }
 

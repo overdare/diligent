@@ -257,6 +257,26 @@ describe("Integration: full tool execution cycle", () => {
     expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
   });
 
+  test("steering commit transition keeps prompt anchored across subsequent redraws", () => {
+    const { sim, chatView, renderer } = buildStack(8, 20);
+
+    chatView.setPendingSteers(["change approach with a longer steer"]);
+    expect(sim.screen.some((line) => stripAnsi(line).includes("⚑"))).toBe(true);
+
+    chatView.commitSteeringMessages(["change approach with a longer steer"]);
+    const cursorRowAfterCommit = sim.cursorRow;
+
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.countOccurrences("❯ ")).toBeGreaterThanOrEqual(1);
+
+    renderer.forceRender();
+    renderer.forceRender();
+
+    expect(sim.cursorRow).toBe(cursorRowAfterCommit);
+    expect(sim.lineAt(sim.cursorRow)).toBe("❯ ");
+    expect(sim.countOccurrences("❯ ")).toBeGreaterThanOrEqual(1);
+  });
+
   test("status_change busy shows Working status in active stack", () => {
     const { sim, chatView } = buildStack();
     chatView.addUserMessage("run something");

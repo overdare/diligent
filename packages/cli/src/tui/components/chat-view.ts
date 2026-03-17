@@ -64,6 +64,19 @@ export class ChatView implements Component {
     this.flushPendingCommittedItems();
   }
 
+  commitSteeringMessages(texts: string[]): void {
+    if (texts.length === 0) {
+      this.store.setPendingSteers([]);
+      return;
+    }
+
+    this.store.setPendingSteers([], { requestRender: false });
+    for (const text of texts) {
+      this.store.addUserMessage(text, { requestRender: false });
+    }
+    this.flushPendingCommittedItems();
+  }
+
   addLines(lines: string[]): void {
     this.store.addLines(lines);
     this.flushPendingCommittedItems();

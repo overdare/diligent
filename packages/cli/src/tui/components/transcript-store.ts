@@ -381,9 +381,11 @@ export class TranscriptStore {
     }
   }
 
-  addUserMessage(text: string): void {
+  addUserMessage(text: string, options?: { requestRender?: boolean }): void {
     this.items.push(new UserMessageView(text));
-    this.options.requestRender();
+    if (options?.requestRender !== false) {
+      this.options.requestRender();
+    }
   }
 
   addLines(lines: string[]): void {
@@ -490,9 +492,11 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
-  setPendingSteers(steers: string[]): void {
+  setPendingSteers(steers: string[], options?: { requestRender?: boolean }): void {
     this.pendingSteers = [...steers];
-    this.options.requestRender();
+    if (options?.requestRender !== false) {
+      this.options.requestRender();
+    }
   }
 
   consumePendingSteers(): string[] {
