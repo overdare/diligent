@@ -44,7 +44,7 @@ test("generic fallback payload uses raw input/output summaries", () => {
     "Done successfully",
   );
   expect(summarizeInput(payload)).toBe("{");
-  expect(summarizeOutput(payload)).toBe("Done successfully");
+  expect(summarizeOutput(payload)).toBe("");
 });
 
 test("header title uses toolName - inputSummary rule", () => {
@@ -66,4 +66,9 @@ test("generic fallback emits text blocks for input and output", () => {
     { type: "text", title: "Input", text: '{"alpha":1}' },
     { type: "text", title: "Output", text: "ok", isError: false },
   ]);
+});
+
+test("generic fallback does not synthesize output summary from first output line", () => {
+  const payload = deriveRenderPayload('{"alpha":1}', "ok\nsecond line");
+  expect(payload?.outputSummary).toBeUndefined();
 });

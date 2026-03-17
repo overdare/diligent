@@ -98,5 +98,10 @@ export function deriveRenderPayload(
   outputText: string,
   isError = false,
 ): ToolRenderPayload | undefined {
-  return createTextRenderPayload(inputText, outputText, isError);
+  const payload = createTextRenderPayload(inputText, outputText, isError);
+  if (!payload) return undefined;
+  return {
+    ...payload,
+    outputSummary: undefined,
+  };
 }
