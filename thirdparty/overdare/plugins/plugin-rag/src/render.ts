@@ -1,7 +1,9 @@
 type RenderBlock = Record<string, unknown>;
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: RenderBlock[];
 };
 
@@ -25,10 +27,16 @@ function shortUrl(value: string): string {
   return normalized.length > 0 ? normalized : value;
 }
 
+function summarizeCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function buildSearchRender(args: { source: string; query: string }, results: RagResult[]): ToolRenderPayload {
   const rows = results.slice(0, 10).map((entry) => [clip(entry.text ?? "", 96), clip(entry.originFileUrl ?? "", 56)]);
   return {
-    version: 1,
+    version: 2,
+    inputSummary: clip(`${args.source}: ${args.query}`, 100),
+    outputSummary: results.length === 0 ? "No results found." : summarizeCount(results.length, "result"),
     blocks: [
       {
         type: "key_value",
@@ -80,5 +88,10 @@ export function buildOriginFileRender(
     blocks.push({ type: "file", filePath: firstLoaded.originFileUrl, content: firstLoaded.content });
   }
 
-  return { version: 1, blocks };
+  return {
+    version: 2,
+    inputSummary: `${action} (${requestedUrls.length} URL${requestedUrls.length === 1 ? "" : "s"})`,
+    outputSummary: summarizeCount(loaded.length, "file"),
+    blocks,
+  };
 }

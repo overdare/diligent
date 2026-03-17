@@ -163,6 +163,61 @@ test("computes tool duration when tool completes", () => {
   }
 });
 
+test("uses completed tool render payload so live read blocks match hydrated blocks", () => {
+  resetAdapter();
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool-read-1",
+        toolCallId: "tool-read-1",
+        toolName: "read",
+        input: { file_path: "/repo/src/app.ts", offset: 5, limit: 10 },
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "tool-read-1",
+        toolCallId: "tool-read-1",
+        toolName: "read",
+        input: { file_path: "/repo/src/app.ts", offset: 5, limit: 10 },
+        output: "5\tline one\n6\tline two",
+        isError: false,
+        render: {
+          version: 2,
+          inputSummary: "src/app.ts",
+          outputSummary: "5\tline one",
+          blocks: [
+            {
+              type: "file",
+              filePath: "/repo/src/app.ts",
+              content: "5\tline one\n6\tline two",
+              offset: 5,
+              limit: 10,
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const startedState = reduce(initialThreadState, started);
+  const completedState = reduce(startedState, completed);
+  const tool = completedState.items.find((item) => item.kind === "tool");
+
+  expect(tool).toBeDefined();
+  expect(tool && tool.kind === "tool" ? tool.render : undefined).toEqual(completed.params.item.render);
+});
+
 test("creates a new assistant item when same itemId appears in a new turn", () => {
   resetAdapter();
   const startedTurn1: DiligentServerNotification = {

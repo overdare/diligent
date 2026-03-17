@@ -84,6 +84,10 @@ function formatLineNumber(lineNum: number, maxLineNum: number): string {
   return `${String(lineNum).padStart(width)}\t`;
 }
 
+function buildReadSummary(lineCount: number): string {
+  return `${lineCount} line${lineCount === 1 ? "" : "s"} read`;
+}
+
 export function createReadTool(): Tool<typeof ReadParams> {
   return {
     name: "read",
@@ -175,7 +179,7 @@ export function createReadTool(): Tool<typeof ReadParams> {
         render: {
           version: 2,
           inputSummary: summarizeRenderText(file_path),
-          outputSummary: summarizeRenderText(output),
+          outputSummary: buildReadSummary(selectedLines.length),
           blocks: [
             {
               type: "file",

@@ -413,7 +413,7 @@ describe("Integration: full tool execution cycle", () => {
     expect(
       plainLines.some((l) => l.includes('grep - Search(pattern: "TODO", path: "/Users/me/project/src/main.ts")')),
     ).toBe(true);
-    expect(plainLines.some((l) => l.includes("⎿  src/main.ts:1:// TODO"))).toBe(true);
+    expect(plainLines.some((l) => l.includes("⎿  1 match found"))).toBe(true);
   });
 
   test("prompt count stays at 2 after full tool + response cycle", () => {

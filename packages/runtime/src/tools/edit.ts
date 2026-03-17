@@ -159,6 +159,7 @@ Usage:
               oldString: old_string,
               newString: new_string,
               outputText: output,
+              actionSummary: "1 file created",
             }),
           };
         } catch (err) {
@@ -212,6 +213,7 @@ Usage:
             oldString: old_string,
             newString: new_string,
             outputText: output,
+            actionSummary: `${count} edit${count === 1 ? "" : "s"} applied`,
           }),
         };
       } catch (err) {
@@ -313,7 +315,12 @@ If you want to create a new file, use:
         const output = `Edited ${file_path}: applied ${edits.length} edit(s), replaced ${totalCount} occurrence(s) total`;
         return {
           output,
-          render: createMultiEditDiffRenderPayload({ filePath: file_path, edits, outputText: output }),
+          render: createMultiEditDiffRenderPayload({
+            filePath: file_path,
+            edits,
+            outputText: output,
+            actionSummary: `${edits.length} edit${edits.length === 1 ? "" : "s"} applied`,
+          }),
         };
       } catch (err) {
         return {

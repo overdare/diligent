@@ -1,9 +1,15 @@
 type RenderBlock = Record<string, unknown>;
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: RenderBlock[];
 };
+
+function clip(value: string, max = 80): string {
+  return value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+}
 
 export function buildValidateLuaRender(filePath: string, output: string): ToolRenderPayload {
   const lines = output
@@ -13,7 +19,9 @@ export function buildValidateLuaRender(filePath: string, output: string): ToolRe
 
   if (output.includes("No issues found. Code is valid.")) {
     return {
-      version: 1,
+      version: 2,
+      inputSummary: clip(filePath),
+      outputSummary: "0 issues",
       blocks: [
         {
           type: "key_value",
@@ -29,8 +37,12 @@ export function buildValidateLuaRender(filePath: string, output: string): ToolRe
   }
 
   const statusItems = lines.filter((line) => line.startsWith("[OK]") || /^\[\d+ issue\(s\)\]/.test(line)).slice(0, 20);
+  const issueMatch = output.match(/---\s+\d+ file\(s\) checked,\s+(\d+) issue\(s\) found\s+---/);
+  const issueCount = issueMatch?.[1] ?? String(lines.length);
   return {
-    version: 1,
+    version: 2,
+    inputSummary: clip(filePath),
+    outputSummary: `${issueCount} issue${issueCount === "1" ? "" : "s"}`,
     blocks: [
       {
         type: "key_value",

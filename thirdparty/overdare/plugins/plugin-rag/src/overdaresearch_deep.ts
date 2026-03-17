@@ -3,7 +3,9 @@ import { loadOverdareConfig } from "./config.ts";
 import { buildOriginFileRender } from "./render.ts";
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: Array<Record<string, unknown>>;
 };
 
@@ -85,13 +87,13 @@ async function fetcher(url: string, signal: AbortSignal, token: string): Promise
   return response.json();
 }
 
-function buildResult(action: string, files: unknown[], totalCount: number): ToolResult {
+function buildResult(action: string, requestedUrls: string[], files: unknown[], totalCount: number): ToolResult {
   const loaded = (files as { content: unknown }[]).filter((f) => f.content !== null);
   return {
     output: files.length
       ? JSON.stringify(files, null, 2)
       : `No ${action === "origin-file" ? "files returned" : "related metadata found"}.`,
-    render: buildOriginFileRender(action, [], files as OriginFileResult[]),
+    render: buildOriginFileRender(action, requestedUrls, files as OriginFileResult[]),
     metadata: { action, totalCount, loadedCount: loaded.length, files },
   };
 }
@@ -106,10 +108,7 @@ async function originFile(urls: string[], signal: AbortSignal, token: string): P
   const params = urls.map((u) => `originFileUrl=${encodeURIComponent(u)}`).join("&");
   const data = (await fetcher(`${BASE_URL}/api/chat/rag/origin-file?${params}`, signal, token)) as OriginFileResponse;
 
-  return {
-    ...buildResult("origin-file", data.files ?? [], data.totalCount),
-    render: buildOriginFileRender("origin-file", urls, data.files ?? []),
-  };
+  return buildResult("origin-file", urls, data.files ?? [], data.totalCount);
 }
 
 export async function execute(args: Params, ctx: ToolContext): Promise<ToolResult> {

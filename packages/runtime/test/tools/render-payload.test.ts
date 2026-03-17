@@ -25,6 +25,7 @@ describe("search render payload builders", () => {
 
     expect(payload.version).toBe(2);
     expect(payload.inputSummary).toBe('Search(pattern: "**/*.ts", path: ".")');
+    expect(payload.outputSummary).toBe("3 files found");
     const summaryBlock = payload.blocks[0];
     if (summaryBlock?.type !== "summary") throw new Error("Expected summary block");
     expect(summaryBlock.text).toBe('Search(pattern: "**/*.ts", path: ".")');
@@ -41,6 +42,7 @@ describe("search render payload builders", () => {
       cwd,
     });
 
+    expect(payload.outputSummary).toBe("1 match found");
     const summaryBlock = payload.blocks[0];
     if (summaryBlock?.type !== "summary") throw new Error("Expected summary block");
     expect(summaryBlock.text).toBe('Search(pattern: "TODO", path: "src/main.ts")');
@@ -78,7 +80,7 @@ describe("update knowledge render payload builder", () => {
     expect(payload).toBeDefined();
     expect(payload?.version).toBe(2);
     expect(payload?.inputSummary).toBe("upsert");
-    expect(payload?.outputSummary).toBe("Knowledge saved: [pattern] Prefer batched tool calls");
+    expect(payload?.outputSummary).toBe("1 knowledge entry updated");
     expect(payload?.blocks[0]).toEqual({
       type: "key_value",
       items: [

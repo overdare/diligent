@@ -459,6 +459,37 @@ test("tool block hides duration while tool is still running", () => {
   expect(html).toContain("running");
 });
 
+test("tool block shows request summary in header and response summary once below", () => {
+  const html = renderToStaticMarkup(
+    <ToolBlock
+      item={{
+        id: "tool-3",
+        kind: "tool",
+        toolName: "read",
+        inputText: "src/ARCHITECTURE.md",
+        outputText: "# Architecture\nDetails",
+        isError: false,
+        status: "done",
+        timestamp: 300,
+        toolCallId: "call-3",
+        startedAt: 200,
+        durationMs: 0,
+        render: {
+          version: 2,
+          inputSummary: "src/ARCHITECTURE.md",
+          outputSummary: "1 # Architecture",
+          blocks: [],
+        },
+      }}
+    />,
+  );
+
+  expect(html).toContain("Read - src/ARCHITECTURE.md");
+  expect(html).toContain("0ms");
+  expect(html).toContain("↳ 1 # Architecture");
+  expect(html.match(/src\/ARCHITECTURE\.md/g)?.length).toBe(1);
+});
+
 test("extractPastedImageFiles returns empty array for null clipboard", () => {
   expect(extractPastedImageFiles(null)).toEqual([]);
 });

@@ -180,7 +180,11 @@ It is important to remember:
       const output = `Success. Updated the following files:\n${summaryLines.join("\n")}`;
       return {
         output,
-        render: createPatchDiffRenderPayload(args.patch, output),
+        render: createPatchDiffRenderPayload(
+          args.patch,
+          output,
+          `${changes.length} file${changes.length === 1 ? "" : "s"} patched`,
+        ),
       };
     },
   };

@@ -6,11 +6,11 @@ import { createCollabTools } from "../collab";
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
+import { createApplyPatchTool } from "./apply-patch";
 import { createBashTool } from "./bash";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
-import { createEditTool, createMultiEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
 import { createLsTool } from "./ls";
@@ -19,7 +19,6 @@ import { createReadTool } from "./read";
 import { createRequestUserInputTool } from "./request-user-input";
 import { createSkillTool } from "./skill";
 import { createUpdateKnowledgeTool } from "./update-knowledge";
-import { createWriteAbsoluteTool } from "./write";
 
 export interface BuildDefaultToolsResult {
   tools: Tool[];
@@ -44,13 +43,13 @@ export async function buildDefaultTools(
   host?: RuntimeToolHost,
 ): Promise<BuildDefaultToolsResult> {
   // 1. Assemble all built-in tools
-  const fileEditTools: Tool[] = [createWriteAbsoluteTool(host), createEditTool(host), createMultiEditTool(host)];
+  //const fileEditTools: Tool[] = [createWriteAbsoluteTool(host), createEditTool(host), createMultiEditTool(host)];
 
   const builtinTools: Tool[] = [
     createBashTool(cwd, host),
     createSkillTool(skills),
     createReadTool(),
-    ...fileEditTools,
+    createApplyPatchTool(cwd, host),
     createLsTool(),
     createGlobTool(cwd),
     createGrepTool(cwd),

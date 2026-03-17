@@ -17,12 +17,14 @@ describe("bash tool", () => {
   test("simple command (echo hello)", async () => {
     const result = await bashTool.execute({ command: "echo hello" }, makeCtx());
     expect(result.output.trim()).toBe("hello");
+    expect(result.render?.outputSummary).toBe("Command completed");
     expect(result.render?.blocks[0]).toMatchObject({ type: "command", command: "echo hello" });
   });
 
   test("non-zero exit code → exit code in header", async () => {
     const result = await bashTool.execute({ command: "exit 42" }, makeCtx());
     expect(result.output).toContain("[Exit code: 42]");
+    expect(result.render?.outputSummary).toBe("Command failed (exit 42)");
     expect(result.render?.blocks[0]).toMatchObject({ type: "command", isError: true });
     expect(result.metadata?.exitCode).toBe(42);
   });
@@ -30,6 +32,7 @@ describe("bash tool", () => {
   test("timeout → kills process, timeout message", async () => {
     const result = await bashTool.execute({ command: "sleep 10", timeout: 200 }, makeCtx());
     expect(result.output).toContain("Timed out");
+    expect(result.render?.outputSummary).toBe("Command timed out");
     expect(result.metadata?.timedOut).toBe(true);
   }, 5000);
 
@@ -39,6 +42,7 @@ describe("bash tool", () => {
     setTimeout(() => ac.abort(), 100);
     const result = await promise;
     expect(result.output).toContain("Aborted");
+    expect(result.render?.outputSummary).toBe("Command aborted");
     expect(result.metadata?.aborted).toBe(true);
   }, 5000);
 

@@ -35,6 +35,7 @@ describe("write tool", () => {
     expect(result.output).toContain("11 bytes");
     expect(result.output).toContain("new.txt");
     expect(result.render?.version).toBe(2);
+    expect(result.render?.outputSummary).toBe("1 file written");
     expect(result.render?.blocks[0]).toMatchObject({ type: "file" });
 
     const content = await readFile(filePath, "utf-8");
@@ -85,6 +86,7 @@ describe("write tool (absolute path variant)", () => {
     try {
       const result = await tool.execute({ file_path: filePath, content: "absolute content" }, makeCtx());
       expect(result.output).toContain("Wrote");
+      expect(result.render?.outputSummary).toBe("1 file written");
 
       const content = await readFile(filePath, "utf-8");
       expect(content).toBe("absolute content");

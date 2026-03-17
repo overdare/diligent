@@ -48,7 +48,7 @@ export function createCommandRenderPayload(command: string, outputText: string, 
   return {
     version: 2,
     inputSummary: summarizeRenderText(command, 120),
-    outputSummary: summarizeRenderText(outputText, 120),
+    outputSummary: summarizeCommandOutput(outputText, isError),
     blocks: [{ type: "command", command, output: outputText || undefined, isError }],
   };
 }
@@ -60,11 +60,12 @@ export function createFileRenderPayload(args: {
   limit?: number;
   isError?: boolean;
   outputText?: string;
+  actionSummary?: string;
 }): ToolRenderPayload {
   return {
     version: 2,
     inputSummary: summarizeRenderText(args.filePath),
-    outputSummary: summarizeRenderText(args.outputText),
+    outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
       {
         type: "file",
@@ -83,12 +84,13 @@ export function createEditDiffRenderPayload(args: {
   oldString?: string;
   newString?: string;
   outputText: string;
+  actionSummary?: string;
 }): ToolRenderPayload {
   const action = args.oldString === "" ? ("Add" as const) : undefined;
   return {
     version: 2,
     inputSummary: summarizeRenderText(args.filePath),
-    outputSummary: summarizeRenderText(args.outputText),
+    outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
       {
         type: "diff",
@@ -109,11 +111,12 @@ export function createMultiEditDiffRenderPayload(args: {
   filePath: string;
   edits: Array<{ old_string: string; new_string: string }>;
   outputText: string;
+  actionSummary?: string;
 }): ToolRenderPayload {
   return {
     version: 2,
     inputSummary: summarizeRenderText(args.filePath),
-    outputSummary: summarizeRenderText(args.outputText),
+    outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
       {
         type: "diff",
@@ -129,13 +132,17 @@ export function createMultiEditDiffRenderPayload(args: {
   };
 }
 
-export function createPatchDiffRenderPayload(patch: string, outputText: string): ToolRenderPayload | undefined {
+export function createPatchDiffRenderPayload(
+  patch: string,
+  outputText: string,
+  actionSummary?: string,
+): ToolRenderPayload | undefined {
   const files = parsePatchForRender(patch);
   if (files.length === 0) return undefined;
   return {
     version: 2,
     inputSummary: summarizeRenderText(patch, 120),
-    outputSummary: summarizeRenderText(outputText),
+    outputSummary: actionSummary ?? summarizeRenderText(outputText),
     blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
   };
 }
@@ -168,7 +175,7 @@ export function createGlobRenderPayload(
   return {
     version: 2,
     inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
-    outputSummary: summarizeRenderText(outputText),
+    outputSummary: buildResultSummary(items.length, "file", outputText, "found"),
     blocks,
   };
 }
@@ -203,7 +210,7 @@ export function createGrepRenderPayload(
   return {
     version: 2,
     inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
-    outputSummary: summarizeRenderText(outputText),
+    outputSummary: buildResultSummary(items.length, "match", outputText, "found"),
     blocks,
   };
 }
@@ -211,7 +218,11 @@ export function createGrepRenderPayload(
 export function createListRenderPayload(outputText: string): ToolRenderPayload | undefined {
   const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
   if (items.length === 0) return undefined;
-  return { version: 2, outputSummary: summarizeRenderText(outputText), blocks: [{ type: "list", items }] };
+  return {
+    version: 2,
+    outputSummary: buildResultSummary(items.length, "entry", outputText, "listed"),
+    blocks: [{ type: "list", items }],
+  };
 }
 
 export function createUpdateKnowledgeRenderPayload(
@@ -258,7 +269,7 @@ export function createUpdateKnowledgeRenderPayload(
   return {
     version: 2,
     inputSummary: summarizeRenderText(action),
-    outputSummary: summarizeRenderText(outputSummary),
+    outputSummary: buildKnowledgeSummary(input, outputSummary),
     blocks,
   };
 }
@@ -307,9 +318,41 @@ function buildFoundTitle(count: number, singularNoun: string): string {
   return `└ Found ${count} ${noun}`;
 }
 
+function buildResultSummary(
+  count: number,
+  singularNoun: string,
+  outputText: string,
+  verb: "found" | "listed" | "read",
+): string {
+  if (count === 0) return summarizeRenderText(outputText) ?? `0 ${pluralizeNoun(singularNoun, 0)} ${verb}`;
+  return `${count} ${pluralizeNoun(singularNoun, count)} ${verb}`;
+}
+
+function summarizeCommandOutput(outputText: string, isError: boolean): string | undefined {
+  if (!outputText.trim()) return isError ? "Command failed" : "Command completed";
+  if (outputText.includes("[Timed out")) return "Command timed out";
+  if (outputText.includes("[Aborted by user]")) return "Command aborted";
+  const exitCodeMatch = outputText.match(/\[Exit code: (\d+)\]/);
+  if (exitCodeMatch) return `Command failed (exit ${exitCodeMatch[1]})`;
+  return isError ? "Command failed" : "Command completed";
+}
+
+function buildKnowledgeSummary(
+  input: UpdateKnowledgeRenderInput,
+  fallbackSummary: string | undefined,
+): string | undefined {
+  const actionValue = typeof input.action === "string" ? input.action : "upsert";
+  if (actionValue === "delete") {
+    return fallbackSummary?.startsWith("Knowledge not found") ? "Knowledge not found" : "1 knowledge entry deleted";
+  }
+  if (typeof input.id === "string" && input.id.trim()) return "1 knowledge entry updated";
+  return "1 knowledge entry saved";
+}
+
 function pluralizeNoun(singularNoun: string, count: number): string {
   if (count === 1) return singularNoun;
   if (singularNoun === "match") return "matches";
+  if (singularNoun === "entry") return "entries";
   return `${singularNoun}s`;
 }
 

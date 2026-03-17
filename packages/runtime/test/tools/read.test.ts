@@ -35,6 +35,7 @@ describe("read tool", () => {
     expect(result.output).toContain("2\tline two");
     expect(result.output).toContain("3\tline three");
     expect(result.render?.version).toBe(2);
+    expect(result.render?.outputSummary).toBe("4 lines read");
     expect(result.render?.blocks[0]).toMatchObject({ type: "file", filePath });
     expect(result.truncateDirection).toBe("head");
   });
@@ -45,6 +46,7 @@ describe("read tool", () => {
     await writeFile(filePath, lines);
 
     const result = await tool.execute({ file_path: filePath, offset: 10, limit: 5 }, makeCtx());
+    expect(result.render?.outputSummary).toBe("5 lines read");
     expect(result.output).toContain("10\tline 10");
     expect(result.output).toContain("14\tline 14");
     expect(result.output).not.toContain("line 15");

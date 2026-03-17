@@ -23,8 +23,8 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
   const renderPayload = item.render ?? deriveRenderPayload(item.inputText, item.outputText, item.isError);
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
   const isUserInput = item.toolName.toLowerCase() === "request_user_input";
-  const inputSummary = !isUserInput ? summarizeInput(renderPayload) : "";
   const outputSummary = !isUserInput && item.status === "done" && !item.isError ? summarizeOutput(renderPayload) : "";
+  const showOutputSummary = Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
 
   const statusEl = item.isError ? (
     <span className="shrink-0 text-xs text-danger">error</span>
@@ -63,14 +63,9 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
             {statusEl}
           </div>
           {/* Summary rows */}
-          {inputSummary || outputSummary ? (
+          {showOutputSummary ? (
             <div className="ml-5 flex flex-col gap-0.5">
-              {inputSummary ? (
-                <span className="max-w-[64ch] truncate font-mono text-xs text-text/50">{inputSummary}</span>
-              ) : null}
-              {outputSummary ? (
-                <span className="max-w-[64ch] truncate font-mono text-xs text-accent/70">↳ {outputSummary}</span>
-              ) : null}
+              <span className="max-w-[64ch] truncate font-mono text-xs text-accent/70">↳ {outputSummary}</span>
             </div>
           ) : null}
         </button>

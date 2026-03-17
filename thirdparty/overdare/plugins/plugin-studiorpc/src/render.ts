@@ -1,12 +1,31 @@
 type TreeNode = { label: string; children?: TreeNode[] };
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: Array<Record<string, unknown>>;
 };
 
 function firstLine(text: string, fallback: string): string {
   return text.split("\n")[0]?.trim() || fallback;
+}
+
+function summarizeText(text: string | undefined, fallback?: string): string | undefined {
+  const line = text
+    ?.split("\n")
+    .map((value) => value.trim())
+    .find(Boolean);
+  if (line) return line;
+  return fallback;
+}
+
+function summarizeCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function clip(value: string, max = 80): string {
+  return value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,19 +58,28 @@ export function buildLevelBrowseRender(result: unknown): ToolRenderPayload | und
     return node ? [node] : [];
   });
   if (nodes.length === 0) return undefined;
-  return { version: 1, blocks: [{ type: "tree", title: "Level tree", nodes }] };
+  return {
+    version: 2,
+    inputSummary: "level tree",
+    outputSummary: summarizeCount(nodes.length, "root node"),
+    blocks: [{ type: "tree", title: "Level tree", nodes }],
+  };
 }
 
 export function buildScriptAddRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const className = readString(args.class) ?? "Script";
+  const scriptName = readString(args.name) ?? "unnamed";
   return {
-    version: 1,
+    version: 2,
+    inputSummary: clip(`${className} ${scriptName}`),
+    outputSummary: summarizeText(output, "Script added."),
     blocks: [
       {
         type: "key_value",
         title: "Studio script add",
         items: [
-          { key: "class", value: readString(args.class) ?? "" },
-          { key: "name", value: readString(args.name) ?? "" },
+          { key: "class", value: className },
+          { key: "name", value: scriptName },
           { key: "parent", value: readString(args.parentGuid) ?? "" },
         ].filter((item) => item.value.length > 0),
       },
@@ -62,7 +90,9 @@ export function buildScriptAddRender(args: Record<string, unknown>, output: stri
 
 export function buildDeleteRender(title: string, targetGuid: string, output: string): ToolRenderPayload {
   return {
-    version: 1,
+    version: 2,
+    inputSummary: clip(targetGuid || title),
+    outputSummary: summarizeText(output, "Deleted."),
     blocks: [
       { type: "key_value", title, items: [{ key: "targetGuid", value: targetGuid }] },
       { type: "summary", text: firstLine(output, "Deleted."), tone: "warning" },
@@ -71,15 +101,19 @@ export function buildDeleteRender(title: string, targetGuid: string, output: str
 }
 
 export function buildInstanceAddRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const className = readString(args.class) ?? "Instance";
+  const instanceName = readString(args.name) ?? "unnamed";
   return {
-    version: 1,
+    version: 2,
+    inputSummary: clip(`${className} ${instanceName}`),
+    outputSummary: summarizeText(output, "Instance added."),
     blocks: [
       {
         type: "key_value",
         title: "Studio instance add",
         items: [
-          { key: "class", value: readString(args.class) ?? "" },
-          { key: "name", value: readString(args.name) ?? "" },
+          { key: "class", value: className },
+          { key: "name", value: instanceName },
           { key: "parent", value: readString(args.parentGuid) ?? "" },
         ].filter((item) => item.value.length > 0),
       },
@@ -91,7 +125,9 @@ export function buildInstanceAddRender(args: Record<string, unknown>, output: st
 export function buildGamePlayRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const count = typeof args.numberOfPlayer === "number" ? String(args.numberOfPlayer) : "1";
   return {
-    version: 1,
+    version: 2,
+    inputSummary: `players: ${count}`,
+    outputSummary: summarizeText(output, "Game started."),
     blocks: [
       { type: "key_value", title: "Studio play", items: [{ key: "players", value: count }] },
       { type: "summary", text: firstLine(output, "Game started."), tone: "success" },
@@ -101,7 +137,9 @@ export function buildGamePlayRender(args: Record<string, unknown>, output: strin
 
 export function buildGameStopRender(output: string): ToolRenderPayload {
   return {
-    version: 1,
+    version: 2,
+    inputSummary: "stop game",
+    outputSummary: summarizeText(output, "Game stopped."),
     blocks: [{ type: "summary", text: firstLine(output, "Game stopped."), tone: "warning" }],
   };
 }

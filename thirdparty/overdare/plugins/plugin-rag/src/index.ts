@@ -3,7 +3,9 @@ import * as overdaresearch from "./overdaresearch.ts";
 import * as overdaresearchDeep from "./overdaresearch_deep.ts";
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: Array<Record<string, unknown>>;
 };
 
@@ -12,7 +14,7 @@ type ToolRenderPayload = {
 interface ToolContext {
   toolCallId: string;
   signal: AbortSignal;
-  approve: (req: ApprovalRequest) => Promise<ApprovalResponse>;
+  approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
   onUpdate?: (partialResult: string) => void;
 }
 

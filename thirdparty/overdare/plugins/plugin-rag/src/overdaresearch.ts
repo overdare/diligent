@@ -3,7 +3,9 @@ import { loadOverdareConfig } from "./config.ts";
 import { buildSearchRender } from "./render.ts";
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: Array<Record<string, unknown>>;
 };
 

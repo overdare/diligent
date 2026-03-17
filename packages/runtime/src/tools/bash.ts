@@ -6,7 +6,7 @@ import { existsSync } from "fs";
 import { z } from "zod";
 import { spawnProcess } from "../util/process";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
-import { summarizeRenderText } from "./render-payload";
+import { createCommandRenderPayload } from "./render-payload";
 
 const BashParams = z.object({
   command: z.string().min(1).describe("The shell command to execute"),
@@ -68,12 +68,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
         ctx.abort();
         return {
           output: "[Rejected by user]",
-          render: {
-            version: 2,
-            inputSummary: summarizeRenderText(args.command, 120),
-            outputSummary: "[Rejected by user]",
-            blocks: [{ type: "command", command: args.command, output: "[Rejected by user]", isError: true }],
-          },
+          render: createCommandRenderPayload(args.command, "[Rejected by user]", true),
           metadata: { error: true },
         };
       }
@@ -143,19 +138,7 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       const finalOutput = header + output;
       return {
         output: finalOutput,
-        render: {
-          version: 2,
-          inputSummary: summarizeRenderText(args.command, 120),
-          outputSummary: summarizeRenderText(finalOutput, 120),
-          blocks: [
-            {
-              type: "command",
-              command: args.command,
-              output: finalOutput || undefined,
-              isError: timedOut || aborted || exitCode !== 0,
-            },
-          ],
-        },
+        render: createCommandRenderPayload(args.command, finalOutput, timedOut || aborted || exitCode !== 0),
         metadata: {
           exitCode,
           timedOut,

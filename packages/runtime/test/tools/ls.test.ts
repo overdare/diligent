@@ -32,6 +32,7 @@ describe("ls tool", () => {
 
     const result = await tool.execute({ path: tmpDir }, makeCtx());
     expect(result.render?.version).toBe(2);
+    expect(result.render?.outputSummary).toBe("2 entries listed");
     expect(result.render?.blocks[0]).toMatchObject({ type: "list" });
     expect(result.output).toContain("file.txt");
     expect(result.output).toContain("subdir/");

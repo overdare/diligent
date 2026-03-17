@@ -8,7 +8,7 @@ import type {
   ThreadStatus,
   UserInputRequest,
 } from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { AgentEvent } from "@diligent/runtime/client";
 import {
   COLLAB_RENDERED_TOOLS,
@@ -205,6 +205,11 @@ function normalizeSpawnStatusFromWait(status: string, timedOut: boolean): string
 
 let renderSeq = 0;
 
+function toToolRenderPayload(value: unknown): import("@diligent/protocol").ToolRenderPayload | undefined {
+  const parsed = ToolRenderPayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
   switch (event.type) {
     case "message_start": {
@@ -339,6 +344,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             timestamp: now,
             toolCallId: event.toolCallId,
             startedAt: now,
+            render: "render" in event ? toToolRenderPayload(event.render) : undefined,
           },
         ],
       };
@@ -417,7 +423,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 isError: event.isError,
                 status: "done" as const,
                 durationMs: Date.now() - current.startedAt,
-                render: current.render,
+                render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? current.render,
               }
             : current,
         ),

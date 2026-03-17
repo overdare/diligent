@@ -5,7 +5,7 @@ import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { isAbsolute } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
-import { createTextRenderPayload, summarizeRenderText } from "./render-payload";
+import { createFileRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const WriteParams = z.object({
   file_path: z.string().describe("The relative path to the file to write"),
@@ -53,12 +53,12 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
         const output = `Wrote ${bytes} bytes to ${targetPath}`;
         return {
           output,
-          render: {
-            version: 2,
-            inputSummary: summarizeRenderText(targetPath),
-            outputSummary: summarizeRenderText(output),
-            blocks: [{ type: "file", filePath: targetPath, content }],
-          },
+          render: createFileRenderPayload({
+            filePath: targetPath,
+            content,
+            outputText: output,
+            actionSummary: "1 file written",
+          }),
         };
       } catch (err) {
         const output = `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
@@ -120,12 +120,12 @@ Usage:
         const output = `Wrote ${bytes} bytes to ${file_path}`;
         return {
           output,
-          render: {
-            version: 2,
-            inputSummary: summarizeRenderText(file_path),
-            outputSummary: summarizeRenderText(output),
-            blocks: [{ type: "file", filePath: file_path, content }],
-          },
+          render: createFileRenderPayload({
+            filePath: file_path,
+            content,
+            outputText: output,
+            actionSummary: "1 file written",
+          }),
         };
       } catch (err) {
         const output = `Error writing file: ${err instanceof Error ? err.message : String(err)}`;

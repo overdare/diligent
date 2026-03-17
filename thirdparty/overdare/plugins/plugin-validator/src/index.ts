@@ -2,7 +2,9 @@ import type { z } from "zod";
 import * as validatelua from "./validatelua.ts";
 
 type ToolRenderPayload = {
-  version: 1;
+  version: 2;
+  inputSummary?: string;
+  outputSummary?: string;
   blocks: Array<Record<string, unknown>>;
 };
 
