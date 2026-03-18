@@ -15,6 +15,7 @@ function getEntryType(entry: Record<string, unknown>): string {
   if (entry.type === "mode_change") return "Mode Change";
   if (entry.type === "effort_change") return "Effort Change";
   if (entry.type === "steering") return "Steering";
+  if (entry.type === "error") return "Error";
   if (entry.role === "user") return "User Message";
   if (entry.role === "assistant") return "Assistant Message";
   if (entry.role === "tool_result") return "Tool Result";

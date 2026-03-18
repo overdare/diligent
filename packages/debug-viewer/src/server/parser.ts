@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type {
   AssistantMessageEntry,
   CompactionEntry,
+  ErrorEntry,
   EffortChangeEntry,
   ModeChangeEntry,
   ModelChangeEntry,
@@ -18,13 +19,17 @@ import type {
   UserMessageEntry,
 } from "../shared/types.js";
 
+interface DetectEntryContext {
+  sessionId?: string;
+}
+
 /**
  * Detect entry type from raw parsed JSON.
  * Supports two formats:
  *   1. Core envelope format: { type: "session"|"message", ... }
  *   2. Legacy flat format (sample data): { role: "user"|"assistant"|"tool_result", ... }
  */
-export function detectEntryType(raw: Record<string, unknown>): SessionEntry | null {
+export function detectEntryType(raw: Record<string, unknown>, context?: DetectEntryContext): SessionEntry | null {
   // --- Core envelope format (from @diligent/core session persistence) ---
 
   // Session header: { type: "session", version, id, timestamp (ISO), cwd }
@@ -148,8 +153,24 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
     } as SteeringEntry;
   }
 
+  if (raw.type === "error") {
+    return {
+      id: raw.id as string,
+      parentId: (raw.parentId as string | null) ?? undefined,
+      turnId: raw.turnId as string | undefined,
+      type: "error",
+      fatal: Boolean(raw.fatal),
+      error: {
+        message: (raw.error as { message?: string } | undefined)?.message ?? "Unknown error",
+        ...((typeof raw.error === "object" && raw.error !== null ? raw.error : {}) as Record<string, unknown>),
+      },
+      timestamp: new Date(raw.timestamp as string).getTime(),
+    } as ErrorEntry;
+  }
+
   // Unknown entry type — skip with warning
-  console.warn("Unknown session entry type:", JSON.stringify(raw).slice(0, 300));
+  const sessionTag = context?.sessionId ? ` [session:${context.sessionId}]` : "";
+  console.warn(`Unknown session entry type${sessionTag}:`, JSON.stringify(raw).slice(0, 300));
   return null;
 }
 
@@ -159,13 +180,14 @@ export function detectEntryType(raw: Record<string, unknown>): SessionEntry | nu
 export async function parseSessionFile(filePath: string): Promise<SessionEntry[]> {
   const file = Bun.file(filePath);
   const text = await file.text();
-  return parseSessionText(text);
+  const sessionId = basename(filePath, ".jsonl");
+  return parseSessionText(text, { sessionId });
 }
 
 /**
  * Parse JSONL text into typed entries.
  */
-export function parseSessionText(text: string): SessionEntry[] {
+export function parseSessionText(text: string, context?: DetectEntryContext): SessionEntry[] {
   const entries: SessionEntry[] = [];
 
   for (const line of text.split("\n")) {
@@ -174,7 +196,7 @@ export function parseSessionText(text: string): SessionEntry[] {
 
     try {
       const raw = JSON.parse(trimmed);
-      const result = detectEntryType(raw);
+      const result = detectEntryType(raw, context);
       if (result) {
         entries.push(result);
       }
@@ -274,11 +296,24 @@ export function extractSessionMeta(filePath: string, entries: SessionEntry[]): S
   let toolCallCount = 0;
   let hasErrors = false;
   let lastActivity = 0;
+  let firstUserMessage: string | undefined;
 
   for (const entry of entries) {
     if ("role" in entry) {
       if (entry.role === "user" || entry.role === "assistant") {
         messageCount++;
+      }
+      if (entry.role === "user" && firstUserMessage === undefined) {
+        if (typeof entry.content === "string") {
+          firstUserMessage = entry.content;
+        } else {
+          const textParts = entry.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text);
+          if (textParts.length > 0) {
+            firstUserMessage = textParts.join(" ");
+          }
+        }
       }
       if (entry.role === "tool_result") {
         toolCallCount++;
@@ -294,6 +329,7 @@ export function extractSessionMeta(filePath: string, entries: SessionEntry[]): S
     id: header?.id ?? basename(filePath, ".jsonl"),
     filePath,
     timestamp: header?.timestamp ?? lastActivity,
+    firstUserMessage,
     messageCount,
     toolCallCount,
     hasErrors,

@@ -5,6 +5,7 @@ import type {
   AssistantMessageEntry,
   CompactionEntry,
   ContentBlock,
+  ErrorEntry,
   EffortChangeEntry,
   ModeChangeEntry,
   ModelChangeEntry,
@@ -133,7 +134,7 @@ function CompactionCard({ entry, onSelectEntry }: { entry: CompactionEntry; onSe
   );
 }
 
-function getSystemEventInfo(entry: SessionEntry): { badge: string; description: string } | null {
+function getSystemEventInfo(entry: SessionEntry): { badge: string; description: string; meta?: string } | null {
   if (!("type" in entry)) return null;
   switch (entry.type) {
     case "model_change": {
@@ -158,6 +159,17 @@ function getSystemEventInfo(entry: SessionEntry): { badge: string; description: 
       const truncated = content.length > 120 ? `${content.slice(0, 120)}…` : content;
       return { badge: "Steering", description: `[${e.source}] ${truncated}` };
     }
+    case "error": {
+      const e = entry as ErrorEntry;
+      const metaParts = [e.turnId ? `turn:${e.turnId}` : null, e.parentId ? `parent:${e.parentId}` : null].filter(
+        (part): part is string => part !== null,
+      );
+      return {
+        badge: e.fatal ? "Fatal Error" : "Error",
+        description: e.error.message,
+        meta: metaParts.length > 0 ? metaParts.join("  •  ") : undefined,
+      };
+    }
     default:
       return null;
   }
@@ -170,7 +182,10 @@ function SystemEventCard({ entry, onSelectEntry }: { entry: SessionEntry; onSele
   return (
     <div className="system-event-card" onClick={() => onSelectEntry(entry)}>
       <span className="system-event-badge">{info.badge}</span>
-      <span className="system-event-description">{info.description}</span>
+      <div className="system-event-text">
+        <span className="system-event-description">{info.description}</span>
+        {info.meta && <span className="system-event-meta">{info.meta}</span>}
+      </div>
     </div>
   );
 }
@@ -197,7 +212,8 @@ export function MessageCard({ entry, toolPairs, onSelectEntry }: MessageCardProp
       entry.type === "session_info" ||
       entry.type === "mode_change" ||
       entry.type === "effort_change" ||
-      entry.type === "steering")
+      entry.type === "steering" ||
+      entry.type === "error")
   ) {
     return <SystemEventCard entry={entry} onSelectEntry={onSelectEntry} />;
   }

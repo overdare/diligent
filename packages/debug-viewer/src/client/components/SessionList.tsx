@@ -12,6 +12,12 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
 }
 
+function truncatePreview(text: string, max = 96): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 1)}…`;
+}
+
 export function SessionList({ sessions, selectedId, onSelect, loading }: SessionListProps) {
   if (loading) {
     return <div className="session-list-loading">Loading sessions...</div>;
@@ -31,13 +37,13 @@ export function SessionList({ sessions, selectedId, onSelect, loading }: Session
           onClick={() => onSelect(session.id)}
         >
           <div className="session-id">{session.id}</div>
+          {session.firstUserMessage && <div className="session-preview">{truncatePreview(session.firstUserMessage)}</div>}
           <div className="session-meta">
             <span className="session-time">{formatTime(session.lastActivity)}</span>
             <span className="session-counts">
               {session.messageCount} msgs, {session.toolCallCount} tools
             </span>
           </div>
-          {session.hasErrors && <span className="error-badge">errors</span>}
         </button>
       ))}
     </div>

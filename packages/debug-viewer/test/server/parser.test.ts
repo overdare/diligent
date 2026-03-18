@@ -212,6 +212,26 @@ describe("detectEntryType", () => {
     expect((st as Record<string, unknown>).type).toBe("steering");
     expect((st as Record<string, unknown>).source).toBe("steer");
   });
+
+  test("parses error entry", () => {
+    const err = detectEntryType({
+      type: "error",
+      id: "ee43916f",
+      parentId: "ae198bf6",
+      timestamp: "2026-03-10T06:50:44.731Z",
+      turnId: "turn-1",
+      fatal: true,
+      error: {
+        message:
+          "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"tools.16.custom.input_schema: input_schema does not support oneOf, allOf\"}}",
+      },
+    });
+
+    expect(err).not.toBeNull();
+    expect((err as Record<string, unknown>).type).toBe("error");
+    expect((err as Record<string, unknown>).fatal).toBe(true);
+    expect(((err as { error: { message: string } }).error.message).length).toBeGreaterThan(0);
+  });
 });
 
 describe("parseSessionFile", () => {
@@ -300,6 +320,23 @@ describe("parseSessionText", () => {
     expect(user).toBeDefined();
     expect((user as { parentId?: string }).parentId).toBe("ec1");
   });
+
+  test("passes sessionId context to unknown-entry warning", () => {
+    const warn = console.warn;
+    const calls: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      calls.push(args);
+    };
+
+    try {
+      parseSessionText('{"foo":"bar"}', { sessionId: "session-ctx-test" });
+    } finally {
+      console.warn = warn;
+    }
+
+    expect(calls.length).toBe(1);
+    expect(String(calls[0][0])).toContain("[session:session-ctx-test]");
+  });
 });
 
 describe("buildTree", () => {
@@ -375,6 +412,7 @@ describe("extractSessionMeta", () => {
     expect(meta.toolCallCount).toBe(2);
     expect(meta.hasErrors).toBe(false);
     expect(meta.timestamp).toBe(1708900000000);
+    expect(meta.firstUserMessage).toBe("Read the package.json file and tell me what dependencies we have.");
   });
 
   test("detects errors in sample-002", async () => {
@@ -385,6 +423,31 @@ describe("extractSessionMeta", () => {
     expect(meta.id).toBe("sample-002");
     expect(meta.hasErrors).toBe(true);
     expect(meta.toolCallCount).toBe(5);
+    expect(meta.firstUserMessage).toBe("Fix the failing tests in src/utils.ts");
+  });
+
+  test("extracts first user text from block content", () => {
+    const meta = extractSessionMeta("/tmp/session-1.jsonl", [
+      {
+        type: "session_header",
+        id: "session-1",
+        timestamp: 1,
+        cwd: "/tmp",
+        version: "1",
+      },
+      {
+        id: "u1",
+        role: "user",
+        content: [
+          { type: "thinking", thinking: "ignore" },
+          { type: "text", text: "hello" },
+          { type: "text", text: "world" },
+        ],
+        timestamp: 2,
+      },
+    ]);
+
+    expect(meta.firstUserMessage).toBe("hello world");
   });
 });
 
