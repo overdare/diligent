@@ -114,6 +114,21 @@ export type RenderItem =
         outputText: string;
       }>;
       childMessages?: string[];
+      childTimeline?: Array<
+        | {
+            kind: "assistant";
+            message: string;
+          }
+        | {
+            kind: "tool";
+            toolCallId: string;
+            toolName: string;
+            status: "running" | "done";
+            isError: boolean;
+            inputText: string;
+            outputText: string;
+          }
+      >;
       timestamp: number;
     };
 
@@ -223,6 +238,60 @@ function mergeToolRenderPayload(
   };
 }
 
+function appendChildAssistantTimelineStart(state: ThreadState, childThreadId: string): ThreadState {
+  const spawnItem = findCollabSpawnItem(state, childThreadId);
+  if (!spawnItem) return state;
+  return updateItem(state, spawnItem.id, (item) =>
+    item.kind === "collab"
+      ? {
+          ...item,
+          childTimeline: [...(item.childTimeline ?? []), { kind: "assistant" as const, message: "" }],
+        }
+      : item,
+  );
+}
+
+function appendChildAssistantTimelineDelta(state: ThreadState, childThreadId: string, delta: string): ThreadState {
+  const spawnItem = findCollabSpawnItem(state, childThreadId);
+  if (!spawnItem) return state;
+  return updateItem(state, spawnItem.id, (item) => {
+    if (item.kind !== "collab") return item;
+    const timeline = [...(item.childTimeline ?? [])];
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const entry = timeline[i];
+      if (entry.kind === "assistant") {
+        timeline[i] = { ...entry, message: entry.message + delta };
+        return { ...item, childTimeline: timeline };
+      }
+    }
+    timeline.push({ kind: "assistant" as const, message: delta });
+    return { ...item, childTimeline: timeline };
+  });
+}
+
+function finalizeChildAssistantTimeline(
+  state: ThreadState,
+  childThreadId: string,
+  message: AssistantMessage,
+): ThreadState {
+  const spawnItem = findCollabSpawnItem(state, childThreadId);
+  if (!spawnItem) return state;
+  const finalRaw = stringifyUnknown(message);
+  return updateItem(state, spawnItem.id, (item) => {
+    if (item.kind !== "collab") return item;
+    const timeline = [...(item.childTimeline ?? [])];
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const entry = timeline[i];
+      if (entry.kind === "assistant") {
+        timeline[i] = { ...entry, message: finalRaw };
+        return { ...item, childTimeline: timeline };
+      }
+    }
+    timeline.push({ kind: "assistant" as const, message: finalRaw });
+    return { ...item, childTimeline: timeline };
+  });
+}
+
 function extractAssistantTextFromMessage(message: AssistantMessage): { text: string; thinking: string } {
   type AssistantContentBlock = AssistantMessage["content"][number];
   const text = message.content
@@ -245,6 +314,9 @@ function extractAssistantTextFromMessage(message: AssistantMessage): { text: str
 function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
   switch (event.type) {
     case "message_start": {
+      if ("childThreadId" in event && typeof event.childThreadId === "string") {
+        return appendChildAssistantTimelineStart(state, event.childThreadId);
+      }
       const renderId = `item:${event.itemId}:${++renderSeq}`;
       if (state.itemSlots[event.itemId]) return state;
       return {
@@ -269,6 +341,12 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "message_delta": {
+      if ("childThreadId" in event && typeof event.childThreadId === "string") {
+        if (event.delta.type === "text_delta") {
+          return appendChildAssistantTimelineDelta(state, event.childThreadId, event.delta.delta);
+        }
+        return state;
+      }
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
 
@@ -299,6 +377,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "message_end": {
+      if ("childThreadId" in event && typeof event.childThreadId === "string") {
+        return finalizeChildAssistantTimeline(state, event.childThreadId, event.message);
+      }
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
       const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
@@ -367,6 +448,18 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                     render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
                   },
                 ],
+                childTimeline: [
+                  ...(item.childTimeline ?? []),
+                  {
+                    kind: "tool" as const,
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    status: "running" as const,
+                    isError: false,
+                    inputText: stringifyUnknown(event.input),
+                    outputText: "",
+                  },
+                ],
               }
             : item,
         );
@@ -424,6 +517,11 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 childTools: item.childTools.map((t) =>
                   t.toolCallId === event.toolCallId ? { ...t, outputText: t.outputText + event.partialResult } : t,
                 ),
+                childTimeline: (item.childTimeline ?? []).map((entry) =>
+                  entry.kind === "tool" && entry.toolCallId === event.toolCallId
+                    ? { ...entry, outputText: entry.outputText + event.partialResult }
+                    : entry,
+                ),
               }
             : item,
         );
@@ -456,6 +554,16 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                   t.toolCallId === event.toolCallId
                     ? { ...t, status: "done" as const, isError: event.isError, outputText: event.output ?? "" }
                     : t,
+                ),
+                childTimeline: (item.childTimeline ?? []).map((entry) =>
+                  entry.kind === "tool" && entry.toolCallId === event.toolCallId
+                    ? {
+                        ...entry,
+                        status: "done" as const,
+                        isError: event.isError,
+                        outputText: event.output ?? "",
+                      }
+                    : entry,
                 ),
               }
             : item,
@@ -616,6 +724,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         prompt: event.prompt,
         status: "running",
         childTools: [],
+        childTimeline: [],
         timestamp: Date.now(),
       });
     }
@@ -636,6 +745,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                 prompt: event.prompt,
                 status: event.status,
                 message: event.message,
+                childTimeline: item.childTimeline ?? [],
               }
             : item,
         );
@@ -653,6 +763,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         status: event.status,
         message: event.message,
         childTools: [],
+        childTimeline: [],
         timestamp: Date.now(),
       });
     }

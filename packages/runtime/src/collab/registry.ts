@@ -221,6 +221,10 @@ export class AgentRegistry {
             nickname,
             turnNumber,
           });
+        } else if (event.type === "message_start") {
+          this.emit({ ...event, childThreadId: threadId, nickname });
+        } else if (event.type === "message_delta") {
+          this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "tool_start") {
           this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "tool_update") {
@@ -228,6 +232,7 @@ export class AgentRegistry {
         } else if (event.type === "tool_end") {
           this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "message_end") {
+          this.emit({ ...event, childThreadId: threadId, nickname });
           const textBlocks = event.message.content.filter((b): b is TextBlock => b.type === "text");
           output = textBlocks.map((b) => b.text).join("\n") || null;
         } else if (event.type === "error" && event.fatal) {

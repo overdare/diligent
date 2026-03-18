@@ -194,6 +194,7 @@ export class ProtocolNotificationAdapter {
           itemId: item.itemId,
           message: item.message,
           ...(typeof item.timestamp === "number" ? { timestamp: item.timestamp } : {}),
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }
@@ -242,6 +243,7 @@ export class ProtocolNotificationAdapter {
             type: delta.type === "messageText" ? "text_delta" : "thinking_delta",
             delta: delta.delta,
           },
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }
@@ -283,6 +285,7 @@ export class ProtocolNotificationAdapter {
           ...(typeof item.timestamp === "number" ? { timestamp: item.timestamp } : {}),
           ...(typeof item.reasoningDurationMs === "number" ? { reasoningDurationMs: item.reasoningDurationMs } : {}),
           ...(typeof item.turnDurationMs === "number" ? { turnDurationMs: item.turnDurationMs } : {}),
+          ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];
     }

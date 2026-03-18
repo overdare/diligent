@@ -282,12 +282,16 @@ export const AgentEventSchema = z.union([
     itemId: z.string(),
     message: AssistantMessageSchema,
     timestamp: z.number().int().optional(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("message_delta"),
     itemId: z.string(),
     message: AssistantMessageSchema,
     delta: MessageDeltaSchema,
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("message_end"),
@@ -296,6 +300,8 @@ export const AgentEventSchema = z.union([
     timestamp: z.number().int().optional(),
     reasoningDurationMs: z.number().int().nonnegative().optional(),
     turnDurationMs: z.number().int().nonnegative().optional(),
+    childThreadId: z.string().optional(),
+    nickname: z.string().optional(),
   }),
   z.object({
     type: z.literal("user_message"),

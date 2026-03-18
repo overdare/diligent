@@ -26,9 +26,16 @@ export type CoreAgentEvent =
   | { type: "turn_start"; turnId: string; childThreadId?: string; nickname?: string; turnNumber?: number }
   | { type: "turn_end"; turnId: string; message: AssistantMessage; toolResults: ToolResultMessage[] }
   // Message streaming (3) — D086: itemId groups related events
-  | { type: "message_start"; itemId: string; message: AssistantMessage }
-  | { type: "message_delta"; itemId: string; message: AssistantMessage; delta: MessageDelta }
-  | { type: "message_end"; itemId: string; message: AssistantMessage }
+  | { type: "message_start"; itemId: string; message: AssistantMessage; childThreadId?: string; nickname?: string }
+  | {
+      type: "message_delta";
+      itemId: string;
+      message: AssistantMessage;
+      delta: MessageDelta;
+      childThreadId?: string;
+      nickname?: string;
+    }
+  | { type: "message_end"; itemId: string; message: AssistantMessage; childThreadId?: string; nickname?: string }
   // Tool execution (3) — D086: itemId groups related events
   | {
       type: "tool_start";

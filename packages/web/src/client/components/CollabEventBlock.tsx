@@ -1,4 +1,4 @@
-// @summary Collab event block showing sub-agent orchestration, always collapsed by default
+// @summary Collab event block showing sub-agent orchestration in concise conversation order
 
 import { useState } from "react";
 import { cn } from "../lib/cn";
@@ -34,13 +34,77 @@ function statusBadge(status?: string): { text: string; className: string } | nul
   }
 }
 
+function truncateUnicode(value: string, maxChars: number): string {
+  const chars = Array.from(value);
+  if (chars.length <= maxChars) return value;
+  return `${chars.slice(0, maxChars).join("")}…`;
+}
+
+function summarizeRequest(inputText: string): string {
+  const trimmed = inputText.trim();
+  if (!trimmed) return "(empty request)";
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const entries = Object.entries(parsed);
+    if (entries.length === 0) return "{}";
+    const preview = entries
+      .slice(0, 3)
+      .map(([key, value]) => {
+        if (typeof value === "string") return `${key}=${value}`;
+        if (typeof value === "number" || typeof value === "boolean") return `${key}=${String(value)}`;
+        if (Array.isArray(value)) return `${key}=[${value.length}]`;
+        if (value && typeof value === "object") return `${key}={...}`;
+        return key;
+      })
+      .join(", ");
+    return truncateUnicode(preview, 180);
+  } catch {
+    return truncateUnicode(trimmed.split("\n")[0] ?? trimmed, 180);
+  }
+}
+
+function summarizeResponse(outputText: string): string {
+  const trimmed = outputText.trim();
+  if (!trimmed) return "(empty response)";
+  return truncateUnicode(trimmed.split("\n")[0] ?? trimmed, 180);
+}
+
+function summarizeAssistantMessage(rawMessage: string): string | null {
+  const trimmed = rawMessage.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      content?: Array<{ type?: string; text?: string; thinking?: string }>;
+    };
+    const blocks = parsed.content;
+    if (!Array.isArray(blocks)) return truncateUnicode(trimmed, 260);
+
+    const text = blocks
+      .filter((block) => block.type === "text" && typeof block.text === "string")
+      .map((block) => block.text!.trim())
+      .filter((part) => part.length > 0)
+      .join(" ");
+    if (text) return truncateUnicode(text, 260);
+
+    const thinking = blocks
+      .filter((block) => block.type === "thinking" && typeof block.thinking === "string")
+      .map((block) => block.thinking!.trim())
+      .filter((part) => part.length > 0)
+      .join(" ");
+    if (thinking) return truncateUnicode(thinking, 200);
+
+    return null;
+  } catch {
+    return truncateUnicode(trimmed, 260);
+  }
+}
+
 export function CollabEventBlock({ item }: CollabEventBlockProps) {
-  const iconMap: Record<string, string> = { spawn: "◈", wait: "⏳", close: "✕", interaction: "→" };
-  const icon = iconMap[item.eventType] ?? "◈";
-
-  const hasRunningTool = item.childTools.some((t) => t.status === "running");
-
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const hasRunningTool = item.childTools.some((tool) => tool.status === "running");
+  const badge = statusBadge(item.status);
+  const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
 
   let title = "";
   let details: string | null = null;
@@ -49,15 +113,14 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
   switch (item.eventType) {
     case "spawn":
       title = `Spawned ${agentLabel(item.nickname, item.childThreadId)}${agentTypeLabel ? ` ${agentTypeLabel}` : ""}`;
-      if (item.description) details = item.description;
+      details = item.description ?? null;
       break;
     case "wait": {
       const count = item.agents?.length ?? 0;
-      if (count === 1 && item.agents?.[0]) {
-        title = `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`;
-      } else {
-        title = `Finished waiting for ${count} agents`;
-      }
+      title =
+        count === 1 && item.agents?.[0]
+          ? `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`
+          : `Finished waiting for ${count} agents`;
       break;
     }
     case "close":
@@ -68,123 +131,87 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
       break;
   }
 
-  const badge = statusBadge(item.status);
-
-  // For wait events, show per-agent status
-  const agentStatuses = item.eventType === "wait" && item.agents && item.agents.length > 0;
-
-  // Turn info for spawn items
-  const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
-
-  // Count expandable detail items
-  const detailCount = item.childTools.length + (item.childMessages?.length ?? 0) + (item.prompt ? 1 : 0);
+  const timeline = item.childTimeline ?? [];
+  const hasBody = Boolean(
+    details || item.message || (item.eventType === "wait" && item.agents?.length) || timeline.length > 0,
+  );
 
   return (
     <div className="pb-4">
-      <div className="flex items-start gap-3 rounded-2xl border border-border/10 bg-surface/28 px-4 py-3">
-        <span
-          className={cn(
-            "inline-flex h-4 w-4 shrink-0 items-center justify-center font-mono text-sm",
-            hasRunningTool ? "text-accent" : "text-muted",
-          )}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          {/* Header row */}
-          <div className="flex items-center gap-2">
+      <div className="min-w-0 rounded-xl bg-surface-dark py-2.5">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium text-text-soft">{title}</span>
             {badge && <span className={cn("text-xs", badge.className)}>{badge.text}</span>}
             {hasRunningTool && <StatusDot color="accent" pulse />}
-            {turnInfo && <span className="text-xs text-text/30">{turnInfo}</span>}
-            {item.timedOut && <span className="text-xs text-danger/70">timed out</span>}
+            {turnInfo && <span className="text-xs text-text/40">{turnInfo}</span>}
+            {item.timedOut && <span className="text-xs text-danger/80">timed out</span>}
           </div>
 
-          {/* Description */}
-          {details && <p className="mt-1 text-xs leading-5 text-text/55">{details}</p>}
+          {hasBody ? (
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="-mt-1 w-fit text-2xs text-muted hover:text-accent"
+            >
+              {open ? "▾ collapse" : "▸ expand"}
+            </button>
+          ) : null}
 
-          {/* Final message for non-wait events */}
-          {item.message && !agentStatuses && (
-            <p className="mt-1 max-w-[80ch] truncate text-xs text-text/50">{item.message}</p>
-          )}
+          {open ? (
+            <>
+              {details ? <p className="text-xs leading-5 text-text/60">{details}</p> : null}
 
-          {/* Per-agent status for wait events */}
-          {agentStatuses && (
-            <div className="mt-2 space-y-1">
-              {item.agents!.map((agent) => {
-                const aBadge = statusBadge(agent.status);
-                return (
-                  <div key={agent.threadId} className="flex items-center gap-1.5 text-xs">
-                    <span className="text-text/40">└</span>
-                    <span className="font-medium text-accent/80">{agentLabel(agent.nickname, agent.threadId)}</span>
-                    {aBadge && <span className={aBadge.className}>{aBadge.text}</span>}
-                    {agent.message && <span className="max-w-[60ch] truncate text-text/40">— {agent.message}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+              {item.message ? <p className="text-xs text-text/65">{truncateUnicode(item.message, 240)}</p> : null}
 
-          {/* Expandable detail section: tools + messages */}
-          {detailCount > 0 && (
-            <div className="mt-2.5 space-y-1">
-              {!expanded ? (
-                <button
-                  type="button"
-                  onClick={() => setExpanded(true)}
-                  className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
-                >
-                  <span className="w-3 text-right text-text/25">├</span>
-                  <span className="text-text/40">▸</span>
-                  <span>{detailCount} items</span>
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(false)}
-                    className="flex items-center gap-1.5 text-xs text-muted hover:text-accent"
-                  >
-                    <span className="w-3 text-right text-text/25">├</span>
-                    <span className="text-text/40">▾</span>
-                    <span>{detailCount} items</span>
-                  </button>
-                  {item.prompt ? (
-                    <div className="flex items-start gap-1.5 text-xs">
-                      <span className="w-3 shrink-0 text-right text-text/25">├</span>
-                      <span className="shrink-0 text-text/40">📝</span>
-                      <span className="max-w-[80ch] whitespace-pre-wrap text-text/45">{item.prompt}</span>
-                    </div>
-                  ) : null}
-                  {/* Child messages (assistant text from sub-agent) */}
-                  {item.childMessages?.map((msg) => (
-                    <div key={msg} className="flex items-start gap-1.5 text-xs">
-                      <span className="w-3 shrink-0 text-right text-text/25">├</span>
-                      <span className="shrink-0 text-text/40">💬</span>
-                      <span className="max-w-[80ch] whitespace-pre-wrap text-text/50">{msg}</span>
-                    </div>
-                  ))}
-                  {/* Child tool activity */}
-                  {item.childTools.map((tool) => {
-                    const info = getToolInfo(tool.toolName);
-                    const isRunning = tool.status === "running";
+              {item.eventType === "wait" && item.agents?.length ? (
+                <div className="space-y-1">
+                  {item.agents.map((agent) => {
+                    const agentStatus = statusBadge(agent.status);
                     return (
-                      <div key={tool.toolCallId} className="flex flex-col gap-0.5 text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-3 text-right text-text/25">├</span>
-                          <span className={cn("leading-none", isRunning ? "text-text/70" : "text-text/40")}>
-                            {info.displayName}
-                          </span>
-                          {isRunning && <StatusDot color="accent" pulse />}
-                          {tool.isError && <span className="text-danger">✗</span>}
-                        </div>
+                      <div key={agent.threadId} className="text-xs text-text/60">
+                        {agentLabel(agent.nickname, agent.threadId)}
+                        {agentStatus ? (
+                          <span className={cn("ml-2", agentStatus.className)}>{agentStatus.text}</span>
+                        ) : null}
+                        {agent.message ? (
+                          <span className="ml-2 text-text/45">- {truncateUnicode(agent.message, 140)}</span>
+                        ) : null}
                       </div>
                     );
                   })}
-                </>
-              )}
-            </div>
-          )}
+                </div>
+              ) : null}
+
+              {timeline.length > 0 ? (
+                <div className="space-y-1 text-xs">
+                  {timeline.map((entry, index) => {
+                    if (entry.kind === "assistant") {
+                      const summary = summarizeAssistantMessage(entry.message);
+                      if (!summary) return null;
+                      return (
+                        <div key={`${item.id}:timeline:assistant:${index}`} className="text-text/70">
+                          {summary}
+                        </div>
+                      );
+                    }
+
+                    const info = getToolInfo(entry.toolName);
+                    const req = summarizeRequest(entry.inputText);
+                    const res = summarizeResponse(entry.outputText);
+                    return (
+                      <div key={`${item.id}:timeline:tool:${entry.toolCallId}`} className="font-mono">
+                        <div className="text-text/60">
+                          {info.displayName} - {req}
+                        </div>
+                        <div className="text-text/45">ㄴ {res}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </div>
       </div>
     </div>

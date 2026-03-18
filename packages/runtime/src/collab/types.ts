@@ -35,6 +35,9 @@ export interface AgentEntry {
 export type CollabAgentEvent =
   | Extract<AgentEvent, { type: `collab_${string}` }>
   | (Extract<AgentEvent, { type: "turn_start" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "message_start" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "message_delta" }> & { childThreadId: string })
+  | (Extract<AgentEvent, { type: "message_end" }> & { childThreadId: string })
   | (Extract<AgentEvent, { type: "tool_start" }> & { childThreadId: string })
   | (Extract<AgentEvent, { type: "tool_update" }> & { childThreadId: string })
   | (Extract<AgentEvent, { type: "tool_end" }> & { childThreadId: string });
