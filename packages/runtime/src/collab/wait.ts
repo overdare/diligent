@@ -8,7 +8,6 @@ import type { AgentStatus } from "./types";
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const MIN_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
-const MAX_WAIT_OUTPUT_PREVIEW_CHARS = 1_000;
 
 const WaitParams = z.object({
   ids: z.array(z.string()).min(1).describe("Thread IDs of agents to wait for"),
@@ -21,7 +20,7 @@ const WaitParams = z.object({
 function summarizeStatus(status: AgentStatus, nickname: string): string {
   switch (status.kind) {
     case "completed": {
-      const preview = status.output ? status.output.split("\n")[0].slice(0, 160) : "(no output)";
+      const preview = status.output ? status.output.split("\n")[0] : "(no output)";
       return `${nickname}: Completed — ${preview}`;
     }
     case "errored":
@@ -33,30 +32,6 @@ function summarizeStatus(status: AgentStatus, nickname: string): string {
     case "shutdown":
       return `${nickname}: Shutdown`;
   }
-}
-
-function truncateText(text: string, maxChars: number): { value: string; truncated: boolean } {
-  if (text.length <= maxChars) {
-    return { value: text, truncated: false };
-  }
-  return {
-    value: `${text.slice(0, maxChars)}\n\n… [truncated ${text.length - maxChars} chars]`,
-    truncated: true,
-  };
-}
-
-function toSerializableStatus(status: AgentStatus): AgentStatus {
-  if (status.kind === "completed" && status.output) {
-    const { value } = truncateText(status.output, MAX_WAIT_OUTPUT_PREVIEW_CHARS);
-    return { kind: "completed", output: value };
-  }
-
-  if (status.kind === "errored") {
-    const { value } = truncateText(status.error, MAX_WAIT_OUTPUT_PREVIEW_CHARS);
-    return { kind: "errored", error: value };
-  }
-
-  return status;
 }
 
 export function createWaitTool(registry: AgentRegistry): Tool<typeof WaitParams> {
@@ -80,12 +55,8 @@ export function createWaitTool(registry: AgentRegistry): Tool<typeof WaitParams>
         lines.push(summarizeStatus(s, nickname));
       }
 
-      const serializableStatus = Object.fromEntries(
-        Object.entries(status).map(([id, agentStatus]) => [id, toSerializableStatus(agentStatus)]),
-      );
-
       const output = JSON.stringify({
-        status: serializableStatus,
+        status,
         timed_out: timedOut,
         summary: lines,
       });

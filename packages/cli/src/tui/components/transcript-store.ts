@@ -36,6 +36,13 @@ function parseCollabOutput(output: string): Record<string, unknown> | null {
   }
 }
 
+function summarizeCollabLine(value: string, maxChars: number): string {
+  const firstLine = value.split("\n")[0] ?? value;
+  const chars = Array.from(firstLine);
+  if (chars.length <= maxChars) return firstLine;
+  return `${chars.slice(0, maxChars).join("")}…`;
+}
+
 const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 const TOOL_MAX_LINES = 5;
 
@@ -618,7 +625,7 @@ export class TranscriptStore {
         lines.push(`${icon} Finished waiting${elapsed}`);
         if (parsed?.summary && Array.isArray(parsed.summary)) {
           for (const entry of parsed.summary as string[]) {
-            lines.push(`${t.dim}  ${entry}${t.reset}`);
+            lines.push(`${t.dim}  ${summarizeCollabLine(entry, 160)}${t.reset}`);
           }
         }
         if (parsed?.timed_out) {

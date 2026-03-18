@@ -797,7 +797,7 @@ test("hydrateFromThreadRead shows wait-derived final status on spawn item", () =
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("completed");
 
   // Should also have childMessages from child session
-  expect(spawn && spawn.kind === "collab" ? spawn.childMessages : []).toEqual(["I finished the work."]);
+  expect(spawn && spawn.kind === "collab" ? spawn.childMessages?.[0] : undefined).toContain("I finished the work.");
 });
 
 test("hydrateFromThreadRead shows close-derived final status on spawn item", () => {
@@ -1461,4 +1461,47 @@ test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pe
   const collab = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
   expect(collab).toBeDefined();
   expect(collab && collab.kind === "collab" ? collab.status : "").toBe("running");
+});
+
+test("hydrateFromThreadRead stores full wait message text from status output", () => {
+  const veryLongMessage = `${"x".repeat(300)}\nline2`;
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    items: [
+      {
+        type: "toolCall",
+        itemId: "tool:tc-wait-1",
+        toolCallId: "tc-wait-1",
+        toolName: "wait",
+        input: { ids: ["ses-child-1"] },
+        output: JSON.stringify({
+          status: {
+            "ses-child-1": { kind: "completed", output: veryLongMessage },
+          },
+          timed_out: false,
+        }),
+        isError: false,
+        timestamp: 102,
+        startedAt: 101,
+        durationMs: 1,
+      },
+    ],
+    childSessions: [
+      {
+        sessionId: "ses-child-1",
+        nickname: "Cleo",
+        description: "do work",
+        messages: [],
+        created: "2026-03-04T10:00:00Z",
+      },
+    ],
+    isRunning: false,
+    hasFollowUp: false,
+    entryCount: 1,
+    currentEffort: "medium",
+  });
+
+  const collabWait = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  expect(collabWait).toBeDefined();
+  const firstAgent = collabWait && collabWait.kind === "collab" ? collabWait.agents?.[0] : undefined;
+  expect(firstAgent?.message).toBe(veryLongMessage);
 });

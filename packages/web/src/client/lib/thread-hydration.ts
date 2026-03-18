@@ -59,15 +59,79 @@ function extractChildMessages(child: ChildSession): string[] {
   const messages: string[] = [];
   for (const msg of child.messages) {
     if (msg.role === "assistant") {
-      const blocks = (msg as { content: Array<{ type: string; text?: string }> }).content;
-      const text = blocks
-        .filter((b) => b.type === "text" && b.text)
-        .map((b) => b.text!)
-        .join("");
-      if (text.trim()) messages.push(text.trim());
+      messages.push(stringifyUnknown(msg));
     }
   }
   return messages;
+}
+
+function extractChildTimeline(child: ChildSession): Array<
+  | {
+      kind: "assistant";
+      message: string;
+    }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      toolName: string;
+      status: "done";
+      isError: boolean;
+      inputText: string;
+      outputText: string;
+    }
+> {
+  const inputMap = new Map<string, unknown>();
+  for (const msg of child.messages) {
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (typeof block === "object" && block !== null && "type" in block && block.type === "tool_call") {
+          const tb = block as { id: string; input: unknown };
+          inputMap.set(tb.id, tb.input);
+        }
+      }
+    }
+  }
+
+  const timeline: Array<
+    | {
+        kind: "assistant";
+        message: string;
+      }
+    | {
+        kind: "tool";
+        toolCallId: string;
+        toolName: string;
+        status: "done";
+        isError: boolean;
+        inputText: string;
+        outputText: string;
+      }
+  > = [];
+
+  for (const msg of child.messages) {
+    if (msg.role === "assistant") {
+      timeline.push({
+        kind: "assistant",
+        message: stringifyUnknown(msg),
+      });
+      continue;
+    }
+
+    if (msg.role === "tool_result") {
+      const toolCallId = (msg as { toolCallId: string }).toolCallId;
+      timeline.push({
+        kind: "tool",
+        toolCallId,
+        toolName: (msg as { toolName: string }).toolName,
+        status: "done",
+        isError: (msg as { isError: boolean }).isError,
+        inputText: stringifyUnknown(inputMap.get(toolCallId)),
+        outputText: typeof (msg as { output?: string }).output === "string" ? (msg as { output: string }).output : "",
+      });
+    }
+  }
+
+  return timeline;
 }
 
 function parseSpawnOutput(output: string): { threadId?: string; nickname?: string } {
@@ -237,6 +301,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
           status: "running",
           childTools: child ? extractChildTools(child) : [],
           childMessages: child ? extractChildMessages(child) : undefined,
+          childTimeline: child ? extractChildTimeline(child) : undefined,
           timestamp: item.timestamp ?? item.startedAt ?? Date.now(),
         });
         continue;
@@ -250,7 +315,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
             threadId: agent.threadId,
             nickname: child?.nickname,
             status: agent.status,
-            message: agent.message ? agent.message.split("\n")[0].slice(0, 160) : undefined,
+            message: agent.message,
           };
         });
         current = withItem(current, `history:collab:wait:${item.toolCallId}`, {
@@ -260,6 +325,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
           agents,
           timedOut: waitData?.timedOut,
           childTools: [],
+          childTimeline: undefined,
           timestamp: item.timestamp ?? item.startedAt ?? Date.now(),
         });
         for (const agent of waitData?.agents ?? []) {
@@ -286,6 +352,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
           nickname: close.nickname,
           status: close.status,
           childTools: [],
+          childTimeline: undefined,
           timestamp: item.timestamp ?? item.startedAt ?? Date.now(),
         });
         continue;
@@ -321,6 +388,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
         agents: item.agents,
         timedOut: item.timedOut,
         childTools: [],
+        childTimeline: undefined,
         timestamp: item.timestamp ?? Date.now(),
       });
     }
