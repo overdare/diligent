@@ -432,6 +432,8 @@ export const ThreadItemSchema = z.union([
     itemId: z.string(),
     message: AssistantMessageSchema,
     timestamp: z.number().int().optional(),
+    usage: UsageSchema.optional(),
+    cost: z.number().nonnegative().optional(),
     reasoningDurationMs: z.number().int().nonnegative().optional(),
     turnDurationMs: z.number().int().nonnegative().optional(),
   }),

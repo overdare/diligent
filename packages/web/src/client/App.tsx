@@ -355,7 +355,7 @@ export function App() {
                   console.log("[App][thread-status] rehydrate after idle notification", {
                     threadId,
                     isRunning: history.isRunning,
-                    messageCount: history.messages?.length ?? 0,
+                    itemCount: history.items.length,
                     entryCount: history.entryCount,
                   });
                   dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });

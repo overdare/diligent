@@ -411,19 +411,23 @@ test("steering_injected falls back to event text when local queue is empty", () 
 
 test("hydrateFromThreadRead restores user images from local_image blocks", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "user",
-        content: [
-          { type: "text", text: "What is in this screenshot?" },
-          {
-            type: "local_image",
-            path: "/repo/.diligent/images/thread-1/shot.png",
-            mediaType: "image/png",
-            fileName: "shot.png",
-          },
-        ],
-        timestamp: 100,
+        type: "userMessage",
+        itemId: "u1",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "What is in this screenshot?" },
+            {
+              type: "local_image",
+              path: "/repo/.diligent/images/thread-1/shot.png",
+              mediaType: "image/png",
+              fileName: "shot.png",
+            },
+          ],
+          timestamp: 100,
+        },
       },
     ],
     hasFollowUp: false,
@@ -441,18 +445,22 @@ test("hydrateFromThreadRead restores user images from local_image blocks", () =>
 
 test("hydrateFromThreadRead converts persisted local images to browser-safe route URLs", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "user",
-        content: [
-          {
-            type: "local_image",
-            path: "/repo/.diligent/images/thread-1/shot 1.png",
-            mediaType: "image/png",
-            fileName: "shot 1.png",
-          },
-        ],
-        timestamp: 101,
+        type: "userMessage",
+        itemId: "u1",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "local_image",
+              path: "/repo/.diligent/images/thread-1/shot 1.png",
+              mediaType: "image/png",
+              fileName: "shot 1.png",
+            },
+          ],
+          timestamp: 101,
+        },
       },
     ],
     hasFollowUp: false,
@@ -473,25 +481,27 @@ test("hydrateFromThreadRead converts persisted local images to browser-safe rout
 
 test("hydrateFromThreadRead restores tool_call input and merges matching tool_result output", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          { type: "tool_call", id: "tc-read-1", name: "read", input: { file_path: "/repo/src/app.ts" } },
-          { type: "text", text: "Reading file" },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-read-1",
         toolCallId: "tc-read-1",
         toolName: "read",
+        input: { file_path: "/repo/src/app.ts" },
+        timestamp: 100,
+        startedAt: 100,
+      },
+      {
+        type: "toolCall",
+        itemId: "tool:tc-read-1",
+        toolCallId: "tc-read-1",
+        toolName: "read",
+        input: { file_path: "/repo/src/app.ts" },
         output: "1| const x = 1;",
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
     ],
     hasFollowUp: false,
@@ -542,7 +552,6 @@ test("hydrateFromThreadRead reuses snapshot tool renders for bash start and comp
         },
       },
     ],
-    messages: [],
     hasFollowUp: false,
     entryCount: 2,
     isRunning: false,
@@ -583,7 +592,6 @@ test("hydrateFromThreadRead keeps assistant text when snapshot has message_end o
         },
       },
     ],
-    messages: [],
     hasFollowUp: false,
     entryCount: 1,
     isRunning: false,
@@ -596,26 +604,13 @@ test("hydrateFromThreadRead keeps assistant text when snapshot has message_end o
   expect(assistant && assistant.kind === "assistant" ? assistant.thinkingDone : false).toBe(true);
 });
 
-test("hydrateFromThreadRead prefers raw transcript over compacted context for post-compaction history", () => {
+test("hydrateFromThreadRead restores post-compaction history from snapshot items", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "user",
-        content: "recent user",
-        timestamp: 300,
-      },
-      {
-        role: "user",
-        content:
-          "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n\nCompacted summary",
-        timestamp: 400,
-      },
-    ],
-    transcript: [
-      {
-        type: "message",
-        id: "a1",
-        timestamp: "2026-02-25T10:00:00.000Z",
+        type: "userMessage",
+        itemId: "a1",
+        timestamp: 100,
         message: {
           role: "user",
           content: "old user",
@@ -623,9 +618,9 @@ test("hydrateFromThreadRead prefers raw transcript over compacted context for po
         },
       },
       {
-        type: "message",
-        id: "a2",
-        timestamp: "2026-02-25T10:00:01.000Z",
+        type: "agentMessage",
+        itemId: "a2",
+        timestamp: 200,
         message: {
           role: "assistant",
           content: [{ type: "text", text: "old assistant" }],
@@ -637,14 +632,16 @@ test("hydrateFromThreadRead prefers raw transcript over compacted context for po
       },
       {
         type: "compaction",
-        id: "c1",
-        timestamp: "2026-02-25T10:00:02.000Z",
+        itemId: "c1",
+        timestamp: 300,
         summary: "Compacted summary",
+        tokensBefore: 0,
+        tokensAfter: 0,
       },
       {
-        type: "message",
-        id: "a3",
-        timestamp: "2026-02-25T10:00:03.000Z",
+        type: "userMessage",
+        itemId: "a3",
+        timestamp: 500,
         message: {
           role: "user",
           content: "new user",
@@ -677,14 +674,18 @@ test("hydrateFromThreadRead prefers raw transcript over compacted context for po
 
 test("hydrateFromThreadRead keeps tool_result even without prior tool_call block", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-ls-1",
         toolCallId: "tc-ls-1",
         toolName: "ls",
+        input: {},
         output: "src/\nREADME.md",
         isError: false,
         timestamp: 200,
+        startedAt: 200,
+        durationMs: 0,
       },
     ],
     hasFollowUp: false,
@@ -700,29 +701,18 @@ test("hydrateFromThreadRead keeps tool_result even without prior tool_call block
 
 test("hydrateFromThreadRead shows running sub-agent as running when parent isRunning and not yet waited", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-spawn-1",
-            name: "spawn_agent",
-            input: { description: "do work" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-spawn-1",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
+        input: { description: "do work" },
         output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
     ],
     childSessions: [
@@ -748,55 +738,33 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
 
 test("hydrateFromThreadRead shows wait-derived final status on spawn item", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-spawn-1",
-            name: "spawn_agent",
-            input: { description: "do work" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-spawn-1",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
+        input: { description: "do work" },
         output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-wait-1",
-            name: "wait",
-            input: { ids: ["ses-child-1"] },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 102,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-wait-1",
         toolCallId: "tc-wait-1",
         toolName: "wait",
+        input: { ids: ["ses-child-1"] },
         output: JSON.stringify({
           status: { "ses-child-1": { kind: "completed", output: "done" } },
           timed_out: false,
         }),
         isError: false,
         timestamp: 103,
+        startedAt: 102,
+        durationMs: 1,
       },
     ],
     childSessions: [
@@ -834,49 +802,25 @@ test("hydrateFromThreadRead shows wait-derived final status on spawn item", () =
 
 test("hydrateFromThreadRead shows close-derived final status on spawn item", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-spawn-1",
-            name: "spawn_agent",
-            input: { description: "do work" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-spawn-1",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
+        input: { description: "do work" },
         output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-close-1",
-            name: "close_agent",
-            input: { id: "ses-child-1" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 102,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-close-1",
         toolCallId: "tc-close-1",
         toolName: "close_agent",
+        input: { id: "ses-child-1" },
         output: JSON.stringify({
           thread_id: "ses-child-1",
           nickname: "Cleo",
@@ -884,6 +828,8 @@ test("hydrateFromThreadRead shows close-derived final status on spawn item", () 
         }),
         isError: false,
         timestamp: 103,
+        startedAt: 102,
+        durationMs: 1,
       },
     ],
     childSessions: [
@@ -1429,29 +1375,18 @@ test("authoritative thread status from item notifications updates header state",
 
 test("hydrateFromThreadRead keeps sub-agent running until wait/close settles status", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-spawn-1",
-            name: "spawn_agent",
-            input: { description: "do work" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-spawn-1",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
+        input: { description: "do work" },
         output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
     ],
     childSessions: [
@@ -1477,34 +1412,25 @@ test("hydrateFromThreadRead keeps sub-agent running until wait/close settles sta
 
 test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pending snapshot", () => {
   const hydrated = hydrateFromThreadRead(initialThreadState, {
-    messages: [
+    items: [
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            id: "tc-spawn-1",
-            name: "spawn_agent",
-            input: { description: "do work" },
-          },
-        ],
-        model: "x",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        stopReason: "tool_use",
-        timestamp: 100,
-      },
-      {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-spawn-1",
         toolCallId: "tc-spawn-1",
         toolName: "spawn_agent",
+        input: { description: "do work" },
         output: JSON.stringify({ thread_id: "ses-child-1", nickname: "Cleo" }),
         isError: false,
         timestamp: 101,
+        startedAt: 100,
+        durationMs: 1,
       },
       {
-        role: "tool_result",
+        type: "toolCall",
+        itemId: "tool:tc-wait-1",
         toolCallId: "tc-wait-1",
         toolName: "wait",
+        input: { ids: ["ses-child-1"] },
         output: JSON.stringify({
           status: {
             "ses-child-1": { kind: "pending" },
@@ -1513,6 +1439,8 @@ test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pe
         }),
         isError: false,
         timestamp: 102,
+        startedAt: 101,
+        durationMs: 1,
       },
     ],
     childSessions: [

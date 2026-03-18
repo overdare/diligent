@@ -82,7 +82,6 @@ function formatUsageTooltip(usage: UsageState): string {
     `Output: ${usage.outputTokens.toLocaleString()}`,
     `Cache read: ${usage.cacheReadTokens.toLocaleString()}`,
     `Cache write: ${usage.cacheWriteTokens.toLocaleString()}`,
-    `Cost: $${usage.totalCost.toFixed(4)}`,
   ].join("\n");
 }
 
@@ -150,9 +149,9 @@ export function InputDock({
   const hasContext = currentContextTokens > 0;
   const contextPct = contextWindow > 0 ? Math.round((currentContextTokens / contextWindow) * 100) : 0;
   const usageLabel = hasContext
-    ? `${formatTokenCount(currentContextTokens)} / ${formatTokenCount(contextWindow)} (${contextPct}%) · $${usage.totalCost.toFixed(2)}`
+    ? `${formatTokenCount(currentContextTokens)} / ${formatTokenCount(contextWindow)} (${contextPct}%)`
     : hasUsage
-      ? `${formatTokenCount(totalTokens)} tokens · $${usage.totalCost.toFixed(2)}`
+      ? `${formatTokenCount(totalTokens)} tokens`
       : null;
 
   // Update slash menu when input changes
@@ -547,7 +546,7 @@ export function InputDock({
 
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             {usageLabel ? (
-              <span className="shrink-0 cursor-default text-xs text-muted/70" title={formatUsageTooltip(usage)}>
+              <span className="mr-1 shrink-0 cursor-default text-xs text-muted/70" title={formatUsageTooltip(usage)}>
                 {usageLabel}
               </span>
             ) : null}

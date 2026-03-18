@@ -268,7 +268,15 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
 
     if (message.role === "assistant") {
       const assistantTimestamp = message.timestamp;
-      items.push({ type: "agentMessage", itemId: entry.id, message, timestamp: assistantTimestamp });
+      const assistantCost = calculateUsageCost(resolveModel(message.model), message.usage);
+      items.push({
+        type: "agentMessage",
+        itemId: entry.id,
+        message,
+        timestamp: assistantTimestamp,
+        usage: message.usage,
+        cost: assistantCost,
+      });
 
       for (const block of message.content) {
         if (block.type !== "tool_call") continue;
@@ -328,8 +336,6 @@ export async function handleThreadRead(
 ): Promise<{
   cwd: string;
   items: ThreadItem[];
-  messages: unknown[];
-  transcript?: unknown[];
   errors: unknown[];
   childSessions?: unknown[];
   hasFollowUp: boolean;
@@ -369,8 +375,6 @@ export async function handleThreadRead(
   return {
     cwd: runtime.cwd,
     items,
-    messages,
-    transcript,
     errors: runtime.manager.getErrors(),
     childSessions: children.length > 0 ? children : undefined,
     hasFollowUp: runtime.manager.hasPendingMessages(),

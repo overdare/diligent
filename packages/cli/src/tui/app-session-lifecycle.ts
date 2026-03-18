@@ -185,6 +185,13 @@ export class AppSessionLifecycle {
           .map((block) => block.text)
           .join("");
         if (text.length > 0) this.deps.chatView.addAssistantMessage(text);
+        if (item.usage) {
+          this.deps.chatView.handleEvent({
+            type: "usage",
+            usage: item.usage,
+            cost: item.cost ?? 0,
+          });
+        }
         continue;
       }
       if (item.type === "toolCall" && typeof item.output === "string") {
