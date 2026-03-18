@@ -218,7 +218,7 @@ test("uses completed tool render payload so live read blocks match hydrated bloc
   expect(tool && tool.kind === "tool" ? tool.render : undefined).toEqual(completed.params.item.render);
 });
 
-test("keeps started render summary on error completion when completed render is missing", () => {
+test("merges started request summary with completed response summary", () => {
   resetAdapter();
   const started: DiligentServerNotification = {
     method: "item/started",
@@ -247,6 +247,7 @@ test("keeps started render summary on error completion when completed render is 
         toolName: "bash",
         output: "[Exit code: 1]",
         isError: true,
+        render: { version: 2, outputSummary: "Command failed (exit 1)", blocks: [] },
       },
     },
   };
@@ -258,6 +259,7 @@ test("keeps started render summary on error completion when completed render is 
   expect(tool).toBeDefined();
   expect(tool && tool.kind === "tool" ? tool.isError : false).toBe(true);
   expect(tool && tool.kind === "tool" ? tool.render?.inputSummary : undefined).toBe("exit 1");
+  expect(tool && tool.kind === "tool" ? tool.render?.outputSummary : undefined).toBe("Command failed (exit 1)");
 });
 
 test("creates a new assistant item when same itemId appears in a new turn", () => {

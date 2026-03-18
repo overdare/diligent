@@ -139,7 +139,6 @@ export class DiligentAppServer {
   private readonly connections = new Map<string, ConnectedPeer>();
   private readonly subscriptionMap = new Map<string, { connectionId: string; threadId: string }>();
   private readonly turnInitiators = new Map<string, string>(); // threadId → connectionId
-  private readonly toolCallsByThread = new Map<string, Map<string, { toolName: string; input: unknown }>>();
   private readonly pendingServerRequests = new Map<number, PendingServerRequest>();
   private serverRequestSeq = 0;
 
@@ -652,23 +651,13 @@ export class DiligentAppServer {
 
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     const runtime = this.threads.get(threadId);
-    const toolCalls = this.getOrCreateToolCalls(threadId);
     const notification = agentEventToNotification(threadId, turnId, event, {
       model: runtime?.agent?.model,
       threadStatus: runtime?.isRunning === true ? "busy" : undefined,
-      toolCalls,
     });
     if (notification) {
       await this.emit(notification);
     }
-  }
-
-  private getOrCreateToolCalls(threadId: string): Map<string, { toolName: string; input: unknown }> {
-    const existing = this.toolCallsByThread.get(threadId);
-    if (existing) return existing;
-    const created = new Map<string, { toolName: string; input: unknown }>();
-    this.toolCallsByThread.set(threadId, created);
-    return created;
   }
 
   // ─── Notification routing ───────────────────────────────────────────────────
@@ -694,7 +683,6 @@ export class DiligentAppServer {
       const params = notification.params as { threadId?: string };
       if (params.threadId) {
         this.turnInitiators.delete(params.threadId);
-        this.toolCallsByThread.delete(params.threadId);
       }
     }
 

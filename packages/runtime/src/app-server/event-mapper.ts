@@ -4,17 +4,29 @@ import type { Message, Model, UserMessage } from "@diligent/core";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "../protocol/index";
-import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-payload";
+import { createToolEndRenderPayloadFromInput } from "../tools/render-payload";
 
 interface NotificationContext {
   threadStatus?: "idle" | "busy";
   model?: Model;
-  toolCalls?: Map<string, { toolName: string; input: unknown }>;
 }
 
 type ThreadStatusSnapshot = {
   threadStatus?: "idle" | "busy";
 };
+
+function mergeToolRenderPayload(
+  started: import("@diligent/protocol").ToolRenderPayload | undefined,
+  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
+): import("@diligent/protocol").ToolRenderPayload | undefined {
+  if (!started) return completed;
+  if (!completed) return started;
+  return {
+    ...completed,
+    inputSummary: completed.inputSummary ?? started.inputSummary,
+    outputSummary: completed.outputSummary ?? started.outputSummary,
+  };
+}
 
 function withThreadStatus<T extends { threadId: string }>(
   params: T,
@@ -24,28 +36,6 @@ function withThreadStatus<T extends { threadId: string }>(
     ...params,
     ...(context?.threadStatus ? { threadStatus: context.threadStatus } : {}),
   };
-}
-
-function createToolEndRenderPayload(event: Extract<AgentEvent, { type: "tool_end" }>) {
-  if (event.render) return event.render;
-  return undefined;
-}
-
-function getToolCallKey(event: { itemId: string; toolCallId: string }): string {
-  return `${event.itemId}:${event.toolCallId}`;
-}
-
-function readCachedToolStartInput(
-  context: NotificationContext | undefined,
-  event: Extract<AgentEvent, { type: "tool_end" }>,
-): { toolName: string; input: unknown } | undefined {
-  const key = getToolCallKey(event);
-  const cached = context?.toolCalls?.get(key);
-  if (cached) {
-    context?.toolCalls?.delete(key);
-    return cached;
-  }
-  return undefined;
 }
 
 /**
@@ -115,7 +105,6 @@ export function agentEventToNotification(
       };
 
     case "tool_start":
-      context?.toolCalls?.set(getToolCallKey(event), { toolName: event.toolName, input: event.input });
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED,
         params: withThreadStatus(
@@ -128,7 +117,7 @@ export function agentEventToNotification(
               toolCallId: event.toolCallId,
               toolName: event.toolName,
               input: event.input,
-              render: createToolStartRenderPayload(event.toolName, event.input),
+              render: event.render,
             },
             ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },
@@ -152,15 +141,16 @@ export function agentEventToNotification(
       };
 
     case "tool_end": {
-      const cached = readCachedToolStartInput(context, event);
-      const derivedRender = cached
-        ? createToolEndRenderPayloadFromInput({
-            toolName: cached.toolName,
-            input: cached.input,
-            output: event.output,
-            isError: event.isError,
-          })
-        : undefined;
+      const fallbackRender =
+        event.render && !event.render.outputSummary
+          ? createToolEndRenderPayloadFromInput({
+              toolName: event.toolName,
+              input: {},
+              output: event.output,
+              isError: event.isError,
+            })
+          : undefined;
+      const resolvedRender = mergeToolRenderPayload(fallbackRender, event.render);
       return {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED,
         params: withThreadStatus(
@@ -175,7 +165,7 @@ export function agentEventToNotification(
               input: {},
               output: event.output,
               isError: event.isError,
-              render: createToolEndRenderPayload(event) ?? derivedRender,
+              render: resolvedRender,
             },
             ...(event.childThreadId ? { childThreadId: event.childThreadId, nickname: event.nickname } : {}),
           },

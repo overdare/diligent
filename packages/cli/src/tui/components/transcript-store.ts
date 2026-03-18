@@ -73,6 +73,18 @@ function toProtocolRenderPayload(value: unknown): ToolRenderPayload | undefined 
   return parsed.success ? parsed.data : undefined;
 }
 
+function mergeToolRenderPayload(
+  started: ToolRenderPayload | undefined,
+  completed: ToolRenderPayload | undefined,
+): ToolRenderPayload | undefined {
+  if (!started) return completed;
+  if (!completed) return started;
+  return {
+    ...completed,
+    inputSummary: completed.inputSummary ?? started.inputSummary,
+  };
+}
+
 function splitThoughtLines(text: string): string[] {
   const lines = text.split("\n");
   while (lines.length > 0 && lines[lines.length - 1] === "") {
@@ -133,6 +145,7 @@ export class TranscriptStore {
   private lastUsage: { input: number; output: number; cost: number } | null = null;
   private toolStartTimes = new Map<string, number>();
   private toolCallInputs = new Map<string, unknown>();
+  private toolStartRenderByCallId = new Map<string, ToolRenderPayload | undefined>();
   private collabState = new Map<string, { toolName: string; label: string; prompt?: string }>();
   private planCallCount = 0;
   private pendingSteers: string[] = [];
@@ -252,6 +265,7 @@ export class TranscriptStore {
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());
         this.toolCallInputs.set(event.toolCallId, event.input);
+        this.toolStartRenderByCallId.set(event.toolCallId, toProtocolRenderPayload(event.render));
         if (event.toolName === "plan") {
           const label = this.planCallCount === 0 ? "Planning…" : "Updating plan…";
           this.startOverlayStatus(label, "tool");
@@ -448,6 +462,7 @@ export class TranscriptStore {
     this.thinkingText = "";
     this.planCallCount = 0;
     this.toolCallInputs.clear();
+    this.toolStartRenderByCallId.clear();
     this.activeMarkdown = null;
   }
 
@@ -462,6 +477,7 @@ export class TranscriptStore {
     }
     this.planCallCount = 0;
     this.toolCallInputs.clear();
+    this.toolStartRenderByCallId.clear();
     if (this.activeMarkdown) {
       this.activeMarkdown.finalize();
       this.commitAssistantChunk(this.activeMarkdown);
@@ -538,10 +554,15 @@ export class TranscriptStore {
     this.stopOverlayStatus();
     const startTime = this.toolStartTimes.get(event.toolCallId);
     this.toolStartTimes.delete(event.toolCallId);
+    const startedRender = this.toolStartRenderByCallId.get(event.toolCallId);
+    this.toolStartRenderByCallId.delete(event.toolCallId);
     this.toolCallInputs.delete(event.toolCallId);
     const elapsedVal = startTime !== undefined ? formatElapsedSeconds(Date.now() - startTime) : null;
     const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
-    const renderPayload: ToolRenderPayload | undefined = toProtocolRenderPayload(event.render);
+    const renderPayload: ToolRenderPayload | undefined = mergeToolRenderPayload(
+      startedRender,
+      toProtocolRenderPayload(event.render),
+    );
 
     if (event.toolName === "plan") {
       this.planCallCount++;

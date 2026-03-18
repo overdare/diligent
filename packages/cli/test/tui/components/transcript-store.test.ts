@@ -321,4 +321,32 @@ describe("TranscriptStore", () => {
     expect(header).toContain("✗ bash - exit 1");
     expect(toolItem.summaryLine).toBe("⎿  Command failed (exit 1)");
   });
+
+  test("merges started request summary with completed response summary", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({
+      type: "tool_start",
+      toolCallId: "read_err_1",
+      toolName: "read",
+      input: { file_path: "README.md" },
+      render: { version: 2, inputSummary: "README.md", blocks: [] },
+    });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "read_err_1",
+      toolName: "read",
+      output: "Error: ENOENT",
+      isError: true,
+      render: { version: 2, outputSummary: "Read failed", blocks: [] },
+    });
+
+    const toolItem = store.getItems().find((item) => item.kind === "tool_result");
+    expect(toolItem).toBeDefined();
+    if (!toolItem || toolItem.kind !== "tool_result") throw new Error("Expected tool_result item");
+
+    const header = stripAnsi(toolItem.header);
+    expect(header).toContain("read - README.md");
+    expect(toolItem.summaryLine).toBe("⎿  Read failed");
+  });
 });

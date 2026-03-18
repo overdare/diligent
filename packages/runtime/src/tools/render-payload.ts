@@ -46,6 +46,12 @@ export function createToolStartRenderPayload(toolName: string, input: unknown): 
     const title = typeof parsedInput?.title === "string" ? parsedInput.title : "Plan";
     const stepCount = Array.isArray(parsedInput?.steps) ? parsedInput.steps.length : 0;
     inputSummary = summarizeRenderText(`${title} (${stepCount} steps)`, 120);
+  } else if (normalizedToolName === "read") {
+    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+    inputSummary = summarizeRenderText(filePath, 120);
+  } else if (normalizedToolName === "write") {
+    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+    inputSummary = summarizeRenderText(filePath, 120);
   } else if (normalizedToolName === "bash") {
     const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
     inputSummary = summarizeRenderText(command, 120);

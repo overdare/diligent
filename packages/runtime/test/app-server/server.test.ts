@@ -1158,9 +1158,98 @@ describe("DiligentAppServer", () => {
     });
   });
 
-  it("event mapper derives read/write/apply_patch error summaries from start input", () => {
-    const toolCalls = new Map<string, { toolName: string; input: unknown }>();
+  it("thread/read merges request and response summaries for resumed tool results", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig: makeFactoryRuntimeConfig() }),
+    );
+
+    connectTestPeer(server);
+
+    const paths = await ensureDiligentDir(projectRoot);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 3915,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const base = Date.now();
+    const sessionPath = join(paths.sessions, `${threadId}.jsonl`);
+    const entries = [
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: new Date(base).toISOString(),
+        message: { role: "user", content: "read missing", timestamp: base },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: new Date(base + 1).toISOString(),
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "tc-read-resume-1", name: "read", input: { file_path: "README.md" } }],
+          model: "fake-model",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "tool_use",
+          timestamp: base + 1,
+        },
+      },
+      {
+        type: "message",
+        id: "tr1",
+        parentId: "a1",
+        timestamp: new Date(base + 2).toISOString(),
+        message: {
+          role: "tool_result",
+          toolCallId: "tc-read-resume-1",
+          toolName: "read",
+          output: "Error: ENOENT",
+          isError: true,
+          timestamp: base + 2,
+          render: { version: 2, outputSummary: "Read failed", blocks: [] },
+        },
+      },
+    ];
+    const existing = await readFile(sessionPath, "utf8");
+    await writeFile(sessionPath, `${existing}${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 3916,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    const result = readResult(read) as {
+      items: Array<{
+        type: string;
+        toolCallId?: string;
+        output?: string;
+        render?: {
+          version: number;
+          inputSummary?: string;
+          outputSummary?: string;
+        };
+      }>;
+    };
+
+    const completedItem = result.items.find(
+      (item) =>
+        item.type === "toolCall" && item.toolCallId === "tc-read-resume-1" && item.output === "Error: ENOENT",
+    );
+    expect(completedItem?.render).toMatchObject({
+      version: 2,
+      inputSummary: "README.md",
+      outputSummary: "Read failed",
+    });
+  });
+
+  it("event mapper keeps request summary on start and response summary on error end", () => {
     const startRead = agentEventToNotification(
       "thread-1",
       "turn-1",
@@ -1170,10 +1259,15 @@ describe("DiligentAppServer", () => {
         toolCallId: "tc-read-1",
         toolName: "read",
         input: { file_path: "README.md" },
+        render: { version: 2, inputSummary: "README.md", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     expect(startRead?.method).toBe("item/started");
+    if (!startRead || startRead.method !== "item/started") throw new Error("Expected item/started read");
+    expect(startRead.params.item).toMatchObject({
+      render: { version: 2, inputSummary: "README.md" },
+    });
 
     const endRead = agentEventToNotification(
       "thread-1",
@@ -1185,12 +1279,13 @@ describe("DiligentAppServer", () => {
         toolName: "read",
         output: "Error: ENOENT",
         isError: true,
+        render: { version: 2, outputSummary: "Read failed", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     if (!endRead || endRead.method !== "item/completed") throw new Error("Expected item/completed read");
     expect(endRead.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "README.md", outputSummary: "Read failed" },
+      render: { version: 2, outputSummary: "Read failed" },
     });
 
     const startWrite = agentEventToNotification(
@@ -1202,10 +1297,15 @@ describe("DiligentAppServer", () => {
         toolCallId: "tc-write-1",
         toolName: "write",
         input: { file_path: "src/app.ts", content: "x" },
+        render: { version: 2, inputSummary: "src/app.ts", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     expect(startWrite?.method).toBe("item/started");
+    if (!startWrite || startWrite.method !== "item/started") throw new Error("Expected item/started write");
+    expect(startWrite.params.item).toMatchObject({
+      render: { version: 2, inputSummary: "src/app.ts" },
+    });
 
     const endWrite = agentEventToNotification(
       "thread-1",
@@ -1217,12 +1317,13 @@ describe("DiligentAppServer", () => {
         toolName: "write",
         output: "Error: Permission denied",
         isError: true,
+        render: { version: 2, outputSummary: "Write failed", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     if (!endWrite || endWrite.method !== "item/completed") throw new Error("Expected item/completed write");
     expect(endWrite.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "src/app.ts", outputSummary: "Write failed" },
+      render: { version: 2, outputSummary: "Write failed" },
     });
 
     const startPatch = agentEventToNotification(
@@ -1243,10 +1344,15 @@ describe("DiligentAppServer", () => {
             "*** End Patch",
           ].join("\n"),
         },
+        render: { version: 2, inputSummary: "src/a.ts", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     expect(startPatch?.method).toBe("item/started");
+    if (!startPatch || startPatch.method !== "item/started") throw new Error("Expected item/started patch");
+    expect(startPatch.params.item).toMatchObject({
+      render: { version: 2, inputSummary: "src/a.ts" },
+    });
 
     const endPatch = agentEventToNotification(
       "thread-1",
@@ -1258,17 +1364,17 @@ describe("DiligentAppServer", () => {
         toolName: "apply_patch",
         output: "Patch failed: context mismatch",
         isError: true,
+        render: { version: 2, outputSummary: "Patch failed", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
     if (!endPatch || endPatch.method !== "item/completed") throw new Error("Expected item/completed patch");
     expect(endPatch.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "src/a.ts", outputSummary: "Patch failed" },
+      render: { version: 2, outputSummary: "Patch failed" },
     });
   });
 
   it("event mapper and thread/read snapshot use the same bash start render summary", () => {
-    const toolCalls = new Map<string, { toolName: string; input: unknown }>();
     const notification = agentEventToNotification(
       "thread-1",
       "turn-1",
@@ -1278,8 +1384,9 @@ describe("DiligentAppServer", () => {
         toolCallId: "tc-bash-1",
         toolName: "bash",
         input: { command: "pwd", description: "Print working directory" },
+        render: { version: 2, inputSummary: "pwd", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
 
     expect(notification).not.toBeNull();
@@ -1306,8 +1413,9 @@ describe("DiligentAppServer", () => {
         toolName: "bash",
         output: "[Exit code: 1]",
         isError: true,
+        render: { version: 2, outputSummary: "Command failed (exit 1)", blocks: [] },
       },
-      { threadStatus: "busy", toolCalls },
+      { threadStatus: "busy" },
     );
 
     expect(completed).not.toBeNull();
@@ -1320,7 +1428,6 @@ describe("DiligentAppServer", () => {
       toolCallId: "tc-bash-1",
       render: {
         version: 2,
-        inputSummary: "pwd",
         outputSummary: "Command failed (exit 1)",
       },
     });

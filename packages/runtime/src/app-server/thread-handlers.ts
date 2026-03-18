@@ -213,6 +213,19 @@ type ThreadReadTranscriptEntry =
   | { type: "compaction"; id: string; timestamp: string; summary: string }
   | { type: "message"; id: string; timestamp: string; message: UserMessage | AssistantMessage | ToolResultMessage };
 
+function mergeToolRenderPayload(
+  started: import("@diligent/protocol").ToolRenderPayload | undefined,
+  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
+): import("@diligent/protocol").ToolRenderPayload | undefined {
+  if (!started) return completed;
+  if (!completed) return started;
+  return {
+    ...completed,
+    inputSummary: completed.inputSummary ?? started.inputSummary,
+    outputSummary: completed.outputSummary ?? started.outputSummary,
+  };
+}
+
 function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadItem[] {
   const items: ThreadItem[] = [];
   const toolStartsByCallId = new Map<
@@ -289,6 +302,7 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
         output: message.output,
         isError: message.isError,
       });
+      const startRender = start ? createToolStartRenderPayload(start.toolName, start.input) : undefined;
       items.push({
         type: "toolCall",
         itemId: start?.itemId ?? `tool:${message.toolCallId}`,
@@ -300,7 +314,7 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
         durationMs: Math.max(0, message.timestamp - (start?.startedAt ?? message.timestamp)),
         output: message.output,
         isError: message.isError,
-        render: message.render ?? derivedRender,
+        render: mergeToolRenderPayload(startRender, message.render ?? derivedRender),
       });
     }
   }

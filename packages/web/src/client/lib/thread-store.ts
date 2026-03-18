@@ -211,6 +211,18 @@ function toToolRenderPayload(value: unknown): import("@diligent/protocol").ToolR
   return parsed.success ? parsed.data : undefined;
 }
 
+function mergeToolRenderPayload(
+  started: import("@diligent/protocol").ToolRenderPayload | undefined,
+  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
+): import("@diligent/protocol").ToolRenderPayload | undefined {
+  if (!started) return completed;
+  if (!completed) return started;
+  return {
+    ...completed,
+    inputSummary: completed.inputSummary ?? started.inputSummary,
+  };
+}
+
 function extractAssistantTextFromMessage(message: AssistantMessage): { text: string; thinking: string } {
   type AssistantContentBlock = AssistantMessage["content"][number];
   const text = message.content
@@ -472,7 +484,10 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
                   typeof (event as { durationMs?: number }).durationMs === "number"
                     ? (event as { durationMs?: number }).durationMs!
                     : Date.now() - current.startedAt,
-                render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? current.render,
+                render: mergeToolRenderPayload(
+                  current.render,
+                  ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
+                ),
               }
             : current,
         ),

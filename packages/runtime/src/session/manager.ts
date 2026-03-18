@@ -7,6 +7,7 @@ import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
+import { createToolStartRenderPayload } from "../tools/render-payload";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
 import { SessionPersistence, type SessionReconcileResult } from "./persistence";
 import { SessionStateStore } from "./state-store";
@@ -534,7 +535,12 @@ export class SessionManager {
     const enriched: AgentEvent =
       event.type === "usage" && this._agent
         ? { ...event, cost: calculateUsageCost(this._agent.model, event.usage) }
-        : (event as AgentEvent);
+        : event.type === "tool_start"
+          ? {
+              ...event,
+              render: createToolStartRenderPayload(event.toolName, event.input),
+            }
+          : (event as AgentEvent);
     for (const fn of this.listeners) fn(enriched);
   }
 

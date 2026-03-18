@@ -148,7 +148,7 @@ test("item lifecycle: toolCall started → delta → completed", () => {
   }
 });
 
-test("toolCall completed falls back to started render when completed render is missing", () => {
+test("toolCall completed merges started inputSummary with completed outputSummary", () => {
   const adapter = makeAdapter();
 
   const started: DiligentServerNotification = {
@@ -179,6 +179,7 @@ test("toolCall completed falls back to started render when completed render is m
         toolName: "bash",
         output: "done",
         isError: true,
+        render: { version: 2, outputSummary: "Command failed", blocks: [] },
       },
     },
   };
@@ -188,7 +189,12 @@ test("toolCall completed falls back to started render when completed render is m
   expect(events).toHaveLength(1);
   expect(events[0].type).toBe("tool_end");
   if (events[0].type === "tool_end") {
-    expect(events[0].render).toEqual({ version: 2, inputSummary: "ls", blocks: [] });
+    expect(events[0].render).toEqual({
+      version: 2,
+      inputSummary: "ls",
+      outputSummary: "Command failed",
+      blocks: [],
+    });
   }
 });
 

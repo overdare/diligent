@@ -15,6 +15,18 @@ function createEmptyAssistantMessage(model = "unknown"): AssistantMessage {
   };
 }
 
+function mergeToolRenderPayload(
+  started: import("@diligent/protocol").ToolRenderPayload | undefined,
+  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
+): import("@diligent/protocol").ToolRenderPayload | undefined {
+  if (!started) return completed;
+  if (!completed) return started;
+  return {
+    ...completed,
+    inputSummary: completed.inputSummary ?? started.inputSummary,
+  };
+}
+
 export class ProtocolNotificationAdapter {
   private agentMessageByItemId = new Map<string, AssistantMessage>();
   private toolCallByItemId = new Map<
@@ -308,7 +320,7 @@ export class ProtocolNotificationAdapter {
           toolName: started?.toolName ?? item.toolName,
           output: item.output ?? "",
           isError: item.isError ?? false,
-          render: item.render ?? started?.render,
+          render: mergeToolRenderPayload(started?.render, item.render),
           ...(childThreadId ? { childThreadId, nickname } : {}),
         },
       ];

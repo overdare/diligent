@@ -118,6 +118,7 @@ function toToolCallExecution(
     toolName: toolCall.name,
     output: result.output,
     isError: toolResult.isError,
+    render: result.render,
   });
 
   return { toolCall, toolResult };
