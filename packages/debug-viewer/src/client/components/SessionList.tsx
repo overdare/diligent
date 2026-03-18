@@ -37,7 +37,9 @@ export function SessionList({ sessions, selectedId, onSelect, loading }: Session
           onClick={() => onSelect(session.id)}
         >
           <div className="session-id">{session.id}</div>
-          {session.firstUserMessage && <div className="session-preview">{truncatePreview(session.firstUserMessage)}</div>}
+          {session.firstUserMessage && (
+            <div className="session-preview">{truncatePreview(session.firstUserMessage)}</div>
+          )}
           <div className="session-meta">
             <span className="session-time">{formatTime(session.lastActivity)}</span>
             <span className="session-counts">

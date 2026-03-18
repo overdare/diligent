@@ -3,8 +3,8 @@ import { basename } from "node:path";
 import type {
   AssistantMessageEntry,
   CompactionEntry,
-  ErrorEntry,
   EffortChangeEntry,
+  ErrorEntry,
   ModeChangeEntry,
   ModelChangeEntry,
   SessionEntry,
@@ -307,9 +307,7 @@ export function extractSessionMeta(filePath: string, entries: SessionEntry[]): S
         if (typeof entry.content === "string") {
           firstUserMessage = entry.content;
         } else {
-          const textParts = entry.content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text);
+          const textParts = entry.content.filter((block) => block.type === "text").map((block) => block.text);
           if (textParts.length > 0) {
             firstUserMessage = textParts.join(" ");
           }

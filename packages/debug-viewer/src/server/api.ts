@@ -1,7 +1,8 @@
 // @summary REST API endpoint handlers for sessions, search, and knowledge queries
+
+import { resolveModel } from "@diligent/core/llm/models";
 import { readdirSync } from "fs";
 import { join } from "path";
-import { resolveModel } from "@diligent/core/llm/models";
 import type {
   KnowledgeResponse,
   SearchResponse,
@@ -183,21 +184,19 @@ export function createApiHandler(dataDir: string) {
         summary.totals.cacheWriteTokens += assistant.usage.cacheWriteTokens;
         summary.totals.totalTokens += assistant.usage.inputTokens + assistant.usage.outputTokens;
 
-        const item =
-          modelMap.get(assistant.model) ??
-          {
-            model: assistant.model,
-            messageCount: 0,
-            pricedMessageCount: 0,
-            totalCost: 0,
-            totals: {
-              inputTokens: 0,
-              outputTokens: 0,
-              cacheReadTokens: 0,
-              cacheWriteTokens: 0,
-              totalTokens: 0,
-            },
-          };
+        const item = modelMap.get(assistant.model) ?? {
+          model: assistant.model,
+          messageCount: 0,
+          pricedMessageCount: 0,
+          totalCost: 0,
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 0,
+          },
+        };
 
         item.messageCount++;
         item.totals.inputTokens += assistant.usage.inputTokens;

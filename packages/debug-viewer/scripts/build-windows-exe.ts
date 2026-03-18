@@ -1,6 +1,6 @@
 // @summary Build Windows exe bundle for debug-viewer without requiring Bun on user machines
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { join, resolve } from "path";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const repoRoot = resolve(packageRoot, "../..");
@@ -22,15 +22,7 @@ if ((await buildClient.exited) !== 0) {
 
 console.log("[debug-viewer] Building windows exe...");
 const buildExe = Bun.spawn(
-  [
-    "bun",
-    "build",
-    "--compile",
-    "--target=bun-windows-x64",
-    "src/server/index.ts",
-    "--outfile",
-    exePath,
-  ],
+  ["bun", "build", "--compile", "--target=bun-windows-x64", "src/server/index.ts", "--outfile", exePath],
   {
     cwd: packageRoot,
     stdout: "inherit",

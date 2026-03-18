@@ -223,14 +223,14 @@ describe("detectEntryType", () => {
       fatal: true,
       error: {
         message:
-          "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"tools.16.custom.input_schema: input_schema does not support oneOf, allOf\"}}",
+          '400 {"type":"error","error":{"type":"invalid_request_error","message":"tools.16.custom.input_schema: input_schema does not support oneOf, allOf"}}',
       },
     });
 
     expect(err).not.toBeNull();
     expect((err as Record<string, unknown>).type).toBe("error");
     expect((err as Record<string, unknown>).fatal).toBe(true);
-    expect(((err as { error: { message: string } }).error.message).length).toBeGreaterThan(0);
+    expect((err as { error: { message: string } }).error.message.length).toBeGreaterThan(0);
   });
 });
 

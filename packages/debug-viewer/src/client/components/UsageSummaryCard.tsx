@@ -70,7 +70,8 @@ export function UsageSummaryCard({ summary, loading, className, modelLimit = 3 }
 
       {summary.unpricedMessageCount > 0 && (
         <div className="usage-note">
-          {formatNumber(summary.unpricedMessageCount)} assistant messages had unknown pricing and were excluded from cost.
+          {formatNumber(summary.unpricedMessageCount)} assistant messages had unknown pricing and were excluded from
+          cost.
         </div>
       )}
 

@@ -1239,8 +1239,7 @@ describe("DiligentAppServer", () => {
     };
 
     const completedItem = result.items.find(
-      (item) =>
-        item.type === "toolCall" && item.toolCallId === "tc-read-resume-1" && item.output === "Error: ENOENT",
+      (item) => item.type === "toolCall" && item.toolCallId === "tc-read-resume-1" && item.output === "Error: ENOENT",
     );
     expect(completedItem?.render).toMatchObject({
       version: 2,
