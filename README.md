@@ -27,6 +27,22 @@ make dev
 
 Resume the last session with `--continue`, or list past sessions with `--list`.
 
+## Commit and PR title convention
+
+Commit and PR titles are enforced with the same format:
+
+`<type>(<scope>): <summary>`
+
+- Allowed `type`: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
+- `scope`: lowercase letters, numbers, and `-`
+- `summary`: short, clear, and up to 72 characters
+
+Examples:
+
+- `feat(runtime): add session append batching`
+- `fix(cli): prevent duplicate redraw on resize`
+- `chore(ci): bump github actions versions`
+
 ## Completion bell (terminal)
 
 Diligent rings the terminal bell when a turn completes in CLI/TUI.

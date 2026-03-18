@@ -6,6 +6,11 @@ pre-commit:
     typecheck:
       run: bun run typecheck
 
+commit-msg:
+  commands:
+    title:
+      run: bun run validate:title --file {1}
+
 pre-push:
   parallel: true
   only:

@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "postinstall": "lefthook install --force && bash scripts/patch-hooks.sh",
+    "validate:title": "bun scripts/validate-title.ts",
     "test": "NO_COLOR=1 FORCE_COLOR=0 bun test",
     "test:e2e": "bun test packages/e2e/",
     "web:dev": "bun run packages/web/src/server/index.ts --dev",
