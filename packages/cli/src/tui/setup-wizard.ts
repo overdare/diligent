@@ -50,14 +50,19 @@ export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
 
   return {
     async runSetupWizard(): Promise<void> {
-      deps.addLines(["", `  ${t.warn}No API key found.${t.reset} Let's set one up.`, ""]);
+      deps.addLines([
+        "",
+        `  ${t.warn}No AI connection found.${t.reset} Let's set it up together.`,
+        `  ${t.dim}Tip: ChatGPT is the easiest first option for most users (browser login, no API key).${t.reset}`,
+        "",
+      ]);
       deps.requestRender();
 
       // Step 1: Pick provider
       const provider = await wizardPickProvider();
       if (!provider) {
         deps.addLines([
-          `  ${t.dim}Setup skipped. Use /provider set <anthropic|openai|chatgpt|gemini> to configure later.${t.reset}`,
+          `  ${t.dim}Setup skipped. Run /provider set chatgpt anytime for the fastest setup.${t.reset}`,
           "",
         ]);
         deps.requestRender();
@@ -69,14 +74,14 @@ export function createSetupWizard(deps: SetupWizardDeps): SetupWizard {
         const ctx = deps.buildCommandContext();
         await promptApiKey("chatgpt", ctx);
         if (!deps.config.providerManager.hasKeyFor("chatgpt")) {
-          deps.addLines([`  ${t.dim}Setup skipped. Use /provider set chatgpt to configure later.${t.reset}`, ""]);
+          deps.addLines([`  ${t.dim}Setup paused. Run /provider set chatgpt when you're ready.${t.reset}`, ""]);
           deps.requestRender();
           return;
         }
       } else {
         const apiKey = await wizardEnterApiKey(provider);
         if (!apiKey) {
-          deps.addLines([`  ${t.dim}Setup skipped. Use /provider set ${provider} to configure later.${t.reset}`, ""]);
+          deps.addLines([`  ${t.dim}Setup paused. Run /provider set ${provider} when you're ready.${t.reset}`, ""]);
           deps.requestRender();
           return;
         }

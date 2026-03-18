@@ -86,14 +86,22 @@ export function ProviderSettingsModal({
   }, [onOAuthStart]);
 
   const isConnected = (p: ProviderAuthStatus) => p.configured || p.oauthConnected;
+  const orderedProviders = [
+    ...providers.filter((provider) => provider.provider === "chatgpt"),
+    ...providers.filter((provider) => provider.provider !== "chatgpt"),
+  ];
 
   // Display combined error from local state or OAuth notification
   const displayError = error || oauthError;
 
   return (
-    <Modal title="Providers" description="Manage API keys for each provider." onCancel={onClose}>
+    <Modal
+      title="Connect AI"
+      description="For most users, start with ChatGPT (browser login). You can also connect other providers with API keys."
+      onCancel={onClose}
+    >
       <div className="space-y-3">
-        {providers.map((p) => {
+        {orderedProviders.map((p) => {
           const isSaving = savingProvider === p.provider;
           const isFocused = focusProvider === p.provider;
           return (
@@ -132,11 +140,15 @@ export function ProviderSettingsModal({
                         }
                       }}
                     >
-                      Connect
+                      {p.provider === "chatgpt" ? "Sign in" : "Connect"}
                     </Button>
                   )
                 ) : null}
               </div>
+
+              {p.provider === "chatgpt" && !isConnected(p) ? (
+                <div className="mt-1.5 text-xs text-muted">Recommended first setup — no API key needed.</div>
+              ) : null}
 
               {editingProvider === p.provider ? (
                 <div className="mt-2 space-y-2">

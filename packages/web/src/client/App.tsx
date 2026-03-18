@@ -286,6 +286,7 @@ export function App() {
 
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: uses steeringQueue refs intentionally without effect churn
   useEffect(() => {
     const rpc = getRpc();
     if (!rpc) return;
@@ -364,7 +365,24 @@ export function App() {
           }
         }
       }
-      const events = notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
+      const events =
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
+        events.push({ type: "status_change", status: notification.params.status });
+      }
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
+        events.push({
+          type: "turn_start",
+          turnId: notification.params.turnId,
+          ...(notification.params.childThreadId
+            ? {
+                childThreadId: notification.params.childThreadId,
+                nickname: notification.params.nickname,
+                turnNumber: notification.params.turnNumber,
+              }
+            : {}),
+        });
+      }
       const shouldSuppressSteeringInjected =
         steeringQueue.suppressNextSteeringInjectedRef.current &&
         events.some((event) => event.type === "steering_injected");
@@ -947,7 +965,6 @@ export function App() {
       })),
     [pendingImages],
   );
-  const handleSelectPrompt = useCallback((prompt: string) => setActiveInput(prompt), [setActiveInput]);
   const handleQuestionAnswerChange = useCallback(
     (id: string, val: string | string[]) => serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
     [serverRequests.setAnswers],
@@ -962,9 +979,15 @@ export function App() {
     setShowProviderModal(true);
   }, []);
   const handleQuickConnectChatGPT = useCallback(() => {
-    setFocusedProvider("chatgpt");
-    setShowProviderModal(true);
-  }, []);
+    setOauthPending(true);
+    setOauthError(null);
+    void providerMgr.handleOAuthStart("chatgpt").catch((error) => {
+      setOauthPending(false);
+      setOauthError(error instanceof Error ? error.message : "Failed to start OAuth");
+      setFocusedProvider("chatgpt");
+      setShowProviderModal(true);
+    });
+  }, [providerMgr]);
   const { handleSteer, canSteer } = steeringQueue;
   const handleInterrupt = () => {
     void interruptTurn();
@@ -1063,9 +1086,9 @@ export function App() {
             threadStatus={state.threadStatus}
             threadCwd={state.activeThreadCwd ?? undefined}
             hasProvider={hasProvider}
+            oauthPending={oauthPending}
             onOpenProviders={handleOpenProviders}
             onQuickConnectChatGPT={handleQuickConnectChatGPT}
-            onSelectPrompt={handleSelectPrompt}
             approvalPrompt={approvalPrompt}
             questionPrompt={questionPrompt}
           />
@@ -1096,8 +1119,6 @@ export function App() {
             currentContextTokens={state.currentContextTokens}
             contextWindow={contextWindow}
             hasProvider={hasProvider}
-            onOpenProviders={handleOpenProviders}
-            onQuickConnectChatGPT={handleQuickConnectChatGPT}
             supportsVision={supportsVision}
             supportsThinking={supportsThinking}
             pendingImages={pendingImagePreviews}
@@ -1111,6 +1132,7 @@ export function App() {
           {showToolModal ? (
             <ToolSettingsModal
               threadId={state.activeThreadId}
+              providers={providerMgr.providers}
               onList={listTools}
               onSave={saveTools}
               onOpenProviders={() => {

@@ -88,8 +88,9 @@ async function main() {
     const provider = (config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
     if (!config.providerManager.hasKeyFor(provider)) {
       console.error(
-        `Error: No API key for ${provider}.\n` +
-          `Save a key to ~/.diligent/auth.jsonc, or run diligent interactively to configure.`,
+        `Error: No AI provider is connected for ${provider}.\n` +
+          `Run 'diligent' in interactive mode and follow the setup wizard (recommended: ChatGPT).\n` +
+          `Or manually save credentials in ~/.diligent/auth.jsonc.`,
       );
       process.exit(1);
     }

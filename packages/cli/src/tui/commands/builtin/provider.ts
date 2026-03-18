@@ -16,7 +16,7 @@ import type { Command, CommandContext } from "../types";
 
 export const providerCommand: Command = {
   name: "provider",
-  description: "Switch provider or manage API keys",
+  description: "Connect AI providers and switch models",
   supportsArgs: true,
   handler: async (args, ctx) => {
     const parts = args?.trim().split(/\s+/) ?? [];
@@ -254,7 +254,10 @@ function showProviderStatus(ctx: CommandContext): void {
   }
 
   lines.push("");
-  lines.push(`  ${t.dim}Use /provider set <name> to add auth, /provider <name> to switch.${t.reset}`);
+  lines.push(`  ${t.dim}Quick start: /provider set chatgpt (recommended for most users).${t.reset}`);
+  lines.push(
+    `  ${t.dim}Or use /provider set <name> to connect another provider, /provider <name> to switch.${t.reset}`,
+  );
   lines.push("");
 
   ctx.displayLines(lines);
@@ -313,7 +316,7 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
       } else {
         await saveAuthKey(provider, apiKey);
       }
-      ctx.displayLines([`  ${t.success}Key saved to auth.json.${t.reset}`]);
+      ctx.displayLines([`  ${t.success}Connected.${t.reset} Key saved to auth.json.`]);
     } catch (err) {
       ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
     }

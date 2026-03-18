@@ -1,15 +1,31 @@
 // @summary Modal for listing and updating built-in tool/plugin settings through shared RPC methods
 
-import type { ToolsListResponse, ToolsSetParams, ToolsSetResponse } from "@diligent/protocol";
+import type { ProviderAuthStatus, ToolsListResponse, ToolsSetParams, ToolsSetResponse } from "@diligent/protocol";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 
+const PROVIDER_BADGE_STYLE: Record<string, string> = {
+  anthropic: "border-provider-anthropic/30 bg-provider-anthropic/10 text-provider-anthropic",
+  openai: "border-provider-openai/30 bg-provider-openai/10 text-provider-openai",
+  chatgpt: "border-provider-chatgpt/30 bg-provider-chatgpt/10 text-provider-chatgpt",
+  gemini: "border-provider-gemini/30 bg-provider-gemini/10 text-provider-gemini",
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+};
+
 interface ToolSettingsModalProps {
   threadId?: string | null;
   initialState?: ToolsListResponse;
+  providers?: ProviderAuthStatus[];
   onList: (threadId?: string) => Promise<ToolsListResponse>;
   onSave: (params: ToolsSetParams) => Promise<ToolsSetResponse>;
+  onOpenProviders?: () => void;
   onClose: () => void;
   className?: string;
 }
@@ -106,8 +122,10 @@ function pluginSummary(plugin: ToolsListResponse["plugins"][number]): string {
 export function ToolSettingsModal({
   threadId,
   initialState,
+  providers,
   onList,
   onSave,
+  onOpenProviders,
   onClose,
   className,
 }: ToolSettingsModalProps) {
@@ -168,6 +186,7 @@ export function ToolSettingsModal({
   }, [state]);
 
   const currentPluginDrafts = draft?.plugins ?? [];
+  const connectedProviders = (providers ?? []).filter((provider) => provider.configured || provider.oauthConnected);
 
   const handleBuiltinToggle = (name: string, enabled: boolean) => {
     setDraft((current) => {
@@ -301,6 +320,35 @@ export function ToolSettingsModal({
 
           {state && draft ? (
             <div className="space-y-4">
+              {onOpenProviders ? (
+                <section className="space-y-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text">AI connection</h3>
+                    <p className="text-xs text-muted">Manage your connected AI accounts and login methods.</p>
+                  </div>
+                  <div className="rounded-lg border border-border/100 bg-surface-dark px-3 py-2.5">
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                      {connectedProviders.length > 0 ? (
+                        connectedProviders.map((provider) => (
+                          <span
+                            key={provider.provider}
+                            className={`rounded border px-2 py-0.5 text-xs ${PROVIDER_BADGE_STYLE[provider.provider] ?? "border-border/100 bg-surface-light text-text"}`}
+                          >
+                            {PROVIDER_LABELS[provider.provider] ?? provider.provider}
+                            {provider.oauthConnected ? " (OAuth)" : ""}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted">No provider connected</span>
+                      )}
+                    </div>
+                    <Button intent="ghost" size="sm" onClick={onOpenProviders}>
+                      Open AI connection settings
+                    </Button>
+                  </div>
+                </section>
+              ) : null}
+
               <section className="space-y-2">
                 <div>
                   <h3 className="text-sm font-semibold text-text">Built-in tools</h3>

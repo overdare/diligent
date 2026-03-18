@@ -29,7 +29,10 @@ interface MessageListProps {
   items: RenderItem[];
   threadStatus: ThreadStatus;
   threadCwd?: string;
-  onSelectPrompt: (prompt: string) => void;
+  hasProvider: boolean;
+  oauthPending?: boolean;
+  onOpenProviders: () => void;
+  onQuickConnectChatGPT?: () => void;
   approvalPrompt?: { request: ApprovalRequest; onDecide: (decision: "once" | "always" | "reject") => void } | null;
   questionPrompt?: {
     request: UserInputRequest;
@@ -85,7 +88,10 @@ function MessageListImpl({
   items,
   threadStatus,
   threadCwd,
-  onSelectPrompt,
+  hasProvider,
+  oauthPending,
+  onOpenProviders,
+  onQuickConnectChatGPT,
   approvalPrompt,
   questionPrompt,
 }: MessageListProps) {
@@ -140,7 +146,12 @@ function MessageListImpl({
     <div className="relative min-h-0 flex-1 bg-bg-sunken">
       <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto bg-bg-sunken px-7 py-6">
         {items.length === 0 && !hasPrompt ? (
-          <EmptyState onSelectPrompt={onSelectPrompt} />
+          <EmptyState
+            hasProvider={hasProvider}
+            oauthPending={oauthPending}
+            onOpenProviders={onOpenProviders}
+            onQuickConnectChatGPT={onQuickConnectChatGPT}
+          />
         ) : (
           <div className="space-y-3">
             {groupedItems}

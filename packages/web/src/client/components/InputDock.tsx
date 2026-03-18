@@ -33,8 +33,6 @@ interface InputDockProps {
   currentContextTokens: number;
   contextWindow: number;
   hasProvider: boolean;
-  onOpenProviders: () => void;
-  onQuickConnectChatGPT?: () => void;
   supportsVision: boolean;
   supportsThinking: boolean;
   pendingImages: Array<{ path: string; url: string; fileName?: string }>;
@@ -125,8 +123,6 @@ export function InputDock({
   currentContextTokens,
   contextWindow,
   hasProvider,
-  onOpenProviders,
-  onQuickConnectChatGPT,
   supportsVision,
   supportsThinking,
   pendingImages,
@@ -365,7 +361,9 @@ export function InputDock({
             <TextArea
               className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
               aria-label={isBusy ? "Steering input" : "Message input"}
-              placeholder={isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"}
+              placeholder={
+                isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
+              }
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
               onCompositionStart={() => {
@@ -399,21 +397,21 @@ export function InputDock({
                 }}
               />
 
-                <button
-                  type="button"
-                  aria-label="Open composer options"
-                  aria-haspopup="menu"
-                  aria-expanded={isPlusMenuOpen}
-                  onClick={togglePlusMenu}
-                  disabled={composerDisabled}
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
-                    isPlusMenuOpen
-                      ? "border-border/100 bg-fill-secondary text-text"
-                      : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
-                >
-                  +
-                </button>
+              <button
+                type="button"
+                aria-label="Open composer options"
+                aria-haspopup="menu"
+                aria-expanded={isPlusMenuOpen}
+                onClick={togglePlusMenu}
+                disabled={composerDisabled}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
+                  isPlusMenuOpen
+                    ? "border-border/100 bg-fill-secondary text-text"
+                    : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                +
+              </button>
 
               {isPlusMenuOpen ? (
                 <div
@@ -591,7 +589,6 @@ export function InputDock({
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -1,20 +1,10 @@
 // @summary Sidebar with thread list, new thread button, and relative timestamps
 
-import type { ProviderAuthStatus, SessionSummary } from "@diligent/protocol";
+import type { SessionSummary } from "@diligent/protocol";
 import { memo } from "react";
 import { APP_PROJECT_MARK } from "../lib/app-config";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
-
-const PROVIDER_STYLE: Record<string, { label: string; className: string }> = {
-  anthropic: {
-    label: "Anthropic",
-    className: "border-provider-anthropic/30 bg-provider-anthropic/10 text-provider-anthropic",
-  },
-  openai: { label: "OpenAI", className: "border-provider-openai/30 bg-provider-openai/10 text-provider-openai" },
-  chatgpt: { label: "ChatGPT", className: "border-provider-chatgpt/30 bg-provider-chatgpt/10 text-provider-chatgpt" },
-  gemini: { label: "Gemini", className: "border-provider-gemini/30 bg-provider-gemini/10 text-provider-gemini" },
-};
 
 interface SidebarProps {
   cwd: string;
@@ -24,8 +14,6 @@ interface SidebarProps {
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
   onDeleteThread?: (threadId: string) => void;
-  providers?: ProviderAuthStatus[];
-  onOpenProviders?: (provider?: string) => void;
   onOpenTools?: () => void;
   onOpenKnowledge?: () => void;
 }
@@ -38,8 +26,6 @@ function SidebarImpl({
   onNewThread,
   onOpenThread,
   onDeleteThread,
-  providers,
-  onOpenProviders,
   onOpenTools,
   onOpenKnowledge,
 }: SidebarProps) {
@@ -142,52 +128,6 @@ function SidebarImpl({
           );
         })}
       </div>
-
-      {/* Settings footer */}
-      {providers && onOpenProviders ? (
-        <div className="space-y-2 border-t border-border/100 bg-surface-dark px-4 py-3">
-          {(() => {
-            const connected = providers.filter((p) => p.configured);
-            return (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {connected.length === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenProviders()}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-danger/40 px-3 py-1.5 text-xs text-danger/80 transition hover:border-danger hover:text-danger"
-                  >
-                    <span>+</span>
-                    <span>Connect a provider</span>
-                  </button>
-                ) : (
-                  <>
-                    {connected.map((p) => {
-                      const style = PROVIDER_STYLE[p.provider];
-                      return (
-                        <button
-                          key={p.provider}
-                          type="button"
-                          onClick={() => onOpenProviders(p.provider)}
-                          className={`rounded border px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${style?.className ?? "border-border/20 bg-surface text-muted"}`}
-                        >
-                          {style?.label ?? p.provider}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => onOpenProviders()}
-                      className="rounded border border-dashed border-border/20 px-2 py-0.5 text-xs text-muted transition hover:border-accent/50 hover:text-accent"
-                    >
-                      + Connect
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-      ) : null}
     </Panel>
   );
 }

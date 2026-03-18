@@ -1,47 +1,45 @@
-// @summary Empty state with example prompt cards shown when no messages exist
+// @summary Empty state with a central account connection call-to-action
 
 interface EmptyStateProps {
-  onSelectPrompt: (prompt: string) => void;
+  hasProvider: boolean;
+  oauthPending?: boolean;
+  onOpenProviders: () => void;
+  onQuickConnectChatGPT?: () => void;
 }
 
-const EXAMPLE_PROMPTS = [
-  {
-    label: "Explain this codebase",
-    prompt: "Give me an overview of this codebase and its architecture.",
-  },
-  {
-    label: "Find potential bugs",
-    prompt: "Are there any obvious bugs or issues in the current code?",
-  },
-  {
-    label: "Write unit tests",
-    prompt: "Help me write unit tests for the main functionality.",
-  },
-  {
-    label: "Suggest refactors",
-    prompt: "Which files could benefit from refactoring and how?",
-  },
-];
+export function EmptyState({ hasProvider, oauthPending, onOpenProviders, onQuickConnectChatGPT }: EmptyStateProps) {
+  if (hasProvider) {
+    return null;
+  }
 
-export function EmptyState({ onSelectPrompt }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 py-16">
       <div className="mb-8 rounded-xl border border-border/100 bg-surface-default px-8 py-7 text-center shadow-panel">
-        <h2 className="mb-2 text-xl font-semibold text-text">What can I help you with?</h2>
-        <p className="text-sm leading-6 text-muted">Ask a question or pick an example below</p>
-      </div>
-      <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-        {EXAMPLE_PROMPTS.map((p) => (
+        <h2 className="mb-2 text-xl font-semibold text-text">Connect your AI account to start building</h2>
+        <p className="text-sm leading-6 text-muted">Most users start with ChatGPT. Sign in once and continue.</p>
+        <div className="mt-6 flex items-center justify-center gap-2">
           <button
-            key={p.label}
             type="button"
-            onClick={() => onSelectPrompt(p.prompt)}
-            className="rounded-xl border border-border/100 bg-surface-dark px-5 py-4 text-left text-sm text-text transition hover:border-accent/40 hover:bg-surface-light"
+            onClick={() => {
+              if (onQuickConnectChatGPT) {
+                onQuickConnectChatGPT();
+                return;
+              }
+              onOpenProviders();
+            }}
+            disabled={oauthPending}
+            className="rounded-md bg-fill-primary px-2.5 py-1.5 text-xs font-medium text-text transition hover:bg-fill-active"
           >
-            <div className="font-medium text-text-soft">{p.label}</div>
-            <div className="mt-1 text-xs leading-5 text-muted">{p.prompt}</div>
+            {oauthPending ? "Connecting…" : "Connect ChatGPT"}
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={onOpenProviders}
+            className="rounded-md border border-border/100 bg-surface-dark px-2.5 py-1.5 text-xs text-muted transition hover:border-accent/40 hover:text-text"
+          >
+            More options
+          </button>
+        </div>
       </div>
     </div>
   );
