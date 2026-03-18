@@ -71,12 +71,12 @@ describe("protocol-lifecycle", () => {
     const threadId = await client.initAndStartThread(tmpDir);
 
     const result = (await client.request("thread/read", { threadId })) as {
-      messages: unknown[];
+      items: unknown[];
       hasFollowUp: boolean;
       isRunning: boolean;
     };
 
-    expect(result.messages).toEqual([]);
+    expect(result.items).toEqual([]);
     expect(result.hasFollowUp).toBe(false);
     expect(result.isRunning).toBe(false);
   });

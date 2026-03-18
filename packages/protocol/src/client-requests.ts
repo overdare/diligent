@@ -111,27 +111,9 @@ export const ChildSessionSchema = z.object({
 });
 export type ChildSession = z.infer<typeof ChildSessionSchema>;
 
-export const TranscriptEntrySchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("message"),
-    id: z.string(),
-    timestamp: z.string(),
-    message: MessageSchema,
-  }),
-  z.object({
-    type: z.literal("compaction"),
-    id: z.string(),
-    timestamp: z.string(),
-    summary: z.string(),
-  }),
-]);
-export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
-
 export const ThreadReadResponseSchema = z.object({
   cwd: z.string(),
   items: z.array(ThreadItemSchema),
-  messages: z.array(MessageSchema).optional(),
-  transcript: z.array(TranscriptEntrySchema).optional(),
   errors: z
     .array(
       z.object({

@@ -55,14 +55,10 @@ describe("turn-execution", () => {
     const allNotifs = client.notifications;
     const methods = allNotifs.map((n) => n.method);
 
-    // Expected sequence: status→busy, turn/started, item/started(user), item/completed(user),
-    // item/started(agent), item/delta, item/completed(agent), turn/completed, status→idle
-    // Note: turn initiator doesn't receive userMessage item notifications
+    // Expected sequence includes status/turn boundaries and agent/event stream payloads.
     expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED);
     expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED);
-    expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED);
-    expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA);
-    expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED);
+    expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT);
     expect(methods).toContain(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
 
     // Verify ordering: status(busy) before turn/started before turn/completed before status(idle)
@@ -86,7 +82,7 @@ describe("turn-execution", () => {
     expect(turnCompletedIdx).toBeLessThan(idleIdx);
   });
 
-  test("tool use turn includes tool item notifications", async () => {
+  test("tool use turn includes tool agent events", async () => {
     const toolStream = createToolUseStream(
       [{ id: "tc-1", name: "test_tool", input: { arg: "value" } }],
       "done after tool",
@@ -96,19 +92,19 @@ describe("turn-execution", () => {
 
     const turnNotifs = await client.sendTurnAndWait(threadId, "use the tool");
 
-    // Should have item/started with type=toolCall
+    // Should have agent/event with tool_start
     const toolStarted = turnNotifs.find(
       (n) =>
-        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED &&
-        (n.params as { item?: { type?: string } }).item?.type === "toolCall",
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        (n.params as { event?: { type?: string } }).event?.type === "tool_start",
     );
     expect(toolStarted).toBeTruthy();
 
-    // Should have item/completed with type=toolCall
+    // Should have agent/event with tool_end
     const toolCompleted = turnNotifs.find(
       (n) =>
-        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED &&
-        (n.params as { item?: { type?: string } }).item?.type === "toolCall",
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        (n.params as { event?: { type?: string } }).event?.type === "tool_end",
     );
     expect(toolCompleted).toBeTruthy();
   });
@@ -140,13 +136,12 @@ describe("turn-execution", () => {
     await client.sendTurnAndWait(threadId, "hello");
 
     const result = (await client.request("thread/read", { threadId })) as {
-      messages: Array<{ role: string }>;
+      items: Array<{ type: string }>;
     };
 
-    // Should have user + assistant messages
-    const roles = result.messages.map((m) => m.role);
-    expect(roles).toContain("user");
-    expect(roles).toContain("assistant");
+    const itemTypes = result.items.map((item) => item.type);
+    expect(itemTypes).toContain("userMessage");
+    expect(itemTypes).toContain("agentMessage");
   });
 
   test("multi-turn accumulates context", async () => {
@@ -157,10 +152,12 @@ describe("turn-execution", () => {
     await client.sendTurnAndWait(threadId, "second message");
 
     const result = (await client.request("thread/read", { threadId })) as {
-      messages: Array<{ role: string }>;
+      items: Array<{ type: string }>;
     };
 
-    // 2 user + 2 assistant = 4 messages minimum
-    expect(result.messages.length).toBeGreaterThanOrEqual(4);
+    const visibleConversationItems = result.items.filter(
+      (item) => item.type === "userMessage" || item.type === "agentMessage",
+    );
+    expect(visibleConversationItems.length).toBeGreaterThanOrEqual(4);
   });
 });

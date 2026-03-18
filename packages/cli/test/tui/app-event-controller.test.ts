@@ -10,7 +10,6 @@ describe("AppEventController", () => {
     const onTurnFinished = mock(() => {});
     const controller = new AppEventController({
       runtime,
-      mapNotificationToEvents: () => [],
       handleAgentEvent: () => {},
       onTurnFinished,
       onTurnErrored: () => {},
@@ -28,12 +27,34 @@ describe("AppEventController", () => {
     expect(onTurnFinished).toHaveBeenCalledTimes(1);
   });
 
+  test("maps thread status changed notifications to status_change events", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread-1";
+    const handleAgentEvent = mock(() => {});
+    const controller = new AppEventController({
+      runtime,
+      handleAgentEvent,
+      onTurnFinished: () => {},
+      onTurnErrored: () => {},
+      onUserInputRequestResolved: () => {},
+      onAccountLoginCompleted: () => {},
+      requestApproval: async () => "once",
+      requestUserInput: async () => ({ answers: {} }),
+    });
+
+    await controller.handleServerNotification({
+      method: "thread/status/changed",
+      params: { threadId: "thread-1", status: "idle" },
+    });
+
+    expect(handleAgentEvent).toHaveBeenCalledWith({ type: "status_change", status: "idle" });
+  });
+
   test("delegates approval server requests", async () => {
     const runtime = new AppRuntimeState("default", "medium");
     const requestApproval = mock(async () => "always" as const);
     const controller = new AppEventController({
       runtime,
-      mapNotificationToEvents: () => [],
       handleAgentEvent: () => {},
       onTurnFinished: () => {},
       onTurnErrored: () => {},

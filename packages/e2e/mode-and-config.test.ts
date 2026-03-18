@@ -73,11 +73,11 @@ describe("mode-and-config", () => {
 
     // Verify the thread read shows the effort/state
     const readResult = (await client.request("thread/read", { threadId })) as {
-      messages: Array<{ role: string; content: unknown }>;
+      items: Array<{ type: string }>;
     };
 
-    // Messages should exist (mode change + user + assistant)
-    expect(readResult.messages.length).toBeGreaterThanOrEqual(2);
+    expect(readResult.items.some((item) => item.type === "userMessage")).toBe(true);
+    expect(readResult.items.some((item) => item.type === "agentMessage")).toBe(true);
   });
 
   test("effort/set max is reflected in thread/read currentEffort", async () => {
@@ -132,18 +132,19 @@ describe("mode-and-config", () => {
     });
 
     const notifications = await client.sendTurnAndWait(threadId, "use the tool");
-    expect(notifications.some((notification) => notification.method === "item/started")).toBe(true);
+    expect(notifications.some((notification) => notification.method === "agent/event")).toBe(true);
     expect(notifications.some((notification) => notification.method === "turn/completed")).toBe(true);
 
     const readResult = (await client.request("thread/read", { threadId })) as {
-      messages: Array<{ role: string; output?: string; isError?: boolean }>;
+      items: Array<{ type: string; toolName?: string; output?: string; isError?: boolean }>;
     };
     expect(
-      readResult.messages.some(
-        (message) =>
-          message.role === "tool_result" &&
-          message.isError === true &&
-          (message.output ?? "").includes('Unknown tool "bash"'),
+      readResult.items.some(
+        (item) =>
+          item.type === "toolCall" &&
+          item.toolName === "bash" &&
+          item.isError === true &&
+          (item.output ?? "").includes('Unknown tool "bash"'),
       ),
     ).toBe(true);
   });

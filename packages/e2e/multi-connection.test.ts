@@ -115,8 +115,8 @@ describe("multi-connection", () => {
     await p1.sendTurnAndWait(threadId, "still works");
 
     const readResult = (await p1.request("thread/read", { threadId })) as {
-      messages: Array<{ role: string }>;
+      items: Array<{ type: string }>;
     };
-    expect(readResult.messages.length).toBeGreaterThan(0);
+    expect(readResult.items.length).toBeGreaterThan(0);
   });
 });

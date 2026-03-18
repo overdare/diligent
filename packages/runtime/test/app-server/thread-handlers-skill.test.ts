@@ -65,7 +65,7 @@ describe("handleTurnStart slash skill rewriting", () => {
     const text = captured?.content as string;
     expect(text).toContain('call the "skill" tool with {"name":"tidy-plan"}');
     expect(text).toContain("validate me");
-    expect(notifications.some((n) => n.method === "item/started")).toBe(true);
+    expect(notifications.some((n) => n.method === "agent/event")).toBe(true);
   });
 
   it("does not rewrite slash commands when name is not an available skill", async () => {
