@@ -75,7 +75,7 @@ describe("model class annotations", () => {
   it("openai classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.4")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.3-codex")?.modelClass).toBe("general");
-    expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.1-codex-mini")?.modelClass).toBe("lite");
+    expect(KNOWN_MODELS.find((m) => m.id === "gpt-5.4-mini")?.modelClass).toBe("lite");
   });
 
   it("gemini classes map correctly", () => {
@@ -87,7 +87,7 @@ describe("model class annotations", () => {
   it("chatgpt classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.3-codex")?.modelClass).toBe("general");
-    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.1-codex-mini")?.modelClass).toBe("lite");
+    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4-mini")?.modelClass).toBe("lite");
   });
 });
 
@@ -138,7 +138,7 @@ describe("resolveModelForClass", () => {
   it("resolves openai general → lite", () => {
     const codex = resolveModel("gpt-5.3-codex");
     const lite = resolveModelForClass(codex, "lite");
-    expect(lite.id).toBe("gpt-5.1-codex-mini");
+    expect(lite.id).toBe("gpt-5.4-mini");
     expect(lite.provider).toBe("openai");
   });
 
@@ -159,7 +159,7 @@ describe("resolveModelForClass", () => {
   it("resolves chatgpt general → lite", () => {
     const codex = resolveModel("chatgpt-5.3-codex");
     const lite = resolveModelForClass(codex, "lite");
-    expect(lite.id).toBe("chatgpt-5.1-codex-mini");
+    expect(lite.id).toBe("chatgpt-5.4-mini");
     expect(lite.provider).toBe("chatgpt");
   });
 

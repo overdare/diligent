@@ -50,6 +50,63 @@ describe("AppEventController", () => {
     expect(handleAgentEvent).toHaveBeenCalledWith({ type: "status_change", status: "idle" });
   });
 
+  test("applies threadStatus snapshot from agent_event before forwarding event", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread-1";
+    const handleAgentEvent = mock(() => {});
+    const controller = new AppEventController({
+      runtime,
+      handleAgentEvent,
+      onTurnFinished: () => {},
+      onTurnErrored: () => {},
+      onUserInputRequestResolved: () => {},
+      onAccountLoginCompleted: () => {},
+      requestApproval: async () => "once",
+      requestUserInput: async () => ({ answers: {} }),
+    });
+
+    await controller.handleServerNotification({
+      method: "agent/event",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        threadStatus: "busy",
+        event: { type: "message_start" },
+      },
+    });
+
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(1, { type: "status_change", status: "busy" });
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(2, { type: "message_start" });
+  });
+
+  test("applies threadStatus snapshot from turn_started notification", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread-1";
+    const handleAgentEvent = mock(() => {});
+    const controller = new AppEventController({
+      runtime,
+      handleAgentEvent,
+      onTurnFinished: () => {},
+      onTurnErrored: () => {},
+      onUserInputRequestResolved: () => {},
+      onAccountLoginCompleted: () => {},
+      requestApproval: async () => "once",
+      requestUserInput: async () => ({ answers: {} }),
+    });
+
+    await controller.handleServerNotification({
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        threadStatus: "busy",
+      },
+    });
+
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(1, { type: "status_change", status: "busy" });
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(2, { type: "turn_start", turnId: "turn-1" });
+  });
+
   test("delegates approval server requests", async () => {
     const runtime = new AppRuntimeState("default", "medium");
     const requestApproval = mock(async () => "always" as const);

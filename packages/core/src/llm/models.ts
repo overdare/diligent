@@ -154,6 +154,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     cacheWriteCostPer1M: 0,
     supportsThinking: false,
     supportsVision: true,
+    modelClass: "general",
   },
   {
     id: "gpt-5.4-mini",

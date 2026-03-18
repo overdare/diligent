@@ -25,6 +25,11 @@ export interface AppEventControllerDeps {
 export class AppEventController {
   constructor(private deps: AppEventControllerDeps) {}
 
+  private emitStatusSnapshot(status: "idle" | "busy" | undefined): void {
+    if (!status) return;
+    this.deps.handleAgentEvent({ type: "status_change", status });
+  }
+
   async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
     const threadId = "threadId" in notification.params ? notification.params.threadId : undefined;
     if (threadId && this.deps.runtime.currentThreadId && threadId !== this.deps.runtime.currentThreadId) {
@@ -32,6 +37,7 @@ export class AppEventController {
     }
 
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+      this.emitStatusSnapshot(notification.params.threadStatus);
       this.deps.handleAgentEvent(notification.params.event);
 
       if (notification.params.event.type === "error" && this.deps.runtime.pendingTurn) {
@@ -44,6 +50,7 @@ export class AppEventController {
     }
 
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
+      this.emitStatusSnapshot(notification.params.threadStatus);
       this.deps.handleAgentEvent({ type: "turn_start", turnId: notification.params.turnId });
     }
 
@@ -52,6 +59,7 @@ export class AppEventController {
       this.deps.runtime.currentThreadId &&
       notification.params.threadId === this.deps.runtime.currentThreadId
     ) {
+      this.emitStatusSnapshot(notification.params.threadStatus);
       this.deps.onTurnFinished();
     }
 
@@ -60,6 +68,7 @@ export class AppEventController {
       this.deps.runtime.currentThreadId &&
       notification.params.threadId === this.deps.runtime.currentThreadId
     ) {
+      this.emitStatusSnapshot(notification.params.threadStatus);
       this.deps.onTurnFinished();
     }
 
