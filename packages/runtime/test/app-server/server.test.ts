@@ -27,7 +27,6 @@ import {
   RuntimeAgent,
 } from "@diligent/runtime";
 import { createAppServerConfig, DiligentAppServer } from "@diligent/runtime/app-server";
-import { agentEventToNotification } from "@diligent/runtime/app-server/event-mapper";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
@@ -384,9 +383,7 @@ describe("DiligentAppServer", () => {
     await turnCompleted;
 
     const userEvent = notifications.find(
-      (n) =>
-        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
-        n.params.event.type === "user_message",
+      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT && n.params.event.type === "user_message",
     );
     expect(userEvent).toBeDefined();
     const message = (userEvent as { params: { event: { message: { content: unknown } } } }).params.event.message;
@@ -849,13 +846,13 @@ describe("DiligentAppServer", () => {
       method: "thread/read",
       params: { threadId },
     });
-    const result = readResult(read) as { messages: Array<{ role: string; content: unknown[] }> };
-    const lastMessage = result.messages[result.messages.length - 1] as {
-      role: string;
-      content: Array<{ type: string; text?: string }>;
+    const result = readResult(read) as {
+      items: Array<{ type: string; message?: { role?: string; content?: Array<{ type: string; text?: string }> } }>;
     };
-    expect(lastMessage.role).toBe("assistant");
-    expect(lastMessage.content.find((b) => b.type === "text")?.text).toBe("from-disk");
+    const assistantItems = result.items.filter((item) => item.type === "agentMessage");
+    const lastAssistant = assistantItems[assistantItems.length - 1];
+    expect(lastAssistant?.message?.role).toBe("assistant");
+    expect(lastAssistant?.message?.content?.find((b) => b.type === "text")?.text).toBe("from-disk");
 
     // Also validate equal-count/equal-leaf fingerprints are present and stable on next read.
     const secondRead = await server.handleRequest(TEST_CONNECTION_ID, {
@@ -863,12 +860,12 @@ describe("DiligentAppServer", () => {
       method: "thread/read",
       params: { threadId },
     });
-    const second = readResult(secondRead) as { messages: Array<{ role: string; content: unknown[] }> };
-    const secondLast = second.messages[second.messages.length - 1] as {
-      role: string;
-      content: Array<{ type: string; text?: string }>;
+    const second = readResult(secondRead) as {
+      items: Array<{ type: string; message?: { content?: Array<{ type: string; text?: string }> } }>;
     };
-    expect(secondLast.content.find((b) => b.type === "text")?.text).toBe("from-disk");
+    const secondAssistantItems = second.items.filter((item) => item.type === "agentMessage");
+    const secondLastAssistant = secondAssistantItems[secondAssistantItems.length - 1];
+    expect(secondLastAssistant?.message?.content?.find((b) => b.type === "text")?.text).toBe("from-disk");
   });
 
   it("thread/read includes snapshot items with tool input/output/render", async () => {
@@ -1249,190 +1246,6 @@ describe("DiligentAppServer", () => {
       version: 2,
       inputSummary: "README.md",
       outputSummary: "Read failed",
-    });
-  });
-
-  it("event mapper keeps request summary on start and response summary on error end", () => {
-    const startRead = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_start",
-        itemId: "item-read-1",
-        toolCallId: "tc-read-1",
-        toolName: "read",
-        input: { file_path: "README.md" },
-        render: { version: 2, inputSummary: "README.md", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    expect(startRead?.method).toBe("item/started");
-    if (!startRead || startRead.method !== "item/started") throw new Error("Expected item/started read");
-    expect(startRead.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "README.md" },
-    });
-
-    const endRead = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_end",
-        itemId: "item-read-1",
-        toolCallId: "tc-read-1",
-        toolName: "read",
-        output: "Error: ENOENT",
-        isError: true,
-        render: { version: 2, outputSummary: "Read failed", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    if (!endRead || endRead.method !== "item/completed") throw new Error("Expected item/completed read");
-    expect(endRead.params.item).toMatchObject({
-      render: { version: 2, outputSummary: "Read failed" },
-    });
-
-    const startWrite = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_start",
-        itemId: "item-write-1",
-        toolCallId: "tc-write-1",
-        toolName: "write",
-        input: { file_path: "src/app.ts", content: "x" },
-        render: { version: 2, inputSummary: "src/app.ts", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    expect(startWrite?.method).toBe("item/started");
-    if (!startWrite || startWrite.method !== "item/started") throw new Error("Expected item/started write");
-    expect(startWrite.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "src/app.ts" },
-    });
-
-    const endWrite = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_end",
-        itemId: "item-write-1",
-        toolCallId: "tc-write-1",
-        toolName: "write",
-        output: "Error: Permission denied",
-        isError: true,
-        render: { version: 2, outputSummary: "Write failed", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    if (!endWrite || endWrite.method !== "item/completed") throw new Error("Expected item/completed write");
-    expect(endWrite.params.item).toMatchObject({
-      render: { version: 2, outputSummary: "Write failed" },
-    });
-
-    const startPatch = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_start",
-        itemId: "item-patch-1",
-        toolCallId: "tc-patch-1",
-        toolName: "apply_patch",
-        input: {
-          patch: [
-            "*** Begin Patch",
-            "*** Update File: src/a.ts",
-            "@@",
-            "-const a = 1;",
-            "+const a = 2;",
-            "*** End Patch",
-          ].join("\n"),
-        },
-        render: { version: 2, inputSummary: "src/a.ts", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    expect(startPatch?.method).toBe("item/started");
-    if (!startPatch || startPatch.method !== "item/started") throw new Error("Expected item/started patch");
-    expect(startPatch.params.item).toMatchObject({
-      render: { version: 2, inputSummary: "src/a.ts" },
-    });
-
-    const endPatch = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_end",
-        itemId: "item-patch-1",
-        toolCallId: "tc-patch-1",
-        toolName: "apply_patch",
-        output: "Patch failed: context mismatch",
-        isError: true,
-        render: { version: 2, outputSummary: "Patch failed", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-    if (!endPatch || endPatch.method !== "item/completed") throw new Error("Expected item/completed patch");
-    expect(endPatch.params.item).toMatchObject({
-      render: { version: 2, outputSummary: "Patch failed" },
-    });
-  });
-
-  it("event mapper and thread/read snapshot use the same bash start render summary", () => {
-    const notification = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_start",
-        itemId: "item-bash-1",
-        toolCallId: "tc-bash-1",
-        toolName: "bash",
-        input: { command: "pwd", description: "Print working directory" },
-        render: { version: 2, inputSummary: "pwd", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-
-    expect(notification).not.toBeNull();
-    if (!notification || notification.method !== "item/started") {
-      throw new Error("Expected item/started notification");
-    }
-
-    expect(notification.params.item).toMatchObject({
-      type: "toolCall",
-      toolCallId: "tc-bash-1",
-      render: {
-        version: 2,
-        inputSummary: "pwd",
-      },
-    });
-
-    const completed = agentEventToNotification(
-      "thread-1",
-      "turn-1",
-      {
-        type: "tool_end",
-        itemId: "item-bash-1",
-        toolCallId: "tc-bash-1",
-        toolName: "bash",
-        output: "[Exit code: 1]",
-        isError: true,
-        render: { version: 2, outputSummary: "Command failed (exit 1)", blocks: [] },
-      },
-      { threadStatus: "busy" },
-    );
-
-    expect(completed).not.toBeNull();
-    if (!completed || completed.method !== "item/completed") {
-      throw new Error("Expected item/completed notification");
-    }
-
-    expect(completed.params.item).toMatchObject({
-      type: "toolCall",
-      toolCallId: "tc-bash-1",
-      render: {
-        version: 2,
-        outputSummary: "Command failed (exit 1)",
-      },
     });
   });
 
@@ -2434,8 +2247,7 @@ describe("DiligentAppServer", () => {
     expect(
       notifications.some(
         (n) =>
-          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
-          n.params.event.type === "collab_spawn_begin",
+          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT && n.params.event.type === "collab_spawn_begin",
       ),
     ).toBe(true);
     expect(

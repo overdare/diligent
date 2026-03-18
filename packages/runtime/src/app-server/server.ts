@@ -712,7 +712,11 @@ export class DiligentAppServer {
       // Skip turn initiator for echo of their own user message events
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
         const params = notification.params as { event?: { type?: string }; threadId?: string };
-        if (params.event?.type === "user_message" && params.threadId && this.turnInitiators.get(params.threadId) === conn.id) {
+        if (
+          params.event?.type === "user_message" &&
+          params.threadId &&
+          this.turnInitiators.get(params.threadId) === conn.id
+        ) {
           continue;
         }
       }

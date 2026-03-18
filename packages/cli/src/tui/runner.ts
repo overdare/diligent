@@ -60,7 +60,8 @@ export class NonInteractiveRunner {
       },
     });
     rpc.setNotificationListener((notification: DiligentServerNotification) => {
-      const events = notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
+      const events =
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
       for (const event of events) {
         hasText = this.handleEvent(event, isTTY, hasText);
       }

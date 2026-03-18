@@ -8,12 +8,7 @@ import type {
   RequestId,
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
-import type {
-  ApprovalRequest,
-  ApprovalResponse,
-  UserInputRequest,
-  UserInputResponse,
-} from "@diligent/runtime";
+import type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse } from "@diligent/runtime";
 import type { AppRuntimeState } from "./app-runtime-state";
 
 export interface AppEventControllerDeps {
@@ -42,6 +37,10 @@ export class AppEventController {
       if (notification.params.event.type === "error" && this.deps.runtime.pendingTurn) {
         this.deps.onTurnErrored(notification.params.event.error.message);
       }
+    }
+
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
+      this.deps.handleAgentEvent({ type: "status_change", status: notification.params.status });
     }
 
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
