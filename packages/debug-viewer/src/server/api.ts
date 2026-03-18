@@ -1,6 +1,7 @@
 // @summary REST API endpoint handlers for sessions, search, and knowledge queries
 import { readdirSync } from "fs";
 import { join } from "path";
+import { resolveModel } from "@diligent/core/llm/models";
 import type {
   KnowledgeResponse,
   SearchResponse,
@@ -8,9 +9,35 @@ import type {
   SessionDataResponse,
   SessionListResponse,
   SessionTreeResponse,
+  UsageSummaryResponse,
 } from "../shared/protocol.js";
-import type { KnowledgeEntry, SessionEntry } from "../shared/types.js";
+import type { AssistantMessageEntry, KnowledgeEntry, SessionEntry, UsageSummary } from "../shared/types.js";
 import { buildTree, extractSessionMeta, parseSessionFile } from "./parser.js";
+
+function calculateUsageCost(
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number },
+  modelId: string,
+): number {
+  let model = resolveModel(modelId);
+
+  const hasAnyPricing =
+    model.inputCostPer1M != null ||
+    model.outputCostPer1M != null ||
+    model.cacheReadCostPer1M != null ||
+    model.cacheWriteCostPer1M != null;
+
+  if (!hasAnyPricing) {
+    if (modelId.startsWith("claude-sonnet-4-")) model = resolveModel("claude-sonnet-4-6");
+    if (modelId.startsWith("claude-opus-4-")) model = resolveModel("claude-opus-4-6");
+    if (modelId.startsWith("claude-haiku-4-")) model = resolveModel("claude-haiku-4-5");
+  }
+
+  const inputCost = (usage.inputTokens / 1_000_000) * (model.inputCostPer1M ?? 0);
+  const outputCost = (usage.outputTokens / 1_000_000) * (model.outputCostPer1M ?? 0);
+  const cacheReadCost = (usage.cacheReadTokens / 1_000_000) * (model.cacheReadCostPer1M ?? 0);
+  const cacheWriteCost = (usage.cacheWriteTokens / 1_000_000) * (model.cacheWriteCostPer1M ?? 0);
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
 
 export function createApiHandler(dataDir: string) {
   const sessionsDir = join(dataDir, "sessions");
@@ -84,6 +111,117 @@ export function createApiHandler(dataDir: string) {
     } catch {
       return { entries: [] };
     }
+  }
+
+  async function getUsageSummary(): Promise<UsageSummaryResponse> {
+    let files: string[];
+    try {
+      files = readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
+    } catch {
+      const emptySummary: UsageSummary = {
+        sessionCount: 0,
+        assistantMessageCount: 0,
+        pricedMessageCount: 0,
+        unpricedMessageCount: 0,
+        totalCost: 0,
+        totals: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 0,
+        },
+        modelBreakdown: [],
+      };
+      return { summary: emptySummary };
+    }
+
+    const summary: UsageSummary = {
+      sessionCount: files.length,
+      assistantMessageCount: 0,
+      pricedMessageCount: 0,
+      unpricedMessageCount: 0,
+      totalCost: 0,
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+      },
+      modelBreakdown: [],
+    };
+
+    const modelMap = new Map<
+      string,
+      {
+        model: string;
+        messageCount: number;
+        pricedMessageCount: number;
+        totalCost: number;
+        totals: {
+          inputTokens: number;
+          outputTokens: number;
+          cacheReadTokens: number;
+          cacheWriteTokens: number;
+          totalTokens: number;
+        };
+      }
+    >();
+
+    for (const file of files) {
+      const filePath = join(sessionsDir, file);
+      const entries = await parseSessionFile(filePath);
+      for (const entry of entries) {
+        if (!("role" in entry) || entry.role !== "assistant") continue;
+        const assistant = entry as AssistantMessageEntry;
+
+        summary.assistantMessageCount++;
+        summary.totals.inputTokens += assistant.usage.inputTokens;
+        summary.totals.outputTokens += assistant.usage.outputTokens;
+        summary.totals.cacheReadTokens += assistant.usage.cacheReadTokens;
+        summary.totals.cacheWriteTokens += assistant.usage.cacheWriteTokens;
+        summary.totals.totalTokens += assistant.usage.inputTokens + assistant.usage.outputTokens;
+
+        const item =
+          modelMap.get(assistant.model) ??
+          {
+            model: assistant.model,
+            messageCount: 0,
+            pricedMessageCount: 0,
+            totalCost: 0,
+            totals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              totalTokens: 0,
+            },
+          };
+
+        item.messageCount++;
+        item.totals.inputTokens += assistant.usage.inputTokens;
+        item.totals.outputTokens += assistant.usage.outputTokens;
+        item.totals.cacheReadTokens += assistant.usage.cacheReadTokens;
+        item.totals.cacheWriteTokens += assistant.usage.cacheWriteTokens;
+        item.totals.totalTokens += assistant.usage.inputTokens + assistant.usage.outputTokens;
+
+        const usageCost = calculateUsageCost(assistant.usage, assistant.model);
+        if (usageCost > 0) {
+          summary.pricedMessageCount++;
+          item.pricedMessageCount++;
+        } else {
+          summary.unpricedMessageCount++;
+        }
+        summary.totalCost += usageCost;
+        item.totalCost += usageCost;
+
+        modelMap.set(assistant.model, item);
+      }
+    }
+
+    summary.modelBreakdown = [...modelMap.values()].sort((a, b) => b.totalCost - a.totalCost);
+    return { summary };
   }
 
   function searchEntries(entries: SessionEntry[], query: string): SearchResult[] {
@@ -210,6 +348,11 @@ export function createApiHandler(dataDir: string) {
 
     if (path === "/api/knowledge" && req.method === "GET") {
       const data = await getKnowledge();
+      return Response.json(data);
+    }
+
+    if (path === "/api/usage/summary" && req.method === "GET") {
+      const data = await getUsageSummary();
       return Response.json(data);
     }
 

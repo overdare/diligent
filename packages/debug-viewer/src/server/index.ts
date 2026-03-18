@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { join, resolve } from "path";
+import { dirname, isAbsolute, join, resolve } from "path";
 import { createApiHandler } from "./api.js";
 import { findDiligentDir } from "./find-diligent-dir.js";
 import { extractSessionMeta, parseSessionFile } from "./parser.js";
@@ -19,8 +19,34 @@ const dataDirArg =
   args.find((a) => a.startsWith("--data-dir="))?.split("=")[1] ??
   (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null);
 
+function resolveDefaultDiligentDir(): string | null {
+  const discovered = findDiligentDir({ cwd: process.cwd() });
+  if (discovered) return discovered;
+
+  const candidate = join(dirname(process.execPath), ".diligent");
+  return existsSync(candidate) ? candidate : null;
+}
+
+function resolveStaticClientDir(): string | null {
+  const candidates = [
+    resolve(import.meta.dir, "../../dist/client"),
+    join(dirname(process.execPath), "client"),
+    resolve(process.cwd(), "packages/debug-viewer/dist/client"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 // Find data directory
-const dataDir = dataDirArg ? resolve(import.meta.dir, "../../", dataDirArg) : findDiligentDir();
+const dataDir = dataDirArg
+  ? isAbsolute(dataDirArg)
+    ? dataDirArg
+    : resolve(process.cwd(), dataDirArg)
+  : resolveDefaultDiligentDir();
 if (!dataDir) {
   console.error("Could not find .diligent/ directory. Run from a diligent project, or pass --data-dir <path>.");
   process.exit(1);
@@ -51,8 +77,8 @@ const watcher = new SessionWatcher(sessionsDir, {
 watcher.start();
 
 // Resolve static files directory for production mode
-const distDir = resolve(import.meta.dir, "../../dist/client");
-const hasDistDir = existsSync(distDir);
+const distDir = resolveStaticClientDir();
+const hasDistDir = distDir !== null;
 
 const server = Bun.serve<WsData>({
   port,
@@ -73,11 +99,11 @@ const server = Bun.serve<WsData>({
 
     // Static file serving (production only)
     if (!dev && hasDistDir) {
-      let filePath = join(distDir, url.pathname === "/" ? "index.html" : url.pathname);
+      let filePath = join(distDir as string, url.pathname === "/" ? "index.html" : url.pathname);
 
       // SPA fallback: serve index.html for non-file routes
       if (!existsSync(filePath)) {
-        filePath = join(distDir, "index.html");
+        filePath = join(distDir as string, "index.html");
       }
 
       if (existsSync(filePath)) {

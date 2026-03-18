@@ -1,5 +1,5 @@
 // @summary REST and WebSocket protocol type definitions
-import type { KnowledgeEntry, SessionEntry, SessionMeta } from "./types.js";
+import type { KnowledgeEntry, SessionEntry, SessionMeta, UsageSummary } from "./types.js";
 
 // REST response types
 export interface SessionListResponse {
@@ -35,6 +35,10 @@ export interface SearchResult {
 export interface SearchResponse {
   query: string;
   results: SearchResult[];
+}
+
+export interface UsageSummaryResponse {
+  summary: UsageSummary;
 }
 
 // WebSocket message types

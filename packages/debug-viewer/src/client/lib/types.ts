@@ -7,6 +7,7 @@ export type {
   SessionDataResponse,
   SessionListResponse,
   SessionTreeResponse,
+  UsageSummaryResponse,
   WsClientMessage,
   WsServerMessage,
 } from "../../shared/protocol.js";
@@ -14,6 +15,7 @@ export type {
   AssistantMessageEntry,
   CompactionEntry,
   ContentBlock,
+  ErrorEntry,
   EffortChangeEntry,
   ImageBlock,
   KnowledgeEntry,
@@ -32,5 +34,8 @@ export type {
   ToolCallPair,
   ToolResultEntry,
   Usage,
+  UsageSummary,
+  UsageTotals,
+  ModelUsageSummary,
   UserMessageEntry,
 } from "../../shared/types.js";

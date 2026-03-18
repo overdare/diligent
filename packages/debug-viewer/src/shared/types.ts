@@ -34,6 +34,28 @@ export interface Usage {
   cacheWriteTokens: number;
 }
 
+export interface UsageTotals extends Usage {
+  totalTokens: number;
+}
+
+export interface ModelUsageSummary {
+  model: string;
+  messageCount: number;
+  pricedMessageCount: number;
+  totalCost: number;
+  totals: UsageTotals;
+}
+
+export interface UsageSummary {
+  sessionCount: number;
+  assistantMessageCount: number;
+  pricedMessageCount: number;
+  unpricedMessageCount: number;
+  totalCost: number;
+  totals: UsageTotals;
+  modelBreakdown: ModelUsageSummary[];
+}
+
 // Session entry types (D036-REV JSONL format)
 export interface SessionHeader {
   type: "session_header";
@@ -134,6 +156,19 @@ export interface SteeringEntry {
   timestamp: number;
 }
 
+export interface ErrorEntry {
+  id: string;
+  parentId?: string;
+  turnId?: string;
+  type: "error";
+  fatal: boolean;
+  error: {
+    message: string;
+    [key: string]: unknown;
+  };
+  timestamp: number;
+}
+
 export type SessionEntry =
   | SessionHeader
   | UserMessageEntry
@@ -144,7 +179,8 @@ export type SessionEntry =
   | SessionInfoEntry
   | ModeChangeEntry
   | EffortChangeEntry
-  | SteeringEntry;
+  | SteeringEntry
+  | ErrorEntry;
 
 // Knowledge (D081)
 export interface KnowledgeEntry {
@@ -163,6 +199,7 @@ export interface SessionMeta {
   id: string;
   filePath: string;
   timestamp: number;
+  firstUserMessage?: string;
   messageCount: number;
   toolCallCount: number;
   hasErrors: boolean;

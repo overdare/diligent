@@ -137,6 +137,36 @@ describe("GET /api/search", () => {
   });
 });
 
+describe("GET /api/usage/summary", () => {
+  test("returns aggregate usage and estimated cost", async () => {
+    const res = await handleRequest(makeReq("/api/usage/summary"));
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+
+    const data = await res!.json();
+    expect(data.summary).toBeDefined();
+
+    expect(data.summary.sessionCount).toBe(3);
+    expect(data.summary.assistantMessageCount).toBe(13);
+    expect(data.summary.pricedMessageCount).toBe(13);
+    expect(data.summary.unpricedMessageCount).toBe(0);
+
+    expect(data.summary.totals.inputTokens).toBe(4340);
+    expect(data.summary.totals.outputTokens).toBe(795);
+    expect(data.summary.totals.cacheReadTokens).toBe(1060);
+    expect(data.summary.totals.cacheWriteTokens).toBe(450);
+    expect(data.summary.totals.totalTokens).toBe(5135);
+    expect(data.summary.totalCost).toBeCloseTo(0.0269505, 10);
+
+    expect(data.summary.modelBreakdown).toBeArray();
+    expect(data.summary.modelBreakdown.length).toBe(1);
+    expect(data.summary.modelBreakdown[0].model).toBe("claude-sonnet-4-20250514");
+    expect(data.summary.modelBreakdown[0].messageCount).toBe(13);
+    expect(data.summary.modelBreakdown[0].pricedMessageCount).toBe(13);
+    expect(data.summary.modelBreakdown[0].totalCost).toBeCloseTo(0.0269505, 10);
+  });
+});
+
 describe("unknown routes", () => {
   test("returns null for non-API routes", async () => {
     const res = await handleRequest(makeReq("/something-else"));

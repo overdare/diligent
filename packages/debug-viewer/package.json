@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "build": "vite build",
-    "start": "bun run src/server/index.ts"
+    "start": "bun run src/server/index.ts",
+    "build:windows-exe": "bun scripts/build-windows-exe.ts"
   },
   "dependencies": {
     "react": "^19.0.0",
