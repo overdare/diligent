@@ -47,7 +47,7 @@
 
 > Codex-RS inspired thread operations and streaming granularity. See `docs/plan/feature/P028-thread-ops-and-streaming-granularity.md`.
 
-- [ ] **Thread Fork (D089)** — `thread/fork` creates independent copy of a thread at current point. New JSONL file with `forkedFromId` metadata. Enables "try a different approach" workflow. (added: 2026-03-05)
+- [ ] **Thread Fork (D089)** — `thread/fork` creates independent copy of a thread at current point. New JSONL file with `forkedFromId` metadata. Enables "try a different approach" workflow. See proposal: `docs/plan/feature/P055-thread-fork.md`. (added: 2026-03-05)
 - [x] **Thread Compact (D090)** — `thread/compact/start` exposes existing compaction as user-triggered operation. Rejects during active turns. Emits `thread/compacted` notification. Handler in `thread-handlers.ts` with busy/idle status management. (done: 2026-03-11)
 - [ ] **Thread Archive/Unarchive (D091)** — Soft delete via `ArchiveEntry` in JSONL. Filtered from `thread/list` by default. `SESSION_VERSION` 5→6. (added: 2026-03-05)
 - [ ] **Thread Name Set (D092)** — `thread/name/set` exposes existing `SessionInfoEntry` name mechanism via protocol. Note: data model (`SessionInfoEntry.name`) exists; missing protocol method, handler, and dispatch. (added: 2026-03-05)
