@@ -56,6 +56,8 @@ export class SessionManager {
   /** Cached agent instance — persists between runs for the session lifetime */
   private _agent: Agent | null = null;
   private prevCacheReadBySession = new Map<string, number>();
+  private prevPromptHashesBySession = new Map<string, string[]>();
+  private currPromptHashesBySession = new Map<string, string[]>();
   /** Track which agent instance has been restored with session history */
   private _initializedAgent: Agent | null = null;
 
@@ -335,6 +337,9 @@ export class SessionManager {
       if (event.type === "usage") {
         this.handleUsageEvent(event.usage);
       }
+      if (event.type === "prompt_signature") {
+        this.handlePromptSignatureEvent(event.hashes);
+      }
 
       const keepRecentTokens = this.config.compaction?.keepRecentTokens ?? 20_000;
       turnStager.handleEvent(event, keepRecentTokens);
@@ -484,15 +489,43 @@ export class SessionManager {
     const prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
     if (usage.cacheReadTokens < prevCacheRead) {
       const sessionEntryCount = this.state.getCommittedEntries().length;
-      console.error(
-        "[SessionManager] Cache drop session=%s entries=%d: %d -> %d",
-        this.persistence.sessionId,
-        sessionEntryCount,
-        prevCacheRead,
-        usage.cacheReadTokens,
-      );
+      const prevPromptHashes = this.prevPromptHashesBySession.get(this.persistence.sessionId) ?? [];
+      const currPromptHashes = this.currPromptHashesBySession.get(this.persistence.sessionId) ?? [];
+      const sharedPrefixCount = sharedPrefixLength(prevPromptHashes, currPromptHashes);
+      const fullyMatchedPrefix = sharedPrefixCount === Math.min(prevPromptHashes.length, currPromptHashes.length);
+      if (fullyMatchedPrefix) {
+        console.error(
+          "[SessionManager] Cache drop session=%s entries=%d: %d -> %d",
+          this.persistence.sessionId,
+          sessionEntryCount,
+          prevCacheRead,
+          usage.cacheReadTokens,
+        );
+      } else {
+        console.error(
+          "[SessionManager] Cache drop session=%s entries=%d: %d -> %d prefix=partial(%d/%d,%d) prevSig=%s currSig=%s",
+          this.persistence.sessionId,
+          sessionEntryCount,
+          prevCacheRead,
+          usage.cacheReadTokens,
+          sharedPrefixCount,
+          prevPromptHashes.length,
+          currPromptHashes.length,
+          prevPromptHashes.join("|"),
+          currPromptHashes.join("|"),
+        );
+      }
     }
     this.prevCacheReadBySession.set(this.persistence.sessionId, usage.cacheReadTokens);
+  }
+
+  private handlePromptSignatureEvent(hashes: string[]): void {
+    const sessionId = this.persistence.sessionId;
+    const prev = this.currPromptHashesBySession.get(sessionId);
+    if (prev) {
+      this.prevPromptHashesBySession.set(sessionId, prev);
+    }
+    this.currPromptHashesBySession.set(sessionId, hashes);
   }
 
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {
@@ -590,4 +623,13 @@ function summarizeTailEntryIds(entries: SessionEntry[], count = 3): string {
     .slice(Math.max(0, entries.length - count))
     .map((entry) => entry.id)
     .join(",");
+}
+
+function sharedPrefixLength(a: readonly string[], b: readonly string[]): number {
+  const max = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < max && a[index] === b[index]) {
+    index += 1;
+  }
+  return index;
 }

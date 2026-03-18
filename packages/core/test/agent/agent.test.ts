@@ -166,6 +166,7 @@ describe("Agent", () => {
     expect(events.map((event) => event.type)).toEqual([
       "agent_start",
       "turn_start",
+      "prompt_signature",
       "message_start",
       "message_delta",
       "message_end",

@@ -1,5 +1,6 @@
 // @summary Assistant-response streaming helpers and provider debug logging
 
+import { createHash } from "node:crypto";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Model, StreamContext, StreamFunction, SystemSection, ThinkingEffort, ToolDefinition } from "../llm/types";
 import { resolveMaxTokens } from "../llm/types";
@@ -62,6 +63,15 @@ export async function streamAssistantMessage(
     messages,
     tools: runtime.tools.map(toToolDefinition),
   };
+
+  const promptHashes = computePromptContextHashes(context);
+  stream.emit({
+    type: "prompt_signature",
+    sessionId: request.sessionId,
+    messageCount: context.messages.length,
+    signature: promptHashes.join("|"),
+    hashes: promptHashes,
+  });
 
   const turnStateRef: { value: string | undefined } = { value: undefined };
   const providerStream = runtime.providerStream(request.config.model, context, {
@@ -129,4 +139,17 @@ export async function streamAssistantMessage(
 
   const result = await providerStream.result();
   return result.message;
+}
+
+function computePromptContextHashes(context: StreamContext): string[] {
+  const systemHashes = context.systemPrompt.map((section) => hashSegment("sys", section));
+  const toolHashes = context.tools.map((tool) => hashSegment("tool", tool));
+  const messageHashes = context.messages.map((message) => hashSegment("msg", message));
+  return [...systemHashes, ...toolHashes, ...messageHashes];
+}
+
+function hashSegment(kind: "sys" | "tool" | "msg", payload: unknown): string {
+  const stable = JSON.stringify({ kind, payload });
+  const digest = createHash("sha256").update(stable).digest("hex").slice(0, 6);
+  return `${kind}:${digest}`;
 }

@@ -63,6 +63,14 @@ export type CoreAgentEvent =
   | { type: "status_change"; status: "idle" | "busy" }
   // Usage (1)
   | { type: "usage"; usage: Usage }
+  // Prompt debug (1)
+  | {
+      type: "prompt_signature";
+      sessionId?: string;
+      messageCount: number;
+      signature: string;
+      hashes: string[];
+    }
   // Error (1) — D086: SerializableError instead of Error
   | { type: "error"; error: SerializableError; fatal: boolean }
   // Steering (1) — P1
