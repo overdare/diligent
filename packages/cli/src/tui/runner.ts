@@ -1,14 +1,13 @@
 // @summary Non-interactive runner using JSON-RPC app-server communication
 
-import type { DiligentServerNotification } from "@diligent/protocol";
+import type { AgentEvent, DiligentServerNotification } from "@diligent/protocol";
 import {
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
-import type { AgentEvent, DiligentPaths } from "@diligent/runtime";
-import { ProtocolNotificationAdapter } from "@diligent/runtime";
+import type { DiligentPaths } from "@diligent/runtime";
 import type { AppConfig } from "../config";
 import type { SpawnedAppServer } from "./rpc-client";
 import { type SpawnRpcClientOptions, spawnCliAppServer } from "./rpc-framed-client";
@@ -41,7 +40,6 @@ export class NonInteractiveRunner {
     }
 
     const isTTY = process.stderr.isTTY === true;
-    const adapter = new ProtocolNotificationAdapter();
     let hasText = false;
     let threadId: string | null = null;
 
@@ -62,7 +60,8 @@ export class NonInteractiveRunner {
       },
     });
     rpc.setNotificationListener((notification: DiligentServerNotification) => {
-      for (const event of adapter.toAgentEvents(notification)) {
+      const events = notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
+      for (const event of events) {
         hasText = this.handleEvent(event, isTTY, hasText);
       }
 
@@ -80,6 +79,13 @@ export class NonInteractiveRunner {
         (!notification.params.threadId || notification.params.threadId === threadId)
       ) {
         pendingTurn?.reject(new Error(notification.params.error.message));
+      }
+
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        notification.params.event.type === "error"
+      ) {
+        pendingTurn?.reject(new Error(notification.params.event.error.message));
       }
     });
 

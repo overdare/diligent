@@ -36,7 +36,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { APP_PROJECT_NAME } from "./lib/app-config";
-import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./lib/protocol-notification-adapter";
+import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./lib/model-thinking-helpers";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import type { SlashCommand } from "./lib/slash-commands";
 import { buildCommandList, parseSlashCommand } from "./lib/slash-commands";
@@ -286,7 +286,6 @@ export function App() {
 
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: adapterRef.current methods are accessed via ref intentionally
   useEffect(() => {
     const rpc = getRpc();
     if (!rpc) return;
@@ -358,7 +357,6 @@ export function App() {
                     messageCount: history.messages?.length ?? 0,
                     entryCount: history.entryCount,
                   });
-                  threadMgr.adapterRef.current.reset();
                   dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
                 })
                 .catch(console.error);
@@ -366,7 +364,7 @@ export function App() {
           }
         }
       }
-      const events = threadMgr.adapterRef.current.toAgentEvents(notification);
+      const events = notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
       const shouldSuppressSteeringInjected =
         steeringQueue.suppressNextSteeringInjectedRef.current &&
         events.some((event) => event.type === "steering_injected");
@@ -401,7 +399,6 @@ export function App() {
     getRpc,
   ]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: adapterRef.current.reset is accessed via ref intentionally
   useEffect(() => {
     if (connection !== "connected") {
       return;
@@ -424,7 +421,6 @@ export function App() {
         setCwd(meta.cwd ?? "");
         setEffortState(meta.effort ?? "medium");
         setSkills(meta.skills ?? []);
-        threadMgr.adapterRef.current.reset();
         providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
@@ -961,7 +957,14 @@ export function App() {
     [serverRequests],
   );
   const handleQuestionCancel = useCallback(() => serverRequests.resolveQuestion({}), [serverRequests]);
-  const handleOpenProviders = useCallback(() => setShowProviderModal(true), []);
+  const handleOpenProviders = useCallback(() => {
+    setFocusedProvider(null);
+    setShowProviderModal(true);
+  }, []);
+  const handleQuickConnectChatGPT = useCallback(() => {
+    setFocusedProvider("chatgpt");
+    setShowProviderModal(true);
+  }, []);
   const { handleSteer, canSteer } = steeringQueue;
   const handleInterrupt = () => {
     void interruptTurn();
@@ -1025,11 +1028,6 @@ export function App() {
           onNewThread={() => void startNewThread()}
           onOpenThread={(id) => void openThread(id)}
           onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
-          providers={providerMgr.providers}
-          onOpenProviders={(p) => {
-            setFocusedProvider(p ?? null);
-            setShowProviderModal(true);
-          }}
           onOpenTools={() => {
             setShowKnowledgeModal(false);
             setShowToolModal(true);
@@ -1064,6 +1062,9 @@ export function App() {
             items={state.items}
             threadStatus={state.threadStatus}
             threadCwd={state.activeThreadCwd ?? undefined}
+            hasProvider={hasProvider}
+            onOpenProviders={handleOpenProviders}
+            onQuickConnectChatGPT={handleQuickConnectChatGPT}
             onSelectPrompt={handleSelectPrompt}
             approvalPrompt={approvalPrompt}
             questionPrompt={questionPrompt}
@@ -1096,6 +1097,7 @@ export function App() {
             contextWindow={contextWindow}
             hasProvider={hasProvider}
             onOpenProviders={handleOpenProviders}
+            onQuickConnectChatGPT={handleQuickConnectChatGPT}
             supportsVision={supportsVision}
             supportsThinking={supportsThinking}
             pendingImages={pendingImagePreviews}
@@ -1111,6 +1113,10 @@ export function App() {
               threadId={state.activeThreadId}
               onList={listTools}
               onSave={saveTools}
+              onOpenProviders={() => {
+                setFocusedProvider(hasProvider ? null : "chatgpt");
+                setShowProviderModal(true);
+              }}
               onClose={() => setShowToolModal(false)}
               className="absolute inset-0 z-40 bg-overlay/35"
             />

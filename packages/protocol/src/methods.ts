@@ -39,6 +39,7 @@ export type DiligentClientNotificationMethod =
   (typeof DILIGENT_CLIENT_NOTIFICATION_METHODS)[keyof typeof DILIGENT_CLIENT_NOTIFICATION_METHODS];
 
 export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
+  AGENT_EVENT: "agent/event",
   THREAD_STARTED: "thread/started",
   THREAD_RESUMED: "thread/resumed",
   THREAD_COMPACTED: "thread/compacted",

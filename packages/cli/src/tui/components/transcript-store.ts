@@ -1,8 +1,7 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
 import type { ToolResultMessage } from "@diligent/core";
-import { type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
-import type { AgentEvent } from "@diligent/runtime";
+import { type AgentEvent, type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
@@ -261,6 +260,8 @@ export class TranscriptStore {
           this.activeMarkdown = null;
         }
         this.hasCommittedAssistantChunkInMessage = false;
+        break;
+      case "user_message":
         break;
       case "tool_start":
         this.toolStartTimes.set(event.toolCallId, Date.now());

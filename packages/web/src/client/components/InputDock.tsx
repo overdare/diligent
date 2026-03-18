@@ -3,7 +3,7 @@
 import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { findModelInfo, getThinkingEffortOptions } from "../lib/protocol-notification-adapter";
+import { findModelInfo, getThinkingEffortOptions } from "../lib/model-thinking-helpers";
 import type { SlashCommand } from "../lib/slash-commands";
 import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix } from "../lib/slash-commands";
 import type { UsageState } from "../lib/thread-store";
@@ -34,6 +34,7 @@ interface InputDockProps {
   contextWindow: number;
   hasProvider: boolean;
   onOpenProviders: () => void;
+  onQuickConnectChatGPT?: () => void;
   supportsVision: boolean;
   supportsThinking: boolean;
   pendingImages: Array<{ path: string; url: string; fileName?: string }>;
@@ -125,6 +126,7 @@ export function InputDock({
   contextWindow,
   hasProvider,
   onOpenProviders,
+  onQuickConnectChatGPT,
   supportsVision,
   supportsThinking,
   pendingImages,
@@ -305,92 +307,79 @@ export function InputDock({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (isBusy) onSteer();
-      else if (!isUploadingImages) onSend();
+      else if (!isUploadingImages && hasProvider) onSend();
     }
   };
+
+  const composerDisabled = !hasProvider;
 
   return (
     <div className="bg-surface-dark px-6 pb-4 pt-2">
       <div
-        className={`rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
+        className={`relative rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
       >
         {isCompacting ? (
           <div className="mb-3 rounded-lg border border-accent/30 bg-surface-dark px-3 py-2 text-xs text-accent">
             Compacting context…
           </div>
         ) : null}
-        {!hasProvider ? (
-          <button
-            type="button"
-            onClick={onOpenProviders}
-            className="flex w-full items-center justify-center gap-2 py-2 text-sm text-muted transition hover:text-text"
-          >
-            <span className="text-danger/70">No provider connected.</span>
-            <span className="text-accent underline underline-offset-2">Connect one in the sidebar →</span>
-          </button>
-        ) : (
-          <>
-            {pendingImages.length > 0 ? (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {pendingImages.map((image) => (
-                  <div
-                    key={image.path}
-                    className="group relative overflow-hidden rounded-lg border border-border/100 bg-surface-light"
-                  >
-                    <img src={image.url} alt={image.fileName ?? "Attached image"} className="h-20 w-20 object-cover" />
-                    <button
-                      type="button"
-                      aria-label={`Remove ${image.fileName ?? "image"}`}
-                      onClick={() => onRemoveImage(image.path)}
-                      disabled={isUploadingImages}
-                      className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                {isUploadingImages ? (
-                  <div className="flex h-20 min-w-[120px] items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
-                    Uploading images…
-                  </div>
-                ) : null}
+        {pendingImages.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {pendingImages.map((image) => (
+              <div
+                key={image.path}
+                className="group relative overflow-hidden rounded-lg border border-border/100 bg-surface-light"
+              >
+                <img src={image.url} alt={image.fileName ?? "Attached image"} className="h-20 w-20 object-cover" />
+                <button
+                  type="button"
+                  aria-label={`Remove ${image.fileName ?? "image"}`}
+                  onClick={() => onRemoveImage(image.path)}
+                  disabled={isUploadingImages || composerDisabled}
+                  className="absolute right-1 top-1 rounded-full bg-bg/80 px-1.5 py-0.5 text-[10px] text-text opacity-90 transition hover:bg-bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  ×
+                </button>
               </div>
-            ) : isUploadingImages ? (
-              <div className="mb-3 flex h-20 items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
+            ))}
+            {isUploadingImages ? (
+              <div className="flex h-20 min-w-[120px] items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
                 Uploading images…
               </div>
             ) : null}
+          </div>
+        ) : isUploadingImages ? (
+          <div className="mb-3 flex h-20 items-center justify-center rounded-lg border border-dashed border-border/100 bg-surface-dark px-3 text-xs text-muted">
+            Uploading images…
+          </div>
+        ) : null}
 
-            {/* Slash command autocomplete — positioned relative to the textarea area */}
-            <div className="relative flex items-start gap-2">
-              {slashMenuOpen ? (
-                <div ref={slashMenuRef}>
-                  <SlashMenu commands={slashFiltered} selectedIndex={slashSelectedIndex} onSelect={handleSlashSelect} />
-                </div>
-              ) : null}
-
-              <div className="min-w-0 flex-1">
-                <TextArea
-                  className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
-                  aria-label={isBusy ? "Steering input" : "Message input"}
-                  placeholder={
-                    isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
-                  }
-                  value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                  onCompositionStart={() => {
-                    composingRef.current = true;
-                  }}
-                  onCompositionEnd={() => {
-                    composingRef.current = false;
-                  }}
-                  onPaste={handlePaste}
-                  onKeyDown={handleKeyDown}
-                />
-              </div>
+        <div className="relative flex items-start gap-2">
+          {slashMenuOpen ? (
+            <div ref={slashMenuRef}>
+              <SlashMenu commands={slashFiltered} selectedIndex={slashSelectedIndex} onSelect={handleSlashSelect} />
             </div>
-          </>
-        )}
+          ) : null}
+
+          <div className="min-w-0 flex-1">
+            <TextArea
+              className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+              aria-label={isBusy ? "Steering input" : "Message input"}
+              placeholder={isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"}
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+              onPaste={handlePaste}
+              onKeyDown={handleKeyDown}
+              disabled={composerDisabled}
+            />
+          </div>
+        </div>
 
         <div className="mt-2.5 flex items-center justify-between gap-2.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -400,7 +389,7 @@ export function InputDock({
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 multiple
-                disabled={isUploadingImages}
+                disabled={isUploadingImages || composerDisabled}
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) {
@@ -410,20 +399,21 @@ export function InputDock({
                 }}
               />
 
-              <button
-                type="button"
-                aria-label="Open composer options"
-                aria-haspopup="menu"
-                aria-expanded={isPlusMenuOpen}
-                onClick={togglePlusMenu}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
-                  isPlusMenuOpen
-                    ? "border-border/100 bg-fill-secondary text-text"
-                    : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
-                }`}
-              >
-                +
-              </button>
+                <button
+                  type="button"
+                  aria-label="Open composer options"
+                  aria-haspopup="menu"
+                  aria-expanded={isPlusMenuOpen}
+                  onClick={togglePlusMenu}
+                  disabled={composerDisabled}
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
+                    isPlusMenuOpen
+                      ? "border-border/100 bg-fill-secondary text-text"
+                      : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  +
+                </button>
 
               {isPlusMenuOpen ? (
                 <div
@@ -540,7 +530,7 @@ export function InputDock({
                 onChange={onModelChange}
                 openDirection="up"
                 className="w-[180px]"
-                disabled={isBusy}
+                disabled={isBusy || composerDisabled}
               />
             ) : null}
 
@@ -552,7 +542,7 @@ export function InputDock({
                 onChange={(value) => onEffortChange(value as ThinkingEffort)}
                 openDirection="up"
                 className="w-[90px]"
-                disabled={isBusy}
+                disabled={isBusy || composerDisabled}
               />
             ) : null}
           </div>
@@ -593,7 +583,7 @@ export function InputDock({
                 onClick={() => {
                   if (!composingRef.current) onSend();
                 }}
-                disabled={!canSend}
+                disabled={!canSend || composerDisabled}
                 className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-fill-active disabled:cursor-not-allowed disabled:opacity-30"
               >
                 Send
@@ -601,6 +591,7 @@ export function InputDock({
             )}
           </div>
         </div>
+
       </div>
     </div>
   );

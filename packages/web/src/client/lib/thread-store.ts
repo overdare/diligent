@@ -505,6 +505,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       return next;
     }
 
+    case "user_message": {
+      const { text, images } = extractUserTextAndImages(event.message.content);
+      let nextState = state;
+      if (nextState.pendingSteers.length > 0) {
+        const joinedSteers = nextState.pendingSteers.join("\n");
+        if (text === joinedSteers) {
+          nextState = { ...nextState, pendingSteers: [] };
+        }
+      }
+      return withItem(nextState, `remote-user-${event.itemId}`, {
+        id: `remote-user-${event.itemId}`,
+        kind: "user",
+        text,
+        images,
+        timestamp: event.message.timestamp,
+      });
+    }
+
     case "status_change":
       return { ...state, threadStatus: event.status };
 
@@ -877,34 +895,6 @@ export function reduceServerNotification(
       break;
     }
     return next;
-  }
-
-  // Handle userMessage items from other subscribers (not converted to AgentEvent by adapter)
-  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED) {
-    const item = (
-      notification.params as {
-        item?: { type?: string; itemId?: string; message?: { content?: unknown; timestamp?: number } };
-      }
-    ).item;
-    if (item?.type === "userMessage" && item.message) {
-      const { text, images } = extractUserTextAndImages(item.message.content);
-      // If the incoming user message matches pending steer chips (auto-submitted after interrupt),
-      // drain those chips so they are not shown alongside the conversation item.
-      let baseState = stateWithAuthoritativeStatus;
-      if (baseState.pendingSteers.length > 0) {
-        const joinedSteers = baseState.pendingSteers.join("\n");
-        if (text === joinedSteers) {
-          baseState = { ...baseState, pendingSteers: [] };
-        }
-      }
-      return withItem(baseState, `remote-user-${item.itemId}`, {
-        id: `remote-user-${item.itemId}`,
-        kind: "user",
-        text,
-        images,
-        timestamp: item.message.timestamp ?? Date.now(),
-      });
-    }
   }
 
   // Delegate all item lifecycle, status, usage, error, knowledge, loop, steering to AgentEvent reducer

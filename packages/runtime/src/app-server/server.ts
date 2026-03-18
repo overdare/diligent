@@ -11,6 +11,7 @@ import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../app
 import type { DiligentConfig } from "../config/schema";
 import type { DiligentPaths } from "../infrastructure";
 import {
+  AgentEventSchema,
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
   DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -40,7 +41,6 @@ import {
   handleConfigSet,
   handleImageUpload,
 } from "./config-handlers";
-import { agentEventToNotification } from "./event-mapper";
 import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import {
   handleServerResponseMessage,
@@ -651,12 +651,17 @@ export class DiligentAppServer {
 
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     const runtime = this.threads.get(threadId);
-    const notification = agentEventToNotification(threadId, turnId, event, {
-      model: runtime?.agent?.model,
-      threadStatus: runtime?.isRunning === true ? "busy" : undefined,
-    });
-    if (notification) {
-      await this.emit(notification);
+    const parsedAgentEvent = AgentEventSchema.safeParse(event);
+    if (parsedAgentEvent.success) {
+      await this.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+        params: {
+          threadId,
+          turnId,
+          event: parsedAgentEvent.data,
+          ...(runtime?.isRunning === true ? { threadStatus: "busy" as const } : {}),
+        },
+      });
     }
   }
 
@@ -704,13 +709,10 @@ export class DiligentAppServer {
     const targets = subscribers.length > 0 ? subscribers : [...this.connections.values()];
 
     for (const conn of targets) {
-      // Skip turn initiator for userMessage item notifications
-      if (
-        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED ||
-        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED
-      ) {
-        const item = (notification.params as { item?: { type?: string } }).item;
-        if (item?.type === "userMessage" && this.turnInitiators.get(threadId) === conn.id) {
+      // Skip turn initiator for echo of their own user message events
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+        const params = notification.params as { event?: { type?: string }; threadId?: string };
+        if (params.event?.type === "user_message" && params.threadId && this.turnInitiators.get(params.threadId) === conn.id) {
           continue;
         }
       }

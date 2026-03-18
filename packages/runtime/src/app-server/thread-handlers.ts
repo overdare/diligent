@@ -474,15 +474,18 @@ export async function handleTurnStart(
   const userMessage = { role: "user" as const, content, timestamp };
 
   const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
-  const userItem = { type: "userMessage" as const, itemId: userItemId, message: userMessage };
-
   await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED,
-    params: { threadId: runtime.id, turnId, item: userItem },
-  });
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED,
-    params: { threadId: runtime.id, turnId, item: userItem },
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+    params: {
+      threadId: runtime.id,
+      turnId,
+      event: {
+        type: "user_message",
+        itemId: userItemId,
+        message: userMessage,
+      },
+      threadStatus: "busy",
+    },
   });
 
   const runPromise = runtime.manager.run(userMessage, {

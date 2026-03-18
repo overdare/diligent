@@ -1,7 +1,6 @@
 // @summary Hydrates web thread render state from thread/read payload history
 
-import type { ChildSession, ThreadItem, ThreadReadResponse, TranscriptEntry } from "@diligent/protocol";
-import { ProtocolNotificationAdapter } from "./protocol-notification-adapter";
+import { ProtocolNotificationAdapter, type ChildSession, type ThreadItem, type ThreadReadResponse, type TranscriptEntry } from "@diligent/protocol";
 import type { PlanState, ThreadState, UsageState } from "./thread-store";
 import { reduceServerNotification } from "./thread-store";
 import {

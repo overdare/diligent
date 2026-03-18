@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
+  AgentEvent,
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
@@ -11,8 +12,7 @@ import type {
   RequestId,
 } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
-import type { AgentEvent, DiligentPaths, SkillMetadata } from "@diligent/runtime";
-import { ProtocolNotificationAdapter } from "@diligent/runtime";
+import type { DiligentPaths, SkillMetadata } from "@diligent/runtime";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
 import { AppDialogs } from "./app-dialogs";
@@ -71,7 +71,6 @@ export class App {
 
   // State
   private rpcClient: SpawnedAppServer | null = null;
-  private notificationAdapter = new ProtocolNotificationAdapter();
   private runtime: AppRuntimeState;
   private shouldBellOnComplete: boolean;
   private viewModel: TuiViewModel;
@@ -171,7 +170,6 @@ export class App {
     });
     this.eventController = new AppEventController({
       runtime: this.runtime,
-      mapNotificationToEvents: (notification) => this.notificationAdapter.toAgentEvents(notification),
       handleAgentEvent: (event) => this.handleAgentEvent(event),
       onTurnFinished: () => {
         this.chatView.finishTurn();
@@ -481,6 +479,21 @@ export class App {
       this.runtime.noteMessageEnd();
     }
 
+    if (event.type === "user_message") {
+      const content = event.message.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : content
+              .filter((block) => block.type === "text")
+              .map((block) => block.text)
+              .join("\n")
+              .trim();
+      if (text.length > 0) {
+        this.handleRemoteUserMessage(text);
+      }
+    }
+
     // Update status bar with usage info
     if (event.type === "usage") {
       this.statusBar.update({
@@ -613,17 +626,6 @@ export class App {
       !this.runtime.isProcessing
     ) {
       this.beginCompactionIndicator(0);
-    }
-
-    if (
-      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED &&
-      notification.params.threadId === this.runtime.currentThreadId &&
-      notification.params.item.type === "userMessage"
-    ) {
-      const content = notification.params.item.message.content;
-      if (typeof content === "string" && content.trim().length > 0) {
-        this.handleRemoteUserMessage(content);
-      }
     }
 
     await this.eventController.handleServerNotification(notification);

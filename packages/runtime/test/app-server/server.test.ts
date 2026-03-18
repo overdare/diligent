@@ -298,9 +298,10 @@ describe("DiligentAppServer", () => {
 
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED)).toBe(true);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED)).toBe(true);
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED)).toBe(true);
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA)).toBe(true);
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED)).toBe(true);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT)).toBe(true);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED)).toBe(false);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_DELTA)).toBe(false);
+    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_COMPLETED)).toBe(false);
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED)).toBe(true);
   });
 
@@ -382,11 +383,14 @@ describe("DiligentAppServer", () => {
 
     await turnCompleted;
 
-    const userStarted = notifications.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED);
-    expect(userStarted).toBeDefined();
-    const userItem = (userStarted as { params: { item: { type: string; message: { content: unknown } } } }).params.item;
-    expect(userItem.type).toBe("userMessage");
-    expect(userItem.message.content).toEqual([
+    const userEvent = notifications.find(
+      (n) =>
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        n.params.event.type === "user_message",
+    );
+    expect(userEvent).toBeDefined();
+    const message = (userEvent as { params: { event: { message: { content: unknown } } } }).params.event.message;
+    expect(message.content).toEqual([
       {
         type: "local_image",
         path: "/tmp/example.png",
@@ -1702,7 +1706,7 @@ describe("DiligentAppServer", () => {
     expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED)).toBe(false);
   });
 
-  it("persists turn-ending errors to thread history and emits error notification", async () => {
+  it("persists turn-ending errors to thread history and emits error agent event", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const notifications: DiligentServerNotification[] = [];
 
@@ -1738,9 +1742,13 @@ describe("DiligentAppServer", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    const errorNotification = notifications.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR);
-    expect(errorNotification).toBeDefined();
-    expect(errorNotification?.params.error.message).toContain("invalid model for provider");
+    const errorEventNotification = notifications.find(
+      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT && n.params.event.type === "error",
+    );
+    expect(errorEventNotification).toBeDefined();
+    if (errorEventNotification?.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+      expect(errorEventNotification.params.event.error.message).toContain("invalid model for provider");
+    }
 
     const read = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 702,
@@ -2423,14 +2431,25 @@ describe("DiligentAppServer", () => {
 
     await turnDone;
 
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN)).toBe(true);
-    expect(notifications.some((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_END)).toBe(true);
     expect(
       notifications.some(
         (n) =>
-          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ITEM_STARTED &&
-          "childThreadId" in n.params &&
-          typeof n.params.childThreadId === "string",
+          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+          n.params.event.type === "collab_spawn_begin",
+      ),
+    ).toBe(true);
+    expect(
+      notifications.some(
+        (n) =>
+          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT && n.params.event.type === "collab_spawn_end",
+      ),
+    ).toBe(true);
+    expect(
+      notifications.some(
+        (n) =>
+          n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+          n.params.event.type === "tool_start" &&
+          typeof n.params.event.childThreadId === "string",
       ),
     ).toBe(true);
   });

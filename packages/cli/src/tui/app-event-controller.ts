@@ -1,6 +1,7 @@
 // @summary Server notification and request controller for the CLI TUI runtime
 
 import type {
+  AgentEvent,
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
@@ -8,7 +9,6 @@ import type {
 } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import type {
-  AgentEvent,
   ApprovalRequest,
   ApprovalResponse,
   UserInputRequest,
@@ -18,7 +18,6 @@ import type { AppRuntimeState } from "./app-runtime-state";
 
 export interface AppEventControllerDeps {
   runtime: AppRuntimeState;
-  mapNotificationToEvents: (notification: DiligentServerNotification) => AgentEvent[];
   handleAgentEvent: (event: AgentEvent) => void;
   onTurnFinished: () => void;
   onTurnErrored: (message: string) => void;
@@ -37,9 +36,16 @@ export class AppEventController {
       return;
     }
 
-    const agentEvents = this.deps.mapNotificationToEvents(notification);
-    for (const event of agentEvents) {
-      this.deps.handleAgentEvent(event);
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+      this.deps.handleAgentEvent(notification.params.event);
+
+      if (notification.params.event.type === "error" && this.deps.runtime.pendingTurn) {
+        this.deps.onTurnErrored(notification.params.event.error.message);
+      }
+    }
+
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
+      this.deps.handleAgentEvent({ type: "turn_start", turnId: notification.params.turnId });
     }
 
     if (

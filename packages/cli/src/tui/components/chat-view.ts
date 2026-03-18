@@ -1,7 +1,7 @@
 // @summary Renders the agent message history and real-time streaming output
 
 import type { ToolResultMessage } from "@diligent/core";
-import type { AgentEvent } from "@diligent/runtime";
+import type { AgentEvent } from "@diligent/protocol";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { MarkdownView } from "./markdown-view";

@@ -1,6 +1,7 @@
 // @summary Diligent server->client notification schemas aligned to codex-like thread/turn/item flow
 import { z } from "zod";
 import {
+  AgentEventSchema,
   CollabAgentRefSchema,
   CollabAgentStatusEntrySchema,
   CollabAgentStatusSchema,
@@ -21,6 +22,21 @@ export const ThreadStartedNotificationSchema = z.object({
   }),
 });
 export type ThreadStartedNotification = z.infer<typeof ThreadStartedNotificationSchema>;
+
+const ThreadStatusSnapshotFields = {
+  threadStatus: ThreadStatusSchema.optional(),
+};
+
+export const AgentEventNotificationSchema = z.object({
+  method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT),
+  params: z.object({
+    threadId: z.string(),
+    turnId: z.string(),
+    event: AgentEventSchema,
+    ...ThreadStatusSnapshotFields,
+  }),
+});
+export type AgentEventNotification = z.infer<typeof AgentEventNotificationSchema>;
 
 export const ThreadResumedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED),
@@ -50,10 +66,6 @@ export const ThreadCompactionStartedNotificationSchema = z.object({
   }),
 });
 export type ThreadCompactionStartedNotification = z.infer<typeof ThreadCompactionStartedNotificationSchema>;
-
-const ThreadStatusSnapshotFields = {
-  threadStatus: ThreadStatusSchema.optional(),
-};
 
 export const ThreadStatusChangedNotificationSchema = z.object({
   method: z.literal(DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED),
@@ -314,6 +326,7 @@ export const CollabInteractionEndNotificationSchema = z.object({
 export type CollabInteractionEndNotification = z.infer<typeof CollabInteractionEndNotificationSchema>;
 
 export const DiligentServerNotificationSchema = z.union([
+  AgentEventNotificationSchema,
   ThreadStartedNotificationSchema,
   ThreadResumedNotificationSchema,
   ThreadCompactedNotificationSchema,

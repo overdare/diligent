@@ -3,8 +3,7 @@
 import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
-import { useCallback, useRef, useState } from "react";
-import { ProtocolNotificationAdapter } from "./protocol-notification-adapter";
+import { useCallback, useState } from "react";
 import type { WebRpcClient } from "./rpc-client";
 
 type ThreadHydrateAction = {
@@ -39,7 +38,6 @@ export function useThreadManager({
   clearAttention: (threadId: string) => void;
   closeModals: () => void;
 }) {
-  const adapterRef = useRef(new ProtocolNotificationAdapter());
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
 
@@ -60,7 +58,6 @@ export function useThreadManager({
     const rpc = rpcRef.current;
     if (!rpc) return;
     closeModals();
-    adapterRef.current.reset();
     const mode = modeRef.current;
     const cwd = cwdRef.current;
     try {
@@ -99,7 +96,6 @@ export function useThreadManager({
       const rpc = rpcRef.current;
       if (!rpc) return;
       closeModals();
-      adapterRef.current.reset();
       const mode = modeRef.current;
       try {
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
@@ -141,7 +137,6 @@ export function useThreadManager({
     if (!threadId) return;
     const rpc = rpcRef.current;
     if (!rpc) return;
-    adapterRef.current.reset();
     const mode = modeRef.current;
     const activeThreadId = activeThreadIdRef.current;
     const cwd = cwdRef.current;
@@ -180,7 +175,6 @@ export function useThreadManager({
   }, [pendingDeleteThreadId, rpcRef, modeRef, activeThreadIdRef, cwdRef, dispatch, setEffortState, refreshThreadList]);
 
   return {
-    adapterRef,
     pendingDeleteThreadId,
     setPendingDeleteThreadId,
     threadInputs,

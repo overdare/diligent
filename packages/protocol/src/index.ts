@@ -3,5 +3,6 @@ export * from "./client-requests";
 export * from "./data-model";
 export * from "./jsonrpc";
 export * from "./methods";
+export * from "./notification-adapter";
 export * from "./server-notifications";
 export * from "./server-requests";

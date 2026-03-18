@@ -1,13 +1,7 @@
-// @summary Protocol-only notification adapter and model helper types for the web client
+// @summary Protocol notification to AgentEvent adapter shared by protocol clients
 
-import type {
-  AgentEvent,
-  AssistantMessage,
-  DiligentServerNotification,
-  ModelInfo,
-  ThinkingEffort,
-} from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import type { AgentEvent, AssistantMessage, DiligentServerNotification, ToolRenderPayload } from "./index";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "./index";
 
 function createEmptyAssistantMessage(model = "unknown"): AssistantMessage {
   return {
@@ -21,9 +15,9 @@ function createEmptyAssistantMessage(model = "unknown"): AssistantMessage {
 }
 
 function mergeToolRenderPayload(
-  started: import("@diligent/protocol").ToolRenderPayload | undefined,
-  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
-): import("@diligent/protocol").ToolRenderPayload | undefined {
+  started: ToolRenderPayload | undefined,
+  completed: ToolRenderPayload | undefined,
+): ToolRenderPayload | undefined {
   if (!started) return completed;
   if (!completed) return started;
   return {
@@ -36,7 +30,7 @@ export class ProtocolNotificationAdapter {
   private agentMessageByItemId = new Map<string, AssistantMessage>();
   private toolCallByItemId = new Map<
     string,
-    { toolCallId: string; toolName: string; input: unknown; render?: import("@diligent/protocol").ToolRenderPayload }
+    { toolCallId: string; toolName: string; input: unknown; render?: ToolRenderPayload }
   >();
 
   toAgentEvents(notification: DiligentServerNotification): AgentEvent[] {
@@ -314,44 +308,4 @@ export class ProtocolNotificationAdapter {
 
     return [];
   }
-}
-
-export function findModelInfo(models: ModelInfo[], modelId?: string): ModelInfo | undefined {
-  if (!modelId) return undefined;
-  return models.find((model) => model.id === modelId);
-}
-
-export function supportsThinkingNone(
-  model: Pick<ModelInfo, "supportsThinking" | "supportedEfforts"> | undefined,
-): boolean {
-  if (!model?.supportsThinking) return false;
-  return model.supportedEfforts?.includes("none") ?? false;
-}
-
-function getThinkingEffortLabel(
-  effort: ThinkingEffort,
-  model: Pick<ModelInfo, "supportsThinking" | "supportedEfforts"> | undefined,
-): string {
-  if (effort === "none" && supportsThinkingNone(model)) return "minimal";
-  return effort;
-}
-
-export function getThinkingEffortOptions(
-  model: Pick<ModelInfo, "supportsThinking" | "supportedEfforts"> | undefined,
-): Array<{ value: ThinkingEffort; label: string }> {
-  const effortValues: ThinkingEffort[] = ["none", "low", "medium", "high", "max"];
-  if (model && !model.supportsThinking) return [];
-  const supportedEfforts =
-    model?.supportsThinking === true
-      ? (model.supportedEfforts ?? effortValues.filter((effort) => effort !== "none"))
-      : effortValues.filter((effort) => effort !== "none");
-  return supportedEfforts.map((effort) => ({ value: effort, label: getThinkingEffortLabel(effort, model) }));
-}
-
-export function getThinkingEffortUsage(
-  model: Pick<ModelInfo, "supportsThinking" | "supportedEfforts"> | undefined,
-): string {
-  return getThinkingEffortOptions(model)
-    .map((option) => option.label)
-    .join("|");
 }
