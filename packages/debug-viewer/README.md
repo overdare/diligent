@@ -37,12 +37,12 @@ Output directory:
 dist/debug-viewer-windows/
   debug-viewer.exe
   client/
-  run-debug-viewer.bat
   README.txt
 ```
 
 Data directory resolution at runtime:
 
-1. If `--data-dir` is provided, it is used.
+1. If `--dir` is provided, it is used.
+   - If the path contains `.diligent` as a child, that folder is used automatically.
 2. Otherwise, it searches from current working directory (for `.diligent`).
 3. If not found, it falls back to `<exe folder>/.diligent`.

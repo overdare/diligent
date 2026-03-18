@@ -15,9 +15,12 @@ const port = portArg
     ? Number.parseInt(args[args.indexOf("--port") + 1], 10)
     : 7432;
 const dev = args.includes("--dev");
-const dataDirArg =
-  args.find((a) => a.startsWith("--data-dir="))?.split("=")[1] ??
-  (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null);
+const dirArg =
+  args.find((a) => a.startsWith("--dir="))?.split("=")[1] ??
+  (args.includes("--dir")
+    ? args[args.indexOf("--dir") + 1]
+    : (args.find((a) => a.startsWith("--data-dir="))?.split("=")[1] ??
+      (args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : null)));
 
 function resolveDefaultDiligentDir(): string | null {
   const discovered = findDiligentDir({ cwd: process.cwd() });
@@ -25,6 +28,13 @@ function resolveDefaultDiligentDir(): string | null {
 
   const candidate = join(dirname(process.execPath), ".diligent");
   return existsSync(candidate) ? candidate : null;
+}
+
+function normalizeDataDirCandidate(candidatePath: string): string {
+  if (candidatePath.endsWith(".diligent")) return candidatePath;
+  const nested = join(candidatePath, ".diligent");
+  if (existsSync(nested)) return nested;
+  return candidatePath;
 }
 
 function resolveStaticClientDir(): string | null {
@@ -42,13 +52,13 @@ function resolveStaticClientDir(): string | null {
 }
 
 // Find data directory
-const dataDir = dataDirArg
-  ? isAbsolute(dataDirArg)
-    ? dataDirArg
-    : resolve(process.cwd(), dataDirArg)
+const dataDir = dirArg
+  ? isAbsolute(dirArg)
+    ? normalizeDataDirCandidate(dirArg)
+    : normalizeDataDirCandidate(resolve(process.cwd(), dirArg))
   : resolveDefaultDiligentDir();
 if (!dataDir) {
-  console.error("Could not find .diligent/ directory. Run from a diligent project, or pass --data-dir <path>.");
+  console.error("Could not find .diligent/ directory. Run from a diligent project, or pass --dir <path>.");
   process.exit(1);
 }
 

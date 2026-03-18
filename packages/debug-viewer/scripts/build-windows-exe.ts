@@ -43,10 +43,7 @@ rmSync(outputClientDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
 cpSync(clientDistDir, outputClientDir, { recursive: true });
 
-const runScript = `@echo off\r\nsetlocal\r\nset SCRIPT_DIR=%~dp0\r\nif "%~1"=="" (\r\n  "%SCRIPT_DIR%debug-viewer.exe" --data-dir "%SCRIPT_DIR%.diligent"\r\n) else (\r\n  "%SCRIPT_DIR%debug-viewer.exe" --data-dir "%~1"\r\n)\r\n`;
-writeFileSync(join(outputDir, "run-debug-viewer.bat"), runScript, "utf8");
-
-const readme = `Debug Viewer (Windows internal build)\n\n1) Place this folder where you want to run it.\n2) Put your .diligent folder in the same directory as debug-viewer.exe\n   OR pass a data dir path to run-debug-viewer.bat.\n\nUsage:\n- Double-click run-debug-viewer.bat\n- Or run: run-debug-viewer.bat C:\\path\\to\\.diligent\n\nThen open: http://localhost:7432\n`;
+const readme = `Debug Viewer (Windows internal build)\n\nUsage:\n- debug-viewer.exe --dir C:\\path\\to\\project-root\n\nNotes:\n- --dir accepts project root (if it contains .diligent, it will be detected automatically).\n- If --dir is omitted, it searches from current working directory first.\n- If not found, it falls back to <exe folder>/.diligent.\n\nThen open: http://localhost:7432\n`;
 writeFileSync(join(outputDir, "README.txt"), readme, "utf8");
 
 console.log("[debug-viewer] Windows bundle ready:");
