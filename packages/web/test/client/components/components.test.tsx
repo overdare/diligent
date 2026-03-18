@@ -5,6 +5,7 @@ import { normalizeImageFileName } from "../../../src/client/App";
 import { AssistantMessage } from "../../../src/client/components/AssistantMessage";
 import { Button } from "../../../src/client/components/Button";
 import { ContextMessage } from "../../../src/client/components/ContextMessage";
+import { EmptyState } from "../../../src/client/components/EmptyState";
 import { Input } from "../../../src/client/components/Input";
 import { extractPastedImageFiles, InputDock } from "../../../src/client/components/InputDock";
 import { KnowledgeManagerModal } from "../../../src/client/components/KnowledgeManagerModal";
@@ -213,6 +214,23 @@ test("context message renders checkpoint language and expandable summary area", 
   expect(html).toContain("Compacted");
   expect(html).toContain("Older conversation was compressed to keep the thread efficient.");
   expect(html).toContain('aria-expanded="false"');
+});
+
+test("empty state renders connect CTA when provider is not configured", () => {
+  const html = renderToStaticMarkup(
+    <EmptyState hasProvider={false} oauthPending={false} onOpenProviders={() => {}} onQuickConnectChatGPT={() => {}} />,
+  );
+
+  expect(html).toContain("Connect your AI account to start building");
+  expect(html).toContain("Connect ChatGPT");
+});
+
+test("empty state is hidden when provider is configured", () => {
+  const html = renderToStaticMarkup(
+    <EmptyState hasProvider={true} oauthPending={false} onOpenProviders={() => {}} onQuickConnectChatGPT={() => {}} />,
+  );
+
+  expect(html).toBe("");
 });
 
 test("assistant message renders completed footer when turn duration is available", () => {

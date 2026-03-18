@@ -956,6 +956,8 @@ export function App() {
     [providerMgr.availableModels, providerMgr.currentModel],
   );
   const hasProvider = useMemo(() => providerMgr.providers.some((p) => p.configured), [providerMgr.providers]);
+  const hasResolvedProviderStatus = providerMgr.providerStatusResolved;
+  const effectiveHasProvider = hasProvider || !hasResolvedProviderStatus;
   const pendingImagePreviews = useMemo(
     () =>
       pendingImages.map((image) => ({
@@ -1085,7 +1087,7 @@ export function App() {
             items={state.items}
             threadStatus={state.threadStatus}
             threadCwd={state.activeThreadCwd ?? undefined}
-            hasProvider={hasProvider}
+            hasProvider={effectiveHasProvider}
             oauthPending={oauthPending}
             onOpenProviders={handleOpenProviders}
             onQuickConnectChatGPT={handleQuickConnectChatGPT}

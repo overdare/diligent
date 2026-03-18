@@ -11,6 +11,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
   const [providers, setProviders] = useState<ProviderAuthStatus[]>([]);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [currentModel, setCurrentModel] = useState<string>("");
+  const [providerStatusResolved, setProviderStatusResolved] = useState(false);
 
   // Refs kept in sync so async callbacks always read the latest values
   const currentModelRef = useRef<string>("");
@@ -45,6 +46,8 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
         }
       } catch (error) {
         console.error(error);
+      } finally {
+        setProviderStatusResolved(true);
       }
     },
     [rpcRef],
@@ -124,6 +127,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
   const onAccountUpdated = useCallback(
     async (params: { providers: ProviderAuthStatus[] }): Promise<void> => {
       setProviders(params.providers);
+      setProviderStatusResolved(true);
       // Also refresh available models since provider configuration changed
       const rpc = rpcRef.current;
       if (!rpc) return;
@@ -146,6 +150,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
 
   return {
     providers,
+    providerStatusResolved,
     availableModels,
     currentModel,
     currentModelRef,
