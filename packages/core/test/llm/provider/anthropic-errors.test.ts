@@ -21,13 +21,13 @@ function makeAPIError(
 }
 
 describe("classifyAnthropicError", () => {
-  test("classifies 429 as rate_limit (retryable)", () => {
+  test("classifies 429 as non-retryable rate_limit", () => {
     const err = makeAPIError(429, "Rate limit exceeded");
     const result = classifyAnthropicError(err);
 
     expect(result).toBeInstanceOf(ProviderError);
     expect(result.errorType).toBe("rate_limit");
-    expect(result.isRetryable).toBe(true);
+    expect(result.isRetryable).toBe(false);
     expect(result.statusCode).toBe(429);
   });
 
@@ -99,12 +99,12 @@ describe("classifyAnthropicError", () => {
     expect(result.statusCode).toBe(403);
   });
 
-  test("classifies other API errors as unknown", () => {
+  test("classifies 500 as overloaded (retryable)", () => {
     const err = makeAPIError(500, "Internal server error");
     const result = classifyAnthropicError(err);
 
-    expect(result.errorType).toBe("unknown");
-    expect(result.isRetryable).toBe(false);
+    expect(result.errorType).toBe("overloaded");
+    expect(result.isRetryable).toBe(true);
     expect(result.statusCode).toBe(500);
   });
 

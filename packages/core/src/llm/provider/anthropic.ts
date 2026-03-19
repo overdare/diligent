@@ -288,9 +288,9 @@ export function classifyAnthropicError(err: unknown): ProviderError {
     const status = err.status;
     if (status === 429) {
       const retryAfter = parseRetryAfter(err.headers);
-      return new ProviderError(err.message, "rate_limit", true, retryAfter, status, err);
+      return new ProviderError(err.message, "rate_limit", false, retryAfter, status, err);
     }
-    if (status === 529) {
+    if (status >= 500) {
       return new ProviderError(err.message, "overloaded", true, undefined, status, err);
     }
     if (status === 400 && err.message.includes("context length")) {

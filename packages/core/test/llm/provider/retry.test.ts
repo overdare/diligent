@@ -96,7 +96,7 @@ describe("withRetry", () => {
 
   test("retries on retryable errors and eventually succeeds", async () => {
     const failures = [
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
       new ProviderError("overloaded", "overloaded", true, undefined, 529),
     ];
     const { streamFn, callCount } = createFailingStreamFn(failures);
@@ -142,9 +142,9 @@ describe("withRetry", () => {
 
   test("stops after max attempts exceeded", async () => {
     const failures = [
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
     ];
     const { streamFn, callCount } = createFailingStreamFn(failures);
 
@@ -168,7 +168,7 @@ describe("withRetry", () => {
 
   test("respects retry-after delay", async () => {
     const failures = [
-      new ProviderError("rate limited", "rate_limit", true, 50, 429), // 50ms retry-after
+      new ProviderError("server unavailable", "overloaded", true, 50, 503), // 50ms retry-after
     ];
     const { streamFn } = createFailingStreamFn(failures);
 
@@ -189,8 +189,8 @@ describe("withRetry", () => {
 
   test("abort cancels retry", async () => {
     const failures = [
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
-      new ProviderError("rate limited", "rate_limit", true, undefined, 429),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
+      new ProviderError("server unavailable", "overloaded", true, undefined, 503),
     ];
     const { streamFn, callCount } = createFailingStreamFn(failures);
     const controller = new AbortController();

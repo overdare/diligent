@@ -74,9 +74,9 @@ export function classifyOpenAIError(err: unknown): ProviderError {
     const status = err.status;
     if (status === 429) {
       const retryAfter = parseRetryAfterFromHeaders(err.headers);
-      return new ProviderError(err.message, "rate_limit", true, retryAfter, status, err);
+      return new ProviderError(err.message, "rate_limit", false, retryAfter, status, err);
     }
-    if (status === 529) {
+    if (status >= 500) {
       return new ProviderError(err.message, "overloaded", true, undefined, status, err);
     }
     if (status === 400 && isContextOverflow(err.message)) {
@@ -89,6 +89,16 @@ export function classifyOpenAIError(err: unknown): ProviderError {
   }
   if (isNetworkError(err)) {
     return new ProviderError(String(err), "network", true);
+  }
+  if (isTransientOpenAIError(err)) {
+    return new ProviderError(
+      err instanceof Error ? err.message : String(err),
+      "overloaded",
+      true,
+      undefined,
+      undefined,
+      err instanceof Error ? err : undefined,
+    );
   }
   return new ProviderError(
     err instanceof Error ? err.message : String(err),
@@ -203,4 +213,17 @@ function parseRetryAfterFromHeaders(headers: Headers | undefined): number | unde
   const s = headers.get("retry-after");
   if (s) return Number.parseInt(s, 10) * 1000;
   return undefined;
+}
+
+function isTransientOpenAIError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toLowerCase();
+  return (
+    message.includes("an error occurred while processing your request") ||
+    message.includes("request id") ||
+    message.includes("help.openai.com") ||
+    message.includes("service unavailable") ||
+    message.includes("server had an error") ||
+    message.includes("internal server error")
+  );
 }

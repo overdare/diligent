@@ -101,10 +101,12 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
               ? "unknown"
               : is429
                 ? "rate_limit"
-                : response.status === 401 || response.status === 403
-                  ? "auth"
-                  : "unknown",
-            is429 && !isUsageLimit,
+                : response.status >= 500
+                  ? "overloaded"
+                  : response.status === 401 || response.status === 403
+                    ? "auth"
+                    : "unknown",
+            response.status >= 500,
             undefined,
             response.status,
           );
