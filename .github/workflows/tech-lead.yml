@@ -21,7 +21,7 @@ jobs:
         run: |
           LAST_MSG=$(git log -1 --format="%s" origin/main)
           echo "Last commit: $LAST_MSG"
-          if echo "$LAST_MSG" | grep -q "^chore: tech-lead review"; then
+          if echo "$LAST_MSG" | grep -q "^chore(repo): tech-lead review"; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -57,5 +57,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: tech-lead review $(date +%Y-%m-%d)" -m "Co-Authored-By: Claude Opus <noreply@anthropic.com>"
+          git commit -m "chore(repo): tech-lead review $(date +%Y-%m-%d)" -m "Co-Authored-By: Claude Opus <noreply@anthropic.com>"
           LEFTHOOK=0 git push origin main
