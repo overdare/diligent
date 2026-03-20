@@ -8,18 +8,20 @@ import type {
   Mode,
   SessionSummary,
   ThreadStatus,
+  ToolRenderPayload,
   UserInputRequest,
 } from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS, ToolRenderPayloadSchema } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import {
-  COLLAB_RENDERED_TOOLS,
-  extractUserTextAndImages,
-  parsePlanOutput,
-  stringifyUnknown,
-  updateItem,
-  withItem,
-  zeroUsage,
-} from "./thread-utils";
+  appendChildAssistantTimelineDelta,
+  appendChildAssistantTimelineStart,
+  finalizeChildAssistantTimeline,
+  findCollabSpawnItem,
+  isCollabEvent,
+  reduceCollabEvent,
+} from "./collab-reducer";
+import { extractUserTextAndImages, updateItem, withItem, zeroUsage } from "./thread-utils";
+import { isToolEvent, reduceToolEvent } from "./tool-reducer";
 
 export { hydrateFromThreadRead } from "./thread-hydration";
 
@@ -89,7 +91,7 @@ export type RenderItem =
       startedAt: number;
       durationMs?: number;
       /** P040: optional structured render payload for richer presentation */
-      render?: import("@diligent/protocol").ToolRenderPayload;
+      render?: ToolRenderPayload;
     }
   | {
       id: string;
@@ -176,121 +178,7 @@ export const initialThreadState: ThreadState = {
   activeReasoningDurationMs: 0,
 };
 
-/** Find the most recent collab spawn RenderItem for a given childThreadId. */
-function findCollabSpawnItem(
-  state: ThreadState,
-  childThreadId: string,
-): Extract<RenderItem, { kind: "collab" }> | undefined {
-  for (let i = state.items.length - 1; i >= 0; i--) {
-    const item = state.items[i];
-    if (item.kind === "collab" && item.eventType === "spawn" && item.childThreadId === childThreadId) {
-      return item;
-    }
-  }
-  return undefined;
-}
-
-/** Update the latest spawn item's status for a child thread. */
-function updateCollabSpawnStatus(
-  state: ThreadState,
-  childThreadId: string,
-  status: string,
-  message?: string,
-): ThreadState {
-  const spawnItem = findCollabSpawnItem(state, childThreadId);
-  if (!spawnItem) return state;
-  return updateItem(state, spawnItem.id, (item) =>
-    item.kind === "collab" && item.eventType === "spawn"
-      ? {
-          ...item,
-          status,
-          message: message ?? item.message,
-        }
-      : item,
-  );
-}
-
-function normalizeSpawnStatusFromWait(status: string, timedOut: boolean): string {
-  // wait() timeout can snapshot a just-spawned agent as "pending" due to race timing.
-  // For spawn rows, that means "still running" from the user's perspective.
-  if (status === "pending") return "running";
-  // When wait timed out, any non-final status should remain running in the spawn row.
-  if (timedOut && status === "running") return "running";
-  return status;
-}
-
 let renderSeq = 0;
-
-function toToolRenderPayload(value: unknown): import("@diligent/protocol").ToolRenderPayload | undefined {
-  const parsed = ToolRenderPayloadSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
-function mergeToolRenderPayload(
-  started: import("@diligent/protocol").ToolRenderPayload | undefined,
-  completed: import("@diligent/protocol").ToolRenderPayload | undefined,
-): import("@diligent/protocol").ToolRenderPayload | undefined {
-  if (!started) return completed;
-  if (!completed) return started;
-  return {
-    ...completed,
-    inputSummary: completed.inputSummary ?? started.inputSummary,
-  };
-}
-
-function appendChildAssistantTimelineStart(state: ThreadState, childThreadId: string): ThreadState {
-  const spawnItem = findCollabSpawnItem(state, childThreadId);
-  if (!spawnItem) return state;
-  return updateItem(state, spawnItem.id, (item) =>
-    item.kind === "collab"
-      ? {
-          ...item,
-          childTimeline: [...(item.childTimeline ?? []), { kind: "assistant" as const, message: "" }],
-        }
-      : item,
-  );
-}
-
-function appendChildAssistantTimelineDelta(state: ThreadState, childThreadId: string, delta: string): ThreadState {
-  const spawnItem = findCollabSpawnItem(state, childThreadId);
-  if (!spawnItem) return state;
-  return updateItem(state, spawnItem.id, (item) => {
-    if (item.kind !== "collab") return item;
-    const timeline = [...(item.childTimeline ?? [])];
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const entry = timeline[i];
-      if (entry.kind === "assistant") {
-        timeline[i] = { ...entry, message: entry.message + delta };
-        return { ...item, childTimeline: timeline };
-      }
-    }
-    timeline.push({ kind: "assistant" as const, message: delta });
-    return { ...item, childTimeline: timeline };
-  });
-}
-
-function finalizeChildAssistantTimeline(
-  state: ThreadState,
-  childThreadId: string,
-  message: AssistantMessage,
-): ThreadState {
-  const spawnItem = findCollabSpawnItem(state, childThreadId);
-  if (!spawnItem) return state;
-  const finalRaw = stringifyUnknown(message);
-  return updateItem(state, spawnItem.id, (item) => {
-    if (item.kind !== "collab") return item;
-    const timeline = [...(item.childTimeline ?? [])];
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const entry = timeline[i];
-      if (entry.kind === "assistant") {
-        timeline[i] = { ...entry, message: finalRaw };
-        return { ...item, childTimeline: timeline };
-      }
-    }
-    timeline.push({ kind: "assistant" as const, message: finalRaw });
-    return { ...item, childTimeline: timeline };
-  });
-}
 
 function extractAssistantTextFromMessage(message: AssistantMessage): { text: string; thinking: string } {
   type AssistantContentBlock = AssistantMessage["content"][number];
@@ -312,6 +200,14 @@ function extractAssistantTextFromMessage(message: AssistantMessage): { text: str
 }
 
 function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
+  if (isToolEvent(event)) {
+    return reduceToolEvent(state, event);
+  }
+
+  if (isCollabEvent(event)) {
+    return reduceCollabEvent(state, event);
+  }
+
   switch (event.type) {
     case "message_start": {
       if ("childThreadId" in event && typeof event.childThreadId === "string") {
@@ -419,200 +315,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
     }
 
-    case "tool_start": {
-      // Child agent tool — nest under spawn item
-      if (event.childThreadId) {
-        const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) {
-          console.log(
-            "[ThreadStore][collab-debug] child tool_start dropped: spawn item not found",
-            event.childThreadId,
-            event.toolName,
-            event.toolCallId,
-          );
-          return state;
-        }
-        return updateItem(state, spawnItem.id, (item) =>
-          item.kind === "collab"
-            ? {
-                ...item,
-                childTools: [
-                  ...item.childTools,
-                  {
-                    toolCallId: event.toolCallId,
-                    toolName: event.toolName,
-                    status: "running" as const,
-                    isError: false,
-                    inputText: stringifyUnknown(event.input),
-                    outputText: "",
-                    render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
-                  },
-                ],
-                childTimeline: [
-                  ...(item.childTimeline ?? []),
-                  {
-                    kind: "tool" as const,
-                    toolCallId: event.toolCallId,
-                    toolName: event.toolName,
-                    status: "running" as const,
-                    isError: false,
-                    inputText: stringifyUnknown(event.input),
-                    outputText: "",
-                  },
-                ],
-              }
-            : item,
-        );
-      }
-      // Collab tools already rendered by CollabEventBlock — skip duplicate ToolBlock
-      if (COLLAB_RENDERED_TOOLS.has(event.toolName)) return state;
-      const renderId = `item:${event.itemId}:${++renderSeq}`;
-      if (state.itemSlots[event.itemId]) return state;
-      const now = Date.now();
-      return {
-        ...state,
-        itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
-        items: [
-          ...state.items,
-          {
-            id: renderId,
-            kind: "tool",
-            toolName: event.toolName,
-            inputText: stringifyUnknown(event.input),
-            outputText: "",
-            isError: false,
-            status: "streaming",
-            timestamp:
-              typeof (event as { timestamp?: number }).timestamp === "number"
-                ? (event as { timestamp?: number }).timestamp!
-                : now,
-            toolCallId: event.toolCallId,
-            startedAt:
-              typeof (event as { startedAt?: number }).startedAt === "number"
-                ? (event as { startedAt?: number }).startedAt!
-                : now,
-            render: ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
-          },
-        ],
-      };
-    }
-
-    case "tool_update": {
-      // Child agent tool — stream update into spawn item's childTools
-      if (event.childThreadId) {
-        const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) {
-          console.log(
-            "[ThreadStore][collab-debug] child tool_update dropped: spawn item not found",
-            event.childThreadId,
-            event.toolName,
-            event.toolCallId,
-          );
-          return state;
-        }
-        return updateItem(state, spawnItem.id, (item) =>
-          item.kind === "collab"
-            ? {
-                ...item,
-                childTools: item.childTools.map((t) =>
-                  t.toolCallId === event.toolCallId ? { ...t, outputText: t.outputText + event.partialResult } : t,
-                ),
-                childTimeline: (item.childTimeline ?? []).map((entry) =>
-                  entry.kind === "tool" && entry.toolCallId === event.toolCallId
-                    ? { ...entry, outputText: entry.outputText + event.partialResult }
-                    : entry,
-                ),
-              }
-            : item,
-        );
-      }
-      const renderId = state.itemSlots[event.itemId];
-      if (!renderId) return state;
-      return updateItem(state, renderId, (item) =>
-        item.kind === "tool" ? { ...item, outputText: item.outputText + event.partialResult } : item,
-      );
-    }
-
-    case "tool_end": {
-      // Child agent tool — update spawn item
-      if (event.childThreadId) {
-        const spawnItem = findCollabSpawnItem(state, event.childThreadId);
-        if (!spawnItem) {
-          console.log(
-            "[ThreadStore][collab-debug] child tool_end dropped: spawn item not found",
-            event.childThreadId,
-            event.toolName,
-            event.toolCallId,
-          );
-          return state;
-        }
-        return updateItem(state, spawnItem.id, (item) =>
-          item.kind === "collab"
-            ? {
-                ...item,
-                childTools: item.childTools.map((t) =>
-                  t.toolCallId === event.toolCallId
-                    ? { ...t, status: "done" as const, isError: event.isError, outputText: event.output ?? "" }
-                    : t,
-                ),
-                childTimeline: (item.childTimeline ?? []).map((entry) =>
-                  entry.kind === "tool" && entry.toolCallId === event.toolCallId
-                    ? {
-                        ...entry,
-                        status: "done" as const,
-                        isError: event.isError,
-                        outputText: event.output ?? "",
-                      }
-                    : entry,
-                ),
-              }
-            : item,
-        );
-      }
-      const slotRenderId = state.itemSlots[event.itemId];
-      // Fallback: for in-progress tools hydrated during reconnect, find by toolCallId
-      const renderId =
-        slotRenderId ?? state.items.find((i) => i.kind === "tool" && i.toolCallId === event.toolCallId)?.id;
-      if (!renderId) return state;
-
-      const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
-      let next = {
-        ...updateItem(state, renderId, (current) =>
-          current.kind === "tool"
-            ? {
-                ...current,
-                outputText: event.output || current.outputText,
-                isError: event.isError,
-                status: "done" as const,
-                timestamp:
-                  typeof (event as { timestamp?: number }).timestamp === "number"
-                    ? (event as { timestamp?: number }).timestamp!
-                    : current.timestamp,
-                durationMs:
-                  typeof (event as { durationMs?: number }).durationMs === "number"
-                    ? (event as { durationMs?: number }).durationMs!
-                    : Date.now() - current.startedAt,
-                render: mergeToolRenderPayload(
-                  current.render,
-                  ("render" in event ? toToolRenderPayload(event.render) : undefined) ?? undefined,
-                ),
-              }
-            : current,
-        ),
-        itemSlots: remainingSlots,
-      };
-
-      if (event.toolName === "plan" && event.output) {
-        const plan = parsePlanOutput(event.output);
-        if (plan) {
-          const allResolved = plan.steps.every((s) => s.status === "done" || s.status === "cancelled");
-          next = { ...next, planState: allResolved ? null : plan };
-        }
-      }
-
-      return next;
-    }
-
     case "user_message": {
       const { text, images } = extractUserTextAndImages(event.message.content);
       let nextState = state;
@@ -710,168 +412,6 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
     }
 
-    case "collab_spawn_begin": {
-      // Create the spawn item eagerly so that child events (tool_start/update/end)
-      // arriving before collab_spawn_end can find it via findCollabSpawnItem.
-      // In the registry, callId === childThreadId (both are the child session id).
-      const renderId = `collab:spawn:${event.callId}`;
-      return withItem(state, renderId, {
-        id: renderId,
-        kind: "collab",
-        eventType: "spawn",
-        childThreadId: event.callId,
-        agentType: event.agentType,
-        prompt: event.prompt,
-        status: "running",
-        childTools: [],
-        childTimeline: [],
-        timestamp: Date.now(),
-      });
-    }
-
-    case "collab_spawn_end": {
-      const renderId = `collab:spawn:${event.callId}`;
-      // If the item was already created by collab_spawn_begin, update it in place.
-      const existing = findCollabSpawnItem(state, event.childThreadId);
-      if (existing) {
-        return updateItem(state, existing.id, (item) =>
-          item.kind === "collab" && item.eventType === "spawn"
-            ? {
-                ...item,
-                childThreadId: event.childThreadId,
-                nickname: event.nickname,
-                agentType: event.agentType ?? item.agentType,
-                description: event.description,
-                prompt: event.prompt,
-                status: event.status,
-                message: event.message,
-                childTimeline: item.childTimeline ?? [],
-              }
-            : item,
-        );
-      }
-      // Fallback: create item if begin was missed (e.g. reconnect)
-      return withItem(state, renderId, {
-        id: renderId,
-        kind: "collab",
-        eventType: "spawn",
-        childThreadId: event.childThreadId,
-        nickname: event.nickname,
-        agentType: event.agentType,
-        description: event.description,
-        prompt: event.prompt,
-        status: event.status,
-        message: event.message,
-        childTools: [],
-        childTimeline: [],
-        timestamp: Date.now(),
-      });
-    }
-
-    case "collab_wait_begin": {
-      const renderId = `collab:wait:${event.callId}`;
-      return withItem(state, renderId, {
-        id: renderId,
-        kind: "collab",
-        eventType: "wait",
-        status: "running",
-        agents: event.agents.map((agent) => ({
-          threadId: agent.threadId,
-          nickname: agent.nickname,
-          status: "running",
-          message: undefined,
-        })),
-        timedOut: false,
-        childTools: [],
-        timestamp: Date.now(),
-      });
-    }
-
-    case "collab_wait_end": {
-      const renderId = `collab:wait:${event.callId}`;
-      const waitItem = state.items.find((item) => item.kind === "collab" && item.id === renderId);
-      let next = waitItem
-        ? updateItem(state, renderId, (item) =>
-            item.kind === "collab" && item.eventType === "wait"
-              ? {
-                  ...item,
-                  status: event.timedOut ? "running" : "completed",
-                  agents: event.agentStatuses.map((a) => ({
-                    threadId: a.threadId,
-                    nickname: a.nickname,
-                    status: a.status,
-                    message: a.message,
-                  })),
-                  timedOut: event.timedOut,
-                }
-              : item,
-          )
-        : withItem(state, renderId, {
-            id: renderId,
-            kind: "collab",
-            eventType: "wait",
-            status: event.timedOut ? "running" : "completed",
-            agents: event.agentStatuses.map((a) => ({
-              threadId: a.threadId,
-              nickname: a.nickname,
-              status: a.status,
-              message: a.message,
-            })),
-            timedOut: event.timedOut,
-            childTools: [],
-            timestamp: Date.now(),
-          });
-
-      for (const agent of event.agentStatuses) {
-        next = updateCollabSpawnStatus(
-          next,
-          agent.threadId,
-          normalizeSpawnStatusFromWait(agent.status, event.timedOut),
-          agent.message,
-        );
-      }
-      return next;
-    }
-
-    case "collab_close_begin":
-      return state;
-
-    case "collab_close_end": {
-      const renderId = `collab:close:${event.callId}`;
-      let next = withItem(state, renderId, {
-        id: renderId,
-        kind: "collab",
-        eventType: "close",
-        childThreadId: event.childThreadId,
-        nickname: event.nickname,
-        status: event.status,
-        message: event.message,
-        childTools: [],
-        timestamp: Date.now(),
-      });
-
-      next = updateCollabSpawnStatus(next, event.childThreadId, event.status, event.message);
-      return next;
-    }
-
-    case "collab_interaction_begin":
-      return state;
-
-    case "collab_interaction_end": {
-      const renderId = `collab:interaction:${event.callId}`;
-      return withItem(state, renderId, {
-        id: renderId,
-        kind: "collab",
-        eventType: "interaction",
-        childThreadId: event.receiverThreadId,
-        nickname: event.receiverNickname,
-        message: event.prompt,
-        status: event.status,
-        childTools: [],
-        timestamp: Date.now(),
-      });
-    }
-
     case "turn_start": {
       // Child agent turn — update spawn item
       if (event.childThreadId) {
@@ -929,132 +469,129 @@ function toThreadStatus(value: unknown): ThreadStatus | undefined {
   return value === "idle" || value === "busy" ? value : undefined;
 }
 
+function shouldIgnoreNotificationForActiveThread(
+  state: ThreadState,
+  notification: DiligentServerNotification,
+  params: Record<string, unknown> | null,
+): boolean {
+  if (
+    notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED ||
+    notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED
+  ) {
+    return false;
+  }
+  if (!params || typeof params.threadId !== "string") return false;
+  if (state.activeThreadId === null) return false;
+  return params.threadId !== state.activeThreadId;
+}
+
+function applyAuthoritativeThreadStatus(state: ThreadState, params: Record<string, unknown> | null): ThreadState {
+  const authoritativeStatus = toThreadStatus(params?.threadStatus);
+  return authoritativeStatus ? { ...state, threadStatus: authoritativeStatus } : state;
+}
+
+function applyThreadIdentityNotification(
+  state: ThreadState,
+  notification: DiligentServerNotification,
+  params: Record<string, unknown> | null,
+): ThreadState | null {
+  if (notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
+    if (notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
+      return null;
+    }
+  }
+  return typeof params?.threadId === "string" ? { ...state, activeThreadId: params.threadId } : state;
+}
+
+function getTurnTimingMetrics(state: ThreadState): { turnDurationMs?: number; reasoningDurationMs: number } {
+  const now = Date.now();
+  const turnDurationMs = state.activeTurnStartedAt !== null ? Math.max(0, now - state.activeTurnStartedAt) : undefined;
+  const reasoningDurationMs =
+    state.activeReasoningStartedAt !== null
+      ? state.activeReasoningDurationMs + (now - state.activeReasoningStartedAt)
+      : state.activeReasoningDurationMs;
+  return { turnDurationMs, reasoningDurationMs };
+}
+
+function applyLatestAssistantDurations(
+  state: ThreadState,
+  turnDurationMs: number | undefined,
+  reasoningDurationMs: number,
+): ThreadState {
+  let next = state;
+  for (let i = next.items.length - 1; i >= 0; i--) {
+    const item = next.items[i];
+    if (item.kind !== "assistant") continue;
+    next = updateItem(next, item.id, (current) =>
+      current.kind === "assistant"
+        ? {
+            ...current,
+            ...(turnDurationMs !== undefined ? { turnDurationMs } : {}),
+            reasoningDurationMs,
+          }
+        : current,
+    );
+    break;
+  }
+  return next;
+}
+
+function handleTurnInterruptedNotification(state: ThreadState): ThreadState {
+  const { turnDurationMs, reasoningDurationMs } = getTurnTimingMetrics(state);
+  const settled = settleInFlightItems({
+    ...state,
+    threadStatus: "idle",
+    itemSlots: {},
+    activeTurnId: null,
+    activeTurnStartedAt: null,
+    activeReasoningStartedAt: null,
+    activeReasoningDurationMs: 0,
+  });
+  return applyLatestAssistantDurations(settled, turnDurationMs, reasoningDurationMs);
+}
+
+function handleTurnCompletedNotification(state: ThreadState, turnId: string): ThreadState {
+  const { turnDurationMs, reasoningDurationMs } = getTurnTimingMetrics(state);
+  const settled = settleInFlightItems({
+    ...state,
+    itemSlots: {},
+    activeTurnId: state.activeTurnId === turnId ? null : state.activeTurnId,
+    activeTurnStartedAt: state.activeTurnId === turnId ? null : state.activeTurnStartedAt,
+    activeReasoningStartedAt: null,
+    activeReasoningDurationMs: 0,
+  });
+  return applyLatestAssistantDurations(settled, turnDurationMs, reasoningDurationMs);
+}
+
 export function reduceServerNotification(
   state: ThreadState,
   notification: DiligentServerNotification,
   events: AgentEvent[],
 ): ThreadState {
-  // Ignore notifications that belong to a different thread than the one currently displayed.
-  // thread/started and thread/resumed are exempt — they establish the active thread.
   const params = asObject(notification.params);
-
-  if (
-    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED &&
-    notification.method !== DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED &&
-    params &&
-    typeof params.threadId === "string" &&
-    state.activeThreadId !== null &&
-    params.threadId !== state.activeThreadId
-  ) {
+  if (shouldIgnoreNotificationForActiveThread(state, notification, params)) {
     return state;
   }
 
-  const authoritativeStatus = toThreadStatus(params?.threadStatus);
-  const stateWithAuthoritativeStatus = authoritativeStatus ? { ...state, threadStatus: authoritativeStatus } : state;
-
-  // Thread-level notifications handled directly
-  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
-    return typeof params?.threadId === "string"
-      ? { ...stateWithAuthoritativeStatus, activeThreadId: params.threadId }
-      : stateWithAuthoritativeStatus;
-  }
-  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
-    return typeof params?.threadId === "string"
-      ? { ...stateWithAuthoritativeStatus, activeThreadId: params.threadId }
-      : stateWithAuthoritativeStatus;
+  const stateWithAuthoritativeStatus = applyAuthoritativeThreadStatus(state, params);
+  const identityState = applyThreadIdentityNotification(stateWithAuthoritativeStatus, notification, params);
+  if (identityState) {
+    return identityState;
   }
 
-  // turn/interrupted: settle all in-flight items (thinking spinner, streaming tools)
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
-    const now = Date.now();
-    const turnDurationMs =
-      stateWithAuthoritativeStatus.activeTurnStartedAt !== null
-        ? Math.max(0, now - stateWithAuthoritativeStatus.activeTurnStartedAt)
-        : undefined;
-    const reasoningDurationMs =
-      stateWithAuthoritativeStatus.activeReasoningStartedAt !== null
-        ? stateWithAuthoritativeStatus.activeReasoningDurationMs +
-          (now - stateWithAuthoritativeStatus.activeReasoningStartedAt)
-        : stateWithAuthoritativeStatus.activeReasoningDurationMs;
-    let next = settleInFlightItems({
-      ...stateWithAuthoritativeStatus,
-      threadStatus: "idle",
-      itemSlots: {},
-      activeTurnId: null,
-      activeTurnStartedAt: null,
-      activeReasoningStartedAt: null,
-      activeReasoningDurationMs: 0,
-    });
-    for (let i = next.items.length - 1; i >= 0; i--) {
-      const item = next.items[i];
-      if (item.kind !== "assistant") continue;
-      next = updateItem(next, item.id, (current) =>
-        current.kind === "assistant"
-          ? {
-              ...current,
-              ...(turnDurationMs !== undefined ? { turnDurationMs } : {}),
-              reasoningDurationMs,
-            }
-          : current,
-      );
-      break;
-    }
-    return next;
+    return handleTurnInterruptedNotification(stateWithAuthoritativeStatus);
   }
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
     const { turnId } = notification.params;
-    const now = Date.now();
-    const turnDurationMs =
-      stateWithAuthoritativeStatus.activeTurnStartedAt !== null
-        ? Math.max(0, now - stateWithAuthoritativeStatus.activeTurnStartedAt)
-        : undefined;
-    const reasoningDurationMs =
-      stateWithAuthoritativeStatus.activeReasoningStartedAt !== null
-        ? stateWithAuthoritativeStatus.activeReasoningDurationMs +
-          (now - stateWithAuthoritativeStatus.activeReasoningStartedAt)
-        : stateWithAuthoritativeStatus.activeReasoningDurationMs;
-    let next: ThreadState = settleInFlightItems({
-      ...stateWithAuthoritativeStatus,
-      itemSlots: {},
-      activeTurnId:
-        stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnId,
-      activeTurnStartedAt:
-        stateWithAuthoritativeStatus.activeTurnId === turnId ? null : stateWithAuthoritativeStatus.activeTurnStartedAt,
-      activeReasoningStartedAt: null,
-      activeReasoningDurationMs: 0,
-    });
-
-    for (let i = next.items.length - 1; i >= 0; i--) {
-      const item = next.items[i];
-      if (item.kind !== "assistant") continue;
-      next = updateItem(next, item.id, (current) =>
-        current.kind === "assistant"
-          ? {
-              ...current,
-              ...(turnDurationMs !== undefined ? { turnDurationMs } : {}),
-              reasoningDurationMs,
-            }
-          : current,
-      );
-      break;
-    }
-    return next;
+    return handleTurnCompletedNotification(stateWithAuthoritativeStatus, turnId);
   }
 
   // Delegate all item lifecycle, status, usage, error, knowledge, loop, steering to AgentEvent reducer
   let current = stateWithAuthoritativeStatus;
   for (const event of events) {
     current = reduceAgentEvent(current, event);
-  }
-  if (current.threadStatus !== state.threadStatus) {
-    console.log("[ThreadStore][thread-status] state updated", {
-      method: notification.method,
-      activeThreadId: current.activeThreadId,
-      from: state.threadStatus,
-      to: current.threadStatus,
-      eventTypes: events.map((event) => event.type),
-    });
   }
   return current;
 }

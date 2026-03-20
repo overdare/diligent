@@ -163,6 +163,170 @@ test("computes tool duration when tool completes", () => {
   }
 });
 
+test("plan tool completion sets planState when unresolved steps remain", () => {
+  resetAdapter();
+  const threadId = "t1";
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "plan-tool-1",
+        toolCallId: "plan-tool-1",
+        toolName: "plan",
+        input: {},
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "plan-tool-1",
+        toolCallId: "plan-tool-1",
+        toolName: "plan",
+        output: JSON.stringify({
+          title: "Plan",
+          steps: [
+            { text: "step-1", status: "done" },
+            { text: "step-2", status: "in_progress" },
+          ],
+        }),
+        isError: false,
+      },
+    },
+  };
+
+  const state = reduce(reduce(initialThreadState, started), completed);
+  expect(state.planState).toBeDefined();
+  expect(state.planState?.steps[1]?.status).toBe("in_progress");
+});
+
+test("plan tool completion clears planState when all steps resolved", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const seeded = {
+    ...initialThreadState,
+    planState: {
+      title: "Old",
+      steps: [{ text: "old", status: "in_progress" as const }],
+    },
+  };
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "plan-tool-2",
+        toolCallId: "plan-tool-2",
+        toolName: "plan",
+        input: {},
+      },
+    },
+  };
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "plan-tool-2",
+        toolCallId: "plan-tool-2",
+        toolName: "plan",
+        output: JSON.stringify({
+          title: "Plan",
+          steps: [
+            { text: "step-1", status: "done" },
+            { text: "step-2", status: "cancelled" },
+          ],
+        }),
+        isError: false,
+      },
+    },
+  };
+
+  const state = reduce(reduce(seeded, started), completed);
+  expect(state.planState).toBeNull();
+});
+
+test("tool_end updates hydrated in-progress tool by toolCallId fallback", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const seeded = {
+    ...initialThreadState,
+    itemSlots: {},
+    items: [
+      {
+        id: "hydrated-tool-1",
+        kind: "tool" as const,
+        toolName: "bash",
+        inputText: '{\n  "command": "pwd"\n}',
+        outputText: "",
+        isError: false,
+        status: "streaming" as const,
+        timestamp: 100,
+        toolCallId: "tool-call-1",
+        startedAt: 100,
+      },
+    ],
+  };
+
+  const completed: DiligentServerNotification = {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "new-item-id-after-reconnect",
+        toolCallId: "tool-call-1",
+        toolName: "bash",
+        output: "/repo\n",
+        isError: false,
+      },
+    },
+  };
+
+  const state = reduce(seeded, completed);
+  const tool = state.items.find((item) => item.kind === "tool" && item.toolCallId === "tool-call-1");
+  expect(tool).toBeDefined();
+  expect(tool && tool.kind === "tool" ? tool.status : "").toBe("done");
+  expect(tool && tool.kind === "tool" ? tool.outputText : "").toBe("/repo\n");
+});
+
+test("collab-rendered tools are not duplicated as generic tool items", () => {
+  resetAdapter();
+  const threadId = "t1";
+
+  const started: DiligentServerNotification = {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "toolCall",
+        itemId: "collab-tool-1",
+        toolCallId: "collab-tool-1",
+        toolName: "spawn_agent",
+        input: { description: "do work" },
+      },
+    },
+  };
+
+  const state = reduce(initialThreadState, started);
+  expect(state.items.filter((item) => item.kind === "tool")).toHaveLength(0);
+});
+
 test("uses completed tool render payload so live read blocks match hydrated blocks", () => {
   resetAdapter();
   const started: DiligentServerNotification = {
@@ -1339,6 +1503,218 @@ test("collab_wait_begin shows running wait item before wait_end", () => {
   expect(waitItems).toHaveLength(1);
   const updatedWait = waitItems[0];
   expect(updatedWait && updatedWait.kind === "collab" ? updatedWait.status : "").toBe("completed");
+});
+
+test("collab_close_end appends close item and updates spawn status", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-close-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "close me",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Pine",
+      prompt: "close me",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/close/end",
+    params: {
+      threadId,
+      callId: "close-call-1",
+      childThreadId,
+      nickname: "Pine",
+      status: "shutdown",
+      message: "closed",
+    },
+  });
+
+  const close = state.items.find((item) => item.kind === "collab" && item.eventType === "close");
+  expect(close).toBeDefined();
+  expect(close && close.kind === "collab" ? close.status : "").toBe("shutdown");
+
+  const spawn = state.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("shutdown");
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBe("closed");
+});
+
+test("collab_interaction_end creates interaction item", () => {
+  resetAdapter();
+  const threadId = "t1";
+
+  const state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/interaction/end",
+      params: {
+        threadId,
+        callId: "interaction-call-1",
+        receiverThreadId: "child-rx-1",
+        receiverNickname: "Birch",
+        prompt: "Please summarize these files",
+        status: "completed",
+      },
+    },
+  );
+
+  const interaction = state.items.find((item) => item.kind === "collab" && item.eventType === "interaction");
+  expect(interaction).toBeDefined();
+  expect(interaction && interaction.kind === "collab" ? interaction.childThreadId : "").toBe("child-rx-1");
+  expect(interaction && interaction.kind === "collab" ? interaction.nickname : "").toBe("Birch");
+  expect(interaction && interaction.kind === "collab" ? interaction.status : "").toBe("completed");
+});
+
+test("collab_wait_end keeps spawn running when timed out snapshot reports running", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-running-timeout-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "long task",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "collab/spawn/end",
+    params: {
+      threadId,
+      callId: childThreadId,
+      childThreadId,
+      nickname: "Willow",
+      prompt: "long task",
+      status: "running",
+    },
+  });
+
+  state = reduce(state, {
+    method: "collab/wait/end",
+    params: {
+      threadId,
+      callId: "wait-timeout-1",
+      agentStatuses: [
+        {
+          threadId: childThreadId,
+          nickname: "Willow",
+          status: "running",
+          message: "still working",
+        },
+      ],
+      timedOut: true,
+    },
+  });
+
+  const spawn = state.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
+  expect(spawn && spawn.kind === "collab" ? spawn.message : "").toBe("still working");
+});
+
+test("child assistant timeline keeps latest final message text on message_end", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-msg-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/spawn/begin",
+      params: {
+        threadId,
+        callId: childThreadId,
+        prompt: "respond",
+      },
+    },
+  );
+
+  state = reduce(state, {
+    method: "item/started",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "child-msg-item-1",
+        message: {
+          role: "assistant",
+          content: [],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 10,
+        },
+      },
+      childThreadId,
+      nickname: "Spruce",
+    },
+  });
+
+  state = reduce(state, {
+    method: "item/delta",
+    params: {
+      threadId,
+      turnId: "turn1",
+      itemId: "child-msg-item-1",
+      delta: { type: "messageText", itemId: "child-msg-item-1", delta: "partial text" },
+      childThreadId,
+      nickname: "Spruce",
+    },
+  });
+
+  state = reduce(state, {
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId: "turn1",
+      item: {
+        type: "agentMessage",
+        itemId: "child-msg-item-1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "final text" }],
+          model: "x",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 11,
+        },
+      },
+      childThreadId,
+      nickname: "Spruce",
+    },
+  });
+
+  const spawn = state.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn).toBeDefined();
+  expect(spawn && spawn.kind === "collab" ? spawn.childTimeline?.length : 0).toBe(1);
+  const assistantEntry =
+    spawn && spawn.kind === "collab" ? spawn.childTimeline?.find((entry) => entry.kind === "assistant") : undefined;
+  const message = assistantEntry && assistantEntry.kind === "assistant" ? assistantEntry.message : "";
+  expect(message).not.toBe("partial text");
+  expect(message).toContain('"role": "assistant"');
 });
 
 test("authoritative thread status from item notifications updates header state", () => {
