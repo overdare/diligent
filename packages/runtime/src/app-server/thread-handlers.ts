@@ -24,7 +24,7 @@ import {
 } from "../protocol/index";
 import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
-import { deleteSession, listSessions, readChildSessions, readSessionFile } from "../session/persistence";
+import { deleteSession, listSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
 import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-payload";
@@ -337,7 +337,6 @@ export async function handleThreadRead(
   cwd: string;
   items: ThreadItem[];
   errors: unknown[];
-  childSessions?: unknown[];
   hasFollowUp: boolean;
   entryCount: number;
   isRunning: boolean;
@@ -352,9 +351,6 @@ export async function handleThreadRead(
   if (!runtime.isRunning) {
     await runtime.manager.reconcileFromDisk();
   }
-  const paths = await ctx.resolvePaths(runtime.cwd);
-  const sessionId = runtime.manager.sessionId;
-  const children = await readChildSessions(paths.sessions, sessionId);
 
   const messages = runtime.manager.getContext();
   const transcript = runtime.manager.getTranscript();
@@ -376,7 +372,6 @@ export async function handleThreadRead(
     cwd: runtime.cwd,
     items,
     errors: runtime.manager.getErrors(),
-    childSessions: children.length > 0 ? children : undefined,
     hasFollowUp: runtime.manager.hasPendingMessages(),
     entryCount: runtime.manager.entryCount,
     isRunning: runtime.isRunning,

@@ -1,7 +1,6 @@
 // @summary Hydrates web thread render state from thread/read payload history
 
 import {
-  type ChildSession,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   ProtocolNotificationAdapter,
   type ThreadItem,
@@ -9,130 +8,7 @@ import {
 } from "@diligent/protocol";
 import type { PlanState, ThreadState } from "./thread-store";
 import { reduceServerNotification } from "./thread-store";
-import { parsePlanOutput, stringifyUnknown, updateItem, withItem, zeroUsage } from "./thread-utils";
-
-function extractChildTools(child: ChildSession): Array<{
-  toolCallId: string;
-  toolName: string;
-  status: "done";
-  isError: boolean;
-  inputText: string;
-  outputText: string;
-}> {
-  const inputMap = new Map<string, unknown>();
-  for (const msg of child.messages) {
-    if (msg.role === "assistant" && Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (typeof block === "object" && block !== null && "type" in block && block.type === "tool_call") {
-          const tb = block as { id: string; input: unknown };
-          inputMap.set(tb.id, tb.input);
-        }
-      }
-    }
-  }
-
-  const tools: Array<{
-    toolCallId: string;
-    toolName: string;
-    status: "done";
-    isError: boolean;
-    inputText: string;
-    outputText: string;
-  }> = [];
-  for (const msg of child.messages) {
-    if (msg.role === "tool_result") {
-      const toolCallId = (msg as { toolCallId: string }).toolCallId;
-      tools.push({
-        toolCallId,
-        toolName: (msg as { toolName: string }).toolName,
-        status: "done",
-        isError: (msg as { isError: boolean }).isError,
-        inputText: stringifyUnknown(inputMap.get(toolCallId)),
-        outputText: typeof (msg as { output?: string }).output === "string" ? (msg as { output: string }).output : "",
-      });
-    }
-  }
-  return tools;
-}
-
-function extractChildMessages(child: ChildSession): string[] {
-  const messages: string[] = [];
-  for (const msg of child.messages) {
-    if (msg.role === "assistant") {
-      messages.push(stringifyUnknown(msg));
-    }
-  }
-  return messages;
-}
-
-function extractChildTimeline(child: ChildSession): Array<
-  | {
-      kind: "assistant";
-      message: string;
-    }
-  | {
-      kind: "tool";
-      toolCallId: string;
-      toolName: string;
-      status: "done";
-      isError: boolean;
-      inputText: string;
-      outputText: string;
-    }
-> {
-  const inputMap = new Map<string, unknown>();
-  for (const msg of child.messages) {
-    if (msg.role === "assistant" && Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (typeof block === "object" && block !== null && "type" in block && block.type === "tool_call") {
-          const tb = block as { id: string; input: unknown };
-          inputMap.set(tb.id, tb.input);
-        }
-      }
-    }
-  }
-
-  const timeline: Array<
-    | {
-        kind: "assistant";
-        message: string;
-      }
-    | {
-        kind: "tool";
-        toolCallId: string;
-        toolName: string;
-        status: "done";
-        isError: boolean;
-        inputText: string;
-        outputText: string;
-      }
-  > = [];
-
-  for (const msg of child.messages) {
-    if (msg.role === "assistant") {
-      timeline.push({
-        kind: "assistant",
-        message: stringifyUnknown(msg),
-      });
-      continue;
-    }
-
-    if (msg.role === "tool_result") {
-      const toolCallId = (msg as { toolCallId: string }).toolCallId;
-      timeline.push({
-        kind: "tool",
-        toolCallId,
-        toolName: (msg as { toolName: string }).toolName,
-        status: "done",
-        isError: (msg as { isError: boolean }).isError,
-        inputText: stringifyUnknown(inputMap.get(toolCallId)),
-        outputText: typeof (msg as { output?: string }).output === "string" ? (msg as { output: string }).output : "",
-      });
-    }
-  }
-
-  return timeline;
-}
+import { parsePlanOutput, updateItem, withItem, zeroUsage } from "./thread-utils";
 
 function parseSpawnOutput(output: string): { threadId?: string; nickname?: string } {
   try {
@@ -184,14 +60,9 @@ function setSpawnStatus(state: ThreadState, threadId: string, status: string): T
 
 function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadResponse): ThreadState {
   const adapter = new ProtocolNotificationAdapter();
-  const childBySessionId = new Map<string, ChildSession>();
-  const childByNickname = new Map<string, ChildSession>();
-  for (const child of payload.childSessions ?? []) {
-    childBySessionId.set(child.sessionId, child);
-    if (child.nickname) childByNickname.set(child.nickname, child);
-  }
 
   const spawnToolCallToThreadId = new Map<string, string>();
+  const childNicknameByThreadId = new Map<string, string>();
 
   let current: ThreadState = {
     ...state,
@@ -276,32 +147,32 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     if (item.type === "toolCall") {
       if (item.toolName === "spawn_agent" && typeof item.output === "string") {
         const spawn = parseSpawnOutput(item.output);
-        const child =
-          (spawn.threadId ? childBySessionId.get(spawn.threadId) : undefined) ??
-          (spawn.nickname ? childByNickname.get(spawn.nickname) : undefined);
-        const childThreadId = spawn.threadId ?? child?.sessionId;
+        const childThreadId = spawn.threadId;
         if (childThreadId) {
           spawnToolCallToThreadId.set(item.toolCallId, childThreadId);
+          if (spawn.nickname) {
+            childNicknameByThreadId.set(childThreadId, spawn.nickname);
+          }
         }
         current = withItem(current, `history:collab:spawn:${item.toolCallId}`, {
           id: `history:collab:spawn:${item.toolCallId}`,
           kind: "collab",
           eventType: "spawn",
           childThreadId,
-          nickname: spawn.nickname ?? child?.nickname,
+          nickname: spawn.nickname,
           agentType:
             typeof (item.input as { agent_type?: unknown })?.agent_type === "string"
               ? (item.input as { agent_type: string }).agent_type
               : undefined,
-          description: child?.description ?? (item.input as { description?: string })?.description,
+          description: (item.input as { description?: string })?.description,
           prompt:
             typeof (item.input as { message?: unknown })?.message === "string"
               ? (item.input as { message: string }).message
               : undefined,
           status: "running",
-          childTools: child ? extractChildTools(child) : [],
-          childMessages: child ? extractChildMessages(child) : undefined,
-          childTimeline: child ? extractChildTimeline(child) : undefined,
+          childTools: [],
+          childMessages: undefined,
+          childTimeline: undefined,
           timestamp: item.timestamp ?? item.startedAt ?? Date.now(),
         });
         continue;
@@ -309,15 +180,12 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
 
       if (item.toolName === "wait" && typeof item.output === "string") {
         const waitData = parseWaitOutput(item.output);
-        const agents = waitData?.agents.map((agent) => {
-          const child = childBySessionId.get(agent.threadId);
-          return {
-            threadId: agent.threadId,
-            nickname: child?.nickname,
-            status: agent.status,
-            message: agent.message,
-          };
-        });
+        const agents = waitData?.agents.map((agent) => ({
+          threadId: agent.threadId,
+          nickname: childNicknameByThreadId.get(agent.threadId),
+          status: agent.status,
+          message: agent.message,
+        }));
         current = withItem(current, `history:collab:wait:${item.toolCallId}`, {
           id: `history:collab:wait:${item.toolCallId}`,
           kind: "collab",
@@ -338,10 +206,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
 
       if (item.toolName === "close_agent" && typeof item.output === "string") {
         const close = parseCloseOutput(item.output);
-        const resolvedThreadId =
-          close.threadId ??
-          (close.nickname ? childByNickname.get(close.nickname)?.sessionId : undefined) ??
-          spawnToolCallToThreadId.get(item.toolCallId);
+        const resolvedThreadId = close.threadId ?? spawnToolCallToThreadId.get(item.toolCallId);
         if (resolvedThreadId && close.status) {
           current = setSpawnStatus(current, resolvedThreadId, close.status);
         }
@@ -376,6 +241,9 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     }
 
     if (item.type === "collabEvent") {
+      if (item.eventKind === "spawn" && item.childThreadId && item.nickname) {
+        childNicknameByThreadId.set(item.childThreadId, item.nickname);
+      }
       current = withItem(current, `history:collab:${item.itemId}`, {
         id: `history:collab:${item.itemId}`,
         kind: "collab",

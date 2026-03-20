@@ -1,7 +1,12 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
 import type { ToolResultMessage } from "@diligent/core";
-import { type AgentEvent, type ToolRenderPayload, ToolRenderPayloadSchema } from "@diligent/protocol";
+import {
+  type AgentEvent,
+  type ThreadReadResponse,
+  type ToolRenderPayload,
+  ToolRenderPayloadSchema,
+} from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
@@ -41,6 +46,80 @@ function summarizeCollabLine(value: string, maxChars: number): string {
   const chars = Array.from(firstLine);
   if (chars.length <= maxChars) return firstLine;
   return `${chars.slice(0, maxChars).join("")}…`;
+}
+
+function summarizeChildText(value: string, maxChars: number): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  if (!singleLine) return "";
+  const chars = Array.from(singleLine);
+  if (chars.length <= maxChars) return singleLine;
+  return `${chars.slice(0, maxChars).join("")}…`;
+}
+
+function parseSpawnChildThreadId(output: string): string | undefined {
+  const parsed = parseCollabOutput(output);
+  const threadId = parsed?.thread_id;
+  return typeof threadId === "string" && threadId.trim().length > 0 ? threadId : undefined;
+}
+
+function buildChildDetailLines(payload: ThreadReadResponse): string[] {
+  const detailLines: string[] = [];
+  let assistantCount = 0;
+  let toolCount = 0;
+
+  for (const item of payload.items) {
+    if (item.type === "agentMessage") {
+      const text = item.message.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join(" ");
+      const summary = summarizeChildText(text, 140);
+      if (summary) {
+        assistantCount++;
+        detailLines.push(`${t.dim}    assistant: ${summary}${t.reset}`);
+      }
+      continue;
+    }
+
+    if (item.type === "toolCall") {
+      toolCount++;
+      const status = item.isError ? "error" : typeof item.output === "undefined" ? "running" : "done";
+      detailLines.push(`${t.dim}    tool: ${item.toolName} (${status})${t.reset}`);
+      if (typeof item.output === "string") {
+        const outputPreview = summarizeCollabLine(item.output, 120);
+        if (outputPreview) {
+          detailLines.push(`${t.dim}      ↳ ${outputPreview}${t.reset}`);
+        }
+      }
+    }
+  }
+
+  const previewLimit = 12;
+  const previewLines = detailLines.slice(0, previewLimit);
+  const omitted = detailLines.length - previewLines.length;
+  if (omitted > 0) {
+    previewLines.push(`${t.dim}    … +${omitted} more lines${t.reset}`);
+  }
+
+  return [
+    `${t.dim}  Child thread preview:${t.reset}`,
+    `${t.dim}    assistant=${assistantCount}, tools=${toolCount}${t.reset}`,
+    ...previewLines,
+  ];
+}
+
+function isChildScopedStreamEvent(event: AgentEvent): boolean {
+  switch (event.type) {
+    case "message_start":
+    case "message_delta":
+    case "message_end":
+    case "tool_start":
+    case "tool_update":
+    case "tool_end":
+      return "childThreadId" in event && typeof event.childThreadId === "string";
+    default:
+      return false;
+  }
 }
 
 const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
@@ -114,6 +193,12 @@ export type TranscriptItem =
       header: string;
       summaryLine?: string;
       details: string[];
+      childDetail?: {
+        childThreadId: string;
+        status: "idle" | "loading" | "loaded" | "error";
+        lines?: string[];
+        error?: string;
+      };
     }
   | {
       kind: "thinking";
@@ -133,6 +218,7 @@ type OverlayStatus = {
 export interface TranscriptStoreOptions {
   requestRender: () => void;
   cwd?: string;
+  loadChildThread?: (threadId: string) => Promise<ThreadReadResponse | null>;
 }
 
 export class TranscriptStore {
@@ -153,11 +239,17 @@ export class TranscriptStore {
   private toolCallInputs = new Map<string, unknown>();
   private toolStartRenderByCallId = new Map<string, ToolRenderPayload | undefined>();
   private collabState = new Map<string, { toolName: string; label: string; prompt?: string }>();
+  private collabAgentNamesByThreadId = new Map<string, string>();
   private planCallCount = 0;
   private pendingSteers: string[] = [];
   private activeQuestion: (Component & { handleInput(data: string): void }) | null = null;
   private toolResultsExpanded = false;
   private hasCommittedAssistantChunkInMessage = false;
+  private childDetailCache = new Map<
+    string,
+    { status: "loaded"; lines: string[] } | { status: "error"; error: string }
+  >();
+  private childDetailPending = new Map<string, Promise<void>>();
 
   constructor(private options: TranscriptStoreOptions) {}
 
@@ -234,6 +326,10 @@ export class TranscriptStore {
   }
 
   handleEvent(event: AgentEvent): void {
+    if (isChildScopedStreamEvent(event)) {
+      return;
+    }
+
     switch (event.type) {
       case "agent_start":
         this.startOverlayStatus("Thinking…");
@@ -296,11 +392,25 @@ export class TranscriptStore {
             prompt = promptText || undefined;
           } else if (event.toolName === "wait") {
             const ids = inp?.ids;
-            spinnerLabel = `Waiting for ${Array.isArray(ids) ? ids.join(", ") : "agents"}…`;
+            if (Array.isArray(ids) && ids.length > 0) {
+              const labels = ids.map((id) => {
+                if (typeof id !== "string") return String(id);
+                return this.collabAgentNamesByThreadId.get(id) ?? id;
+              });
+              spinnerLabel = `Waiting for ${labels.join(", ")}…`;
+            } else {
+              spinnerLabel = "Waiting for agents…";
+            }
           } else if (event.toolName === "send_input") {
-            spinnerLabel = `Sending to ${(inp?.id as string | undefined) ?? "agent"}…`;
+            const targetId = inp?.id as string | undefined;
+            spinnerLabel = `Sending to ${
+              (targetId ? this.collabAgentNamesByThreadId.get(targetId) : undefined) ?? targetId ?? "agent"
+            }…`;
           } else if (event.toolName === "close_agent") {
-            spinnerLabel = `Closing ${(inp?.id as string | undefined) ?? "agent"}…`;
+            const targetId = inp?.id as string | undefined;
+            spinnerLabel = `Closing ${
+              (targetId ? this.collabAgentNamesByThreadId.get(targetId) : undefined) ?? targetId ?? "agent"
+            }…`;
           }
           this.collabState.set(event.toolCallId, { toolName: event.toolName, label: spinnerLabel, prompt });
           this.startOverlayStatus(spinnerLabel, "tool");
@@ -429,7 +539,17 @@ export class TranscriptStore {
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines));
+      const item = this.createToolResultItem(lines);
+      if (message.toolName === "spawn_agent") {
+        const childThreadId = parseSpawnChildThreadId(message.output);
+        if (childThreadId) {
+          item.childDetail = {
+            childThreadId,
+            status: "idle",
+          };
+        }
+      }
+      this.items.push(item);
     } else {
       this.items.push({ kind: "plain", lines: [`${icon} ${headerLabel}`] });
     }
@@ -449,6 +569,85 @@ export class TranscriptStore {
 
   toggleToolResultsCollapsed(): void {
     this.toolResultsExpanded = !this.toolResultsExpanded;
+    if (this.toolResultsExpanded) {
+      this.loadExpandedChildDetails();
+    }
+    this.options.requestRender();
+  }
+
+  private loadExpandedChildDetails(): void {
+    if (!this.options.loadChildThread) return;
+
+    for (const item of this.items) {
+      if (item instanceof UserMessageView || item.kind !== "tool_result") continue;
+      const detail = item.childDetail;
+      if (!detail) continue;
+
+      const cached = this.childDetailCache.get(detail.childThreadId);
+      if (cached?.status === "loaded") {
+        item.childDetail = { ...detail, status: "loaded", lines: cached.lines, error: undefined };
+        continue;
+      }
+      if (cached?.status === "error") {
+        item.childDetail = { ...detail, status: "error", lines: undefined, error: cached.error };
+        continue;
+      }
+      if (detail.status === "loading" || this.childDetailPending.has(detail.childThreadId)) {
+        continue;
+      }
+
+      item.childDetail = { ...detail, status: "loading", lines: undefined, error: undefined };
+      this.options.requestRender();
+
+      const pending = this.options
+        .loadChildThread(detail.childThreadId)
+        .then((thread) => {
+          if (!thread) {
+            const error = "child thread not found";
+            this.childDetailCache.set(detail.childThreadId, { status: "error", error });
+            this.applyChildDetailError(detail.childThreadId, error);
+            return;
+          }
+          const lines = buildChildDetailLines(thread);
+          this.childDetailCache.set(detail.childThreadId, { status: "loaded", lines });
+          this.applyChildDetailSuccess(detail.childThreadId, lines);
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.childDetailCache.set(detail.childThreadId, { status: "error", error: message });
+          this.applyChildDetailError(detail.childThreadId, message);
+        })
+        .finally(() => {
+          this.childDetailPending.delete(detail.childThreadId);
+        });
+
+      this.childDetailPending.set(detail.childThreadId, pending);
+    }
+  }
+
+  private applyChildDetailSuccess(childThreadId: string, lines: string[]): void {
+    for (const item of this.items) {
+      if (item instanceof UserMessageView || item.kind !== "tool_result") continue;
+      if (item.childDetail?.childThreadId !== childThreadId) continue;
+      item.childDetail = {
+        childThreadId,
+        status: "loaded",
+        lines,
+      };
+    }
+    this.options.requestRender();
+  }
+
+  private applyChildDetailError(childThreadId: string, message: string): void {
+    for (const item of this.items) {
+      if (item instanceof UserMessageView || item.kind !== "tool_result") continue;
+      if (item.childDetail?.childThreadId !== childThreadId) continue;
+      item.childDetail = {
+        childThreadId,
+        status: "error",
+        error: message,
+      };
+    }
     this.options.requestRender();
   }
 
@@ -457,6 +656,7 @@ export class TranscriptStore {
     this.items = [];
     this.lastUsage = null;
     this.toolStartTimes.clear();
+    this.collabAgentNamesByThreadId.clear();
     this.options.requestRender();
   }
 
@@ -546,9 +746,12 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
-  private createToolResultItem(lines: string[], summaryLine?: string): TranscriptItem {
+  private createToolResultItem(
+    lines: string[],
+    summaryLine?: string,
+  ): Extract<TranscriptItem, { kind: "tool_result" }> {
     if (lines.length === 0) {
-      return { kind: "plain", lines };
+      return { kind: "tool_result", header: "", summaryLine, details: [] };
     }
     return {
       kind: "tool_result",
@@ -641,7 +844,21 @@ export class TranscriptStore {
         lines.push(`${icon} ${event.toolName}${elapsed}`);
       }
 
-      this.items.push(this.createToolResultItem(lines));
+      const collabItem = this.createToolResultItem(lines);
+      if (event.toolName === "spawn_agent") {
+        const childThreadId = parseSpawnChildThreadId(event.output);
+        const nickname = (parsed?.nickname as string | undefined)?.trim();
+        if (childThreadId && nickname) {
+          this.collabAgentNamesByThreadId.set(childThreadId, nickname);
+        }
+        if (childThreadId) {
+          collabItem.childDetail = {
+            childThreadId,
+            status: "idle",
+          };
+        }
+      }
+      this.items.push(collabItem);
     } else if (renderPayload) {
       const headerLabel = buildToolHeader(event.toolName, renderPayload);
       const rendered = renderToolPayload(renderPayload);
@@ -660,7 +877,8 @@ export class TranscriptStore {
       for (const line of display) {
         lines.push(`${t.dim}  ${line}${t.reset}`);
       }
-      this.items.push(this.createToolResultItem(lines));
+      const item = this.createToolResultItem(lines);
+      this.items.push(item);
     } else {
       const headerLabel = buildToolHeader(event.toolName);
       const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;

@@ -1,6 +1,6 @@
 // @summary Scrollable message feed with auto-scroll, scroll-to-bottom button, and inline prompts
 
-import type { ApprovalRequest, ThreadStatus, UserInputRequest } from "@diligent/protocol";
+import type { ApprovalRequest, ThreadReadResponse, ThreadStatus, UserInputRequest } from "@diligent/protocol";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
 import { ApprovalCard } from "./ApprovalCard";
@@ -41,19 +41,24 @@ interface MessageListProps {
     onSubmit: () => void;
     onCancel: () => void;
   } | null;
+  onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
 }
 
 type CollabItem = Extract<RenderItem, { kind: "collab" }>;
 
 /** Group consecutive collab items, render everything else individually. */
-function renderGroupedItems(items: RenderItem[], threadCwd?: string): React.ReactNode[] {
+function renderGroupedItems(
+  items: RenderItem[],
+  threadCwd?: string,
+  onLoadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>,
+): React.ReactNode[] {
   const result: React.ReactNode[] = [];
   let collabBuf: CollabItem[] = [];
 
   const flushCollab = () => {
     if (collabBuf.length === 0) return;
     const groupKey = collabBuf.map((c) => c.id).join("+");
-    result.push(<CollabGroup key={groupKey} items={[...collabBuf]} />);
+    result.push(<CollabGroup key={groupKey} items={[...collabBuf]} loadChildThread={onLoadChildThread} />);
     collabBuf = [];
   };
 
@@ -94,6 +99,7 @@ function MessageListImpl({
   onQuickConnectChatGPT,
   approvalPrompt,
   questionPrompt,
+  onLoadChildThread,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -140,7 +146,10 @@ function MessageListImpl({
   }, []);
 
   const hasPrompt = approvalPrompt || questionPrompt;
-  const groupedItems = useMemo(() => renderGroupedItems(items, threadCwd), [items, threadCwd]);
+  const groupedItems = useMemo(
+    () => renderGroupedItems(items, threadCwd, onLoadChildThread),
+    [items, threadCwd, onLoadChildThread],
+  );
 
   return (
     <div className="relative min-h-0 flex-1 bg-bg-sunken">

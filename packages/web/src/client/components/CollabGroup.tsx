@@ -1,5 +1,6 @@
 // @summary Groups consecutive collab events, always collapsed by default
 
+import type { ThreadReadResponse } from "@diligent/protocol";
 import { useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
 import { CollabEventBlock } from "./CollabEventBlock";
@@ -8,9 +9,10 @@ type CollabItem = Extract<RenderItem, { kind: "collab" }>;
 
 interface CollabGroupProps {
   items: CollabItem[];
+  loadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
 }
 
-export function CollabGroup({ items }: CollabGroupProps) {
+export function CollabGroup({ items, loadChildThread }: CollabGroupProps) {
   const [open, setOpen] = useState(false);
 
   const latest = items[items.length - 1];
@@ -18,7 +20,7 @@ export function CollabGroup({ items }: CollabGroupProps) {
 
   return (
     <div className="pb-4">
-      {latest ? <CollabEventBlock key={latest.id} item={latest} /> : null}
+      {latest ? <CollabEventBlock key={latest.id} item={latest} loadChildThread={loadChildThread} /> : null}
       {hiddenCount > 0 ? (
         <button
           type="button"
@@ -31,7 +33,7 @@ export function CollabGroup({ items }: CollabGroupProps) {
       {open && hiddenCount > 0 ? (
         <div className="mt-2 space-y-0">
           {items.slice(0, -1).map((item) => (
-            <CollabEventBlock key={item.id} item={item} />
+            <CollabEventBlock key={item.id} item={item} loadChildThread={loadChildThread} />
           ))}
         </div>
       ) : null}

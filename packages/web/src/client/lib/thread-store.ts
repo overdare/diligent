@@ -768,25 +768,59 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       });
     }
 
-    case "collab_wait_begin":
-      return state;
-
-    case "collab_wait_end": {
+    case "collab_wait_begin": {
       const renderId = `collab:wait:${event.callId}`;
-      let next = withItem(state, renderId, {
+      return withItem(state, renderId, {
         id: renderId,
         kind: "collab",
         eventType: "wait",
-        agents: event.agentStatuses.map((a) => ({
-          threadId: a.threadId,
-          nickname: a.nickname,
-          status: a.status,
-          message: a.message,
+        status: "running",
+        agents: event.agents.map((agent) => ({
+          threadId: agent.threadId,
+          nickname: agent.nickname,
+          status: "running",
+          message: undefined,
         })),
-        timedOut: event.timedOut,
+        timedOut: false,
         childTools: [],
         timestamp: Date.now(),
       });
+    }
+
+    case "collab_wait_end": {
+      const renderId = `collab:wait:${event.callId}`;
+      const waitItem = state.items.find((item) => item.kind === "collab" && item.id === renderId);
+      let next = waitItem
+        ? updateItem(state, renderId, (item) =>
+            item.kind === "collab" && item.eventType === "wait"
+              ? {
+                  ...item,
+                  status: event.timedOut ? "running" : "completed",
+                  agents: event.agentStatuses.map((a) => ({
+                    threadId: a.threadId,
+                    nickname: a.nickname,
+                    status: a.status,
+                    message: a.message,
+                  })),
+                  timedOut: event.timedOut,
+                }
+              : item,
+          )
+        : withItem(state, renderId, {
+            id: renderId,
+            kind: "collab",
+            eventType: "wait",
+            status: event.timedOut ? "running" : "completed",
+            agents: event.agentStatuses.map((a) => ({
+              threadId: a.threadId,
+              nickname: a.nickname,
+              status: a.status,
+              message: a.message,
+            })),
+            timedOut: event.timedOut,
+            childTools: [],
+            timestamp: Date.now(),
+          });
 
       for (const agent of event.agentStatuses) {
         next = updateCollabSpawnStatus(

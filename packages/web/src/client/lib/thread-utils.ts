@@ -48,7 +48,9 @@ export function updateItem(state: ThreadState, itemId: string, updater: (item: R
 
 export function stringifyUnknown(value: unknown): string {
   try {
-    return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    if (typeof value === "string") return value;
+    const json = JSON.stringify(value, null, 2);
+    return typeof json === "string" ? json : String(value);
   } catch {
     return String(value);
   }

@@ -1,7 +1,6 @@
 // @summary Session file persistence with JSONL format, immediate writing, and session listing
 import { appendFile, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { buildSessionContext } from "./context-builder";
 import type {
   CollabSessionMeta,
   SessionEntry,
@@ -129,15 +128,6 @@ export async function listSessions(sessionsDir: string): Promise<SessionInfo[]> 
     if (modifiedDelta !== 0) return modifiedDelta;
     return b.id.localeCompare(a.id);
   });
-}
-
-/** Hydrated child session for ThreadReadResponse */
-export interface ChildSessionData {
-  sessionId: string;
-  nickname?: string;
-  description?: string;
-  messages: import("@diligent/core/types").Message[];
-  created: string; // ISO 8601
 }
 
 export interface SessionPersistenceConfig {
@@ -334,39 +324,6 @@ export class SessionPersistence {
       sessionId,
     );
   }
-}
-
-/**
- * Find and read all child sessions belonging to a parent session.
- * Returns child session data sorted by creation time (oldest first).
- */
-export async function readChildSessions(sessionsDir: string, parentSessionId: string): Promise<ChildSessionData[]> {
-  const glob = new Bun.Glob("*.jsonl");
-  const children: ChildSessionData[] = [];
-
-  for await (const file of glob.scan(sessionsDir)) {
-    try {
-      const path = join(sessionsDir, file);
-      const { header, entries } = await readSessionFile(path);
-
-      if (header.parentSession !== parentSessionId) continue;
-
-      const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
-      const context = buildSessionContext(entries, leafId);
-
-      children.push({
-        sessionId: header.id,
-        nickname: header.nickname,
-        description: header.description,
-        messages: context.messages,
-        created: header.timestamp,
-      });
-    } catch {
-      // Skip corrupted child sessions
-    }
-  }
-
-  return children.sort((a, b) => a.created.localeCompare(b.created));
 }
 
 /**

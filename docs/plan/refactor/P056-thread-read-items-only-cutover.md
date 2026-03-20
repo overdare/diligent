@@ -2,7 +2,7 @@
 id: P056
 title: Thread read items-only cutover and fallback retirement
 type: refactor
-status: in_progress
+status: done
 owner: diligent
 created: 2026-03-18
 ---
@@ -20,7 +20,7 @@ The core rule is simple:
 
 This is the concrete follow-through after adapter unification and thread item snapshot introduction.
 
-# Progress snapshot (2026-03-18)
+# Progress snapshot (2026-03-20)
 
 Completed in this iteration:
 
@@ -29,13 +29,16 @@ Completed in this iteration:
 3. Protocol `ThreadReadResponse` removed legacy `messages` and `transcript` fields.
 4. Runtime no longer populates legacy `thread/read` fields.
 5. Regressions for running-state settling and resume hydration were covered and validated by full test runs.
+6. `childSessions` was removed from protocol `ThreadReadResponse` and runtime `thread/read` payload population.
+7. Web collab detail expansion now loads child thread detail on demand via explicit `thread/read({ threadId: childThreadId })`.
+8. Web collab expansion now includes per-child-thread in-session caching plus inline loading/error/retry states.
+9. Web hydration/tests were updated to remove parent `childSessions` dependency and keep items-only hydration contract.
+10. CLI assumptions were swept to keep parent snapshot independent from embedded child-session payloads.
 
 Still remaining after this iteration:
 
-1. Decide whether and when to retire `childSessions` from `thread/read`.
-2. If `childSessions` is retired, enrich snapshot items so collab UI can render equivalent detail without child-session payload.
-3. Publish explicit breaking-change migration notes for third-party clients relying on removed legacy fields.
-4. Optional cleanup pass: remove now-unused compatibility comments and any stale references in docs/release notes.
+1. Publish explicit breaking-change migration notes for third-party clients that previously consumed `thread/read.childSessions`.
+2. Optional cleanup pass: remove now-unused compatibility comments and any stale references in docs/release notes.
 
 # Why this plan now
 
@@ -71,7 +74,20 @@ This plan removes that ambiguity by defining one canonical thread-read contract 
 
 - required: `items`
 - required: thread execution metadata (`isRunning`, `currentEffort`, `currentModel`, etc.)
-- optional transitional/debug only: `messages`, `transcript`, `childSessions` (to be removed)
+- optional transitional/debug only: `childSessions` (to be removed in this plan)
+
+## Resolved direction for collab child details
+
+`childSessions` should not remain part of the long-term parent `thread/read` contract.
+
+The chosen direction is:
+
+1. parent `thread/read` returns only parent snapshot items plus thread metadata
+2. parent collab items keep only the minimum data needed to identify and label the child thread
+3. when the UI expands a collab item and needs child detail, it performs a separate `thread/read({ threadId: childThreadId })`
+4. child message/tool/timeline previews are derived from the child thread response, not embedded into the parent response
+
+This keeps the parent snapshot bounded, preserves the items-first contract, and makes child-thread detail an explicit on-demand read rather than hidden payload coupling.
 
 ## Live stream alignment
 
@@ -140,9 +156,7 @@ Exit criteria:
 ## Phase 3 — Protocol and runtime legacy field retirement
 
 1. Remove optional legacy fields from `ThreadReadResponse` schema:
-   - `messages`
-   - `transcript`
-   - (optionally) `childSessions` if fully represented by items for first-party usage
+   - `childSessions`
 2. Remove runtime population of deleted fields.
 3. Update all affected tests (runtime/web/cli/e2e) to assert items-only payloads.
 4. Publish breaking-change note for third-party clients.
@@ -155,15 +169,17 @@ Exit criteria:
 ## Phase 4 — Legacy path sweep and hardening
 
 1. Repository-wide grep sweep for legacy thread hydration usage patterns:
-   - `payload.messages` in hydration contexts
-   - `payload.transcript` in hydration contexts
-   - transcript-to-render reconstruction helpers no longer used
-2. Remove dead helpers and stale comments.
-3. Run full suite and protocol lifecycle E2E.
+   - `payload.childSessions`
+   - child-session summary extraction from parent snapshot payloads
+   - collab hydration paths that assume embedded child thread messages in parent `thread/read`
+2. Add explicit client-side on-demand child thread reads for collab detail expansion.
+3. Remove dead helpers and stale comments.
+4. Run full suite and protocol lifecycle E2E.
 
 Exit criteria:
 
-- no production first-party code depends on legacy thread-read hydration fields
+- no production first-party code depends on embedded child-session payloads in parent `thread/read`
+- collab detail expansion works via explicit child-thread reads
 - full tests green
 
 # File-level worklist
@@ -175,17 +191,71 @@ Exit criteria:
 - related runtime tests under `packages/runtime/test/app-server/`
 - protocol lifecycle E2E under `packages/e2e/`
 
+Specific work:
+
+- remove `ChildSessionSchema` from `ThreadReadResponse`
+- stop calling `readChildSessions()` from parent `handleThreadRead`
+- preserve enough collab item metadata for later lookup (`childThreadId`, nickname, description, status)
+- document migration: callers needing child detail must issue a separate `thread/read` for the child thread
+
 ## Web
 
 - `packages/web/src/client/lib/thread-hydration.ts`
 - `packages/web/src/client/lib/thread-store.ts`
+- `packages/web/src/client/components/CollabEventBlock.tsx`
+- `packages/web/src/client/components/CollabGroup.tsx`
 - `packages/web/test/client/lib/thread-store.test.ts`
+
+Specific work:
+
+- remove `payload.childSessions` hydration logic from parent snapshot handling
+- stop deriving `childTools`, `childMessages`, and `childTimeline` from parent `thread/read`
+- when a collab item with `childThreadId` is expanded, request the child thread explicitly
+- cache fetched child thread detail by `childThreadId` to avoid repeated requests during a session
+- render loading and error states for expanded collab items without switching the active parent thread
+- derive child previews from the fetched child thread's `items`
 
 ## CLI
 
 - `packages/cli/src/tui/app-session-lifecycle.ts`
 - `packages/cli/src/tui/app-event-controller.ts`
 - `packages/cli/test/tui/*.test.ts` (resume/status regression coverage)
+
+Specific work:
+
+- keep CLI hydration independent of parent `childSessions`
+- if/when TUI adds expandable child-thread detail, use the same explicit child `thread/read` pattern rather than reviving embedded payloads
+
+# Recommended implementation sequence
+
+1. Remove `childSessions` from protocol and runtime `thread/read` handling.
+   - Delete the field from `ThreadReadResponse`.
+   - Stop building embedded child-session payloads in parent `handleThreadRead`.
+   - Update protocol/runtime tests to assert the reduced response shape.
+
+2. Finalize the minimum collab item metadata that must remain in the parent thread.
+   - Keep enough information for discovery and later lookup: `childThreadId`, nickname, description, status, and event summary.
+   - Ensure live notifications and hydrated history produce the same collab item shape.
+
+3. Add explicit child-thread reads for Web collab expansion.
+   - When a collab item is expanded, request `thread/read({ threadId: childThreadId })`.
+   - Keep the parent thread active while filling detail inside the expanded collab block.
+   - Include loading, error, and retry behavior.
+
+4. Add Web-side child detail caching and derive previews from fetched child items.
+   - Cache child thread responses by `childThreadId` for the current session.
+   - Build timeline/message/tool previews from fetched child `items`.
+   - Remove the old parent-payload-based child detail derivation.
+
+5. Sweep CLI assumptions and keep the same architecture boundary.
+   - Confirm TUI does not depend on parent `childSessions`.
+   - If expandable child detail is added later, use the same explicit child-read path instead of embedded payloads.
+
+6. Close with regression coverage and migration notes.
+   - Validate items-only hydration, collab expansion behavior, and protocol compatibility expectations.
+   - Publish the breaking-change guidance for callers that previously used `childSessions`.
+
+Recommended execution order: `1 → 2 → 3 → 4 → 5 → 6`.
 
 # Risk analysis
 
@@ -216,13 +286,24 @@ Mitigation:
 - perform removal only in phase 3 after first-party clients are fully migrated
 - communicate break in release notes with migration guidance
 
+## Risk 4: collab detail latency on expand
+
+Moving child detail to on-demand reads introduces a second fetch and visible loading state.
+
+Mitigation:
+
+- keep collapsed collab items informative without extra fetches
+- fetch only on explicit expand
+- cache child thread detail after the first successful read
+- show non-blocking loading/error UI inside the expanded collab block
+
 # Rollback strategy
 
 If regressions appear during phase 2 or 3:
 
 1. restore legacy fields in `ThreadReadResponse` schema
 2. restore runtime field population in `handleThreadRead`
-3. re-enable temporary client fallback hydration path
+3. re-enable temporary embedded child-session hydration path
 
 Rollback is intentionally bounded to migration period only; it is not a long-term dual-contract policy.
 
@@ -234,5 +315,6 @@ This plan is complete only when all conditions are true:
 2. runtime computes and returns display-complete items for all first-party thread features
 3. protocol no longer exposes legacy hydration fields
 4. live and resume rendering are behaviorally aligned in tests
-5. no remaining legacy hydration branches in production code
+5. no remaining embedded child-session hydration branches in production code
+6. collab child detail expansion reads the child thread explicitly instead of relying on parent snapshot payloads
 

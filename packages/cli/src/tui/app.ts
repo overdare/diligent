@@ -127,6 +127,7 @@ export class App {
       requestRenderBatched,
       cwd: process.cwd(),
       getCommitWidth: () => this.terminal.columns,
+      loadChildThread: (threadId) => this.threadManager.readThreadById(threadId),
     });
     this.inputEditor = new InputEditor(
       {

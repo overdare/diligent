@@ -16,6 +16,7 @@ export interface ThreadManager {
   resumeThread: (threadId?: string) => Promise<string | null>;
   listThreads: () => Promise<SessionSummary[]>;
   readThread: () => Promise<ThreadReadResponse | null>;
+  readThreadById: (threadId: string) => Promise<ThreadReadResponse | null>;
   deleteThread: (threadId: string) => Promise<boolean>;
 }
 
@@ -83,6 +84,14 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
         return null;
       }
       return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: currentThreadId });
+    },
+
+    async readThreadById(threadId: string): Promise<ThreadReadResponse | null> {
+      const rpc = deps.getRpcClient();
+      if (!rpc) {
+        return null;
+      }
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
     },
 
     async deleteThread(threadId: string): Promise<boolean> {

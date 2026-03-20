@@ -116,7 +116,23 @@ function renderTranscriptItemLines(item: TranscriptItem, width: number, toolResu
       ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
       : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
     if (toolResultsExpanded) {
-      return [`${item.header}${hint}`, ...item.details];
+      const childLines: string[] = [];
+      if (item.childDetail) {
+        if (item.childDetail.status === "loading") {
+          childLines.push(`${t.dim}  Loading child thread details…${t.reset}`);
+        } else if (item.childDetail.status === "error") {
+          childLines.push(
+            `${t.error}  Failed to load child thread details: ${item.childDetail.error ?? "unknown error"}${t.reset}`,
+          );
+        } else if (
+          item.childDetail.status === "loaded" &&
+          item.childDetail.lines &&
+          item.childDetail.lines.length > 0
+        ) {
+          childLines.push(...item.childDetail.lines);
+        }
+      }
+      return [`${item.header}${hint}`, ...item.details, ...childLines];
     }
     const previewLines = getCollapsedToolPreviewLines(item);
     if (previewLines.length > 0) {
@@ -218,6 +234,21 @@ export function renderTranscriptSections(
       historyLines.push(`${item.header}${hint}`);
       if (store.isToolResultsExpanded()) {
         historyLines.push(...item.details);
+        if (item.childDetail) {
+          if (item.childDetail.status === "loading") {
+            historyLines.push(`${t.dim}  Loading child thread details…${t.reset}`);
+          } else if (item.childDetail.status === "error") {
+            historyLines.push(
+              `${t.error}  Failed to load child thread details: ${item.childDetail.error ?? "unknown error"}${t.reset}`,
+            );
+          } else if (
+            item.childDetail.status === "loaded" &&
+            item.childDetail.lines &&
+            item.childDetail.lines.length > 0
+          ) {
+            historyLines.push(...item.childDetail.lines);
+          }
+        }
       } else {
         const previewLines = getCollapsedToolPreviewLines(item);
         if (previewLines.length > 0) {

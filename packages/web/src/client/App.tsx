@@ -237,6 +237,7 @@ export function App() {
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
   // Build full slash command list (builtins + skills)
   const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
@@ -283,6 +284,19 @@ export function App() {
   });
 
   const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
+
+  const loadChildThread = useCallback(
+    async (childThreadId: string): Promise<ThreadReadResponse> => {
+      const cached = childThreadCacheRef.current.get(childThreadId);
+      if (cached) return cached;
+      const rpc = rpcRef.current;
+      if (!rpc) throw new Error("WebSocket is not connected");
+      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: childThreadId });
+      childThreadCacheRef.current.set(childThreadId, response);
+      return response;
+    },
+    [rpcRef],
+  );
 
   // Register notification + server request listeners on the rpc instance created by useRpcClient.
   // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
@@ -1093,6 +1107,7 @@ export function App() {
             onQuickConnectChatGPT={handleQuickConnectChatGPT}
             approvalPrompt={approvalPrompt}
             questionPrompt={questionPrompt}
+            onLoadChildThread={loadChildThread}
           />
 
           {showPlan && <PlanPanel planState={state.planState!} />}

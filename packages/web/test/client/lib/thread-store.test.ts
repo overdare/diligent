@@ -715,16 +715,6 @@ test("hydrateFromThreadRead shows running sub-agent as running when parent isRun
         durationMs: 1,
       },
     ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-
-        nickname: "Cleo",
-        description: "do work",
-        messages: [],
-        created: "2026-03-04T10:00:00Z",
-      },
-    ],
     isRunning: true,
     hasFollowUp: false,
     entryCount: 2,
@@ -767,25 +757,6 @@ test("hydrateFromThreadRead shows wait-derived final status on spawn item", () =
         durationMs: 1,
       },
     ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-
-        nickname: "Cleo",
-        description: "do work",
-        messages: [
-          {
-            role: "assistant",
-            content: [{ type: "text", text: "I finished the work." }],
-            model: "x",
-            usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-            stopReason: "end_turn",
-            timestamp: 102,
-          },
-        ],
-        created: "2026-03-04T10:00:00Z",
-      },
-    ],
     isRunning: true,
     hasFollowUp: false,
     entryCount: 4,
@@ -796,8 +767,11 @@ test("hydrateFromThreadRead shows wait-derived final status on spawn item", () =
   expect(spawn).toBeDefined();
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("completed");
 
-  // Should also have childMessages from child session
-  expect(spawn && spawn.kind === "collab" ? spawn.childMessages?.[0] : undefined).toContain("I finished the work.");
+  expect(spawn && spawn.kind === "collab" ? spawn.childMessages : undefined).toBeUndefined();
+
+  const wait = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  expect(wait).toBeDefined();
+  expect(wait && wait.kind === "collab" ? wait.agents?.[0]?.nickname : undefined).toBe("Cleo");
 });
 
 test("hydrateFromThreadRead shows close-derived final status on spawn item", () => {
@@ -830,16 +804,6 @@ test("hydrateFromThreadRead shows close-derived final status on spawn item", () 
         timestamp: 103,
         startedAt: 102,
         durationMs: 1,
-      },
-    ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-
-        nickname: "Cleo",
-        description: "do work",
-        messages: [],
-        created: "2026-03-04T10:00:00Z",
       },
     ],
     isRunning: false,
@@ -1339,6 +1303,44 @@ test("collab_wait_end keeps spawn status running when timed out snapshot reports
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
 });
 
+test("collab_wait_begin shows running wait item before wait_end", () => {
+  resetAdapter();
+  const threadId = "t1";
+  const childThreadId = "child-live-wait-1";
+
+  let state = reduce(
+    { ...initialThreadState, activeThreadId: threadId },
+    {
+      method: "collab/wait/begin",
+      params: {
+        threadId,
+        callId: "wait-1",
+        agents: [{ threadId: childThreadId, nickname: "Holly" }],
+      },
+    },
+  );
+
+  const waitItem = state.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  expect(waitItem).toBeDefined();
+  expect(waitItem && waitItem.kind === "collab" ? waitItem.status : "").toBe("running");
+  expect(waitItem && waitItem.kind === "collab" ? waitItem.agents?.[0]?.nickname : undefined).toBe("Holly");
+
+  state = reduce(state, {
+    method: "collab/wait/end",
+    params: {
+      threadId,
+      callId: "wait-1",
+      agentStatuses: [{ threadId: childThreadId, nickname: "Holly", status: "completed", message: "done" }],
+      timedOut: false,
+    },
+  });
+
+  const waitItems = state.items.filter((item) => item.kind === "collab" && item.eventType === "wait");
+  expect(waitItems).toHaveLength(1);
+  const updatedWait = waitItems[0];
+  expect(updatedWait && updatedWait.kind === "collab" ? updatedWait.status : "").toBe("completed");
+});
+
 test("authoritative thread status from item notifications updates header state", () => {
   resetAdapter();
   const threadId = "t1";
@@ -1389,16 +1391,6 @@ test("hydrateFromThreadRead keeps sub-agent running until wait/close settles sta
         durationMs: 1,
       },
     ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-
-        nickname: "Cleo",
-        description: "do work",
-        messages: [],
-        created: "2026-03-04T10:00:00Z",
-      },
-    ],
     isRunning: false,
     hasFollowUp: false,
     entryCount: 2,
@@ -1443,15 +1435,6 @@ test("hydrateFromThreadRead keeps sub-agent running after timed-out wait with pe
         durationMs: 1,
       },
     ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-        nickname: "Cleo",
-        description: "do work",
-        messages: [],
-        created: "2026-03-04T10:00:00Z",
-      },
-    ],
     isRunning: false,
     hasFollowUp: false,
     entryCount: 3,
@@ -1483,15 +1466,6 @@ test("hydrateFromThreadRead stores full wait message text from status output", (
         timestamp: 102,
         startedAt: 101,
         durationMs: 1,
-      },
-    ],
-    childSessions: [
-      {
-        sessionId: "ses-child-1",
-        nickname: "Cleo",
-        description: "do work",
-        messages: [],
-        created: "2026-03-04T10:00:00Z",
       },
     ],
     isRunning: false,

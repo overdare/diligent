@@ -1,13 +1,59 @@
 // @summary Collab event block showing sub-agent orchestration in concise conversation order
 
-import { useState } from "react";
+import type { ThreadReadResponse } from "@diligent/protocol";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
+import { stringifyUnknown } from "../lib/thread-utils";
 import { getToolInfo } from "../lib/tool-info";
 import { StatusDot } from "./StatusDot";
 
 interface CollabEventBlockProps {
   item: Extract<RenderItem, { kind: "collab" }>;
+  loadChildThread?: (childThreadId: string) => Promise<ThreadReadResponse>;
+}
+
+type ChildPreview = {
+  childTools: Extract<RenderItem, { kind: "collab" }>["childTools"];
+  childMessages: string[];
+  childTimeline: NonNullable<Extract<RenderItem, { kind: "collab" }>["childTimeline"]>;
+};
+
+function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
+  const childTools: ChildPreview["childTools"] = [];
+  const childMessages: string[] = [];
+  const childTimeline: ChildPreview["childTimeline"] = [];
+
+  for (const item of payload.items) {
+    if (item.type === "agentMessage") {
+      const raw = stringifyUnknown(item.message);
+      childMessages.push(raw);
+      childTimeline.push({ kind: "assistant", message: raw });
+      continue;
+    }
+
+    if (item.type === "toolCall") {
+      const inputText = stringifyUnknown(item.input);
+      const outputText = typeof item.output === "string" ? item.output : stringifyUnknown(item.output);
+      const status = typeof item.output === "undefined" ? "running" : "done";
+      const tool = {
+        toolCallId: item.toolCallId,
+        toolName: item.toolName,
+        status,
+        isError: item.isError ?? false,
+        inputText,
+        outputText,
+      } as const;
+      childTools.push(tool);
+      childTimeline.push({ ...tool, kind: "tool" });
+    }
+  }
+
+  return {
+    childTools,
+    childMessages,
+    childTimeline,
+  };
 }
 
 function agentLabel(nickname?: string, threadId?: string): string {
@@ -70,7 +116,7 @@ function summarizeResponse(outputText: string): string {
 }
 
 function summarizeAssistantMessage(rawMessage: string): string | null {
-  const trimmed = rawMessage.trim();
+  const trimmed = typeof rawMessage === "string" ? rawMessage.trim() : "";
   if (!trimmed) return null;
 
   try {
@@ -100,11 +146,15 @@ function summarizeAssistantMessage(rawMessage: string): string | null {
   }
 }
 
-export function CollabEventBlock({ item }: CollabEventBlockProps) {
+export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProps) {
   const [open, setOpen] = useState(false);
+  const [isLoadingChild, setIsLoadingChild] = useState(false);
+  const [childLoadError, setChildLoadError] = useState<string | null>(null);
+  const [loadedChildPreview, setLoadedChildPreview] = useState<ChildPreview | null>(null);
   const hasRunningTool = item.childTools.some((tool) => tool.status === "running");
   const badge = statusBadge(item.status);
   const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
+  const effectiveTimeline = loadedChildPreview?.childTimeline ?? item.childTimeline ?? [];
 
   let title = "";
   let details: string | null = null;
@@ -117,10 +167,17 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
       break;
     case "wait": {
       const count = item.agents?.length ?? 0;
-      title =
-        count === 1 && item.agents?.[0]
-          ? `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`
-          : `Finished waiting for ${count} agents`;
+      if (item.status === "running") {
+        title =
+          count === 1 && item.agents?.[0]
+            ? `Waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`
+            : `Waiting for ${count} agents`;
+      } else {
+        title =
+          count === 1 && item.agents?.[0]
+            ? `Finished waiting for ${agentLabel(item.agents[0].nickname, item.agents[0].threadId)}`
+            : `Finished waiting for ${count} agents`;
+      }
       break;
     }
     case "close":
@@ -131,10 +188,41 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
       break;
   }
 
-  const timeline = item.childTimeline ?? [];
+  const timeline = effectiveTimeline;
   const hasBody = Boolean(
-    details || item.message || (item.eventType === "wait" && item.agents?.length) || timeline.length > 0,
+    details ||
+      item.message ||
+      (item.eventType === "wait" && item.agents?.length) ||
+      timeline.length > 0 ||
+      (item.eventType === "spawn" && item.childThreadId),
   );
+
+  const loadChildDetail = useCallback(async (): Promise<void> => {
+    if (item.eventType !== "spawn" || !item.childThreadId || !loadChildThread) return;
+    if (isLoadingChild) return;
+    if (loadedChildPreview) return;
+    setIsLoadingChild(true);
+    setChildLoadError(null);
+    try {
+      const child = await loadChildThread(item.childThreadId);
+      setLoadedChildPreview(deriveChildPreview(child));
+    } catch (error) {
+      setChildLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoadingChild(false);
+    }
+  }, [item.eventType, item.childThreadId, loadChildThread, isLoadingChild, loadedChildPreview]);
+
+  const retryLoadChildDetail = useCallback(async (): Promise<void> => {
+    setLoadedChildPreview(null);
+    await loadChildDetail();
+  }, [loadChildDetail]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (item.eventType !== "spawn" || !item.childThreadId) return;
+    void loadChildDetail();
+  }, [open, item.eventType, item.childThreadId, loadChildDetail]);
 
   return (
     <div className="pb-4">
@@ -208,6 +296,24 @@ export function CollabEventBlock({ item }: CollabEventBlockProps) {
                       </div>
                     );
                   })}
+                </div>
+              ) : null}
+
+              {item.eventType === "spawn" && item.childThreadId ? (
+                <div className="pt-1 text-xs text-text/55">
+                  {isLoadingChild ? <div>Loading child thread details…</div> : null}
+                  {!isLoadingChild && childLoadError ? (
+                    <div className="space-y-1">
+                      <div className="text-danger/80">Failed to load child thread detail: {childLoadError}</div>
+                      <button
+                        type="button"
+                        onClick={() => void retryLoadChildDetail()}
+                        className="text-2xs text-accent hover:underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </>

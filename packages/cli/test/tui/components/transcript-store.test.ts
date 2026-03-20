@@ -349,4 +349,142 @@ describe("TranscriptStore", () => {
     expect(header).toContain("read - README.md");
     expect(toolItem.summaryLine).toBe("⎿  Read failed");
   });
+
+  test("expanded spawn_agent tool_result loads child thread detail preview", async () => {
+    const store = new TranscriptStore({
+      requestRender: () => {},
+      loadChildThread: async (_threadId) => ({
+        cwd: "/repo",
+        items: [
+          {
+            type: "agentMessage",
+            itemId: "m1",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "child says hello" }],
+              model: "x",
+              usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+              stopReason: "end_turn",
+              timestamp: 1,
+            },
+          },
+          {
+            type: "toolCall",
+            itemId: "t1",
+            toolCallId: "tc1",
+            toolName: "bash",
+            input: { command: "echo hi" },
+            output: "hi",
+            isError: false,
+            timestamp: 2,
+            startedAt: 1,
+            durationMs: 1,
+          },
+        ],
+        hasFollowUp: false,
+        entryCount: 2,
+        isRunning: false,
+        currentEffort: "medium",
+      }),
+    });
+
+    store.handleEvent({ type: "tool_start", toolCallId: "spawn_1", toolName: "spawn_agent", input: {} });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "spawn_1",
+      toolName: "spawn_agent",
+      output: JSON.stringify({ thread_id: "child-1", nickname: "fern" }),
+      isError: false,
+    });
+
+    store.toggleToolResultsCollapsed();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const toolItem = store.getItems().find((item) => "kind" in item && item.kind === "tool_result");
+    expect(toolItem).toBeDefined();
+    if (!toolItem || !("kind" in toolItem) || toolItem.kind !== "tool_result")
+      throw new Error("Expected tool_result item");
+
+    expect(toolItem.childDetail?.status).toBe("loaded");
+    const childLines = (toolItem.childDetail?.lines ?? []).map(stripAnsi);
+    expect(childLines.some((line) => line.includes("Child thread preview:"))).toBe(true);
+    expect(childLines.some((line) => line.includes("assistant=1, tools=1"))).toBe(true);
+    expect(childLines.some((line) => line.includes("child says hello"))).toBe(true);
+  });
+
+  test("child-thread streaming events are not rendered in parent transcript", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({
+      type: "message_start",
+      itemId: "child-msg-1",
+      message: {
+        role: "assistant",
+        content: [],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 1,
+      },
+      childThreadId: "child-1",
+      nickname: "fern",
+    });
+    store.handleEvent({
+      type: "message_delta",
+      itemId: "child-msg-1",
+      delta: { type: "text_delta", delta: "child streaming" },
+      childThreadId: "child-1",
+      nickname: "fern",
+    });
+    store.handleEvent({
+      type: "message_end",
+      itemId: "child-msg-1",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "child streaming" }],
+        model: "x",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "end_turn",
+        timestamp: 2,
+      },
+      childThreadId: "child-1",
+      nickname: "fern",
+    });
+    store.handleEvent({
+      type: "tool_start",
+      toolCallId: "child-tool-1",
+      toolName: "bash",
+      input: { command: "echo hi" },
+      childThreadId: "child-1",
+      nickname: "fern",
+    });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "child-tool-1",
+      toolName: "bash",
+      output: "hi",
+      isError: false,
+      childThreadId: "child-1",
+      nickname: "fern",
+    });
+
+    expect(store.getItems()).toHaveLength(0);
+  });
+
+  test("wait overlay prefers known agent nicknames over thread ids", () => {
+    const store = new TranscriptStore({ requestRender: () => {} });
+
+    store.handleEvent({ type: "tool_start", toolCallId: "spawn_1", toolName: "spawn_agent", input: {} });
+    store.handleEvent({
+      type: "tool_end",
+      toolCallId: "spawn_1",
+      toolName: "spawn_agent",
+      output: JSON.stringify({ thread_id: "child-abc", nickname: "Holly" }),
+      isError: false,
+    });
+
+    store.handleEvent({ type: "tool_start", toolCallId: "wait_1", toolName: "wait", input: { ids: ["child-abc"] } });
+    const lines = renderTranscript(store, 100).map(stripAnsi);
+    expect(lines.some((line) => line.includes("Waiting for Holly"))).toBe(true);
+  });
 });
