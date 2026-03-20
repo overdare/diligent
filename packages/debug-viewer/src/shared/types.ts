@@ -1,4 +1,7 @@
-// Convention-based types — duplicated from @diligent/core by convention, NOT imported (DV-01)
+// Debug-viewer local DTOs (D095/DV-01):
+// - Core-level concepts may be mirrored by convention.
+// - Runtime session/knowledge types are intentionally NOT imported.
+// - Duplicate only fields required by debug-viewer UX/parsing.
 
 // Content blocks (mirrors core/src/types.ts)
 export interface TextBlock {

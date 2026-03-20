@@ -654,3 +654,23 @@ Decisions made during synthesis reviews, with rationale.
 - **Decision**: Cancelled. No capability negotiation needed since D093 is cancelled.
 - **Reason for cancellation**: D094 existed solely to support gradual migration to D093’s fine-grained deltas. With D093 cancelled, D094 has no purpose.
 - **Date**: 2026-03-05 (cancelled 2026-03-09)
+
+### D095: Debug Viewer type topology — Core-coupled, Runtime-decoupled
+- **Decision**: Keep `packages/debug-viewer` in the monorepo but intentionally **do not import runtime session/knowledge types**. Debug-viewer may reference stable core-level concepts, but runtime-specific shapes must be represented locally in `packages/debug-viewer/src/shared/types.ts` (DV-01 convention) with selective duplication only for fields required by viewer UX.
+- **Boundary rule**:
+  - Allowed: core utilities/types that are framework-agnostic and stable.
+  - Not allowed: imports from `packages/runtime/**` (or runtime package exports) for session entry/knowledge schemas.
+  - If runtime introduces a new field needed by debug-viewer, duplicate only the minimal subset in debug-viewer local types instead of inheriting full runtime internals.
+- **Rationale**:
+  - Prevents tight coupling of a diagnostics UI to runtime internals that evolve quickly.
+  - Keeps debug-viewer usable as an independent analysis surface for JSONL/session artifacts.
+  - Makes type drift explicit at parser boundaries and avoids transitive dependency creep.
+- **Trade-offs**:
+  - Requires periodic sync work when runtime entry shapes evolve.
+  - Parser currently uses multiple `as unknown as` casts (`packages/debug-viewer/src/server/parser.ts`), which is a known safety cost of decoupled local typing.
+  - Mitigation: prefer narrow local interfaces and targeted parsing guards over broad runtime type import.
+- **Implementation note**:
+  - `packages/debug-viewer/src/shared/types.ts` remains the source of truth for debug-viewer DTOs.
+  - Do not “fix” cast friction by importing runtime types directly; improve local parser narrowing instead.
+- **References**: DV-01 (`packages/debug-viewer/src/shared/types.ts`), `packages/debug-viewer/src/server/parser.ts`
+- **Date**: 2026-03-20
