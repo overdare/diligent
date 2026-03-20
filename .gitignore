@@ -20,9 +20,11 @@ dist/
 # Claude Code local
 .claude/settings.local.json
 .claude/worktrees/
-
 # Terminal Bench job outputs
 jobs/
 
 # Test temp directories
 **/tmp-watcher-test/
+
+# Alias file (symlink)
+CLAUDE.md
