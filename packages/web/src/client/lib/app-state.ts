@@ -1,0 +1,110 @@
+// @summary App-level thread state reducer and actions extracted from App orchestrator
+
+import type {
+  AgentEvent,
+  DiligentServerNotification,
+  LocalImageBlock,
+  Mode,
+  SessionSummary,
+  ThreadReadResponse,
+} from "@diligent/protocol";
+import { hydrateFromThreadRead, type RenderItem, reduceServerNotification, type ThreadState } from "./thread-store";
+
+export type PendingImage = LocalImageBlock & { webUrl: string };
+
+export type AppAction =
+  | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
+  | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
+  | { type: "set_threads"; payload: SessionSummary[] }
+  | { type: "set_mode"; payload: Mode }
+  | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
+  | { type: "local_steer"; payload: string }
+  | { type: "consume_first_pending_steer" }
+  | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
+  | { type: "show_info_toast"; payload: string }
+  | { type: "clear_toast" };
+
+export function appReducer(state: ThreadState, action: AppAction): ThreadState {
+  if (action.type === "notification")
+    return reduceServerNotification(state, action.payload.notification, action.payload.events);
+  if (action.type === "hydrate") {
+    return hydrateFromThreadRead(
+      {
+        ...state,
+        activeThreadId: action.payload.threadId,
+        activeThreadCwd: action.payload.history.cwd,
+        mode: action.payload.mode,
+      },
+      action.payload.history,
+    );
+  }
+  if (action.type === "set_mode") return { ...state, mode: action.payload };
+  if (action.type === "set_threads") {
+    const optimisticMessages = new Map(
+      state.threadList.filter((t) => t.firstUserMessage).map((t) => [t.id, t.firstUserMessage!]),
+    );
+    const merged = action.payload.map((t) =>
+      !t.firstUserMessage && optimisticMessages.has(t.id)
+        ? { ...t, firstUserMessage: optimisticMessages.get(t.id) }
+        : t,
+    );
+    return { ...state, threadList: merged };
+  }
+  if (action.type === "local_user") {
+    const text = action.payload.text;
+    const userItem: RenderItem = {
+      id: `local-user-${Date.now()}`,
+      kind: "user",
+      text,
+      images: action.payload.images.map((image) => ({
+        url: image.webUrl,
+        fileName: image.fileName,
+        mediaType: image.mediaType,
+      })),
+      timestamp: Date.now(),
+    };
+    return { ...state, items: [...state.items, userItem] };
+  }
+  if (action.type === "local_steer") {
+    return { ...state, pendingSteers: [...state.pendingSteers, action.payload] };
+  }
+  if (action.type === "consume_first_pending_steer") {
+    return state.pendingSteers.length === 0 ? state : { ...state, pendingSteers: state.pendingSteers.slice(1) };
+  }
+  if (action.type === "optimistic_thread") {
+    const { threadId, message } = action.payload;
+    const now = new Date().toISOString();
+    const existing = state.threadList.find((t) => t.id === threadId);
+    if (existing) {
+      if (existing.firstUserMessage) return state;
+      return {
+        ...state,
+        threadList: state.threadList.map((t) =>
+          t.id === threadId ? { ...t, firstUserMessage: message, modified: now } : t,
+        ),
+      };
+    }
+    const optimistic: SessionSummary = {
+      id: threadId,
+      path: "",
+      cwd: "",
+      created: now,
+      modified: now,
+      messageCount: 1,
+      firstUserMessage: message,
+    };
+    return { ...state, threadList: [optimistic, ...state.threadList] };
+  }
+  if (action.type === "show_info_toast") {
+    return {
+      ...state,
+      toast: {
+        id: `info-${Date.now()}`,
+        kind: "info",
+        message: action.payload,
+      },
+    };
+  }
+  if (action.type === "clear_toast") return { ...state, toast: null };
+  return state;
+}

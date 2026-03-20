@@ -1,14 +1,8 @@
 // @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
 
 import type {
-  AgentEvent,
-  DiligentServerNotification,
-  InitializeResponse,
   KnowledgeEntry,
   KnowledgeUpdateParams,
-  LocalImageBlock,
-  Mode,
-  SessionSummary,
   SkillInfo,
   ThinkingEffort,
   ThreadReadResponse,
@@ -16,13 +10,7 @@ import type {
   ToolsSetParams,
   ToolsSetResponse,
 } from "@diligent/protocol";
-import {
-  DILIGENT_CLIENT_NOTIFICATION_METHODS,
-  DILIGENT_CLIENT_REQUEST_METHODS,
-  DILIGENT_SERVER_NOTIFICATION_METHODS,
-  DILIGENT_SERVER_REQUEST_METHODS,
-  DILIGENT_VERSION,
-} from "@diligent/protocol";
+import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
@@ -36,175 +24,20 @@ import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { APP_PROJECT_NAME } from "./lib/app-config";
-import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./lib/model-thinking-helpers";
+import { appReducer, type PendingImage } from "./lib/app-state";
+import { getThreadIdFromUrl } from "./lib/app-utils";
+import { supportsThinkingNone } from "./lib/model-thinking-helpers";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import type { SlashCommand } from "./lib/slash-commands";
-import { buildCommandList, parseSlashCommand } from "./lib/slash-commands";
-import {
-  hydrateFromThreadRead,
-  initialThreadState,
-  type RenderItem,
-  reduceServerNotification,
-  type ThreadState,
-} from "./lib/thread-store";
+import { buildCommandList } from "./lib/slash-commands";
+import { initialThreadState } from "./lib/thread-store";
+import { useAppActions } from "./lib/use-app-actions";
+import { useAppBootstrap, useAppRpcBindings } from "./lib/use-app-lifecycle";
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
 import { useSteeringQueue } from "./lib/use-steering-queue";
 import { useThreadManager } from "./lib/use-thread-manager";
-
-type PendingImage = LocalImageBlock & { webUrl: string };
-
-const MANUAL_COMPACTION_TOAST = "Manual compaction in progress…";
-
-type AppAction =
-  | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
-  | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
-  | { type: "set_threads"; payload: SessionSummary[] }
-  | { type: "set_mode"; payload: Mode }
-  | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
-  | { type: "local_steer"; payload: string }
-  | { type: "consume_first_pending_steer" }
-  | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
-  | { type: "show_info_toast"; payload: string }
-  | { type: "clear_toast" };
-
-function appReducer(state: ThreadState, action: AppAction): ThreadState {
-  if (action.type === "notification")
-    return reduceServerNotification(state, action.payload.notification, action.payload.events);
-  if (action.type === "hydrate") {
-    return hydrateFromThreadRead(
-      {
-        ...state,
-        activeThreadId: action.payload.threadId,
-        activeThreadCwd: action.payload.history.cwd,
-        mode: action.payload.mode,
-      },
-      action.payload.history,
-    );
-  }
-  if (action.type === "set_mode") return { ...state, mode: action.payload };
-  if (action.type === "set_threads") {
-    // Merge: preserve optimistic firstUserMessage if the server hasn't persisted it yet
-    const optimisticMessages = new Map(
-      state.threadList.filter((t) => t.firstUserMessage).map((t) => [t.id, t.firstUserMessage!]),
-    );
-    const merged = action.payload.map((t) =>
-      !t.firstUserMessage && optimisticMessages.has(t.id)
-        ? { ...t, firstUserMessage: optimisticMessages.get(t.id) }
-        : t,
-    );
-    return { ...state, threadList: merged };
-  }
-  if (action.type === "local_user") {
-    const text = action.payload.text;
-    const userItem: RenderItem = {
-      id: `local-user-${Date.now()}`,
-      kind: "user",
-      text,
-      images: action.payload.images.map((image) => ({
-        url: image.webUrl,
-        fileName: image.fileName,
-        mediaType: image.mediaType,
-      })),
-      timestamp: Date.now(),
-    };
-    return { ...state, items: [...state.items, userItem] };
-  }
-  if (action.type === "local_steer") {
-    return { ...state, pendingSteers: [...state.pendingSteers, action.payload] };
-  }
-  if (action.type === "consume_first_pending_steer") {
-    return state.pendingSteers.length === 0 ? state : { ...state, pendingSteers: state.pendingSteers.slice(1) };
-  }
-  if (action.type === "optimistic_thread") {
-    const { threadId, message } = action.payload;
-    const now = new Date().toISOString();
-    const existing = state.threadList.find((t) => t.id === threadId);
-    if (existing) {
-      // Thread already in list (e.g. empty thread from startNewThread) — update firstUserMessage if missing
-      if (existing.firstUserMessage) return state;
-      return {
-        ...state,
-        threadList: state.threadList.map((t) =>
-          t.id === threadId ? { ...t, firstUserMessage: message, modified: now } : t,
-        ),
-      };
-    }
-    // Thread not yet in list — prepend optimistic entry
-    const optimistic: SessionSummary = {
-      id: threadId,
-      path: "",
-      cwd: "",
-      created: now,
-      modified: now,
-      messageCount: 1,
-      firstUserMessage: message,
-    };
-    return { ...state, threadList: [optimistic, ...state.threadList] };
-  }
-  if (action.type === "show_info_toast") {
-    return {
-      ...state,
-      toast: {
-        id: `info-${Date.now()}`,
-        kind: "info",
-        message: action.payload,
-      },
-    };
-  }
-  if (action.type === "clear_toast") return { ...state, toast: null };
-  return state;
-}
-
-// ---------------------------------------------------------------------------
-// URL ↔ threadId helpers
-// ---------------------------------------------------------------------------
-
-/** Extract threadId from the current URL path (e.g. "/abc123" → "abc123"). Returns null if at root. */
-function getThreadIdFromUrl(): string | null {
-  const path = window.location.pathname.replace(/^\/+/, "");
-  return path || null;
-}
-
-/** Replace current URL with `/{threadId}` (used for initial load so back doesn't double-stack). */
-function replaceThreadUrl(threadId: string): void {
-  if (getThreadIdFromUrl() !== threadId) {
-    window.history.replaceState(null, "", `/${threadId}`);
-  }
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function extensionForImageType(mediaType: string): string {
-  switch (mediaType) {
-    case "image/png":
-      return ".png";
-    case "image/jpeg":
-      return ".jpg";
-    case "image/webp":
-      return ".webp";
-    case "image/gif":
-      return ".gif";
-    default:
-      return ".bin";
-  }
-}
-
-export function normalizeImageFileName(file: File, index: number, timestamp = Date.now()): string {
-  const trimmedName = file.name?.trim() ?? "";
-  if (trimmedName.length > 0) return trimmedName;
-  return `pasted-image-${timestamp}-${index}${extensionForImageType(file.type)}`;
-}
 
 export function App() {
   useEffect(() => {
@@ -283,8 +116,6 @@ export function App() {
     closeModals,
   });
 
-  const getRpc = useCallback(() => rpcRef.current, [rpcRef]);
-
   const loadChildThread = useCallback(
     async (childThreadId: string): Promise<ThreadReadResponse> => {
       const cached = childThreadCacheRef.current.get(childThreadId);
@@ -297,246 +128,6 @@ export function App() {
     },
     [rpcRef],
   );
-
-  // Register notification + server request listeners on the rpc instance created by useRpcClient.
-  // Connection bootstrap is handled in a separate effect so initialize becomes the bootstrap source.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: uses steeringQueue refs intentionally without effect churn
-  useEffect(() => {
-    const rpc = getRpc();
-    if (!rpc) return;
-
-    rpc.onNotification((notification: DiligentServerNotification) => {
-      const notificationParams =
-        notification.params !== null && typeof notification.params === "object"
-          ? (notification.params as Record<string, unknown>)
-          : null;
-
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED) {
-        const params = notification.params;
-        if (params.success) {
-          setOauthPending(false);
-          setOauthError(null);
-        } else {
-          setOauthPending(false);
-          setOauthError(params.error ?? "OAuth flow failed");
-        }
-        providerMgr.onAccountLoginCompleted(params);
-        return;
-      }
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED) {
-        void providerMgr.onAccountUpdated(notification.params);
-        return;
-      }
-      // Mark non-active threads as needing attention when their turn completes
-      if (
-        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED &&
-        notificationParams &&
-        typeof notificationParams.threadId === "string" &&
-        activeThreadIdRef.current &&
-        notificationParams.threadId !== activeThreadIdRef.current
-      ) {
-        markAttention(notificationParams.threadId);
-      }
-
-      // Refresh sidebar on status changes: busy picks up new sessions, idle picks up completed ones
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
-        if (!notificationParams) {
-          return;
-        }
-        console.log("[App][thread-status] notification", {
-          notificationThreadId: notificationParams.threadId,
-          status: notificationParams.status,
-          activeThreadId: activeThreadIdRef.current,
-          currentUiThreadStatus: stateRef.current.threadStatus,
-          itemCount: stateRef.current.items.length,
-        });
-        void threadMgr.refreshThreadList(rpc);
-        // Re-hydrate if any items are still showing as in-flight (notifications missed during disconnect)
-        const status = typeof notificationParams.status === "string" ? notificationParams.status : undefined;
-        if (status === "idle") {
-          const hasInFlightItems = stateRef.current.items.some(
-            (i) =>
-              (i.kind === "tool" && i.status === "streaming") ||
-              (i.kind === "assistant" && !(i as { thinkingDone: boolean }).thinkingDone),
-          );
-          if (hasInFlightItems) {
-            const threadId = activeThreadIdRef.current;
-            if (threadId) {
-              console.log("[App] thread/status/changed idle with in-flight items — re-hydrating thread", threadId);
-              void rpc
-                .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId })
-                .then((history) => {
-                  console.log("[App][thread-status] rehydrate after idle notification", {
-                    threadId,
-                    isRunning: history.isRunning,
-                    itemCount: history.items.length,
-                    entryCount: history.entryCount,
-                  });
-                  dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
-                })
-                .catch(console.error);
-            }
-          }
-        }
-      }
-      const events =
-        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT ? [notification.params.event] : [];
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
-        events.push({ type: "status_change", status: notification.params.status });
-      }
-      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
-        events.push({
-          type: "turn_start",
-          turnId: notification.params.turnId,
-          ...(notification.params.childThreadId
-            ? {
-                childThreadId: notification.params.childThreadId,
-                nickname: notification.params.nickname,
-                turnNumber: notification.params.turnNumber,
-              }
-            : {}),
-        });
-      }
-      const shouldSuppressSteeringInjected =
-        steeringQueue.suppressNextSteeringInjectedRef.current &&
-        events.some((event) => event.type === "steering_injected");
-      if (shouldSuppressSteeringInjected) {
-        steeringQueue.suppressNextSteeringInjectedRef.current = false;
-      }
-      const filteredEvents = shouldSuppressSteeringInjected
-        ? events.filter((event) => event.type !== "steering_injected")
-        : events;
-      dispatch({ type: "notification", payload: { notification, events: filteredEvents } });
-
-      if (
-        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
-        notificationParams &&
-        typeof notificationParams.threadId === "string" &&
-        notificationParams.threadId === activeThreadIdRef.current &&
-        steeringQueue.pendingAbortRestartMessageRef.current
-      ) {
-        const interruptedThreadId = notificationParams.threadId;
-        queueMicrotask(() => {
-          void steeringQueue.restartFromPendingAbortSteer(interruptedThreadId);
-        });
-      }
-    });
-    rpc.onServerRequest((requestId, request) => serverRequests.handleServerRequest(requestId, request));
-  }, [
-    threadMgr.refreshThreadList,
-    providerMgr.onAccountLoginCompleted,
-    providerMgr.onAccountUpdated,
-    serverRequests.handleServerRequest,
-    markAttention,
-    getRpc,
-  ]);
-
-  useEffect(() => {
-    if (connection !== "connected") {
-      return;
-    }
-
-    const rpc = rpcRef.current;
-    if (!rpc) return;
-
-    let cancelled = false;
-
-    const bootstrap = async (): Promise<void> => {
-      try {
-        const meta = (await rpc.initialize({
-          clientName: "diligent-web",
-          clientVersion: DILIGENT_VERSION,
-          protocolVersion: 1,
-        })) as InitializeResponse;
-        if (cancelled) return;
-
-        setCwd(meta.cwd ?? "");
-        setEffortState(meta.effort ?? "medium");
-        setSkills(meta.skills ?? []);
-        providerMgr.setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
-        rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
-
-        const mode = meta.mode ?? "default";
-
-        const prevThreadId = activeThreadIdRef.current;
-        if (prevThreadId) {
-          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: prevThreadId });
-          if (!cancelled && resumed.found && resumed.threadId) {
-            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-              threadId: resumed.threadId,
-            });
-            if (cancelled) return;
-            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
-            setEffortState(history.currentEffort);
-            replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.currentModel);
-            await threadMgr.refreshThreadList(rpc);
-            return;
-          }
-        }
-
-        const urlThreadId = getThreadIdFromUrl();
-        if (urlThreadId) {
-          const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId: urlThreadId });
-          if (!cancelled && resumed.found && resumed.threadId) {
-            const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-              threadId: resumed.threadId,
-            });
-            if (cancelled) return;
-            dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
-            setEffortState(history.currentEffort);
-            replaceThreadUrl(resumed.threadId);
-            await providerMgr.applySessionModel(history.currentModel);
-            await threadMgr.refreshThreadList(rpc);
-            return;
-          }
-        }
-
-        const mostRecent = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
-        if (!cancelled && mostRecent.found && mostRecent.threadId) {
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-            threadId: mostRecent.threadId,
-          });
-          if (cancelled) return;
-          dispatch({ type: "hydrate", payload: { threadId: mostRecent.threadId, mode, history } });
-          setEffortState(history.currentEffort);
-          replaceThreadUrl(mostRecent.threadId);
-          await providerMgr.applySessionModel(history.currentModel);
-          await threadMgr.refreshThreadList(rpc);
-          return;
-        }
-
-        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-          cwd: (meta.cwd ?? cwdRef.current) || "/",
-          mode,
-        });
-        if (cancelled) return;
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
-        if (cancelled) return;
-        dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode, history } });
-        setEffortState(history.currentEffort);
-        replaceThreadUrl(started.threadId);
-        await threadMgr.refreshThreadList(rpc);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        await providerMgr.refreshProviders(rpc);
-      }
-    };
-
-    void bootstrap();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    connection,
-    providerMgr.setInitialModel,
-    providerMgr.applySessionModel,
-    providerMgr.refreshProviders,
-    threadMgr.refreshThreadList,
-    rpcRef,
-  ]);
 
   const startNewThread = threadMgr.startNewThread;
   const openThread = threadMgr.openThread;
@@ -610,297 +201,86 @@ export function App() {
     isBusy,
     clearThreadInput,
   });
+
+  useAppRpcBindings({
+    rpcRef,
+    activeThreadIdRef,
+    stateRef,
+    dispatch,
+    refreshThreadList: threadMgr.refreshThreadList,
+    onAccountLoginCompleted: providerMgr.onAccountLoginCompleted,
+    onAccountUpdated: providerMgr.onAccountUpdated,
+    markAttention,
+    handleServerRequest: serverRequests.handleServerRequest,
+    steering: {
+      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
+      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
+      restartFromPendingAbortSteer: steeringQueue.restartFromPendingAbortSteer,
+    },
+    setOauthPending,
+    setOauthError,
+  });
+
+  useAppBootstrap({
+    connection,
+    rpcRef,
+    activeThreadIdRef,
+    cwdRef,
+    dispatch,
+    setCwd,
+    setEffortState,
+    setSkills,
+    setInitialModel: providerMgr.setInitialModel,
+    applySessionModel: providerMgr.applySessionModel,
+    refreshThreadList: threadMgr.refreshThreadList,
+    refreshProviders: providerMgr.refreshProviders,
+  });
+
   const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
   const supportsVision = currentModelInfo?.supportsVision === true;
   const supportsThinking = currentModelInfo?.supportsThinking === true;
 
-  const sendMessage = async () => {
-    const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId || !canSend) return;
-    const threadId = state.activeThreadId;
-    const message = activeInput.trim();
-    const images = pendingImages;
-    clearThreadInput(threadId);
-    setPendingImages([]);
-    dispatch({ type: "local_user", payload: { text: message, images } });
-    // If this is the first message in the thread, immediately add an optimistic sidebar entry
-    if (state.items.length === 0 && state.activeThreadId) {
-      dispatch({
-        type: "optimistic_thread",
-        payload: { threadId: state.activeThreadId, message: message || "[image]" },
-      });
-    }
-    try {
-      const content = [
-        ...(message ? [{ type: "text" as const, text: message }] : []),
-        ...images.map((image) => ({
-          type: "local_image" as const,
-          path: image.path,
-          mediaType: image.mediaType,
-          fileName: image.fileName,
-        })),
-      ];
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-        threadId: state.activeThreadId,
-        message,
-        attachments: images.map((image) => ({
-          type: "local_image" as const,
-          path: image.path,
-          mediaType: image.mediaType,
-          fileName: image.fileName,
-        })),
-        content,
-        model: providerMgr.currentModelRef.current || undefined,
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const confirmDeleteThread = threadMgr.confirmDeleteThread;
 
-  const interruptTurn = async () => {
-    const rpc = rpcRef.current;
-    const threadId = state.activeThreadId;
-    if (!rpc || !threadId) return;
-    steeringQueue.pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0] ?? null;
-    steeringQueue.suppressNextSteeringInjectedRef.current =
-      steeringQueue.pendingAbortRestartMessageRef.current !== null;
-    console.log("[App] Stop pressed — sending turn/interrupt for thread", threadId);
-    try {
-      const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
-        threadId,
-      });
-      console.log("[App] turn/interrupt response:", result);
-    } catch (error) {
-      steeringQueue.pendingAbortRestartMessageRef.current = null;
-      steeringQueue.suppressNextSteeringInjectedRef.current = false;
-      console.error("[App] turn/interrupt failed:", error);
-    }
-  };
-
-  const setMode = async (mode: Mode) => {
-    const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId) return;
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET, { threadId: state.activeThreadId, mode });
-    dispatch({ type: "set_mode", payload: mode });
-  };
-
-  const setEffort = useCallback(
-    async (e: ThinkingEffort) => {
-      const rpc = getRpc();
-      if (!rpc || !state.activeThreadId) return;
-      const currentModelInfo = findModelInfo(providerMgr.availableModels, providerMgr.currentModel);
-      if (e === "none" && currentModelInfo?.supportsThinking && !supportsThinkingNone(currentModelInfo)) {
-        dispatch({ type: "show_info_toast", payload: "This model does not support minimal thinking." });
-        return;
-      }
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId: state.activeThreadId, effort: e });
-      setEffortState(e);
+  const {
+    handleSend,
+    handleInterrupt,
+    handleModeChange,
+    handleEffortChange,
+    handleModelChange,
+    handleCompactionClick,
+    handleAddImagesToDock,
+    handleRemovePendingImage,
+    handleSlashCommand,
+  } = useAppActions({
+    rpcRef,
+    state,
+    stateRef,
+    dispatch,
+    activeInput,
+    pendingImages,
+    canSend,
+    isUploadingImages,
+    isCompacting,
+    supportsVision,
+    effort,
+    slashCommands,
+    currentModel: providerMgr.currentModel,
+    availableModels: providerMgr.availableModels,
+    currentModelRef: providerMgr.currentModelRef,
+    clearThreadInput,
+    setPendingImages,
+    setIsUploadingImages,
+    setIsCompacting,
+    setEffortState,
+    changeModel: providerMgr.changeModel,
+    startNewThread,
+    openThread,
+    steeringControl: {
+      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
+      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
     },
-    [providerMgr, state.activeThreadId, getRpc],
-  );
-
-  const handleCompactionClick = () => {
-    void (async () => {
-      const rpc = rpcRef.current;
-      if (!rpc || !state.activeThreadId || isCompacting) return;
-      setIsCompacting(true);
-      dispatch({ type: "show_info_toast", payload: MANUAL_COMPACTION_TOAST });
-      try {
-        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId: state.activeThreadId });
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-          threadId: state.activeThreadId,
-        });
-        dispatch({ type: "hydrate", payload: { threadId: state.activeThreadId, mode: state.mode, history } });
-        dispatch({ type: "show_info_toast", payload: "Thread compacted." });
-      } catch (error) {
-        dispatch({
-          type: "show_info_toast",
-          payload: error instanceof Error ? error.message : "Manual compaction failed.",
-        });
-      } finally {
-        setIsCompacting(false);
-      }
-    })();
-  };
-
-  const handleAddImages = async (files: FileList | File[]): Promise<void> => {
-    const rpc = rpcRef.current;
-    if (!rpc || isUploadingImages) return;
-
-    const list = Array.from(files);
-    if (pendingImages.length + list.length > 4) {
-      dispatch({ type: "show_info_toast", payload: "You can attach up to 4 images per message." });
-      return;
-    }
-    if (!supportsVision) {
-      dispatch({ type: "show_info_toast", payload: "The selected model does not support image input." });
-      return;
-    }
-
-    const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-    const uploaded: PendingImage[] = [];
-    const uploadTimestamp = Date.now();
-
-    setIsUploadingImages(true);
-    try {
-      for (const [index, file] of list.entries()) {
-        const normalizedFileName = normalizeImageFileName(file, index, uploadTimestamp);
-        if (!allowedTypes.has(file.type)) {
-          dispatch({ type: "show_info_toast", payload: `Unsupported image type: ${normalizedFileName}` });
-          return;
-        }
-        if (file.size > 10 * 1024 * 1024) {
-          dispatch({ type: "show_info_toast", payload: `Image exceeds 10 MB: ${normalizedFileName}` });
-          return;
-        }
-
-        const dataBase64 = await fileToBase64(file);
-        const result = await rpc.webRequest(DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD, {
-          threadId: state.activeThreadId ?? undefined,
-          fileName: normalizedFileName,
-          mediaType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
-          dataBase64,
-        });
-        uploaded.push(result.attachment as PendingImage);
-      }
-
-      setPendingImages((prev) => [...prev, ...uploaded]);
-    } catch (error) {
-      dispatch({ type: "show_info_toast", payload: "Failed to upload images." });
-      console.error(error);
-    } finally {
-      setIsUploadingImages(false);
-    }
-  };
-
-  const handleRemovePendingImage = (path: string) => {
-    setPendingImages((prev) => prev.filter((image) => image.path !== path));
-  };
-
-  // ---------------------------------------------------------------------------
-  // Slash command handling
-  // ---------------------------------------------------------------------------
-
-  const handleSlashCommand = useCallback(
-    (name: string, arg?: string) => {
-      const rpc = rpcRef.current;
-      const activeThreadId = state.activeThreadId;
-
-      if (activeThreadId) {
-        clearThreadInput(activeThreadId);
-      }
-
-      switch (name) {
-        case "help": {
-          const names = slashCommands.map((c) => `/${c.name}`).join(", ");
-          dispatch({ type: "show_info_toast", payload: `Commands: ${names}` });
-          return;
-        }
-        case "new":
-          void startNewThread();
-          return;
-        case "resume":
-          if (!arg) {
-            dispatch({ type: "show_info_toast", payload: "Usage: /resume <thread-id>" });
-            return;
-          }
-          void openThread(arg);
-          return;
-        case "model": {
-          if (!arg) {
-            dispatch({ type: "show_info_toast", payload: "Usage: /model <model-id>" });
-            return;
-          }
-
-          const exists = providerMgr.availableModels.some((model) => model.id === arg);
-          if (!exists) {
-            dispatch({ type: "show_info_toast", payload: `Unknown model: ${arg}` });
-            return;
-          }
-
-          void providerMgr.changeModel(arg).then(() => {
-            const modelInfo = providerMgr.availableModels.find((model) => model.id === arg);
-            if (effort === "none" && modelInfo && !supportsThinkingNone(modelInfo)) {
-              setEffortState("medium");
-              dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}. Thinking adjusted to medium.` });
-              return;
-            }
-            dispatch({ type: "show_info_toast", payload: `Model switched to ${arg}` });
-          });
-          return;
-        }
-        case "effort": {
-          const modelInfo = findModelInfo(providerMgr.availableModels, providerMgr.currentModel);
-          if (modelInfo && !modelInfo.supportsThinking) {
-            dispatch({ type: "show_info_toast", payload: "This model does not support thinking effort settings." });
-            return;
-          }
-          const usage = `/effort <${getThinkingEffortUsage(modelInfo)}>`;
-          if (!arg) {
-            dispatch({ type: "show_info_toast", payload: `Usage: ${usage}` });
-            return;
-          }
-          const raw = arg.toLowerCase();
-          const normalized = raw === "minimal" ? "none" : raw;
-          if (
-            normalized !== "none" &&
-            normalized !== "low" &&
-            normalized !== "medium" &&
-            normalized !== "high" &&
-            normalized !== "max"
-          ) {
-            dispatch({ type: "show_info_toast", payload: `Unknown effort: ${arg}. Usage: ${usage}` });
-            return;
-          }
-          void setEffort(normalized as ThinkingEffort);
-          return;
-        }
-        default: {
-          // Check if it's a skill command — send as message for server-side skill invocation
-          const isSkill = slashCommands.some((c) => c.name === name && c.isSkill);
-          if (isSkill && rpc && activeThreadId) {
-            const message = arg ? `/${name} ${arg}` : `/${name}`;
-            dispatch({ type: "local_user", payload: { text: message, images: [] } });
-            void rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-              threadId: activeThreadId,
-              message,
-              content: [{ type: "text" as const, text: message }],
-            });
-            return;
-          }
-          dispatch({ type: "show_info_toast", payload: `Unknown command: /${name}` });
-          return;
-        }
-      }
-    },
-    [
-      rpcRef,
-      slashCommands,
-      state.activeThreadId,
-      startNewThread,
-      openThread,
-      providerMgr,
-      clearThreadInput,
-      effort,
-      setEffort,
-    ],
-  );
-
-  // Intercept slash commands on send
-  const handleSend = useCallback(() => {
-    const parsed = parseSlashCommand(activeInput);
-    if (parsed) {
-      const cmd = slashCommands.find((c) => c.name === parsed.name);
-      if (cmd) {
-        handleSlashCommand(parsed.name, parsed.args);
-        return;
-      }
-    }
-    void sendMessage();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is stable enough
-  }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
+  });
 
   useEffect(() => {
     if (effort !== "none") return;
@@ -1005,27 +385,6 @@ export function App() {
     });
   }, [providerMgr]);
   const { handleSteer, canSteer } = steeringQueue;
-  const handleInterrupt = () => {
-    void interruptTurn();
-  };
-  const handleModeChange = (mode: Mode) => {
-    void setMode(mode);
-  };
-  const handleEffortChange = useCallback(
-    (nextEffort: ThinkingEffort) => {
-      void setEffort(nextEffort);
-    },
-    [setEffort],
-  );
-  const handleModelChange = useCallback(
-    (modelId: string) => {
-      void providerMgr.changeModel(modelId);
-    },
-    [providerMgr],
-  );
-  const handleAddImagesToDock = (files: FileList | File[]) => {
-    void handleAddImages(files);
-  };
   const approvalPrompt = useMemo(
     () =>
       serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST

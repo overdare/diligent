@@ -1,7 +1,6 @@
 // @summary Static render tests for core UI components and accessibility attributes
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { normalizeImageFileName } from "../../../src/client/App";
 import { AssistantMessage } from "../../../src/client/components/AssistantMessage";
 import { Button } from "../../../src/client/components/Button";
 import { ContextMessage } from "../../../src/client/components/ContextMessage";
@@ -15,6 +14,7 @@ import { SlashMenu } from "../../../src/client/components/SlashMenu";
 import { ToolBlock } from "../../../src/client/components/ToolBlock";
 import { ToolSettingsModal } from "../../../src/client/components/ToolSettingsModal";
 import { UserMessage } from "../../../src/client/components/UserMessage";
+import { normalizeImageFileName } from "../../../src/client/lib/app-utils";
 
 function createClipboardFile(name: string, type: string): File {
   return new File([`${name}:${type}`], name, { type });
