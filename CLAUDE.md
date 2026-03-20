@@ -32,6 +32,7 @@ Every source file has a `@summary` annotation on the first line: `// @summary <d
 
 - English only in all files
 - Clarify requirements fully before implementing — no assumptions
+- When implementing new features or modifying existing behavior, write or strengthen tests first whenever possible.
 - Run tests after code changes
 - Plan before implementing when a task involves multiple files or architectural changes
 - When adding user-facing features, implement for both Web and TUI — they are thin clients of the same protocol (see `ARCHITECTURE.md` "Frontend Protocol Philosophy")
