@@ -24,15 +24,13 @@ Your assessment should catch these problems early — before they compound as th
 
 ## Before You Start
 
-Check `docs/review/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the most recent one to understand the trend — what was YELLOW last time, what was flagged as compounding. Your job is to assess *change*, not just current state.
+Check `docs/review/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the 3 most recent reviews to understand the trend — what was YELLOW, what was flagged as compounding, and what remained unresolved across multiple cycles. Do not treat those reviews as a hard baseline; the repository changes quickly, and your job is to make an independent assessment of the current codebase.
 
 Note: you are operating as a new hire with no prior context. Any friction you encounter while navigating the codebase during this review — a directory whose purpose is unclear, a file that's hard to locate, a decision that exists nowhere in the repo — is itself a finding worth reporting.
 
 ## Context Gathering
 
 Build a complete picture before forming judgments. The project is a custom coding agent (Bun + TypeScript monorepo). The 11-layer architecture (L0-L10) is fully implemented — development now focuses on features, providers/transports, and hardening.
-
-**Use `/explore-aug` to map the project structure first.** Run it on key directories (`packages/core/src`, `packages/cli/src`, `packages/web/src`, etc.) to get the full directory tree with `@summary` annotations before diving into individual files.
 
 ### Review Scope
 
@@ -206,7 +204,7 @@ If it's hard to find, that difficulty is itself a clue. Which part of the projec
 
 ## Persistent Issues
 
-After completing the review above, read the 3 most recent previous assessments from `docs/review/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
+Use the 3 most recent previous assessments from `docs/review/` as historical context only. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved, but do not force-fit the current review to match prior framing. These issues are more dangerous than new findings because they may indicate systemic neglect.
 
 Only include issues that are currently unresolved. If an issue's original risk has been eliminated via decomposition, architectural simplification, or other structural change, treat it as resolved and keep it out of Persistent Issues.
 
