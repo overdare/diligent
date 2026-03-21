@@ -208,6 +208,8 @@ If it's hard to find, that difficulty is itself a clue. Which part of the projec
 
 After completing the review above, read the 3 most recent previous assessments from `docs/review/`. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved. These are more dangerous than new findings because they indicate systemic neglect.
 
+Only include issues that are currently unresolved. If an issue's original risk has been eliminated via decomposition, architectural simplification, or other structural change, treat it as resolved and keep it out of Persistent Issues.
+
 [List findings that appeared in 2+ previous reviews and remain unresolved. For each:]
 
 ### [Issue name]
@@ -220,6 +222,8 @@ After completing the review above, read the 3 most recent previous assessments f
 ## Priority Actions
 
 Group actions by execution dependency. Actions within the same group have no dependencies on each other and can be done in parallel. Groups must be executed in order.
+
+Do not add "close tracking", "mark as closed", or other bookkeeping-only actions. Priority Actions must be implementation work that changes code/docs/architecture. Resolved items belong in the summary (for example: "resolved-by-decomposition"), not in action groups.
 
 ### Group 1 (parallel)
 1. [Action A] — [file path, decision ref]
