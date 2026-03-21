@@ -1,7 +1,7 @@
 // @summary Tests steering queue rendering in transcript active stack instead of the input editor
 import { describe, expect, test } from "bun:test";
+import { ThreadStore } from "../../../src/tui/components/thread-store";
 import { renderTranscript } from "../../../src/tui/components/transcript-render";
-import { TranscriptStore } from "../../../src/tui/components/transcript-store";
 
 function stripAnsi(input: string): string {
   let out = "";
@@ -30,7 +30,7 @@ function stripAnsi(input: string): string {
 
 describe("Transcript steering queue", () => {
   test("renders each pending steering message in active stack", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     store.setPendingSteers(["change approach", "use tests first"]);
     const lines = renderTranscript(store, 80).map(stripAnsi);
     expect(lines.some((line) => line.includes("⚑ change approach"))).toBe(true);
@@ -38,7 +38,7 @@ describe("Transcript steering queue", () => {
   });
 
   test("does not render steering indicator when queue is empty", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     store.setPendingSteers([]);
     const lines = renderTranscript(store, 80).map(stripAnsi);
     expect(lines.some((line) => line.includes("⚑ "))).toBe(false);

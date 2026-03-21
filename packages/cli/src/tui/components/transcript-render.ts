@@ -4,13 +4,13 @@ import { displayWidth, sliceToFitWidth } from "../framework/string-width";
 import type { Component, RenderBlock } from "../framework/types";
 import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
-import { type TranscriptItem, type TranscriptStore, UserMessageView } from "./transcript-store";
+import { type ThreadItem, type ThreadStore, UserMessageView } from "./thread-store";
 
 function stripAnsi(line: string): string {
   return line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
 }
 
-function getCollapsedToolPreviewLines(item: Extract<TranscriptItem, { kind: "tool_result" }>): string[] {
+function getCollapsedToolPreviewLines(item: Extract<ThreadItem, { kind: "tool_result" }>): string[] {
   if (item.summaryLine?.trim()) {
     return [item.summaryLine];
   }
@@ -28,21 +28,21 @@ function getCollapsedToolPreviewLines(item: Extract<TranscriptItem, { kind: "too
   return previewLines;
 }
 
-export function renderTranscriptLiveStack(store: TranscriptStore, width: number): string[] {
+export function renderTranscriptLiveStack(store: ThreadStore, width: number): string[] {
   return renderTranscriptLiveStackBlocks(store, width).flatMap((block) => block.lines);
 }
 
-export function renderTranscriptLiveStackBlocks(store: TranscriptStore, width: number): RenderBlock[] {
+export function renderTranscriptLiveStackBlocks(store: ThreadStore, width: number): RenderBlock[] {
   const { liveStackBlocks } = renderTranscriptSections(store, width, { includeActiveMarkdown: true });
   return liveStackBlocks;
 }
 
-export function renderTranscript(store: TranscriptStore, width: number): string[] {
+export function renderTranscript(store: ThreadStore, width: number): string[] {
   return renderTranscriptLiveStack(store, width);
 }
 
 export function renderCommittedTranscriptItems(
-  items: TranscriptItem[],
+  items: ThreadItem[],
   width: number,
   options?: { includeLeadingSeparator?: boolean; toolResultsExpanded?: boolean },
 ): string[] {
@@ -96,7 +96,7 @@ function renderActiveMarkdownLines(activeMarkdown: MarkdownView, width: number):
   return [TURN_MARKER + lines[0], ...lines.slice(1).map((line) => `${CONTINUATION_PREFIX}${line}`)];
 }
 
-function renderTranscriptItemLines(item: TranscriptItem, width: number, toolResultsExpanded: boolean): string[] {
+function renderTranscriptItemLines(item: ThreadItem, width: number, toolResultsExpanded: boolean): string[] {
   if (item instanceof UserMessageView) {
     return item.render(width);
   }
@@ -145,7 +145,7 @@ function renderTranscriptItemLines(item: TranscriptItem, width: number, toolResu
 }
 
 export function renderTranscriptSections(
-  store: TranscriptStore,
+  store: ThreadStore,
   width: number,
   options?: { includeActiveMarkdown?: boolean },
 ): {

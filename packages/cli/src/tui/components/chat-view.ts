@@ -5,13 +5,13 @@ import type { AgentEvent, ThreadReadResponse } from "@diligent/protocol";
 import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { MarkdownView } from "./markdown-view";
+import { ThreadStore, UserMessageView } from "./thread-store";
 import {
   renderCommittedTranscriptItems,
   renderTranscript,
   renderTranscriptLiveStack,
   renderTranscriptLiveStackBlocks,
 } from "./transcript-render";
-import { TranscriptStore, UserMessageView } from "./transcript-store";
 
 export interface ChatViewOptions {
   requestRender: () => void;
@@ -26,7 +26,7 @@ export interface ChatViewOptions {
  * Main conversation view — now a thin adapter over a renderer-agnostic transcript store.
  */
 export class ChatView implements Component {
-  private store: TranscriptStore;
+  private store: ThreadStore;
   private historyView: Component;
   private liveStackView: Component;
   private hasCommittedHistory = false;
@@ -37,7 +37,7 @@ export class ChatView implements Component {
 
   constructor(options: ChatViewOptions) {
     this.requestRender = options.requestRender;
-    this.store = new TranscriptStore(options);
+    this.store = new ThreadStore(options);
     this.getCommitWidth = options.getCommitWidth ?? (() => 80);
     this.onCommittedLines = options.onCommittedLines ?? null;
     this.historyView = {
@@ -183,4 +183,4 @@ export class ChatView implements Component {
   }
 }
 
-export { MarkdownView, TranscriptStore, UserMessageView, displayWidth };
+export { MarkdownView, ThreadStore, UserMessageView, displayWidth };

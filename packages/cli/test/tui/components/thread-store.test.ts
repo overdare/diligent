@@ -1,7 +1,7 @@
 // @summary Tests for transcript store state reduction and rendering-adjacent behavior
 import { describe, expect, test } from "bun:test";
+import { ThreadStore } from "../../../src/tui/components/thread-store";
 import { renderTranscript } from "../../../src/tui/components/transcript-render";
-import { TranscriptStore } from "../../../src/tui/components/transcript-store";
 
 function stripAnsi(input: string): string {
   let out = "";
@@ -27,9 +27,9 @@ function stripAnsi(input: string): string {
   return out;
 }
 
-describe("TranscriptStore", () => {
+describe("ThreadStore", () => {
   test("captures streamed assistant text into transcript items", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "agent_start" });
     store.handleEvent({ type: "message_start" });
@@ -42,7 +42,7 @@ describe("TranscriptStore", () => {
   });
 
   test("keeps streamed markdown as a single committed assistant item at message end", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "message_start" });
     store.handleEvent({ type: "message_delta", delta: { type: "text_delta", delta: "- item 1\n" } });
@@ -62,7 +62,7 @@ describe("TranscriptStore", () => {
   });
 
   test("tracks active question independently from transcript items", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     const question = {
       render: () => ["question"],
       handleInput: (_data: string) => {},
@@ -78,7 +78,7 @@ describe("TranscriptStore", () => {
   });
 
   test("renders pending steering messages in transcript active stack", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     store.setPendingSteers(["change approach"]);
 
     const lines = renderTranscript(store, 80).map(stripAnsi);
@@ -86,7 +86,7 @@ describe("TranscriptStore", () => {
   });
 
   test("renders multiline pending steering as first-line preview with more suffix", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     store.setPendingSteers(["line 1\nline 2"]);
 
     const lines = renderTranscript(store, 80).map(stripAnsi);
@@ -96,7 +96,7 @@ describe("TranscriptStore", () => {
   });
 
   test("orders live stack so status is below streaming markdown", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
     store.handleEvent({ type: "status_change", status: "busy" });
     store.handleEvent({ type: "message_start" });
     store.handleEvent({ type: "message_delta", delta: { type: "text_delta", delta: `${"s".repeat(1100)} streaming` } });
@@ -122,7 +122,7 @@ describe("TranscriptStore", () => {
 
   test("triggers low-frequency periodic re-renders while active status is shown", async () => {
     let renderCount = 0;
-    const store = new TranscriptStore({
+    const store = new ThreadStore({
       requestRender: () => {
         renderCount++;
       },
@@ -138,7 +138,7 @@ describe("TranscriptStore", () => {
   });
 
   test("turn_end clears lingering Working status even if pin flag drifted", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
 
@@ -158,7 +158,7 @@ describe("TranscriptStore", () => {
   });
 
   test("finishTurn clears lingering Working status without turn_end event", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
     const before = renderTranscript(store, 80).map(stripAnsi);
@@ -171,7 +171,7 @@ describe("TranscriptStore", () => {
   });
 
   test("tool_end restores Working status while thread remains busy", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
     store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
@@ -190,7 +190,7 @@ describe("TranscriptStore", () => {
   });
 
   test("Complete status omits elapsed time and has no forced blank line below", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "tool_start", toolName: "wait", toolCallId: "t1", input: { ids: ["a1"] } });
     store.handleEvent({ type: "tool_update", toolName: "wait", toolCallId: "t1", partialResult: "Complete" });
@@ -202,7 +202,7 @@ describe("TranscriptStore", () => {
   });
 
   test("tool progress overlay uses white tone while active", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "tool_1", input: { command: "echo hi" } });
 
@@ -214,7 +214,7 @@ describe("TranscriptStore", () => {
   });
 
   test("busy status persists under overlay and clears on idle", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "status_change", status: "busy" });
     store.handleEvent({ type: "tool_start", toolName: "bash", toolCallId: "t1", input: { command: "echo hi" } });
@@ -240,7 +240,7 @@ describe("TranscriptStore", () => {
   });
 
   test("read tool result header does not synthesize client render payloads", () => {
-    const store = new TranscriptStore({ requestRender: () => {}, cwd: "/Users/devbv-mini4/git/diligent" });
+    const store = new ThreadStore({ requestRender: () => {}, cwd: "/Users/devbv-mini4/git/diligent" });
 
     store.handleEvent({
       type: "tool_start",
@@ -267,7 +267,7 @@ describe("TranscriptStore", () => {
   });
 
   test("bash tool result uses producer command render payload", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "tool_start", toolCallId: "bash_1", toolName: "bash", input: { command: "pwd" } });
     store.handleEvent({
@@ -296,7 +296,7 @@ describe("TranscriptStore", () => {
   });
 
   test("error tool_end still uses render header summary when payload exists", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "tool_start", toolCallId: "bash_err_1", toolName: "bash", input: { command: "exit 1" } });
     store.handleEvent({
@@ -323,7 +323,7 @@ describe("TranscriptStore", () => {
   });
 
   test("merges started request summary with completed response summary", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({
       type: "tool_start",
@@ -351,7 +351,7 @@ describe("TranscriptStore", () => {
   });
 
   test("expanded spawn_agent tool_result loads child thread detail preview", async () => {
-    const store = new TranscriptStore({
+    const store = new ThreadStore({
       requestRender: () => {},
       loadChildThread: async (_threadId) => ({
         cwd: "/repo",
@@ -413,7 +413,7 @@ describe("TranscriptStore", () => {
   });
 
   test("child-thread streaming events are not rendered in parent transcript", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({
       type: "message_start",
@@ -472,7 +472,7 @@ describe("TranscriptStore", () => {
   });
 
   test("wait overlay prefers known agent nicknames over thread ids", () => {
-    const store = new TranscriptStore({ requestRender: () => {} });
+    const store = new ThreadStore({ requestRender: () => {} });
 
     store.handleEvent({ type: "tool_start", toolCallId: "spawn_1", toolName: "spawn_agent", input: {} });
     store.handleEvent({

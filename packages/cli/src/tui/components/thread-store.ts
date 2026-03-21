@@ -1,228 +1,49 @@
 // @summary Renderer-agnostic transcript state container for chat, tool results, thinking blocks, and active prompts
 
 import type { ToolResultMessage } from "@diligent/core";
-import {
-  type AgentEvent,
-  type ThreadReadResponse,
-  type ToolRenderPayload,
-  ToolRenderPayloadSchema,
-} from "@diligent/protocol";
+import type { AgentEvent, ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
 import type { Component } from "../framework/types";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import { MarkdownView } from "./markdown-view";
+import {
+  type ReducerOverlayStatus,
+  type ReducerOverlayStatusKind,
+  reduceThreadStoreEvent,
+  type ThreadEventReducerDelegate,
+} from "./thread-event-reducer";
+import { type ThreadItem, UserMessageView } from "./thread-store-primitives";
+import {
+  buildChildDetailLines,
+  buildToolHeader,
+  buildToolSummaryLine,
+  COLLAB_TOOL_NAMES,
+  formatElapsedSeconds,
+  formatTokensRoundedK,
+  getWorkingSpinnerFrame,
+  isChildScopedStreamEvent,
+  mergeToolRenderPayload,
+  parseCollabOutput,
+  parseSpawnChildThreadId,
+  splitThoughtLines,
+  summarizeCollabLine,
+  TOOL_MAX_LINES,
+  toProtocolRenderPayload,
+  truncateMiddle,
+} from "./thread-store-utils";
 
-function formatTokensRoundedK(n: number): string {
-  return `${Math.round(n / 1000)}k`;
-}
+type OverlayStatusKind = ReducerOverlayStatusKind;
 
-function formatElapsedSeconds(ms: number): string | null {
-  if (ms < 1000) return null;
-  const totalSeconds = Math.floor(ms / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
-}
+type OverlayStatus = ReducerOverlayStatus;
 
-function getWorkingSpinnerFrame(nowMs: number): string {
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  const frameIndex = Math.floor(nowMs / 120) % frames.length;
-  return frames[frameIndex] ?? "⠋";
-}
-
-function parseCollabOutput(output: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(output);
-    if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function summarizeCollabLine(value: string, maxChars: number): string {
-  const firstLine = value.split("\n")[0] ?? value;
-  const chars = Array.from(firstLine);
-  if (chars.length <= maxChars) return firstLine;
-  return `${chars.slice(0, maxChars).join("")}…`;
-}
-
-function summarizeChildText(value: string, maxChars: number): string {
-  const singleLine = value.replace(/\s+/g, " ").trim();
-  if (!singleLine) return "";
-  const chars = Array.from(singleLine);
-  if (chars.length <= maxChars) return singleLine;
-  return `${chars.slice(0, maxChars).join("")}…`;
-}
-
-function parseSpawnChildThreadId(output: string): string | undefined {
-  const parsed = parseCollabOutput(output);
-  const threadId = parsed?.thread_id;
-  return typeof threadId === "string" && threadId.trim().length > 0 ? threadId : undefined;
-}
-
-function buildChildDetailLines(payload: ThreadReadResponse): string[] {
-  const detailLines: string[] = [];
-  let assistantCount = 0;
-  let toolCount = 0;
-
-  for (const item of payload.items) {
-    if (item.type === "agentMessage") {
-      const text = item.message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join(" ");
-      const summary = summarizeChildText(text, 140);
-      if (summary) {
-        assistantCount++;
-        detailLines.push(`${t.dim}    assistant: ${summary}${t.reset}`);
-      }
-      continue;
-    }
-
-    if (item.type === "toolCall") {
-      toolCount++;
-      const status = item.isError ? "error" : typeof item.output === "undefined" ? "running" : "done";
-      detailLines.push(`${t.dim}    tool: ${item.toolName} (${status})${t.reset}`);
-      if (typeof item.output === "string") {
-        const outputPreview = summarizeCollabLine(item.output, 120);
-        if (outputPreview) {
-          detailLines.push(`${t.dim}      ↳ ${outputPreview}${t.reset}`);
-        }
-      }
-    }
-  }
-
-  const previewLimit = 12;
-  const previewLines = detailLines.slice(0, previewLimit);
-  const omitted = detailLines.length - previewLines.length;
-  if (omitted > 0) {
-    previewLines.push(`${t.dim}    … +${omitted} more lines${t.reset}`);
-  }
-
-  return [
-    `${t.dim}  Child thread preview:${t.reset}`,
-    `${t.dim}    assistant=${assistantCount}, tools=${toolCount}${t.reset}`,
-    ...previewLines,
-  ];
-}
-
-function isChildScopedStreamEvent(event: AgentEvent): boolean {
-  switch (event.type) {
-    case "message_start":
-    case "message_delta":
-    case "message_end":
-    case "tool_start":
-    case "tool_update":
-    case "tool_end":
-      return "childThreadId" in event && typeof event.childThreadId === "string";
-    default:
-      return false;
-  }
-}
-
-const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
-const TOOL_MAX_LINES = 5;
-
-function truncateMiddle(lines: string[], max: number): string[] {
-  if (lines.length <= max) return lines;
-  const head = Math.floor((max - 1) / 2);
-  const tail = max - head - 1;
-  const omitted = lines.length - head - tail;
-  return [...lines.slice(0, head), `… +${omitted} lines`, ...lines.slice(lines.length - tail)];
-}
-
-export class UserMessageView {
-  constructor(private text: string) {}
-
-  render(_width: number): string[] {
-    return [`${t.bgUser}${t.bold}${t.dim}❯${t.reset}${t.bgUser} ${this.text}${t.reset}`];
-  }
-
-  invalidate(): void {}
-}
-
-function buildToolHeader(toolName: string, payload?: ToolRenderPayload): string {
-  const inputSummary = payload?.inputSummary?.trim();
-  return inputSummary ? `${toolName} - ${inputSummary}` : toolName;
-}
-
-function buildToolSummaryLine(payload?: ToolRenderPayload): string | undefined {
-  const outputSummary = payload?.outputSummary?.trim();
-  return outputSummary ? `⎿  ${outputSummary}` : undefined;
-}
-
-function toProtocolRenderPayload(value: unknown): ToolRenderPayload | undefined {
-  const parsed = ToolRenderPayloadSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
-function mergeToolRenderPayload(
-  started: ToolRenderPayload | undefined,
-  completed: ToolRenderPayload | undefined,
-): ToolRenderPayload | undefined {
-  if (!started) return completed;
-  if (!completed) return started;
-  return {
-    ...completed,
-    inputSummary: completed.inputSummary ?? started.inputSummary,
-  };
-}
-
-function splitThoughtLines(text: string): string[] {
-  const lines = text.split("\n");
-  while (lines.length > 0 && lines[lines.length - 1] === "") {
-    lines.pop();
-  }
-  return lines;
-}
-
-export type TranscriptItem =
-  | {
-      kind: "plain";
-      lines: string[];
-    }
-  | {
-      kind: "assistant_chunk";
-      text: string;
-      continued: boolean;
-    }
-  | {
-      kind: "tool_result";
-      header: string;
-      summaryLine?: string;
-      details: string[];
-      childDetail?: {
-        childThreadId: string;
-        status: "idle" | "loading" | "loaded" | "error";
-        lines?: string[];
-        error?: string;
-      };
-    }
-  | {
-      kind: "thinking";
-      header: string;
-      bodyLines: string[];
-    }
-  | UserMessageView;
-
-type OverlayStatusKind = "default" | "tool";
-
-type OverlayStatus = {
-  message: string;
-  startedAt: number;
-  kind: OverlayStatusKind;
-};
-
-export interface TranscriptStoreOptions {
+export interface ThreadStoreOptions {
   requestRender: () => void;
   cwd?: string;
   loadChildThread?: (threadId: string) => Promise<ThreadReadResponse | null>;
 }
 
-export class TranscriptStore {
-  private items: TranscriptItem[] = [];
+export class ThreadStore {
+  private items: ThreadItem[] = [];
   private activeMarkdown: MarkdownView | null = null;
   private thinkingStartTime: number | null = null;
   private thinkingText = "";
@@ -251,13 +72,13 @@ export class TranscriptStore {
   >();
   private childDetailPending = new Map<string, Promise<void>>();
 
-  constructor(private options: TranscriptStoreOptions) {}
+  constructor(private options: ThreadStoreOptions) {}
 
-  getItems(): TranscriptItem[] {
+  getItems(): ThreadItem[] {
     return this.items;
   }
 
-  drainCommittedItems(): TranscriptItem[] {
+  drainCommittedItems(): ThreadItem[] {
     if (this.items.length === 0) {
       return [];
     }
@@ -330,16 +151,81 @@ export class TranscriptStore {
       return;
     }
 
-    switch (event.type) {
-      case "agent_start":
-        this.startOverlayStatus("Thinking…");
-        break;
+    const reduced = reduceThreadStoreEvent(
+      {
+        items: this.items,
+        thinkingStartTime: this.thinkingStartTime,
+        thinkingText: this.thinkingText,
+        overlayStatus: this.overlayStatus,
+        statusBeforeCompaction: this.statusBeforeCompaction,
+        isThreadBusy: this.isThreadBusy,
+        busyStartedAt: this.busyStartedAt,
+        lastUsage: this.lastUsage,
+      },
+      event,
+      {
+        nowMs: Date.now(),
+        buildCompactionItem: (compactionEvent) => {
+          const summaryText = compactionEvent.summary.trim();
+          const summaryPrefix = summaryText.length > 0 ? `${summaryText}, ` : "";
+          return {
+            kind: "plain" as const,
+            lines: [
+              `${t.success}⏺${t.reset} ${t.dim}Compacted: ${summaryPrefix}${formatTokensRoundedK(compactionEvent.tokensBefore)} → ${formatTokensRoundedK(compactionEvent.tokensAfter)} tokens${t.reset}`,
+            ],
+          };
+        },
+        buildKnowledgeSavedItem: () => ({
+          kind: "plain" as const,
+          lines: [`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`],
+        }),
+        buildErrorItem: (message) => ({
+          kind: "plain" as const,
+          lines: [`${t.error}✗ ${message}${t.reset}`],
+        }),
+      },
+    );
+
+    if (reduced.handled) {
+      this.items = reduced.state.items;
+      this.thinkingStartTime = reduced.state.thinkingStartTime;
+      this.thinkingText = reduced.state.thinkingText;
+      this.overlayStatus = reduced.state.overlayStatus;
+      this.statusBeforeCompaction = reduced.state.statusBeforeCompaction;
+      this.isThreadBusy = reduced.state.isThreadBusy;
+      this.busyStartedAt = reduced.state.busyStartedAt;
+      this.lastUsage = reduced.state.lastUsage;
+
+      if (event.type === "status_change" || event.type === "turn_end" || event.type === "error") {
+        this.cleanupStatusTimersIfIdle();
+      }
+      if (event.type === "status_change" && event.status === "busy") {
+        this.ensureStatusTimers();
+      }
+      if (event.type === "agent_start" || event.type === "compaction_start") {
+        this.ensureStatusTimers();
+      }
+
+      if (reduced.delegate) {
+        this.runReducerDelegate(reduced.delegate);
+      }
+
+      if (reduced.requestRender) {
+        this.options.requestRender();
+      }
+      return;
+    }
+  }
+
+  private runReducerDelegate(delegate: ThreadEventReducerDelegate): void {
+    switch (delegate.kind) {
       case "message_start":
         this.stopOverlayStatus();
         this.hasCommittedAssistantChunkInMessage = false;
         this.activeMarkdown = new MarkdownView(this.options.requestRender);
         break;
-      case "message_delta":
+      case "message_delta": {
+        const { event } = delegate;
         if (event.delta.type === "thinking_delta") {
           this.thinkingText += event.delta.delta;
           if (this.thinkingStartTime === null) {
@@ -353,6 +239,7 @@ export class TranscriptStore {
           this.activeMarkdown.pushDelta(event.delta.delta);
         }
         break;
+      }
       case "message_end":
         if (this.thinkingText.length > 0) {
           this.commitThinkingBlock();
@@ -364,9 +251,8 @@ export class TranscriptStore {
         }
         this.hasCommittedAssistantChunkInMessage = false;
         break;
-      case "user_message":
-        break;
-      case "tool_start":
+      case "tool_start": {
+        const { event } = delegate;
         this.toolStartTimes.set(event.toolCallId, Date.now());
         this.toolCallInputs.set(event.toolCallId, event.input);
         this.toolStartRenderByCallId.set(event.toolCallId, toProtocolRenderPayload(event.render));
@@ -418,7 +304,9 @@ export class TranscriptStore {
           this.startOverlayStatus(event.toolName, "tool");
         }
         break;
-      case "tool_update":
+      }
+      case "tool_update": {
+        const { event } = delegate;
         if (COLLAB_TOOL_NAMES.has(event.toolName)) {
           const state = this.collabState.get(event.toolCallId);
           if (state) {
@@ -428,76 +316,9 @@ export class TranscriptStore {
           this.startOverlayStatus(`${event.toolName}…`, "tool");
         }
         break;
-      case "tool_end":
-        this.handleToolEnd(event);
-        break;
-      case "status_change":
-        this.isThreadBusy = event.status === "busy";
-        if (this.isThreadBusy) {
-          if (this.busyStartedAt === null) {
-            this.busyStartedAt = Date.now();
-          }
-          this.ensureStatusTimers();
-          this.options.requestRender();
-          break;
-        }
-        this.busyStartedAt = null;
-        this.statusBeforeCompaction = null;
-        this.cleanupStatusTimersIfIdle();
-        this.options.requestRender();
-        break;
-      case "usage":
-        this.lastUsage = {
-          input: event.usage.inputTokens,
-          output: event.usage.outputTokens,
-          cost: event.cost,
-        };
-        break;
-      case "compaction_start":
-        this.statusBeforeCompaction = this.overlayStatus?.message ?? null;
-        this.startOverlayStatus("Compacting…");
-        break;
-      case "compaction_end": {
-        if (this.statusBeforeCompaction) {
-          this.startOverlayStatus(this.statusBeforeCompaction);
-        } else {
-          this.stopOverlayStatus();
-        }
-        this.statusBeforeCompaction = null;
-        const summaryText = event.summary.trim();
-        const summaryPrefix = summaryText.length > 0 ? `${summaryText}, ` : "";
-        this.items.push({
-          kind: "plain",
-          lines: [
-            `${t.success}⏺${t.reset} ${t.dim}Compacted: ${summaryPrefix}${formatTokensRoundedK(event.tokensBefore)} → ${formatTokensRoundedK(event.tokensAfter)} tokens${t.reset}`,
-          ],
-        });
-        this.options.requestRender();
-        break;
       }
-      case "knowledge_saved":
-        this.items.push({ kind: "plain", lines: [`${t.success}⏺${t.reset} ${t.dim}knowledge saved${t.reset}`] });
-        this.options.requestRender();
-        break;
-      case "error":
-        this.stopOverlayStatus();
-        this.thinkingStartTime = null;
-        this.thinkingText = "";
-        this.items.push({ kind: "plain", lines: [`${t.error}✗ ${event.error.message}${t.reset}`] });
-        this.options.requestRender();
-        break;
-      case "turn_start":
-        break;
-      case "turn_end":
-        this.isThreadBusy = false;
-        this.busyStartedAt = null;
-        if (!this.statusBeforeCompaction && this.overlayStatus?.message === "Compacting…") {
-          this.stopOverlayStatus();
-        }
-        this.cleanupStatusTimersIfIdle();
-        this.options.requestRender();
-        break;
-      default:
+      case "tool_end":
+        this.handleToolEnd(delegate.event);
         break;
     }
   }
@@ -746,10 +567,7 @@ export class TranscriptStore {
     this.options.requestRender();
   }
 
-  private createToolResultItem(
-    lines: string[],
-    summaryLine?: string,
-  ): Extract<TranscriptItem, { kind: "tool_result" }> {
+  private createToolResultItem(lines: string[], summaryLine?: string): Extract<ThreadItem, { kind: "tool_result" }> {
     if (lines.length === 0) {
       return { kind: "tool_result", header: "", summaryLine, details: [] };
     }
@@ -981,3 +799,6 @@ export class TranscriptStore {
     this.statusBlinkStartedAt = Date.now();
   }
 }
+
+export { UserMessageView };
+export type { ThreadItem };
