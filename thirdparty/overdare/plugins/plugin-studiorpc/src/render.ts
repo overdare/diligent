@@ -1,3 +1,4 @@
+// @summary Builds tool render payloads for Studio RPC methods.
 type TreeNode = { label: string; children?: TreeNode[] };
 
 type ToolRenderPayload = {
@@ -198,12 +199,12 @@ export function buildAssetManagerImageImportRender(
   };
 }
 
-export function buildLevelApplyRender(output: string): ToolRenderPayload {
+export function buildLevelSaveFileRender(output: string): ToolRenderPayload {
   return {
     version: 2,
-    inputSummary: "apply map data",
-    outputSummary: summarizeText(output, "Map data applied."),
-    blocks: [{ type: "summary", text: firstLine(output, "Map data applied."), tone: "success" }],
+    inputSummary: "save current world",
+    outputSummary: summarizeText(output, "World file saved."),
+    blocks: [{ type: "summary", text: firstLine(output, "World file saved."), tone: "success" }],
   };
 }
 
