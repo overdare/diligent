@@ -73,14 +73,13 @@ describe("instance-upsert-tool", () => {
 
     const result = await tool.execute(
       {
-        mode: "update",
         items: [
           {
             guid: "CHILD_GUID",
             properties: {
-              Name: "UpdatedName",
               Visible: false,
             },
+            name: "UpdatedName",
           },
         ],
       },
@@ -96,6 +95,8 @@ describe("instance-upsert-tool", () => {
     expect(child.Visible).toBe(false);
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
     expect(result.metadata?.targetGuids).toEqual(["CHILD_GUID"]);
+    expect(result.metadata?.updateCount).toBe(1);
+    expect(result.metadata?.addCount).toBe(0);
     expect(world.Root.LuaChildren[0].LuaChildren[0].Name).toBe("OldName");
   });
 
@@ -104,7 +105,6 @@ describe("instance-upsert-tool", () => {
 
     const result = await tool.execute(
       {
-        mode: "add",
         items: [
           {
             class: "Folder",
@@ -129,6 +129,43 @@ describe("instance-upsert-tool", () => {
     expect(saved.MapObjectKeyIndex).toBe(8);
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
     expect(result.metadata?.targetGuids).toEqual([added?.ActorGuid]);
+    expect(result.metadata?.addCount).toBe(1);
+    expect(result.metadata?.updateCount).toBe(0);
+  });
+
+  test("supports mixed update and add items", async () => {
+    const tool = createInstanceUpsertTool(tempDir);
+
+    const result = await tool.execute(
+      {
+        items: [
+          {
+            guid: "CHILD_GUID",
+            name: "UpdatedName",
+            properties: {},
+          },
+          {
+            class: "Folder",
+            parentGuid: "PARENT_GUID",
+            name: "SpawnedFolder",
+            properties: {},
+          },
+        ],
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const savedRoot = saved.Root as { LuaChildren: Array<{ LuaChildren: Array<Record<string, unknown>> }> };
+    const children = savedRoot.LuaChildren[0].LuaChildren;
+    const updated = children.find((node) => node.ActorGuid === "CHILD_GUID");
+    const added = children.find((node) => node.Name === "SpawnedFolder");
+
+    expect(updated?.Name).toBe("UpdatedName");
+    expect(added?.InstanceType).toBe("Folder");
+    expect(result.metadata?.targetGuids).toHaveLength(2);
+    expect(result.metadata?.updateCount).toBe(1);
+    expect(result.metadata?.addCount).toBe(1);
   });
 
   test("throws when update guid is missing", async () => {
@@ -137,7 +174,6 @@ describe("instance-upsert-tool", () => {
     await expect(
       tool.execute(
         {
-          mode: "update",
           items: [
             {
               guid: "MISSING_GUID",
@@ -158,7 +194,6 @@ describe("instance-upsert-tool", () => {
     await expect(
       tool.execute(
         {
-          mode: "add",
           items: [
             {
               class: "Folder",

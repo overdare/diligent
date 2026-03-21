@@ -102,13 +102,13 @@ async function executeInstanceUpsert(
   cwd: string,
 ): Promise<ToolResult> {
   const toolName = "studiorpc_instance_upsert";
-  const parsedArgs = instanceUpsert.normalizeArgsToBatch(instanceUpsert.parseArgs(args));
+  const operations = instanceUpsert.normalizeArgsToOperations(instanceUpsert.parseArgs(args));
 
   const writeApproval = await ctx.approve({
     permission: "write",
     toolName,
     description: "Update .ovdrjm world file",
-    details: parsedArgs,
+    details: { items: operations },
   });
   if (writeApproval === "reject") {
     return {
@@ -118,61 +118,52 @@ async function executeInstanceUpsert(
   }
 
   let fileResult: { umapPath: string; ovdrjmPath: string; changedGuids: string[] };
-  if (parsedArgs.mode === "update") {
-    fileResult = applyLevelChangesByFileEdit({
-      cwd,
-      update: (rootDoc) => {
-        const root = rootDoc.Root;
-        if (!isRecord(root)) {
-          throw new Error("Invalid .ovdrjm format: Root object is missing.");
-        }
+  fileResult = applyLevelChangesByFileEdit({
+    cwd,
+    update: (rootDoc) => {
+      const root = rootDoc.Root;
+      if (!isRecord(root)) {
+        throw new Error("Invalid .ovdrjm format: Root object is missing.");
+      }
 
-        for (const item of parsedArgs.items) {
-          const target = findNodeByActorGuid(root as OvdrjmNode, item.guid);
+      const changedGuids: string[] = [];
+      for (const operation of operations) {
+        if (operation.mode === "update") {
+          const target = findNodeByActorGuid(root as OvdrjmNode, operation.item.guid);
           if (!target) {
-            throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
+            throw new Error(`ActorGuid not found in .ovdrjm: ${operation.item.guid}`);
           }
-          Object.assign(target, item.properties);
-        }
-
-        return { guids: parsedArgs.items.map((item) => item.guid) };
-      },
-    });
-  } else {
-    fileResult = applyLevelChangesByFileEdit({
-      cwd,
-      update: (rootDoc) => {
-        const root = rootDoc.Root;
-        if (!isRecord(root)) {
-          throw new Error("Invalid .ovdrjm format: Root object is missing.");
-        }
-
-        const createdGuids: string[] = [];
-        for (const item of parsedArgs.items) {
-          const parent = findNodeByActorGuid(root as OvdrjmNode, item.parentGuid);
-          if (!parent) {
-            throw new Error(`Parent ActorGuid not found in .ovdrjm: ${item.parentGuid}`);
+          Object.assign(target, operation.item.properties);
+          if (typeof operation.item.name === "string") {
+            target.Name = operation.item.name;
           }
-
-          const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
-          parent.LuaChildren = childList;
-
-          const newGuid = makeActorGuid();
-          const newNode: Record<string, unknown> = {
-            InstanceType: item.class,
-            ActorGuid: newGuid,
-            ObjectKey: nextObjectKey(rootDoc),
-            Name: item.name,
-            ...item.properties,
-          };
-          childList.push(newNode);
-          createdGuids.push(newGuid);
+          changedGuids.push(operation.item.guid);
+          continue;
         }
 
-        return { guids: createdGuids };
-      },
-    });
-  }
+        const parent = findNodeByActorGuid(root as OvdrjmNode, operation.item.parentGuid);
+        if (!parent) {
+          throw new Error(`Parent ActorGuid not found in .ovdrjm: ${operation.item.parentGuid}`);
+        }
+
+        const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
+        parent.LuaChildren = childList;
+
+        const newGuid = makeActorGuid();
+        const newNode: Record<string, unknown> = {
+          InstanceType: operation.item.class,
+          ActorGuid: newGuid,
+          ObjectKey: nextObjectKey(rootDoc),
+          Name: operation.item.name,
+          ...operation.item.properties,
+        };
+        childList.push(newNode);
+        changedGuids.push(newGuid);
+      }
+
+      return { guids: changedGuids };
+    },
+  });
 
   const executeApproval = await ctx.approve({
     permission: "execute",
@@ -197,7 +188,8 @@ async function executeInstanceUpsert(
       umapPath: fileResult.umapPath,
       ovdrjmPath: fileResult.ovdrjmPath,
       targetGuids: fileResult.changedGuids,
-      mode: parsedArgs.mode,
+      addCount: operations.filter((operation) => operation.mode === "add").length,
+      updateCount: operations.filter((operation) => operation.mode === "update").length,
       levelApplyResult: result,
     },
   };

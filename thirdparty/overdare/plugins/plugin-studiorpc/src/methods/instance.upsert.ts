@@ -1,85 +1,60 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
-import { params as instanceAddParams } from "./instance.params.ts";
+import { instanceClassEnum, instancePropertiesSchema } from "./instance.params.ts";
 
-const addParams = instanceAddParams;
-const topLevelParams = z
+const addParams = z
   .object({
-    mode: z.enum(["add", "update"]).describe("Batch operation mode"),
-    items: z
-      .array(z.record(z.unknown()))
-      .min(1)
-      .describe(
-        "Batch operation items. Shape depends on mode: add uses parentGuid/class/name/properties; update uses guid/properties.",
-      ),
+    class: instanceClassEnum,
+    parentGuid: z.string(),
+    name: z.string(),
+    properties: instancePropertiesSchema,
   })
   .strict();
 
 const updateParams = z
   .object({
-    guid: z.string().describe("ActorGuid of the target instance in .ovdrjm"),
-    properties: z.record(z.unknown()).describe("Partial properties to merge into the target instance"),
+    guid: z.string(),
+    name: z.string().optional(),
+    properties: instancePropertiesSchema,
   })
   .strict();
 
-const batchAddParams = z
-  .object({
-    mode: z.literal("add").describe("Batch add mode"),
-    items: z.array(addParams).min(1).describe("Instances to add under their parentGuid targets"),
-  })
-  .strict();
+const itemParams = z
+  .union([addParams, updateParams])
+  .describe(
+    "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid/(optional name)/properties.",
+  );
 
-const batchUpdateParams = z
+export const params = z
   .object({
-    mode: z.literal("update").describe("Batch update mode"),
-    items: z.array(updateParams).min(1).describe("Instances to update by ActorGuid"),
+    items: z.array(itemParams).min(1).describe("Batch items inferred as add or update by their fields."),
   })
   .strict();
 
 export const method = "instance.upsert";
 
 export const description =
-  "Upsert instances in batch. Use mode='add' with items[{ parentGuid, class, name, properties }] or mode='update' with items[{ guid, properties }].";
+  "Upsert instances in batch. Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. Mixed add and update items are allowed in one call.";
 
-export const params = topLevelParams;
-
-type InstanceUpsertAddArgs = z.infer<typeof addParams>;
-type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;
-export type InstanceUpsertBatchAddArgs = z.infer<typeof batchAddParams>;
-export type InstanceUpsertBatchUpdateArgs = z.infer<typeof batchUpdateParams>;
-export type InstanceUpsertArgs = InstanceUpsertBatchAddArgs | InstanceUpsertBatchUpdateArgs;
+export type InstanceUpsertAddArgs = z.infer<typeof addParams>;
+export type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;
+export type InstanceUpsertItemArgs = InstanceUpsertAddArgs | InstanceUpsertUpdateArgs;
+export type InstanceUpsertArgs = z.infer<typeof params>;
 
 export type InstanceUpsertMode = "add" | "update";
 
-export type InstanceUpsertOperationBatch =
-  | { mode: "add"; items: InstanceUpsertAddArgs[] }
-  | { mode: "update"; items: InstanceUpsertUpdateArgs[] };
+export type InstanceUpsertOperation =
+  | { mode: "add"; item: InstanceUpsertAddArgs }
+  | { mode: "update"; item: InstanceUpsertUpdateArgs };
 
-export function isBatchAddArgs(value: InstanceUpsertArgs): value is InstanceUpsertBatchAddArgs {
-  return value.mode === "add";
+export function isUpdateItem(value: InstanceUpsertItemArgs): value is InstanceUpsertUpdateArgs {
+  return "guid" in value && typeof value.guid === "string";
 }
 
-export function isBatchUpdateArgs(value: InstanceUpsertArgs): value is InstanceUpsertBatchUpdateArgs {
-  return value.mode === "update";
-}
-
-export function isBatchArgs(
-  value: InstanceUpsertArgs,
-): value is InstanceUpsertBatchAddArgs | InstanceUpsertBatchUpdateArgs {
-  return "mode" in value && Array.isArray(value.items);
-}
-
-export function normalizeArgsToBatch(value: InstanceUpsertArgs): InstanceUpsertOperationBatch {
-  if (value.mode === "add") {
-    return value;
-  }
-  return value;
+export function normalizeArgsToOperations(value: InstanceUpsertArgs): InstanceUpsertOperation[] {
+  return value.items.map((item) => (isUpdateItem(item) ? { mode: "update", item } : { mode: "add", item }));
 }
 
 export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
-  const parsed = topLevelParams.parse(value);
-  if (parsed.mode === "add") {
-    return batchAddParams.parse(parsed);
-  }
-  return batchUpdateParams.parse(parsed);
+  return params.parse(value);
 }
