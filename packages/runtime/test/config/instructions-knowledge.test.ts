@@ -11,6 +11,8 @@ describe("buildSystemPromptWithKnowledge", () => {
     expect(flat).toContain("## Project Knowledge");
     expect(flat).toContain("[pattern] Use Bun");
     expect(flat).toContain("update_knowledge tool");
+    expect(flat).toContain("Do not save transient current-turn intent");
+    expect(flat).toContain("in most cases it is immediate task intent, not knowledge");
   });
 
   it("includes instructions after knowledge section", () => {

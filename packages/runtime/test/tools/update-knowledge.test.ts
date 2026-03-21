@@ -109,4 +109,13 @@ describe("update_knowledge tool", () => {
     const entries = await readKnowledge(tmpDir);
     expect(entries).toHaveLength(1);
   });
+
+  it("describes durable knowledge and forbids transient intent", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
+    const tool = createUpdateKnowledgeTool(tmpDir);
+
+    expect(tool.description).toContain("durable cross-session value");
+    expect(tool.description).toContain("in most cases it is immediate task intent, not knowledge");
+    expect(tool.description).toContain("Do not store transient current-turn intent");
+  });
 });

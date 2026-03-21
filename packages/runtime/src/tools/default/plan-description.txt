@@ -16,11 +16,18 @@ Do NOT use for single trivial tasks, purely conversational requests, or tasks co
 ## How to use
 - Call this at the start of complex tasks to show the user your plan.
 - After receiving new instructions, immediately capture requirements as plan steps.
+- When user intent changes, think carefully about whether to replace the whole plan with a new one or resolve the old one entirely; do not leave stale steps from abandoned work on screen.
+- If the user defers or postpones the work, immediately clean up that plan by marking obsolete steps as cancelled or otherwise resolved.
 - Each step should represent a unit of work you can complete in one go.
 - Only ONE step should be in_progress at a time. Mark each step done immediately after completing it, before starting the next.
 - Add any new follow-up steps discovered during execution.
 - Cancel steps that become irrelevant instead of deleting them.
+- Before yielding, ensure no deferred or abandoned plan still has active pending or in_progress steps.
 - IMPORTANT: Before summarizing results to the user, call this tool to mark the last step done.
+
+Anti-patterns:
+- Keeping an old plan active after the user says "later", "not now", "stop", or changes direction.
+- Mixing newly intended work into an old plan when the old plan should have been replaced or cancelled.
 
 ## Step quality
 Each step should be specific and actionable. Include concrete details about what each step does.

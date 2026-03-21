@@ -92,7 +92,10 @@ You have access to an update_knowledge tool. Use it to save, revise, or delete i
 - Important backlog items to revisit later
 - Corrections to previous behavior
 
-Use your judgment — save knowledge when you discover something that would be useful in future sessions.`;
+Use your judgment — save knowledge when you discover something that would be useful in future sessions.
+When the user says they want to do or build something, think carefully about whether that is durable knowledge or just the work to do right now; in most cases it is immediate task intent, not knowledge.
+Do not save transient current-turn intent or immediate implementation plans as knowledge.
+Anti-pattern: storing “user wants to build X” right before implementing X in the same turn.`;
 
 /**
  * Build system prompt with knowledge section, skills section, and autonomous recording instruction.

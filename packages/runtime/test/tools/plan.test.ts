@@ -13,6 +13,14 @@ function makeCtx(): ToolContext {
 }
 
 describe("plan tool", () => {
+  it("describes plan cleanup on intent changes and deferrals", () => {
+    const tool = createPlanTool();
+
+    expect(tool.description).toContain("When user intent changes");
+    expect(tool.description).toContain("If the user defers or postpones the work");
+    expect(tool.description).toContain("no deferred or abandoned plan still has active pending or in_progress steps");
+  });
+
   it("returns JSON with title and steps", async () => {
     const tool = createPlanTool();
     const result = await tool.execute(
