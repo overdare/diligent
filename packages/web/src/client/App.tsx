@@ -39,6 +39,8 @@ import { useServerRequests } from "./lib/use-server-requests";
 import { useSteeringQueue } from "./lib/use-steering-queue";
 import { useThreadManager } from "./lib/use-thread-manager";
 
+const DRAFT_INPUT_KEY = "__draft__";
+
 export function App() {
   useEffect(() => {
     document.title = APP_PROJECT_NAME;
@@ -107,9 +109,7 @@ export function App() {
     dispatch,
     activeThreadIdRef,
     modeRef,
-    cwdRef,
     applySessionModel: providerMgr.applySessionModel,
-    currentModelRef: providerMgr.currentModelRef,
     setEffortState,
     activateServerThread: serverRequests.activateThread,
     clearAttention,
@@ -166,14 +166,14 @@ export function App() {
 
   const isBusy = state.threadStatus === "busy";
   const showCompactingIndicator = isCompacting;
-  const activeInput = state.activeThreadId ? (threadMgr.threadInputs[state.activeThreadId] ?? "") : "";
+  const activeInputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
+  const activeInput = threadMgr.threadInputs[activeInputKey] ?? "";
   const setActiveInput = useCallback(
     (value: string) => {
-      const threadId = state.activeThreadId;
-      if (!threadId) return;
+      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
       threadMgr.setThreadInputs((prev) => {
-        const next = value.length > 0 ? { ...prev, [threadId]: value } : { ...prev };
-        if (value.length === 0) delete next[threadId];
+        const next = value.length > 0 ? { ...prev, [inputKey]: value } : { ...prev };
+        if (value.length === 0) delete next[inputKey];
         return next;
       });
     },
@@ -280,6 +280,11 @@ export function App() {
       pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
       suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
     },
+    modeRef,
+    cwdRef,
+    applySessionModel: providerMgr.applySessionModel,
+    activateServerThread: serverRequests.activateThread,
+    refreshThreadList: threadMgr.refreshThreadList,
   });
 
   useEffect(() => {

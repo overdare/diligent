@@ -1,7 +1,12 @@
 // @summary Tests for App URL and image utility helpers
 
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { getThreadIdFromUrl, normalizeImageFileName, replaceThreadUrl } from "../../../src/client/lib/app-utils";
+import {
+  getThreadIdFromUrl,
+  normalizeImageFileName,
+  replaceDraftUrl,
+  replaceThreadUrl,
+} from "../../../src/client/lib/app-utils";
 
 const BASE_URL = "https://example.test";
 let previousWindow: typeof globalThis.window | undefined;
@@ -57,6 +62,12 @@ test("replaceThreadUrl updates path only when target differs", () => {
 
   replaceThreadUrl("new-thread");
   expect(window.location.pathname).toBe("/new-thread");
+});
+
+test("replaceDraftUrl returns app to root path", () => {
+  window.history.replaceState(null, "", `${BASE_URL}/thread-123`);
+  replaceDraftUrl();
+  expect(window.location.pathname).toBe("/");
 });
 
 test("normalizeImageFileName returns .bin fallback for unknown mime type", () => {

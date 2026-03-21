@@ -24,7 +24,7 @@ import {
   toNotificationParams,
 } from "./app-notification";
 import type { AppAction } from "./app-state";
-import { getThreadIdFromUrl, replaceThreadUrl } from "./app-utils";
+import { getThreadIdFromUrl, replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
 
@@ -251,16 +251,9 @@ export function useAppBootstrap({
           return;
         }
 
-        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-          cwd: (meta.cwd ?? cwdRef.current) || "/",
-          mode,
-        });
-        if (cancelled) return;
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: started.threadId });
-        if (cancelled) return;
-        dispatch({ type: "hydrate", payload: { threadId: started.threadId, mode, history } });
-        setEffortState(history.currentEffort);
-        replaceThreadUrl(started.threadId);
+        dispatch({ type: "reset_draft", payload: { mode } });
+        setEffortState(meta.effort ?? "medium");
+        replaceDraftUrl();
         await refreshThreadList(rpc);
       } catch (error) {
         console.error(error);
@@ -278,7 +271,6 @@ export function useAppBootstrap({
     connection,
     rpcRef,
     activeThreadIdRef,
-    cwdRef,
     dispatch,
     setCwd,
     setEffortState,

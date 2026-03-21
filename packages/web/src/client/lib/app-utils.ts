@@ -11,6 +11,12 @@ export function replaceThreadUrl(threadId: string): void {
   }
 }
 
+export function replaceDraftUrl(): void {
+  if (window.location.pathname !== "/") {
+    window.history.replaceState(null, "", "/");
+  }
+}
+
 export async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   let binary = "";

@@ -37,6 +37,120 @@ test("set_threads keeps optimistic first message when server value is empty", ()
   expect(next.threadList[0]?.firstUserMessage).toBe("hello optimistic");
 });
 
+test("set_threads keeps optimistic thread not yet returned by server", () => {
+  const seeded = {
+    ...initialThreadState,
+    threadList: [
+      {
+        id: "optimistic-only",
+        path: "",
+        cwd: "",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-01T00:00:00.000Z",
+        messageCount: 1,
+        firstUserMessage: "just sent",
+      },
+      {
+        id: "existing",
+        path: "",
+        cwd: "",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-01T00:00:00.000Z",
+        messageCount: 2,
+        firstUserMessage: "older",
+      },
+    ],
+  };
+
+  const next = appReducer(seeded, {
+    type: "set_threads",
+    payload: [
+      {
+        id: "existing",
+        path: "",
+        cwd: "",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-02T00:00:00.000Z",
+        messageCount: 2,
+        firstUserMessage: "older",
+      },
+    ],
+  });
+
+  expect(next.threadList.map((thread) => thread.id)).toEqual(["optimistic-only", "existing"]);
+  expect(next.threadList[0]?.firstUserMessage).toBe("just sent");
+});
+
+test("set_threads drops stale legacy optimistic-like thread from top", () => {
+  const seeded = {
+    ...initialThreadState,
+    threadList: [
+      {
+        id: "legacy-thread",
+        path: "/repo/.diligent/sessions/legacy-thread.jsonl",
+        cwd: "/repo",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-03T00:00:00.000Z",
+        messageCount: 5,
+        firstUserMessage: "older discussion",
+      },
+      {
+        id: "server-top",
+        path: "/repo/.diligent/sessions/server-top.jsonl",
+        cwd: "/repo",
+        created: "2026-01-02T00:00:00.000Z",
+        modified: "2026-01-02T00:00:00.000Z",
+        messageCount: 2,
+        firstUserMessage: "newer on server",
+      },
+    ],
+  };
+
+  const next = appReducer(seeded, {
+    type: "set_threads",
+    payload: [
+      {
+        id: "server-top",
+        path: "/repo/.diligent/sessions/server-top.jsonl",
+        cwd: "/repo",
+        created: "2026-01-02T00:00:00.000Z",
+        modified: "2026-01-02T00:00:00.000Z",
+        messageCount: 2,
+        firstUserMessage: "newer on server",
+      },
+    ],
+  });
+
+  expect(next.threadList.map((thread) => thread.id)).toEqual(["server-top"]);
+});
+
+test("set_threads hides empty pre-message conversations", () => {
+  const next = appReducer(initialThreadState, {
+    type: "set_threads",
+    payload: [
+      {
+        id: "empty-thread",
+        path: "/repo/.diligent/sessions/empty-thread.jsonl",
+        cwd: "/repo",
+        created: "2026-01-02T00:00:00.000Z",
+        modified: "2026-01-02T00:00:00.000Z",
+        messageCount: 0,
+      },
+      {
+        id: "active-thread",
+        path: "/repo/.diligent/sessions/active-thread.jsonl",
+        cwd: "/repo",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-03T00:00:00.000Z",
+        messageCount: 3,
+        firstUserMessage: "hello",
+      },
+    ],
+  });
+
+  expect(next.threadList.map((thread) => thread.id)).toEqual(["active-thread"]);
+});
+
 test("optimistic_thread prepends a new thread when absent", () => {
   const next = appReducer(initialThreadState, {
     type: "optimistic_thread",
@@ -70,6 +184,45 @@ test("optimistic_thread updates existing thread missing first message", () => {
 
   expect(next.threadList).toHaveLength(1);
   expect(next.threadList[0]?.firstUserMessage).toBe("seeded now");
+});
+
+test("reset_draft clears active thread and items but preserves thread list", () => {
+  const seeded = {
+    ...initialThreadState,
+    activeThreadId: "t1",
+    activeThreadCwd: "/repo",
+    mode: "plan" as const,
+    items: [
+      {
+        id: "local-user-1",
+        kind: "user" as const,
+        text: "hello",
+        images: [],
+        timestamp: 1,
+      },
+    ],
+    threadList: [
+      {
+        id: "t1",
+        path: "",
+        cwd: "/repo",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-01T00:00:00.000Z",
+        messageCount: 1,
+        firstUserMessage: "hello",
+      },
+    ],
+  };
+
+  const next = appReducer(seeded, {
+    type: "reset_draft",
+    payload: { mode: "execute" },
+  });
+
+  expect(next.activeThreadId).toBeNull();
+  expect(next.items).toEqual([]);
+  expect(next.mode).toBe("execute");
+  expect(next.threadList).toEqual(seeded.threadList);
 });
 
 test("consume_first_pending_steer removes head entry only", () => {

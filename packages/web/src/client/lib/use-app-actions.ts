@@ -4,7 +4,7 @@ import type { Mode, ModelInfo, ThinkingEffort } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback } from "react";
 import type { AppAction, PendingImage } from "./app-state";
-import { fileToBase64, normalizeImageFileName } from "./app-utils";
+import { fileToBase64, normalizeImageFileName, replaceThreadUrl } from "./app-utils";
 import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./model-thinking-helpers";
 import type { WebRpcClient } from "./rpc-client";
 import { parseSlashCommand, type SlashCommand } from "./slash-commands";
@@ -40,6 +40,11 @@ export function useAppActions({
   startNewThread,
   openThread,
   steeringControl,
+  modeRef,
+  cwdRef,
+  applySessionModel,
+  activateServerThread,
+  refreshThreadList,
 }: {
   rpcRef: RefObject<WebRpcClient | null>;
   state: ThreadState;
@@ -65,25 +70,50 @@ export function useAppActions({
   startNewThread: () => Promise<void>;
   openThread: (threadId: string) => Promise<void>;
   steeringControl: SteeringControl;
+  modeRef: RefObject<Mode>;
+  cwdRef: RefObject<string>;
+  applySessionModel: (sessionModel?: string) => Promise<void>;
+  activateServerThread: (threadId: string) => void;
+  refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
   const sendMessage = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
-    if (!rpc || !state.activeThreadId || !canSend) return;
-    const threadId = state.activeThreadId;
+    if (!rpc || !canSend) return;
     const message = activeInput.trim();
     const images = pendingImages;
-    clearThreadInput(threadId);
-    setPendingImages([]);
-    dispatch({ type: "local_user", payload: { text: message, images } });
-
-    if (state.items.length === 0 && state.activeThreadId) {
-      dispatch({
-        type: "optimistic_thread",
-        payload: { threadId: state.activeThreadId, message: message || "[image]" },
-      });
+    const existingThreadId = state.activeThreadId;
+    if (existingThreadId) {
+      clearThreadInput(existingThreadId);
     }
+    setPendingImages([]);
 
     try {
+      let threadId = existingThreadId;
+      if (!threadId) {
+        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
+          cwd: cwdRef.current || "/",
+          mode: modeRef.current,
+          model: currentModelRef.current || undefined,
+        });
+        threadId = started.threadId;
+        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
+        dispatch({ type: "hydrate", payload: { threadId, mode: modeRef.current, history } });
+        if (typeof window !== "undefined") {
+          replaceThreadUrl(threadId);
+        }
+        activateServerThread(threadId);
+        await applySessionModel(history.currentModel);
+      }
+
+      dispatch({ type: "local_user", payload: { text: message, images } });
+
+      if (state.items.length === 0 && threadId) {
+        dispatch({
+          type: "optimistic_thread",
+          payload: { threadId, message: message || "[image]" },
+        });
+      }
+
       const content = [
         ...(message ? [{ type: "text" as const, text: message }] : []),
         ...images.map((image) => ({
@@ -94,7 +124,7 @@ export function useAppActions({
         })),
       ];
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-        threadId: state.activeThreadId,
+        threadId,
         message,
         attachments: images.map((image) => ({
           type: "local_image" as const,
@@ -105,6 +135,7 @@ export function useAppActions({
         content,
         model: currentModelRef.current || undefined,
       });
+      await refreshThreadList(rpc);
     } catch (error) {
       console.error(error);
     }
@@ -118,6 +149,11 @@ export function useAppActions({
     setPendingImages,
     dispatch,
     currentModelRef,
+    modeRef,
+    cwdRef,
+    applySessionModel,
+    activateServerThread,
+    refreshThreadList,
   ]);
 
   const setMode = useCallback(

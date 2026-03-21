@@ -8,13 +8,20 @@ import type {
   SessionSummary,
   ThreadReadResponse,
 } from "@diligent/protocol";
-import { hydrateFromThreadRead, type RenderItem, reduceServerNotification, type ThreadState } from "./thread-store";
+import {
+  hydrateFromThreadRead,
+  initialThreadState,
+  type RenderItem,
+  reduceServerNotification,
+  type ThreadState,
+} from "./thread-store";
 
 export type PendingImage = LocalImageBlock & { webUrl: string };
 
 export type AppAction =
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
+  | { type: "reset_draft"; payload: { mode: Mode } }
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
   | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
@@ -25,6 +32,14 @@ export type AppAction =
   | { type: "clear_toast" };
 
 export function appReducer(state: ThreadState, action: AppAction): ThreadState {
+  const isDraftOptimisticThread = (thread: SessionSummary): boolean =>
+    thread.path.length === 0 && thread.cwd.length === 0 && thread.messageCount <= 1 && Boolean(thread.firstUserMessage);
+  const isVisibleThread = (thread: SessionSummary): boolean => {
+    if (thread.messageCount > 0) return true;
+    if (thread.firstUserMessage) return true;
+    return false;
+  };
+
   if (action.type === "notification")
     return reduceServerNotification(state, action.payload.notification, action.payload.events);
   if (action.type === "hydrate") {
@@ -38,17 +53,29 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       action.payload.history,
     );
   }
+  if (action.type === "reset_draft") {
+    return {
+      ...initialThreadState,
+      mode: action.payload.mode,
+      threadList: state.threadList,
+      pendingSteers: state.pendingSteers,
+    };
+  }
   if (action.type === "set_mode") return { ...state, mode: action.payload };
   if (action.type === "set_threads") {
     const optimisticMessages = new Map(
       state.threadList.filter((t) => t.firstUserMessage).map((t) => [t.id, t.firstUserMessage!]),
     );
-    const merged = action.payload.map((t) =>
-      !t.firstUserMessage && optimisticMessages.has(t.id)
-        ? { ...t, firstUserMessage: optimisticMessages.get(t.id) }
-        : t,
-    );
-    return { ...state, threadList: merged };
+    const serverThreadIds = new Set(action.payload.map((t) => t.id));
+    const merged = action.payload
+      .map((t) =>
+        !t.firstUserMessage && optimisticMessages.has(t.id)
+          ? { ...t, firstUserMessage: optimisticMessages.get(t.id) }
+          : t,
+      )
+      .filter(isVisibleThread);
+    const missingOptimistic = state.threadList.filter((t) => isDraftOptimisticThread(t) && !serverThreadIds.has(t.id));
+    return { ...state, threadList: [...missingOptimistic, ...merged] };
   }
   if (action.type === "local_user") {
     const text = action.payload.text;
