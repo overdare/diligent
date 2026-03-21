@@ -3,6 +3,17 @@ import { z } from "zod";
 import { params as instanceAddParams } from "./instance.params.ts";
 
 const addParams = instanceAddParams;
+const topLevelParams = z
+  .object({
+    mode: z.enum(["add", "update"]).describe("Batch operation mode"),
+    items: z
+      .array(z.record(z.unknown()))
+      .min(1)
+      .describe(
+        "Batch operation items. Shape depends on mode: add uses parentGuid/class/name/properties; update uses guid/properties.",
+      ),
+  })
+  .strict();
 
 const updateParams = z
   .object({
@@ -30,13 +41,13 @@ export const method = "instance.upsert";
 export const description =
   "Upsert instances in batch. Use mode='add' with items[{ parentGuid, class, name, properties }] or mode='update' with items[{ guid, properties }].";
 
-export const params = z.union([batchAddParams, batchUpdateParams]);
+export const params = topLevelParams;
 
 type InstanceUpsertAddArgs = z.infer<typeof addParams>;
 type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;
 export type InstanceUpsertBatchAddArgs = z.infer<typeof batchAddParams>;
 export type InstanceUpsertBatchUpdateArgs = z.infer<typeof batchUpdateParams>;
-export type InstanceUpsertArgs = z.infer<typeof params>;
+export type InstanceUpsertArgs = InstanceUpsertBatchAddArgs | InstanceUpsertBatchUpdateArgs;
 
 export type InstanceUpsertMode = "add" | "update";
 
@@ -59,9 +70,16 @@ export function isBatchArgs(
 }
 
 export function normalizeArgsToBatch(value: InstanceUpsertArgs): InstanceUpsertOperationBatch {
+  if (value.mode === "add") {
+    return value;
+  }
   return value;
 }
 
 export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
-  return params.parse(value);
+  const parsed = topLevelParams.parse(value);
+  if (parsed.mode === "add") {
+    return batchAddParams.parse(parsed);
+  }
+  return batchUpdateParams.parse(parsed);
 }
