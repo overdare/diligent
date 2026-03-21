@@ -10,6 +10,23 @@ type OvdrjmNode = Record<string, unknown> & {
   LuaChildren?: unknown;
 };
 
+function normalizeEnumValue(value: unknown): unknown {
+  if (typeof value === "string" && value.startsWith("Enum.")) {
+    const segments = value.split(".");
+    return segments[segments.length - 1] ?? value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeEnumValue(entry));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => [key, normalizeEnumValue(entryValue)]));
+  }
+
+  return value;
+}
+
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
@@ -132,7 +149,7 @@ async function executeInstanceUpsert(
           if (!target) {
             throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
           }
-          Object.assign(target, item.properties);
+          Object.assign(target, normalizeEnumValue(item.properties));
           if (typeof item.name === "string") {
             target.Name = item.name;
           }
@@ -154,7 +171,7 @@ async function executeInstanceUpsert(
           ActorGuid: newGuid,
           ObjectKey: nextObjectKey(rootDoc),
           Name: item.name,
-          ...item.properties,
+          ...(normalizeEnumValue(item.properties) as Record<string, unknown>),
         };
         childList.push(newNode);
         changedGuids.push(newGuid);

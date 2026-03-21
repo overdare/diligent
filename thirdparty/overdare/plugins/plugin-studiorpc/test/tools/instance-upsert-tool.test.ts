@@ -100,6 +100,33 @@ describe("instance-upsert-tool", () => {
     expect(world.Root.LuaChildren[0].LuaChildren[0].Name).toBe("OldName");
   });
 
+  test("normalizes Enum.* property values to their final segment on update", async () => {
+    const tool = createInstanceUpsertTool(tempDir);
+
+    await tool.execute(
+      {
+        items: [
+          {
+            guid: "CHILD_GUID",
+            properties: {
+              TextXAlignment: "Enum.TextXAlignment.Left",
+              TextYAlignment: "Enum.TextYAlignment.Top",
+            },
+          },
+        ],
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const savedRoot = saved.Root as { LuaChildren: Array<{ LuaChildren: Array<Record<string, unknown>> }> };
+    const child = savedRoot.LuaChildren[0].LuaChildren[0];
+
+    expect(child.TextXAlignment).toBe("Left");
+    expect(child.TextYAlignment).toBe("Top");
+    expect(child.Visible).toBe(true);
+  });
+
   test("adds nodes under parentGuid", async () => {
     const tool = createInstanceUpsertTool(tempDir);
 
@@ -131,6 +158,35 @@ describe("instance-upsert-tool", () => {
     expect(result.metadata?.targetGuids).toEqual([added?.ActorGuid]);
     expect(result.metadata?.addCount).toBe(1);
     expect(result.metadata?.updateCount).toBe(0);
+  });
+
+  test("normalizes Enum.* property values to their final segment on add", async () => {
+    const tool = createInstanceUpsertTool(tempDir);
+
+    await tool.execute(
+      {
+        items: [
+          {
+            class: "UIListLayout",
+            parentGuid: "PARENT_GUID",
+            name: "LayoutNode",
+            properties: {
+              FillDirection: "Enum.FillDirection.Vertical",
+              SortOrder: "Enum.SortOrder.LayoutOrder",
+            },
+          },
+        ],
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const savedRoot = saved.Root as { LuaChildren: Array<{ LuaChildren: Array<Record<string, unknown>> }> };
+    const children = savedRoot.LuaChildren[0].LuaChildren;
+    const added = children.find((node) => node.Name === "LayoutNode");
+
+    expect(added?.FillDirection).toBe("Vertical");
+    expect(added?.SortOrder).toBe("LayoutOrder");
   });
 
   test("supports mixed update and add items", async () => {
