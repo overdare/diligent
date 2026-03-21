@@ -177,7 +177,8 @@ describe("instance-upsert-tool", () => {
           items: [
             {
               guid: "MISSING_GUID",
-              properties: { Name: "Nope" },
+              name: "Nope",
+              properties: {},
             },
           ],
         },

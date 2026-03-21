@@ -102,13 +102,13 @@ async function executeInstanceUpsert(
   cwd: string,
 ): Promise<ToolResult> {
   const toolName = "studiorpc_instance_upsert";
-  const operations = instanceUpsert.normalizeArgsToOperations(instanceUpsert.parseArgs(args));
+  const parsedArgs = instanceUpsert.parseArgs(args);
 
   const writeApproval = await ctx.approve({
     permission: "write",
     toolName,
     description: "Update .ovdrjm world file",
-    details: { items: operations },
+    details: parsedArgs,
   });
   if (writeApproval === "reject") {
     return {
@@ -117,8 +117,7 @@ async function executeInstanceUpsert(
     };
   }
 
-  let fileResult: { umapPath: string; ovdrjmPath: string; changedGuids: string[] };
-  fileResult = applyLevelChangesByFileEdit({
+  const fileResult = applyLevelChangesByFileEdit({
     cwd,
     update: (rootDoc) => {
       const root = rootDoc.Root;
@@ -127,23 +126,23 @@ async function executeInstanceUpsert(
       }
 
       const changedGuids: string[] = [];
-      for (const operation of operations) {
-        if (operation.mode === "update") {
-          const target = findNodeByActorGuid(root as OvdrjmNode, operation.item.guid);
+      for (const item of parsedArgs.items) {
+        if (instanceUpsert.isUpdateItem(item)) {
+          const target = findNodeByActorGuid(root as OvdrjmNode, item.guid);
           if (!target) {
-            throw new Error(`ActorGuid not found in .ovdrjm: ${operation.item.guid}`);
+            throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
           }
-          Object.assign(target, operation.item.properties);
-          if (typeof operation.item.name === "string") {
-            target.Name = operation.item.name;
+          Object.assign(target, item.properties);
+          if (typeof item.name === "string") {
+            target.Name = item.name;
           }
-          changedGuids.push(operation.item.guid);
+          changedGuids.push(item.guid);
           continue;
         }
 
-        const parent = findNodeByActorGuid(root as OvdrjmNode, operation.item.parentGuid);
+        const parent = findNodeByActorGuid(root as OvdrjmNode, item.parentGuid);
         if (!parent) {
-          throw new Error(`Parent ActorGuid not found in .ovdrjm: ${operation.item.parentGuid}`);
+          throw new Error(`Parent ActorGuid not found in .ovdrjm: ${item.parentGuid}`);
         }
 
         const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
@@ -151,11 +150,11 @@ async function executeInstanceUpsert(
 
         const newGuid = makeActorGuid();
         const newNode: Record<string, unknown> = {
-          InstanceType: operation.item.class,
+          InstanceType: item.class,
           ActorGuid: newGuid,
           ObjectKey: nextObjectKey(rootDoc),
-          Name: operation.item.name,
-          ...operation.item.properties,
+          Name: item.name,
+          ...item.properties,
         };
         childList.push(newNode);
         changedGuids.push(newGuid);
@@ -188,8 +187,8 @@ async function executeInstanceUpsert(
       umapPath: fileResult.umapPath,
       ovdrjmPath: fileResult.ovdrjmPath,
       targetGuids: fileResult.changedGuids,
-      addCount: operations.filter((operation) => operation.mode === "add").length,
-      updateCount: operations.filter((operation) => operation.mode === "update").length,
+      addCount: parsedArgs.items.filter((item) => !instanceUpsert.isUpdateItem(item)).length,
+      updateCount: parsedArgs.items.filter((item) => instanceUpsert.isUpdateItem(item)).length,
       levelApplyResult: result,
     },
   };

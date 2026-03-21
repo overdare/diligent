@@ -41,18 +41,8 @@ export type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;
 export type InstanceUpsertItemArgs = InstanceUpsertAddArgs | InstanceUpsertUpdateArgs;
 export type InstanceUpsertArgs = z.infer<typeof params>;
 
-export type InstanceUpsertMode = "add" | "update";
-
-export type InstanceUpsertOperation =
-  | { mode: "add"; item: InstanceUpsertAddArgs }
-  | { mode: "update"; item: InstanceUpsertUpdateArgs };
-
 export function isUpdateItem(value: InstanceUpsertItemArgs): value is InstanceUpsertUpdateArgs {
   return "guid" in value && typeof value.guid === "string";
-}
-
-export function normalizeArgsToOperations(value: InstanceUpsertArgs): InstanceUpsertOperation[] {
-  return value.items.map((item) => (isUpdateItem(item) ? { mode: "update", item } : { mode: "add", item }));
 }
 
 export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {

@@ -1,6 +1,6 @@
 // @summary Verifies batched instance upsert parsing and normalization.
 import { describe, expect, test } from "bun:test";
-import { isUpdateItem, normalizeArgsToOperations, parseArgs } from "../../src/methods/instance.upsert.ts";
+import { isUpdateItem, parseArgs } from "../../src/methods/instance.upsert.ts";
 
 describe("instance.upsert args", () => {
   test("parses add items without explicit mode", () => {
@@ -21,24 +21,18 @@ describe("instance.upsert args", () => {
       ],
     });
 
-    expect(normalizeArgsToOperations(parsed)).toEqual([
+    expect(parsed.items).toEqual([
       {
-        mode: "add",
-        item: {
-          class: "Folder",
-          parentGuid: "ROOT",
-          name: "Enemies",
-          properties: {},
-        },
+        class: "Folder",
+        parentGuid: "ROOT",
+        name: "Enemies",
+        properties: {},
       },
       {
-        mode: "add",
-        item: {
-          class: "Folder",
-          parentGuid: "ROOT",
-          name: "Props",
-          properties: {},
-        },
+        class: "Folder",
+        parentGuid: "ROOT",
+        name: "Props",
+        properties: {},
       },
     ]);
   });
@@ -49,7 +43,7 @@ describe("instance.upsert args", () => {
         {
           guid: "GUID_A",
           name: "UpdatedA",
-          properties: { Name: "UpdatedA" },
+          properties: {},
         },
         {
           guid: "GUID_B",
@@ -58,21 +52,15 @@ describe("instance.upsert args", () => {
       ],
     });
 
-    expect(normalizeArgsToOperations(parsed)).toEqual([
+    expect(parsed.items).toEqual([
       {
-        mode: "update",
-        item: {
-          guid: "GUID_A",
-          name: "UpdatedA",
-          properties: { Name: "UpdatedA" },
-        },
+        guid: "GUID_A",
+        name: "UpdatedA",
+        properties: {},
       },
       {
-        mode: "update",
-        item: {
-          guid: "GUID_B",
-          properties: { Visible: false },
-        },
+        guid: "GUID_B",
+        properties: { Visible: false },
       },
     ]);
   });
@@ -83,7 +71,7 @@ describe("instance.upsert args", () => {
         {
           guid: "GUID_A",
           name: "UpdatedA",
-          properties: { Name: "UpdatedA" },
+          properties: {},
         },
         {
           class: "Folder",
@@ -96,25 +84,38 @@ describe("instance.upsert args", () => {
 
     expect(isUpdateItem(parsed.items[0])).toBe(true);
     expect(isUpdateItem(parsed.items[1])).toBe(false);
-    expect(normalizeArgsToOperations(parsed)).toEqual([
+    expect(parsed.items).toEqual([
       {
-        mode: "update",
-        item: {
-          guid: "GUID_A",
-          name: "UpdatedA",
-          properties: { Name: "UpdatedA" },
-        },
+        guid: "GUID_A",
+        name: "UpdatedA",
+        properties: {},
       },
       {
-        mode: "add",
-        item: {
+        class: "Folder",
+        parentGuid: "ROOT",
+        name: "Props",
+        properties: {},
+      },
+    ]);
+  });
+
+  test("infers item mode by guid presence", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          guid: "GUID_A",
+          properties: {},
+        },
+        {
           class: "Folder",
           parentGuid: "ROOT",
           name: "Props",
           properties: {},
         },
-      },
-    ]);
+      ],
+    });
+
+    expect(parsed.items.map((item) => (isUpdateItem(item) ? "update" : "add"))).toEqual(["update", "add"]);
   });
 
   test("rejects legacy mode wrapper", () => {
