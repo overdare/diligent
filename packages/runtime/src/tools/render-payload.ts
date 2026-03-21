@@ -16,7 +16,6 @@ export interface UpdateKnowledgeRenderInput {
   id?: string;
   type?: string;
   content?: string;
-  confidence?: number;
   tags?: string[];
 }
 
@@ -393,8 +392,6 @@ export function createUpdateKnowledgeRenderPayload(
   const id = typeof input.id === "string" ? input.id.trim() : "";
   const typeValue = typeof input.type === "string" ? input.type.trim() : "";
   const content = typeof input.content === "string" ? input.content : "";
-  const confidenceValue =
-    typeof input.confidence === "number" && Number.isFinite(input.confidence) ? input.confidence.toFixed(2) : "";
   const tags = Array.isArray(input.tags)
     ? input.tags
         .map((value) => String(value).trim())
@@ -407,7 +404,6 @@ export function createUpdateKnowledgeRenderPayload(
     { key: "action", value: action },
     ...(id ? [{ key: "id", value: id }] : []),
     ...(typeValue ? [{ key: "type", value: typeValue }] : []),
-    ...(confidenceValue ? [{ key: "confidence", value: confidenceValue }] : []),
     ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
     ...(tags.length > 0 ? [{ key: "tags", value: tags.join(", ") }] : []),
   ];

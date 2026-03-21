@@ -4,7 +4,6 @@ import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
 import { readKnowledge, writeKnowledge } from "../knowledge/store";
 import type { KnowledgeEntry, KnowledgeType } from "../knowledge/types";
-import { generateEntryId } from "../session/types";
 import { createUpdateKnowledgeRenderPayload } from "./render-payload";
 
 const knowledgeTypeSchema = z.enum(["pattern", "discovery", "preference", "correction", "backlog"]);
@@ -15,10 +14,9 @@ const updateKnowledgeSchema = z
       .enum(["upsert", "delete"])
       .default("upsert")
       .describe("Knowledge operation. Use 'upsert' to create/update, 'delete' to remove by id."),
-    id: z.string().optional().describe("Knowledge entry id. Required for delete. Optional for upsert."),
+    id: z.string().optional().describe("Knowledge entry id. Required for delete. Optional for upsert revisions."),
     type: knowledgeTypeSchema.optional().describe("Knowledge category for upsert."),
     content: z.string().optional().describe("Knowledge text to store for upsert."),
-    confidence: z.number().min(0).max(1).optional().describe("Confidence score (0.0–1.0) for upsert."),
     tags: z.array(z.string()).optional().describe("Optional tags for upsert."),
   })
   .superRefine((value, ctx) => {
@@ -93,7 +91,6 @@ export function createUpdateKnowledgeTool(
             ...entries[index],
             type: requestedType,
             content: requestedContent,
-            confidence: args.confidence ?? entries[index].confidence,
             tags: args.tags ?? entries[index].tags,
             timestamp: now,
           };
@@ -109,12 +106,12 @@ export function createUpdateKnowledgeTool(
       }
 
       const entry: KnowledgeEntry = {
-        id: args.id?.trim() || generateEntryId(),
+        id: crypto.randomUUID(),
         timestamp: now,
         sessionId,
         type: requestedType,
         content: requestedContent,
-        confidence: args.confidence ?? 0.8,
+        confidence: 0.8,
         tags: args.tags,
       };
       entries.push(entry);

@@ -318,7 +318,6 @@ describe("RPC binding", () => {
       threadId: started.threadId,
       type: "pattern",
       content: "Use focused tests before full suite",
-      confidence: 0.85,
       tags: ["tests"],
     });
     expect(added.entry.content).toBe("Use focused tests before full suite");
@@ -330,12 +329,11 @@ describe("RPC binding", () => {
       id: added.entry.id,
       type: "backlog",
       content: "Run focused tests before full suite",
-      confidence: 0.9,
       tags: ["tests", "workflow"],
     });
     expect(updated.entry.id).toBe(added.entry.id);
     expect(updated.entry.type).toBe("backlog");
-    expect(updated.entry.confidence).toBe(0.9);
+    expect(updated.entry.confidence).toBe(0.8);
 
     const listed = await client.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST, {
       threadId: started.threadId,

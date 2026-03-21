@@ -165,7 +165,6 @@ export function KnowledgeManagerModal({ threadId, onList, onUpdate, onClose, cla
         id: editing.id,
         type: editing.draft.type,
         content,
-        confidence,
         tags: normalizeTags(editing.draft.tags),
       });
       if (!result.entry) {

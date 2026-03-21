@@ -28,7 +28,7 @@ describe("update_knowledge tool", () => {
     const tool = createUpdateKnowledgeTool(tmpDir, "session-123");
 
     const result = await tool.execute(
-      { action: "upsert", type: "pattern", content: "Use Bun.spawn for processes", confidence: 0.9 },
+      { action: "upsert", type: "pattern", content: "Use Bun.spawn for processes" },
       makeCtx(),
     );
 
@@ -42,7 +42,7 @@ describe("update_knowledge tool", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].type).toBe("pattern");
     expect(entries[0].content).toBe("Use Bun.spawn for processes");
-    expect(entries[0].confidence).toBe(0.9);
+    expect(entries[0].confidence).toBe(0.8);
     expect(entries[0].sessionId).toBe("session-123");
   });
 
@@ -50,17 +50,17 @@ describe("update_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
     const tool = createUpdateKnowledgeTool(tmpDir);
 
-    await tool.execute(
-      { action: "upsert", id: "k-1", type: "backlog", content: "Investigate flaky test", confidence: 0.7 },
-      makeCtx(),
-    );
+    await tool.execute({ action: "upsert", type: "backlog", content: "Investigate flaky test" }, makeCtx());
+    const seededEntries = await readKnowledge(tmpDir);
+    const seededId = seededEntries[0]?.id;
+    if (!seededId) throw new Error("Expected seeded knowledge entry");
+
     const updateResult = await tool.execute(
       {
         action: "upsert",
-        id: "k-1",
+        id: seededId,
         type: "backlog",
         content: "Investigate flaky test in CI",
-        confidence: 0.95,
         tags: ["ci"],
       },
       makeCtx(),
@@ -72,9 +72,9 @@ describe("update_knowledge tool", () => {
 
     const entries = await readKnowledge(tmpDir);
     expect(entries).toHaveLength(1);
-    expect(entries[0].id).toBe("k-1");
+    expect(entries[0].id).toBe(seededId);
     expect(entries[0].content).toBe("Investigate flaky test in CI");
-    expect(entries[0].confidence).toBe(0.95);
+    expect(entries[0].confidence).toBe(0.8);
     expect(entries[0].tags).toEqual(["ci"]);
   });
 
@@ -82,11 +82,12 @@ describe("update_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-"));
     const tool = createUpdateKnowledgeTool(tmpDir);
 
-    await tool.execute(
-      { action: "upsert", id: "k-2", type: "preference", content: "Prefer concise responses" },
-      makeCtx(),
-    );
-    const deleteResult = await tool.execute({ action: "delete", id: "k-2" }, makeCtx());
+    await tool.execute({ action: "upsert", type: "preference", content: "Prefer concise responses" }, makeCtx());
+    const entriesBeforeDelete = await readKnowledge(tmpDir);
+    const seededId = entriesBeforeDelete[0]?.id;
+    if (!seededId) throw new Error("Expected seeded knowledge entry");
+
+    const deleteResult = await tool.execute({ action: "delete", id: seededId }, makeCtx());
 
     expect(deleteResult.output).toContain("Knowledge deleted");
     expect(deleteResult.render?.version).toBe(2);
@@ -100,7 +101,7 @@ describe("update_knowledge tool", () => {
     const tool = createUpdateKnowledgeTool(tmpDir);
 
     const result = await tool.execute(
-      { action: "upsert", type: "pattern", content: "No approval required", confidence: 0.9 },
+      { action: "upsert", type: "pattern", content: "No approval required" },
       makeCtx(),
     );
 

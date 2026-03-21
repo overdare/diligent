@@ -2,7 +2,6 @@
 
 import { readKnowledge, writeKnowledge } from "../knowledge/store";
 import type { KnowledgeEntry, KnowledgeType } from "../protocol/index";
-import { generateEntryId } from "../session/types";
 import type { ThreadHandlersContext } from "./thread-handlers";
 
 export async function handleKnowledgeList(
@@ -24,7 +23,6 @@ export async function handleKnowledgeUpdate(
     id?: string;
     type?: KnowledgeType;
     content?: string;
-    confidence?: number;
     tags?: string[];
   },
 ): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> {
@@ -58,7 +56,6 @@ export async function handleKnowledgeUpdate(
         ...entries[index],
         type: params.type,
         content: requestedContent,
-        confidence: params.confidence ?? entries[index].confidence,
         tags: params.tags ?? entries[index].tags,
         timestamp: now,
       };
@@ -69,12 +66,12 @@ export async function handleKnowledgeUpdate(
   }
 
   const entry: KnowledgeEntry = {
-    id: params.id ?? generateEntryId(),
+    id: crypto.randomUUID(),
     timestamp: now,
     sessionId: runtime.id,
     type: params.type,
     content: requestedContent,
-    confidence: params.confidence ?? 0.8,
+    confidence: 0.8,
     tags: params.tags,
   };
   entries.push(entry);

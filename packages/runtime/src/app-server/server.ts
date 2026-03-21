@@ -544,7 +544,6 @@ export class DiligentAppServer {
       id?: string;
       type?: "pattern" | "discovery" | "preference" | "correction" | "backlog";
       content?: string;
-      confidence?: number;
       tags?: string[];
     },
   ): Promise<{ entry?: unknown; deleted?: boolean }> {

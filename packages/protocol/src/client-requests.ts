@@ -224,7 +224,6 @@ export const KnowledgeUpdateParamsSchema = z
     id: z.string().optional(),
     type: KnowledgeTypeParamSchema.optional(),
     content: z.string().min(1).optional(),
-    confidence: z.number().min(0).max(1).optional(),
     tags: z.array(z.string()).optional(),
   })
   .superRefine((value, ctx) => {
