@@ -1,11 +1,25 @@
-// @summary Utility helpers for ThreadStore parsing, formatting, and event classification
+// @summary Utility helpers for ThreadStore parsing, formatting, and reducer item construction
 
 import type { AgentEvent, ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
 import { ToolRenderPayloadSchema } from "@diligent/protocol";
+import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
+import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives";
 
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 export const TOOL_MAX_LINES = 5;
+
+export interface ToolCallState {
+  startedAt: number;
+  input?: unknown;
+  startRender?: ToolRenderPayload;
+}
+
+export interface CollabToolState {
+  toolName: string;
+  label: string;
+  prompt?: string;
+}
 
 export function formatTokensRoundedK(n: number): string {
   return `${Math.round(n / 1000)}k`;
@@ -158,4 +172,238 @@ export function splitThoughtLines(text: string): string[] {
     lines.pop();
   }
   return lines;
+}
+
+export function createToolResultItem(lines: string[], summaryLine?: string): ToolResultThreadItem {
+  if (lines.length === 0) {
+    return { kind: "tool_result", header: "", summaryLine, details: [] };
+  }
+  return {
+    kind: "tool_result",
+    header: lines[0],
+    summaryLine,
+    details: lines.slice(1),
+  };
+}
+
+export function buildThinkingItem(text: string, elapsedMs?: number): ThreadItem {
+  const icon = `${t.success}⏺${t.reset}`;
+  const header =
+    elapsedMs !== undefined
+      ? `${icon} ${t.bold}Thought for ${formatElapsedSeconds(elapsedMs) ?? "0s"}${t.reset}`
+      : `${icon} ${t.bold}Thought${t.reset}`;
+  return { kind: "thinking", header, bodyLines: splitThoughtLines(text) };
+}
+
+export function deriveToolStartState(
+  event: Extract<AgentEvent, { type: "tool_start" }>,
+  options: { planCallCount: number; collabAgentNamesByThreadId: Record<string, string> },
+): { overlayMessage: string; collabState?: CollabToolState } {
+  if (event.toolName === "plan") {
+    return { overlayMessage: options.planCallCount === 0 ? "Planning…" : "Updating plan…" };
+  }
+
+  if (!COLLAB_TOOL_NAMES.has(event.toolName)) {
+    return { overlayMessage: event.toolName };
+  }
+
+  const input = event.input as Record<string, unknown> | null;
+  let spinnerLabel = event.toolName;
+  let prompt: string | undefined;
+  if (event.toolName === "spawn_agent") {
+    const agentType = (input?.agent_type as string | undefined) ?? "general";
+    const description = (input?.description as string | undefined) ?? "";
+    const promptText = typeof input?.message === "string" ? input.message : "";
+    const promptSummary = promptText
+      ? promptText.split("\n")[0].trim().slice(0, 72) + (promptText.length > 72 ? "…" : "")
+      : "";
+    spinnerLabel = description
+      ? `Spawning [${agentType}] ${description}…`
+      : promptSummary
+        ? `Spawning [${agentType}] ${promptSummary}`
+        : `Spawning [${agentType}]…`;
+    prompt = promptText || undefined;
+  } else if (event.toolName === "wait") {
+    const ids = input?.ids;
+    if (Array.isArray(ids) && ids.length > 0) {
+      const labels = ids.map((id) => {
+        if (typeof id !== "string") return String(id);
+        return options.collabAgentNamesByThreadId[id] ?? id;
+      });
+      spinnerLabel = `Waiting for ${labels.join(", ")}…`;
+    } else {
+      spinnerLabel = "Waiting for agents…";
+    }
+  } else if (event.toolName === "send_input") {
+    const targetId = input?.id as string | undefined;
+    spinnerLabel = `Sending to ${
+      (targetId ? options.collabAgentNamesByThreadId[targetId] : undefined) ?? targetId ?? "agent"
+    }…`;
+  } else if (event.toolName === "close_agent") {
+    const targetId = input?.id as string | undefined;
+    spinnerLabel = `Closing ${
+      (targetId ? options.collabAgentNamesByThreadId[targetId] : undefined) ?? targetId ?? "agent"
+    }…`;
+  }
+
+  return {
+    overlayMessage: spinnerLabel,
+    collabState: { toolName: event.toolName, label: spinnerLabel, prompt },
+  };
+}
+
+export function deriveToolUpdateMessage(
+  event: Extract<AgentEvent, { type: "tool_update" }>,
+  collabState?: CollabToolState,
+): string {
+  if (COLLAB_TOOL_NAMES.has(event.toolName) && collabState) {
+    return `${collabState.label} — ${event.partialResult}`;
+  }
+  return `${event.toolName}…`;
+}
+
+export function buildToolEndItem(options: {
+  event: Extract<AgentEvent, { type: "tool_end" }>;
+  toolCall?: ToolCallState;
+  collabState?: CollabToolState;
+  planCallCount: number;
+  collabAgentNamesByThreadId: Record<string, string>;
+  nowMs: number;
+}): { item: ThreadItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number } {
+  const { event, toolCall, collabState, planCallCount, collabAgentNamesByThreadId, nowMs } = options;
+  const elapsedVal = toolCall ? formatElapsedSeconds(nowMs - toolCall.startedAt) : null;
+  const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
+  const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
+  const renderPayload: ToolRenderPayload | undefined = mergeToolRenderPayload(
+    toolCall?.startRender,
+    toProtocolRenderPayload(event.render),
+  );
+
+  if (event.toolName === "plan") {
+    const nextPlanCallCount = planCallCount + 1;
+    const parsed = parseCollabOutput(event.output);
+    const isUpdate = nextPlanCallCount > 1;
+    const header = isUpdate ? "Updated Plan" : ((parsed?.title as string | undefined) ?? "Plan");
+    const lines: string[] = [`${icon} ${t.bold}${header}${t.reset}${elapsed}`];
+    if (parsed?.steps && Array.isArray(parsed.steps)) {
+      for (const step of parsed.steps as Array<{
+        text: string;
+        status?: "pending" | "in_progress" | "done";
+        done?: boolean;
+      }>) {
+        const status = step.status ?? (step.done ? "done" : "pending");
+        const check =
+          status === "done" ? `${t.success}☑${t.reset}` : status === "in_progress" ? "▶" : `${t.dim}☐${t.reset}`;
+        const text = status === "done" ? `${t.dim}${step.text}${t.reset}` : step.text;
+        lines.push(`  ${check} ${text}`);
+      }
+    }
+    return {
+      item: { kind: "plain", lines },
+      collabAgentNamesByThreadId,
+      planCallCount: nextPlanCallCount,
+    };
+  }
+
+  if (event.toolName === "skill") {
+    const match = event.output.match(/<skill_content\s+name="([^"]+)"/);
+    const skillName = match?.[1];
+    const label = skillName ? `Loaded skill: ${skillName}` : "Loaded skill";
+    return {
+      item: { kind: "plain", lines: [`${icon} ${label}${elapsed}`] },
+      collabAgentNamesByThreadId,
+      planCallCount,
+    };
+  }
+
+  if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+    const parsed = parseCollabOutput(event.output);
+    const lines: string[] = [];
+    const nextNames = { ...collabAgentNamesByThreadId };
+
+    if (event.toolName === "spawn_agent") {
+      const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+      const inputLabel = collabState?.label ?? "";
+      const typeMatch = inputLabel.match(/\[(\w+)\]/);
+      const agentType = typeMatch ? typeMatch[1] : "general";
+      lines.push(`${icon} Spawned ${t.bold}${nickname}${t.reset} [${agentType}]${elapsed}`);
+      const prompt = collabState?.prompt;
+      if (typeof prompt === "string" && prompt.trim()) {
+        const promptLines = truncateMiddle(prompt.trim().split("\n"), TOOL_MAX_LINES);
+        for (let i = 0; i < promptLines.length; i++) {
+          lines.push(`${t.dim}  ${i === 0 ? `prompt: ${promptLines[i]}` : promptLines[i]}${t.reset}`);
+        }
+      }
+      const childThreadId = parseSpawnChildThreadId(event.output);
+      const trimmedNickname = (parsed?.nickname as string | undefined)?.trim();
+      const item = createToolResultItem(lines);
+      if (childThreadId && trimmedNickname) {
+        nextNames[childThreadId] = trimmedNickname;
+      }
+      if (childThreadId) {
+        item.childDetail = { childThreadId, status: "idle" };
+      }
+      return { item, collabAgentNamesByThreadId: nextNames, planCallCount };
+    }
+
+    if (event.toolName === "wait") {
+      lines.push(`${icon} Finished waiting${elapsed}`);
+      if (parsed?.summary && Array.isArray(parsed.summary)) {
+        for (const entry of parsed.summary as string[]) {
+          lines.push(`${t.dim}  ${summarizeCollabLine(entry, 160)}${t.reset}`);
+        }
+      }
+      if (parsed?.timed_out) {
+        lines.push(`${t.warn}  Timed out${t.reset}`);
+      }
+      return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
+    }
+
+    if (event.toolName === "send_input") {
+      const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+      lines.push(`${icon} Sent input → ${t.bold}${nickname}${t.reset}${elapsed}`);
+      return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
+    }
+
+    if (event.toolName === "close_agent") {
+      const nickname = (parsed?.nickname as string | undefined) ?? "agent";
+      lines.push(`${icon} Closed ${t.bold}${nickname}${t.reset}${elapsed}`);
+      return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
+    }
+  }
+
+  if (renderPayload) {
+    const headerLabel = buildToolHeader(event.toolName, renderPayload);
+    const rendered = renderToolPayload(renderPayload);
+    const lines: string[] = [`${icon} ${headerLabel}${elapsed}`];
+    if (rendered.length > 0) {
+      lines.push(...rendered.map((line) => `  ${line}`));
+    }
+    return {
+      item: createToolResultItem(lines, buildToolSummaryLine(renderPayload)),
+      collabAgentNamesByThreadId,
+      planCallCount,
+    };
+  }
+
+  if (event.output) {
+    const headerLabel = buildToolHeader(event.toolName);
+    const rawLines = event.output.split("\n");
+    const display = truncateMiddle(rawLines, TOOL_MAX_LINES);
+    const lines: string[] = [`${icon} ${headerLabel}${elapsed}`];
+    for (const line of display) {
+      lines.push(`${t.dim}  ${line}${t.reset}`);
+    }
+    return {
+      item: createToolResultItem(lines),
+      collabAgentNamesByThreadId,
+      planCallCount,
+    };
+  }
+
+  return {
+    item: { kind: "plain", lines: [`${icon} ${buildToolHeader(event.toolName)}${elapsed}`] },
+    collabAgentNamesByThreadId,
+    planCallCount,
+  };
 }

@@ -2,21 +2,16 @@
 import { describe, expect, test } from "bun:test";
 import { MarkdownView } from "../../../src/tui/components/markdown-view";
 
-function stripAnsi(value: string): string {
-  return value.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
 describe("MarkdownView", () => {
   test("returns empty for no content", () => {
     const mv = new MarkdownView(() => {});
     expect(mv.render(80)).toEqual([]);
   });
 
-  test("renders small trailing buffer immediately", () => {
+  test("hides trailing buffer until newline commit", () => {
     const mv = new MarkdownView(() => {});
     mv.pushDelta("Hello ");
-    const beforeNewline = mv.render(80);
-    expect(beforeNewline.join("")).toContain("Hello");
+    expect(mv.render(80)).toEqual([]);
 
     mv.pushDelta("world\n");
     expect(mv.render(80).join("")).toContain("world");
@@ -27,12 +22,10 @@ describe("MarkdownView", () => {
     expect(afterFinalize.join("")).toContain("world");
   });
 
-  test("renders streaming content without a byte threshold", () => {
+  test("keeps trailing buffer hidden without a byte threshold", () => {
     const mv = new MarkdownView(() => {});
     mv.pushDelta("a".repeat(32));
-    const lines = mv.render(80);
-    expect(lines.length).toBeGreaterThan(0);
-    expect(stripAnsi(lines.join(""))).toContain("a");
+    expect(mv.render(80)).toEqual([]);
   });
 
   test("finalize renders remaining content", () => {
@@ -81,10 +74,14 @@ describe("MarkdownView", () => {
     expect(renderCount).toBe(1);
   });
 
-  test("renders markdown in trailing buffer during streaming", () => {
+  test("renders markdown only after trailing buffer is finalized", () => {
     const mv = new MarkdownView(() => {});
     mv.pushDelta("x".repeat(1024));
     mv.pushDelta(" **bold**");
+    expect(mv.render(80)).toEqual([]);
+
+    mv.finalize();
+
     const lines = mv.render(80).join(" ");
     expect(lines).toContain("bold");
     expect(lines).not.toContain("**bold**");

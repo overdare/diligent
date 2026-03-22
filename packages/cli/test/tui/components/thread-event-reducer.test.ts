@@ -1,6 +1,11 @@
 // @summary Unit tests for pure ThreadStore event reducer transitions
 import { describe, expect, test } from "bun:test";
-import { reduceThreadStoreEvent, type ThreadEventReducerState } from "../../../src/tui/components/thread-event-reducer";
+import { reduceThreadEvent, type ThreadEventReducerState } from "../../../src/tui/components/thread-event-reducer";
+import {
+  buildToolEndItem,
+  deriveToolStartState,
+  deriveToolUpdateMessage,
+} from "../../../src/tui/components/thread-store-utils";
 
 type TestItem = { id: string };
 
@@ -14,55 +19,60 @@ function createState(overrides?: Partial<ThreadEventReducerState<TestItem>>): Th
     isThreadBusy: false,
     busyStartedAt: null,
     lastUsage: null,
+    planCallCount: 0,
+    hasCommittedAssistantChunkInMessage: false,
+    toolCalls: {},
+    collabByToolCallId: {},
+    collabAgentNamesByThreadId: {},
     ...overrides,
   };
 }
 
-describe("reduceThreadStoreEvent", () => {
+function createDeps(nowMs = 1, markdownText = "") {
+  return {
+    nowMs,
+    getCommittedMarkdownText: () => markdownText,
+    deriveToolStartState,
+    deriveToolUpdateMessage,
+    buildCompactionItem: () => ({ id: "compaction" }),
+    buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
+    buildErrorItem: () => ({ id: "error" }),
+    buildThinkingItem: (_text: string) => ({ id: "thinking" }),
+    buildAssistantChunkItem: (_text: string, _continued: boolean) => ({ id: "assistant" }),
+    buildToolEndItem: (options: Parameters<typeof buildToolEndItem>[0]) => {
+      const built = buildToolEndItem(options);
+      return {
+        item: { id: `tool:${built.planCallCount}` },
+        collabAgentNamesByThreadId: built.collabAgentNamesByThreadId,
+        planCallCount: built.planCallCount,
+      };
+    },
+  };
+}
+
+describe("reduceThreadEvent", () => {
   test("handles status_change busy by setting busyStartedAt once", () => {
     const nowMs = 1700000000000;
-    const first = reduceThreadStoreEvent(
-      createState(),
-      { type: "status_change", status: "busy" },
-      {
-        nowMs,
-        buildCompactionItem: () => ({ id: "compaction" }),
-        buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
-        buildErrorItem: () => ({ id: "error" }),
-      },
-    );
+    const first = reduceThreadEvent(createState(), { type: "status_change", status: "busy" }, createDeps(nowMs));
 
     expect(first.handled).toBe(true);
     expect(first.requestRender).toBe(true);
     expect(first.state.isThreadBusy).toBe(true);
     expect(first.state.busyStartedAt).toBe(nowMs);
+    expect(first.effects).toEqual([{ kind: "start_status_timers" }]);
 
-    const second = reduceThreadStoreEvent(
-      first.state,
-      { type: "status_change", status: "busy" },
-      {
-        nowMs: nowMs + 999,
-        buildCompactionItem: () => ({ id: "compaction" }),
-        buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
-        buildErrorItem: () => ({ id: "error" }),
-      },
-    );
+    const second = reduceThreadEvent(first.state, { type: "status_change", status: "busy" }, createDeps(nowMs + 999));
     expect(second.state.busyStartedAt).toBe(nowMs);
   });
 
   test("handles compaction_end by restoring previous overlay and appending item", () => {
-    const result = reduceThreadStoreEvent(
+    const result = reduceThreadEvent(
       createState({
         overlayStatus: { message: "Compacting…", kind: "default", startedAt: 1000 },
         statusBeforeCompaction: "Thinking…",
       }),
       { type: "compaction_end", summary: "trimmed", tokensBefore: 4000, tokensAfter: 1800 },
-      {
-        nowMs: 2000,
-        buildCompactionItem: () => ({ id: "compaction-item" }),
-        buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
-        buildErrorItem: () => ({ id: "error" }),
-      },
+      { ...createDeps(2000), buildCompactionItem: () => ({ id: "compaction-item" }) },
     );
 
     expect(result.handled).toBe(true);
@@ -71,22 +81,61 @@ describe("reduceThreadStoreEvent", () => {
     expect(result.state.items).toEqual([{ id: "compaction-item" }]);
   });
 
-  test("routes message_start via delegate without direct state change", () => {
+  test("message_start resets assistant-stream state and opens markdown via effects", () => {
     const initial = createState();
-    const result = reduceThreadStoreEvent(
-      initial,
-      { type: "message_start" },
-      {
-        nowMs: 1,
-        buildCompactionItem: () => ({ id: "compaction" }),
-        buildKnowledgeSavedItem: () => ({ id: "knowledge" }),
-        buildErrorItem: () => ({ id: "error" }),
-      },
-    );
+    const result = reduceThreadEvent(initial, { type: "message_start" }, createDeps());
 
     expect(result.handled).toBe(true);
-    expect(result.requestRender).toBe(false);
-    expect(result.delegate?.kind).toBe("message_start");
-    expect(result.state).toBe(initial);
+    expect(result.requestRender).toBe(true);
+    expect(result.effects).toEqual([{ kind: "markdown_open" }, { kind: "cleanup_status_timers_if_idle" }]);
+    expect(result.state.hasCommittedAssistantChunkInMessage).toBe(false);
+  });
+
+  test("text delta commits thinking item before markdown push", () => {
+    const result = reduceThreadEvent(
+      createState({ thinkingText: "pondering", thinkingStartTime: 10 }),
+      { type: "message_delta", delta: { type: "text_delta", delta: "hello" } },
+      { ...createDeps(20), buildThinkingItem: (_text: string) => ({ id: "thinking-committed" }) },
+    );
+
+    expect(result.state.items).toEqual([{ id: "thinking-committed" }]);
+    expect(result.effects).toEqual([
+      { kind: "markdown_push", delta: "hello" },
+      { kind: "cleanup_status_timers_if_idle" },
+    ]);
+    expect(result.state.thinkingText).toBe("");
+  });
+
+  test("tool lifecycle is reduced without delegates", () => {
+    const started = reduceThreadEvent(
+      createState({ collabAgentNamesByThreadId: { child: "Holly" } }),
+      { type: "tool_start", toolName: "wait", toolCallId: "wait_1", input: { ids: ["child"] } },
+      createDeps(100),
+    );
+
+    expect(started.state.overlayStatus?.message).toContain("Waiting for Holly");
+    expect(started.state.toolCalls.wait_1?.startedAt).toBe(100);
+
+    const updated = reduceThreadEvent(
+      started.state,
+      { type: "tool_update", toolName: "wait", toolCallId: "wait_1", partialResult: "Complete" },
+      createDeps(120),
+    );
+    expect(updated.state.overlayStatus?.message).toContain("Complete");
+
+    const ended = reduceThreadEvent(
+      updated.state,
+      {
+        type: "tool_end",
+        toolName: "wait",
+        toolCallId: "wait_1",
+        output: JSON.stringify({ summary: [] }),
+        isError: false,
+      },
+      createDeps(140),
+    );
+    expect(ended.state.overlayStatus).toBeNull();
+    expect(ended.state.toolCalls.wait_1).toBeUndefined();
+    expect(ended.state.items).toEqual([{ id: "tool:0" }]);
   });
 });

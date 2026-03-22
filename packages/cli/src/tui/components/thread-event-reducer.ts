@@ -1,6 +1,7 @@
-// @summary Pure event-to-state reducer for ThreadStore core transitions without side effects
+// @summary Pure event-to-state reducer for CLI ThreadStore transitions and lifecycle effects
 
 import type { AgentEvent } from "@diligent/protocol";
+import type { CollabToolState, ToolCallState } from "./thread-store-utils";
 
 export type ReducerOverlayStatusKind = "default" | "tool";
 
@@ -19,34 +20,54 @@ export interface ThreadEventReducerState<TItem> {
   isThreadBusy: boolean;
   busyStartedAt: number | null;
   lastUsage: { input: number; output: number; cost: number } | null;
+  planCallCount: number;
+  hasCommittedAssistantChunkInMessage: boolean;
+  toolCalls: Record<string, ToolCallState>;
+  collabByToolCallId: Record<string, CollabToolState>;
+  collabAgentNamesByThreadId: Record<string, string>;
 }
 
 interface ThreadEventReducerDeps<TItem> {
   nowMs: number;
+  getCommittedMarkdownText: () => string;
+  deriveToolStartState: (
+    event: Extract<AgentEvent, { type: "tool_start" }>,
+    options: {
+      planCallCount: number;
+      collabAgentNamesByThreadId: Record<string, string>;
+    },
+  ) => { overlayMessage: string; collabState?: CollabToolState };
+  deriveToolUpdateMessage: (
+    event: Extract<AgentEvent, { type: "tool_update" }>,
+    collabState?: CollabToolState,
+  ) => string;
   buildCompactionItem: (event: Extract<AgentEvent, { type: "compaction_end" }>) => TItem;
   buildKnowledgeSavedItem: () => TItem;
   buildErrorItem: (message: string) => TItem;
+  buildThinkingItem: (text: string, elapsedMs?: number) => TItem;
+  buildAssistantChunkItem: (text: string, continued: boolean) => TItem;
+  buildToolEndItem: (options: {
+    event: Extract<AgentEvent, { type: "tool_end" }>;
+    toolCall?: ToolCallState;
+    collabState?: CollabToolState;
+    planCallCount: number;
+    collabAgentNamesByThreadId: Record<string, string>;
+    nowMs: number;
+  }) => { item: TItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number };
 }
 
-type DelegatedEvent =
-  | Extract<AgentEvent, { type: "message_delta" }>
-  | Extract<AgentEvent, { type: "tool_start" }>
-  | Extract<AgentEvent, { type: "tool_update" }>
-  | Extract<AgentEvent, { type: "tool_end" }>;
-
-export type ThreadEventReducerDelegate =
-  | { kind: "message_start" }
-  | { kind: "message_delta"; event: Extract<DelegatedEvent, { type: "message_delta" }> }
-  | { kind: "message_end" }
-  | { kind: "tool_start"; event: Extract<DelegatedEvent, { type: "tool_start" }> }
-  | { kind: "tool_update"; event: Extract<DelegatedEvent, { type: "tool_update" }> }
-  | { kind: "tool_end"; event: Extract<DelegatedEvent, { type: "tool_end" }> };
+export type ThreadEventReducerEffect =
+  | { kind: "markdown_open" }
+  | { kind: "markdown_push"; delta: string }
+  | { kind: "markdown_finalize" }
+  | { kind: "start_status_timers" }
+  | { kind: "cleanup_status_timers_if_idle" };
 
 export interface ThreadEventReducerResult<TItem> {
   handled: boolean;
   requestRender: boolean;
   state: ThreadEventReducerState<TItem>;
-  delegate?: ThreadEventReducerDelegate;
+  effects: ThreadEventReducerEffect[];
 }
 
 function setOverlayStatus(
@@ -66,7 +87,7 @@ function setOverlayStatus(
   return current;
 }
 
-export function reduceThreadStoreEvent<TItem>(
+export function reduceThreadEvent<TItem>(
   state: ThreadEventReducerState<TItem>,
   event: AgentEvent,
   deps: ThreadEventReducerDeps<TItem>,
@@ -76,6 +97,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [{ kind: "start_status_timers" }],
         state: {
           ...state,
           overlayStatus: setOverlayStatus(state.overlayStatus, "Thinking…", "default", deps.nowMs),
@@ -85,64 +107,170 @@ export function reduceThreadStoreEvent<TItem>(
     case "message_start":
       return {
         handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "message_start" },
+        requestRender: true,
+        effects: [{ kind: "markdown_open" }, { kind: "cleanup_status_timers_if_idle" }],
+        state: {
+          ...state,
+          overlayStatus: null,
+          thinkingStartTime: null,
+          thinkingText: "",
+          hasCommittedAssistantChunkInMessage: false,
+        },
       };
 
-    case "message_delta":
-      return {
-        handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "message_delta", event },
-      };
+    case "message_delta": {
+      if (event.delta.type === "thinking_delta") {
+        return {
+          handled: true,
+          requestRender: true,
+          effects: [{ kind: "start_status_timers" }],
+          state: {
+            ...state,
+            thinkingText: state.thinkingText + event.delta.delta,
+            thinkingStartTime: state.thinkingStartTime ?? deps.nowMs,
+            overlayStatus: setOverlayStatus(state.overlayStatus, "Thinking…", "default", deps.nowMs),
+          },
+        };
+      }
 
-    case "message_end":
-      return {
-        handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "message_end" },
-      };
+      const items = [...state.items];
+      let thinkingText = state.thinkingText;
+      let thinkingStartTime = state.thinkingStartTime;
+      let overlayStatus = state.overlayStatus;
 
-    case "tool_start":
+      if (thinkingText.length > 0) {
+        const elapsedMs = thinkingStartTime !== null ? deps.nowMs - thinkingStartTime : undefined;
+        items.push(deps.buildThinkingItem(thinkingText, elapsedMs));
+        thinkingText = "";
+        thinkingStartTime = null;
+        overlayStatus = null;
+      }
+
       return {
         handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "tool_start", event },
+        requestRender: true,
+        effects: [{ kind: "markdown_push", delta: event.delta.delta }, { kind: "cleanup_status_timers_if_idle" }],
+        state: {
+          ...state,
+          items,
+          thinkingText,
+          thinkingStartTime,
+          overlayStatus,
+        },
       };
+    }
+
+    case "message_end": {
+      const items = [...state.items];
+      let hasCommittedAssistantChunkInMessage = state.hasCommittedAssistantChunkInMessage;
+      if (state.thinkingText.length > 0) {
+        const elapsedMs = state.thinkingStartTime !== null ? deps.nowMs - state.thinkingStartTime : undefined;
+        items.push(deps.buildThinkingItem(state.thinkingText, elapsedMs));
+      }
+      const committedMarkdownText = deps.getCommittedMarkdownText();
+      if (committedMarkdownText) {
+        items.push(deps.buildAssistantChunkItem(committedMarkdownText, hasCommittedAssistantChunkInMessage));
+        hasCommittedAssistantChunkInMessage = true;
+      }
+      return {
+        handled: true,
+        requestRender: true,
+        effects: [{ kind: "markdown_finalize" }, { kind: "cleanup_status_timers_if_idle" }],
+        state: {
+          ...state,
+          items,
+          thinkingText: "",
+          thinkingStartTime: null,
+          overlayStatus: null,
+          hasCommittedAssistantChunkInMessage: false,
+        },
+      };
+    }
+
+    case "tool_start": {
+      const { overlayMessage, collabState } = deps.deriveToolStartState(event, {
+        planCallCount: state.planCallCount,
+        collabAgentNamesByThreadId: state.collabAgentNamesByThreadId,
+      });
+      return {
+        handled: true,
+        requestRender: true,
+        effects: [{ kind: "start_status_timers" }],
+        state: {
+          ...state,
+          overlayStatus: setOverlayStatus(state.overlayStatus, overlayMessage, "tool", deps.nowMs),
+          toolCalls: {
+            ...state.toolCalls,
+            [event.toolCallId]: {
+              startedAt: deps.nowMs,
+              input: event.input,
+              startRender: event.render,
+            },
+          },
+          collabByToolCallId: collabState
+            ? { ...state.collabByToolCallId, [event.toolCallId]: collabState }
+            : state.collabByToolCallId,
+        },
+      };
+    }
 
     case "tool_update":
       return {
         handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "tool_update", event },
+        requestRender: true,
+        effects: [{ kind: "start_status_timers" }],
+        state: {
+          ...state,
+          overlayStatus: setOverlayStatus(
+            state.overlayStatus,
+            deps.deriveToolUpdateMessage(event, state.collabByToolCallId[event.toolCallId]),
+            "tool",
+            deps.nowMs,
+          ),
+        },
       };
 
-    case "tool_end":
+    case "tool_end": {
+      const toolCall = state.toolCalls[event.toolCallId];
+      const collabState = state.collabByToolCallId[event.toolCallId];
+      const { item, collabAgentNamesByThreadId, planCallCount } = deps.buildToolEndItem({
+        event,
+        toolCall,
+        collabState,
+        planCallCount: state.planCallCount,
+        collabAgentNamesByThreadId: state.collabAgentNamesByThreadId,
+        nowMs: deps.nowMs,
+      });
+      const toolCalls = { ...state.toolCalls };
+      delete toolCalls[event.toolCallId];
+      const collabByToolCallId = { ...state.collabByToolCallId };
+      delete collabByToolCallId[event.toolCallId];
       return {
         handled: true,
-        requestRender: false,
-        state,
-        delegate: { kind: "tool_end", event },
+        requestRender: true,
+        effects: state.isThreadBusy ? [{ kind: "start_status_timers" }] : [{ kind: "cleanup_status_timers_if_idle" }],
+        state: {
+          ...state,
+          overlayStatus: null,
+          items: [...state.items, item],
+          toolCalls,
+          collabByToolCallId,
+          collabAgentNamesByThreadId,
+          planCallCount,
+        },
       };
+    }
 
     case "turn_start":
     case "user_message":
-      return {
-        handled: true,
-        requestRender: false,
-        state,
-      };
+      return { handled: true, requestRender: false, state, effects: [] };
 
     case "status_change": {
       if (event.status === "busy") {
         return {
           handled: true,
           requestRender: true,
+          effects: [{ kind: "start_status_timers" }],
           state: {
             ...state,
             isThreadBusy: true,
@@ -154,6 +282,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
           ...state,
           isThreadBusy: false,
@@ -167,6 +296,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: false,
+        effects: [],
         state: {
           ...state,
           lastUsage: {
@@ -181,6 +311,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [{ kind: "start_status_timers" }],
         state: {
           ...state,
           statusBeforeCompaction: state.overlayStatus?.message ?? null,
@@ -193,6 +324,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [restoredStatus ? { kind: "start_status_timers" } : { kind: "cleanup_status_timers_if_idle" }],
         state: {
           ...state,
           statusBeforeCompaction: null,
@@ -208,6 +340,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [],
         state: {
           ...state,
           items: [...state.items, deps.buildKnowledgeSavedItem()],
@@ -218,11 +351,15 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
           ...state,
           overlayStatus: null,
           thinkingStartTime: null,
           thinkingText: "",
+          toolCalls: {},
+          collabByToolCallId: {},
+          hasCommittedAssistantChunkInMessage: false,
           items: [...state.items, deps.buildErrorItem(event.error.message)],
         },
       };
@@ -233,6 +370,7 @@ export function reduceThreadStoreEvent<TItem>(
       return {
         handled: true,
         requestRender: true,
+        effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
           ...state,
           isThreadBusy: false,
@@ -243,6 +381,6 @@ export function reduceThreadStoreEvent<TItem>(
     }
 
     default:
-      return { handled: false, requestRender: false, state };
+      return { handled: false, requestRender: false, state, effects: [] };
   }
 }

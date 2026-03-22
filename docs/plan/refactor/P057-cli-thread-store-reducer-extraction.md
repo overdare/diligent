@@ -2,7 +2,7 @@
 id: P057
 title: CLI thread-store reducer extraction
 type: refactor
-status: backlog
+status: done
 owner: diligent
 created: 2026-03-22
 ---
@@ -10,6 +10,22 @@ created: 2026-03-22
 # Summary
 
 Extract the remaining deterministic event-reduction logic out of `packages/cli/src/tui/components/thread-store.ts` into a pure `reduceThreadEvent()` API, leaving `ThreadStore` as the owner of timers, async child-detail loading, active prompt wiring, and render invalidation. The target shape should align with the Web reducer pattern: protocol events are reduced into explicit state transitions plus declarative effects, rather than mutating store fields inline inside a stateful class.
+
+## Outcome
+
+Delivered:
+
+- introduced `reduceThreadEvent()` as the canonical pure reducer entry point
+- moved deterministic `message_*` and `tool_*` transitions into reducer-owned state changes plus declarative effects
+- replaced delegate-based `ThreadStore` event handling with reducer state application + effect execution
+- extracted pure tool/collab/thinking item construction helpers into `thread-store-utils.ts`
+- added explicit `snapshotState()` / `applyReducerState()` / `reducerDeps()` bridge methods in `ThreadStore`
+- expanded reducer tests to cover assistant/tool/collab reduction and kept `ThreadStore` lifecycle integration behavior green
+- validated broader CLI TUI component coverage after the refactor
+
+Follow-up ideas outside this plan:
+
+- consider splitting the now-larger reducer/helpers into assistant/tool/collab-focused reducer helpers for readability
 
 This plan is intentionally CLI-first. It prepares the event-reduction seam needed for future Web/CLI sharing, but does not force immediate cross-client unification in the same change.
 
@@ -63,7 +79,7 @@ to:
 - `packages/cli/src/tui/components/thread-event-reducer.ts` owns busy/idle, usage, compaction, knowledge-saved, and error transitions.
 - `ThreadStore.handleEvent()` maps reducer output back into mutable class fields.
 
-## Still class-owned and should be planned for extraction
+## Previously class-owned and now extracted
 
 - `message_start` / `message_delta` / `message_end` assistant-flow transitions
 - `tool_start` / `tool_update` / `tool_end` transitions
@@ -181,9 +197,9 @@ without keeping core semantics trapped in `ThreadStore` methods.
 
 | File | Action | Description |
 |------|--------|-------------|
-| `thread-store.ts` | MODIFY | Shrink class into lifecycle/render owner that snapshots/applies reducer state and runs effects |
-| `thread-event-reducer.ts` | MODIFY | Expand partial reducer into the canonical pure `reduceThreadEvent()` entry point |
-| `thread-store-utils.ts` | MODIFY | Host pure formatting/item-construction helpers currently buried in class methods |
+| `thread-store.ts` | MODIFY | Shrunk class into lifecycle/render owner with explicit `snapshotState()` / `applyReducerState()` / `reducerDeps()` bridge methods |
+| `thread-event-reducer.ts` | MODIFY | Expanded partial reducer into the canonical pure `reduceThreadEvent()` entry point |
+| `thread-store-utils.ts` | MODIFY | Now hosts pure formatting/item-construction helpers previously buried in class methods |
 | `thread-store-primitives.ts` | MODIFY | Optionally add serializable item/state helpers needed by reducer-owned transitions |
 | `markdown-view.ts` | MODIFY (optional) | Only if a smaller adapter seam is needed for reducer effects around markdown commit/finalize |
 
@@ -191,8 +207,8 @@ without keeping core semantics trapped in `ThreadStore` methods.
 
 | File | Action | Description |
 |------|--------|-------------|
-| `thread-event-reducer.test.ts` | MODIFY | Expand pure reducer coverage to assistant/tool/collab transitions |
-| `thread-store.test.ts` | MODIFY | Narrow to lifecycle/effects/render integration behavior after extraction |
+| `thread-event-reducer.test.ts` | MODIFY | Expanded pure reducer coverage to assistant/tool/collab transitions |
+| `thread-store.test.ts` | MODIFY | Verified lifecycle/effects/render integration behavior after extraction |
 
 ## packages/web/src/client/lib/
 
@@ -205,7 +221,7 @@ without keeping core semantics trapped in `ThreadStore` methods.
 
 | File | Action | Description |
 |------|--------|-------------|
-| `P057-cli-thread-store-reducer-extraction.md` | CREATE | Execution plan for reducer extraction |
+| `P057-cli-thread-store-reducer-extraction.md` | MODIFY | Completed plan with delivered outcome and follow-up notes |
 
 # Implementation Tasks
 

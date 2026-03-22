@@ -13,15 +13,12 @@ export class MarkdownView implements Component {
   private committedRaw = "";
   private committedLines: string[] = [];
   private lastRenderWidth = 0;
-  private finalized = false;
-  private lastRenderedLines: string[] = [];
 
   constructor(private requestRender: () => void) {}
 
   static fromText(text: string): MarkdownView {
     const view = new MarkdownView(() => {});
     view.committedRaw = text;
-    view.finalized = true;
     return view;
   }
 
@@ -51,7 +48,6 @@ export class MarkdownView implements Component {
       this.committedLines = [];
     }
 
-    this.finalized = true;
     this.requestRender();
   }
 
@@ -63,7 +59,6 @@ export class MarkdownView implements Component {
     const text = this.committedRaw;
     this.committedRaw = "";
     this.committedLines = [];
-    this.lastRenderedLines = [];
     this.lastRenderWidth = 0;
     return text;
   }
@@ -77,21 +72,12 @@ export class MarkdownView implements Component {
     this.buffer = "";
     this.committedRaw = "";
     this.committedLines = [];
-    this.finalized = false;
-    this.lastRenderedLines = [];
+    this.lastRenderWidth = 0;
   }
 
   render(width: number): string[] {
     if (this.committedRaw.length === 0 && this.buffer.length === 0) {
-      this.lastRenderedLines = [];
       return [];
-    }
-
-    // While streaming trailing text, render full content as markdown so users
-    // don't see raw markdown markers (e.g. **, `) in interactive mode.
-    if (this.buffer.length > 0 && !this.finalized) {
-      this.lastRenderedLines = this.renderToLines(this.committedRaw + this.buffer, width);
-      return this.lastRenderedLines;
     }
 
     // Re-render committed content if width changed or cache is empty
@@ -100,7 +86,6 @@ export class MarkdownView implements Component {
       this.lastRenderWidth = width;
     }
 
-    this.lastRenderedLines = this.committedLines;
     return this.committedLines;
   }
 
