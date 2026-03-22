@@ -14,6 +14,7 @@
     "pack": "bun run build && bun pack"
   },
   "dependencies": {
+    "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
     "zod": "^3.24.0"
   },
   "devDependencies": {

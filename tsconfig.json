@@ -18,6 +18,8 @@
     "paths": {
       "@diligent/core": ["packages/core/src/index.ts"],
       "@diligent/core/*": ["packages/core/src/*"],
+      "@diligent/plugin-sdk": ["packages/plugin-sdk/src/index.ts"],
+      "@diligent/plugin-sdk/*": ["packages/plugin-sdk/src/*"],
       "@diligent/runtime": ["packages/runtime/src/index.ts"],
       "@diligent/runtime/client": ["packages/runtime/src/client.ts"],
       "@diligent/runtime/*": ["packages/runtime/src/*"],

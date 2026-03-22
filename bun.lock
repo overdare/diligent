@@ -83,6 +83,18 @@
         "@types/bun": "^1.3.0",
       },
     },
+    "packages/plugin-sdk": {
+      "name": "@diligent/plugin-sdk",
+      "version": "0.0.1",
+      "dependencies": {
+        "@diligent/protocol": "workspace:*",
+        "zod": "^3.24.0",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.0",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/protocol": {
       "name": "@diligent/protocol",
       "version": "0.0.1",
@@ -206,6 +218,8 @@
     "@diligent/desktop": ["@diligent/desktop@workspace:apps/desktop"],
 
     "@diligent/e2e": ["@diligent/e2e@workspace:packages/e2e"],
+
+    "@diligent/plugin-sdk": ["@diligent/plugin-sdk@workspace:packages/plugin-sdk"],
 
     "@diligent/protocol": ["@diligent/protocol@workspace:packages/protocol"],
 

@@ -1,6 +1,6 @@
+import type { Tool } from "@diligent/plugin-sdk";
 import { call } from "./rpc.ts";
 import { methodModules, renderBuilders } from "./tool-registry.ts";
-import type { Tool } from "./tool-types.ts";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool.ts";
 
 export const manifest = {

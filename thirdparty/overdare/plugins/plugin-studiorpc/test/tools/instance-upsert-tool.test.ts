@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolContext } from "../../src/tool-types.ts";
+import type { ToolContext } from "@diligent/plugin-sdk";
 
 const levelApplyMock = mock(async () => ({ ok: true }));
 
@@ -22,7 +22,9 @@ function createToolContext(): ToolContext {
   return {
     toolCallId: "tool-call-1",
     signal: new AbortController().signal,
+    abort: () => {},
     approve: async () => "always",
+    ask: async () => null,
   };
 }
 

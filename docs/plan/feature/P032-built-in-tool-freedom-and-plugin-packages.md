@@ -332,6 +332,119 @@ Keep plugin context intentionally small in MVP:
 
 Do not add lifecycle hooks or broad host services in this phase.
 
+## Studiorpc retrospective: plugin contract gaps for next iteration
+
+Studiorpc was useful as a real plugin-authoring exercise because it exposed where the current contract is technically usable but still awkward to build against. This is not a request to expand the contract immediately inside P032; it is evidence for the next plugin-contract / SDK iteration.
+
+### Novel perspective: the thirdparty plugin acted as a shadow integration test suite
+
+One useful way to read the Studiorpc work is as a shadow integration test suite for P032.
+
+Internal tests validate that the runtime can load plugin packages, validate shapes, and execute tools through the current host pathway. What they do not validate is whether the contract is actually pleasant, legible, and self-consistent for a plugin author working outside the core/runtime tree.
+
+The recent Studiorpc development arc is the first substantial real-world exercise of that boundary inside this repo. That matters because `thirdparty/` has mostly sat outside normal architecture review scope, even though it is the best available proxy for how a real external plugin author experiences the system.
+
+In that sense, Studiorpc revealed integration failures that unit tests and end-to-end tests would not naturally catch:
+
+- whether a plugin author can import stable public types instead of redeclaring them
+- whether approval semantics are clear enough to use consistently across plugins
+- whether render payloads are typed enough to author safely
+- whether common file I/O and host-interaction patterns are reusable instead of repeatedly rebuilt
+
+Two concrete signs of friction already exist in the repo:
+
+- `thirdparty/overdare/plugins/plugin-studiorpc/src/tool-types.ts`
+  - redeclares 54 lines of host-facing tool types instead of importing a stable public contract
+- `packages/runtime/src/tools/plugin-loader.ts`
+  - currently wraps plugin execution with a legacy compatibility shim before calling `tool.execute(...)`
+- `thirdparty/overdare/plugins/plugin-studiorpc/src/tools/instance-upsert-tool.ts`
+  - manages file I/O, RPC calls, and approval flows directly, reproducing patterns that exist in built-in tooling but are not exposed as reusable plugin utilities
+
+Those are strong signals that the contract is not yet cleanly consumable as a package boundary.
+
+### 1. Approval semantics are underspecified at the plugin boundary
+
+Studiorpc needed to understand what `approve()` really means in practice, but the current contract is still too thin:
+
+- approval requests expose only broad permissions such as `read`, `write`, and `execute`
+- response values such as `once` and `always` are host-oriented but do not define plugin-visible scope clearly
+- Studiorpc ended up inventing its own approval model around those broad permission buckets because no richer structured approval API exists
+- the contract does not state whether `always` means:
+  - for this tool call only
+  - for the current turn
+  - for the current plugin tool
+  - for future calls with similar arguments
+- plugin authors do not have a standard way to describe approval intent in a structured, user-friendly way beyond free-form `description` and optional `details`
+
+Implication for the next iteration:
+
+- define approval scope explicitly in the public plugin contract
+- specify which approval dimensions are stable for plugins to rely on
+- provide a richer approval request shape oriented around user-facing intent, not only internal permission buckets
+
+### 2. Render payload types are usable internally but weak as public SDK types
+
+Studiorpc also highlighted that render payloads are not yet ergonomic as a plugin-facing contract:
+
+- `ToolRenderPayload.blocks` is currently `Array<Record<string, unknown>>`
+- plugin authors must infer the allowed block shapes from host behavior rather than a discriminated public type model
+- this makes plugin rendering possible, but not self-documenting or strongly typed
+
+Implication for the next iteration:
+
+- publish render block types as a stable SDK surface
+- use discriminated unions for supported block variants instead of unbounded records
+- clarify which render payload fields are required, optional, and forward-compatible for plugins
+
+### 3. Plugin authors lack shared I/O utilities
+
+Studiorpc had to bridge host interaction patterns manually because the plugin contract exposes raw primitives but not the higher-level helpers authors actually need:
+
+- no shared utility layer for common approval + execution flows
+- no standard helpers for structured output/render assembly
+- no host-provided convenience wrappers for repetitive request/response patterns
+- non-trivial tools such as `instance-upsert-tool.ts` must compose local file mutation, remote RPC invocation, and host approval sequencing entirely on their own
+
+This pushes each plugin toward bespoke glue code, which increases duplication and drift.
+
+Implication for the next iteration:
+
+- introduce a plugin SDK package with reusable helpers rather than exposing only structural types
+- keep the runtime contract narrow, but provide optional authoring utilities on top of it
+- treat “can technically call host functions” and “pleasant to author a plugin” as separate goals
+
+### 4. `ToolContext` is too narrow for real plugin development
+
+The current MVP context was intentionally minimal, but Studiorpc showed that minimality alone is not the right long-term package contract:
+
+- plugins need more than `cwd` plus ad hoc host callbacks once they become non-trivial
+- the runtime currently relies on a compatibility shim to extend the execution context for legacy expectations
+- this suggests the public context shape is lagging behind real host capabilities
+
+Likely expansion areas for the next iteration:
+
+- a stable request/response surface for approvals and user input
+- clearer progress / partial-update reporting semantics
+- host utilities for common file or command I/O patterns where the host wants to preserve policy control
+- explicit versioning of `ToolContext` capabilities so plugins can feature-detect rather than copy internal types
+
+### Retrospective conclusion
+
+P032 remains valid as the MVP plugin-packages feature. However, Studiorpc demonstrates that “runtime-loadable plugin tools” and “clean public plugin SDK” are not the same milestone.
+
+The key architectural lesson is that P032 got the trust boundary mostly right, but not yet the authoring surface. A plugin contract can be intentionally decoupled from `@diligent/core` while still offering a real public SDK.
+
+That SDK does not need to be `@diligent/core`. A thinner `@diligent/plugin-sdk` package would likely be the better direction: it could export only the stable plugin-facing types and optional utilities, while preserving the runtime's internal freedom to evolve.
+
+The next iteration should therefore treat the plugin contract as a first-class product surface with at least four follow-up themes:
+
+1. approval semantics with explicit scope and author guidance
+2. stable typed render payload/block contracts
+3. shared plugin SDK utilities for common I/O and rendering work
+4. an expanded, versioned `ToolContext` that reflects real host interaction needs
+
+That work can be planned separately without reopening the MVP scope of P032.
+
 ## Failure isolation
 
 Any of the following must be non-fatal:

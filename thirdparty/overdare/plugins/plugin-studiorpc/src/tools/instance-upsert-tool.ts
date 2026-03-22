@@ -1,9 +1,9 @@
 // @summary Applies batched add or update instance changes to the level file.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { call } from "../rpc.ts";
-import type { Tool, ToolContext, ToolResult } from "../tool-types.ts";
 
 type OvdrjmNode = Record<string, unknown> & {
   ActorGuid?: unknown;

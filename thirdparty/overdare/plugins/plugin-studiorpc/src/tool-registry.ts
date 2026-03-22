@@ -1,4 +1,6 @@
 // @summary Registers generic Studio RPC method modules and their render builders.
+import type { ToolRenderPayload } from "@diligent/plugin-sdk";
+import type { z } from "zod";
 import * as actionSequencerApplyJson from "./methods/action-sequencer-service.apply-json.ts";
 import * as assetDrawerImport from "./methods/asset-drawer.import.ts";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import.ts";
@@ -20,7 +22,20 @@ import {
   buildLevelSaveFileRender,
   buildScriptAddRender,
 } from "./render.ts";
-import type { MethodModule, RenderBuilder } from "./tool-types.ts";
+
+type MethodModule = {
+  method: string;
+  description: string;
+  params: z.ZodType;
+  resolveMethod?: (args: Record<string, unknown>) => string;
+  normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
+};
+
+type RenderBuilder = (ctx: {
+  normalizedArgs: Record<string, unknown>;
+  output: string;
+  result: unknown;
+}) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
   assetDrawerImport,

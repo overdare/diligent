@@ -1,12 +1,7 @@
 // @summary Builds tool render payloads for Studio RPC methods.
-type TreeNode = { label: string; children?: TreeNode[] };
+import type { ToolRenderPayload } from "@diligent/plugin-sdk";
 
-type ToolRenderPayload = {
-  version: 2;
-  inputSummary?: string;
-  outputSummary?: string;
-  blocks: Array<Record<string, unknown>>;
-};
+type TreeNode = { label: string; children?: TreeNode[] };
 
 function firstLine(text: string, fallback: string): string {
   return text.split("\n")[0]?.trim() || fallback;
