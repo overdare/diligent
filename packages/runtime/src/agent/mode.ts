@@ -1,5 +1,6 @@
 // @summary Diligent collaboration mode definitions: Mode, tool allow-list, prompt suffixes
 import type { Mode as ProtocolMode } from "@diligent/protocol";
+import { PLAN_MODE_ALLOWED_TOOLS } from "../tools/tool-metadata";
 import executePrompt from "./default/execute.md" with { type: "text" };
 import planPrompt from "./default/plan.md" with { type: "text" };
 
@@ -10,16 +11,9 @@ export type Mode = ProtocolMode;
  * Tools available in plan mode (read-only exploration only).
  * Bash, write, apply_patch, update_knowledge are excluded.
  * D088: request_user_input is allowed in all modes.
+ * Source of truth: TOOL_CAPABILITIES in tools/tool-metadata.ts.
  */
-export const PLAN_MODE_ALLOWED_TOOLS = new Set([
-  "read",
-  "glob",
-  "grep",
-  "ls",
-  "request_user_input",
-  "skill",
-  "search_knowledge",
-]);
+export { PLAN_MODE_ALLOWED_TOOLS };
 
 /**
  * System prompt suffixes injected per mode.

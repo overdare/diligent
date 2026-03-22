@@ -8,6 +8,7 @@ import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import { SessionManager } from "../session/manager";
 import { buildDefaultTools } from "../tools/defaults";
+import { COLLAB_TOOL_NAMES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
@@ -25,7 +26,7 @@ function statusMessage(s: AgentStatus): string | undefined {
 }
 
 /** Tool names that belong to the collab layer — excluded from child agents. */
-export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
+export { COLLAB_TOOL_NAMES };
 
 /** Subset of CollabToolDeps that can safely be mutated between turns (excludes structural fields). */
 export type MutableCollabDeps = Omit<
