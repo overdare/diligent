@@ -7,6 +7,24 @@ import { useCallback, useRef, useState } from "react";
 import { fetchProviderStatus, removeProviderKey, setProviderKey, startOAuthFlow } from "./auth-api";
 import type { WebRpcClient } from "./rpc-client";
 
+export function resolveDraftModel({
+  initialModel,
+  currentModel,
+  availableModels,
+}: {
+  initialModel: string;
+  currentModel: string;
+  availableModels: ModelInfo[];
+}): string {
+  if (availableModels.some((model) => model.id === initialModel)) {
+    return initialModel;
+  }
+  if (availableModels.some((model) => model.id === currentModel)) {
+    return currentModel;
+  }
+  return availableModels[0]?.id ?? "";
+}
+
 export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
   const [providers, setProviders] = useState<ProviderAuthStatus[]>([]);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
@@ -16,6 +34,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
   // Refs kept in sync so async callbacks always read the latest values
   const currentModelRef = useRef<string>("");
   currentModelRef.current = currentModel;
+  const initialModelRef = useRef<string>("");
   const availableModelsRef = useRef<ModelInfo[]>([]);
   availableModelsRef.current = availableModels;
 
@@ -24,10 +43,21 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
   const setInitialModel = useCallback((modelId: string, models?: ModelInfo[]): void => {
     setCurrentModel(modelId);
     currentModelRef.current = modelId;
+    initialModelRef.current = modelId;
     if (models !== undefined) {
       setAvailableModels(models);
       availableModelsRef.current = models;
     }
+  }, []);
+
+  const resetDraftModel = useCallback((): void => {
+    const nextModel = resolveDraftModel({
+      initialModel: initialModelRef.current,
+      currentModel: currentModelRef.current,
+      availableModels: availableModelsRef.current,
+    });
+    setCurrentModel(nextModel);
+    currentModelRef.current = nextModel;
   }, []);
 
   const refreshProviders = useCallback(
@@ -156,6 +186,7 @@ export function useProviderManager(rpcRef: RefObject<WebRpcClient | null>) {
     currentModelRef,
     availableModelsRef,
     setInitialModel,
+    resetDraftModel,
     refreshProviders,
     applySessionModel,
     changeModel,

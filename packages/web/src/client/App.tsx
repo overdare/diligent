@@ -37,9 +37,7 @@ import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 import { useServerRequests } from "./lib/use-server-requests";
 import { useSteeringQueue } from "./lib/use-steering-queue";
-import { useThreadManager } from "./lib/use-thread-manager";
-
-const DRAFT_INPUT_KEY = "__draft__";
+import { clearDraftThreadInput, DRAFT_INPUT_KEY, useThreadManager } from "./lib/use-thread-manager";
 
 export function App() {
   useEffect(() => {
@@ -110,6 +108,7 @@ export function App() {
     activeThreadIdRef,
     modeRef,
     applySessionModel: providerMgr.applySessionModel,
+    resetDraftModel: providerMgr.resetDraftModel,
     setEffortState,
     activateServerThread: serverRequests.activateThread,
     clearAttention,
@@ -190,6 +189,9 @@ export function App() {
     },
     [threadMgr.setThreadInputs],
   );
+  const clearDraftInput = useCallback(() => {
+    threadMgr.setThreadInputs((prev) => clearDraftThreadInput(prev));
+  }, [threadMgr.setThreadInputs]);
   const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
   const steeringQueue = useSteeringQueue({
     rpcRef,
@@ -268,6 +270,7 @@ export function App() {
     availableModels: providerMgr.availableModels,
     currentModelRef: providerMgr.currentModelRef,
     clearThreadInput,
+    clearDraftInput,
     setPendingImages,
     setIsUploadingImages,
     setIsCompacting,

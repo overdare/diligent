@@ -10,6 +10,22 @@ import type { WebRpcClient } from "./rpc-client";
 import { parseSlashCommand, type SlashCommand } from "./slash-commands";
 import type { ThreadState } from "./thread-store";
 
+export function clearComposerInputAfterSend({
+  activeThreadId,
+  clearThreadInput,
+  clearDraftInput,
+}: {
+  activeThreadId: string | null;
+  clearThreadInput: (threadId: string) => void;
+  clearDraftInput: () => void;
+}): void {
+  if (activeThreadId) {
+    clearThreadInput(activeThreadId);
+    return;
+  }
+  clearDraftInput();
+}
+
 type SteeringControl = {
   pendingAbortRestartMessageRef: MutableRefObject<string | null>;
   suppressNextSteeringInjectedRef: MutableRefObject<boolean>;
@@ -32,6 +48,7 @@ export function useAppActions({
   availableModels,
   currentModelRef,
   clearThreadInput,
+  clearDraftInput,
   setPendingImages,
   setIsUploadingImages,
   setIsCompacting,
@@ -62,6 +79,7 @@ export function useAppActions({
   availableModels: ModelInfo[];
   currentModelRef: RefObject<string>;
   clearThreadInput: (threadId: string) => void;
+  clearDraftInput: () => void;
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
   setIsUploadingImages: Dispatch<SetStateAction<boolean>>;
   setIsCompacting: Dispatch<SetStateAction<boolean>>;
@@ -82,9 +100,11 @@ export function useAppActions({
     const message = activeInput.trim();
     const images = pendingImages;
     const existingThreadId = state.activeThreadId;
-    if (existingThreadId) {
-      clearThreadInput(existingThreadId);
-    }
+    clearComposerInputAfterSend({
+      activeThreadId: existingThreadId,
+      clearThreadInput,
+      clearDraftInput,
+    });
     setPendingImages([]);
 
     try {
@@ -146,6 +166,7 @@ export function useAppActions({
     activeInput,
     pendingImages,
     clearThreadInput,
+    clearDraftInput,
     setPendingImages,
     dispatch,
     currentModelRef,

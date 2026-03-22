@@ -3,6 +3,7 @@
 import { expect, test } from "bun:test";
 import { appReducer } from "../../../src/client/lib/app-state";
 import { initialThreadState } from "../../../src/client/lib/thread-store";
+import { resolveDraftModel } from "../../../src/client/lib/use-provider-manager";
 
 test("set_threads keeps optimistic first message when server value is empty", () => {
   const seeded = {
@@ -234,4 +235,27 @@ test("consume_first_pending_steer removes head entry only", () => {
   const next = appReducer(seeded, { type: "consume_first_pending_steer" });
 
   expect(next.pendingSteers).toEqual(["b", "c"]);
+});
+
+test("resolveDraftModel prefers initial model when available", () => {
+  const next = resolveDraftModel({
+    initialModel: "gpt-5",
+    currentModel: "claude-sonnet",
+    availableModels: [
+      { id: "claude-sonnet", provider: "anthropic" },
+      { id: "gpt-5", provider: "openai" },
+    ],
+  });
+
+  expect(next).toBe("gpt-5");
+});
+
+test("resolveDraftModel falls back to current model when initial model is unavailable", () => {
+  const next = resolveDraftModel({
+    initialModel: "gpt-5",
+    currentModel: "claude-sonnet",
+    availableModels: [{ id: "claude-sonnet", provider: "anthropic" }],
+  });
+
+  expect(next).toBe("claude-sonnet");
 });

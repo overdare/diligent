@@ -7,6 +7,17 @@ import { useCallback, useState } from "react";
 import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 
+export const DRAFT_INPUT_KEY = "__draft__";
+
+export function clearDraftThreadInput(threadInputs: Record<string, string>): Record<string, string> {
+  if (!(DRAFT_INPUT_KEY in threadInputs)) {
+    return threadInputs;
+  }
+  const next = { ...threadInputs };
+  delete next[DRAFT_INPUT_KEY];
+  return next;
+}
+
 type ThreadHydrateAction = {
   type: "hydrate";
   payload: { threadId: string; mode: Mode; history: ThreadReadResponse };
@@ -21,6 +32,7 @@ export function useThreadManager({
   activeThreadIdRef,
   modeRef,
   applySessionModel,
+  resetDraftModel,
   setEffortState,
   activateServerThread,
   clearAttention,
@@ -31,6 +43,7 @@ export function useThreadManager({
   activeThreadIdRef: RefObject<string | null>;
   modeRef: RefObject<Mode>;
   applySessionModel: (sessionModel?: string) => Promise<void>;
+  resetDraftModel: () => void;
   setEffortState: (effort: ThinkingEffort) => void;
   activateServerThread: (threadId: string) => void;
   clearAttention: (threadId: string) => void;
@@ -56,11 +69,12 @@ export function useThreadManager({
     closeModals();
     const mode = modeRef.current;
     dispatch({ type: "reset_draft", payload: { mode } });
+    resetDraftModel();
     setEffortState("medium");
     if (typeof window !== "undefined") {
       replaceDraftUrl();
     }
-  }, [dispatch, modeRef, setEffortState, closeModals]);
+  }, [dispatch, modeRef, resetDraftModel, setEffortState, closeModals]);
 
   const openThread = useCallback(
     async (threadId: string): Promise<void> => {
@@ -123,6 +137,7 @@ export function useThreadManager({
           }
         } else {
           dispatch({ type: "reset_draft", payload: { mode } });
+          resetDraftModel();
           setEffortState("medium");
           if (typeof window !== "undefined") {
             replaceDraftUrl();
@@ -133,7 +148,16 @@ export function useThreadManager({
     } catch (error) {
       console.error(error);
     }
-  }, [pendingDeleteThreadId, rpcRef, modeRef, activeThreadIdRef, dispatch, setEffortState, refreshThreadList]);
+  }, [
+    pendingDeleteThreadId,
+    rpcRef,
+    modeRef,
+    activeThreadIdRef,
+    dispatch,
+    resetDraftModel,
+    setEffortState,
+    refreshThreadList,
+  ]);
 
   return {
     pendingDeleteThreadId,

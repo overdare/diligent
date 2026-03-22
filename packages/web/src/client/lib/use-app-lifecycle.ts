@@ -1,6 +1,7 @@
 // @summary App lifecycle hooks for RPC notification wiring and bootstrap resume flow
 
 import type {
+  DiligentServerNotification,
   DiligentServerRequest,
   InitializeResponse,
   Mode,
@@ -27,6 +28,29 @@ import type { AppAction } from "./app-state";
 import { getThreadIdFromUrl, replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
+
+function hasNotificationThreadId(params: unknown): params is { threadId: string } {
+  return typeof (params as { threadId?: unknown } | null)?.threadId === "string";
+}
+
+export function shouldDispatchNotificationToActiveThread(
+  notification: DiligentServerNotification,
+  activeThreadId: string | null,
+): boolean {
+  if (!hasNotificationThreadId(notification.params)) {
+    return true;
+  }
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED) {
+    return true;
+  }
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_RESUMED) {
+    return true;
+  }
+  if (activeThreadId === null) {
+    return false;
+  }
+  return notification.params.threadId === activeThreadId;
+}
 
 type SteeringRefs = {
   pendingAbortRestartMessageRef: MutableRefObject<string | null>;
@@ -135,7 +159,9 @@ export function useAppRpcBindings({
       if (filtered.consumedSuppression) {
         steering.suppressNextSteeringInjectedRef.current = false;
       }
-      dispatch({ type: "notification", payload: { notification, events: filtered.events } });
+      if (shouldDispatchNotificationToActiveThread(notification, activeThreadIdRef.current)) {
+        dispatch({ type: "notification", payload: { notification, events: filtered.events } });
+      }
 
       if (
         notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
