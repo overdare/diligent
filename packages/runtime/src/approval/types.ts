@@ -1,13 +1,8 @@
 // @summary Types for rule-based permission engine — D027, D028, D029
+import type { ApprovalRequest } from "@diligent/protocol";
 
-export interface ApprovalRequest {
-  permission: "read" | "write" | "execute";
-  toolName: string;
-  description: string;
-  details?: Record<string, unknown>;
-}
-
-export type ApprovalResponse = "once" | "always" | "reject";
+// Re-exports from protocol (canonical source)
+export type { ApprovalRequest, ApprovalResponse } from "@diligent/protocol";
 
 export type PermissionAction = "allow" | "deny" | "prompt";
 
