@@ -21,7 +21,7 @@ export interface UpdateKnowledgeRenderInput {
 
 export interface SearchKnowledgeRenderInput {
   id?: string;
-  content?: string;
+  query?: string;
 }
 
 export interface PlanRenderStepInput {
@@ -448,11 +448,11 @@ export function createSearchKnowledgeRenderPayload(
   isError: boolean,
 ): ToolRenderPayload | undefined {
   const id = typeof input.id === "string" ? input.id.trim() : "";
-  const content = typeof input.content === "string" ? input.content.trim() : "";
-  const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " "), 140) : "";
+  const query = typeof input.query === "string" ? input.query.trim() : "";
+  const queryPreview = query ? clipInlineText(query.replace(/\s+/g, " "), 140) : "";
   const queryItems = [
     ...(id ? [{ key: "id", value: id }] : []),
-    ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
+    ...(queryPreview ? [{ key: "query", value: queryPreview }] : []),
   ];
   const blocks: ToolRenderPayload["blocks"] = [];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
@@ -521,11 +521,11 @@ function buildKnowledgeInputSummary(input: UpdateKnowledgeRenderInput, contentPr
 
 function buildSearchKnowledgeInputSummary(input: SearchKnowledgeRenderInput): string | undefined {
   const id = typeof input.id === "string" ? input.id.trim() : "";
-  const content = typeof input.content === "string" ? input.content.trim() : "";
-  const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " "), 120) : "";
-  if (id && contentPreview) return summarizeRenderText(`id:${id} content:${contentPreview}`, 120);
+  const query = typeof input.query === "string" ? input.query.trim() : "";
+  const queryPreview = query ? clipInlineText(query.replace(/\s+/g, " "), 120) : "";
+  if (id && queryPreview) return summarizeRenderText(`id:${id} query:${queryPreview}`, 120);
   if (id) return summarizeRenderText(`id:${id}`, 120);
-  if (contentPreview) return summarizeRenderText(`content:${contentPreview}`, 120);
+  if (queryPreview) return summarizeRenderText(`query:${queryPreview}`, 120);
   return "search knowledge";
 }
 

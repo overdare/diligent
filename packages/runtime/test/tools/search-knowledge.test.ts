@@ -60,7 +60,7 @@ describe("search_knowledge tool", () => {
       makeCtx(),
     );
 
-    const result = await searchTool.execute({ content: "THREAD fork" }, makeCtx());
+    const result = await searchTool.execute({ query: "THREAD fork" }, makeCtx());
 
     expect(result.output).toContain("Implement thread fork feature");
     expect(result.output).toContain("Fork thread view into dedicated panel");
@@ -79,7 +79,7 @@ describe("search_knowledge tool", () => {
     );
     await updateTool.execute({ action: "upsert", type: "backlog", content: "Thread feature only" }, makeCtx());
 
-    const result = await searchTool.execute({ content: "thread fork" }, makeCtx());
+    const result = await searchTool.execute({ query: "thread fork" }, makeCtx());
     const lines = result.output.split("\n");
 
     expect(lines[0]).toContain("Thread fork feature for web client");
@@ -90,7 +90,7 @@ describe("search_knowledge tool", () => {
     tmpDir = await mkdtemp(join(tmpdir(), "knowledge-search-"));
     const searchTool = createSearchKnowledgeTool(tmpDir);
 
-    const result = await searchTool.execute({ content: "missing value" }, makeCtx());
+    const result = await searchTool.execute({ query: "missing value" }, makeCtx());
 
     expect(result.output).toBe("No knowledge entries found");
     expect(result.metadata).toMatchObject({ matchCount: 0, ids: [] });
