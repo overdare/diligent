@@ -40,6 +40,18 @@ describe("protocol-lifecycle", () => {
     });
   });
 
+  test("initialize rejects unsupported protocolVersion", async () => {
+    await setup();
+
+    await expect(
+      client.request("initialize", {
+        clientName: "test",
+        clientVersion: "0.0.1",
+        protocolVersion: 2,
+      }),
+    ).rejects.toThrow("Unsupported protocolVersion: 2. Only version 1 is supported.");
+  });
+
   test("thread/start returns threadId and emits THREAD_STARTED", async () => {
     await setup();
     const threadId = await client.initAndStartThread(tmpDir);

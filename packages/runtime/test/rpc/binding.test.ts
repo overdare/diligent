@@ -147,6 +147,36 @@ describe("RPC binding", () => {
     stop();
   });
 
+  it("rejects initialize requests with unsupported protocolVersion", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-rpc-binding-"));
+    const { client: clientPeer, server: serverPeer } = createLinkedPeers();
+
+    const client = new RpcClientSession(clientPeer);
+    clientPeer.onMessage(async (message) => {
+      await client.handleMessage(message);
+    });
+
+    const server = new DiligentAppServer({
+      cwd: projectRoot,
+      createAgent: () => {
+        throw new Error("createAgent should not be called for initialize rejection test");
+      },
+    });
+
+    const { bindAppServer } = await import("@diligent/runtime");
+    const stop = bindAppServer(server, serverPeer);
+
+    await expect(
+      client.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
+        clientName: "test-client",
+        clientVersion: "0.0.1",
+        protocolVersion: 2,
+      }),
+    ).rejects.toThrow("Unsupported protocolVersion: 2. Only version 1 is supported.");
+
+    stop();
+  });
+
   it("round-trips server-initiated approval requests through the bound peer", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-rpc-binding-"));
     const { client: clientPeer, server: serverPeer } = createLinkedPeers();

@@ -674,3 +674,10 @@ Decisions made during synthesis reviews, with rationale.
   - Do not “fix” cast friction by importing runtime types directly; improve local parser narrowing instead.
 - **References**: DV-01 (`packages/debug-viewer/src/shared/types.ts`), `packages/debug-viewer/src/server/parser.ts`
 - **Date**: 2026-03-20
+
+### D096: Protocol version remains fixed at 1 for now
+- **Decision**: Do not introduce protocol version negotiation or a version handshake at this time. Keep the app-server initialize response hardcoded as `protocolVersion: 1` for the current development phase.
+- **Rationale**: There is only one in-repo client/server protocol implementation today, so negotiation adds complexity without solving an active compatibility problem. The near-term work for D089/D091 may evolve the protocol and session format, but we are explicitly choosing not to preserve multi-version wire compatibility during this phase. If a future change creates a real need to support concurrent protocol versions or out-of-sync clients, we can introduce negotiation then with concrete migration requirements.
+- **Consequence**: Breaking protocol changes remain allowed for now as long as the single shipped client/server pair is updated together. `protocolVersion: 1` should be treated as a fixed marker, not as an actively negotiated contract.
+- **References**: `packages/runtime/src/app-server/server.ts:341`, D089, D091, D043
+- **Date**: 2026-03-22

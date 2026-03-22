@@ -46,7 +46,7 @@ export type SkillInfo = z.infer<typeof SkillInfoSchema>;
 export const InitializeResponseSchema = z.object({
   serverName: z.string(),
   serverVersion: z.string(),
-  protocolVersion: ProtocolVersionSchema,
+  protocolVersion: z.literal(1),
   capabilities: ProtocolCapabilitiesSchema,
   cwd: z.string().optional(),
   mode: ModeSchema.optional(),

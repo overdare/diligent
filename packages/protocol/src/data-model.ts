@@ -1,7 +1,7 @@
 // @summary Zod schemas for Diligent protocol domain models and event payloads
 import { z } from "zod";
 
-export const ProtocolVersionSchema = z.literal(1);
+export const ProtocolVersionSchema = z.number().int().positive();
 export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
 
 export const ModeSchema = z.enum(["default", "plan", "execute"]);

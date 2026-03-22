@@ -334,6 +334,11 @@ export class DiligentAppServer {
   private async dispatchClientRequest(connectionId: string, request: DiligentClientRequest): Promise<unknown> {
     switch (request.method) {
       case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
+        if (request.params.protocolVersion !== 1) {
+          throw Object.assign(new Error(`Unsupported protocolVersion: ${request.params.protocolVersion}. Only version 1 is supported.`), {
+            code: -32602,
+          });
+        }
         const extra = (await this.config.getInitializeResult?.()) ?? {};
         return {
           serverName: this.serverName,
