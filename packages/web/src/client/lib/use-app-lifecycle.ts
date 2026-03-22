@@ -172,7 +172,6 @@ export function useAppBootstrap({
   connection,
   rpcRef,
   activeThreadIdRef,
-  cwdRef,
   dispatch,
   setCwd,
   setEffortState,
@@ -185,7 +184,6 @@ export function useAppBootstrap({
   connection: "connecting" | "connected" | "reconnecting" | "disconnected";
   rpcRef: RefObject<WebRpcClient | null>;
   activeThreadIdRef: RefObject<string | null>;
-  cwdRef: RefObject<string>;
   dispatch: Dispatch<AppAction>;
   setCwd: Dispatch<SetStateAction<string>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;

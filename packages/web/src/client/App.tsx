@@ -225,7 +225,6 @@ export function App() {
     connection,
     rpcRef,
     activeThreadIdRef,
-    cwdRef,
     dispatch,
     setCwd,
     setEffortState,
