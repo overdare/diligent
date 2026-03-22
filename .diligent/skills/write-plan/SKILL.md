@@ -23,7 +23,7 @@ Before generating any plan, read these project files to build context:
 | File | What it provides |
 |------|-----------------|
 | `ARCHITECTURE.md` | System architecture, layer overview, design principles |
-| `BACKLOG.md` | Pending work items — check if the task is already tracked |
+| Project knowledge backlog entries | Pending work items — check whether the task is already tracked there |
 | `docs/plan/decisions.md` | Design decisions (D001-D078+) with rationale |
 
 Then read source code relevant to the task. Use `/explore-aug` to explore unfamiliar areas efficiently.

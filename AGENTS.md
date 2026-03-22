@@ -21,7 +21,7 @@ Read only what your task requires.
 | Reference codebases (codex, opencode, pi-mono) | `docs/references/` |
 | Layer research & analysis | `docs/research/` |
 | Past tech-lead assessments | `docs/review/` |
-| Pending work items | `BACKLOG.md` |
+| Pending work items | Project knowledge backlog entries |
 
 ## Code Explore System
 

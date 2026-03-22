@@ -467,8 +467,8 @@ Test: mock overlay callbacks in app unit test.
 ## Migration Notes
 
 - `loop.ts:156` — `approve: async () => "once" as const` → replaced by `approve: async (req) => config.approve ? config.approve(req) : "once"`
-- BACKLOG.md L4 section — entries reference `ctx.ask()` (old name); update to `ctx.approve()` after this phase
-- BACKLOG.md P1 `request_user_input tool` — remove "plan mode only" qualifier (now all modes per D088)
+- Historical backlog entries referenced `ctx.ask()` (old name); update those references to `ctx.approve()` after this phase
+- Historical backlog wording for `request_user_input tool` included "plan mode only"; remove that qualifier (now all modes per D088)
 
 ## Acceptance Criteria
 
