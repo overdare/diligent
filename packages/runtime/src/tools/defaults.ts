@@ -17,6 +17,7 @@ import { createLsTool } from "./ls";
 import { createPlanTool } from "./plan";
 import { createReadTool } from "./read";
 import { createRequestUserInputTool } from "./request-user-input";
+import { createSearchKnowledgeTool } from "./search-knowledge";
 import { createSkillTool } from "./skill";
 import { createUpdateKnowledgeTool } from "./update-knowledge";
 
@@ -58,6 +59,7 @@ export async function buildDefaultTools(
   ];
 
   if (paths) {
+    builtinTools.push(createSearchKnowledgeTool(paths.knowledge));
     builtinTools.push(createUpdateKnowledgeTool(paths.knowledge));
   }
 

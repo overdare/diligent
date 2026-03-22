@@ -86,7 +86,7 @@ export function buildSystemPrompt(
 }
 
 const KNOWLEDGE_INSTRUCTION = `
-You have access to an update_knowledge tool. Use it to save, revise, or delete important information that should persist across sessions:
+You have access to search_knowledge and update_knowledge tools. Use search_knowledge to find existing knowledge entries by id or content before revising or deleting them, and use update_knowledge to save, revise, or delete important information that should persist across sessions:
 - Project patterns (naming conventions, preferred libraries, architectural patterns)
 - User preferences (workflow, style, communication)
 - Important backlog items to revisit later

@@ -152,6 +152,7 @@ export {
   createPlanTool,
   createReadTool,
   createRequestUserInputTool,
+  createSearchKnowledgeTool,
   createSkillTool,
   createUpdateKnowledgeTool,
   createWriteAbsoluteTool,

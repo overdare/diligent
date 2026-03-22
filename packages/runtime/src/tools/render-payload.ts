@@ -19,6 +19,11 @@ export interface UpdateKnowledgeRenderInput {
   tags?: string[];
 }
 
+export interface SearchKnowledgeRenderInput {
+  id?: string;
+  content?: string;
+}
+
 export interface PlanRenderStepInput {
   text: string;
   status?: "pending" | "in_progress" | "done" | "cancelled";
@@ -41,6 +46,8 @@ export function createToolStartRenderPayload(toolName: string, input: unknown): 
         ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
         : "";
     inputSummary = buildKnowledgeInputSummary(parsedInput ?? {}, contentPreview);
+  } else if (normalizedToolName === "search_knowledge") {
+    inputSummary = buildSearchKnowledgeInputSummary(parsedInput ?? {});
   } else if (normalizedToolName === "plan") {
     const title = typeof parsedInput?.title === "string" ? parsedInput.title : "Plan";
     const stepCount = Array.isArray(parsedInput?.steps) ? parsedInput.steps.length : 0;
@@ -428,6 +435,52 @@ export function createUpdateKnowledgeRenderPayload(
   };
 }
 
+export function createSearchKnowledgeRenderPayload(
+  input: SearchKnowledgeRenderInput,
+  matches: Array<{
+    id: string;
+    type: string;
+    content: string;
+    timestamp: string;
+    tags?: string[];
+  }>,
+  outputText: string,
+  isError: boolean,
+): ToolRenderPayload | undefined {
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  const content = typeof input.content === "string" ? input.content.trim() : "";
+  const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " "), 140) : "";
+  const queryItems = [
+    ...(id ? [{ key: "id", value: id }] : []),
+    ...(contentPreview ? [{ key: "content", value: contentPreview }] : []),
+  ];
+  const blocks: ToolRenderPayload["blocks"] = [];
+  if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
+  if (matches.length > 0) {
+    blocks.push({
+      type: "list",
+      title: `${matches.length} knowledge ${matches.length === 1 ? "entry" : "entries"}`,
+      items: matches.map((match) => {
+        const summary = `[${match.type}] ${clipInlineText(match.content.replace(/\s+/g, " ").trim(), 120)}`;
+        return `${match.id} — ${summary}`;
+      }),
+    });
+  }
+  const firstLine = outputText
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (firstLine) blocks.push({ type: "summary", text: firstLine, tone: isError ? "danger" : "info" });
+  if (blocks.length === 0) return undefined;
+
+  return {
+    version: 2,
+    inputSummary: buildSearchKnowledgeInputSummary(input),
+    outputSummary: firstLine ?? (matches.length === 0 ? "No knowledge entries found" : undefined),
+    blocks,
+  };
+}
+
 function buildPatchInputSummary(files: DiffFile[]): string | undefined {
   if (files.length === 0) return undefined;
   const first = buildPatchFileLabel(files[0]);
@@ -464,6 +517,16 @@ function buildKnowledgeInputSummary(input: UpdateKnowledgeRenderInput, contentPr
   if (typeValue) return summarizeRenderText(typeValue, 120);
   if (id) return summarizeRenderText(`upsert ${id}`, 120);
   return "upsert";
+}
+
+function buildSearchKnowledgeInputSummary(input: SearchKnowledgeRenderInput): string | undefined {
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  const content = typeof input.content === "string" ? input.content.trim() : "";
+  const contentPreview = content ? clipInlineText(content.replace(/\s+/g, " "), 120) : "";
+  if (id && contentPreview) return summarizeRenderText(`id:${id} content:${contentPreview}`, 120);
+  if (id) return summarizeRenderText(`id:${id}`, 120);
+  if (contentPreview) return summarizeRenderText(`content:${contentPreview}`, 120);
+  return "search knowledge";
 }
 
 function clipInlineText(value: string, maxLength: number): string {

@@ -11,7 +11,15 @@ export type Mode = ProtocolMode;
  * Bash, write, apply_patch, update_knowledge are excluded.
  * D088: request_user_input is allowed in all modes.
  */
-export const PLAN_MODE_ALLOWED_TOOLS = new Set(["read", "glob", "grep", "ls", "request_user_input", "skill"]);
+export const PLAN_MODE_ALLOWED_TOOLS = new Set([
+  "read",
+  "glob",
+  "grep",
+  "ls",
+  "request_user_input",
+  "skill",
+  "search_knowledge",
+]);
 
 /**
  * System prompt suffixes injected per mode.
