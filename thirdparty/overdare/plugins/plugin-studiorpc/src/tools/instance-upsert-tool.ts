@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { call } from "../rpc.ts";
-import { type OvdrjmNode, findNodeByActorGuid, isRecord, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils.ts";
+import { findNodeByActorGuid, isRecord, type OvdrjmNode, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;

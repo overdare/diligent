@@ -1,8 +1,8 @@
 // @summary Reads instance properties from the .ovdrjm level file, filtered to known schemas.
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
-import { type ShapeSpec, classPropertyShapes, instanceClassEnum } from "../methods/instance.params.ts";
+import { classPropertyShapes, instanceClassEnum, type ShapeSpec } from "../methods/instance.params.ts";
 import * as instanceRead from "../methods/instance.read.ts";
-import { type OvdrjmNode, findNodeByActorGuid, isRecord, readOvdrjmRoot } from "./ovdrjm-utils.ts";
+import { findNodeByActorGuid, isRecord, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils.ts";
 
 const knownClasses = new Set(instanceClassEnum.options);
 
@@ -75,11 +75,7 @@ function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
 
-async function executeInstanceRead(
-  args: Record<string, unknown>,
-  _ctx: ToolContext,
-  cwd: string,
-): Promise<ToolResult> {
+async function executeInstanceRead(args: Record<string, unknown>, _ctx: ToolContext, cwd: string): Promise<ToolResult> {
   const parsed = instanceRead.params.parse(args);
   const { root } = readOvdrjmRoot(cwd);
 

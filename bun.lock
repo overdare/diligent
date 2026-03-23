@@ -41,6 +41,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.78.0",
+        "@diligent/protocol": "workspace:*",
         "@google/genai": "^1.0.0",
         "jsonc-parser": "^3.3.1",
         "openai": "^6.25.0",
