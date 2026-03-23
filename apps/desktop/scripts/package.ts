@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
+import { createPluginBundlePlan } from "./lib/plugin-bundle";
 import { resolveDesktopIconPaths, resolveProjectName, toProjectArtifactName } from "./lib/project-name";
 import { rustSourcesChanged, saveRustHash } from "./lib/rust-cache";
 import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
@@ -77,9 +78,6 @@ function buildWebFrontend(): void {
 const DEFAULTS_SRC = join(DESKTOP, "defaults");
 const DEFAULTS_RESOURCES = join(DESKTOP, "src-tauri/resources/defaults");
 
-/** Files in the plugin root that are never copied as assets. */
-const PLUGIN_ROOT_SKIP = new Set(["package.json", "tsconfig.json", "bun.lock", "bun.lockb"]);
-
 /**
  * Bundle a plugin directory to a single ESM file using `bun build`.
  * Output: resources/defaults/plugins/<pluginName>/index.js + package.json
@@ -88,32 +86,23 @@ const PLUGIN_ROOT_SKIP = new Set(["package.json", "tsconfig.json", "bun.lock", "
  * plugin root directory alongside the bundled output.
  */
 function bundlePlugin(pluginDir: string, pluginName: string): void {
-  const pluginEntry = join(pluginDir, "src/index.ts");
-  const outDir = join(DEFAULTS_RESOURCES, "plugins", pluginName);
+  const plan = createPluginBundlePlan({
+    rootDir: ROOT,
+    defaultsResourcesDir: DEFAULTS_RESOURCES,
+    pluginDir,
+    pluginName,
+  });
+  const outDir = plan.outDir;
   mkdirSync(outDir, { recursive: true });
 
-  const outFile = join(outDir, "index.js");
-  run(`bun install`, pluginDir);
-  run(`bun build --target bun --outfile ${outFile} ${pluginEntry}`);
+  run(plan.buildCommand, plan.buildCwd);
 
-  // Write minimal package.json so import(dirUrl) resolves to index.js
-  const srcPkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf-8")) as { version?: string };
-  const pkgJson = {
-    name: pluginName,
-    version: srcPkg.version ?? "0.1.0",
-    type: "module",
-    main: "index.js",
-  };
-  writeFileSync(join(outDir, "package.json"), `${JSON.stringify(pkgJson, null, 2)}\n`);
-  console.log(`   Bundled plugin: ${pluginName} → ${outFile}`);
+  writeFileSync(join(outDir, "package.json"), `${JSON.stringify(plan.outputPackageJson, null, 2)}\n`);
+  console.log(`   Bundled plugin: ${pluginName} → ${plan.outFile}`);
 
-  // Copy asset files from plugin root (binaries, type defs, etc.) — skip source/config files
-  for (const entry of readdirSync(pluginDir, { withFileTypes: true })) {
-    if (entry.isDirectory()) continue;
-    if (PLUGIN_ROOT_SKIP.has(entry.name)) continue;
-    if (entry.name.endsWith(".ts")) continue;
-    cpSync(join(pluginDir, entry.name), join(outDir, entry.name));
-    console.log(`   Copied asset:   ${pluginName}/${entry.name}`);
+  for (const fileName of plan.assetFiles) {
+    cpSync(join(pluginDir, fileName), join(outDir, fileName));
+    console.log(`   Copied asset:   ${pluginName}/${fileName}`);
   }
 }
 
