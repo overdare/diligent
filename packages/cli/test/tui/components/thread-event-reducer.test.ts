@@ -138,4 +138,31 @@ describe("reduceThreadEvent", () => {
     expect(ended.state.toolCalls.wait_1).toBeUndefined();
     expect(ended.state.items).toEqual([{ id: "tool:0" }]);
   });
+
+  test("spawn_agent completion preserves hyphenated custom agent type labels", () => {
+    const built = buildToolEndItem({
+      event: {
+        type: "tool_end",
+        toolName: "spawn_agent",
+        toolCallId: "spawn_1",
+        output: JSON.stringify({ thread_id: "child-1", nickname: "Acacia" }),
+        isError: false,
+      },
+      toolCall: {
+        startedAt: 100,
+      },
+      collabState: {
+        toolName: "spawn_agent",
+        label: "Spawning [code-reviewer] custom reviewer…",
+        prompt: "Review this change",
+      },
+      planCallCount: 0,
+      collabAgentNamesByThreadId: {},
+      nowMs: 200,
+    });
+
+    expect(built.item.kind).toBe("tool_result");
+    if (built.item.kind !== "tool_result") return;
+    expect(built.item.header).toContain("[code-reviewer]");
+  });
 });

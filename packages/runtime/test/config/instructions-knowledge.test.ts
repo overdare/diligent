@@ -41,4 +41,18 @@ describe("buildSystemPromptWithKnowledge", () => {
     const flat = flattenSections(result);
     expect(flat).toContain("Custom instruction 1");
   });
+
+  it("includes agents section when provided", () => {
+    const result = buildSystemPromptWithKnowledge(
+      "Base",
+      [],
+      "",
+      undefined,
+      undefined,
+      "## Available Agents\n- **code-reviewer**",
+    );
+    const flat = flattenSections(result);
+    expect(flat).toContain("Available Agents");
+    expect(flat).toContain("code-reviewer");
+  });
 });

@@ -24,6 +24,7 @@ import {
   createPermissionEngine,
   createRequestUserInputTool,
   createYoloPermissionEngine,
+  getBuiltinAgentDefinitions,
   RuntimeAgent,
 } from "@diligent/runtime";
 import { createAppServerConfig, DiligentAppServer } from "@diligent/runtime/app-server";
@@ -2125,7 +2126,9 @@ describe("DiligentAppServer", () => {
           cwd: projectRoot,
           paths,
           modelId: "fake-model",
+          effort: "medium",
           systemPrompt: [{ label: "base", content: "test" }],
+          agentDefinitions: getBuiltinAgentDefinitions(),
           parentTools: [noopTool],
           getParentSessionId: getSessionId,
           ask,

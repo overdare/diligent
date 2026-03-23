@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { AgentRegistry } from "@diligent/runtime/collab";
 import { resolvePaths } from "@diligent/runtime/infrastructure";
 import { readSessionFile } from "@diligent/runtime/session";
+import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { makeAssistant, makeStreamFn, TEST_MODEL } from "../helpers/collab";
 
 const TEST_ROOT = join(tmpdir(), `diligent-collab-threadid-${Date.now()}`);
@@ -33,6 +34,7 @@ describe("sub-agent thread ID consistency", () => {
       modelId: TEST_MODEL.id,
       effort: "medium",
       systemPrompt: [{ label: "test", content: "test" }],
+      agentDefinitions: getBuiltinAgentDefinitions(),
       parentTools: [],
       streamFn: makeStreamFn([makeAssistant("child complete")]),
     });

@@ -116,4 +116,11 @@ describe("DiligentConfigSchema — tools section", () => {
     expect(result.tools).toBeUndefined();
     expect(result.model).toBe("gpt-4o");
   });
+
+  it("accepts agents config with enabled and paths", () => {
+    const result = DiligentConfigSchema.parse({
+      agents: { enabled: true, paths: ["/tmp/agents"] },
+    });
+    expect(result.agents).toEqual({ enabled: true, paths: ["/tmp/agents"] });
+  });
 });

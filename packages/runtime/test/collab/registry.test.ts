@@ -2,6 +2,8 @@
 import { describe, expect, it } from "bun:test";
 import { AgentRegistry, isFinal } from "@diligent/runtime/collab";
 import type { SessionManagerConfig } from "@diligent/runtime/session";
+import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
+import { resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import type { AgentEvent } from "../../src/agent-event";
 import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "../helpers/collab";
 
@@ -207,5 +209,27 @@ describe("AgentRegistry", () => {
         event.message?.includes("model not found"),
     );
     expect(spawnEndErrored).toBeDefined();
+  });
+
+  it("allows custom agent names to resolve through the shared definition layer", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+        agentDefinitions: resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [
+          {
+            name: "code-reviewer",
+            description: "Reviews code",
+            filePath: "/tmp/code-reviewer/AGENT.md",
+            content: "Review code carefully.",
+            tools: ["read"],
+            defaultModelClass: "general",
+            source: "project",
+          },
+        ]),
+      }),
+    );
+
+    const result = registry.spawn({ prompt: "review", description: "", agentType: "code-reviewer" });
+    expect(typeof result.threadId).toBe("string");
   });
 });

@@ -2,6 +2,7 @@
 
 import type { SystemSection, ThinkingEffort } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
+import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
 import type { DiligentPaths } from "../infrastructure";
@@ -48,6 +49,7 @@ export interface CollabToolDeps {
   modelId: string;
   effort: ThinkingEffort;
   systemPrompt: SystemSection[];
+  agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8
   getParentSessionId?: () => string | undefined;

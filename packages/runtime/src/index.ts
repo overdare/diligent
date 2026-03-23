@@ -32,9 +32,14 @@ export {
   resolveModel,
   supportsThinkingNone,
 } from "@diligent/core";
+export { getBuiltinAgentDefinitions } from "./agent/agent-types";
 export type { Mode } from "./agent/mode";
+export type { ResolvedAgentDefinition } from "./agent/resolved-agent";
+export { resolveAgentDefinition, resolveAvailableAgentDefinitions } from "./agent/resolved-agent";
 export { RuntimeAgent } from "./agent/runtime-agent";
 export type { AgentEvent, RuntimeAgentEvent } from "./agent-event";
+export type { AgentDiscoveryOptions, AgentFrontmatter, AgentLoadError, AgentLoadResult, AgentMetadata } from "./agents";
+export { discoverAgents, parseAgentFrontmatter, renderAgentsSection, validateAgentName } from "./agents";
 export type { CreateAgentArgs, CreateAppServerConfigOptions, DiligentAppServerConfig } from "./app-server";
 export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { ApprovalRequest, ApprovalResponse, PermissionAction, PermissionEngine, PermissionRule } from "./approval";

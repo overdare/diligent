@@ -582,7 +582,7 @@ export async function handleToolsList(
 }> {
   const { cwd, tools } = await ctx.resolveToolsContext(threadId);
   const paths = await ctx.resolvePaths(cwd);
-  const result = await buildDefaultTools(cwd, paths, undefined, tools, []);
+  const result = await buildDefaultTools(cwd, paths, undefined, tools, [], undefined);
 
   return {
     configPath: getGlobalConfigPath(),
@@ -624,7 +624,7 @@ export async function handleToolsSet(
   toolConfig.setTools(writeResult.config.tools);
 
   const paths = await ctx.resolvePaths(cwd);
-  const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools, []);
+  const result = await buildDefaultTools(cwd, paths, undefined, writeResult.config.tools, [], undefined);
 
   return {
     configPath: writeResult.configPath,

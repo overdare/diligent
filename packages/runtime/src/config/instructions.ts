@@ -106,6 +106,7 @@ export function buildSystemPromptWithKnowledge(
   knowledgeSection: string,
   additionalInstructions?: string[],
   skillsSection?: string,
+  agentsSection?: string,
 ): SystemSection[] {
   const sections: SystemSection[] = [{ label: "base", content: basePrompt }];
 
@@ -115,6 +116,10 @@ export function buildSystemPromptWithKnowledge(
 
   if (skillsSection) {
     sections.push({ label: "skills", content: skillsSection });
+  }
+
+  if (agentsSection) {
+    sections.push({ label: "agents", content: agentsSection });
   }
 
   for (const inst of instructions) {

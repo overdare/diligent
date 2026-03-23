@@ -1,5 +1,9 @@
 // @summary Agent type definitions, builtin registry, and role-guidance formatters for spawn_agent
+
+import { parseAgentFrontmatter } from "../agents/frontmatter";
 import explorePrompt from "./default/explore.md" with { type: "text" };
+import generalPrompt from "./default/general.md" with { type: "text" };
+import type { ResolvedAgentDefinition } from "./resolved-agent";
 
 /** Built-in agent type names supported by spawn_agent. */
 export const BUILTIN_AGENT_TYPE_NAMES = ["general", "explore"] as const;
@@ -22,6 +26,27 @@ export interface AgentTypeDef {
   spawnGuidance: AgentTypeSpawnGuidance;
 }
 
+function parseBuiltinAgentMarkdown(
+  content: string,
+  filePath: string,
+): {
+  description: string;
+  systemPromptPrefix: string;
+} {
+  const result = parseAgentFrontmatter(content, filePath);
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+
+  return {
+    description: result.frontmatter.description,
+    systemPromptPrefix: `${result.body.trim()}\n`,
+  };
+}
+
+const builtinGeneralMarkdown = parseBuiltinAgentMarkdown(generalPrompt, "builtin:general.md");
+const builtinExploreMarkdown = parseBuiltinAgentMarkdown(explorePrompt, "builtin:explore.md");
+
 /**
  * Built-in agent types (D063).
  * "general" — full tool access, task tool excluded to prevent infinite nesting (D064).
@@ -36,7 +61,8 @@ export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "
 export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   general: {
     name: "general",
-    description: "General-purpose agent with full tool access for complex tasks",
+    description: builtinGeneralMarkdown.description,
+    systemPromptPrefix: builtinGeneralMarkdown.systemPromptPrefix,
     toolFilter: "all",
     spawnGuidance: {
       summary: "Execution agent for implementation and production work",
@@ -54,8 +80,8 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   },
   explore: {
     name: "explore",
-    description: "Read-only agent for codebase exploration and research",
-    systemPromptPrefix: `${explorePrompt}\n`,
+    description: builtinExploreMarkdown.description,
+    systemPromptPrefix: builtinExploreMarkdown.systemPromptPrefix,
     toolFilter: "readonly",
     spawnGuidance: {
       summary: "Fast, authoritative codebase Q&A for specific scoped questions",
@@ -74,6 +100,26 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   },
 };
 
+export function getBuiltinAgentDefinitions(): ResolvedAgentDefinition[] {
+  return [
+    {
+      name: "general",
+      description: BUILTIN_AGENT_TYPES.general.description,
+      source: "builtin",
+      systemPromptPrefix: BUILTIN_AGENT_TYPES.general.systemPromptPrefix,
+      readonly: false,
+    },
+    {
+      name: "explore",
+      description: BUILTIN_AGENT_TYPES.explore.description,
+      source: "builtin",
+      systemPromptPrefix: BUILTIN_AGENT_TYPES.explore.systemPromptPrefix,
+      readonly: true,
+      defaultModelClass: "lite",
+    },
+  ];
+}
+
 function modelClassLabel(value: AgentTypeSpawnGuidance["defaultModelClass"]): string {
   if (value === "same_as_parent") return "same as parent";
   return value;
@@ -90,16 +136,30 @@ function formatGuidanceLine(type: AgentTypeDef): string {
   );
 }
 
+function formatCustomAgentLine(agent: ResolvedAgentDefinition): string {
+  const toolSummary = agent.allowedTools?.length ? agent.allowedTools.join(", ") : "inherit parent-visible tools";
+  const modelSummary = agent.defaultModelClass ? ` Default model class: ${agent.defaultModelClass}.` : "";
+  return `'${agent.name}': ${agent.description}. Default tools: ${toolSummary}.${modelSummary}`;
+}
+
 /** Human-readable role guidance string for spawn_agent's top-level tool description. */
-export function formatSpawnAgentToolDescription(): string {
-  const roleLines = BUILTIN_AGENT_TYPE_NAMES.map((name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`).join(
-    "\n",
-  );
+export function formatSpawnAgentToolDescription(
+  agentDefinitions: ResolvedAgentDefinition[] = getBuiltinAgentDefinitions(),
+): string {
+  const builtinLines = BUILTIN_AGENT_TYPE_NAMES.map(
+    (name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`,
+  ).join("\n");
+  const customLines = agentDefinitions
+    .filter((agent) => agent.source === "user")
+    .map((agent) => `- ${formatCustomAgentLine(agent)}`)
+    .join("\n");
+  const customSection = customLines ? `\nCustom roles:\n${customLines}` : "";
   return (
     "Spawn a sub-agent and return immediately with thread_id and nickname. Use 'wait' to collect results. " +
     "If sub-agents are still running, wait for them before yielding unless the user is asking an explicit question that should be answered first.\n" +
     "Role selection guide:\n" +
-    roleLines +
+    builtinLines +
+    customSection +
     "\n\nDelegation rules:\n" +
     "- If you delegate work to sub-agents, your primary role becomes coordinating them until they finish; do not duplicate their work while they are running.\n" +
     "- Do not duplicate sub-agent work by searching the same areas yourself.\n" +
@@ -108,9 +168,17 @@ export function formatSpawnAgentToolDescription(): string {
 }
 
 /** Human-readable role guidance string for spawn_agent.agent_type schema description. */
-export function formatAgentTypeParameterDescription(): string {
-  const roleLines = BUILTIN_AGENT_TYPE_NAMES.map((name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`).join(
-    "\n",
-  );
-  return `Agent type to run. Available built-in roles:\n${roleLines}`;
+export function formatAgentTypeParameterDescription(
+  agentDefinitions: ResolvedAgentDefinition[] = getBuiltinAgentDefinitions(),
+): string {
+  const builtinLines = BUILTIN_AGENT_TYPE_NAMES.map(
+    (name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`,
+  ).join("\n");
+  const customLines = agentDefinitions
+    .filter((agent) => agent.source === "user")
+    .map((agent) => `- ${formatCustomAgentLine(agent)}`)
+    .join("\n");
+  return customLines
+    ? `Agent type to run. Available built-in and custom roles:\n${builtinLines}\n${customLines}`
+    : `Agent type to run. Available built-in roles:\n${builtinLines}`;
 }

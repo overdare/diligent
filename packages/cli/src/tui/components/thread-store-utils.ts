@@ -324,7 +324,7 @@ export function buildToolEndItem(options: {
     if (event.toolName === "spawn_agent") {
       const nickname = (parsed?.nickname as string | undefined) ?? "agent";
       const inputLabel = collabState?.label ?? "";
-      const typeMatch = inputLabel.match(/\[(\w+)\]/);
+      const typeMatch = inputLabel.match(/\[([^\]]+)\]/);
       const agentType = typeMatch ? typeMatch[1] : "general";
       lines.push(`${icon} Spawned ${t.bold}${nickname}${t.reset} [${agentType}]${elapsed}`);
       const prompt = collabState?.prompt;

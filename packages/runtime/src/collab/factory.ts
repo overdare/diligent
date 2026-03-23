@@ -28,7 +28,7 @@ export function createCollabTools(
     registry = new AgentRegistry(deps);
   }
   const tools: Tool[] = [
-    createSpawnAgentTool(registry),
+    createSpawnAgentTool(registry, deps.agentDefinitions),
     createWaitTool(registry),
     createSendInputTool(registry),
     createCloseAgentTool(registry),

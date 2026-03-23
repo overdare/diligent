@@ -75,6 +75,13 @@ export const DiligentConfigSchema = z
       })
       .optional(),
 
+    agents: z
+      .object({
+        enabled: z.boolean().optional(),
+        paths: z.array(z.string()).optional(),
+      })
+      .optional(),
+
     // Collaboration mode
     mode: z.enum(["default", "plan", "execute"]).optional(),
     effort: ThinkingEffortSchema.optional(),

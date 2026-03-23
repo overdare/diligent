@@ -2,7 +2,12 @@
 import { describe, expect, it } from "bun:test";
 import type { ToolContext } from "@diligent/core/tool/types";
 import { createCollabTools } from "@diligent/runtime/collab";
-import { formatAgentTypeParameterDescription, formatSpawnAgentToolDescription } from "../../src/agent/agent-types";
+import {
+  formatAgentTypeParameterDescription,
+  formatSpawnAgentToolDescription,
+  getBuiltinAgentDefinitions,
+} from "../../src/agent/agent-types";
+import { resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "../helpers/collab";
 
 function makeCtx(updates: string[] = []): ToolContext {
@@ -76,6 +81,32 @@ describe("spawn_agent tool", () => {
     expect(shape.agent_type.description).toContain("'general':");
     expect(shape.agent_type.description).toContain("'explore':");
     expect(shape.agent_type.description).not.toContain("'planner':");
+  });
+
+  it("includes custom agents in tool description and schema description", () => {
+    const agentDefinitions = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [
+      {
+        name: "code-reviewer",
+        description: "Reviews code changes",
+        filePath: "/tmp/code-reviewer/AGENT.md",
+        content: "Review code carefully.",
+        tools: ["read", "glob"],
+        defaultModelClass: "general",
+        source: "project",
+      },
+    ]);
+    const { tools } = createCollabTools(
+      makeCollabDeps({
+        agentDefinitions,
+      }),
+    );
+    const spawnTool = tools.find((tool) => tool.name === "spawn_agent")!;
+    const shape = (spawnTool.parameters as { shape: Record<string, { description?: string }> }).shape;
+    expect(spawnTool.description).toBe(formatSpawnAgentToolDescription(agentDefinitions));
+    expect(spawnTool.description).toContain("code-reviewer");
+    expect(shape.agent_type.description).toBe(formatAgentTypeParameterDescription(agentDefinitions));
+    expect(shape.agent_type.description).toContain("code-reviewer");
+    expect(shape.allowed_tools.description).toContain("allow-list");
   });
 });
 

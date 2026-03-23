@@ -1,0 +1,126 @@
+// @summary Parses and validates AGENT.md frontmatter metadata
+import type { ModelClass } from "@diligent/core/llm/models";
+import { TOOL_CAPABILITIES } from "../tools/tool-metadata";
+import type { AgentFrontmatter } from "./types";
+
+const NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const MAX_NAME_LENGTH = 64;
+const MAX_DESCRIPTION_LENGTH = 1024;
+const MODEL_CLASSES = new Set<ModelClass>(["pro", "general", "lite"]);
+
+function parseToolList(rawValue: string): string[] {
+  return rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function normalizeToolNames(tools: string[], filePath: string): { tools: string[] } | { error: string } {
+  const normalized = new Set<string>();
+  for (const tool of tools) {
+    if (!(tool in TOOL_CAPABILITIES)) {
+      return { error: `${filePath}: unknown tool in frontmatter: ${tool}` };
+    }
+    normalized.add(tool);
+  }
+  return { tools: [...normalized] };
+}
+
+export function parseAgentFrontmatter(
+  content: string,
+  filePath: string,
+): { frontmatter: AgentFrontmatter; body: string } | { error: string } {
+  const lines = content.split("\n");
+  if (lines[0]?.trim() !== "---") {
+    return { error: `${filePath}: missing frontmatter (no opening ---)` };
+  }
+
+  let closingIdx = -1;
+  for (let index = 1; index < lines.length; index++) {
+    if (lines[index].trim() === "---") {
+      closingIdx = index;
+      break;
+    }
+  }
+
+  if (closingIdx === -1) {
+    return { error: `${filePath}: missing frontmatter (no closing ---)` };
+  }
+
+  const parsed: Record<string, string> = {};
+  for (const line of lines.slice(1, closingIdx)) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx === -1) {
+      return { error: `${filePath}: invalid frontmatter line: ${trimmed}` };
+    }
+
+    const key = trimmed.slice(0, colonIdx).trim();
+    let value = trimmed.slice(colonIdx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    parsed[key] = value;
+  }
+
+  if (!parsed.name) {
+    return { error: `${filePath}: frontmatter missing required field: name` };
+  }
+  if (!parsed.description) {
+    return { error: `${filePath}: frontmatter missing required field: description` };
+  }
+  if (parsed.name.length > MAX_NAME_LENGTH) {
+    return { error: `${filePath}: agent name exceeds ${MAX_NAME_LENGTH} characters` };
+  }
+  if (!NAME_PATTERN.test(parsed.name)) {
+    return {
+      error: `${filePath}: agent name must be kebab-case (lowercase alphanumeric with hyphens): "${parsed.name}"`,
+    };
+  }
+  if (parsed.description.length > MAX_DESCRIPTION_LENGTH) {
+    return { error: `${filePath}: agent description exceeds ${MAX_DESCRIPTION_LENGTH} characters` };
+  }
+
+  let tools: string[] | undefined;
+  if (parsed.tools) {
+    const toolResult = normalizeToolNames(parseToolList(parsed.tools), filePath);
+    if ("error" in toolResult) {
+      return toolResult;
+    }
+    tools = toolResult.tools;
+  }
+
+  let modelClass: ModelClass | undefined;
+  if (parsed.model_class) {
+    if (!MODEL_CLASSES.has(parsed.model_class as ModelClass)) {
+      return { error: `${filePath}: invalid model_class: ${parsed.model_class}` };
+    }
+    modelClass = parsed.model_class as ModelClass;
+  }
+
+  const body = lines
+    .slice(closingIdx + 1)
+    .join("\n")
+    .trim();
+  if (!body) {
+    return { error: `${filePath}: AGENT.md body must not be empty` };
+  }
+
+  return {
+    frontmatter: {
+      name: parsed.name,
+      description: parsed.description,
+      ...(tools ? { tools } : {}),
+      ...(modelClass ? { model_class: modelClass } : {}),
+    },
+    body,
+  };
+}
+
+export function validateAgentName(name: string, dirName: string): string | null {
+  if (name !== dirName) {
+    return `Agent name "${name}" must match directory name "${dirName}"`;
+  }
+  return null;
+}

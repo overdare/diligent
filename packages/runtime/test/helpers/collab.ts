@@ -6,6 +6,7 @@ import type { AssistantMessage, Message } from "@diligent/core/types";
 import type { CollabToolDeps } from "@diligent/runtime/collab";
 import type { DiligentPaths } from "@diligent/runtime/infrastructure";
 import type { SessionManagerConfig } from "@diligent/runtime/session";
+import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import type { AgentEvent } from "../../src/agent-event";
 import type { SessionManager } from "../../src/session/manager";
 
@@ -147,6 +148,7 @@ export function makeCollabDeps(overrides: Partial<CollabToolDeps> = {}): CollabT
     modelId: TEST_MODEL.id,
     effort: "medium",
     systemPrompt: [{ label: "base", content: "You are a helpful agent." }] as SystemSection[],
+    agentDefinitions: getBuiltinAgentDefinitions(),
     parentTools: [],
     maxAgents: 8,
     ...overrides,

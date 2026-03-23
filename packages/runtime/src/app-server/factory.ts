@@ -54,6 +54,7 @@ async function createRuntimeAgent(args: {
       modelId: modelId,
       effort,
       systemPrompt: guardedSystemPrompt,
+      agentDefinitions: runtimeConfig.agentDefinitions,
       getParentSessionId: getSessionId,
       approve,
       ask,
@@ -61,6 +62,7 @@ async function createRuntimeAgent(args: {
     },
     runtimeConfig.diligent.tools,
     runtimeConfig.skills,
+    undefined,
     existingAgent?.registry,
     { approve, ask },
   );

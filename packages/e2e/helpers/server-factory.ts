@@ -6,8 +6,10 @@ import {
   createYoloPermissionEngine,
   DiligentAppServer,
   ensureDiligentDir,
+  getBuiltinAgentDefinitions,
   ProviderManager,
   RuntimeAgent,
+  resolveAvailableAgentDefinitions,
 } from "@diligent/runtime";
 import { createSimpleStream } from "./fake-stream";
 
@@ -16,6 +18,7 @@ export function createTestServer(opts: {
   streamFunction?: StreamFunction;
   tools?: Tool[];
   runtimeToolsConfig?: RuntimeConfig["diligent"]["tools"];
+  runtimeConfigOverrides?: Partial<RuntimeConfig>;
 }): DiligentAppServer {
   const streamFn = opts.streamFunction ?? createSimpleStream("ok");
 
@@ -34,6 +37,10 @@ export function createTestServer(opts: {
   }
 
   const providerManager = new ProviderManager({});
+  const agentDefinitions = resolveAvailableAgentDefinitions(
+    getBuiltinAgentDefinitions(),
+    opts.runtimeConfigOverrides?.agents ?? [],
+  );
   const runtimeConfig: RuntimeConfig = {
     model: { id: "fake", provider: "fake", contextWindow: 8192, maxOutputTokens: 4096, supportsThinking: false },
     effort: "medium",
@@ -43,6 +50,8 @@ export function createTestServer(opts: {
     diligent: { tools: opts.runtimeToolsConfig },
     sources: [],
     skills: [],
+    agents: opts.runtimeConfigOverrides?.agents ?? [],
+    agentDefinitions,
     compaction: {
       enabled: true,
       reservePercent: 16,
@@ -50,6 +59,7 @@ export function createTestServer(opts: {
     },
     permissionEngine: createYoloPermissionEngine(),
     providerManager,
+    ...opts.runtimeConfigOverrides,
   };
 
   const base = createAppServerConfig({ cwd: opts.cwd, runtimeConfig });

@@ -5,7 +5,11 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import { ProviderManager } from "@diligent/core/llm/provider-manager";
 import type { Model, StreamFunction, SystemSection, ThinkingEffort } from "@diligent/core/llm/types";
+import { getBuiltinAgentDefinitions } from "../agent/agent-types";
 import type { Mode } from "../agent/mode";
+import { type ResolvedAgentDefinition, resolveAvailableAgentDefinitions } from "../agent/resolved-agent";
+import type { AgentMetadata } from "../agents/index";
+import { discoverAgents, renderAgentsSection } from "../agents/index";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
 import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
@@ -28,6 +32,8 @@ export interface RuntimeConfig {
   diligent: DiligentConfig;
   sources: string[];
   skills: SkillMetadata[];
+  agents: AgentMetadata[];
+  agentDefinitions: ResolvedAgentDefinition[];
   compaction: {
     enabled: boolean;
     reservePercent: number;
@@ -98,6 +104,19 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     skillsSection = renderSkillsSection(skills);
   }
 
+  let agents: AgentMetadata[] = [];
+  let agentsSection = "";
+  const agentsEnabled = config.agents?.enabled ?? true;
+  if (agentsEnabled) {
+    const result = await discoverAgents({
+      cwd,
+      additionalPaths: config.agents?.paths,
+    });
+    agents = result.agents;
+    agentsSection = renderAgentsSection(agents);
+  }
+  const agentDefinitions = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), agents);
+
   // Build system prompt with knowledge AND skills
   let basePrompt: string;
   if (config.systemPrompt) {
@@ -130,6 +149,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     knowledgeSection,
     config.instructions,
     skillsSection,
+    agentsSection,
   );
 
   return {
@@ -141,6 +161,8 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     diligent: config,
     sources,
     skills,
+    agents,
+    agentDefinitions,
     compaction: {
       enabled: config.compaction?.enabled ?? true,
       reservePercent: config.compaction?.reservePercent ?? 14,

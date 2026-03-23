@@ -3,8 +3,8 @@
 import type { ModelClass } from "@diligent/core/llm/models";
 import { agentTypeToModelClass, resolveModel, resolveModelForClass } from "@diligent/core/llm/models";
 import type { TextBlock } from "@diligent/core/types";
-import { BUILTIN_AGENT_TYPES } from "../agent/agent-types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
+import { resolveAgentDefinition } from "../agent/resolved-agent";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import { SessionManager } from "../session/manager";
 import { buildDefaultTools } from "../tools/defaults";
@@ -85,6 +85,7 @@ export class AgentRegistry {
     agentType: string;
     resumeId?: string;
     modelClass?: ModelClass;
+    allowedTools?: string[];
   }): {
     threadId: string;
     nickname: string;
@@ -94,29 +95,37 @@ export class AgentRegistry {
       throw new Error(`Max active agents reached (${this.maxAgents}). Close some agents first.`);
     }
 
-    const agentType =
-      params.agentType in BUILTIN_AGENT_TYPES
-        ? BUILTIN_AGENT_TYPES[params.agentType as keyof typeof BUILTIN_AGENT_TYPES]
-        : BUILTIN_AGENT_TYPES.general;
+    const agentDefinition =
+      resolveAgentDefinition(this.deps.agentDefinitions, params.agentType) ??
+      resolveAgentDefinition(this.deps.agentDefinitions, "general");
+    if (!agentDefinition) {
+      throw new Error("Missing built-in general agent definition");
+    }
     const nickname = this.pool.reserve();
     const abortController = new AbortController();
 
     // Build child tool list
-    let childTools = this.deps.parentTools;
-    if (agentType.toolFilter === "readonly") {
-      childTools = this.deps.parentTools.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name));
-    } else {
-      // general: exclude collab tools (prevent nesting)
-      childTools = this.deps.parentTools.filter((t) => !COLLAB_TOOL_NAMES.has(t.name));
+    let childTools = this.deps.parentTools.filter((tool) => !COLLAB_TOOL_NAMES.has(tool.name));
+    if (agentDefinition.readonly) {
+      childTools = childTools.filter((tool) => PLAN_MODE_ALLOWED_TOOLS.has(tool.name));
+    }
+    if (agentDefinition.allowedTools) {
+      const allowedSet = new Set(agentDefinition.allowedTools);
+      childTools = childTools.filter((tool) => allowedSet.has(tool.name));
+    }
+    if (params.allowedTools) {
+      const allowedSet = new Set(params.allowedTools);
+      childTools = childTools.filter((tool) => allowedSet.has(tool.name));
     }
 
-    const childSystemPrompt = agentType.systemPromptPrefix
-      ? [{ label: "agent_role", content: agentType.systemPromptPrefix }, ...this.deps.systemPrompt]
+    const childSystemPrompt = agentDefinition.systemPromptPrefix
+      ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }, ...this.deps.systemPrompt]
       : [...this.deps.systemPrompt];
 
     // Resolve model class: explicit override > agent_type-based default
     const parentModel = resolveModel(this.deps.modelId);
-    const targetClass: ModelClass = params.modelClass ?? agentTypeToModelClass(params.agentType, parentModel);
+    const targetClass: ModelClass =
+      params.modelClass ?? agentDefinition.defaultModelClass ?? agentTypeToModelClass(params.agentType, parentModel);
     const childModel = resolveModelForClass(parentModel, targetClass);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
@@ -133,10 +142,19 @@ export class AgentRegistry {
           : undefined;
 
         const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk };
-        const result = await buildDefaultTools(this.deps.cwd, this.deps.paths, childDeps, undefined, [], undefined, {
-          approve: this.deps.approve,
-          ask: childAsk,
-        });
+        const result = await buildDefaultTools(
+          this.deps.cwd,
+          this.deps.paths,
+          childDeps,
+          undefined,
+          [],
+          childTools,
+          undefined,
+          {
+            approve: this.deps.approve,
+            ask: childAsk,
+          },
+        );
 
         return new RuntimeAgent(
           childModel.id,

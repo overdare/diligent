@@ -35,6 +35,7 @@ export async function buildDefaultTools(
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
   toolsConfig?: DiligentConfig["tools"],
   skills: SkillMetadata[] = [],
+  parentToolOverride?: Tool[],
   /**
    * Existing registry to reuse across turns.
    * When provided, the registry's mutable deps are updated but live child-agent
@@ -43,30 +44,35 @@ export async function buildDefaultTools(
   existingRegistry?: AgentRegistry,
   host?: RuntimeToolHost,
 ): Promise<BuildDefaultToolsResult> {
-  // 1. Assemble all built-in tools
-  //const fileEditTools: Tool[] = [createWriteAbsoluteTool(host), createEditTool(host), createMultiEditTool(host)];
+  const catalog = parentToolOverride
+    ? {
+        tools: [...parentToolOverride],
+        state: [],
+        plugins: [],
+        pluginErrors: [],
+      }
+    : await (async () => {
+        const builtinTools: Tool[] = [
+          createBashTool(cwd, host),
+          createSkillTool(skills),
+          createReadTool(),
+          createApplyPatchTool(cwd, host),
+          createLsTool(),
+          createGlobTool(cwd),
+          createGrepTool(cwd),
+          createPlanTool(),
+          createRequestUserInputTool(host),
+        ];
 
-  const builtinTools: Tool[] = [
-    createBashTool(cwd, host),
-    createSkillTool(skills),
-    createReadTool(),
-    createApplyPatchTool(cwd, host),
-    createLsTool(),
-    createGlobTool(cwd),
-    createGrepTool(cwd),
-    createPlanTool(),
-    createRequestUserInputTool(host),
-  ];
+        if (paths) {
+          builtinTools.push(createSearchKnowledgeTool(paths.knowledge));
+          builtinTools.push(createUpdateKnowledgeTool(paths.knowledge));
+        }
 
-  if (paths) {
-    builtinTools.push(createSearchKnowledgeTool(paths.knowledge));
-    builtinTools.push(createUpdateKnowledgeTool(paths.knowledge));
-  }
+        return buildToolCatalog(builtinTools, toolsConfig, cwd, host);
+      })();
 
-  // 2. Run catalog resolution (applies config toggles, loads plugins, enforces immutables)
-  const catalog = await buildToolCatalog(builtinTools, toolsConfig, cwd, host);
-
-  // 3. Add collab tools (always enabled, not user-configurable)
+  // 2. Add collab tools (always enabled, not user-configurable)
   if (paths && collabDeps) {
     const { tools: collabTools, registry } = createCollabTools(
       {

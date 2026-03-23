@@ -2,17 +2,14 @@
 
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import {
-  BUILTIN_AGENT_TYPE_NAMES,
-  formatAgentTypeParameterDescription,
-  formatSpawnAgentToolDescription,
-} from "../agent/agent-types";
+import { formatAgentTypeParameterDescription, formatSpawnAgentToolDescription } from "../agent/agent-types";
+import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentRegistry } from "./registry";
 
 const SpawnAgentParams = z.object({
   message: z.string().describe("The full prompt/instruction for the sub-agent"),
   description: z.string().optional().describe("Brief description for status display"),
-  agent_type: z.enum(BUILTIN_AGENT_TYPE_NAMES).default("general").describe(formatAgentTypeParameterDescription()),
+  agent_type: z.string().default("general").describe(formatAgentTypeParameterDescription()),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
   model_class: z
     .enum(["pro", "general", "lite"])
@@ -30,13 +27,26 @@ const SpawnAgentParams = z.object({
         "'quick' for targeted lookups (1–2 searches, fast answer). " +
         "'thorough' for comprehensive analysis across multiple locations and naming conventions (default).",
     ),
+  allowed_tools: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional per-spawn child-tool allow-list. Can only narrow the selected agent's default tool access and may intentionally narrow to zero tools.",
+    ),
 });
 
-export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof SpawnAgentParams> {
+export function createSpawnAgentTool(
+  registry: AgentRegistry,
+  agentDefinitions: ResolvedAgentDefinition[],
+): Tool<typeof SpawnAgentParams> {
+  const parameters = SpawnAgentParams.extend({
+    agent_type: z.string().default("general").describe(formatAgentTypeParameterDescription(agentDefinitions)),
+  });
+
   return {
     name: "spawn_agent",
-    description: formatSpawnAgentToolDescription(),
-    parameters: SpawnAgentParams,
+    description: formatSpawnAgentToolDescription(agentDefinitions),
+    parameters,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
       const prompt =
         args.agent_type === "explore" && args.thoroughness
@@ -48,6 +58,7 @@ export function createSpawnAgentTool(registry: AgentRegistry): Tool<typeof Spawn
         agentType: args.agent_type,
         resumeId: args.resume_id,
         modelClass: args.model_class,
+        allowedTools: args.allowed_tools,
       });
       return { output: JSON.stringify({ thread_id: threadId, nickname }) };
     },
