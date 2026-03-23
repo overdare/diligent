@@ -183,16 +183,18 @@ function buildDesktop(plat: PlatformTarget): void {
 
   buildSidecar(plat);
 
+  const tauriConfigPath = join(tauriDir, ".diligent-packaging", "tauri.package.conf.json");
+
   if (rustSourcesChanged(tauriDir)) {
     console.log("   Rust sources changed — full compile");
-    run("bunx tauri build", DESKTOP, {
+    run(`bunx tauri build --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
     });
     saveRustHash(tauriDir);
   } else {
     console.log("   Rust sources unchanged — skipping compile, bundling only");
-    run("bunx tauri bundle", DESKTOP, {
+    run(`bunx tauri bundle --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
     });
@@ -382,7 +384,7 @@ try {
   cleanupDesktopIconOverrides();
   const desktopIcons = applyDesktopIconOverrides(desktopIconPaths);
 
-  // Inject version into protocol + tauri.conf.json
+  // Inject version into protocol + temporary Tauri config
   console.log(`⚙️  Injecting version ${version}...`);
   backup = injectVersion(version, { projectName, desktopIcons });
 

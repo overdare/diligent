@@ -4,3 +4,5 @@ src-tauri/binaries/init*
 src-tauri/resources/dist/
 src-tauri/resources/defaults/
 src-tauri/.rust-build-hash
+src-tauri/.diligent-packaging/
+src-tauri/.diligent-packaging-icons/
