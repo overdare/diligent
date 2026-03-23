@@ -1,52 +1,21 @@
-// Content blocks
-export type ContentBlock = TextBlock | ImageBlock | LocalImageBlock | ThinkingBlock | ToolCallBlock;
+import type { AssistantMessage, UserMessage } from "@diligent/protocol";
 
-export interface TextBlock {
-  type: "text";
-  text: string;
-}
+// Re-exports from protocol (canonical source of truth per ARCHITECTURE.md)
+export type {
+  AssistantMessage,
+  ContentBlock,
+  ImageBlock,
+  LocalImageBlock,
+  StopReason,
+  TextBlock,
+  ThinkingBlock,
+  ToolCallBlock,
+  Usage,
+  UserMessage,
+} from "@diligent/protocol";
 
-export interface ImageBlock {
-  type: "image";
-  source: { type: "base64"; media_type: string; data: string };
-}
-
-export interface LocalImageBlock {
-  type: "local_image";
-  path: string;
-  mediaType: string;
-  fileName?: string;
-}
-
-export interface ThinkingBlock {
-  type: "thinking";
-  thinking: string;
-  signature?: string;
-}
-
-export interface ToolCallBlock {
-  type: "tool_call";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-// Messages (D005: unified, inline content)
-export interface UserMessage {
-  role: "user";
-  content: string | ContentBlock[];
-  timestamp: number;
-}
-
-export interface AssistantMessage {
-  role: "assistant";
-  content: ContentBlock[];
-  model: string;
-  usage: Usage;
-  stopReason: StopReason;
-  timestamp: number;
-}
-
+// Core-owned types: ToolResultMessage uses a weaker render type (ToolRenderPayloadLike)
+// to decouple tool implementations from the full protocol render block schema.
 export interface ToolRenderPayloadLike {
   version: 2;
   inputSummary?: string;
@@ -71,12 +40,3 @@ export interface ToolResultMessage {
 }
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
-
-export type StopReason = "end_turn" | "tool_use" | "max_tokens" | "error" | "aborted";
-
-export interface Usage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}

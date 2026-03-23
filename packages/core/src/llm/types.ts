@@ -1,4 +1,7 @@
-import type { ProviderName as ProtocolProviderName } from "@diligent/protocol";
+import type {
+  ProviderName as ProtocolProviderName,
+  ThinkingEffort as ProtocolThinkingEffort,
+} from "@diligent/protocol";
 import type { EventStream } from "../event-stream";
 import type { AssistantMessage, Message, StopReason, Usage } from "../types";
 
@@ -10,7 +13,7 @@ export interface SystemSection {
   cacheControl?: "ephemeral"; // hint for Anthropic cache breakpoints
 }
 
-export type ThinkingEffort = "none" | "low" | "medium" | "high" | "max";
+export type ThinkingEffort = ProtocolThinkingEffort;
 
 export type ProviderName = ProtocolProviderName;
 
