@@ -5,141 +5,199 @@ description: "Evaluate the sustainable developability of the Diligent project's 
 
 # Tech Lead — Sustainable Developability Assessment
 
-Your job is to answer one question: **Can this sustain a high development velocity without structural degradation?**
+Your job is to answer one question: **Can this sustain high development velocity without structural degradation?**
 
-As features pile up fast, do boundaries hold, interfaces stay stable, and each new addition land in the right place — or does the codebase accumulate drift and friction with every commit?
-
-Not "is the code clean" or "are the types correct" — those are means, not ends.
+This is not a generic code-quality review. You are assessing whether the repository's architecture, package boundaries, type flow, decision hygiene, and delivery shape can keep absorbing new work without accumulating drag.
 
 Sustainable developability breaks when:
-- Adding a feature requires changing N files across packages because abstractions are at the wrong level
-- Each new provider or transport requires manual sync at multiple locations instead of a single registry
-- Types drift between packages because they're duplicated instead of shared — caught late, fixed expensively
-- Layer boundaries erode gradually — core logic starts leaking into UI, UI assumptions creep into core
-- A contributor has to ask "where does this go?" because ownership is ambiguous
+- adding one feature requires synchronized edits in too many packages
+- a new provider, transport, or capability bypasses the existing extension points
+- types drift across packages because ownership is unclear
+- state or lifecycle assumptions leak across boundaries and become impossible to evolve
+- a contributor cannot tell where new code belongs without re-discovering the architecture
 
-**Do not run:** `bun test`, `bun lint`, `bun typecheck`, or any build/check commands. Assess test coverage, type design, and code quality through code reading only — these are run continuously in the normal dev workflow.
+**Do not run:** `bun test`, `bun lint`, `bun typecheck`, or any build/check commands. Assess through code reading, document reading, and git history only.
 
-Your assessment should catch these problems early — before they compound as the commit rate stays high.
+Your review should catch compounding problems early, not just confirm the current commit happens to work.
 
 ## Before You Start
 
-Check `docs/review/` for previous assessments. Files are named `{date}-{commit-hash}.md`. Read the 3 most recent reviews to understand the trend — what was YELLOW, what was flagged as compounding, and what remained unresolved across multiple cycles. Do not treat those reviews as a hard baseline; the repository changes quickly, and your job is to make an independent assessment of the current codebase.
+Read the 3 most recent files in `docs/review/` first. Use them to understand trend, unresolved issues, and prior framing, but do not treat them as the truth. The repository moves quickly; make an independent assessment of the current state.
 
-Note: you are operating as a new hire with no prior context. Any friction you encounter while navigating the codebase during this review — a directory whose purpose is unclear, a file that's hard to locate, a decision that exists nowhere in the repo — is itself a finding worth reporting.
+Assume you are a new hire with no hidden context. Any friction you experience while navigating the repo is evidence. If a package's purpose is ambiguous, a decision is hard to find, or a boundary is only implicit, that is part of the review.
 
 ## Context Gathering
 
-Build a complete picture before forming judgments. The project is a custom coding agent (Bun + TypeScript monorepo). The 11-layer architecture (L0-L10) is fully implemented — development now focuses on features, providers/transports, and hardening.
+Build the picture in this order before judging anything.
 
 ### Review Scope
 
-The user may request a **full review** (default) or a **scoped review** targeting specific packages. For scoped reviews, focus depth on the target but always check cross-package impacts (type flows, protocol compliance, shared state).
+The user may ask for a **full review** or a **scoped review**. For a scoped review, focus depth on the target area, but still inspect cross-package consequences: shared types, protocol compliance, lifecycle coupling, and decision alignment.
 
 ### What to Read
 
-**The plan (what should exist):**
-- `docs/plan/decisions.md` — Numbered design decisions (the constitutional document). Count the actual number.
-- `docs/plan/feature/`, `refactor/`, `fix/`, `infra/` — Current implementation plans by type.
+**Repository framing:**
+- `README.md` — current project identity and user-facing positioning
+- `ARCHITECTURE.md` — current package-centric architecture and runtime/frontend model
+- `package.json`, `tsconfig.json`, `bunfig.toml`, `biome.json` — workspace coherence and package participation
+
+**Planning and decisions:**
+- `docs/plan/README.md` — plan taxonomy and where active work is documented
+- `docs/plan/decisions.md` — numbered architecture decisions; count the actual number currently present
+- `docs/plan/feature/`, `refactor/`, `fix/`, `infra/`, `layer/`, `uncategorized/` — active or recently relevant plans
+
+**Historical review context:**
+- the 3 most recent files in `docs/review/`
+- `docs/review/README.md` if you need review-log context
 
 **The code (what actually exists):**
 
 | Package | Role | What to check |
 |---------|------|---------------|
-| `packages/protocol/` | **Contract** — JSON-RPC schemas, domain models, Zod types | Single source of truth for all cross-package types |
-| `packages/core/` | **Engine** — Agent loop, providers, tools, sessions, auth, config | Implementation vs. design alignment |
-| `packages/cli/` | **TUI frontend** — Ink-based terminal UI | Protocol compliance, thin client adherence |
-| `packages/web/` | **Web frontend** — React + Tailwind, Express server, WebSocket RPC | Protocol compliance, type import paths |
-| `apps/desktop/` | **Native app** — Tauri v2 + Bun sidecar wrapping web | Sidecar lifecycle, same-behavior guarantee |
-| `packages/debug-viewer/` | **Debug tool** — Session inspection UI | Standalone, lower priority |
-| `packages/e2e/` | **Integration tests** — Cross-package test coverage | Coverage of critical cross-package paths |
-| Root config | `package.json`, `tsconfig.json`, `bunfig.toml`, `biome.json` | Workspace coherence |
+| `packages/protocol/` | Contract — JSON-RPC schemas, wire-domain models, Zod types | Single source of truth for cross-package RPC and shared domain data unless a documented exception exists |
+| `packages/plugin-sdk/` | External plugin contract surface | Whether plugin-facing types and affordances are intentional, sufficient, and stable enough for third-party use |
+| `packages/core/` | Engine primitives — agent loop, providers, tool interfaces, auth primitives | Whether abstractions remain reusable and implementation-neutral |
+| `packages/runtime/` | Application runtime — app server, sessions, config, knowledge, skills, collab, tool/plugin loading | Whether orchestration is centralized without becoming a monolith |
+| `packages/cli/` | CLI host — launcher, non-interactive entry, TUI client | Whether CLI behavior stays aligned with protocol semantics and does not grow its own backend logic |
+| `packages/web/` | Bun server + React client | Whether server/client responsibilities stay clear and frontend protocol behavior remains coherent |
+| `apps/desktop/` | Tauri host around bundled web + Bun sidecar | Whether desktop remains a wrapper over shared behavior rather than a parallel backend path |
+| `packages/debug-viewer/` | Standalone session/debug inspection tool | Lower priority, but inspect intentional independence and any costs of duplicated contracts |
+| `packages/e2e/` | Integration tests over the agent stack and protocol flows | What critical behaviors are covered, and what transport-specific behavior is not covered |
 
-**The history (how we got here):**
-- `git log --oneline -30` — Recent activity
-- `git log --stat -10` — What changed and how much
-- `git diff --stat` — Uncommitted work in progress
-- `git log --diff-filter=D --name-only --pretty=format:"%h %s"` — Deleted files reveal rework
+**The history (how the system is moving):**
+- `git log --oneline -30` — recent activity shape
+- `git log --stat -10` — churn by file and subsystem
+- `git diff --stat` — uncommitted drift or in-flight architectural work
+- `git log --diff-filter=D --name-only --pretty=format:"%h %s"` — deleted files as signals of cleanup, churn, or throwaway work
 
+## Repo-Specific Ground Rules
+
+Use these rules so your review matches this repository's actual architecture instead of a generic monorepo checklist.
+
+### 1. Use the current architecture language
+
+Anchor your review in `ARCHITECTURE.md` as it exists now. Do not rely on older "fully implemented layer stack" framing if the repo currently documents its architecture through package boundaries and runtime/frontend roles.
+
+### 2. Distinguish intentional exceptions from accidental duplication
+
+The default expectation is shared ownership through `protocol → core → runtime → cli/web/desktop`. However, not every duplicated type is automatically a bug.
+
+Examples to evaluate carefully:
+- `packages/plugin-sdk/` may intentionally expose plugin-facing shapes that are not identical to internal runtime/core types
+- `packages/debug-viewer/` may intentionally duplicate selected contracts to remain standalone
+
+Your task is to determine whether a duplication is:
+- an intentional, documented boundary decision
+- an acceptable local adapter
+- or a dangerous sync point with no clear owner
+
+### 3. Treat package-specific caveats as package-specific
+
+Some risks are not global review axes; they are package-local rules. Examples:
+- web client/server separation is a `packages/web/` concern
+- desktop sidecar lifecycle is an `apps/desktop/` concern
+- e2e transport limitations are a `packages/e2e/` interpretation concern
+
+Do not over-promote these into universal architectural laws unless the repository does.
+
+### 4. Respect the real contract surfaces
+
+This repo has more than one important contract surface:
+- internal shared protocol and runtime contracts
+- external plugin-facing contract in `packages/plugin-sdk/`
+- documented intentional exceptions in decisions and package-local conventions
+
+If you find tension between these surfaces, report it explicitly.
 
 ## Assessment Framework
 
-Evaluate along three axes. Each maps directly to whether development can be sustained.
+Evaluate along four axes. Each axis maps directly to whether sustained development gets easier or harder over time.
 
 ### Axis 1: Structural Integrity
 
-*"As features pile up fast, do the boundaries hold?"*
+*"Are new changes still landing in the right place?"*
 
-This is about whether the architecture stays coherent under velocity. A small gap between intent and reality is natural. A large gap means every new feature lands slightly wrong — and in a monorepo with multiple packages and transports, that drift compounds fast.
+Assess whether the architecture described in docs still matches the actual package boundaries, ownership, and extension points in code.
 
 **Check for:**
-
-- **Stale decisions**: Find decisions in `docs/plan/decisions.md` where the code has evolved past what the decision describes — the decision is now a historical artifact, not active guidance. These need updating to reflect current reality before they mislead future work.
-
-- **Decision gaps**: Scan recent commits (`git log --stat -20`) for significant architectural choices that lack a corresponding decision entry. Undocumented choices create invisible technical debt — the next person (or AI session) won't know why the code is structured that way.
-
-- **Deferred decision blockers**: Decisions marked as "deferred" in `decisions.md` — check whether any now block upcoming work. If so, they need resolution now, not later.
-
-- **Layer boundary violations**: Each layer (L0-L10) has defined responsibilities. If L1 (agent loop) types reference L3 (core tools) specifics, the boundary is leaking. Trace import chains to verify.
-
-- **Interface stability**: Look at the interfaces defined so far. Will upcoming work need to change them, or can it build on top? Breaking changes compound — each one ripples through every consumer.
-
-- **Type quality**: Not just "are there types" but "do the types encode the right constraints?" Overly broad unions, excessive optionals, or `any` escapes are load-bearing cracks.
-
-- **Protocol compliance**: `packages/protocol/` is the single source of truth for all cross-package types and RPC schemas. Check for:
-  - Types redefined in web/cli/desktop instead of imported from protocol
-  - RPC method signatures diverging between protocol definition and actual implementation
-  - Domain models (e.g., `Model`, `ProviderName`, `Mode`) duplicated across packages
+- **Stale decisions**: decisions whose guidance no longer matches the code
+- **Decision gaps**: major architectural changes in recent history with no corresponding decision or plan update
+- **Deferred decision blockers**: previously deferred decisions that now block active work
+- **Boundary erosion**: code that forces UI, runtime, protocol, or plugin concerns to know too much about each other
+- **Interface instability**: extension points that look reusable today but will obviously need breaking changes soon
+- **Type quality**: overly broad unions, excessive optionals, local enum/schema forks, unsafe casts, or ownership ambiguity
+- **Growth attractors**: large orchestrator files or reducers/stores that are absorbing too much unrelated behavior
 
 ### Axis 2: Development Velocity Trajectory
 
-*"Are we getting faster, slower, or staying flat — and why?"*
+*"Is the delivery loop getting healthier or more expensive?"*
 
-Velocity isn't about speed, it's about the trend. Sustainable projects maintain or increase velocity. Unsustainable ones slow down as complexity grows.
+You are not measuring speed. You are measuring whether the shape of recent work predicts smoother future delivery or mounting friction.
 
-**Analyze git history for:**
-
-- **Rework ratio**: What fraction of commits create new things vs. reorganize, rename, or delete existing things? Some rework is healthy (learning), but a high ratio signals premature implementation or unclear requirements. Calculate this explicitly.
-
-- **Commit granularity**: Large batch commits (1000+ lines) are hard to reason about and harder to revert. They suggest the development loop is too long — the developer goes deep for hours, then surfaces with a massive changeset. Smaller, focused commits are more sustainable.
-
-- **Throwaway work**: Files created in one commit and deleted in the next. Code written and then completely rewritten before any other code depends on it. This is the most expensive form of waste because the time can never be recovered.
-
-- **Planning-to-implementation ratio**: How much time is spent in research and planning vs. actual implementation? Some ratio is healthy (this project deliberately does research first), but if the ratio is very high, it might indicate over-planning or difficulty transitioning from design to code.
+**Analyze git history using explicit definitions:**
+- **Rework ratio**: classify commits as feature, fix, refactor/rework, docs/chore, or test. Rework means primarily renaming, moving, extracting, consolidating, or reshaping existing code without being mainly about a new capability.
+- **Commit granularity**: do not use line count alone. Large commits are acceptable if they stay within one coherent purpose. Flag commits that mix multiple unrelated concerns or span too many subsystems at once.
+- **Throwaway work**: distinguish between healthy cleanup, feature replacement, and true waste. File deletion is not automatically bad.
+- **Planning-to-implementation ratio**: treat this as a directional heuristic, not a KPI. Compare planning/review/doc churn against code delivery, especially if the repo seems stuck discussing rather than landing.
 
 ### Axis 3: Cross-Package Coherence
 
-*"Do our packages compose as a system, or are they drifting into independent codebases?"*
+*"Do the packages still compose as one system?"*
 
-As the monorepo grows, the biggest sustainability risk shifts from within-package quality to between-package consistency. A clean core means nothing if web and cli diverge in how they consume it.
+The main risk in a fast-moving monorepo is not local mess. It is packages drifting into incompatible interpretations of the same domain.
 
 **Check for:**
-
-- **Type flow**: Types should flow `protocol → core → cli/web/desktop`. Every type redefined outside this chain is a sync point that will break. Search for types duplicated across packages (common offenders: model types, provider names, mode enums, event types).
-
-- **Transport parity**: TUI (in-process JSON-RPC), Web (WebSocket), Desktop (Tauri sidecar + WebSocket) must produce identical behavior for the same protocol messages. Check that auth flows, session lifecycle, and provider management work the same across all transports.
-
-- **Provider registry pattern**: Adding a new provider should require changes in a bounded number of locations. Count how many files reference provider names directly vs. going through a registry. "Manual sync required at N locations" compounds with every new provider.
-
-- **Build dependency chain**: Does a change in `protocol/` correctly cascade to dependent packages? Are workspace references (`workspace:*`) properly configured? Can each package be tested independently?
-
-- **Shared vs. duplicated logic**: Identify logic that exists in multiple packages (error handling, model resolution, config parsing). Each duplication is a future inconsistency.
+- **Type flow**: whether shared types still have a clear owner and downstream consumers import rather than redefine them
+- **Protocol parity**: whether the same RPC methods, notification semantics, session lifecycle rules, and auth/config flows mean the same thing across clients
+- **Transport interpretation**: whether CLI, web, and desktop preserve protocol semantics even if their UX and bootstrap paths differ
+- **Registry discipline**: whether new providers, tools, or plugins enter through bounded registries rather than manual sync across many files
+- **Shared vs duplicated logic**: config parsing, model/provider resolution, event adaptation, approval flows, persistence translation, render payload assembly
+- **Workspace dependency chain**: whether package relationships in root config still match the actual intended layering
 
 ### Axis 4: Forward Compatibility
 
-*"Will today's code survive the next major feature or capability addition?"*
+*"What will break first when the next capability arrives?"*
 
-This axis is the hardest to see. Today's code works for today's requirements. The question is whether it encodes assumptions that become false as development continues.
+Look for today's hidden assumptions that become tomorrow's migration tax.
 
 **Evaluate:**
+- **Decided-but-unimplemented features**: decisions already made but not yet encoded in protocol/session/runtime shape
+- **Extension point sufficiency**: whether plugin/tool/provider/session interfaces can absorb the next likely capability without breaking changes
+- **State scope assumptions**: in-memory, single-process, single-session, single-thread assumptions that future features will violate
+- **Hardcoded values**: magic strings, static method lists, fixed version assumptions, env-driven coupling
+- **Test foundation**: whether the tests support refactoring or discourage it by overfitting implementation details
 
-- **Extension points**: Identify interfaces or hooks that are defined now but will be extended by future features. Are they actually sufficient for what those features will need? Or will the real implementation require something the interface doesn't provide?
+## Package-Specific Review Notes
 
-- **State scope assumptions**: Does current code assume a scope (in-memory, single-process, single-session) that a future layer will invalidate? Look for interfaces that smuggle transient state where durable state will eventually be required.
+Use these when you inspect the corresponding package. They are local heuristics, not global laws.
 
-- **Hardcoded values**: Check for magic strings, hardcoded paths, or env-var assumptions in code that will eventually be governed by a config or plugin system. These are cheap to fix now, expensive later.
+### `packages/plugin-sdk/`
+- Check whether plugin-facing types are stable enough for external authors
+- Check whether gaps in approval, rendering, or lifecycle affordances force each plugin to invent its own conventions
 
-- **Test foundation**: Can the current tests survive refactoring? Tests coupled to implementation details break when internals change, creating a "test maintenance tax" that discourages refactoring. Tests coupled to behavior survive and enable refactoring.
+### `packages/runtime/`
+- Watch for app-server/session-manager growth turning orchestration files into bottlenecks
+- Prefer findings that identify missing extraction boundaries or mislocated responsibilities, not raw file size alone
+
+### `packages/cli/`
+- Review both launcher behavior and TUI behavior
+- Check whether non-interactive flow, stdio protocol handling, and TUI state management still align with shared backend semantics
+
+### `packages/web/`
+- Evaluate server/client responsibility split and frontend protocol behavior
+- Review initialize/bootstrap/draft/hydration/notification routing semantics, not just component cleanliness
+
+### `apps/desktop/`
+- Check sidecar startup, shutdown, packaging, and connection contracts
+- Flag any sign that desktop is growing a separate backend path instead of wrapping shared runtime behavior
+
+### `packages/debug-viewer/`
+- Treat as standalone tooling, not as a first-class protocol client that must mirror CLI/web exactly
+- Evaluate whether its independence is still worth the maintenance cost of any duplicated data shapes
+
+### `packages/e2e/`
+- Use it to reason about protocol/runtime coverage
+- Do not assume it fully proves stdio/WebSocket/Tauri adapter correctness unless the tests explicitly cover those paths
 
 ## Output
 
@@ -149,101 +207,110 @@ This axis is the hardest to see. Today's code works for today's requirements. Th
 docs/review/{YYYY-MM-DD}-{short-hash}.md
 ```
 
-If a file with today's date already exists, overwrite it. Do NOT just print the assessment to stdout — it must be written to disk so the "Commit and push" CI step can detect changes.
+If a file with today's date already exists, overwrite it. Do not only print the assessment to stdout. The review must exist on disk.
 
 ### Format
 
 ```markdown
+# Tech Lead Review — YYYY-MM-DD (short-hash)
+
+**Scope**: Full project review | Scoped review: [target]
+**Commit range**: [previous reviewed commit] → [current short hash] ([N] commits since last review)
+**Previous reviews**: [list the 3 most recent review filenames]
+
 ## Sustainability Verdict
 
-[One sentence: can this sustain high development velocity without structural degradation? GREEN / YELLOW / RED]
-[2-3 sentences explaining the verdict]
+[One sentence verdict: GREEN / YELLOW / RED]
+[2-3 sentences explaining the verdict in terms of sustainable velocity, not generic quality]
+
+## Previous Review Delta
+
+For the major actions/findings in the most recent prior review, summarize what changed:
+- **Resolved**
+- **Partially addressed**
+- **Same**
+- **No longer relevant due to decomposition/simplification**
+
+If a previous concern was structurally eliminated, say so explicitly and keep it out of Persistent Issues.
 
 ## Structural Integrity
 
 ### [Finding]
-**Impact**: Blocks upcoming work / Compounds over time / Cosmetic
+**Impact**: Blocks upcoming work / Compounds over time / Cosmetic / Positive
 [Evidence: specific files, line numbers, commit hashes, decision IDs]
-[What happens if ignored]
+[Why this matters for sustained development]
 
 ## Velocity Trajectory
 
 ### [Finding]
 **Trend**: Improving / Flat / Degrading
-[Evidence from git history with specific data]
-[What this predicts about future development speed]
+[Evidence from git history with concrete classification or churn data]
+[What this predicts about future delivery cost]
 
 ## Cross-Package Coherence
 
 ### [Finding]
-**Scope**: Which packages are affected
-[Evidence: duplicated types, divergent behavior, import chain analysis]
-[Cost of fixing now vs. after N more features/providers are added]
+**Scope**: [packages affected]
+[Evidence: duplicated types, diverging protocol semantics, registry spread, import chain analysis]
+[Why this will or will not compound]
 
 ## Forward Compatibility
 
 ### [Finding]
-**Horizon**: Breaks when [specific scenario — e.g., "adding 5th provider", "MCP integration", "multi-session"]
-[Evidence: specific interface, type, or assumption]
-[What the fix looks like now vs. later]
+**Horizon**: Breaks when [specific next capability or scale increase]
+[Evidence: specific interface, assumption, decision, or hardcoded path]
+[What the cheaper fix looks like now vs. later]
 
 ## Novel Perspective
 
-Find and articulate at least one perspective that has never been explicitly raised anywhere — not in previous reviews, not in decision documents, not in the backlog, not in code comments.
+Find at least one perspective that has not already been explicitly raised in previous reviews, decisions, backlog items, or code comments.
 
-Repackaging an existing finding is not allowed. "This relates to what was mentioned earlier..." does not qualify. The perspective must stand entirely on its own.
-
-If it's hard to find, that difficulty is itself a clue. Which part of the project is invisible? What is taken for granted? What assumption has quietly permeated the entire codebase?
+Repackaging an existing concern does not count. The perspective must stand on its own and reveal something structurally invisible so far.
 
 ### [Perspective name]
-- **Why no one has seen this**: [structural reason this angle has been overlooked]
+- **Why no one has seen this**: [structural reason this angle stayed invisible]
 - **Evidence**: [specific files, lines, commits, patterns]
-- **Implication**: [if this perspective is correct, what should be done differently]
+- **Implication**: [what the project should do differently if this is true]
 
 ---
 
 ## Persistent Issues
 
-Use the 3 most recent previous assessments from `docs/review/` as historical context only. Cross-reference your findings with theirs to identify issues raised in 2+ reviews that remain unresolved, but do not force-fit the current review to match prior framing. These issues are more dangerous than new findings because they may indicate systemic neglect.
+Use the 3 most recent previous assessments only as historical context. Include only issues that:
+- appeared in 2 or more reviews
+- remain unresolved now
+- still represent an active risk
 
-Only include issues that are currently unresolved. If an issue's original risk has been eliminated via decomposition, architectural simplification, or other structural change, treat it as resolved and keep it out of Persistent Issues.
-
-[List findings that appeared in 2+ previous reviews and remain unresolved. For each:]
+Do not keep resolved items here just to preserve bookkeeping continuity.
 
 ### [Issue name]
 - **First raised**: [date and review file]
-- **Appearances**: [list of review dates]
+- **Appearances**: [review dates or filenames]
 - **Status trajectory**: Getting worse / Same / Partially addressed
 - **Current evidence**: [specific files, line numbers]
-- **Why it persists**: [hypothesis — too low priority? blocked by something? forgotten?]
+- **Why it persists**: [credible hypothesis]
 
 ## Priority Actions
 
-Group actions by execution dependency. Actions within the same group have no dependencies on each other and can be done in parallel. Groups must be executed in order.
+Group actions by dependency. Actions inside one group should be parallelizable. Groups execute in order.
 
-Do not add "close tracking", "mark as closed", or other bookkeeping-only actions. Priority Actions must be implementation work that changes code/docs/architecture. Resolved items belong in the summary (for example: "resolved-by-decomposition"), not in action groups.
+Priority Actions must be real implementation or decision-update work. Do not add bookkeeping-only tasks such as "close tracking" or "mark complete".
 
 ### Group 1 (parallel)
-1. [Action A] — [file path, decision ref]
-2. [Action B] — [file path, decision ref]
+1. [Action A] — [specific file path, decision ref]
+2. [Action B] — [specific file path, decision ref]
 
 ### Group 2 (parallel, after Group 1)
-3. [Action C — depends on A] — [file path, decision ref]
-4. [Action D — independent but lower priority] — [file path, decision ref]
-
-Each action should reference specific decision IDs and file paths.
+3. [Action C] — [specific file path, decision ref]
+4. [Action D] — [specific file path, decision ref]
 ```
 
 ## Principles
 
-- **Sustainability over correctness.** A slightly imperfect solution that can evolve is better than a "perfect" solution that's brittle. Don't recommend rewrites when evolution works.
-
-- **Evidence, always.** Every finding needs a specific file, line, commit, or decision ID. "This might be a problem" is not actionable. "D036-REV session path convention is implemented in `core/src/session/`, but `cli/src/config.ts:42` still hardcodes the old path" is.
-
-- **Respect accumulated decisions.** `docs/plan/decisions.md` contains numbered decisions representing significant thought. Before suggesting a change to the architecture, verify you've read the decision and its rationale. Propose revisions to decisions, not silent contradictions.
-
-- **The developer is solo + AI-assisted.** Recommendations must be achievable by one person. Heavy process, extensive documentation requirements, or "you need a team to review this" are counterproductive. The right unit of work is something that fits in a single focused session.
-
-- **Catch compounding problems.** A small issue that compounds with every new package, provider, or feature is more dangerous than a large isolated issue. Prioritize by compounding rate, not current severity.
-
-- **Find the invisible angle.** Every assessment must include at least one perspective that has never appeared in any previous review, decision document, backlog, or code comment. If every finding could have been predicted from the last review, the assessment hasn't earned its place. The Novel Perspective section is not optional — it is the bar that separates a good review from a rote checklist.
+- **Sustainability over correctness.** Favor recommendations that keep the system evolvable.
+- **Evidence always.** Every finding needs concrete file paths, line numbers, commits, or decision IDs.
+- **Respect decisions, but verify they still match reality.** Recommend updates to decisions rather than silently ignoring them.
+- **Optimize for a solo developer + AI-assisted workflow.** Recommendations must fit focused sessions, not imaginary committee process.
+- **Prioritize compounding risks.** Small sync points that repeat are more dangerous than one large isolated file.
+- **Call out resolved-by-decomposition outcomes.** If a prior risk was structurally removed, record that clearly instead of keeping it alive as a stale issue.
+- **Earn the Novel Perspective section.** If every finding could have been predicted from the prior review, the review did not go deep enough.
