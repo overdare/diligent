@@ -681,3 +681,11 @@ Decisions made during synthesis reviews, with rationale.
 - **Consequence**: Breaking protocol changes remain allowed for now as long as the single shipped client/server pair is updated together. `protocolVersion: 1` should be treated as a fixed marker, not as an actively negotiated contract.
 - **References**: `packages/runtime/src/app-server/server.ts:341`, D089, D091, D043
 - **Date**: 2026-03-22
+
+### D097: CLI COLLAB_TOOL_NAMES stays CLI-local; do not move to protocol
+- **Decision**: Keep `COLLAB_TOOL_NAMES` defined locally in `packages/cli/src/tui/components/thread-store-utils.ts`. Do not extract it to protocol or add a runtime package dependency to the CLI.
+- **Rationale**: The CLI uses this set only for local render decisions — determining whether a tool call should be displayed as a collab interaction rather than a regular tool block. This is a pure presentation concern of the TUI. Moving the constant to protocol would conflate a client-side rendering heuristic with the protocol's wire contract. Adding `@diligent/runtime` as a CLI dependency to share this constant would introduce a large transitive dependency for a 4-name string set and couple the CLI build to runtime internals.
+- **Consequence**: When a new collab tool is added to `TOOL_CAPABILITIES` in `packages/runtime/src/tools/tool-metadata.ts`, the CLI's local copy in `thread-store-utils.ts` must be updated manually. The review finding in `docs/review/2026-03-23-adc8d2c.md` notes this risk. Any PR that adds a collab tool should include a CLI update.
+- **Alternative considered**: Adding `COLLAB_TOOL_NAMES` to `packages/protocol` — rejected because the protocol package defines wire types and RPC method names, not rendering heuristics. A tool name list for TUI presentation does not belong there.
+- **References**: `packages/cli/src/tui/components/thread-store-utils.ts:9`, `packages/runtime/src/tools/tool-metadata.ts:62`
+- **Date**: 2026-03-23
