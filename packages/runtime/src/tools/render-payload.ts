@@ -29,41 +29,134 @@ export interface PlanRenderStepInput {
   status?: "pending" | "in_progress" | "done" | "cancelled";
 }
 
+/** Strategy for per-tool render customization. */
+interface RenderStrategy {
+  startInputSummary?: (parsedInput: Record<string, unknown> | undefined) => string | undefined;
+  endRender?: (
+    parsedInput: Record<string, unknown> | undefined,
+    output: string,
+    isError: boolean,
+  ) => ToolRenderPayload | undefined;
+}
+
+/**
+ * Per-tool render strategy map (keyed by normalized tool name).
+ * Tools in CUSTOM_RENDER_TOOLS from tool-metadata correspond to entries here.
+ * To add a new custom-rendered tool: add an entry to TOOL_CAPABILITIES in
+ * tool-metadata.ts, then add a RenderStrategy here.
+ */
+const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
+  [
+    "apply_patch",
+    {
+      startInputSummary: (parsedInput) => {
+        const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
+        if (!patch) return undefined;
+        return buildPatchInputSummary(parsePatchForRender(patch));
+      },
+      endRender: (parsedInput, output, isError) => {
+        const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
+        if (patch) {
+          const payload = createPatchDiffRenderPayload(patch, output, isError ? "Patch failed" : undefined);
+          if (payload) return payload;
+        }
+        return {
+          version: 2,
+          inputSummary: summarizeRenderText(parsedInput ? JSON.stringify(parsedInput) : "", 120),
+          outputSummary: isError ? "Patch failed" : summarizeRenderText(output),
+          blocks: [{ type: "text", title: "patch", text: output, isError }],
+        };
+      },
+    },
+  ],
+  [
+    "update_knowledge",
+    {
+      startInputSummary: (parsedInput) => {
+        const contentPreview =
+          typeof parsedInput?.content === "string"
+            ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
+            : "";
+        return buildKnowledgeInputSummary(parsedInput ?? {}, contentPreview);
+      },
+    },
+  ],
+  [
+    "search_knowledge",
+    {
+      startInputSummary: (parsedInput) => buildSearchKnowledgeInputSummary(parsedInput ?? {}),
+    },
+  ],
+  [
+    "plan",
+    {
+      startInputSummary: (parsedInput) => {
+        const title = typeof parsedInput?.title === "string" ? parsedInput.title : "Plan";
+        const stepCount = Array.isArray(parsedInput?.steps) ? parsedInput.steps.length : 0;
+        return summarizeRenderText(`${title} (${stepCount} steps)`, 120);
+      },
+    },
+  ],
+  [
+    "read",
+    {
+      startInputSummary: (parsedInput) => {
+        const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+        return summarizeRenderText(filePath, 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+        const outputSummary = isError ? "Read failed" : (summarizeRenderText(output) ?? "Read completed");
+        return {
+          version: 2,
+          inputSummary: summarizeRenderText(filePath, 120),
+          outputSummary,
+          blocks: [{ type: "text", title: filePath ?? "read", text: output, isError }],
+        };
+      },
+    },
+  ],
+  [
+    "write",
+    {
+      startInputSummary: (parsedInput) => {
+        const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+        return summarizeRenderText(filePath, 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
+        return {
+          version: 2,
+          inputSummary: summarizeRenderText(filePath, 120),
+          outputSummary: isError ? "Write failed" : "Write completed",
+          blocks: [{ type: "text", title: filePath ?? "write", text: output, isError }],
+        };
+      },
+    },
+  ],
+  [
+    "bash",
+    {
+      startInputSummary: (parsedInput) => {
+        const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
+        return summarizeRenderText(command, 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
+        if (command?.trim()) return createCommandRenderPayload(command, output, isError);
+        return undefined;
+      },
+    },
+  ],
+]);
+
 export function createToolStartRenderPayload(toolName: string, input: unknown): ToolRenderPayload | undefined {
   const parsedInput = readRecordInput(input);
   const normalizedToolName = toolName.trim().toLowerCase();
-
-  let inputSummary: string | undefined;
-  if (normalizedToolName === "apply_patch") {
-    const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
-    if (patch) {
-      const files = parsePatchForRender(patch);
-      inputSummary = buildPatchInputSummary(files);
-    }
-  } else if (normalizedToolName === "update_knowledge") {
-    const contentPreview =
-      typeof parsedInput?.content === "string"
-        ? clipInlineText(parsedInput.content.replace(/\s+/g, " ").trim(), 140)
-        : "";
-    inputSummary = buildKnowledgeInputSummary(parsedInput ?? {}, contentPreview);
-  } else if (normalizedToolName === "search_knowledge") {
-    inputSummary = buildSearchKnowledgeInputSummary(parsedInput ?? {});
-  } else if (normalizedToolName === "plan") {
-    const title = typeof parsedInput?.title === "string" ? parsedInput.title : "Plan";
-    const stepCount = Array.isArray(parsedInput?.steps) ? parsedInput.steps.length : 0;
-    inputSummary = summarizeRenderText(`${title} (${stepCount} steps)`, 120);
-  } else if (normalizedToolName === "read") {
-    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
-    inputSummary = summarizeRenderText(filePath, 120);
-  } else if (normalizedToolName === "write") {
-    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
-    inputSummary = summarizeRenderText(filePath, 120);
-  } else if (normalizedToolName === "bash") {
-    const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
-    inputSummary = summarizeRenderText(command, 120);
-  } else {
-    inputSummary = summarizeRenderText(stringifyInputPreview(input), 120);
-  }
+  const strategy = RENDER_STRATEGIES.get(normalizedToolName);
+  const inputSummary = strategy?.startInputSummary
+    ? strategy.startInputSummary(parsedInput)
+    : summarizeRenderText(stringifyInputPreview(input), 120);
 
   if (!inputSummary) return undefined;
   return {
@@ -81,49 +174,11 @@ export function createToolEndRenderPayloadFromInput(args: {
 }): ToolRenderPayload | undefined {
   const normalizedToolName = args.toolName.trim().toLowerCase();
   const parsedInput = readRecordInput(args.input);
-
-  if (normalizedToolName === "bash") {
-    const command = typeof parsedInput?.command === "string" ? parsedInput.command : undefined;
-    if (command?.trim()) return createCommandRenderPayload(command, args.output, args.isError);
+  const strategy = RENDER_STRATEGIES.get(normalizedToolName);
+  if (strategy?.endRender) {
+    const result = strategy.endRender(parsedInput, args.output, args.isError);
+    if (result !== undefined) return result;
   }
-
-  if (normalizedToolName === "read") {
-    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
-    const summary = summarizeRenderText(filePath, 120);
-    const outputSummary = args.isError ? "Read failed" : (summarizeRenderText(args.output) ?? "Read completed");
-    return {
-      version: 2,
-      inputSummary: summary,
-      outputSummary,
-      blocks: [{ type: "text", title: filePath ?? "read", text: args.output, isError: args.isError }],
-    };
-  }
-
-  if (normalizedToolName === "write") {
-    const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
-    const summary = summarizeRenderText(filePath, 120);
-    return {
-      version: 2,
-      inputSummary: summary,
-      outputSummary: args.isError ? "Write failed" : "Write completed",
-      blocks: [{ type: "text", title: filePath ?? "write", text: args.output, isError: args.isError }],
-    };
-  }
-
-  if (normalizedToolName === "apply_patch") {
-    const patch = typeof parsedInput?.patch === "string" ? parsedInput.patch : undefined;
-    if (patch) {
-      const payload = createPatchDiffRenderPayload(patch, args.output, args.isError ? "Patch failed" : undefined);
-      if (payload) return payload;
-    }
-    return {
-      version: 2,
-      inputSummary: summarizeRenderText(stringifyInputPreview(args.input), 120),
-      outputSummary: args.isError ? "Patch failed" : summarizeRenderText(args.output),
-      blocks: [{ type: "text", title: "patch", text: args.output, isError: args.isError }],
-    };
-  }
-
   return createTextRenderPayload(
     summarizeRenderText(stringifyInputPreview(args.input), 120),
     args.output,
