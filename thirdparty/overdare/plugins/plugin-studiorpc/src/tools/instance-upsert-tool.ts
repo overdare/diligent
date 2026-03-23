@@ -1,84 +1,12 @@
 // @summary Applies batched add or update instance changes to the level file.
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { call } from "../rpc.ts";
-
-type OvdrjmNode = Record<string, unknown> & {
-  ActorGuid?: unknown;
-  LuaChildren?: unknown;
-};
-
-function normalizeEnumValue(value: unknown): unknown {
-  if (typeof value === "string" && value.startsWith("Enum.")) {
-    const segments = value.split(".");
-    return segments[segments.length - 1] ?? value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => normalizeEnumValue(entry));
-  }
-
-  if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => [key, normalizeEnumValue(entryValue)]));
-  }
-
-  return value;
-}
+import { type OvdrjmNode, findNodeByActorGuid, isRecord, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
-}
-
-function findFilesByExtension(cwd: string, extension: string): string[] {
-  const entries = readdirSync(cwd, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(extension))
-    .map((entry) => join(cwd, entry.name));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function findNodeByActorGuid(node: OvdrjmNode, targetGuid: string): OvdrjmNode | undefined {
-  if (typeof node.ActorGuid === "string" && node.ActorGuid === targetGuid) {
-    return node;
-  }
-  if (!Array.isArray(node.LuaChildren)) {
-    return undefined;
-  }
-  for (const child of node.LuaChildren) {
-    if (!isRecord(child)) continue;
-    const found = findNodeByActorGuid(child as OvdrjmNode, targetGuid);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-function resolveOvdrjmPathFromUmap(cwd: string): { umapPath: string; ovdrjmPath: string } {
-  const umapFiles = findFilesByExtension(cwd, ".umap");
-  if (umapFiles.length === 0) {
-    throw new Error("No .umap file found in current working directory.");
-  }
-  if (umapFiles.length > 1) {
-    throw new Error(
-      `Multiple .umap files found (${umapFiles.map((file) => file.split("/").pop()).join(", ")}). Keep one world file in cwd.`,
-    );
-  }
-
-  const umapPath = umapFiles[0];
-  const ovdrjmPath = umapPath.replace(/\.umap$/i, ".ovdrjm");
-
-  const ovdrjmFiles = findFilesByExtension(cwd, ".ovdrjm");
-  if (!ovdrjmFiles.includes(ovdrjmPath)) {
-    throw new Error(
-      `Matching .ovdrjm file not found for ${umapPath.split("/").pop()}. Expected ${ovdrjmPath.split("/").pop()}.`,
-    );
-  }
-
-  return { umapPath, ovdrjmPath };
 }
 
 function makeActorGuid(): string {
@@ -149,7 +77,7 @@ async function executeInstanceUpsert(
           if (!target) {
             throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
           }
-          Object.assign(target, normalizeEnumValue(item.properties));
+          Object.assign(target, item.properties);
           if (typeof item.name === "string") {
             target.Name = item.name;
           }
@@ -171,7 +99,7 @@ async function executeInstanceUpsert(
           ActorGuid: newGuid,
           ObjectKey: nextObjectKey(rootDoc),
           Name: item.name,
-          ...(normalizeEnumValue(item.properties) as Record<string, unknown>),
+          ...(item.properties as Record<string, unknown>),
         };
         childList.push(newNode);
         changedGuids.push(newGuid);

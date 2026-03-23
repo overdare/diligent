@@ -1,6 +1,7 @@
 import type { Tool } from "@diligent/plugin-sdk";
 import { call } from "./rpc.ts";
 import { methodModules, renderBuilders } from "./tool-registry.ts";
+import { createInstanceReadTool } from "./tools/instance-read-tool.ts";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool.ts";
 
 export const manifest = {
@@ -14,7 +15,7 @@ function toToolName(method: string): string {
 }
 
 export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
-  const tools: Tool[] = [createInstanceUpsertTool(ctx.cwd)];
+  const tools: Tool[] = [createInstanceReadTool(ctx.cwd), createInstanceUpsertTool(ctx.cwd)];
 
   for (const mod of methodModules) {
     const { method, description, params } = mod;

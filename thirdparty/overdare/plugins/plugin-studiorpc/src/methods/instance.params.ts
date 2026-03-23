@@ -1,14 +1,14 @@
 // @summary Defines shared instance property schemas and class enums for Studio RPC tools.
 import { z } from "zod";
 
-const vec3 = z.object({ x: z.number(), y: z.number(), z: z.number() });
-const udim = z.object({ scale: z.number(), offset: z.number() });
+const vec3 = z.object({ X: z.number(), Y: z.number(), Z: z.number() });
+const udim = z.object({ Scale: z.number(), Offset: z.number() });
 const colorChannel = z.number().int().min(0).max(255);
-const rgb = z.object({ r: colorChannel, g: colorChannel, b: colorChannel });
-const udim2 = z.object({ xscale: z.number(), xoffset: z.number(), yscale: z.number(), yoffset: z.number() });
+const rgb = z.object({ R: colorChannel, G: colorChannel, B: colorChannel });
+const udim2 = z.object({ XScale: z.number(), XOffset: z.number(), YScale: z.number(), YOffset: z.number() });
 
 const guiObjectProperties = {
-  AnchorPoint: z.object({ x: z.number(), y: z.number() }).optional(),
+  AnchorPoint: z.object({ X: z.number(), Y: z.number() }).optional(),
   BackgroundColor3: rgb.optional(),
   BackgroundTransparency: z.number().describe("(0~1)").optional(),
   LayoutOrder: z.number().optional(),
@@ -279,7 +279,7 @@ export const instancePropertiesSchema = z
     z
       .object({
         AutomaticCanvasSize: z.string().describe('e.g. "Enum.AutomaticSize.Y"').optional(),
-        CanvasPosition: z.object({ x: z.number(), y: z.number() }).describe("Scroll offset (Vector2)").optional(),
+        CanvasPosition: z.object({ X: z.number(), Y: z.number() }).describe("Scroll offset (Vector2)").optional(),
         CanvasSize: udim2.describe("Total scrollable area (UDim2)").optional(),
         ScrollBarImageColor3: rgb.optional(),
         ScrollBarImageTransparency: z.number().describe("(0~1)").optional(),
@@ -319,3 +319,57 @@ export const instancePropertiesSchema = z
       ),
   ])
   .optional();
+
+// Shape spec for deep-stripping unknown keys when reading .ovdrjm nodes.
+// `true` = keep the value as-is (primitive). Object = recurse and strip unknown keys.
+// When the actual value is an array, the shape is applied to each element.
+export type ShapeSpec = true | { readonly [key: string]: ShapeSpec };
+
+const vec3Shape = { X: true, Y: true, Z: true } as const satisfies ShapeSpec;
+const rgbShape = { R: true, G: true, B: true } as const satisfies ShapeSpec;
+const udim2Shape = { XScale: true, XOffset: true, YScale: true, YOffset: true } as const satisfies ShapeSpec;
+const udimShape = { Scale: true, Offset: true } as const satisfies ShapeSpec;
+const cframeShape = { Position: vec3Shape, Orientation: vec3Shape } as const satisfies ShapeSpec;
+const vec2Shape = { X: true, Y: true } as const satisfies ShapeSpec;
+
+const guiObjectShape: Record<string, ShapeSpec> = {
+  AnchorPoint: vec2Shape,
+  BackgroundColor3: rgbShape,
+  BackgroundTransparency: true,
+  LayoutOrder: true,
+  Position: udim2Shape,
+  Rotation: true,
+  Size: udim2Shape,
+  Visible: true,
+  ZIndex: true,
+};
+
+const textShape: Record<string, ShapeSpec> = {
+  Text: true,
+  TextSize: true,
+  TextColor3: rgbShape,
+  TextTransparency: true,
+  TextXAlignment: true,
+  TextYAlignment: true,
+};
+
+export const classPropertyShapes: Record<string, Record<string, ShapeSpec>> = {
+  Part: { Shape: true, CFrame: cframeShape, Size: vec3Shape, Color: rgbShape, Material: true },
+  Frame: guiObjectShape,
+  ImageButton: { Image: true, ImageColor3: rgbShape, ImageTransparency: true, PressImage: true, HoverImage: true, ...guiObjectShape },
+  ImageLabel: { Image: true, ImageColor3: rgbShape, ImageTransparency: true, ...guiObjectShape },
+  TextButton: { ...textShape, ...guiObjectShape },
+  TextLabel: { ...textShape, ...guiObjectShape },
+  Sound: { SoundId: true, Volume: true, Looped: true, PlaybackSpeed: true, PlayOnRemove: true, RollOffMaxDistance: true, RollOffMinDistance: true, RollOffMode: true },
+  RemoteEvent: {},
+  Tool: { CanBeDropped: true },
+  VFXPreset: { PresetName: true, Color: { Time: true, Color: rgbShape }, Enabled: true, InfiniteLoop: true, LoopCount: true, Size: true, Transparency: true },
+  AngularVelocity: { AngularVelocity: vec3Shape, MaxTorque: true, ReactionTorqueEnabled: true, RelativeTo: true },
+  LinearVelocity: { VelocityConstraintMode: true, VectorVelocity: vec3Shape, ForceLimitsEnabled: true, ForceLimitMode: true, MaxForce: true, RelativeTo: true },
+  VectorForce: { Force: vec3Shape, ApplyAtCenterOfMass: true, RelativeTo: true },
+  Model: { PrimaryPart: true, WorldPivot: cframeShape },
+  Folder: {},
+  ScrollingFrame: { AutomaticCanvasSize: true, CanvasPosition: vec2Shape, CanvasSize: udim2Shape, ScrollBarImageColor3: rgbShape, ScrollBarImageTransparency: true, ScrollBarThickness: true, ScrollingDirection: true, ScrollingEnabled: true, ...guiObjectShape },
+  UIListLayout: { Padding: udimShape, Wraps: true, FillDirection: true, HorizontalAlignment: true, VerticalAlignment: true, SortOrder: true },
+  UIGridLayout: { CellPadding: udim2Shape, CellSize: udim2Shape, FillDirectionMaxCells: true, FillDirection: true, HorizontalAlignment: true, VerticalAlignment: true, SortOrder: true },
+};
