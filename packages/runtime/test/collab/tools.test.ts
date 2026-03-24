@@ -66,7 +66,9 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).toBe(formatSpawnAgentToolDescription());
     expect(spawnTool.description).toContain("Role selection guide:");
     expect(spawnTool.description).toContain("wait for them before yielding");
+    expect(spawnTool.description).toContain("Nested subagents are disabled by default");
     expect(spawnTool.description).toContain("your primary role becomes coordinating them until they finish");
+    expect(spawnTool.description).toContain("Do not ask a child agent to spawn or coordinate additional sub-agents");
     expect(spawnTool.description).toContain("'general':");
     expect(spawnTool.description).toContain("'explore':");
     expect(spawnTool.description).not.toContain("'planner':");
@@ -81,6 +83,7 @@ describe("spawn_agent tool", () => {
     expect(shape.agent_type.description).toContain("'general':");
     expect(shape.agent_type.description).toContain("'explore':");
     expect(shape.agent_type.description).not.toContain("'planner':");
+    expect(shape.allow_nested_agents.description).toContain("Explicit opt-in");
   });
 
   it("includes custom agents in tool description and schema description", () => {
@@ -107,6 +110,7 @@ describe("spawn_agent tool", () => {
     expect(shape.agent_type.description).toBe(formatAgentTypeParameterDescription(agentDefinitions));
     expect(shape.agent_type.description).toContain("code-reviewer");
     expect(shape.allowed_tools.description).toContain("allow-list");
+    expect(shape.allowed_tools.description).toContain("allow_nested_agents=true");
   });
 });
 

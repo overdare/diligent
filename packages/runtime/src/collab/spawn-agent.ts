@@ -11,6 +11,12 @@ const SpawnAgentParams = z.object({
   description: z.string().optional().describe("Brief description for status display"),
   agent_type: z.string().default("general").describe(formatAgentTypeParameterDescription()),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),
+  allow_nested_agents: z
+    .boolean()
+    .optional()
+    .describe(
+      "Explicit opt-in for nested subagents. Disabled by default; child agents cannot access collab tools unless this is true.",
+    ),
   model_class: z
     .enum(["pro", "general", "lite"])
     .optional()
@@ -31,7 +37,7 @@ const SpawnAgentParams = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Optional per-spawn child-tool allow-list. Can only narrow the selected agent's default tool access and may intentionally narrow to zero tools.",
+      "Optional per-spawn child-tool allow-list. Can only narrow the selected agent's default tool access and may intentionally narrow to zero tools. Collab tools remain excluded unless allow_nested_agents=true.",
     ),
 });
 
@@ -57,6 +63,7 @@ export function createSpawnAgentTool(
         description: args.description ?? "",
         agentType: args.agent_type,
         resumeId: args.resume_id,
+        allowNestedAgents: args.allow_nested_agents === true,
         modelClass: args.model_class,
         allowedTools: args.allowed_tools,
       });

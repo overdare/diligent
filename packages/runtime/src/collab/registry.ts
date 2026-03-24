@@ -84,6 +84,7 @@ export class AgentRegistry {
     description: string;
     agentType: string;
     resumeId?: string;
+    allowNestedAgents?: boolean;
     modelClass?: ModelClass;
     allowedTools?: string[];
   }): {
@@ -105,18 +106,29 @@ export class AgentRegistry {
     const abortController = new AbortController();
 
     // Build child tool list
-    let childTools = this.deps.parentTools.filter((tool) => !COLLAB_TOOL_NAMES.has(tool.name));
+    let allowedChildToolNames = new Set(this.deps.parentTools.map((tool) => tool.name));
+    if (!params.allowNestedAgents) {
+      allowedChildToolNames = new Set(
+        [...allowedChildToolNames].filter((toolName) => !COLLAB_TOOL_NAMES.has(toolName)),
+      );
+    }
     if (agentDefinition.readonly) {
-      childTools = childTools.filter((tool) => PLAN_MODE_ALLOWED_TOOLS.has(tool.name));
+      allowedChildToolNames = new Set(
+        [...allowedChildToolNames].filter((toolName) => PLAN_MODE_ALLOWED_TOOLS.has(toolName)),
+      );
     }
     if (agentDefinition.allowedTools) {
       const allowedSet = new Set(agentDefinition.allowedTools);
-      childTools = childTools.filter((tool) => allowedSet.has(tool.name));
+      allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
     }
     if (params.allowedTools) {
       const allowedSet = new Set(params.allowedTools);
-      childTools = childTools.filter((tool) => allowedSet.has(tool.name));
+      allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
     }
+    const childTools = this.deps.parentTools.filter(
+      (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
+    );
+    const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
     if (childTools.length === 0) {
       const parentToolNames = this.deps.parentTools.map((t) => t.name).join(", ");
@@ -128,9 +140,19 @@ export class AgentRegistry {
       );
     }
 
-    const childSystemPrompt = agentDefinition.systemPromptPrefix
-      ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }, ...this.deps.systemPrompt]
-      : [...this.deps.systemPrompt];
+    const nestedAgentPolicy = params.allowNestedAgents
+      ? "Nested sub-agent tools were explicitly enabled for this run. Use them only if the parent instruction clearly requires further delegation; otherwise do the work yourself."
+      : "Nested sub-agent delegation is disabled for this run. Do not call spawn_agent, wait, send_input, or close_agent, and do not attempt to coordinate additional sub-agents.";
+    const childSystemPrompt = [
+      ...(agentDefinition.systemPromptPrefix
+        ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }]
+        : []),
+      {
+        label: "nested_subagent_policy",
+        content: nestedAgentPolicy,
+      },
+      ...this.deps.systemPrompt,
+    ];
 
     // Resolve model class: explicit override > agent_type-based default
     const parentModel = resolveModel(this.deps.modelId);
@@ -155,10 +177,11 @@ export class AgentRegistry {
         const result = await buildDefaultTools(
           this.deps.cwd,
           this.deps.paths,
-          childDeps,
+          nestedCollabEnabled ? childDeps : undefined,
           undefined,
           [],
           childTools,
+          nestedCollabEnabled,
           undefined,
           {
             approve: this.deps.approve,
@@ -166,10 +189,12 @@ export class AgentRegistry {
           },
         );
 
+        const filteredTools = result.tools.filter((tool) => allowedChildToolNames.has(tool.name));
+
         return new RuntimeAgent(
           childModel.id,
           childSystemPrompt,
-          result.tools,
+          filteredTools,
           { effort: this.deps.effort, llmMsgStreamFn: this.deps.streamFn },
           result.registry,
         );

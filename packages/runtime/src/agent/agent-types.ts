@@ -150,13 +150,15 @@ export function formatSpawnAgentToolDescription(
   const customSection = customLines ? `\nCustom roles:\n${customLines}` : "";
   return (
     "Spawn a sub-agent and return immediately with thread_id and nickname. Use 'wait' to collect results. " +
-    "If sub-agents are still running, wait for them before yielding unless the user is asking an explicit question that should be answered first.\n" +
+    "If sub-agents are still running, wait for them before yielding unless the user is asking an explicit question that should be answered first. " +
+    "Nested subagents are disabled by default; child agents do not receive collab tools unless you explicitly opt in.\n" +
     "Role selection guide:\n" +
     builtinLines +
     customSection +
     "\n\nDelegation rules:\n" +
     "- If you delegate work to sub-agents, your primary role becomes coordinating them until they finish; do not duplicate their work while they are running.\n" +
     "- Do not duplicate sub-agent work by searching the same areas yourself.\n" +
+    "- Do not ask a child agent to spawn or coordinate additional sub-agents unless nested delegation was explicitly enabled for that spawn.\n" +
     "- Write prompts as if briefing a colleague who just walked into the room: explain what you're trying to accomplish, what you already know, and what specifically you need them to find or do. Terse, vague prompts produce shallow results."
   );
 }

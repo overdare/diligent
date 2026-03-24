@@ -36,6 +36,7 @@ export async function buildDefaultTools(
   toolsConfig?: DiligentConfig["tools"],
   skills: SkillMetadata[] = [],
   parentToolOverride?: Tool[],
+  enableCollabTools = true,
   /**
    * Existing registry to reuse across turns.
    * When provided, the registry's mutable deps are updated but live child-agent
@@ -73,7 +74,7 @@ export async function buildDefaultTools(
       })();
 
   // 2. Add collab tools (always enabled, not user-configurable)
-  if (paths && collabDeps) {
+  if (enableCollabTools && paths && collabDeps) {
     const { tools: collabTools, registry } = createCollabTools(
       {
         ...collabDeps,

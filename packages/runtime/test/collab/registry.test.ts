@@ -1,11 +1,67 @@
 // @summary Tests for AgentRegistry: spawn, maxAgents, status tracking, shutdownAll
 import { describe, expect, it } from "bun:test";
+import type { Tool } from "@diligent/core/tool/types";
+import type { RuntimeAgent } from "@diligent/runtime/agent/runtime-agent";
 import { AgentRegistry, isFinal } from "@diligent/runtime/collab";
 import type { SessionManagerConfig } from "@diligent/runtime/session";
 import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import type { AgentEvent } from "../../src/agent-event";
 import { makeAssistant, makeCollabDeps, makeMockSessionManagerFactory } from "../helpers/collab";
+
+function makeTool(name: string): Tool {
+  return {
+    name,
+    description: name,
+    parameters: { safeParse: (value: unknown) => ({ success: true, data: value }) } as never,
+    execute: async () => ({ output: name }),
+  } as Tool;
+}
+
+function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => void) {
+  let counter = 0;
+  return (config: SessionManagerConfig) => {
+    const sessionId = `inspect-session-${++counter}`;
+    const listeners = new Set<(event: AgentEvent) => void>();
+    return {
+      entries: [],
+      leafId: null,
+      create: async () => {},
+      resume: async () => false,
+      list: async () => [],
+      getContext: () => [],
+      subscribe: (fn: (event: AgentEvent) => void) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      run: async () => {
+        const agent = (await config.agent()) as RuntimeAgent;
+        observer(agent);
+        const assistant = makeAssistant("inspected");
+        for (const fn of listeners) {
+          fn({ type: "agent_start" });
+          fn({ type: "message_start", itemId: "inspect-item", message: assistant });
+          fn({ type: "message_end", itemId: "inspect-item", message: assistant });
+          fn({ type: "agent_end", messages: [] });
+        }
+      },
+      waitForWrites: async () => {},
+      steer: () => {},
+      hasPendingMessages: () => false,
+      popPendingMessages: () => null,
+      appendModeChange: () => {},
+      get sessionPath() {
+        return null;
+      },
+      get sessionId() {
+        return sessionId;
+      },
+      get entryCount() {
+        return 0;
+      },
+    } as never;
+  };
+}
 
 describe("AgentRegistry", () => {
   it("spawn returns threadId and nickname immediately", () => {
@@ -231,5 +287,67 @@ describe("AgentRegistry", () => {
 
     const result = registry.spawn({ prompt: "review", description: "", agentType: "code-reviewer" });
     expect(typeof result.threadId).toBe("string");
+  });
+
+  it("excludes collab tools from child agents by default", async () => {
+    let childToolNames: string[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        parentTools: [makeTool("read"), makeTool("spawn_agent"), makeTool("wait")],
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          childToolNames = agent.tools.map((tool) => tool.name);
+        }),
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    await registry.wait([threadId], 5000);
+
+    expect(childToolNames).toContain("read");
+    expect(childToolNames).not.toContain("spawn_agent");
+    expect(childToolNames).not.toContain("wait");
+  });
+
+  it("allows collab tools only when nested agents are explicitly enabled", async () => {
+    let childToolNames: string[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        parentTools: [makeTool("read"), makeTool("spawn_agent"), makeTool("wait")],
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          childToolNames = agent.tools.map((tool) => tool.name);
+        }),
+      }),
+    );
+
+    const { threadId } = registry.spawn({
+      prompt: "task",
+      description: "",
+      agentType: "general",
+      allowNestedAgents: true,
+      allowedTools: ["read", "spawn_agent"],
+    });
+    await registry.wait([threadId], 5000);
+
+    expect(childToolNames).toContain("read");
+    expect(childToolNames).toContain("spawn_agent");
+    expect(childToolNames).not.toContain("wait");
+  });
+
+  it("injects an explicit nested-subagent policy into the child system prompt", async () => {
+    let systemSections: Array<{ label: string; content: string }> = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          systemSections = agent.systemPrompt.map((section) => ({ label: section.label, content: section.content }));
+        }),
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    await registry.wait([threadId], 5000);
+
+    const policy = systemSections.find((section) => section.label === "nested_subagent_policy");
+    expect(policy?.content).toContain("Nested sub-agent delegation is disabled");
+    expect(policy?.content).toContain("Do not call spawn_agent, wait, send_input, or close_agent");
   });
 });

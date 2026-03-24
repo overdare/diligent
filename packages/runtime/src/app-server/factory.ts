@@ -63,6 +63,7 @@ async function createRuntimeAgent(args: {
     runtimeConfig.diligent.tools,
     runtimeConfig.skills,
     undefined,
+    true,
     existingAgent?.registry,
     { approve, ask },
   );
