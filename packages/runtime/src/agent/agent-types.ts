@@ -52,12 +52,6 @@ const builtinExploreMarkdown = parseBuiltinAgentMarkdown(explorePrompt, "builtin
  * "general" — full tool access, task tool excluded to prevent infinite nesting (D064).
  * "explore" — read-only tools only (PLAN_MODE_ALLOWED_TOOLS).
  */
-/**
- * Tool names belonging to the collab layer.
- * Used to filter collab tools out of child agents to prevent nesting.
- */
-export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
-
 export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
   general: {
     name: "general",
