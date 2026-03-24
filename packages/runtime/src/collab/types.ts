@@ -52,6 +52,13 @@ export interface CollabToolDeps {
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8
+  /**
+   * Remaining nesting levels allowed when allowNestedAgents=true.
+   * Decremented by 1 on each spawn. When it reaches 0, allowNestedAgents is
+   * silently overridden to false regardless of the spawn parameter, preventing
+   * unbounded recursive agent trees. Defaults to 3.
+   */
+  nestingDepth?: number;
   getParentSessionId?: () => string | undefined;
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
   /** Called when collab boundary events fire (spawn/wait/close begin+end). */

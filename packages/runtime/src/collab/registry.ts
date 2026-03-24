@@ -105,9 +105,14 @@ export class AgentRegistry {
     const nickname = this.pool.reserve();
     const abortController = new AbortController();
 
+    // Enforce nesting depth limit: if the remaining depth is 0, treat as no nested agents allowed
+    // regardless of what the caller requested. This prevents unbounded recursive agent trees.
+    const remainingDepth = this.deps.nestingDepth ?? 3;
+    const effectiveAllowNestedAgents = params.allowNestedAgents && remainingDepth > 0;
+
     // Build child tool list
     let allowedChildToolNames = new Set(this.deps.parentTools.map((tool) => tool.name));
-    if (!params.allowNestedAgents) {
+    if (!effectiveAllowNestedAgents) {
       allowedChildToolNames = new Set(
         [...allowedChildToolNames].filter((toolName) => !COLLAB_TOOL_NAMES.has(toolName)),
       );
@@ -128,7 +133,8 @@ export class AgentRegistry {
     const childTools = this.deps.parentTools.filter(
       (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
     );
-    const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
+    const nestedCollabEnabled =
+      effectiveAllowNestedAgents && [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
     if (childTools.length === 0) {
       const parentToolNames = this.deps.parentTools.map((t) => t.name).join(", ");
@@ -173,7 +179,13 @@ export class AgentRegistry {
               })
           : undefined;
 
-        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk };
+        const childDeps = {
+          ...this.deps,
+          parentTools: childTools,
+          ask: childAsk,
+          // Pass decremented depth so grandchildren can only nest if depth permits.
+          nestingDepth: Math.max(0, remainingDepth - 1),
+        };
         const result = await buildDefaultTools(
           this.deps.cwd,
           this.deps.paths,
