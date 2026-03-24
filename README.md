@@ -22,10 +22,29 @@ Requires [Bun](https://bun.sh) v1.2+.
 
 ```sh
 git clone https://github.com/devbv/diligent.git && cd diligent
+bun install
 make dev
 ```
 
-Resume the last session with `--continue`, or list past sessions with `--list`.
+## Development Surfaces
+
+- `make dev` — run the CLI/TUI
+- `make web-dev` — run the web client dev server
+- `make web-start` — run the web backend server
+- `make desktop-dev` — run the desktop app in Tauri dev mode
+- `make debug-dev` — run the debug viewer
+
+## Workspace Overview
+
+- `packages/core` — reusable agent engine primitives
+- `packages/runtime` — runtime assembly: app server, sessions, tools, config, knowledge, skills, collaboration
+- `packages/protocol` — shared frontend/backend protocol schemas and models
+- `packages/plugin-sdk` — public SDK for external tool plugins
+- `packages/cli` — CLI entrypoint and TUI client
+- `packages/web` — Bun web server and React web client
+- `apps/desktop` — Tauri shell around the web frontend and Bun sidecar
+- `packages/debug-viewer` — viewer for inspecting `.diligent/` project data
+- `packages/e2e` — end-to-end protocol/runtime tests
 
 ## Commit and PR title convention
 
@@ -65,4 +84,4 @@ Diligent supports project-local tool settings for:
 
 Use the Tool settings entry in Web or `/tools` in TUI.
 
-See [`docs/tool-settings.md`](docs/tool-settings.md) for the trust model, config format, plugin contract, the external-style sample plugin at `examples/external-tool-plugin/`, and current limitations.
+See [`docs/guide/tool-settings.md`](docs/guide/tool-settings.md) for the trust model, config format, plugin contract, the external-style sample plugin at `thirdparty/examples/external-tool-plugin/`, and current limitations.

@@ -28,6 +28,7 @@ The architecture is organized around four product goals:
 | `packages/core` | Reusable agent engine: providers, model registry, agent loop, tool interfaces, shared LLM-facing types |
 | `packages/runtime` | Diligent runtime assembly: app server, sessions, tools, approval, knowledge, skills, config, collaboration |
 | `packages/protocol` | Shared JSON-RPC method constants and schema-only frontend/backend contract |
+| `packages/plugin-sdk` | Public SDK types and contracts for external JavaScript tool plugins |
 | `packages/cli` | Bun CLI entrypoint, stdio app-server transport, TUI client |
 | `packages/web` | Bun web server + React web client over WebSocket JSON-RPC |
 | `apps/desktop` | Tauri shell around the web frontend and Bun sidecar |
@@ -121,6 +122,18 @@ Runtime is where shared product behavior should be added when both Web and TUI m
 - shared UI-facing data models
 
 This package should remain schema/model oriented. Behavioral adapters and runtime-specific mapping logic should live outside protocol.
+
+### `@diligent/plugin-sdk`
+
+`packages/plugin-sdk` exposes the public SDK used by external JavaScript tool plugins.
+
+It is intentionally small and contract-focused:
+
+- plugin-facing tool types
+- result and approval payload shapes
+- shared schema helpers used by plugin authors
+
+Runtime consumes this package when loading plugins, but plugin authoring concerns should not leak into unrelated runtime/core modules.
 
 ### `@diligent/cli`
 
@@ -284,6 +297,7 @@ Runtime assembles the default tool set, including:
 - `plan`
 - `skill`
 - `request_user_input`
+- `search_knowledge`
 - `update_knowledge` (when knowledge storage is available)
 - collaboration tools such as `spawn_agent`, `wait`, `send_input`, `close_agent`
 
@@ -359,8 +373,8 @@ Knowledge is persisted separately from sessions and injected back into the syste
 
 - storage: append-only JSONL
 - API surface: `knowledge/list` and `knowledge/update`
+- runtime tools: `search_knowledge` and `update_knowledge`
 - write actions: `upsert` and `delete`
-- runtime tool: `update_knowledge`
 
 Knowledge ranking and injection are runtime concerns, not frontend concerns.
 

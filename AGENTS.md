@@ -12,11 +12,14 @@ Read only what your task requires.
 | Architecture, layers & patterns | `ARCHITECTURE.md` |
 | Source code — core engine (agent loop, providers, tool interfaces, auth primitives) | `packages/core/` |
 | Source code — runtime (built-in tools, app-server, sessions, config, knowledge, skills, collab) | `packages/runtime/` |
+| Source code — shared protocol contract | `packages/protocol/` |
+| Source code — plugin SDK for external tool packages | `packages/plugin-sdk/` |
 | Source code — cli (TUI) | `packages/cli/` |
 | Source code — web (React + Tailwind web frontend) | `packages/web/` |
 | Source code — desktop (Tauri v2 native app) | `apps/desktop/` |
 | Source code — debug-viewer (React web viewer) | `packages/debug-viewer/` |
 | Source code — e2e (integration tests) | `packages/e2e/` |
+| Product and usage guides | `docs/guide/` |
 | Planning, decisions & phase specs | `docs/plan/` |
 | Reference codebases (codex, opencode, pi-mono) | `docs/references/` |
 | Layer research & analysis | `docs/research/` |
@@ -25,7 +28,7 @@ Read only what your task requires.
 
 ## Code Explore System
 
-Every source file has a `@summary` annotation on the first line: `// @summary <desc>` (or `# @summary` for .py). Skip index.ts, types.ts, config files.
+Most source files include a `@summary` annotation on the first line: `// @summary <desc>` (or `# @summary` for .py). Use it as a quick routing hint, but do not assume it is universal. Skip index.ts, types.ts, and config files first.
 
 
 ## Rules
