@@ -118,6 +118,16 @@ export class AgentRegistry {
       childTools = childTools.filter((tool) => allowedSet.has(tool.name));
     }
 
+    if (childTools.length === 0) {
+      const parentToolNames = this.deps.parentTools.map((t) => t.name).join(", ");
+      const requestedNames = [...(agentDefinition.allowedTools ?? []), ...(params.allowedTools ?? [])];
+      const requested = requestedNames.length > 0 ? requestedNames.join(", ") : "(inherit all)";
+      console.warn(
+        `[collab] Spawning agent '${params.agentType}' with zero tools after filtering. ` +
+          `Parent tools: [${parentToolNames}]. Requested: [${requested}].`,
+      );
+    }
+
     const childSystemPrompt = agentDefinition.systemPromptPrefix
       ? [{ label: "agent_role", content: agentDefinition.systemPromptPrefix }, ...this.deps.systemPrompt]
       : [...this.deps.systemPrompt];
