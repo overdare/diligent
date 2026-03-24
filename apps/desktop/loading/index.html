@@ -127,32 +127,58 @@
     </div>
 
     <script>
-      document.getElementById('pick-btn').addEventListener('click', async () => {
-        const btn = document.getElementById('pick-btn');
-        const errorEl = document.getElementById('error');
+      const pickerEl = document.getElementById('picker');
+      const loadingEl = document.getElementById('loading');
+      const btn = document.getElementById('pick-btn');
+      const errorEl = document.getElementById('error');
 
+      function showLoading() {
+        pickerEl.hidden = true;
+        loadingEl.hidden = false;
+      }
+
+      function showPickerWithError(message) {
+        pickerEl.hidden = false;
+        loadingEl.hidden = true;
+        errorEl.textContent = String(message);
+        errorEl.hidden = false;
+        btn.disabled = false;
+      }
+
+      async function launchWithCwd(cwd) {
         btn.disabled = true;
         errorEl.hidden = true;
+        showLoading();
+        const { invoke } = window.__TAURI__.core;
+        await invoke('launch_server', { cwd });
+      }
 
+      btn.addEventListener('click', async () => {
         try {
           const { invoke } = window.__TAURI__.core;
           const cwd = await invoke('pick_directory');
           if (!cwd) {
-            // User cancelled the dialog — stay on picker.
             btn.disabled = false;
             return;
           }
 
-          document.getElementById('picker').hidden = true;
-          document.getElementById('loading').hidden = false;
-
-          await invoke('launch_server', { cwd });
+          await launchWithCwd(cwd);
         } catch (err) {
-          document.getElementById('picker').hidden = false;
-          document.getElementById('loading').hidden = true;
-          errorEl.textContent = String(err);
-          errorEl.hidden = false;
-          btn.disabled = false;
+          showPickerWithError(err);
+        }
+      });
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        try {
+          const { invoke } = window.__TAURI__.core;
+          const startupCwd = await invoke('get_startup_cwd');
+          if (!startupCwd) {
+            return;
+          }
+
+          await launchWithCwd(startupCwd);
+        } catch (err) {
+          showPickerWithError(err);
         }
       });
     </script>

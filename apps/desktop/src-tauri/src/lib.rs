@@ -3,6 +3,7 @@ mod init;
 mod sidecar;
 
 use sidecar::{start_sidecar, stop_sidecar, SidecarState};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -10,6 +11,56 @@ const APP_PROJECT_NAME: &str = match option_env!("DILIGENT_APP_PROJECT_NAME") {
     Some(name) => name,
     None => "Diligent",
 };
+
+fn parse_startup_cwd_from_args<I, T>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString>,
+{
+    let mut args = args.into_iter().map(|arg| arg.into()).peekable();
+
+    while let Some(arg) = args.next() {
+        let arg = arg.to_string_lossy();
+        if let Some(value) = arg.strip_prefix("--cwd=") {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+            continue;
+        }
+
+        if arg == "--cwd" {
+            if let Some(value) = args.next() {
+                let value: std::ffi::OsString = value.into();
+                if !value.is_empty() {
+                    return Some(value.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_startup_cwd() -> Option<String> {
+    let raw = parse_startup_cwd_from_args(std::env::args_os())?;
+    let path = PathBuf::from(raw);
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+
+    absolute
+        .canonicalize()
+        .ok()
+        .filter(|path| path.is_dir())
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_startup_cwd() -> Option<String> {
+    resolve_startup_cwd()
+}
 
 /// Open a native folder picker and return the selected path (or null if cancelled).
 #[tauri::command]
@@ -74,7 +125,7 @@ pub fn run() {
             init::run(app);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![pick_directory, launch_server])
+        .invoke_handler(tauri::generate_handler![get_startup_cwd, pick_directory, launch_server])
         .on_window_event(|window, event| {
             // Kill sidecar only when the main app window closes, not the loading splash.
             if let tauri::WindowEvent::Destroyed = event {
@@ -85,4 +136,33 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_startup_cwd_from_args;
+
+    #[test]
+    fn parses_equals_form_cwd_argument() {
+        let result = parse_startup_cwd_from_args(["diligent-desktop", "--cwd=/tmp/project"]);
+        assert_eq!(result.as_deref(), Some("/tmp/project"));
+    }
+
+    #[test]
+    fn parses_split_form_cwd_argument() {
+        let result = parse_startup_cwd_from_args(["diligent-desktop", "--cwd", "./project"]);
+        assert_eq!(result.as_deref(), Some("./project"));
+    }
+
+    #[test]
+    fn ignores_missing_cwd_value() {
+        let result = parse_startup_cwd_from_args(["diligent-desktop", "--cwd"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn ignores_empty_equals_form_cwd_argument() {
+        let result = parse_startup_cwd_from_args(["diligent-desktop", "--cwd="]);
+        assert_eq!(result, None);
+    }
 }
