@@ -54,14 +54,14 @@ try {
     parentGuid,
     name: "APITestCylinder",
     properties: {
-      Shape: "Enum.Cylinder",
+      Shape: "Cylinder",
       CFrame: {
         Position: { x: 2200, y: 120, z: 0 },
         Orientation: { x: 0, y: 0, z: 0 },
       },
       Size: { x: 400, y: 200, z: 400 },
       Color: { r: 0, g: 170, b: 255 },
-      Material: "Enum.Material.Neon",
+      Material: "Neon",
     },
   });
   console.log("OK:", JSON.stringify(result));

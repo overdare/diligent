@@ -111,8 +111,8 @@ describe("instance-upsert-tool", () => {
           {
             guid: "CHILD_GUID",
             properties: {
-              TextXAlignment: "Enum.TextXAlignment.Left",
-              TextYAlignment: "Enum.TextYAlignment.Top",
+              TextXAlignment: "Left",
+              TextYAlignment: "Top",
             },
           },
         ],
@@ -173,8 +173,8 @@ describe("instance-upsert-tool", () => {
             parentGuid: "PARENT_GUID",
             name: "LayoutNode",
             properties: {
-              FillDirection: "Enum.FillDirection.Vertical",
-              SortOrder: "Enum.SortOrder.LayoutOrder",
+              FillDirection: "Vertical",
+              SortOrder: "LayoutOrder",
             },
           },
         ],

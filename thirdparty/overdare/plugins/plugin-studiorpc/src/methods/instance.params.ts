@@ -24,8 +24,8 @@ const textProperties = {
   TextSize: z.number().optional(),
   TextColor3: rgb.optional(),
   TextTransparency: z.number().describe("(0~1)").optional(),
-  TextXAlignment: z.string().describe('e.g. "Enum.TextXAlignment.Left"').optional(),
-  TextYAlignment: z.string().describe('e.g. "Enum.TextYAlignment.Top"').optional(),
+  TextXAlignment: z.string().describe('e.g. "Left"').optional(),
+  TextYAlignment: z.string().describe('e.g. "Top"').optional(),
 };
 
 export const instanceClassEnum = z.enum([
@@ -50,29 +50,29 @@ export const instanceClassEnum = z.enum([
 ]);
 
 export const materialEnum = z.enum([
-  "Enum.Material.Basic",
-  "Enum.Material.Plastic",
-  "Enum.Material.Brick",
-  "Enum.Material.Rock",
-  "Enum.Material.Metal",
-  "Enum.Material.Unlit",
-  "Enum.Material.Bark",
-  "Enum.Material.SmallBrick",
-  "Enum.Material.LeafyGround",
-  "Enum.Material.MossyGround",
-  "Enum.Material.Ground",
-  "Enum.Material.Glass",
-  "Enum.Material.Paving",
-  "Enum.Material.MossyRock",
-  "Enum.Material.Wood",
-  "Enum.Material.Neon",
+  "Basic",
+  "Plastic",
+  "Brick",
+  "Rock",
+  "Metal",
+  "Unlit",
+  "Bark",
+  "SmallBrick",
+  "LeafyGround",
+  "MossyGround",
+  "Ground",
+  "Glass",
+  "Paving",
+  "MossyRock",
+  "Wood",
+  "Neon",
 ]);
 
 export const instancePropertiesSchema = z
   .union([
     z
       .object({
-        Shape: z.enum(["Enum.PartType.Block", "Enum.PartType.Ball", "Enum.PartType.Cylinder"]).optional(),
+        Shape: z.enum(["Block", "Ball", "Cylinder"]).optional(),
         CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
         Size: vec3.describe("units in cm").optional(),
         Color: rgb.optional(),
@@ -129,7 +129,7 @@ export const instancePropertiesSchema = z
         PlayOnRemove: z.boolean().describe("If true, plays when parent/sound is destroyed").optional(),
         RollOffMaxDistance: z.number().describe("Distance where sound becomes inaudible").optional(),
         RollOffMinDistance: z.number().describe("Distance where volume fading starts").optional(),
-        RollOffMode: z.string().describe('e.g. "Enum.RollOffMode.InverseTapered"').optional(),
+        RollOffMode: z.string().describe('e.g. "InverseTapered"').optional(),
       })
       .strict()
       .describe(
@@ -232,7 +232,7 @@ export const instancePropertiesSchema = z
         AngularVelocity: vec3.describe("Target angular velocity vector").optional(),
         MaxTorque: z.number().optional(),
         ReactionTorqueEnabled: z.boolean().optional(),
-        RelativeTo: z.string().describe('e.g. "Enum.ActuatorRelativeTo.World"').optional(),
+        RelativeTo: z.string().describe('e.g. "World"').optional(),
       })
       .strict()
       .describe(
@@ -240,12 +240,12 @@ export const instancePropertiesSchema = z
       ),
     z
       .object({
-        VelocityConstraintMode: z.string().describe('e.g. "Enum.VelocityConstraintMode.Vector"').optional(),
+        VelocityConstraintMode: z.string().describe('e.g. "Vector"').optional(),
         VectorVelocity: vec3.describe("Target linear velocity vector").optional(),
         ForceLimitsEnabled: z.boolean().optional(),
-        ForceLimitMode: z.string().describe('e.g. "Enum.ForceLimitMode.Magnitude"').optional(),
+        ForceLimitMode: z.string().describe('e.g. "Magnitude"').optional(),
         MaxForce: z.number().optional(),
-        RelativeTo: z.string().describe('e.g. "Enum.ActuatorRelativeTo.World"').optional(),
+        RelativeTo: z.string().describe('e.g. "World"').optional(),
       })
       .strict()
       .describe(
@@ -255,7 +255,7 @@ export const instancePropertiesSchema = z
       .object({
         Force: vec3.describe("Target force vector").optional(),
         ApplyAtCenterOfMass: z.boolean().optional(),
-        RelativeTo: z.string().describe('e.g. "Enum.ActuatorRelativeTo.World"').optional(),
+        RelativeTo: z.string().describe('e.g. "World"').optional(),
       })
       .strict()
       .describe(
@@ -278,13 +278,13 @@ export const instancePropertiesSchema = z
       ),
     z
       .object({
-        AutomaticCanvasSize: z.string().describe('e.g. "Enum.AutomaticSize.Y"').optional(),
+        AutomaticCanvasSize: z.string().describe('e.g. "Y"').optional(),
         CanvasPosition: z.object({ X: z.number(), Y: z.number() }).describe("Scroll offset (Vector2)").optional(),
         CanvasSize: udim2.describe("Total scrollable area (UDim2)").optional(),
         ScrollBarImageColor3: rgb.optional(),
         ScrollBarImageTransparency: z.number().describe("(0~1)").optional(),
         ScrollBarThickness: z.number().optional(),
-        ScrollingDirection: z.string().describe('e.g. "Enum.ScrollingDirection.Y"').optional(),
+        ScrollingDirection: z.string().describe('e.g. "Y"').optional(),
         ScrollingEnabled: z.boolean().optional(),
         ...guiObjectProperties,
       })
@@ -296,10 +296,10 @@ export const instancePropertiesSchema = z
       .object({
         Padding: udim.describe("Space between list items (UDim)").optional(),
         Wraps: z.boolean().optional(),
-        FillDirection: z.string().describe('e.g. "Enum.FillDirection.Vertical"').optional(),
-        HorizontalAlignment: z.string().describe('e.g. "Enum.HorizontalAlignment.Center"').optional(),
-        VerticalAlignment: z.string().describe('e.g. "Enum.VerticalAlignment.Top"').optional(),
-        SortOrder: z.string().describe('e.g. "Enum.SortOrder.LayoutOrder"').optional(),
+        FillDirection: z.string().describe('e.g. "Vertical"').optional(),
+        HorizontalAlignment: z.string().describe('e.g. "Center"').optional(),
+        VerticalAlignment: z.string().describe('e.g. "Top"').optional(),
+        SortOrder: z.string().describe('e.g. "LayoutOrder"').optional(),
       })
       .strict()
       .describe("Use when class=UIListLayout. Auto-arranges sibling UI elements in a horizontal or vertical list."),
@@ -308,10 +308,10 @@ export const instancePropertiesSchema = z
         CellPadding: udim2.describe("Space between grid cells (UDim2)").optional(),
         CellSize: udim2.describe("Uniform size of each grid cell (UDim2)").optional(),
         FillDirectionMaxCells: z.number().int().describe("Max cells per row/column before wrapping").optional(),
-        FillDirection: z.string().describe('e.g. "Enum.FillDirection.Horizontal"').optional(),
-        HorizontalAlignment: z.string().describe('e.g. "Enum.HorizontalAlignment.Left"').optional(),
-        VerticalAlignment: z.string().describe('e.g. "Enum.VerticalAlignment.Top"').optional(),
-        SortOrder: z.string().describe('e.g. "Enum.SortOrder.LayoutOrder"').optional(),
+        FillDirection: z.string().describe('e.g. "Horizontal"').optional(),
+        HorizontalAlignment: z.string().describe('e.g. "Left"').optional(),
+        VerticalAlignment: z.string().describe('e.g. "Top"').optional(),
+        SortOrder: z.string().describe('e.g. "LayoutOrder"').optional(),
       })
       .strict()
       .describe(
