@@ -675,6 +675,13 @@ Decisions made during synthesis reviews, with rationale.
 - **References**: DV-01 (`packages/debug-viewer/src/shared/types.ts`), `packages/debug-viewer/src/server/parser.ts`
 - **Date**: 2026-03-20
 
+### D097: CLI COLLAB_TOOL_NAMES — accept local duplication with canonical reference
+- **Decision**: Accept CLI-local duplication. `packages/cli/src/tui/components/thread-store-utils.ts` keeps its own `COLLAB_TOOL_NAMES` set for rendering decisions, with a comment referencing the canonical source in `packages/runtime/src/tools/tool-metadata.ts`. Do not move the constant to `@diligent/protocol`.
+- **Rationale**: The CLI uses `COLLAB_TOOL_NAMES` purely for TUI rendering logic (which items to display as collab blocks). It is a consumer-side rendering concern, not a shared contract. Moving the constant to `@diligent/protocol` would add a runtime dependency to protocol for a UI-only concern. The four tool names (`spawn_agent`, `wait`, `send_input`, `close_agent`) are stable and unlikely to diverge in practice. A comment cross-reference is sufficient to keep the duplication intentional and visible.
+- **Consequence**: If a new collab tool is added, `tool-metadata.ts` must be updated first, and `thread-store-utils.ts` must be manually synced. The comment makes this obligation explicit.
+- **References**: `packages/cli/src/tui/components/thread-store-utils.ts:9`, `packages/runtime/src/tools/tool-metadata.ts:62`
+- **Date**: 2026-03-24
+
 ### D096: Protocol version remains fixed at 1 for now
 - **Decision**: Do not introduce protocol version negotiation or a version handshake at this time. Keep the app-server initialize response hardcoded as `protocolVersion: 1` for the current development phase.
 - **Rationale**: There is only one in-repo client/server protocol implementation today, so negotiation adds complexity without solving an active compatibility problem. The near-term work for D089/D091 may evolve the protocol and session format, but we are explicitly choosing not to preserve multi-version wire compatibility during this phase. If a future change creates a real need to support concurrent protocol versions or out-of-sync clients, we can introduce negotiation then with concrete migration requirements.

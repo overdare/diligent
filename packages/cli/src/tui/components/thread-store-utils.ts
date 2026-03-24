@@ -6,6 +6,9 @@ import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives";
 
+// CLI-local copy of collab tool names for TUI rendering decisions (D097).
+// Canonical source: packages/runtime/src/tools/tool-metadata.ts (COLLAB_TOOL_NAMES).
+// If a new collab tool is added there, sync this set manually.
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 export const TOOL_MAX_LINES = 5;
 
