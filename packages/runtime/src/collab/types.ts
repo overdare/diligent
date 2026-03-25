@@ -52,6 +52,7 @@ export interface CollabToolDeps {
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8
+  maxDepth?: number; // default 3
   getParentSessionId?: () => string | undefined;
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
   /** Called when collab boundary events fire (spawn/wait/close begin+end). */

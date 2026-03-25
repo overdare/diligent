@@ -80,17 +80,19 @@ export function resolveChildToolAccess(
 /** Subset of CollabToolDeps that can safely be mutated between turns (excludes structural fields). */
 export type MutableCollabDeps = Omit<
   CollabToolDeps,
-  "cwd" | "paths" | "parentTools" | "maxAgents" | "sessionManagerFactory"
+  "cwd" | "paths" | "parentTools" | "maxAgents" | "maxDepth" | "sessionManagerFactory"
 >;
 
 export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();
   private pool = new NicknamePool();
   private maxAgents: number;
+  private maxDepth: number;
   private collabEventHandler?: (event: CollabAgentEvent) => void;
 
   constructor(private deps: CollabToolDeps) {
     this.maxAgents = deps.maxAgents ?? 8;
+    this.maxDepth = deps.maxDepth ?? 3;
     this.collabEventHandler = deps.onCollabEvent;
   }
 
@@ -143,6 +145,9 @@ export class AgentRegistry {
     const activeCount = [...this.agents.values()].filter((e) => !isFinal(e.status)).length;
     if (activeCount >= this.maxAgents) {
       throw new Error(`Max active agents reached (${this.maxAgents}). Close some agents first.`);
+    }
+    if (this.maxDepth <= 0) {
+      throw new Error(`Max agent nesting depth reached. Nested agents cannot spawn further sub-agents.`);
     }
 
     const agentDefinition =
@@ -204,7 +209,7 @@ export class AgentRegistry {
               })
           : undefined;
 
-        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk };
+        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk, maxDepth: this.maxDepth - 1 };
         const result = await buildDefaultTools(
           this.deps.cwd,
           this.deps.paths,
