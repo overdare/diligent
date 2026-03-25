@@ -19,7 +19,7 @@ function normalizeToolNames(tools: string[], filePath: string): { tools: string[
   const normalized = new Set<string>();
   for (const tool of tools) {
     if (!(tool in TOOL_CAPABILITIES)) {
-      return { error: `${filePath}: unknown tool in frontmatter: ${tool}` };
+      console.warn(`${filePath}: unknown tool in frontmatter: ${tool}`);
     }
     normalized.add(tool);
   }

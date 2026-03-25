@@ -39,7 +39,7 @@ describe("parseAgentFrontmatter", () => {
     expect(result.frontmatter.tools).toEqual(["read", "glob"]);
   });
 
-  it("rejects unknown tool names", () => {
+  it("passes through unknown tool names with a warning instead of rejecting", () => {
     const content = [
       "---",
       "name: reviewer",
@@ -50,9 +50,9 @@ describe("parseAgentFrontmatter", () => {
     ].join("\n");
 
     const result = parseAgentFrontmatter(content, "/tmp/AGENT.md");
-    expect("error" in result).toBe(true);
-    if (!("error" in result)) return;
-    expect(result.error).toContain("unknown tool");
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.frontmatter.tools).toContain("mystery_tool");
   });
 
   it("rejects invalid model_class", () => {
