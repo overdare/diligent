@@ -6,6 +6,7 @@ import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives";
 
+// Mirrors runtime's COLLAB_TOOL_NAMES (packages/runtime/src/tools/tool-metadata.ts). Update in sync if collab tool names change.
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 export const TOOL_MAX_LINES = 5;
 
