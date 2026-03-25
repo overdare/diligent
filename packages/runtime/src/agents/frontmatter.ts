@@ -19,7 +19,10 @@ function normalizeToolNames(tools: string[], filePath: string): { tools: string[
   const normalized = new Set<string>();
   for (const tool of tools) {
     if (!(tool in TOOL_CAPABILITIES)) {
-      return { error: `${filePath}: unknown tool in frontmatter: ${tool}` };
+      // Unknown tool names are passed through with a warning — they may be plugin-provided tools
+      // that are not in the built-in TOOL_CAPABILITIES registry. The tool will only be active if
+      // the plugin that provides it is loaded at runtime.
+      console.warn(`[agents] ${filePath}: unknown tool in frontmatter (may be a plugin tool): ${tool}`);
     }
     normalized.add(tool);
   }
