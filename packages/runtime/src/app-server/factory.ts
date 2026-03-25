@@ -47,10 +47,10 @@ async function createRuntimeAgent(args: {
   const { cwd, mode, effort, modelId, approve, ask, getSessionId, existingAgent } = request;
   const guardedSystemPrompt = withSkillGuardrail(runtimeConfig);
   const paths = await getPaths();
-  const toolsResult = await buildDefaultTools(
+  const toolsResult = await buildDefaultTools({
     cwd,
     paths,
-    {
+    collabDeps: {
       modelId: modelId,
       effort,
       systemPrompt: guardedSystemPrompt,
@@ -60,13 +60,12 @@ async function createRuntimeAgent(args: {
       ask,
       streamFn: runtimeConfig.streamFunction,
     },
-    runtimeConfig.diligent.tools,
-    runtimeConfig.skills,
-    undefined,
-    true,
-    existingAgent?.registry,
-    { approve, ask },
-  );
+    toolsConfig: runtimeConfig.diligent.tools,
+    skills: runtimeConfig.skills,
+    enableCollabTools: true,
+    existingRegistry: existingAgent?.registry,
+    host: { approve, ask },
+  });
 
   const activeMode = (mode ?? "default") as Mode;
   const model = resolveModel(modelId);
