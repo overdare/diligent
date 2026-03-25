@@ -2,8 +2,10 @@
 
 import type { ModelClass } from "@diligent/core/llm/models";
 import { agentTypeToModelClass, resolveModel, resolveModelForClass } from "@diligent/core/llm/models";
+import type { Tool } from "@diligent/core/tool/types";
 import type { TextBlock } from "@diligent/core/types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
+import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import { resolveAgentDefinition } from "../agent/resolved-agent";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import { SessionManager } from "../session/manager";
@@ -27,6 +29,53 @@ function statusMessage(s: AgentStatus): string | undefined {
 
 /** Tool names that belong to the collab layer — excluded from child agents. */
 export { COLLAB_TOOL_NAMES };
+
+/**
+ * Resolves which tools a child agent is allowed to use, given the parent tool set,
+ * spawn parameters, and agent definition policy.
+ *
+ * Three concerns handled separately:
+ * 1. Which non-collab tools survive (intersection of parent tools, agent definition, and per-spawn allowlists).
+ * 2. Whether collab tools should be re-created for the child (signalled by nestedCollabEnabled).
+ *    Collab tools are unconditionally excluded from childTools even when nestedCollabEnabled=true because
+ *    child agents need *fresh* collab tools bound to their own registry — inheriting parent collab tools
+ *    would give them stale references pointing to the parent's registry. buildDefaultTools re-creates them.
+ * 3. The allowedChildToolNames set is also used as a post-buildDefaultTools filter (caller's responsibility)
+ *    so that freshly-created collab tools survive only when nestedCollabEnabled=true.
+ */
+export function resolveChildToolAccess(
+  parentTools: Tool[],
+  params: { allowNestedAgents?: boolean; allowedTools?: string[] },
+  agentDefinition: ResolvedAgentDefinition,
+): { childTools: Tool[]; nestedCollabEnabled: boolean; allowedChildToolNames: Set<string> } {
+  let allowedChildToolNames = new Set(parentTools.map((tool) => tool.name));
+
+  if (!params.allowNestedAgents) {
+    allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => !COLLAB_TOOL_NAMES.has(toolName)));
+  }
+  if (agentDefinition.readonly) {
+    allowedChildToolNames = new Set(
+      [...allowedChildToolNames].filter((toolName) => PLAN_MODE_ALLOWED_TOOLS.has(toolName)),
+    );
+  }
+  if (agentDefinition.allowedTools) {
+    const allowedSet = new Set(agentDefinition.allowedTools);
+    allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
+  }
+  if (params.allowedTools) {
+    const allowedSet = new Set(params.allowedTools);
+    allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
+  }
+
+  // Collab tools are always excluded here — child agents receive fresh collab tools from buildDefaultTools
+  // when nestedCollabEnabled=true (bound to the child's own registry, not the parent's).
+  const childTools = parentTools.filter(
+    (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
+  );
+  const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
+
+  return { childTools, nestedCollabEnabled, allowedChildToolNames };
+}
 
 /** Subset of CollabToolDeps that can safely be mutated between turns (excludes structural fields). */
 export type MutableCollabDeps = Omit<
@@ -106,29 +155,11 @@ export class AgentRegistry {
     const abortController = new AbortController();
 
     // Build child tool list
-    let allowedChildToolNames = new Set(this.deps.parentTools.map((tool) => tool.name));
-    if (!params.allowNestedAgents) {
-      allowedChildToolNames = new Set(
-        [...allowedChildToolNames].filter((toolName) => !COLLAB_TOOL_NAMES.has(toolName)),
-      );
-    }
-    if (agentDefinition.readonly) {
-      allowedChildToolNames = new Set(
-        [...allowedChildToolNames].filter((toolName) => PLAN_MODE_ALLOWED_TOOLS.has(toolName)),
-      );
-    }
-    if (agentDefinition.allowedTools) {
-      const allowedSet = new Set(agentDefinition.allowedTools);
-      allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
-    }
-    if (params.allowedTools) {
-      const allowedSet = new Set(params.allowedTools);
-      allowedChildToolNames = new Set([...allowedChildToolNames].filter((toolName) => allowedSet.has(toolName)));
-    }
-    const childTools = this.deps.parentTools.filter(
-      (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
+    const { childTools, nestedCollabEnabled, allowedChildToolNames } = resolveChildToolAccess(
+      this.deps.parentTools,
+      params,
+      agentDefinition,
     );
-    const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
     if (childTools.length === 0) {
       const parentToolNames = this.deps.parentTools.map((t) => t.name).join(", ");
