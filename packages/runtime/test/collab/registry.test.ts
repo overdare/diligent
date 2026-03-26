@@ -129,6 +129,28 @@ describe("AgentRegistry", () => {
     }
   });
 
+  it("rejects spawn when depth is 0", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        depth: 0,
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    expect(() => registry.spawn({ prompt: "task", description: "", agentType: "general" })).toThrow(
+      /Max agent nesting depth reached/,
+    );
+  });
+
+  it("allows spawn when depth is 1 (root spawns one level)", () => {
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        depth: 1,
+        sessionManagerFactory: makeMockSessionManagerFactory(makeAssistant("ok")),
+      }),
+    );
+    expect(() => registry.spawn({ prompt: "task", description: "", agentType: "general" })).not.toThrow();
+  });
+
   it("rejects when maxAgents exceeded", () => {
     const registry = new AgentRegistry(
       makeCollabDeps({

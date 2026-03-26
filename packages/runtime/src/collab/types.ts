@@ -52,6 +52,11 @@ export interface CollabToolDeps {
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8
+  /**
+   * Maximum nesting depth for child agents. Decremented on each spawn.
+   * Spawn is refused when depth reaches 0. Default: 3.
+   */
+  depth?: number;
   getParentSessionId?: () => string | undefined;
   sessionManagerFactory?: (config: import("../session/manager").SessionManagerConfig) => SessionManager;
   /** Called when collab boundary events fire (spawn/wait/close begin+end). */
