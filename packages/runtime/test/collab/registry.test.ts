@@ -301,7 +301,9 @@ describe("AgentRegistry", () => {
     );
 
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
-    await registry.wait([threadId], 5000);
+    const result = await registry.wait([threadId], 5000);
+
+    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).not.toContain("spawn_agent");
@@ -326,7 +328,9 @@ describe("AgentRegistry", () => {
       allowNestedAgents: true,
       allowedTools: ["read", "spawn_agent"],
     });
-    await registry.wait([threadId], 5000);
+    const result = await registry.wait([threadId], 5000);
+
+    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).toContain("spawn_agent");
@@ -344,7 +348,9 @@ describe("AgentRegistry", () => {
     );
 
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
-    await registry.wait([threadId], 5000);
+    const result = await registry.wait([threadId], 5000);
+
+    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
 
     const policy = systemSections.find((section) => section.label === "nested_subagent_policy");
     expect(policy?.content).toContain("Nested sub-agent delegation is disabled");
