@@ -681,3 +681,9 @@ Decisions made during synthesis reviews, with rationale.
 - **Consequence**: Breaking protocol changes remain allowed for now as long as the single shipped client/server pair is updated together. `protocolVersion: 1` should be treated as a fixed marker, not as an actively negotiated contract.
 - **References**: `packages/runtime/src/app-server/server.ts:341`, D089, D091, D043
 - **Date**: 2026-03-22
+
+### D097: CLI COLLAB_TOOL_NAMES — accept local duplication with canonical reference comment
+- **Decision**: Keep `COLLAB_TOOL_NAMES` in `packages/cli/src/tui/components/thread-store-utils.ts` as a CLI-local constant with a code comment referencing the canonical source in `packages/runtime/src/tools/tool-metadata.ts`.
+- **Rationale**: The CLI constant is a UI rendering concern; the runtime constant is a tool-filtering concern derived from `TOOL_CAPABILITIES`. Moving to `@diligent/protocol` would expose a runtime implementation detail as a client-visible protocol semantic. The duplication is 4 string literals that change infrequently.
+- **Alternatives considered**: (a) Export from `@diligent/protocol` — rejected: adds protocol coupling for a UI-only concern. (b) Import directly from `@diligent/runtime` — rejected: breaks the CLI's current independence from the runtime package.
+- **Date**: 2026-03-25
