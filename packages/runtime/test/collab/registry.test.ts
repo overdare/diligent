@@ -63,6 +63,22 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
   };
 }
 
+function createInspectingHarness(observer: (agent: RuntimeAgent) => void) {
+  let factoryCalls = 0;
+  let runCalls = 0;
+  return {
+    getFactoryCalls: () => factoryCalls,
+    getRunCalls: () => runCalls,
+    factory: (config: SessionManagerConfig) => {
+      factoryCalls++;
+      return makeInspectingSessionManagerFactory((agent) => {
+        runCalls++;
+        observer(agent);
+      })(config);
+    },
+  };
+}
+
 describe("AgentRegistry", () => {
   it("spawn returns threadId and nickname immediately", () => {
     const registry = new AgentRegistry(
@@ -291,12 +307,13 @@ describe("AgentRegistry", () => {
 
   it("excludes collab tools from child agents by default", async () => {
     let childToolNames: string[] = [];
+    const harness = createInspectingHarness((agent) => {
+      childToolNames = agent.tools.map((tool) => tool.name);
+    });
     const registry = new AgentRegistry(
       makeCollabDeps({
         parentTools: [makeTool("read"), makeTool("spawn_agent"), makeTool("wait")],
-        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
-          childToolNames = agent.tools.map((tool) => tool.name);
-        }),
+        sessionManagerFactory: harness.factory,
       }),
     );
 
@@ -304,6 +321,8 @@ describe("AgentRegistry", () => {
     const result = await registry.wait([threadId], 5000);
 
     expect(result.status[threadId]?.kind).toBe("completed");
+    expect(harness.getFactoryCalls()).toBe(1);
+    expect(harness.getRunCalls()).toBe(1);
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).not.toContain("spawn_agent");
@@ -312,12 +331,13 @@ describe("AgentRegistry", () => {
 
   it("allows collab tools only when nested agents are explicitly enabled", async () => {
     let childToolNames: string[] = [];
+    const harness = createInspectingHarness((agent) => {
+      childToolNames = agent.tools.map((tool) => tool.name);
+    });
     const registry = new AgentRegistry(
       makeCollabDeps({
         parentTools: [makeTool("read"), makeTool("spawn_agent"), makeTool("wait")],
-        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
-          childToolNames = agent.tools.map((tool) => tool.name);
-        }),
+        sessionManagerFactory: harness.factory,
       }),
     );
 
@@ -331,6 +351,8 @@ describe("AgentRegistry", () => {
     const result = await registry.wait([threadId], 5000);
 
     expect(result.status[threadId]?.kind).toBe("completed");
+    expect(harness.getFactoryCalls()).toBe(1);
+    expect(harness.getRunCalls()).toBe(1);
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).toContain("spawn_agent");
@@ -339,11 +361,12 @@ describe("AgentRegistry", () => {
 
   it("injects an explicit nested-subagent policy into the child system prompt", async () => {
     let systemSections: Array<{ label: string; content: string }> = [];
+    const harness = createInspectingHarness((agent) => {
+      systemSections = agent.systemPrompt.map((section) => ({ label: section.label, content: section.content }));
+    });
     const registry = new AgentRegistry(
       makeCollabDeps({
-        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
-          systemSections = agent.systemPrompt.map((section) => ({ label: section.label, content: section.content }));
-        }),
+        sessionManagerFactory: harness.factory,
       }),
     );
 
@@ -351,6 +374,8 @@ describe("AgentRegistry", () => {
     const result = await registry.wait([threadId], 5000);
 
     expect(result.status[threadId]?.kind).toBe("completed");
+    expect(harness.getFactoryCalls()).toBe(1);
+    expect(harness.getRunCalls()).toBe(1);
 
     const policy = systemSections.find((section) => section.label === "nested_subagent_policy");
     expect(policy?.content).toContain("Nested sub-agent delegation is disabled");
