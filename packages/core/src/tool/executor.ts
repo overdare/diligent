@@ -1,4 +1,5 @@
 // @summary Executes tool calls with parameter validation and auto-truncation
+import type { ZodIssue } from "zod";
 import type { ToolCallBlock } from "../types";
 import {
   persistFullOutput,
@@ -20,17 +21,30 @@ export async function executeTool(
     return { output: `Error: Unknown tool "${toolCall.name}"`, metadata: { error: true } };
   }
 
-  const parsed = tool.parameters.safeParse(toolCall.input);
-  if (!parsed.success) {
-    return {
-      output: `Error: Invalid arguments for "${toolCall.name}":\n${parsed.error.format()._errors.join("\n")}`,
-      metadata: { error: true },
-    };
+  let args: unknown;
+  if (tool.parseArgs) {
+    try {
+      args = tool.parseArgs(toolCall.input);
+    } catch (err) {
+      return {
+        output: `Error: Invalid arguments for "${toolCall.name}":\n${err instanceof Error ? err.message : String(err)}`,
+        metadata: { error: true },
+      };
+    }
+  } else {
+    const parsed = tool.parameters.safeParse(toolCall.input);
+    if (!parsed.success) {
+      return {
+        output: `Error: Invalid arguments for "${toolCall.name}":\n${parsed.error.issues.map((i: ZodIssue) => `  [${i.path.join(".")}] ${i.message}`).join("\n")}`,
+        metadata: { error: true },
+      };
+    }
+    args = parsed.data;
   }
 
   let result: ToolResult;
   try {
-    result = await tool.execute(parsed.data, ctx);
+    result = await tool.execute(args, ctx);
     if (result.abortRequested) ctx.abort();
   } catch (err) {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);

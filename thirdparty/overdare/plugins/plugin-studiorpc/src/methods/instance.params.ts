@@ -5,7 +5,10 @@ const vec3 = z.object({ X: z.number(), Y: z.number(), Z: z.number() });
 const udim = z.object({ Scale: z.number(), Offset: z.number() });
 const colorChannel = z.number().int().min(0).max(255);
 const rgb = z.object({ R: colorChannel, G: colorChannel, B: colorChannel });
-const udim2 = z.object({ XScale: z.number(), XOffset: z.number(), YScale: z.number(), YOffset: z.number() });
+const udim2 = z.object({
+  X: z.object({ Scale: z.number(), Offset: z.number() }),
+  Y: z.object({ Scale: z.number(), Offset: z.number() }),
+});
 
 const normalIdEnum = z.enum(["Right", "Top", "Back", "Left", "Bottom", "Front"]);
 const colorSequence = z
@@ -16,19 +19,19 @@ const numberSequence = z
   .describe("NumberSequence keypoints [{Time,Value,Envelope?}]");
 const numberRange = z.object({ Min: z.number(), Max: z.number() });
 const surfaceGuiBaseProperties = {
-  Active: z.boolean().optional(),
+  Active: z.boolean().default(true),
   AlwaysOnTop: z.boolean().optional(),
-  Brightness: z.number().optional(),
-  ClipsDescendants: z.boolean().optional(),
-  Enabled: z.boolean().optional(),
-  LightInfluence: z.number().describe("(0~1)").optional(),
-  MaxDistance: z.number().optional(),
+  Brightness: z.number().default(10),
+  ClipsDescendants: z.boolean().default(true),
+  Enabled: z.boolean().default(true),
+  LightInfluence: z.number().describe("(0~1)").default(1),
+  MaxDistance: z.number().default(3000),
   Size: udim2.describe("UI size (UDim2)").optional(),
   ZIndexBehavior: z.string().describe('e.g. "Sibling"').optional(),
 };
 
 const guiObjectProperties = {
-  Active: z.boolean().optional(),
+  Active: z.boolean().default(true),
   AnchorPoint: z.object({ X: z.number(), Y: z.number() }).optional(),
   BackgroundColor3: rgb.optional(),
   BackgroundTransparency: z.number().describe("(0~1)").optional(),
@@ -37,7 +40,7 @@ const guiObjectProperties = {
   Position: udim2.describe("UI position (UDim2)").optional(),
   Rotation: z.number().optional(),
   Size: udim2.describe("UI size (UDim2)").optional(),
-  Visible: z.boolean().optional(),
+  Visible: z.boolean().default(true),
   ZIndex: z.number().optional(),
 };
 
@@ -46,7 +49,7 @@ const textProperties = {
   Text: z.string().optional(),
   TextColor3: rgb.optional(),
   TextScaled: z.boolean().optional(),
-  TextSize: z.number().optional(),
+  TextSize: z.number().default(14),
   TextTransparency: z.number().describe("(0~1)").optional(),
   TextWrapped: z.boolean().optional(),
   TextXAlignment: z.string().describe('e.g. "Left"').optional(),
@@ -90,6 +93,27 @@ export const instanceClassEnum = z.enum([
   "HumanoidDescription",
 ]);
 
+export const serviceClassEnum = z.enum([
+  "Workspace",
+  "Lighting",
+  "Atmosphere",
+  "Players",
+  "StarterPlayer",
+  "MaterialService",
+  "HttpService",
+  "CollectionService",
+  "DataModel",
+  "DataStoreService",
+  "PhysicsService",
+  "RunService",
+  "ServerScriptService",
+  "ServerStorage",
+  "StarterCharacterScripts",
+  "StarterGui",
+  "StarterPlayerScripts",
+  "ReplicatedStorage",
+]);
+
 export const materialEnum = z.enum([
   "Basic",
   "Plastic",
@@ -109,6 +133,202 @@ export const materialEnum = z.enum([
   "Neon",
 ]);
 
+// --- Service property schemas (update-only, not insertable) ---
+
+const workspaceServiceSchema = z
+  .object({
+    Gravity: z.number().optional(),
+    HitboxType: z.string().describe('e.g. "Single"').optional(),
+  })
+  .strict()
+  .describe("Use when updating Workspace service. Controls world gravity and hitbox type.");
+
+const lightingServiceSchema = z
+  .object({
+    AmbientSkyBrightness: z.number().optional(),
+    AmbientSkyColor: rgb.optional(),
+    AutoTimeCycle: z.number().optional(),
+    ClockTime: z.number().optional(),
+    Contrast: z.number().optional(),
+    GroundReflectionColor: rgb.optional(),
+    MoonBrightness: z.number().optional(),
+    MoonCastShadow: z.boolean().optional(),
+    MoonLightColor: rgb.optional(),
+    MoonMaterialColor: rgb.optional(),
+    MoonMaxHeight: z.number().optional(),
+    MoonPathAngle: z.number().optional(),
+    MoonPhase: z.number().optional(),
+    NightBrightness: z.number().optional(),
+    RealTimeDayDuration: z.number().optional(),
+    Saturation: z.number().optional(),
+    SkyColorInfluence: z.number().optional(),
+    StarsBrightness: z.number().optional(),
+    StarsColor: rgb.optional(),
+    SunBrightness: z.number().optional(),
+    SunCastShadow: z.number().optional(),
+    SunLightColor: rgb.optional(),
+    SunMaxHeight: z.number().optional(),
+    SunPathAngle: z.number().optional(),
+    TimeFlowSpeed: z.number().optional(),
+  })
+  .strict()
+  .describe("Use when updating Lighting service. Controls time of day, sun/moon, sky colors, and ambient lighting.");
+
+const atmosphereServiceSchema = z
+  .object({
+    AirColor: rgb.optional(),
+    CloudAmount: z.number().optional(),
+    CloudSpeed: z.number().optional(),
+    CloudTexture: z.string().optional(),
+    FogColor: rgb.optional(),
+    FogDensity: z.number().optional(),
+    FogFalloff: z.number().optional(),
+    FogHorizon: z.boolean().optional(),
+    FogStart: z.number().optional(),
+    GlareColor: rgb.optional(),
+    GlareFalloff: z.number().optional(),
+    HazeColor: rgb.optional(),
+    HazeSpread: z.number().optional(),
+  })
+  .strict()
+  .describe("Use when updating Atmosphere service. Controls fog, haze, glare, and cloud settings.");
+
+const playersServiceSchema = z
+  .object({
+    CharacterAutoLoads: z.boolean().optional(),
+    RespawnTime: z.number().optional(),
+    UseStrafingAnimations: z.boolean().optional(),
+  })
+  .strict()
+  .describe("Use when updating Players service. Controls character auto-loading and respawn settings.");
+
+const starterPlayerServiceSchema = z
+  .object({
+    AirControl: z.number().optional(),
+    AllowCustomAnimations: z.number().optional(),
+    CameraMaxZoomDistance: z.number().optional(),
+    CameraMinZoomDistance: z.number().optional(),
+    CapsuleHeight: z.number().optional(),
+    CapsuleRadius: z.number().optional(),
+    CharacterMeshPos: vec3.optional(),
+    FallingDeceleration: z.number().optional(),
+    FallingLateralFriction: z.number().optional(),
+    GravityScale: z.number().optional(),
+    GroundFriction: z.number().optional(),
+    IgnoreBaseRotation: z.boolean().optional(),
+    JumpHeight: z.number().optional(),
+    JumpPower: z.number().optional(),
+    LoadCharacterAppearance: z.boolean().optional(),
+    MaxAcceleration: z.number().optional(),
+    MaxJumpCount: z.number().optional(),
+    MaxSlopeAngle: z.number().optional(),
+    RotationSpeed: z.number().optional(),
+    StompJumpMultiplier: z.number().optional(),
+    UseJumpPower: z.boolean().optional(),
+    WalkSpeed: z.number().optional(),
+    WalkingDeceleration: z.number().optional(),
+  })
+  .strict()
+  .describe("Use when updating StarterPlayer service. Controls character movement, physics, and camera settings.");
+
+const materialServiceSchema = z
+  .object(
+    Object.fromEntries(
+      [
+        "AsphaltName",
+        "BarkName",
+        "BasicName",
+        "BeigeTerrazzoFloor",
+        "BrickCeramicTile",
+        "BrickName",
+        "BrokenConcreteName",
+        "BrokenRoof",
+        "BrushMetal",
+        "CementWallName",
+        "CheckerTileFloorName",
+        "ConcreteName",
+        "ConcretePlateName",
+        "CopperName",
+        "CorrugatedSteelName",
+        "CrackedMiddleCeramicTileName",
+        "CrackedSmallCeramicTileName",
+        "DamagedRoofName",
+        "DistroyedBronzeName",
+        "EmeraldGridTile",
+        "GalvanizedMetal",
+        "GlassName",
+        "GrassName",
+        "GreyWovenFabric",
+        "GridBorder",
+        "GridBoxName",
+        "GridMarbleName",
+        "GridPentagonName",
+        "GridQuadName",
+        "GridTileName",
+        "GroundName",
+        "HalfLeafyGroundName",
+        "HouseBricksName",
+        "IndustrialRibbedSteel",
+        "LeafyGroundName",
+        "MarbleName",
+        "MetalName",
+        "MetalPlateName",
+        "MixRoadName",
+        "MosaicCarpetName",
+        "MossyGroundName",
+        "MossyRockName",
+        "OceanPanelTile",
+        "OfficeCeilingWhiteName",
+        "PaintedMetal",
+        "PaintedWood",
+        "PavingBlockName",
+        "PavingBrickName",
+        "PavingFloorName",
+        "PavingName",
+        "PavingStonesName",
+        "PavingWallName",
+        "PeelingPaintSteel",
+        "PlankName",
+        "PlasticName",
+        "RoadName",
+        "RockName",
+        "RoofName",
+        "RustBrassName",
+        "RustName",
+        "RustySteel",
+        "SandName",
+        "SandstoneBrick",
+        "SilverMetalName",
+        "SmallBrickName",
+        "SnowName",
+        "SoilRockGroundName",
+        "SquareCeramicTile",
+        "StoneBrickName",
+        "StoneFloorName",
+        "TakenOffCeramicTileName",
+        "TerrazzoFloorName",
+        "ThickCarpet",
+        "UnlitName",
+        "UrbanSlateFloor",
+        "WeatheredPlasterBrick",
+        "WhiteCementBrick",
+        "WhiteGrayBrickName",
+        "WoodName",
+      ].map((n) => [n, z.string().optional()]),
+    ) as Record<string, z.ZodOptional<z.ZodString>>,
+  )
+  .strict()
+  .describe("Use when updating MaterialService. Each property maps a base material to its custom variant name.");
+
+const httpServiceSchema = z
+  .object({
+    HttpEnabled: z.boolean().optional(),
+  })
+  .strict()
+  .describe("Use when updating HttpService. Controls whether HTTP requests are enabled.");
+
+const emptyServiceSchema = z.object({}).strict();
+
 export const instancePropertiesSchema = z
   .union([
     z
@@ -116,10 +336,10 @@ export const instancePropertiesSchema = z
         Shape: z.enum(["Block", "Ball", "Cylinder"]).optional(),
         CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
         Size: vec3.describe("units in cm").optional(),
-        Anchored: z.boolean().optional(),
-        CanCollide: z.boolean().optional(),
-        CanQuery: z.boolean().optional(),
-        CanTouch: z.boolean().optional(),
+        Anchored: z.boolean().default(true),
+        CanCollide: z.boolean().default(true),
+        CanQuery: z.boolean().default(true),
+        CanTouch: z.boolean().default(true),
         CastShadow: z.boolean().optional(),
         CollisionGroup: z.string().optional(),
         Color: rgb.optional(),
@@ -182,12 +402,12 @@ export const instancePropertiesSchema = z
     z
       .object({
         SoundId: z.string().optional(),
-        Volume: z.number().describe("multiplier (0~10)").optional(),
+        Volume: z.number().describe("multiplier (0~10)").default(1),
         Looped: z.boolean().optional(),
-        PlaybackSpeed: z.number().optional(),
+        PlaybackSpeed: z.number().default(1),
         PlayOnRemove: z.boolean().optional(),
-        RollOffMaxDistance: z.number().optional(),
-        RollOffMinDistance: z.number().optional(),
+        RollOffMaxDistance: z.number().default(5000),
+        RollOffMinDistance: z.number().default(10),
         RollOffMode: z.string().describe('e.g. "InverseTapered"').optional(),
         StartTimePosition: z.number().optional(),
       })
@@ -201,7 +421,7 @@ export const instancePropertiesSchema = z
       .describe("Use when class=RemoteEvent. No configurable properties — just set parentGuid and name."),
     z
       .object({
-        CanBeDropped: z.boolean().optional(),
+        CanBeDropped: z.boolean().default(true),
         Enabled: z.boolean().optional(),
         ManualActivationOnly: z.boolean().optional(),
         RequiresHandle: z.boolean().optional(),
@@ -281,10 +501,10 @@ export const instancePropertiesSchema = z
           "Fog",
         ]),
         Color: z.array(z.object({ Time: z.number(), Color: rgb })),
-        Enabled: z.boolean().optional(),
-        InfiniteLoop: z.boolean().optional(),
-        LoopCount: z.number().optional(),
-        Size: z.number().optional(),
+        Enabled: z.boolean().default(true),
+        InfiniteLoop: z.boolean().default(true),
+        LoopCount: z.number().default(1),
+        Size: z.number().default(1),
         Transparency: z.number().describe("(0~1)").optional(),
       })
       .strict()
@@ -294,8 +514,8 @@ export const instancePropertiesSchema = z
     z
       .object({
         AngularVelocity: vec3.optional(),
-        Enabled: z.boolean().optional(),
-        MaxTorque: z.number().optional(),
+        Enabled: z.boolean().default(true),
+        MaxTorque: z.number().default(1000),
         ReactionTorqueEnabled: z.boolean().optional(),
         RelativeTo: z.string().describe('e.g. "World"').optional(),
         Visible: z.boolean().optional(),
@@ -313,10 +533,10 @@ export const instancePropertiesSchema = z
         PlaneVelocity: z.object({ X: z.number(), Y: z.number() }).optional(),
         PrimaryTangentAxis: vec3.optional(),
         SecondaryTangentAxis: vec3.optional(),
-        Enabled: z.boolean().optional(),
-        ForceLimitsEnabled: z.boolean().optional(),
+        Enabled: z.boolean().default(true),
+        ForceLimitsEnabled: z.boolean().default(true),
         ForceLimitMode: z.string().describe('e.g. "Magnitude"').optional(),
-        MaxForce: z.number().optional(),
+        MaxForce: z.number().default(10),
         MaxAxesForce: vec3.optional(),
         RelativeTo: z.string().describe('e.g. "World"').optional(),
         Visible: z.boolean().optional(),
@@ -329,7 +549,7 @@ export const instancePropertiesSchema = z
       .object({
         Force: vec3.optional(),
         ApplyAtCenterOfMass: z.boolean().optional(),
-        Enabled: z.boolean().optional(),
+        Enabled: z.boolean().default(true),
         RelativeTo: z.string().describe('e.g. "World"').optional(),
         Visible: z.boolean().optional(),
       })
@@ -359,10 +579,11 @@ export const instancePropertiesSchema = z
         CanvasSize: udim2.describe("Total scrollable area (UDim2)").optional(),
         ScrollBarImageColor3: rgb.optional(),
         ScrollBarImageTransparency: z.number().describe("(0~1)").optional(),
-        ScrollBarThickness: z.number().optional(),
+        ScrollBarThickness: z.number().default(12),
         ScrollingDirection: z.string().describe('e.g. "Y"').optional(),
-        ScrollingEnabled: z.boolean().optional(),
+        ScrollingEnabled: z.boolean().default(true),
         ...guiObjectProperties,
+        ClipsDescendants: z.boolean().default(true),
       })
       .strict()
       .describe(
@@ -413,7 +634,7 @@ export const instancePropertiesSchema = z
       .object({
         ...surfaceGuiBaseProperties,
         Face: normalIdEnum.optional(),
-        ZOffset: z.number().optional(),
+        ZOffset: z.number().default(1),
       })
       .strict()
       .describe(
@@ -438,14 +659,14 @@ export const instancePropertiesSchema = z
         Color: colorSequence.optional(),
         CurveSize0: z.number().optional(),
         CurveSize1: z.number().optional(),
-        Enabled: z.boolean().optional(),
+        Enabled: z.boolean().default(true),
         FaceCamera: z.boolean().optional(),
         Texture: z.string().describe("Texture asset ID").optional(),
-        TextureLength: z.number().optional(),
-        TextureSpeed: z.number().optional(),
+        TextureLength: z.number().default(1),
+        TextureSpeed: z.number().default(1),
         Transparency: numberSequence.optional(),
-        Width0: z.number().optional(),
-        Width1: z.number().optional(),
+        Width0: z.number().default(1),
+        Width1: z.number().default(1),
       })
       .strict()
       .describe(
@@ -454,14 +675,14 @@ export const instancePropertiesSchema = z
     z
       .object({
         Color: colorSequence.optional(),
-        Enabled: z.boolean().optional(),
-        Lifetime: z.number().optional(),
+        Enabled: z.boolean().default(true),
+        Lifetime: z.number().default(2),
         Offset: vec3.optional(),
         Texture: z.string().describe("Texture asset ID").optional(),
-        TextureLength: z.number().optional(),
-        TextureSpeed: z.number().optional(),
+        TextureLength: z.number().default(1),
+        TextureSpeed: z.number().default(1),
         Transparency: numberSequence.optional(),
-        Width: z.number().optional(),
+        Width: z.number().default(200),
         WidthScale: numberSequence.optional(),
       })
       .strict()
@@ -475,7 +696,7 @@ export const instancePropertiesSchema = z
         Color: colorSequence.optional(),
         Drag: z.number().optional(),
         EmissionDirection: normalIdEnum.optional(),
-        Enabled: z.boolean().optional(),
+        Enabled: z.boolean().default(true),
         FlipbookFramerate: numberRange.optional(),
         FlipbookLayout: z.enum(["None", "Grid2x2", "Grid4x4", "Grid8x8"]).optional(),
         FlipbookMode: z.enum(["Loop", "OneShot", "PingPong", "Random"]).optional(),
@@ -486,7 +707,7 @@ export const instancePropertiesSchema = z
         Orientation: z
           .enum(["FacingCamera", "FacingCameraWorldUp", "VelocityParallel", "VelocityPerpendicular"])
           .optional(),
-        Rate: z.number().optional(),
+        Rate: z.number().default(5),
         RotSpeed: z.number().optional(),
         Rotation: numberRange.optional(),
         Shape: z.enum(["Box", "Sphere", "Cylinder", "Disc"]).optional(),
@@ -505,10 +726,10 @@ export const instancePropertiesSchema = z
       ),
     z
       .object({
-        Brightness: z.number().optional(),
+        Brightness: z.number().default(50),
         Color: rgb.optional(),
         Enabled: z.boolean().optional(),
-        Range: z.number().describe("Radius of illumination in studs").optional(),
+        Range: z.number().describe("Radius of illumination in studs").default(300),
         Shadows: z.boolean().optional(),
       })
       .strict()
@@ -517,12 +738,12 @@ export const instancePropertiesSchema = z
       ),
     z
       .object({
-        Angle: z.number().describe("Cone half-angle in degrees").optional(),
-        Brightness: z.number().optional(),
+        Angle: z.number().describe("Cone half-angle in degrees").default(45),
+        Brightness: z.number().default(50),
         Color: rgb.optional(),
         Enabled: z.boolean().optional(),
         Face: normalIdEnum.optional(),
-        Range: z.number().describe("Radius of illumination in studs").optional(),
+        Range: z.number().describe("Radius of illumination in studs").default(300),
         Shadows: z.boolean().optional(),
       })
       .strict()
@@ -550,10 +771,10 @@ export const instancePropertiesSchema = z
         Shape: z.enum(["Block", "Ball", "Cylinder"]).optional(),
         CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
         Size: vec3.describe("units in cm").optional(),
-        Anchored: z.boolean().optional(),
-        CanCollide: z.boolean().optional(),
-        CanQuery: z.boolean().optional(),
-        CanTouch: z.boolean().optional(),
+        Anchored: z.boolean().default(true),
+        CanCollide: z.boolean().default(true),
+        CanQuery: z.boolean().default(true),
+        CanTouch: z.boolean().default(true),
         CastShadow: z.boolean().optional(),
         CollisionGroup: z.string().optional(),
         Color: rgb.optional(),
@@ -609,12 +830,12 @@ export const instancePropertiesSchema = z
         SprintAnimation: z.string().describe("Animation asset ID").optional(),
         MoodAnimation: z.string().describe("Animation asset ID").optional(),
         DieAnimation: z.string().describe("Animation asset ID").optional(),
-        HeightScale: z.number().describe("Character y-axis scale").optional(),
-        DepthScale: z.number().describe("Character z-axis scale").optional(),
-        WidthScale: z.number().describe("Character x-axis scale").optional(),
-        HeadScale: z.number().optional(),
-        BodyTypeScale: z.number().optional(),
-        ProportionScale: z.number().optional(),
+        HeightScale: z.number().describe("Character y-axis scale").default(1),
+        DepthScale: z.number().describe("Character z-axis scale").default(1),
+        WidthScale: z.number().describe("Character x-axis scale").default(1),
+        HeadScale: z.number().default(1),
+        BodyTypeScale: z.number().default(1),
+        ProportionScale: z.number().default(1),
         Face: z.string().describe("Face asset ID").optional(),
         Shirt: z.string().describe("Shirt asset ID").optional(),
         Pants: z.string().describe("Pants asset ID").optional(),
@@ -633,320 +854,70 @@ export const instancePropertiesSchema = z
       .describe(
         "Use when class=HumanoidDescription. Configures character appearance: body part meshes, textures, colors, animations, scale, and accessories.",
       ),
+    workspaceServiceSchema,
+    lightingServiceSchema,
+    atmosphereServiceSchema,
+    playersServiceSchema,
+    starterPlayerServiceSchema,
+    materialServiceSchema,
+    httpServiceSchema,
   ])
   .optional();
+
+/** Explicit service-class → schema entries (not index-dependent). */
+const serviceSchemaEntries: [string, z.ZodTypeAny][] = [
+  ["Workspace", workspaceServiceSchema],
+  ["Lighting", lightingServiceSchema],
+  ["Atmosphere", atmosphereServiceSchema],
+  ["Players", playersServiceSchema],
+  ["StarterPlayer", starterPlayerServiceSchema],
+  ["MaterialService", materialServiceSchema],
+  ["HttpService", httpServiceSchema],
+  ["CollectionService", emptyServiceSchema],
+  ["DataModel", emptyServiceSchema],
+  ["DataStoreService", emptyServiceSchema],
+  ["PhysicsService", emptyServiceSchema],
+  ["RunService", emptyServiceSchema],
+  ["ServerScriptService", emptyServiceSchema],
+  ["ServerStorage", emptyServiceSchema],
+  ["StarterCharacterScripts", emptyServiceSchema],
+  ["StarterGui", emptyServiceSchema],
+  ["StarterPlayerScripts", emptyServiceSchema],
+  ["ReplicatedStorage", emptyServiceSchema],
+];
+
+/** Map from instance/service class name to its dedicated property schema. */
+export const classPropertiesSchemas: ReadonlyMap<string, z.ZodTypeAny> = new Map([
+  ...instanceClassEnum.options.map((name, i) => {
+    const inner = instancePropertiesSchema as z.ZodOptional<z.ZodUnion<[z.ZodTypeAny, ...z.ZodTypeAny[]]>>;
+    return [name, inner.unwrap().options[i]] as [string, z.ZodTypeAny];
+  }),
+  ...serviceSchemaEntries,
+]);
 
 // Shape spec for deep-stripping unknown keys when reading .ovdrjm nodes.
 // `true` = keep the value as-is (primitive). Object = recurse and strip unknown keys.
 // When the actual value is an array, the shape is applied to each element.
 export type ShapeSpec = true | { readonly [key: string]: ShapeSpec };
 
-const vec3Shape = { X: true, Y: true, Z: true } as const satisfies ShapeSpec;
-const rgbShape = { R: true, G: true, B: true } as const satisfies ShapeSpec;
-const udim2Shape = { XScale: true, XOffset: true, YScale: true, YOffset: true } as const satisfies ShapeSpec;
-const udimShape = { Scale: true, Offset: true } as const satisfies ShapeSpec;
-const cframeShape = { Position: vec3Shape, Orientation: vec3Shape } as const satisfies ShapeSpec;
-const vec2Shape = { X: true, Y: true } as const satisfies ShapeSpec;
+/** Derive a ShapeSpec from a Zod schema by unwrapping wrappers and recursing into objects. */
+function zodToShape(schema: z.ZodTypeAny): ShapeSpec {
+  if (schema instanceof z.ZodObject) {
+    const result: Record<string, ShapeSpec> = {};
+    for (const [key, val] of Object.entries(schema.shape as Record<string, z.ZodTypeAny>)) {
+      result[key] = zodToShape(val);
+    }
+    return result;
+  }
+  if (schema instanceof z.ZodOptional) return zodToShape(schema.unwrap());
+  if (schema instanceof z.ZodDefault) return zodToShape(schema.removeDefault());
+  if (schema instanceof z.ZodArray) return zodToShape(schema.element);
+  return true;
+}
 
-const guiObjectShape: Record<string, ShapeSpec> = {
-  Active: true,
-  AnchorPoint: vec2Shape,
-  BackgroundColor3: rgbShape,
-  BackgroundTransparency: true,
-  ClipsDescendants: true,
-  LayoutOrder: true,
-  Position: udim2Shape,
-  Rotation: true,
-  Size: udim2Shape,
-  Visible: true,
-  ZIndex: true,
-};
-
-const textShape: Record<string, ShapeSpec> = {
-  Bold: true,
-  Text: true,
-  TextColor3: rgbShape,
-  TextScaled: true,
-  TextSize: true,
-  TextTransparency: true,
-  TextWrapped: true,
-  TextXAlignment: true,
-  TextYAlignment: true,
-};
-
-export const classPropertyShapes: Record<string, Record<string, ShapeSpec>> = {
-  Part: {
-    Shape: true,
-    CFrame: cframeShape,
-    Size: vec3Shape,
-    Anchored: true,
-    CanCollide: true,
-    CanQuery: true,
-    CanTouch: true,
-    CastShadow: true,
-    CollisionGroup: true,
-    Color: rgbShape,
-    Locked: true,
-    Mass: true,
-    Massless: true,
-    Material: true,
-    MaterialVariant: true,
-    Reflectance: true,
-    RootPriority: true,
-    Transparency: true,
-  },
-  Frame: { ...guiObjectShape, BorderColor3: rgbShape, BorderMode: true, BorderPixelSize: true },
-  ImageButton: {
-    Image: true,
-    ImageColor3: rgbShape,
-    ImageTransparency: true,
-    PressImage: true,
-    HoverImage: true,
-    ...guiObjectShape,
-  },
-  ImageLabel: { Image: true, ImageColor3: rgbShape, ImageTransparency: true, ...guiObjectShape },
-  TextButton: { ...textShape, ...guiObjectShape },
-  TextLabel: { ...textShape, ...guiObjectShape },
-  Sound: {
-    SoundId: true,
-    Volume: true,
-    Looped: true,
-    PlaybackSpeed: true,
-    PlayOnRemove: true,
-    RollOffMaxDistance: true,
-    RollOffMinDistance: true,
-    RollOffMode: true,
-    StartTimePosition: true,
-  },
-  RemoteEvent: {},
-  Tool: { CanBeDropped: true, Enabled: true, ManualActivationOnly: true, RequiresHandle: true, ToolTip: true },
-  VFXPreset: {
-    PresetName: true,
-    Color: { Time: true, Color: rgbShape },
-    Enabled: true,
-    InfiniteLoop: true,
-    LoopCount: true,
-    Size: true,
-    Transparency: true,
-  },
-  AngularVelocity: {
-    AngularVelocity: vec3Shape,
-    Enabled: true,
-    MaxTorque: true,
-    ReactionTorqueEnabled: true,
-    RelativeTo: true,
-    Visible: true,
-  },
-  LinearVelocity: {
-    VelocityConstraintMode: true,
-    VectorVelocity: vec3Shape,
-    LineDirection: vec3Shape,
-    LineVelocity: true,
-    PlaneVelocity: vec2Shape,
-    PrimaryTangentAxis: vec3Shape,
-    SecondaryTangentAxis: vec3Shape,
-    Enabled: true,
-    ForceLimitsEnabled: true,
-    ForceLimitMode: true,
-    MaxForce: true,
-    MaxAxesForce: vec3Shape,
-    RelativeTo: true,
-    Visible: true,
-  },
-  VectorForce: { Force: vec3Shape, ApplyAtCenterOfMass: true, Enabled: true, RelativeTo: true, Visible: true },
-  Model: { PrimaryPart: true, WorldPivot: cframeShape },
-  Folder: {},
-  ScrollingFrame: {
-    AutomaticCanvasSize: true,
-    CanvasPosition: vec2Shape,
-    CanvasSize: udim2Shape,
-    ScrollBarImageColor3: rgbShape,
-    ScrollBarImageTransparency: true,
-    ScrollBarThickness: true,
-    ScrollingDirection: true,
-    ScrollingEnabled: true,
-    ...guiObjectShape,
-  },
-  UIListLayout: {
-    Padding: udimShape,
-    Wraps: true,
-    FillDirection: true,
-    HorizontalAlignment: true,
-    VerticalAlignment: true,
-    SortOrder: true,
-  },
-  UIGridLayout: {
-    CellPadding: udim2Shape,
-    CellSize: udim2Shape,
-    FillDirectionMaxCells: true,
-    FillDirection: true,
-    HorizontalAlignment: true,
-    VerticalAlignment: true,
-    SortOrder: true,
-  },
-  BillboardGui: {
-    Active: true,
-    AlwaysOnTop: true,
-    Brightness: true,
-    ClipsDescendants: true,
-    DistanceLowerLimit: true,
-    DistanceUpperLimit: true,
-    Enabled: true,
-    ExtentsOffsetWorldSpace: vec3Shape,
-    LightInfluence: true,
-    MaxDistance: true,
-    PositionOffset: vec3Shape,
-    Size: udim2Shape,
-    SizeOffset: vec2Shape,
-    ZIndexBehavior: true,
-  },
-  SurfaceGui: {
-    Active: true,
-    AlwaysOnTop: true,
-    Brightness: true,
-    ClipsDescendants: true,
-    Enabled: true,
-    Face: true,
-    LightInfluence: true,
-    MaxDistance: true,
-    Size: udim2Shape,
-    ZIndexBehavior: true,
-    ZOffset: true,
-  },
-  BindableEvent: {},
-  Attachment: { Axis: vec3Shape, CFrame: cframeShape, SecondaryAxis: vec3Shape },
-  Beam: {
-    Color: { Time: true, Color: rgbShape },
-    CurveSize0: true,
-    CurveSize1: true,
-    Enabled: true,
-    FaceCamera: true,
-    Texture: true,
-    TextureLength: true,
-    TextureSpeed: true,
-    Transparency: { Time: true, Value: true, Envelope: true },
-    Width0: true,
-    Width1: true,
-  },
-  Trail: {
-    Color: { Time: true, Color: rgbShape },
-    Enabled: true,
-    Lifetime: true,
-    Offset: vec3Shape,
-    Texture: true,
-    TextureLength: true,
-    TextureSpeed: true,
-    Transparency: { Time: true, Value: true, Envelope: true },
-    Width: true,
-    WidthScale: { Time: true, Value: true, Envelope: true },
-  },
-  ParticleEmitter: {
-    Acceleration: vec3Shape,
-    Brightness: true,
-    Color: { Time: true, Color: rgbShape },
-    Drag: true,
-    EmissionDirection: true,
-    Enabled: true,
-    FlipbookFramerate: { Min: true, Max: true },
-    FlipbookLayout: true,
-    FlipbookMode: true,
-    FlipbookStartRandom: true,
-    LifeTime: { Min: true, Max: true },
-    LightEmission: true,
-    LockedToPart: true,
-    Orientation: true,
-    Rate: true,
-    RotSpeed: true,
-    Rotation: { Min: true, Max: true },
-    Shape: true,
-    ShapeInOut: true,
-    ShapeStyle: true,
-    Size: { Time: true, Value: true, Envelope: true },
-    Speed: { Min: true, Max: true },
-    SpreadAngle: true,
-    Squash: { Time: true, Value: true, Envelope: true },
-    Texture: true,
-    Transparency: { Time: true, Value: true, Envelope: true },
-  },
-  PointLight: { Brightness: true, Color: rgbShape, Enabled: true, Range: true, Shadows: true },
-  SpotLight: { Angle: true, Brightness: true, Color: rgbShape, Enabled: true, Face: true, Range: true, Shadows: true },
-  StringValue: { Value: true },
-  NumberValue: { Value: true },
-  BoolValue: { Value: true },
-  IntValue: { Value: true },
-  MeshPart: {
-    Shape: true,
-    CFrame: cframeShape,
-    Size: vec3Shape,
-    Anchored: true,
-    CanCollide: true,
-    CanQuery: true,
-    CanTouch: true,
-    CastShadow: true,
-    CollisionGroup: true,
-    Color: rgbShape,
-    DoubleSided: true,
-    EnableMeshShadowDetails: true,
-    Locked: true,
-    Massless: true,
-    Material: true,
-    MaterialVariant: true,
-    MeshId: true,
-    Reflectance: true,
-    RootPriority: true,
-    TextureId: true,
-    Transparency: true,
-  },
-  Animation: { AnimationId: true },
-  HumanoidDescription: {
-    Head: true,
-    Torso: true,
-    LeftArm: true,
-    RightArm: true,
-    LeftLeg: true,
-    RightLeg: true,
-    HeadColor: rgbShape,
-    TorsoColor: rgbShape,
-    LeftArmColor: rgbShape,
-    RightArmColor: rgbShape,
-    LeftLegColor: rgbShape,
-    RightLegColor: rgbShape,
-    HeadTextureId: true,
-    TorsoTextureId: true,
-    LeftArmTextureId: true,
-    RightArmTextureId: true,
-    LeftLegTextureId: true,
-    RightLegTextureId: true,
-    IdleAnimation: true,
-    WalkAnimation: true,
-    RunAnimation: true,
-    JumpAnimation: true,
-    FallAnimation: true,
-    LandedAnimation: true,
-    ClimbAnimation: true,
-    SwimmingIdleAnimation: true,
-    SwimmingBreaststrokeAnimation: true,
-    SprintAnimation: true,
-    MoodAnimation: true,
-    DieAnimation: true,
-    HeightScale: true,
-    DepthScale: true,
-    WidthScale: true,
-    HeadScale: true,
-    BodyTypeScale: true,
-    ProportionScale: true,
-    Face: true,
-    Shirt: true,
-    Pants: true,
-    GraphicTShirt: true,
-    HatAccessory: true,
-    HairAccessory: true,
-    FaceAccessory: true,
-    NeckAccessory: true,
-    ShoulderAccessory: true,
-    FrontAccessory: true,
-    BackAccessory: true,
-    WaistAccessory: true,
-    AccessoryBlob: true,
-  },
-};
+export const classPropertyShapes: Record<string, Record<string, ShapeSpec>> = Object.fromEntries(
+  [...classPropertiesSchemas.entries()].map(([name, schema]) => [
+    name,
+    zodToShape(schema) as Record<string, ShapeSpec>,
+  ]),
+);

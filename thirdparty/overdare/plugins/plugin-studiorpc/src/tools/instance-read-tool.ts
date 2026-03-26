@@ -1,10 +1,15 @@
 // @summary Reads instance properties from the .ovdrjm level file, filtered to known schemas.
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
-import { classPropertyShapes, instanceClassEnum, type ShapeSpec } from "../methods/instance.params.ts";
+import {
+  classPropertyShapes,
+  instanceClassEnum,
+  type ShapeSpec,
+  serviceClassEnum,
+} from "../methods/instance.params.ts";
 import * as instanceRead from "../methods/instance.read.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils.ts";
 
-const knownClasses = new Set(instanceClassEnum.options);
+const knownClasses = new Set<string>([...instanceClassEnum.options, ...serviceClassEnum.options]);
 
 type ReadableNode = {
   guid: string;
@@ -47,15 +52,15 @@ function pickKnownProperties(node: OvdrjmNode): Record<string, unknown> {
 
 function toReadableNode(node: OvdrjmNode, recursive: boolean): ReadableNode | undefined {
   const instanceType = typeof node.InstanceType === "string" ? node.InstanceType : undefined;
-  if (!instanceType || !knownClasses.has(instanceType as typeof instanceClassEnum._type)) {
-    return undefined;
-  }
+  if (!instanceType) return undefined;
+
+  const isKnown = knownClasses.has(instanceType as typeof instanceClassEnum._type);
 
   const result: ReadableNode = {
     guid: typeof node.ActorGuid === "string" ? node.ActorGuid : "",
     name: typeof node.Name === "string" ? node.Name : "",
     class: instanceType,
-    properties: pickKnownProperties(node),
+    properties: isKnown ? pickKnownProperties(node) : {},
   };
 
   if (recursive && Array.isArray(node.LuaChildren)) {
@@ -90,7 +95,7 @@ async function executeInstanceRead(args: Record<string, unknown>, _ctx: ToolCont
   const readable = toReadableNode(target, parsed.recursive);
   if (!readable) {
     return {
-      output: `Instance ${parsed.guid} has unknown class "${String(target.InstanceType)}".`,
+      output: `Instance ${parsed.guid} has no InstanceType.`,
       metadata: { error: true, method: "instance.read" },
     };
   }

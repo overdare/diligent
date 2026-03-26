@@ -203,6 +203,53 @@ export function buildLevelSaveFileRender(output: string): ToolRenderPayload {
   };
 }
 
+export function buildInstanceReadRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const guid = readString(args.guid) ?? "";
+  const recursive = args.recursive === true;
+  return {
+    version: 2,
+    inputSummary: clip(guid || "instance read"),
+    outputSummary: summarizeText(output, "Instance read."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio instance read",
+        items: [
+          { key: "guid", value: guid },
+          { key: "recursive", value: String(recursive) },
+        ].filter((item) => item.value.length > 0),
+      },
+      { type: "summary", text: firstLine(output, "Instance read."), tone: "info" },
+    ],
+  };
+}
+
+export function buildInstanceUpsertRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const items = Array.isArray(args.items) ? args.items : [];
+  const addCount = items.filter((i) => isRecord(i) && "parentGuid" in i).length;
+  const updateCount = items.filter((i) => isRecord(i) && "guid" in i && !("parentGuid" in i)).length;
+  const parts: string[] = [];
+  if (addCount > 0) parts.push(summarizeCount(addCount, "add"));
+  if (updateCount > 0) parts.push(summarizeCount(updateCount, "update"));
+  const summary = parts.join(", ") || "upsert";
+  return {
+    version: 2,
+    inputSummary: clip(summary),
+    outputSummary: summarizeText(output, "Instances upserted."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio instance upsert",
+        items: [
+          { key: "adds", value: String(addCount) },
+          { key: "updates", value: String(updateCount) },
+        ],
+      },
+      { type: "summary", text: firstLine(output, "Instances upserted."), tone: "success" },
+    ],
+  };
+}
+
 export function buildActionSequencerApplyJsonRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const instanceGuid = readString(args.instanceGuid) ?? "";
   const jsonFilePath = readString(args.jsonFilePath) ?? "";

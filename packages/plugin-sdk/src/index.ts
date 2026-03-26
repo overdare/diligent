@@ -33,4 +33,6 @@ export interface Tool<TParams extends z.ZodType = any> {
   parameters: TParams;
   execute: (args: z.infer<TParams>, ctx: ToolContext) => Promise<ToolResult>;
   supportParallel?: boolean;
+  /** Custom arg parser. When provided, executor uses this instead of parameters.safeParse(). */
+  parseArgs?: (raw: unknown) => z.infer<TParams>;
 }

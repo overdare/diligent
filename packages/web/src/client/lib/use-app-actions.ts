@@ -123,6 +123,13 @@ export function useAppActions({
         }
         activateServerThread(threadId);
         await applySessionModel(history.currentModel);
+        // Apply draft effort selection to the newly created thread.
+        if (effort !== "medium") {
+          await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
+            threadId,
+            effort,
+          });
+        }
       }
 
       dispatch({ type: "local_user", payload: { text: message, images } });
@@ -172,6 +179,7 @@ export function useAppActions({
     currentModelRef,
     modeRef,
     cwdRef,
+    effort,
     applySessionModel,
     activateServerThread,
     refreshThreadList,
@@ -189,18 +197,21 @@ export function useAppActions({
 
   const setEffort = useCallback(
     async (nextEffort: ThinkingEffort): Promise<void> => {
-      const rpc = rpcRef.current;
-      if (!rpc || !state.activeThreadId) return;
       const modelInfo = findModelInfo(availableModels, currentModel);
       if (nextEffort === "none" && modelInfo?.supportsThinking && !supportsThinkingNone(modelInfo)) {
         dispatch({ type: "show_info_toast", payload: "This model does not support minimal thinking." });
         return;
       }
-      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
-        threadId: state.activeThreadId,
-        effort: nextEffort,
-      });
+      // Always update local state so draft (new conversation) picks up the change.
       setEffortState(nextEffort);
+      // Persist to server only when a thread is active.
+      const rpc = rpcRef.current;
+      if (rpc && state.activeThreadId) {
+        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
+          threadId: state.activeThreadId,
+          effort: nextEffort,
+        });
+      }
     },
     [rpcRef, state.activeThreadId, availableModels, currentModel, dispatch, setEffortState],
   );

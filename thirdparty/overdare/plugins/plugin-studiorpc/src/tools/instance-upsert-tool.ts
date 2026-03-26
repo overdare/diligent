@@ -1,9 +1,8 @@
 // @summary Applies batched add or update instance changes to the level file.
-import { readFileSync, writeFileSync } from "node:fs";
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { call } from "../rpc.ts";
-import { findNodeByActorGuid, isRecord, type OvdrjmNode, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils.ts";
+import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
@@ -23,22 +22,6 @@ function nextObjectKey(rootDoc: Record<string, unknown>): number {
   const next = numeric + 1;
   rootDoc.MapObjectKeyIndex = next;
   return next;
-}
-
-function applyLevelChangesByFileEdit(params: {
-  cwd: string;
-  update: (rootDoc: Record<string, unknown>) => { guids: string[] };
-}): { umapPath: string; ovdrjmPath: string; changedGuids: string[] } {
-  const { umapPath, ovdrjmPath } = resolveOvdrjmPathFromUmap(params.cwd);
-  const raw = readFileSync(ovdrjmPath, "utf-8");
-  const parsedJson = JSON.parse(raw) as Record<string, unknown>;
-  const outcome = params.update(parsedJson);
-  writeFileSync(ovdrjmPath, `${JSON.stringify(parsedJson, null, 2)}\n`, "utf-8");
-  return {
-    umapPath,
-    ovdrjmPath,
-    changedGuids: outcome.guids,
-  };
 }
 
 async function executeInstanceUpsert(
@@ -62,51 +45,48 @@ async function executeInstanceUpsert(
     };
   }
 
-  const fileResult = applyLevelChangesByFileEdit({
-    cwd,
-    update: (rootDoc) => {
-      const root = rootDoc.Root;
-      if (!isRecord(root)) {
-        throw new Error("Invalid .ovdrjm format: Root object is missing.");
+  const fileResult = readAndWriteOvdrjm(cwd, (rootDoc) => {
+    const root = rootDoc.Root;
+    if (!isRecord(root)) {
+      throw new Error("Invalid .ovdrjm format: Root object is missing.");
+    }
+
+    const changedGuids: string[] = [];
+    for (const item of parsedArgs.items) {
+      if (instanceUpsert.isUpdateItem(item)) {
+        const target = findNodeByActorGuid(root as OvdrjmNode, item.guid);
+        if (!target) {
+          throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
+        }
+        Object.assign(target, item.properties);
+        if (typeof item.name === "string") {
+          target.Name = item.name;
+        }
+        changedGuids.push(item.guid);
+        continue;
       }
 
-      const changedGuids: string[] = [];
-      for (const item of parsedArgs.items) {
-        if (instanceUpsert.isUpdateItem(item)) {
-          const target = findNodeByActorGuid(root as OvdrjmNode, item.guid);
-          if (!target) {
-            throw new Error(`ActorGuid not found in .ovdrjm: ${item.guid}`);
-          }
-          Object.assign(target, item.properties);
-          if (typeof item.name === "string") {
-            target.Name = item.name;
-          }
-          changedGuids.push(item.guid);
-          continue;
-        }
-
-        const parent = findNodeByActorGuid(root as OvdrjmNode, item.parentGuid);
-        if (!parent) {
-          throw new Error(`Parent ActorGuid not found in .ovdrjm: ${item.parentGuid}`);
-        }
-
-        const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
-        parent.LuaChildren = childList;
-
-        const newGuid = makeActorGuid();
-        const newNode: Record<string, unknown> = {
-          InstanceType: item.class,
-          ActorGuid: newGuid,
-          ObjectKey: nextObjectKey(rootDoc),
-          Name: item.name,
-          ...(item.properties as Record<string, unknown>),
-        };
-        childList.push(newNode);
-        changedGuids.push(newGuid);
+      const parent = findNodeByActorGuid(root as OvdrjmNode, item.parentGuid);
+      if (!parent) {
+        throw new Error(`Parent ActorGuid not found in .ovdrjm: ${item.parentGuid}`);
       }
 
-      return { guids: changedGuids };
-    },
+      const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
+      parent.LuaChildren = childList;
+
+      const newGuid = makeActorGuid();
+      const newNode: Record<string, unknown> = {
+        InstanceType: item.class,
+        ActorGuid: newGuid,
+        ObjectKey: nextObjectKey(rootDoc),
+        Name: item.name,
+        ...(item.properties as Record<string, unknown>),
+      };
+      childList.push(newNode);
+      changedGuids.push(newGuid);
+    }
+
+    return { guids: changedGuids };
   });
 
   const executeApproval = await ctx.approve({
@@ -123,6 +103,7 @@ async function executeInstanceUpsert(
   }
 
   const result = await call("level.apply", {});
+  await call("level.save.file", {});
   const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return {
@@ -144,6 +125,7 @@ export function createInstanceUpsertTool(cwd: string): Tool {
     name: toToolName(instanceUpsert.method),
     description: instanceUpsert.description,
     parameters: instanceUpsert.params,
+    parseArgs: (raw) => instanceUpsert.parseArgs(raw as Record<string, unknown>),
     async execute(args, ctx) {
       return executeInstanceUpsert(args, ctx, cwd);
     },

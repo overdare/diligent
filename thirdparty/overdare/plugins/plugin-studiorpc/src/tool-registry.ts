@@ -6,7 +6,6 @@ import * as assetDrawerImport from "./methods/asset-drawer.import.ts";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import.ts";
 import * as gamePlay from "./methods/game.play.ts";
 import * as gameStop from "./methods/game.stop.ts";
-import * as instanceDelete from "./methods/instance.delete.ts";
 import * as levelBrowse from "./methods/level.browse.ts";
 import * as levelSaveFile from "./methods/level.save.file.ts";
 import * as scriptAdd from "./methods/script.add.ts";
@@ -18,6 +17,8 @@ import {
   buildDeleteRender,
   buildGamePlayRender,
   buildGameStopRender,
+  buildInstanceReadRender,
+  buildInstanceUpsertRender,
   buildLevelBrowseRender,
   buildLevelSaveFileRender,
   buildScriptAddRender,
@@ -45,10 +46,18 @@ export const methodModules: MethodModule[] = [
   levelSaveFile,
   scriptAdd,
   scriptDelete,
-  instanceDelete,
   gamePlay,
   gameStop,
 ];
+
+/** Methods that mutate the level and should trigger an automatic save after execution. */
+export const mutatingMethods = new Set([
+  assetDrawerImport.method,
+  assetManagerImageImport.method,
+  actionSequencerApplyJson.method,
+  scriptAdd.method,
+  scriptDelete.method,
+]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
@@ -61,8 +70,14 @@ export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_script_add: ({ normalizedArgs, output }) => buildScriptAddRender(normalizedArgs, output),
   studiorpc_script_delete: ({ normalizedArgs, output }) =>
     buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output),
+  studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
+  studiorpc_instance_upsert: ({ normalizedArgs, output }) => buildInstanceUpsertRender(normalizedArgs, output),
   studiorpc_instance_delete: ({ normalizedArgs, output }) =>
-    buildDeleteRender("Studio instance delete", String(normalizedArgs.targetGuid ?? ""), output),
+    buildDeleteRender(
+      "Studio instance delete",
+      JSON.stringify((normalizedArgs.items as Array<{ targetGuid: string }>)?.map((i) => i.targetGuid) ?? []),
+      output,
+    ),
   studiorpc_game_play: ({ normalizedArgs, output }) => buildGamePlayRender(normalizedArgs, output),
   studiorpc_game_stop: ({ output }) => buildGameStopRender(output),
 };

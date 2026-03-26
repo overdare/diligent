@@ -22,9 +22,8 @@ Actively use OverdareSearch whenever you need OVERDARE-specific information, pat
 - When answering questions or troubleshooting, search `docs` first; add `code` if a concrete example would help
 - After completing a whole task, list the references used so the user can explore them further if needed.
 
-# StudioRpc Performance
-- Prefer batching multiple StudioRpc calls into a single request when possible, rather than making individual calls one at a time.
-- Add or modify requests can also be batched — the tool layer handles them automatically.
+# Always Save Your Work
+- Save the project with `studiorpc_file_save` when you begin working. The user may have unsaved changes in Studio — saving upfront avoids conflicts.
 </general_guidelines>
 
 <inherited_guidelines>
