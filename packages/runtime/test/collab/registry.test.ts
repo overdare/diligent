@@ -35,7 +35,20 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
         return () => listeners.delete(fn);
       },
       run: async () => {
-        const agent = (await config.agent()) as RuntimeAgent;
+        let agent: RuntimeAgent;
+        try {
+          agent = (await config.agent()) as RuntimeAgent;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          for (const fn of listeners) {
+            fn({
+              type: "error",
+              error: { name: "Error", message },
+              fatal: true,
+            });
+          }
+          throw error;
+        }
         observer(agent);
         const assistant = makeAssistant("inspected");
         for (const fn of listeners) {
