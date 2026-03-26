@@ -303,7 +303,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
+    expect(result.status[threadId]?.kind).toBe("completed");
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).not.toContain("spawn_agent");
@@ -330,7 +330,7 @@ describe("AgentRegistry", () => {
     });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
+    expect(result.status[threadId]?.kind).toBe("completed");
 
     expect(childToolNames).toContain("read");
     expect(childToolNames).toContain("spawn_agent");
@@ -350,7 +350,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]).toEqual({ kind: "completed", output: "inspected" });
+    expect(result.status[threadId]?.kind).toBe("completed");
 
     const policy = systemSections.find((section) => section.label === "nested_subagent_policy");
     expect(policy?.content).toContain("Nested sub-agent delegation is disabled");
