@@ -205,20 +205,17 @@ export class AgentRegistry {
           : undefined;
 
         const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk };
-        const result = await buildDefaultTools(
-          this.deps.cwd,
-          this.deps.paths,
-          nestedCollabEnabled ? childDeps : undefined,
-          undefined,
-          [],
-          childTools,
-          nestedCollabEnabled,
-          undefined,
-          {
+        const result = await buildDefaultTools({
+          cwd: this.deps.cwd,
+          paths: this.deps.paths,
+          collabDeps: nestedCollabEnabled ? childDeps : undefined,
+          parentToolOverride: childTools,
+          enableCollabTools: nestedCollabEnabled,
+          host: {
             approve: this.deps.approve,
             ask: childAsk,
           },
-        );
+        });
 
         const filteredTools = result.tools.filter((tool) => allowedChildToolNames.has(tool.name));
 

@@ -29,22 +29,35 @@ export interface BuildDefaultToolsResult {
   pluginErrors: PluginLoadError[];
 }
 
-export async function buildDefaultTools(
-  cwd: string,
-  paths?: DiligentPaths,
-  collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">,
-  toolsConfig?: DiligentConfig["tools"],
-  skills: SkillMetadata[] = [],
-  parentToolOverride?: Tool[],
-  enableCollabTools = true,
+export interface BuildDefaultToolsOptions {
+  cwd: string;
+  paths?: DiligentPaths;
+  collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">;
+  toolsConfig?: DiligentConfig["tools"];
+  skills?: SkillMetadata[];
+  parentToolOverride?: Tool[];
+  enableCollabTools?: boolean;
   /**
    * Existing registry to reuse across turns.
    * When provided, the registry's mutable deps are updated but live child-agent
    * entries are preserved so cross-turn spawn→wait works correctly.
    */
-  existingRegistry?: AgentRegistry,
-  host?: RuntimeToolHost,
-): Promise<BuildDefaultToolsResult> {
+  existingRegistry?: AgentRegistry;
+  host?: RuntimeToolHost;
+}
+
+export async function buildDefaultTools(options: BuildDefaultToolsOptions): Promise<BuildDefaultToolsResult> {
+  const {
+    cwd,
+    paths,
+    collabDeps,
+    toolsConfig,
+    skills = [],
+    parentToolOverride,
+    enableCollabTools = true,
+    existingRegistry,
+    host,
+  } = options;
   const catalog = parentToolOverride
     ? {
         tools: [...parentToolOverride],
