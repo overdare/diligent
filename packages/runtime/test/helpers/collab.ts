@@ -151,6 +151,7 @@ export function makeCollabDeps(overrides: Partial<CollabToolDeps> = {}): CollabT
     agentDefinitions: getBuiltinAgentDefinitions(),
     parentTools: [],
     maxAgents: 8,
+    streamFn: makeStreamFn([makeAssistant("default child response")]),
     ...overrides,
   };
 }
