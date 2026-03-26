@@ -92,6 +92,12 @@ function createInspectingHarness(observer: (agent: RuntimeAgent) => void) {
   };
 }
 
+function expectCompletedStatus(status: { kind: string; error?: string; output?: string | null } | undefined) {
+  if (status?.kind !== "completed") {
+    throw new Error(`Expected completed child status, received: ${JSON.stringify(status)}`);
+  }
+}
+
 describe("AgentRegistry", () => {
   it("spawn returns threadId and nickname immediately", () => {
     const registry = new AgentRegistry(
@@ -333,7 +339,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]?.kind).toBe("completed");
+    expectCompletedStatus(result.status[threadId]);
     expect(harness.getFactoryCalls()).toBe(1);
     expect(harness.getRunCalls()).toBe(1);
 
@@ -363,7 +369,7 @@ describe("AgentRegistry", () => {
     });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]?.kind).toBe("completed");
+    expectCompletedStatus(result.status[threadId]);
     expect(harness.getFactoryCalls()).toBe(1);
     expect(harness.getRunCalls()).toBe(1);
 
@@ -386,7 +392,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
     const result = await registry.wait([threadId], 5000);
 
-    expect(result.status[threadId]?.kind).toBe("completed");
+    expectCompletedStatus(result.status[threadId]);
     expect(harness.getFactoryCalls()).toBe(1);
     expect(harness.getRunCalls()).toBe(1);
 
