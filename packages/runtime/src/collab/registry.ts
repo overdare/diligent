@@ -2,7 +2,6 @@
 
 import type { ModelClass } from "@diligent/core/llm/models";
 import { agentTypeToModelClass, resolveModel, resolveModelForClass } from "@diligent/core/llm/models";
-import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
 import type { ThinkingEffort } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
 import type { TextBlock } from "@diligent/core/types";
@@ -612,9 +611,6 @@ function resolveChildEffort(
   childModel: ReturnType<typeof resolveModelForClass>,
 ): ThinkingEffort {
   const defaultEffort = defaultEffortForModelClass(modelClass);
-  if (defaultEffort === "none" && !supportsThinkingNone(childModel)) {
-    return "medium";
-  }
   if (childModel.supportsThinking && childModel.supportedEfforts?.includes(defaultEffort)) {
     return defaultEffort;
   }
