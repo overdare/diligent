@@ -92,9 +92,10 @@ export { appendKnowledge, buildKnowledgeSection, rankKnowledge, readKnowledge, w
 export { ProtocolNotificationAdapter } from "./notification-adapter";
 export type { SystemPromptVars } from "./prompt";
 export { buildBaseSystemPrompt } from "./prompt";
-export type { NdjsonParser, RpcMessageSink, RpcMessageSource, RpcPeer } from "./rpc";
+export type { NdjsonParser, RpcMessageSink, RpcMessageSource, RpcPeer, WebSocketSender } from "./rpc";
 export {
   createNdjsonParser,
+  createWsPeer,
   formatNdjsonMessage,
   isRpcNotification,
   isRpcRequest,

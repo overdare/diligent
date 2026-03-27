@@ -4,3 +4,5 @@ export { RpcClientSession } from "./client";
 export type { NdjsonParser } from "./framing";
 export { createNdjsonParser, formatNdjsonMessage } from "./framing";
 export { bindAppServer } from "./server-binding";
+export type { WebSocketSender } from "./ws-peer";
+export { createWsPeer } from "./ws-peer";

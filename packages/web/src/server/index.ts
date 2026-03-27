@@ -1,21 +1,18 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
 import { createWriteStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import type { JSONRPCMessage } from "@diligent/protocol";
-import { JSONRPCMessageSchema } from "@diligent/protocol";
 import {
   type AgentRegistry,
   createAppServerConfig,
+  createWsPeer,
   DiligentAppServer,
   type DiligentPaths,
   ensureDiligentDir,
   getModelInfoList,
   loadRuntimeConfig,
   type PROVIDER_NAMES,
-  type RpcPeer,
   type RuntimeAgent,
 } from "@diligent/runtime";
-import type { ServerWebSocket } from "bun";
 import { decodeWebImageRelativePath, toWebImageUrl, WEB_IMAGE_ROUTE_PREFIX } from "../shared/image-routes";
 
 interface WsData {
@@ -159,38 +156,6 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       server.stop();
     },
   };
-}
-
-/** Create a transport-neutral RpcPeer backed by a Bun WebSocket */
-function createWsPeer(ws: ServerWebSocket<WsData>): {
-  peer: RpcPeer;
-  receive: (raw: string | Buffer) => void;
-} {
-  const listeners: Array<(msg: JSONRPCMessage) => void | Promise<void>> = [];
-
-  const peer: RpcPeer = {
-    send(message: JSONRPCMessage): void {
-      ws.send(JSON.stringify(message));
-    },
-    onMessage(listener: (msg: JSONRPCMessage) => void | Promise<void>): void {
-      listeners.push(listener);
-    },
-  };
-
-  const receive = (raw: string | Buffer): void => {
-    let parsed: JSONRPCMessage;
-    try {
-      parsed = JSONRPCMessageSchema.parse(JSON.parse(typeof raw === "string" ? raw : raw.toString()));
-    } catch {
-      ws.send(JSON.stringify({ id: "unknown", error: { code: -32700, message: "Malformed JSON" } }));
-      return;
-    }
-    for (const listener of listeners) {
-      void listener(parsed);
-    }
-  };
-
-  return { peer, receive };
 }
 
 function resolveDistDir(): string {
