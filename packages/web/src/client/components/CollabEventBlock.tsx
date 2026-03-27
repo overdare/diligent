@@ -19,6 +19,13 @@ type ChildPreview = {
   childTimeline: NonNullable<Extract<RenderItem, { kind: "collab" }>["childTimeline"]>;
 };
 
+type CachedCollabViewState = {
+  open: boolean;
+  loadedChildPreview: ChildPreview | null;
+};
+
+const collabViewStateCache = new Map<string, CachedCollabViewState>();
+
 function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
   const childTools: ChildPreview["childTools"] = [];
   const childMessages: string[] = [];
@@ -54,6 +61,16 @@ function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
     childMessages,
     childTimeline,
   };
+}
+
+export function resolveEffectiveTimeline(
+  itemTimeline: Extract<RenderItem, { kind: "collab" }>["childTimeline"] | undefined,
+  loadedChildPreview: ChildPreview | null,
+): NonNullable<Extract<RenderItem, { kind: "collab" }>["childTimeline"]> {
+  if (itemTimeline && itemTimeline.length > 0) {
+    return itemTimeline;
+  }
+  return loadedChildPreview?.childTimeline ?? [];
 }
 
 function agentLabel(nickname?: string, threadId?: string): string {
@@ -146,15 +163,26 @@ function summarizeAssistantMessage(rawMessage: string): string | null {
   }
 }
 
+export function getCollabEventPersistenceKey(item: Extract<RenderItem, { kind: "collab" }>): string {
+  if (item.eventType === "spawn" && item.childThreadId) {
+    return `spawn:${item.childThreadId}`;
+  }
+  return item.id;
+}
+
 export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProps) {
-  const [open, setOpen] = useState(false);
+  const persistenceKey = getCollabEventPersistenceKey(item);
+  const cachedState = collabViewStateCache.get(persistenceKey);
+  const [open, setOpen] = useState(cachedState?.open ?? false);
   const [isLoadingChild, setIsLoadingChild] = useState(false);
   const [childLoadError, setChildLoadError] = useState<string | null>(null);
-  const [loadedChildPreview, setLoadedChildPreview] = useState<ChildPreview | null>(null);
+  const [loadedChildPreview, setLoadedChildPreview] = useState<ChildPreview | null>(
+    cachedState?.loadedChildPreview ?? null,
+  );
   const hasRunningTool = item.childTools.some((tool) => tool.status === "running");
   const badge = statusBadge(item.status);
   const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
-  const effectiveTimeline = loadedChildPreview?.childTimeline ?? item.childTimeline ?? [];
+  const effectiveTimeline = resolveEffectiveTimeline(item.childTimeline, loadedChildPreview);
 
   let title = "";
   let details: string | null = null;
@@ -196,6 +224,12 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
       timeline.length > 0 ||
       (item.eventType === "spawn" && item.childThreadId),
   );
+  const isInteractive = hasBody;
+
+  function toggleOpen(): void {
+    if (!isInteractive) return;
+    setOpen((value) => !value);
+  }
 
   const loadChildDetail = useCallback(async (): Promise<void> => {
     if (item.eventType !== "spawn" || !item.childThreadId || !loadChildThread) return;
@@ -219,6 +253,10 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
   }, [loadChildDetail]);
 
   useEffect(() => {
+    collabViewStateCache.set(persistenceKey, { open, loadedChildPreview });
+  }, [persistenceKey, open, loadedChildPreview]);
+
+  useEffect(() => {
     if (!open) return;
     if (item.eventType !== "spawn" || !item.childThreadId) return;
     void loadChildDetail();
@@ -226,7 +264,34 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
 
   return (
     <div className="pb-4">
-      <div className="min-w-0 rounded-xl bg-surface-dark py-2.5">
+      <div
+        role={isInteractive ? "button" : undefined}
+        tabIndex={isInteractive ? 0 : undefined}
+        onClick={
+          isInteractive
+            ? (event) => {
+                const target = event.target;
+                if (target instanceof Element && target.closest("button, a, input, textarea, select")) {
+                  return;
+                }
+                toggleOpen();
+              }
+            : undefined
+        }
+        onKeyDown={
+          isInteractive
+            ? (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                toggleOpen();
+              }
+            : undefined
+        }
+        className={cn(
+          "min-w-0 rounded-xl bg-surface-dark py-2.5",
+          isInteractive ? "cursor-pointer transition hover:bg-surface-dark/80 focus:outline-none" : null,
+        )}
+      >
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium text-text-soft">{title}</span>
@@ -235,16 +300,6 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
             {turnInfo && <span className="text-xs text-text/40">{turnInfo}</span>}
             {item.timedOut && <span className="text-xs text-danger/80">timed out</span>}
           </div>
-
-          {hasBody ? (
-            <button
-              type="button"
-              onClick={() => setOpen((value) => !value)}
-              className="-mt-1 w-fit text-2xs text-muted hover:text-accent"
-            >
-              {open ? "▾ collapse" : "▸ expand"}
-            </button>
-          ) : null}
 
           {open ? (
             <>
@@ -307,7 +362,10 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
                       <div className="text-danger/80">Failed to load child thread detail: {childLoadError}</div>
                       <button
                         type="button"
-                        onClick={() => void retryLoadChildDetail()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void retryLoadChildDetail();
+                        }}
                         className="text-2xs text-accent hover:underline"
                       >
                         Retry

@@ -3,6 +3,12 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AssistantMessage } from "../../../src/client/components/AssistantMessage";
 import { Button } from "../../../src/client/components/Button";
+import {
+  CollabEventBlock,
+  getCollabEventPersistenceKey,
+  resolveEffectiveTimeline,
+} from "../../../src/client/components/CollabEventBlock";
+import { CollabGroup } from "../../../src/client/components/CollabGroup";
 import { ContextMessage } from "../../../src/client/components/ContextMessage";
 import { EmptyState } from "../../../src/client/components/EmptyState";
 import { Input } from "../../../src/client/components/Input";
@@ -505,6 +511,105 @@ test("tool block shows request summary in header and response summary once below
   expect(html).toContain("0ms");
   expect(html).toContain("↳ 1 # Architecture");
   expect(html.match(/src\/ARCHITECTURE\.md/g)?.length).toBe(1);
+});
+
+test("collab event block uses clickable card semantics without explicit expand labels", () => {
+  const html = renderToStaticMarkup(
+    <CollabEventBlock
+      item={{
+        id: "collab-1",
+        kind: "collab",
+        eventType: "spawn",
+        childThreadId: "child-1",
+        nickname: "Juniper",
+        agentType: "explore",
+        description: "Trace the rendering path",
+        status: "completed",
+        childTools: [],
+        timestamp: 1,
+      }}
+    />,
+  );
+
+  expect(html).toContain('role="button"');
+  expect(html).toContain("Spawned Juniper [explore]");
+  expect(html).toContain("cursor-pointer");
+  expect(html).not.toContain("focus:ring-");
+  expect(html).not.toContain(">expand<");
+  expect(html).not.toContain(">collapse<");
+});
+
+test("collab event spawn persistence key is stable across remount-friendly ids", () => {
+  const keyA = getCollabEventPersistenceKey({
+    id: "collab:spawn:call-1",
+    kind: "collab",
+    eventType: "spawn",
+    childThreadId: "child-1",
+    nickname: "Juniper",
+    childTools: [],
+    timestamp: 1,
+  });
+  const keyB = getCollabEventPersistenceKey({
+    id: "history:collab:spawn:call-99",
+    kind: "collab",
+    eventType: "spawn",
+    childThreadId: "child-1",
+    nickname: "Juniper",
+    childTools: [],
+    timestamp: 2,
+  });
+
+  expect(keyA).toBe("spawn:child-1");
+  expect(keyB).toBe("spawn:child-1");
+});
+
+test("collab event prefers live child timeline over loaded snapshot preview", () => {
+  const liveTimeline = [{ kind: "assistant" as const, message: "live turn 6" }];
+  const loadedPreview = {
+    childTools: [],
+    childMessages: ["stale snapshot"],
+    childTimeline: [{ kind: "assistant" as const, message: "stale snapshot" }],
+  };
+
+  expect(resolveEffectiveTimeline(liveTimeline, loadedPreview)).toEqual(liveTimeline);
+  expect(resolveEffectiveTimeline(undefined, loadedPreview)).toEqual(loadedPreview.childTimeline);
+});
+
+test("collab group renders consecutive events directly without earlier-events toggle", () => {
+  const html = renderToStaticMarkup(
+    <CollabGroup
+      items={[
+        {
+          id: "collab-1",
+          kind: "collab",
+          eventType: "spawn",
+          childThreadId: "child-1",
+          nickname: "Juniper",
+          agentType: "explore",
+          description: "Trace the rendering path",
+          status: "running",
+          childTools: [],
+          timestamp: 1,
+        },
+        {
+          id: "collab-2",
+          kind: "collab",
+          eventType: "spawn",
+          childThreadId: "child-2",
+          nickname: "Basil",
+          agentType: "explore",
+          description: "Inspect the reducer flow",
+          status: "completed",
+          childTools: [],
+          timestamp: 2,
+        },
+      ]}
+    />,
+  );
+
+  expect(html).toContain("Spawned Juniper [explore]");
+  expect(html).toContain("Spawned Basil [explore]");
+  expect(html).not.toContain("show earlier events");
 });
 
 test("extractPastedImageFiles returns empty array for null clipboard", () => {
