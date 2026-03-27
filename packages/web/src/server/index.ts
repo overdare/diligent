@@ -161,7 +161,14 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
   };
 }
 
-/** Create a transport-neutral RpcPeer backed by a Bun WebSocket */
+/**
+ * Create a transport-neutral RpcPeer backed by a Bun WebSocket.
+ *
+ * NOTE: This function is intentionally duplicated in `packages/e2e/helpers/ws-server-factory.ts`
+ * (the e2e package must not import web-server internals). If you change WebSocket message
+ * handling here (binary frames, batching, compression, auth headers, close codes), you MUST
+ * mirror the change in the e2e factory to prevent false-positive test results.
+ */
 function createWsPeer(ws: ServerWebSocket<WsData>): {
   peer: RpcPeer;
   receive: (raw: string | Buffer) => void;

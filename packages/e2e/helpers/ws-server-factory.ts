@@ -55,6 +55,13 @@ export function createWsTestServer(appServer: DiligentAppServer): WsTestServer {
   };
 }
 
+/**
+ * NOTE: This function is an intentional replica of the `createWsPeer` function in
+ * `packages/web/src/server/index.ts` (the e2e package must not import web-server internals).
+ * If you change WebSocket message handling there (binary frames, batching, compression,
+ * auth headers, close codes), you MUST mirror the change here to prevent false-positive
+ * test results.
+ */
 function createWsPeer(ws: import("bun").ServerWebSocket<WsData>): {
   peer: RpcPeer;
   receive: (raw: string | Buffer) => void;
