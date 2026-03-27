@@ -2,6 +2,8 @@
 
 import type { ModelClass } from "@diligent/core/llm/models";
 import { agentTypeToModelClass, resolveModel, resolveModelForClass } from "@diligent/core/llm/models";
+import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
+import type { ThinkingEffort } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
 import type { TextBlock } from "@diligent/core/types";
 import { PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
@@ -105,6 +107,7 @@ export class AgentRegistry {
     this.deps = {
       ...this.deps,
       modelId: next.modelId,
+      effort: next.effort,
       systemPrompt: next.systemPrompt,
       getParentSessionId: next.getParentSessionId,
       approve: next.approve,
@@ -196,6 +199,7 @@ export class AgentRegistry {
     const targetClass: ModelClass =
       params.modelClass ?? agentDefinition.defaultModelClass ?? agentTypeToModelClass(params.agentType, parentModel);
     const childModel = resolveModelForClass(parentModel, targetClass);
+    const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
     const childManager = factory({
@@ -229,7 +233,7 @@ export class AgentRegistry {
           childModel.id,
           childSystemPrompt,
           filteredTools,
-          { effort: this.deps.effort, llmMsgStreamFn: this.deps.streamFn },
+          { effort: childEffort, llmMsgStreamFn: this.deps.streamFn },
           result.registry,
         );
       },
@@ -594,4 +598,31 @@ export class AgentRegistry {
     await Promise.allSettled(entries.map((e) => e.promise));
     this.agents.clear();
   }
+}
+
+function defaultEffortForModelClass(modelClass: ModelClass): ThinkingEffort {
+  if (modelClass === "lite") return "low";
+  if (modelClass === "pro") return "high";
+  return "medium";
+}
+
+function resolveChildEffort(
+  parentEffort: ThinkingEffort,
+  modelClass: ModelClass,
+  childModel: ReturnType<typeof resolveModelForClass>,
+): ThinkingEffort {
+  const defaultEffort = defaultEffortForModelClass(modelClass);
+  if (defaultEffort === "none" && !supportsThinkingNone(childModel)) {
+    return "medium";
+  }
+  if (childModel.supportsThinking && childModel.supportedEfforts?.includes(defaultEffort)) {
+    return defaultEffort;
+  }
+  if (!childModel.supportsThinking) {
+    return parentEffort;
+  }
+  if (childModel.supportedEfforts?.includes(parentEffort)) {
+    return parentEffort;
+  }
+  return childModel.supportedEfforts?.[0] ?? "medium";
 }

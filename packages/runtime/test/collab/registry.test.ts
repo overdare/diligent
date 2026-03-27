@@ -372,4 +372,47 @@ describe("AgentRegistry", () => {
     expect(policy?.content).toContain("Nested sub-agent delegation is disabled");
     expect(policy?.content).toContain("Do not call spawn_agent, wait, send_input, or close_agent");
   });
+
+  it("applies class-based default effort to child agents", async () => {
+    const observedEfforts: string[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        effort: "max",
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          observedEfforts.push(agent.effort);
+        }),
+      }),
+    );
+
+    const general = registry.spawn({ prompt: "task", description: "", agentType: "general", modelClass: "general" });
+    await registry.wait([general.threadId], 5000);
+
+    const lite = registry.spawn({ prompt: "task", description: "", agentType: "general", modelClass: "lite" });
+    await registry.wait([lite.threadId], 5000);
+
+    const pro = registry.spawn({ prompt: "task", description: "", agentType: "general", modelClass: "pro" });
+    await registry.wait([pro.threadId], 5000);
+
+    expect(observedEfforts).toEqual(["medium", "low", "high"]);
+  });
+
+  it("updates reused registry deps so later child spawns see the latest parent effort", async () => {
+    const observedEfforts: string[] = [];
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        modelId: "gpt-5.3-chat-latest",
+        effort: "medium",
+        sessionManagerFactory: makeInspectingSessionManagerFactory((agent) => {
+          observedEfforts.push(agent.effort);
+        }),
+      }),
+    );
+
+    registry.updateDeps(makeCollabDeps({ modelId: "gpt-5.3-chat-latest", effort: "high" }));
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    await registry.wait([threadId], 5000);
+
+    expect(observedEfforts).toEqual(["high"]);
+  });
 });
