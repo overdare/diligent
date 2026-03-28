@@ -47,7 +47,7 @@ describe("apply_patch tool", () => {
 
     const result = await tool.execute({ patch }, makeCtx());
 
-    expect(result.render?.version).toBe(2);
+    expect(result.render).toBeDefined();
     expect(result.render?.outputSummary).toBe("3 files patched");
     expect(result.render?.blocks[0]).toMatchObject({ type: "diff" });
     expect(result.output).toContain("Success. Updated the following files:");

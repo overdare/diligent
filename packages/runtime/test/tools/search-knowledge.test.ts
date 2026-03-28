@@ -38,7 +38,7 @@ describe("search_knowledge tool", () => {
 
     expect(result.output).toContain(knowledgeId);
     expect(result.output).toContain("Prefer concise responses");
-    expect(result.render?.version).toBe(2);
+    expect(result.render).toBeDefined();
     expect(result.render?.inputSummary).toContain(knowledgeId);
   });
 

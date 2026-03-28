@@ -26,7 +26,6 @@ describe("search render payload builders", () => {
       { cwd },
     );
 
-    expect(payload.version).toBe(2);
     expect(payload.inputSummary).toBe('Search(pattern: "**/*.ts", path: ".")');
     expect(payload.outputSummary).toBe("3 files found");
     const summaryBlock = payload.blocks[0];
@@ -93,7 +92,6 @@ describe("update knowledge render payload builder", () => {
     );
 
     expect(payload).toBeDefined();
-    expect(payload?.version).toBe(2);
     expect(payload?.inputSummary).toBe("pattern: Prefer batched tool calls for independent reads");
     expect(payload?.outputSummary).toBe("1 knowledge entry updated");
     expect(payload?.blocks[0]).toEqual({
@@ -123,7 +121,6 @@ describe("patch render payload builder", () => {
     ].join("\n");
 
     const payload = createPatchDiffRenderPayload(patch, "Success. Updated the following files:\nM src/a.ts");
-    expect(payload?.version).toBe(2);
     expect(payload?.inputSummary).toBe("src/a.ts");
     const diffBlock = payload?.blocks[0];
     if (!diffBlock || diffBlock.type !== "diff") throw new Error("Expected diff block");

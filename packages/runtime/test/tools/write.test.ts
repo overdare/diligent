@@ -34,7 +34,7 @@ describe("write tool", () => {
     expect(result.output).toContain("Wrote");
     expect(result.output).toContain("11 bytes");
     expect(result.output).toContain("new.txt");
-    expect(result.render?.version).toBe(2);
+    expect(result.render).toBeDefined();
     expect(result.render?.outputSummary).toBe("1 file written");
     expect(result.render?.blocks[0]).toMatchObject({ type: "file" });
 

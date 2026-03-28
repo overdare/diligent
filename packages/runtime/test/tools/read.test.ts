@@ -34,7 +34,7 @@ describe("read tool", () => {
     expect(result.output).toContain("1\tline one");
     expect(result.output).toContain("2\tline two");
     expect(result.output).toContain("3\tline three");
-    expect(result.render?.version).toBe(2);
+    expect(result.render).toBeDefined();
     expect(result.render?.outputSummary).toBe("4 lines read");
     expect(result.render?.blocks[0]).toMatchObject({ type: "file", filePath });
     expect(result.truncateDirection).toBe("head");

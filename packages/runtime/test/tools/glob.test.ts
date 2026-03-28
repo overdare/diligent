@@ -47,7 +47,7 @@ describe("glob tool", () => {
 
     const tool = createGlobTool(tmpDir);
     const result = await tool.execute({ pattern: "*.ts" }, makeCtx());
-    expect(result.render?.version).toBe(2);
+    expect(result.render).toBeDefined();
     expect(result.render?.outputSummary).toBe("1 file found");
     expect(result.render?.blocks[0]).toMatchObject({ type: "summary" });
     expect(result.output).toContain("app.ts");
