@@ -1,5 +1,5 @@
 // @summary Unit tests for loadPlugin — dynamic import, manifest validation, tool shape checks
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -121,13 +121,39 @@ mock.module("@test/duplicate-tool-names", () => ({
   ],
 }));
 
+mock.module("@test/render-plugin", () => ({
+  manifest: { name: "@test/render-plugin", apiVersion: "1.0", version: "0.1.0" },
+  createTools: () => [
+    {
+      name: "render_tool",
+      description: "Render-aware tool",
+      parameters: z.object({}),
+      execute: async () => ({
+        output: "ok",
+        render: {
+          inputSummary: "render_tool",
+          outputSummary: "Rendered",
+          blocks: [{ type: "summary", text: "Plugin render", tone: "info" }],
+        },
+      }),
+    },
+  ],
+}));
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("loadPlugin", () => {
+  const originalWarn = console.warn;
+
   afterAll(async () => {
     await rm(TEST_HOME, { recursive: true, force: true });
     if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
     else delete process.env.HOME;
+    console.warn = originalWarn;
+  });
+
+  afterEach(() => {
+    console.warn = originalWarn;
   });
 
   it("resolves helper paths under the home plugin directory", () => {
@@ -247,6 +273,69 @@ describe("loadPlugin", () => {
     expect(result.error).toBeUndefined();
     expect(result.tools).toHaveLength(1);
     expect(result.tools[0].name).toBe("async_tool");
+  });
+
+  it("preserves valid plugin render payloads through the host wrapper", async () => {
+    const result = await loadPlugin("@test/render-plugin", CWD);
+    expect(result.error).toBeUndefined();
+    expect(result.tools).toHaveLength(1);
+
+    const execution = await result.tools[0].execute(
+      {},
+      {
+        toolCallId: "call-1",
+        signal: new AbortController().signal,
+        abort: () => {},
+      },
+    );
+
+    expect(execution.render).toEqual({
+      inputSummary: "render_tool",
+      outputSummary: "Rendered",
+      blocks: [{ type: "summary", text: "Plugin render", tone: "info" }],
+    });
+  });
+
+  it("drops plugin render payloads that still do not match the protocol after normalization", async () => {
+    const warnMock = mock(() => {});
+    console.warn = warnMock;
+
+    mock.module("@test/invalid-render-plugin", () => ({
+      manifest: { name: "@test/invalid-render-plugin", apiVersion: "1.0", version: "0.1.0" },
+      createTools: () => [
+        {
+          name: "invalid_render_tool",
+          description: "Invalid render tool",
+          parameters: z.object({}),
+          execute: async () => ({
+            output: "ok",
+            render: {
+              inputSummary: "invalid_render_tool",
+              blocks: [{ type: "not-a-real-block" }],
+            },
+          }),
+        },
+      ],
+    }));
+
+    const result = await loadPlugin("@test/invalid-render-plugin", CWD);
+    expect(result.error).toBeUndefined();
+    expect(result.tools).toHaveLength(1);
+
+    const execution = await result.tools[0].execute(
+      {},
+      {
+        toolCallId: "call-3",
+        signal: new AbortController().signal,
+        abort: () => {},
+      },
+    );
+
+    expect(execution.render).toBeUndefined();
+    expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(String(warnMock.mock.calls[0]?.[0] ?? "")).toContain("package=@test/invalid-render-plugin");
+    expect(String(warnMock.mock.calls[0]?.[0] ?? "")).toContain("tool=invalid_render_tool");
+    expect(String(warnMock.mock.calls[0]?.[0] ?? "")).toContain("Invalid discriminator value");
   });
 
   it("filters out tools with invalid shape and returns warnings", async () => {

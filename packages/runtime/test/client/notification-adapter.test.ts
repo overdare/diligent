@@ -91,7 +91,7 @@ test("item lifecycle: toolCall started → delta → completed", () => {
         toolCallId: "tc1",
         toolName: "bash",
         input: { cmd: "ls" },
-        render: { version: 2, inputSummary: "ls", blocks: [] },
+        render: { inputSummary: "ls", blocks: [] },
       },
     },
   };
@@ -102,7 +102,7 @@ test("item lifecycle: toolCall started → delta → completed", () => {
   if (events1[0].type === "tool_start") {
     expect(events1[0].toolName).toBe("bash");
     expect(events1[0].toolCallId).toBe("tc1");
-    expect(events1[0].render).toEqual({ version: 2, inputSummary: "ls", blocks: [] });
+    expect(events1[0].render).toEqual({ inputSummary: "ls", blocks: [] });
   }
 
   const delta: DiligentServerNotification = {
@@ -162,7 +162,7 @@ test("toolCall completed merges started inputSummary with completed outputSummar
         toolCallId: "tc1",
         toolName: "bash",
         input: { cmd: "ls" },
-        render: { version: 2, inputSummary: "ls", blocks: [] },
+        render: { inputSummary: "ls", blocks: [] },
       },
     },
   };
@@ -179,7 +179,7 @@ test("toolCall completed merges started inputSummary with completed outputSummar
         toolName: "bash",
         output: "done",
         isError: true,
-        render: { version: 2, outputSummary: "Command failed", blocks: [] },
+        render: { outputSummary: "Command failed", blocks: [] },
       },
     },
   };
@@ -190,7 +190,6 @@ test("toolCall completed merges started inputSummary with completed outputSummar
   expect(events[0].type).toBe("tool_end");
   if (events[0].type === "tool_end") {
     expect(events[0].render).toEqual({
-      version: 2,
       inputSummary: "ls",
       outputSummary: "Command failed",
       blocks: [],

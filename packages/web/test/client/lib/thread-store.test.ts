@@ -357,7 +357,6 @@ test("uses completed tool render payload so live read blocks match hydrated bloc
         output: "5\tline one\n6\tline two",
         isError: false,
         render: {
-          version: 2,
           inputSummary: "src/app.ts",
           outputSummary: "5\tline one",
           blocks: [
@@ -395,7 +394,7 @@ test("merges started request summary with completed response summary", () => {
         toolCallId: "tool-err-1",
         toolName: "bash",
         input: { command: "exit 1" },
-        render: { version: 2, inputSummary: "exit 1", blocks: [] },
+        render: { inputSummary: "exit 1", blocks: [] },
       },
     },
   };
@@ -411,7 +410,7 @@ test("merges started request summary with completed response summary", () => {
         toolName: "bash",
         output: "[Exit code: 1]",
         isError: true,
-        render: { version: 2, outputSummary: "Command failed (exit 1)", blocks: [] },
+        render: { outputSummary: "Command failed (exit 1)", blocks: [] },
       },
     },
   };
@@ -692,7 +691,6 @@ test("hydrateFromThreadRead reuses snapshot tool renders for bash start and comp
         timestamp: 1_000,
         startedAt: 1_000,
         render: {
-          version: 2,
           inputSummary: "pwd",
           blocks: [],
         },
@@ -709,7 +707,6 @@ test("hydrateFromThreadRead reuses snapshot tool renders for bash start and comp
         startedAt: 1_000,
         durationMs: 1_350,
         render: {
-          version: 2,
           inputSummary: "pwd",
           outputSummary: "Command completed",
           blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],
@@ -732,7 +729,6 @@ test("hydrateFromThreadRead reuses snapshot tool renders for bash start and comp
   expect(tool.startedAt).toBe(1_000);
   expect(tool.durationMs).toBe(1_350);
   expect(tool.render).toEqual({
-    version: 2,
     inputSummary: "pwd",
     outputSummary: "Command completed",
     blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],

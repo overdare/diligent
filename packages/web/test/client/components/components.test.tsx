@@ -493,7 +493,6 @@ test("tool block shows request summary in header and response summary once below
         startedAt: 200,
         durationMs: 0,
         render: {
-          version: 2,
           inputSummary: "src/ARCHITECTURE.md",
           outputSummary: "1 # Architecture",
           blocks: [],

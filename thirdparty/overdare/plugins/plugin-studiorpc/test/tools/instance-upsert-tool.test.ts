@@ -6,13 +6,17 @@ import { join } from "node:path";
 import type { ToolContext } from "@diligent/plugin-sdk";
 
 const levelApplyMock = mock(async () => ({ ok: true }));
+const levelSaveFileMock = mock(async () => "World file saved.");
 
 mock.module("../../src/rpc.ts", () => ({
   call: (method: string, params?: Record<string, unknown>) => {
-    if (method !== "level.apply") {
-      throw new Error(`Unexpected RPC method in test: ${method}`);
+    if (method === "level.apply") {
+      return levelApplyMock(method, params);
     }
-    return levelApplyMock(method, params);
+    if (method === "level.save.file") {
+      return levelSaveFileMock(method, params);
+    }
+    throw new Error(`Unexpected RPC method in test: ${method}`);
   },
 }));
 
@@ -64,6 +68,7 @@ describe("instance-upsert-tool", () => {
     await writeFile(join(tempDir, "world.umap"), "placeholder", "utf-8");
     await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(createWorldDocument(), null, 2)}\n`, "utf-8");
     levelApplyMock.mockClear();
+    levelSaveFileMock.mockClear();
   });
 
   afterEach(async () => {
@@ -96,6 +101,7 @@ describe("instance-upsert-tool", () => {
     expect(child.Name).toBe("UpdatedName");
     expect(child.Visible).toBe(false);
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
+    expect(levelSaveFileMock).toHaveBeenCalledTimes(1);
     expect(result.metadata?.targetGuids).toEqual(["CHILD_GUID"]);
     expect(result.metadata?.updateCount).toBe(1);
     expect(result.metadata?.addCount).toBe(0);
@@ -157,6 +163,7 @@ describe("instance-upsert-tool", () => {
     expect((added?.ActorGuid as string).length).toBe(32);
     expect(saved.MapObjectKeyIndex).toBe(8);
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
+    expect(levelSaveFileMock).toHaveBeenCalledTimes(1);
     expect(result.metadata?.targetGuids).toEqual([added?.ActorGuid]);
     expect(result.metadata?.addCount).toBe(1);
     expect(result.metadata?.updateCount).toBe(0);
@@ -221,6 +228,7 @@ describe("instance-upsert-tool", () => {
 
     expect(updated?.Name).toBe("UpdatedName");
     expect(added?.InstanceType).toBe("Folder");
+    expect(levelSaveFileMock).toHaveBeenCalledTimes(1);
     expect(result.metadata?.targetGuids).toHaveLength(2);
     expect(result.metadata?.updateCount).toBe(1);
     expect(result.metadata?.addCount).toBe(1);

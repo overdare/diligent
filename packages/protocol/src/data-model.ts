@@ -207,7 +207,6 @@ export const ToolRenderBlockSchema = z.discriminatedUnion("type", [
 export type ToolRenderBlock = z.infer<typeof ToolRenderBlockSchema>;
 
 export const ToolRenderPayloadSchema = z.object({
-  version: z.literal(2),
   inputSummary: z.string().optional(),
   outputSummary: z.string().optional(),
   blocks: z.array(ToolRenderBlockSchema),

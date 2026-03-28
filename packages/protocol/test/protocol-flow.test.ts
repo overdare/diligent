@@ -392,7 +392,6 @@ describe("protocol/flow", () => {
 
   it("accepts and validates ToolRenderPayload with all block kinds", () => {
     const payload = ToolRenderPayloadSchema.safeParse({
-      version: 2,
       inputSummary: "Inspect files",
       outputSummary: "Done",
       blocks: [
@@ -410,7 +409,6 @@ describe("protocol/flow", () => {
 
   it("rejects ToolRenderPayload with unknown block type (discriminated union)", () => {
     const bad = ToolRenderPayloadSchema.safeParse({
-      version: 2,
       blocks: [{ type: "chart", data: [] }],
     });
     expect(bad.success).toBe(false);
@@ -425,7 +423,6 @@ describe("protocol/flow", () => {
       isError: false,
       timestamp: 1000,
       render: {
-        version: 2,
         inputSummary: "echo hello",
         outputSummary: "hello",
         blocks: [{ type: "text", title: "Output", text: "hello" }],

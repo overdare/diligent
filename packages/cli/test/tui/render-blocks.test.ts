@@ -9,7 +9,6 @@ import { renderToolPayload } from "../../src/tui/render-blocks";
 describe("renderToolPayload", () => {
   test("renders file block header and content", () => {
     const payload: ToolRenderPayload = {
-      version: 2,
       blocks: [
         {
           type: "file",
@@ -31,7 +30,6 @@ describe("renderToolPayload", () => {
 
   test("renders command block with command and output", () => {
     const payload: ToolRenderPayload = {
-      version: 2,
       blocks: [
         {
           type: "command",
@@ -49,7 +47,6 @@ describe("renderToolPayload", () => {
 
   test("renders diff block action/path and hunk lines", () => {
     const payload: ToolRenderPayload = {
-      version: 2,
       blocks: [
         {
           type: "diff",
@@ -75,7 +72,6 @@ describe("renderToolPayload", () => {
 
   test("renders mixed blocks without dropping known block types", () => {
     const payload: ToolRenderPayload = {
-      version: 2,
       blocks: [
         { type: "summary", text: "done", tone: "success" },
         { type: "file", filePath: "x.ts", content: "x" },
@@ -92,7 +88,6 @@ describe("renderToolPayload", () => {
 
   test("keeps rendering when payload includes unknown block shape", () => {
     const payload = {
-      version: 2,
       blocks: [
         { type: "summary", text: "ok" },
         { type: "future_block", title: "future" },
@@ -107,7 +102,6 @@ describe("renderToolPayload", () => {
 
   test("keeps rendering when a malformed known block throws", () => {
     const payload = {
-      version: 2,
       blocks: [{ type: "summary", text: "ok" }, { type: "table" }],
     } as unknown as ToolRenderPayload;
 
@@ -119,7 +113,6 @@ describe("renderToolPayload", () => {
 
   test("renders text blocks for generic fallback payloads", () => {
     const payload: ToolRenderPayload = {
-      version: 2,
       blocks: [
         { type: "text", title: "Input", text: '{"alpha":1}' },
         { type: "text", title: "Output", text: "failed", isError: true },

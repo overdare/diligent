@@ -46,7 +46,6 @@ export async function createTools(ctx: { cwd: string }) {
           );
 
           const render: ToolRenderPayload = {
-            version: 1,
             blocks: [
               {
                 type: "key_value",

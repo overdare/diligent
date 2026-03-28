@@ -21,7 +21,6 @@ export interface ToolContext {
 
 // D020: Tool result
 export interface ToolRenderPayloadLike {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: unknown[];

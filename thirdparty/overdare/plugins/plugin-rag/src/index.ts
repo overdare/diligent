@@ -3,7 +3,6 @@ import * as overdaresearch from "./overdaresearch.ts";
 import * as overdaresearchDeep from "./overdaresearch_deep.ts";
 
 type ToolRenderPayload = {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: Array<Record<string, unknown>>;

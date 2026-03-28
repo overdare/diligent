@@ -9,7 +9,6 @@ import { loadOverdareConfig } from "./config.ts";
 import { buildValidateLuaRender } from "./render.ts";
 
 type ToolRenderPayload = {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: Array<Record<string, unknown>>;

@@ -11,6 +11,7 @@ import type {
   ToolContext as PluginToolContext,
   ToolResult as PluginToolResult,
 } from "@diligent/plugin-sdk";
+import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { ApprovalRequest } from "../approval/types";
 import type { RuntimeToolHost } from "./capabilities";
 import type { UserInputRequest } from "./user-input-types";
@@ -174,7 +175,7 @@ export async function loadPlugin(packageName: string, cwd: string, host?: Runtim
       continue;
     }
 
-    const typedTool = wrapPluginTool(tool as PluginTool, host);
+    const typedTool = wrapPluginTool(tool as PluginTool, packageName, host);
     if (seenNames.has(typedTool.name)) {
       const error = `Plugin '${packageName}' exports duplicate tool name '${typedTool.name}'. Later duplicates are ignored.`;
       invalidTools.push({ name: typedTool.name, error });
@@ -195,7 +196,7 @@ export async function loadPlugin(packageName: string, cwd: string, host?: Runtim
   };
 }
 
-function wrapPluginTool(tool: PluginTool, host?: RuntimeToolHost): HostTool {
+function wrapPluginTool(tool: PluginTool, packageName: string, host?: RuntimeToolHost): HostTool {
   return {
     ...tool,
     execute: async (args, ctx) => {
@@ -209,9 +210,33 @@ function wrapPluginTool(tool: PluginTool, host?: RuntimeToolHost): HostTool {
           return host.ask(request);
         },
       });
-      return (await tool.execute(args, pluginContext)) as PluginToolResult & HostToolResult;
+      const result = await tool.execute(args, pluginContext);
+      return {
+        ...(result as PluginToolResult & HostToolResult),
+        render: normalizePluginToolRenderPayload({
+          toolName: tool.name,
+          packageName,
+          render: result.render,
+        }),
+      };
     },
   };
+}
+
+function normalizePluginToolRenderPayload(args: {
+  toolName: string;
+  packageName: string;
+  render: unknown;
+}): HostToolResult["render"] | undefined {
+  if (args.render == null) return undefined;
+
+  const parsed = ToolRenderPayloadSchema.safeParse(args.render);
+  if (parsed.success) return parsed.data;
+
+  console.warn(
+    `[plugin-loader] Invalid tool render payload package=${args.packageName} tool=${args.toolName}: ${parsed.error.message}`,
+  );
+  return undefined;
 }
 
 async function importPluginModule(packageName: string, cwd?: string): Promise<Record<string, unknown>> {

@@ -5,7 +5,6 @@ import type { z } from "zod";
 export type { ApprovalRequest, ApprovalResponse, UserInputRequest, UserInputResponse };
 
 export interface ToolRenderPayload {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: Array<Record<string, unknown>>;

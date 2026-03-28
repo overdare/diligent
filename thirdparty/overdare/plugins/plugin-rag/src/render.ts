@@ -1,7 +1,6 @@
 type RenderBlock = Record<string, unknown>;
 
 type ToolRenderPayload = {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: RenderBlock[];
@@ -55,7 +54,6 @@ export function buildSearchRender(args: { source: string; query: string }, resul
         clip(String(entry.score), 8),
       ]);
     return {
-      version: 2,
       inputSummary: clip(`${args.source}: ${args.query}`, 100),
       outputSummary: assetResults.length === 0 ? "No results found." : summarizeCount(assetResults.length, "asset"),
       blocks: [
@@ -87,7 +85,6 @@ export function buildSearchRender(args: { source: string; query: string }, resul
 
   const rows = results.slice(0, 10).map((entry) => [clip(entry.text ?? "", 96), clip(entry.originFileUrl ?? "", 56)]);
   return {
-    version: 2,
     inputSummary: clip(`${args.source}: ${args.query}`, 100),
     outputSummary: results.length === 0 ? "No results found." : summarizeCount(results.length, "result"),
     blocks: [
@@ -142,7 +139,6 @@ export function buildOriginFileRender(
   }
 
   return {
-    version: 2,
     inputSummary: `${action} (${requestedUrls.length} URL${requestedUrls.length === 1 ? "" : "s"})`,
     outputSummary: summarizeCount(loaded.length, "file"),
     blocks,

@@ -61,7 +61,6 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
           if (payload) return payload;
         }
         return {
-          version: 2,
           inputSummary: summarizeRenderText(parsedInput ? JSON.stringify(parsedInput) : "", 120),
           outputSummary: isError ? "Patch failed" : summarizeRenderText(output),
           blocks: [{ type: "text", title: "patch", text: output, isError }],
@@ -108,7 +107,6 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
         const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
         const outputSummary = isError ? "Read failed" : (summarizeRenderText(output) ?? "Read completed");
         return {
-          version: 2,
           inputSummary: summarizeRenderText(filePath, 120),
           outputSummary,
           blocks: [{ type: "text", title: filePath ?? "read", text: output, isError }],
@@ -126,7 +124,6 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
       endRender: (parsedInput, output, isError) => {
         const filePath = typeof parsedInput?.file_path === "string" ? parsedInput.file_path : undefined;
         return {
-          version: 2,
           inputSummary: summarizeRenderText(filePath, 120),
           outputSummary: isError ? "Write failed" : "Write completed",
           blocks: [{ type: "text", title: filePath ?? "write", text: output, isError }],
@@ -160,7 +157,6 @@ export function createToolStartRenderPayload(toolName: string, input: unknown): 
 
   if (!inputSummary) return undefined;
   return {
-    version: 2,
     inputSummary,
     blocks: [],
   };
@@ -208,12 +204,11 @@ export function createTextRenderPayload(
   if (inputText?.trim()) blocks.push({ type: "text", title: "Input", text: inputText });
   if (outputText?.trim()) blocks.push({ type: "text", title: "Output", text: outputText, isError });
   if (!inputSummary && !outputSummary && blocks.length === 0) return undefined;
-  return { version: 2, inputSummary, outputSummary, blocks };
+  return { inputSummary, outputSummary, blocks };
 }
 
 export function createCommandRenderPayload(command: string, outputText: string, isError: boolean): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: summarizeRenderText(command, 120),
     outputSummary: summarizeCommandOutput(outputText, isError),
     blocks: [{ type: "command", command, output: outputText || undefined, isError }],
@@ -230,7 +225,6 @@ export function createFileRenderPayload(args: {
   actionSummary?: string;
 }): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: summarizeRenderText(args.filePath),
     outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
@@ -255,7 +249,6 @@ export function createEditDiffRenderPayload(args: {
 }): ToolRenderPayload {
   const action = args.oldString === "" ? ("Add" as const) : undefined;
   return {
-    version: 2,
     inputSummary: summarizeRenderText(args.filePath),
     outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
@@ -281,7 +274,6 @@ export function createMultiEditDiffRenderPayload(args: {
   actionSummary?: string;
 }): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: summarizeRenderText(args.filePath),
     outputSummary: args.actionSummary ?? summarizeRenderText(args.outputText),
     blocks: [
@@ -307,7 +299,6 @@ export function createPatchDiffRenderPayload(
   const files = parsePatchForRender(patch);
   if (files.length === 0) return undefined;
   return {
-    version: 2,
     inputSummary: buildPatchInputSummary(files),
     outputSummary: actionSummary ?? summarizeRenderText(outputText),
     blocks: [{ type: "diff", files, output: outputText.split("\n")[0] || undefined }],
@@ -359,7 +350,6 @@ export function createPlanRenderPayload(args: {
   }
 
   return {
-    version: 2,
     inputSummary: summarizeRenderText(`${title} (${steps.length} steps)`, 120),
     outputSummary: allResolved ? "All steps resolved" : `${done}/${steps.length} done`,
     blocks,
@@ -392,7 +382,6 @@ export function createGlobRenderPayload(
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
   return {
-    version: 2,
     inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
     outputSummary: buildResultSummary(items.length, "file", outputText, "found"),
     blocks,
@@ -427,7 +416,6 @@ export function createGrepRenderPayload(
   ];
   if (queryItems.length > 0) blocks.push({ type: "key_value", title: "Query", items: queryItems });
   return {
-    version: 2,
     inputSummary: summarizeRenderText(buildSearchSummary(pattern, displaySearchPath)),
     outputSummary: buildResultSummary(items.length, "match", outputText, "found"),
     blocks,
@@ -438,7 +426,6 @@ export function createListRenderPayload(outputText: string): ToolRenderPayload |
   const items = toOutputLines(outputText).filter((line) => !line.startsWith("..."));
   if (items.length === 0) return undefined;
   return {
-    version: 2,
     outputSummary: buildResultSummary(items.length, "entry", outputText, "listed"),
     blocks: [{ type: "list", items }],
   };
@@ -483,7 +470,6 @@ export function createUpdateKnowledgeRenderPayload(
   if (blocks.length === 0) return undefined;
 
   return {
-    version: 2,
     inputSummary: buildKnowledgeInputSummary(input, contentPreview),
     outputSummary: buildKnowledgeSummary(input, outputSummary),
     blocks,
@@ -529,7 +515,6 @@ export function createSearchKnowledgeRenderPayload(
   if (blocks.length === 0) return undefined;
 
   return {
-    version: 2,
     inputSummary: buildSearchKnowledgeInputSummary(input),
     outputSummary: firstLine ?? (matches.length === 0 ? "No knowledge entries found" : undefined),
     blocks,

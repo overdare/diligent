@@ -17,14 +17,12 @@ export type {
 // Core-owned types: ToolResultMessage uses a weaker render type (ToolRenderPayloadLike)
 // to decouple tool implementations from the full protocol render block schema.
 export interface ToolRenderPayloadLike {
-  version: 2;
   inputSummary?: string;
   outputSummary?: string;
   blocks: unknown[];
 }
 
 export interface ToolStartRenderPayloadLike {
-  version: 2;
   inputSummary?: string;
   blocks: unknown[];
 }

@@ -925,7 +925,7 @@ describe("DiligentAppServer", () => {
           output: "# README",
           isError: false,
           timestamp,
-          render: { version: 2, outputSummary: "Read README.md", blocks: [{ type: "summary", text: "ok" }] },
+          render: { outputSummary: "Read README.md", blocks: [{ type: "summary", text: "ok" }] },
         },
       },
     ];
@@ -954,7 +954,7 @@ describe("DiligentAppServer", () => {
     expect(toolItems[0]?.input).toMatchObject({ file_path: "README.md" });
     const completed = toolItems.find((item) => item.output === "# README");
     expect(completed?.output).toBe("# README");
-    expect(completed?.render?.version).toBe(2);
+    expect(completed?.render).toMatchObject({ outputSummary: "Read README.md" });
   });
 
   it("thread/read preserves bash start render and command result render", async () => {
@@ -1014,7 +1014,6 @@ describe("DiligentAppServer", () => {
           isError: false,
           timestamp,
           render: {
-            version: 2,
             inputSummary: "pwd",
             outputSummary: "Command completed",
             blocks: [{ type: "command", command: "pwd", output: "/tmp/project", isError: false }],
@@ -1037,7 +1036,6 @@ describe("DiligentAppServer", () => {
         toolCallId?: string;
         output?: string;
         render?: {
-          version: number;
           inputSummary?: string;
           outputSummary?: string;
           blocks?: Array<{ type: string; command?: string; output?: string; isError?: boolean }>;
@@ -1050,14 +1048,12 @@ describe("DiligentAppServer", () => {
 
     const startedItem = toolItems.find((item) => item.output === undefined);
     expect(startedItem?.render).toMatchObject({
-      version: 2,
       inputSummary: "pwd",
     });
     expect(startedItem?.startedAt).toBe(timestamp);
 
     const completedItem = toolItems.find((item) => item.output === "/tmp/project");
     expect(completedItem?.render).toMatchObject({
-      version: 2,
       inputSummary: "pwd",
       outputSummary: "Command completed",
     });
@@ -1143,7 +1139,6 @@ describe("DiligentAppServer", () => {
         toolCallId?: string;
         output?: string;
         render?: {
-          version: number;
           inputSummary?: string;
           outputSummary?: string;
         };
@@ -1154,7 +1149,6 @@ describe("DiligentAppServer", () => {
       (item) => item.type === "toolCall" && item.toolCallId === "tc-bash-err-1" && item.output === "[Exit code: 127]",
     );
     expect(completedItem?.render).toMatchObject({
-      version: 2,
       inputSummary: "badcmd",
       outputSummary: "Command failed (exit 127)",
     });
@@ -1214,7 +1208,7 @@ describe("DiligentAppServer", () => {
           output: "Error: ENOENT",
           isError: true,
           timestamp: base + 2,
-          render: { version: 2, outputSummary: "Read failed", blocks: [] },
+          render: { outputSummary: "Read failed", blocks: [] },
         },
       },
     ];
@@ -1233,7 +1227,6 @@ describe("DiligentAppServer", () => {
         toolCallId?: string;
         output?: string;
         render?: {
-          version: number;
           inputSummary?: string;
           outputSummary?: string;
         };
@@ -1244,7 +1237,6 @@ describe("DiligentAppServer", () => {
       (item) => item.type === "toolCall" && item.toolCallId === "tc-read-resume-1" && item.output === "Error: ENOENT",
     );
     expect(completedItem?.render).toMatchObject({
-      version: 2,
       inputSummary: "README.md",
       outputSummary: "Read failed",
     });
@@ -1306,7 +1298,6 @@ describe("DiligentAppServer", () => {
           isError: false,
           timestamp: endTimestamp,
           render: {
-            version: 2,
             inputSummary: "pwd",
             outputSummary: "Command completed",
             blocks: [{ type: "command", command: "pwd", output: "/tmp/project", isError: false }],

@@ -55,7 +55,6 @@ export function buildLevelBrowseRender(result: unknown): ToolRenderPayload | und
   });
   if (nodes.length === 0) return undefined;
   return {
-    version: 2,
     inputSummary: "level tree",
     outputSummary: summarizeCount(nodes.length, "root node"),
     blocks: [{ type: "tree", title: "Level tree", nodes }],
@@ -66,7 +65,6 @@ export function buildScriptAddRender(args: Record<string, unknown>, output: stri
   const className = readString(args.class) ?? "Script";
   const scriptName = readString(args.name) ?? "unnamed";
   return {
-    version: 2,
     inputSummary: clip(`${className} ${scriptName}`),
     outputSummary: summarizeText(output, "Script added."),
     blocks: [
@@ -86,7 +84,6 @@ export function buildScriptAddRender(args: Record<string, unknown>, output: stri
 
 export function buildDeleteRender(title: string, targetGuid: string, output: string): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: clip(targetGuid || title),
     outputSummary: summarizeText(output, "Deleted."),
     blocks: [
@@ -100,7 +97,6 @@ export function buildInstanceAddRender(args: Record<string, unknown>, output: st
   const className = readString(args.class) ?? "Instance";
   const instanceName = readString(args.name) ?? "unnamed";
   return {
-    version: 2,
     inputSummary: clip(`${className} ${instanceName}`),
     outputSummary: summarizeText(output, "Instance added."),
     blocks: [
@@ -121,7 +117,6 @@ export function buildInstanceAddRender(args: Record<string, unknown>, output: st
 export function buildGamePlayRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const count = typeof args.numberOfPlayer === "number" ? String(args.numberOfPlayer) : "1";
   return {
-    version: 2,
     inputSummary: `players: ${count}`,
     outputSummary: summarizeText(output, "Game started."),
     blocks: [
@@ -133,7 +128,6 @@ export function buildGamePlayRender(args: Record<string, unknown>, output: strin
 
 export function buildGameStopRender(output: string): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: "stop game",
     outputSummary: summarizeText(output, "Game stopped."),
     blocks: [{ type: "summary", text: firstLine(output, "Game stopped."), tone: "warning" }],
@@ -145,7 +139,6 @@ export function buildAssetDrawerImportRender(args: Record<string, unknown>, outp
   const assetName = readString(args.assetName) ?? "unnamed";
   const assetType = readString(args.assetType) ?? "MODEL";
   return {
-    version: 2,
     inputSummary: clip(`${assetType} ${assetName}`),
     outputSummary: summarizeText(output, "Asset imported."),
     blocks: [
@@ -173,7 +166,6 @@ export function buildAssetManagerImageImportRender(
   const returnedAssetId = asset ? readString(asset.assetid) : undefined;
   const returnedFile = asset ? readString(asset.file) : undefined;
   return {
-    version: 2,
     inputSummary: clip(file || "image file"),
     outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
     blocks: [
@@ -196,7 +188,6 @@ export function buildAssetManagerImageImportRender(
 
 export function buildLevelSaveFileRender(output: string): ToolRenderPayload {
   return {
-    version: 2,
     inputSummary: "save current world",
     outputSummary: summarizeText(output, "World file saved."),
     blocks: [{ type: "summary", text: firstLine(output, "World file saved."), tone: "success" }],
@@ -207,7 +198,6 @@ export function buildInstanceReadRender(args: Record<string, unknown>, output: s
   const guid = readString(args.guid) ?? "";
   const recursive = args.recursive === true;
   return {
-    version: 2,
     inputSummary: clip(guid || "instance read"),
     outputSummary: summarizeText(output, "Instance read."),
     blocks: [
@@ -233,7 +223,6 @@ export function buildInstanceUpsertRender(args: Record<string, unknown>, output:
   if (updateCount > 0) parts.push(summarizeCount(updateCount, "update"));
   const summary = parts.join(", ") || "upsert";
   return {
-    version: 2,
     inputSummary: clip(summary),
     outputSummary: summarizeText(output, "Instances upserted."),
     blocks: [
@@ -254,7 +243,6 @@ export function buildActionSequencerApplyJsonRender(args: Record<string, unknown
   const instanceGuid = readString(args.instanceGuid) ?? "";
   const jsonFilePath = readString(args.jsonFilePath) ?? "";
   return {
-    version: 2,
     inputSummary: clip(jsonFilePath || instanceGuid || "apply sequencer json"),
     outputSummary: summarizeText(output, "Sequencer JSON applied."),
     blocks: [

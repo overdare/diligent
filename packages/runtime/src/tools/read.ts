@@ -115,7 +115,6 @@ export function createReadTool(): Tool<typeof ReadParams> {
         return {
           output,
           render: {
-            version: 2,
             inputSummary: summarizeRenderText(file_path),
             outputSummary: summarizeRenderText(output),
             blocks: [{ type: "text", title: file_path, text: output }],
@@ -132,7 +131,6 @@ export function createReadTool(): Tool<typeof ReadParams> {
           return {
             output,
             render: {
-              version: 2,
               inputSummary: summarizeRenderText(file_path),
               outputSummary: summarizeRenderText(output),
               blocks: [{ type: "text", title: file_path, text: output }],
@@ -177,7 +175,6 @@ export function createReadTool(): Tool<typeof ReadParams> {
       return {
         output,
         render: {
-          version: 2,
           inputSummary: summarizeRenderText(file_path),
           outputSummary: buildReadSummary(selectedLines.length),
           blocks: [

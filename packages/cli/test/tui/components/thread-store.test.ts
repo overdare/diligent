@@ -277,7 +277,6 @@ describe("ThreadStore", () => {
       output: "/repo",
       isError: false,
       render: {
-        version: 2,
         inputSummary: "pwd",
         outputSummary: "Command completed",
         blocks: [{ type: "command", command: "pwd", output: "/repo", isError: false }],
@@ -306,7 +305,6 @@ describe("ThreadStore", () => {
       output: "[Exit code: 1]",
       isError: true,
       render: {
-        version: 2,
         inputSummary: "exit 1",
         outputSummary: "Command failed (exit 1)",
         blocks: [{ type: "command", command: "exit 1", output: "[Exit code: 1]", isError: true }],
@@ -330,7 +328,7 @@ describe("ThreadStore", () => {
       toolCallId: "read_err_1",
       toolName: "read",
       input: { file_path: "README.md" },
-      render: { version: 2, inputSummary: "README.md", blocks: [] },
+      render: { inputSummary: "README.md", blocks: [] },
     });
     store.handleEvent({
       type: "tool_end",
@@ -338,7 +336,7 @@ describe("ThreadStore", () => {
       toolName: "read",
       output: "Error: ENOENT",
       isError: true,
-      render: { version: 2, outputSummary: "Read failed", blocks: [] },
+      render: { outputSummary: "Read failed", blocks: [] },
     });
 
     const toolItem = store.getItems().find((item) => item.kind === "tool_result");

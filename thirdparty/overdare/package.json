@@ -17,6 +17,7 @@
   "scripts": {
     "install:local": "bun run scripts/install.ts",
     "deploy": "bun run scripts/deploy.ts",
+    "mock:studiorpc": "bun run scripts/mock-studiorpc.ts",
     "typecheck": "NO_COLOR=1 FORCE_COLOR=0 bunx tsc --pretty false --noEmit -p plugins/plugin-studiorpc/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 bunx tsc --pretty false --noEmit -p plugins/plugin-rag/tsconfig.json && NO_COLOR=1 FORCE_COLOR=0 bunx tsc --pretty false --noEmit -p plugins/plugin-validator/tsconfig.json"
   }
 }

@@ -2,6 +2,17 @@
 import { describe, expect, test } from "bun:test";
 import { isUpdateItem, parseArgs } from "../../src/methods/instance.upsert.ts";
 
+const folderDefaultProperties = {
+  Anchored: true,
+  CanCollide: true,
+  CanQuery: true,
+  CanTouch: true,
+};
+
+const modelDefaultProperties = {
+  Active: true,
+};
+
 describe("instance.upsert args", () => {
   test("parses add items without explicit mode", () => {
     const parsed = parseArgs({
@@ -26,13 +37,13 @@ describe("instance.upsert args", () => {
         class: "Folder",
         parentGuid: "ROOT",
         name: "Enemies",
-        properties: {},
+        properties: folderDefaultProperties,
       },
       {
         class: "Folder",
         parentGuid: "ROOT",
         name: "Props",
-        properties: {},
+        properties: folderDefaultProperties,
       },
     ]);
   });
@@ -56,11 +67,11 @@ describe("instance.upsert args", () => {
       {
         guid: "GUID_A",
         name: "UpdatedA",
-        properties: {},
+        properties: folderDefaultProperties,
       },
       {
         guid: "GUID_B",
-        properties: { Visible: false },
+        properties: { ...modelDefaultProperties, Visible: false },
       },
     ]);
   });
@@ -88,13 +99,13 @@ describe("instance.upsert args", () => {
       {
         guid: "GUID_A",
         name: "UpdatedA",
-        properties: {},
+        properties: folderDefaultProperties,
       },
       {
         class: "Folder",
         parentGuid: "ROOT",
         name: "Props",
-        properties: {},
+        properties: folderDefaultProperties,
       },
     ]);
   });

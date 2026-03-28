@@ -63,18 +63,19 @@ function deployPlugin(meta: PluginMeta): void {
   console.log(`   src  : ${dirPath}`);
   console.log(`   dest : ${deployDir}`);
 
-  // 1. Install dependencies
-  console.log("   → bun install");
-  run("bun install", dirPath);
-
-  // 2. Bundle to a temp output dir, then move to deploy dir
+  // 1. Bundle to a temp output dir, then move to deploy dir.
+  // Do not run `bun install` inside each plugin directory here.
+  // Some plugins depend on local file: packages that in turn reference the main
+  // repo's workspace:* dependencies, which fails when installing from the
+  // isolated plugin directory. Deployment only needs bundling with the already
+  // available dependency graph.
   const outFile = join(deployDir, "index.js");
   mkdirSync(deployDir, { recursive: true });
 
   console.log("   → bun build");
   run(`bun build src/index.ts --target bun --outfile ${outFile}`, dirPath);
 
-  // 3. Write minimal package.json so import(dirUrl) resolves to index.js
+  // 2. Write minimal package.json so import(dirUrl) resolves to index.js
   const pkgJson = {
     name: packageName,
     version,
@@ -83,7 +84,7 @@ function deployPlugin(meta: PluginMeta): void {
   };
   writeFileSync(join(deployDir, "package.json"), `${JSON.stringify(pkgJson, null, 2)}\n`);
 
-  // 4. Copy asset files from plugin root (binaries, type defs, etc.)
+  // 3. Copy asset files from plugin root (binaries, type defs, etc.)
   for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
     if (entry.isDirectory()) continue;
     if (SKIP_FILES.has(entry.name)) continue;
