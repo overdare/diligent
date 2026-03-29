@@ -220,6 +220,70 @@ describe("AgentRegistry", () => {
     expect(registry.getStatus("sess-9999")).toEqual({ kind: "shutdown" });
   });
 
+  it("getKnownAgents reflects final completion after a timed out wait", async () => {
+    let resolveRun: (() => void) | null = null;
+    const registry = new AgentRegistry(
+      makeCollabDeps({
+        sessionManagerFactory: () => {
+          const listeners = new Set<(event: AgentEvent) => void>();
+          return {
+            create: async () => {},
+            resume: async () => false,
+            list: async () => [],
+            getContext: () => [],
+            subscribe: (fn: (event: AgentEvent) => void) => {
+              listeners.add(fn);
+              return () => listeners.delete(fn);
+            },
+            run: async () => {
+              await new Promise<void>((resolve) => {
+                resolveRun = () => {
+                  const assistant = makeAssistant("late final");
+                  for (const fn of listeners) {
+                    fn({ type: "message_start", itemId: "late-item", message: assistant });
+                    fn({ type: "message_end", itemId: "late-item", message: assistant });
+                  }
+                  resolve();
+                };
+              });
+            },
+            waitForWrites: async () => {},
+            steer: () => {},
+            hasPendingMessages: () => false,
+            popPendingMessages: () => null,
+            appendModeChange: () => {},
+            get sessionPath() {
+              return null;
+            },
+            get sessionId() {
+              return "late-session-1";
+            },
+            get entryCount() {
+              return 0;
+            },
+          } as never;
+        },
+      }),
+    );
+
+    const { threadId } = registry.spawn({ prompt: "task", description: "", agentType: "general" });
+    const firstWait = await registry.wait([threadId], 1);
+    expect(firstWait.timedOut).toBe(true);
+    expect(firstWait.status[threadId]?.kind === "pending" || firstWait.status[threadId]?.kind === "running").toBe(true);
+
+    resolveRun?.();
+    await registry.wait([threadId], 1000);
+
+    expect(registry.getKnownAgents()).toEqual([
+      {
+        threadId,
+        nickname: registry.getNickname(threadId)!,
+        description: "",
+        status: { kind: "completed", output: "late final" },
+      },
+    ]);
+  });
+
   it("restoreAgent skips if agent already exists", () => {
     const registry = new AgentRegistry(
       makeCollabDeps({

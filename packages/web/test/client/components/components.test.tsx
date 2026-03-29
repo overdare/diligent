@@ -562,7 +562,7 @@ test("collab wait event shows animated spinner while agents are still running", 
   );
 
   expect(html).toContain("Waiting for Juniper");
-  expect(html).toContain("Subagents are still working…");
+  expect(html).toContain(">running<");
   expect(html).toContain("animate-spin");
 });
 
@@ -590,7 +590,7 @@ test("collab wait timeout keeps ongoing spinner UI without explicit timeout labe
   );
 
   expect(html).toContain("Waiting for Juniper");
-  expect(html).toContain("Subagents are still working…");
+  expect(html).toContain(">running<");
   expect(html).toContain("animate-spin");
   expect(html).not.toContain("timed out");
 });

@@ -1463,6 +1463,65 @@ test("collab_wait_end keeps spawn status running when timed out snapshot reports
   expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("running");
 });
 
+test("hydrateFromThreadRead upgrades timed-out wait snapshot to completed when snapshot agents are final", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    cwd: "/repo",
+    items: [
+      {
+        type: "toolCall",
+        itemId: "tool:spawn-1",
+        toolCallId: "spawn-1",
+        toolName: "spawn_agent",
+        input: { message: "task", description: "desc", agent_type: "general" },
+        output: JSON.stringify({ thread_id: "child-1", nickname: "Moss" }),
+        timestamp: 1000,
+        startedAt: 1000,
+      },
+      {
+        type: "toolCall",
+        itemId: "tool:wait-1",
+        toolCallId: "wait-1",
+        toolName: "wait",
+        input: { ids: ["child-1"] },
+        output: JSON.stringify({
+          status: { "child-1": { kind: "running" } },
+          timed_out: true,
+        }),
+        timestamp: 2000,
+        startedAt: 2000,
+      },
+      {
+        type: "collabEvent",
+        itemId: "collab-wait-1",
+        eventKind: "wait",
+        agents: [
+          {
+            threadId: "child-1",
+            nickname: "Moss",
+            status: "completed",
+            message: "done later",
+          },
+        ],
+        timedOut: false,
+        timestamp: 2000,
+      },
+    ],
+    errors: [],
+    hasFollowUp: false,
+    entryCount: 2,
+    isRunning: false,
+    currentEffort: "medium",
+    currentModel: "test-model",
+  });
+
+  const spawn = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "spawn");
+  expect(spawn && spawn.kind === "collab" ? spawn.status : "").toBe("completed");
+
+  const wait = hydrated.items.find((item) => item.kind === "collab" && item.eventType === "wait");
+  expect(wait && wait.kind === "collab" ? wait.status : "").toBe("completed");
+  expect(wait && wait.kind === "collab" ? wait.timedOut : true).toBe(false);
+});
+
 test("collab_wait_begin shows running wait item before wait_end", () => {
   resetAdapter();
   const threadId = "t1";
