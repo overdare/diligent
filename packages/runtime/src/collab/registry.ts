@@ -107,7 +107,6 @@ export class AgentRegistry {
       ...this.deps,
       modelId: next.modelId,
       effort: next.effort,
-      systemPrompt: next.systemPrompt,
       getParentSessionId: next.getParentSessionId,
       approve: next.approve,
       ask: next.ask,
@@ -190,7 +189,6 @@ export class AgentRegistry {
         label: "nested_subagent_policy",
         content: nestedAgentPolicy,
       },
-      ...this.deps.systemPrompt,
     ];
 
     // Resolve model class: explicit override > agent_type-based default

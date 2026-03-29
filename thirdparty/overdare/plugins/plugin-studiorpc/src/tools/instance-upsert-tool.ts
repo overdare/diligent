@@ -111,18 +111,17 @@ async function executeInstanceUpsert(
 
   const lines: string[] = [];
   if (fileResult.added.length > 0) {
-    lines.push("Added instances:");
+    lines.push("<added-instances>");
     for (const a of fileResult.added) {
-      lines.push(`  - ${a.name} (${a.class}) guid=${a.guid}`);
+      lines.push(`<instance name="${a.name}" class="${a.class}" guid="${a.guid}" />`);
     }
+    lines.push("</added-instances>");
   }
   if (diag.warnings.length > 0) {
-    lines.push("Mobile UI warnings:");
-    lines.push(...diag.warnings);
+    lines.push("<warnings>", ...diag.warnings, "</warnings>");
   }
   if (diag.info.length > 0) {
-    lines.push("Mobile UI suggestions:");
-    lines.push(...diag.info);
+    lines.push("<suggestions>", ...diag.info, "</suggestions>");
   }
 
   return {

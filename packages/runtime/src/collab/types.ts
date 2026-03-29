@@ -1,6 +1,6 @@
 // @summary AgentStatus, AgentEntry, CollabToolDeps, and CollabEvent types for non-blocking multi-agent collab
 
-import type { SystemSection, ThinkingEffort } from "@diligent/core/llm/types";
+import type { ThinkingEffort } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
 import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentEvent } from "../agent-event";
@@ -48,7 +48,6 @@ export interface CollabToolDeps {
   paths: DiligentPaths;
   modelId: string;
   effort: ThinkingEffort;
-  systemPrompt: SystemSection[];
   agentDefinitions: ResolvedAgentDefinition[];
   parentTools: Tool[];
   maxAgents?: number; // default 8

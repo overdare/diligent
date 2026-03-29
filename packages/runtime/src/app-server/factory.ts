@@ -53,7 +53,6 @@ async function createRuntimeAgent(args: {
     collabDeps: {
       modelId: modelId,
       effort,
-      systemPrompt: guardedSystemPrompt,
       agentDefinitions: runtimeConfig.agentDefinitions,
       getParentSessionId: getSessionId,
       approve,

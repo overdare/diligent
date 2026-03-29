@@ -340,7 +340,7 @@ function walkNodes(
           if (rectsOverlap(rect, zone.rect)) {
             const r = zone.rect;
             warnings.push(
-              `"${name}" (${cls} ${guid}…) might overlaps the ${zone.label} area ` +
+              `"${name}" (${cls} ${guid}…) overlaps the ${zone.label} area ` +
                 `(${Math.round(rect.left)},${Math.round(rect.top)})-(${Math.round(rect.right)},${Math.round(rect.bottom)}) ` +
                 `vs ${zone.label} (${r.left},${r.top})-(${r.right},${r.bottom}) at ${SCREEN_W}×${SCREEN_H}. ` +
                 `If this is a layout container, set BackgroundTransparency to 1.`,

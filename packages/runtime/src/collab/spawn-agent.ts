@@ -25,14 +25,6 @@ const SpawnAgentParams = z.object({
         "'pro' for complex reasoning, 'general' for balanced tasks, 'lite' for simple/read-only. " +
         "Defaults by role: general→same as parent, explore→lite.",
     ),
-  thoroughness: z
-    .enum(["quick", "thorough"])
-    .optional()
-    .describe(
-      "Search depth for explore agents only. " +
-        "'quick' for targeted lookups (1–2 searches, fast answer). " +
-        "'thorough' for comprehensive analysis across multiple locations and naming conventions (default).",
-    ),
   allowed_tools: z
     .array(z.string())
     .optional()
@@ -54,10 +46,7 @@ export function createSpawnAgentTool(
     description: formatSpawnAgentToolDescription(agentDefinitions),
     parameters,
     execute: async (args, _ctx: ToolContext): Promise<ToolResult> => {
-      const prompt =
-        args.agent_type === "explore" && args.thoroughness
-          ? `[thoroughness: ${args.thoroughness}]\n\n${args.message}`
-          : args.message;
+      const prompt = args.message;
       const { threadId, nickname } = registry.spawn({
         prompt,
         description: args.description ?? "",
