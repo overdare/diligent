@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { prepareDefaultsResources } from "./lib/defaults";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 const WEB = resolve(ROOT, "packages/web");
@@ -24,6 +25,17 @@ const PLATFORMS: TargetPlatform[] = [
 
 async function run(): Promise<void> {
   const singleTarget = process.env.TAURI_TARGET_TRIPLE?.trim();
+
+  prepareDefaultsResources({
+    rootDir: ROOT,
+    desktopDir: DESKTOP,
+    run(command, cwd) {
+      const result = Bun.spawnSync(command.split(" "), { cwd, stdio: ["inherit", "inherit", "inherit"] });
+      if (result.exitCode !== 0) {
+        throw new Error(`Defaults preparation command failed: ${command}`);
+      }
+    },
+  });
 
   // Step 1: Build React SPA if not already built
   const clientDist = resolve(WEB, "dist/client");
