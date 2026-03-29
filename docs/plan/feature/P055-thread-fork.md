@@ -42,6 +42,8 @@ This document answers those questions.
 
 ## Current Diligent State
 
+Current codebase audit date: **2026-03-27**.
+
 Today Diligent has:
 
 - session headers persisted as the first line of a JSONL file in `packages/runtime/src/session/types.ts`
@@ -50,6 +52,18 @@ Today Diligent has:
 - top-level vs child-session distinction via `parentSession` on session headers
 - thread lifecycle handlers in `packages/runtime/src/app-server/thread-handlers.ts`
 - no protocol method for fork yet
+- no fork metadata in protocol `SessionSummary` or `thread/read`
+- no TUI or Web fork affordance yet
+
+Concrete current-state notes:
+
+- `packages/protocol/src/methods.ts` has `thread/start`, `thread/resume`, `thread/list`, `thread/read`, `thread/compact/start`, `thread/delete`, `thread/subscribe`, and `thread/unsubscribe`, but no `thread/fork`.
+- `packages/protocol/src/client-requests.ts` uses optional `threadId` for thread-scoped operations such as `thread/read`, `thread/compact/start`, `turn/start`, `mode/set`, and `effort/set`.
+- `packages/protocol/src/data-model.ts` exposes `parentSession` in `SessionSummary`, but no `forkedFromId`.
+- `packages/runtime/src/session/types.ts` is still on `SESSION_VERSION = 8` and `SessionHeader` does not yet include fork ancestry.
+- `packages/runtime/src/app-server/thread-handlers.ts` already reconciles idle runtimes from disk before `thread/read`, which is the right precedent for `thread/fork` as well.
+- `packages/cli/src/tui/commands/builtin/session.ts` exposes `new`, `resume`, `delete`, and `status`, but no `/fork`.
+- `packages/web/src/client/components/Sidebar.tsx` currently exposes open/delete thread actions only.
 
 Important current properties:
 
@@ -222,10 +236,22 @@ This is the cleanest way to document format evolution and avoid silently introdu
 ```ts
 thread/fork
 params: {
-  threadId: string;
+  threadId?: string;
   name?: string;
 }
 ```
+
+### Why `threadId` should be optional
+
+The current Diligent protocol already treats most thread-scoped operations as "active thread by default, explicit thread when provided" APIs. Using optional `threadId` keeps `thread/fork` aligned with:
+
+- `thread/read`
+- `thread/compact/start`
+- `turn/start`
+- `mode/set`
+- `effort/set`
+
+This avoids making fork the one thread operation with a different caller ergonomics model.
 
 ### Response
 
@@ -244,7 +270,7 @@ Reuse existing:
 thread/started { threadId: string }
 ```
 
-No dedicated `thread/forked` notification is needed.
+No dedicated `thread/forked` notification is needed for v1.
 
 ### Why reuse `thread/started`
 
@@ -412,6 +438,8 @@ This proposal explicitly does **not** include:
 
 ## Implementation plan
 
+This section is updated to reflect the **current package layout and existing handler patterns** in the repo.
+
 ### 1. Session types and persistence
 
 Files:
@@ -425,15 +453,16 @@ Changes:
 - add `forkedFromId?: string` to `SessionInfo`
 - bump `SESSION_VERSION` from 8 to 9
 - extend session creation helper to accept fork metadata
-- add a persistence helper like:
+- add a persistence helper for file-level forking
+
+Recommended persistence shape:
 
 ```ts
 forkSessionFile({
   sessionsDir,
   sourcePath,
-  sourceSessionId,
-  sourceLeafId,
-  cwd,
+  sourceThreadId,
+  forkedFromId,
   name,
 }): Promise<{ path: string; header: SessionHeader }>
 ```
@@ -441,10 +470,15 @@ forkSessionFile({
 Implementation note:
 
 - read source header + entries
-- compute visible path using the same lineage semantics as `buildSessionContext()`
+- compute visible path using the same lineage semantics as `buildSessionContext()` / `buildSessionTranscript()`
 - rewrite copied entries with fresh IDs and re-rooted parent links
 - write a fresh header and append rewritten entries
 - append `session_info` name entry if provided
+
+Current-codebase note:
+
+- `createSessionFile()` currently accepts `parentSession` and `collabMeta`; fork metadata should be added alongside these, not by overloading `parentSession`.
+- `listSessions()` and `resume({ mostRecent: true })` already rely on `parentSession` meaning "collab child session". This invariant must remain true after fork is introduced.
 
 ### 2. Session manager surface
 
@@ -462,6 +496,11 @@ Preferred pattern:
 - keep file-copy logic in persistence
 - keep runtime business rule checks in handlers/manager
 
+Current-codebase note:
+
+- `SessionManager` already exposes `reconcileFromDisk()`, `getContext()`, and transcript-oriented read helpers. Fork should reuse those boundaries rather than duplicating transcript logic in app-server code.
+- If a dedicated manager method is added, it should stay orchestration-focused, for example `prepareForkSource()` or `forkCurrentVisiblePath()`, while persistence owns JSONL rewriting.
+
 ### 3. Protocol
 
 Files:
@@ -477,6 +516,13 @@ Changes:
 - add `ThreadForkResponseSchema`
 - add `forkedFromId` to `SessionSummarySchema`
 - add `forkedFromId` to `ThreadReadResponseSchema`
+
+Protocol-shape guidance:
+
+- follow the existing naming pattern `ThreadCompactStartParamsSchema` / `ThreadCompactStartResponseSchema`
+- keep `threadId` optional in `ThreadForkParamsSchema`
+- return `{ threadId, forkedFromId }` directly rather than wrapping additional metadata prematurely
+- keep this additive within protocol v1; no protocol version bump is required
 
 ### 4. App-server handlers
 
@@ -494,6 +540,13 @@ Changes:
 - make the new thread active
 - emit `thread/started`
 
+Recommended handler pattern:
+
+- mirror `handleThreadCompactStart()` for the running-thread rejection rule
+- mirror `handleThreadRead()` for the idle-runtime `reconcileFromDisk()` rule
+- wire the new method through `packages/runtime/src/app-server/server.ts` alongside other thread lifecycle cases
+- return the fork response after the runtime is registered in `ctx.threads` and `ctx.setActiveThreadId()` is updated
+
 ### 5. Frontends
 
 Files likely affected:
@@ -506,6 +559,12 @@ Changes:
 - expose fork action in both TUI and Web
 - switch active thread to the returned thread id
 - surface fork provenance in thread detail/list UI
+
+Current-codebase note:
+
+- TUI likely needs touches in `packages/cli/src/tui/thread-manager.ts` and `packages/cli/src/tui/commands/builtin/session.ts`.
+- Web likely needs touches in `packages/web/src/client/App.tsx`, `packages/web/src/client/components/Sidebar.tsx`, and any RPC bridge/client layer that maps thread lifecycle requests.
+- Because Diligent's product rule is that Web and TUI are thin clients over the same protocol, the plan should treat both client updates as part of the same feature slice, not as a follow-up backlog item.
 
 ## Validation plan
 
@@ -534,20 +593,29 @@ Add schema coverage for new request/response fields.
 - Web can fork and immediately continue in the new thread
 - provenance is visible and readable in both clients
 
-## Open questions
+## Remaining open questions
 
-These are the only open questions I think remain after this proposal:
+After re-checking the current codebase, the proposal is mostly implementation-ready. The remaining open questions are narrower than before:
 
-1. Should `thread/fork` accept `threadId?: string` like other thread-scoped APIs, defaulting to the active thread?
-   - Recommendation: **yes**, for consistency with existing Diligent thread-scoped methods.
-   - If protocol consistency is prioritized over explicitness, use optional `threadId`.
-
-2. Should `thread/read` expose fork provenance as a top-level response field or embed it inside a future richer thread metadata object?
+1. Should `thread/read` expose fork provenance as a top-level response field or inside a future richer thread metadata object?
    - Recommendation: add the top-level field now, and migrate later if thread metadata is consolidated.
 
-3. Should list views visually group forks under their source thread?
+2. Should list views visually group forks under their source thread?
    - Recommendation: **no** for v1.
    - Show provenance metadata, but keep the list flat.
+
+3. Should the fork action be exposed in the TUI as a direct `/fork [name?]` command, an interactive prompt, or both?
+   - Recommendation: support `/fork [name?]` first, then add prompting only if needed.
+
+## Codebase drift corrections from the original draft
+
+The original draft was directionally correct, but these points required explicit correction after auditing the current repo:
+
+- implementation locations must point to `packages/runtime/...` and `packages/protocol/...` rather than older `packages/core/...` references seen in adjacent planning docs
+- `thread/fork` should follow current Diligent convention and accept `threadId?: string`, not require `threadId: string`
+- `thread/read` and `SessionSummary` currently expose no fork metadata, so the document must treat these as planned additive changes rather than implied existing structure
+- current frontend surfaces have no partial fork groundwork; this remains a full-stack feature across protocol, runtime, TUI, and Web
+- `SESSION_VERSION` is still 8 today, so the version bump described here remains pending work, not already-landed format evolution
 
 ## Final recommendation
 
