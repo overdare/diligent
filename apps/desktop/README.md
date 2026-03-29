@@ -15,6 +15,18 @@ Tauri (Rust + System WebView)
 
 The sidecar starts on port 0 (OS-assigned), prints `DILIGENT_PORT=<n>` to stdout, and the Rust host reads that line to know where to navigate the WebView.
 
+## Desktop notifications
+
+The desktop shell can show native OS notifications for background work:
+
+- turn completed in a non-active conversation
+- approval requested for a non-active conversation
+- user input requested for a non-active conversation
+
+Notifications are only sent while the desktop window is not foregrounded/visible.
+Clicking a desktop notification opens the related conversation in the app.
+You can enable or disable this behavior from the in-app Config panel.
+
 ## Dev Commands
 
 ```bash

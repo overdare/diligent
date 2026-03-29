@@ -9,6 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@tauri-apps/plugin-notification": "^2",
     "@diligent/core": "workspace:*",
     "@diligent/runtime": "workspace:*",
     "@diligent/protocol": "workspace:*",

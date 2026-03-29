@@ -26,6 +26,7 @@ import { ToolSettingsModal } from "./components/ToolSettingsModal";
 import { APP_PROJECT_NAME } from "./lib/app-config";
 import { appReducer, type PendingImage } from "./lib/app-state";
 import { getThreadIdFromUrl } from "./lib/app-utils";
+import { createDesktopNotificationController, readDesktopNotificationsEnabled } from "./lib/desktop-notification";
 import { supportsThinkingNone } from "./lib/model-thinking-helpers";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
 import type { SlashCommand } from "./lib/slash-commands";
@@ -71,6 +72,10 @@ export function App() {
   // Skills received from server at init
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
+  const desktopNotificationsRef = useRef(createDesktopNotificationController());
+  const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState(() =>
+    readDesktopNotificationsEnabled(),
+  );
   // Build full slash command list (builtins + skills)
   const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
@@ -83,7 +88,12 @@ export function App() {
     });
   }, []);
 
-  const serverRequests = useServerRequests(rpcRef, activeThreadIdRef, markAttention);
+  const serverRequests = useServerRequests(
+    rpcRef,
+    activeThreadIdRef,
+    markAttention,
+    (requestId, request) => void desktopNotificationsRef.current.notifyForServerRequest(requestId, request),
+  );
 
   // Keep ref in sync so onConnected closure can read latest activeThreadId
   activeThreadIdRef.current = state.activeThreadId;
@@ -130,6 +140,16 @@ export function App() {
 
   const startNewThread = threadMgr.startNewThread;
   const openThread = threadMgr.openThread;
+
+  useEffect(() => {
+    desktopNotificationsRef.current.setEnabled(desktopNotificationsEnabled);
+  }, [desktopNotificationsEnabled]);
+
+  useEffect(() => {
+    void desktopNotificationsRef.current.attachActionHandler((threadId) => {
+      void openThread(threadId);
+    });
+  }, [openThread]);
 
   // Handle browser back/forward navigation between threads
   useEffect(() => {
@@ -213,6 +233,8 @@ export function App() {
     onAccountLoginCompleted: providerMgr.onAccountLoginCompleted,
     onAccountUpdated: providerMgr.onAccountUpdated,
     markAttention,
+    onBackgroundNotification: (notification) =>
+      void desktopNotificationsRef.current.notifyForNotification(notification),
     handleServerRequest: serverRequests.handleServerRequest,
     steering: {
       pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
@@ -516,8 +538,10 @@ export function App() {
             <ToolSettingsModal
               threadId={state.activeThreadId}
               providers={providerMgr.providers}
+              desktopNotificationsEnabled={desktopNotificationsEnabled}
               onList={listTools}
               onSave={saveTools}
+              onDesktopNotificationsEnabledChange={setDesktopNotificationsEnabled}
               onOpenProviders={() => {
                 setFocusedProvider(hasProvider ? null : "chatgpt");
                 setShowProviderModal(true);

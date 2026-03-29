@@ -23,8 +23,10 @@ interface ToolSettingsModalProps {
   threadId?: string | null;
   initialState?: ToolsListResponse;
   providers?: ProviderAuthStatus[];
+  desktopNotificationsEnabled?: boolean;
   onList: (threadId?: string) => Promise<ToolsListResponse>;
   onSave: (params: ToolsSetParams) => Promise<ToolsSetResponse>;
+  onDesktopNotificationsEnabledChange?: (enabled: boolean) => void;
   onOpenProviders?: () => void;
   onClose: () => void;
   className?: string;
@@ -123,8 +125,10 @@ export function ToolSettingsModal({
   threadId,
   initialState,
   providers,
+  desktopNotificationsEnabled,
   onList,
   onSave,
+  onDesktopNotificationsEnabledChange,
   onOpenProviders,
   onClose,
   className,
@@ -346,6 +350,31 @@ export function ToolSettingsModal({
                       Open AI connection settings
                     </Button>
                   </div>
+                </section>
+              ) : null}
+
+              {typeof desktopNotificationsEnabled === "boolean" && onDesktopNotificationsEnabledChange ? (
+                <section className="space-y-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text">Desktop notifications</h3>
+                    <p className="text-xs text-muted">
+                      Show native OS notifications for background turn completion and pending approval/input requests.
+                    </p>
+                  </div>
+                  <label className="flex items-start gap-3 rounded-lg border border-border/100 bg-surface-dark px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={desktopNotificationsEnabled}
+                      onChange={(event) => onDesktopNotificationsEnabledChange(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-text">Enable desktop notifications</div>
+                      <p className="mt-0.5 text-xs text-muted">
+                        Only notifies while the desktop app is not foregrounded.
+                      </p>
+                    </div>
+                  </label>
                 </section>
               ) : null}
 

@@ -67,6 +67,7 @@ export function useAppRpcBindings({
   onAccountLoginCompleted,
   onAccountUpdated,
   markAttention,
+  onBackgroundNotification,
   handleServerRequest,
   steering,
   setOauthPending,
@@ -80,6 +81,7 @@ export function useAppRpcBindings({
   onAccountLoginCompleted: (params: { loginId: string | null; success: boolean; error: string | null }) => void;
   onAccountUpdated: (params: { providers: ProviderAuthStatus[] }) => Promise<void>;
   markAttention: (threadId: string) => void;
+  onBackgroundNotification: (notification: DiligentServerNotification) => void;
   handleServerRequest: (requestId: number, request: DiligentServerRequest) => void;
   steering: SteeringRefs;
   setOauthPending: Dispatch<SetStateAction<boolean>>;
@@ -113,6 +115,7 @@ export function useAppRpcBindings({
       const attentionThreadId = shouldMarkAttentionThread(notification, notificationParams, activeThreadIdRef.current);
       if (attentionThreadId) {
         markAttention(attentionThreadId);
+        onBackgroundNotification(notification);
       }
 
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED) {
@@ -187,6 +190,7 @@ export function useAppRpcBindings({
     onAccountLoginCompleted,
     onAccountUpdated,
     markAttention,
+    onBackgroundNotification,
     handleServerRequest,
     steering,
     setOauthPending,

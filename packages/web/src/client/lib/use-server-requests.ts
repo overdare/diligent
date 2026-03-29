@@ -19,6 +19,7 @@ export function useServerRequests(
   rpcRef: RefObject<WebRpcClient | null>,
   activeThreadIdRef?: RefObject<string | null>,
   onAttention?: (threadId: string) => void,
+  onBackgroundServerRequest?: (requestId: number, request: DiligentServerRequest) => void,
 ) {
   const [approvalPrompt, setApprovalPrompt] = useState<{
     requestId: number;
@@ -73,6 +74,7 @@ export function useServerRequests(
         }
         bufferedRef.current.set(threadId, { requestId, request });
         onAttention?.(threadId);
+        onBackgroundServerRequest?.(requestId, request);
         return;
       }
 
@@ -86,7 +88,7 @@ export function useServerRequests(
       setAnswers({});
       setQuestionPrompt({ requestId, request: request.params.request });
     },
-    [activeThreadIdRef, dismissBuffered, rejectPendingApproval, onAttention],
+    [activeThreadIdRef, dismissBuffered, rejectPendingApproval, onAttention, onBackgroundServerRequest],
   );
 
   const handleNotification = useCallback((notification: DiligentServerNotification): void => {
