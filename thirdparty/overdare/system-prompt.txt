@@ -86,6 +86,10 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - Always consider mobile environment, NOT PC environment, when designing UI layouts — the screen is **landscape (horizontal)** orientation
 - No keyboard input: Do not design interactions based on keyboard input. All player actions must be triggered through on-screen touch buttons
 - Ensure sufficient contrast between text and background. If the background is complex or has large brightness variations, use overlays or panels to maintain readability for text.
+
+# Sub-agents
+For large units of work, leverage sub-agents to parallelize and keep context focused.
+- `ui-builder`: Spawn when building a full static UI from scratch (e.g., HUD, inventory panel, skill bar). Do NOT spawn for small tweaks or single-property edits — handle those directly.
 </building-rules>
 
 <workarounds>

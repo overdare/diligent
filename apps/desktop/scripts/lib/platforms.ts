@@ -54,7 +54,7 @@ export const ALL_PLATFORMS: PlatformTarget[] = [
     ext: ".exe",
     os: "windows",
     arch: "x64",
-    desktopBundleTypes: ["nsis"],
+    desktopBundleTypes: [],
   },
 ];
 

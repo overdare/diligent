@@ -1,5 +1,5 @@
 // @summary Method constants for Diligent v1 protocol (shared by TUI and future web)
-export const DILIGENT_VERSION = "0.2.2";
+export const DILIGENT_VERSION = "0.2.6";
 
 export const DILIGENT_CLIENT_REQUEST_METHODS = {
   INITIALIZE: "initialize",

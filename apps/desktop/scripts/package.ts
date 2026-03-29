@@ -262,9 +262,66 @@ function copyArtifact(src: string, destDir: string, destName: string, list: stri
   list.push(destName);
 }
 
+/**
+ * Assemble a portable release folder that mirrors the installed directory layout.
+ * Structure:
+ *   <portableDir>/
+ *     diligent-desktop.exe
+ *     diligent-web-server.exe
+ *     rg.exe
+ *     defaults/
+ *     dist/client/
+ */
+function assemblePortableFolder(plat: PlatformTarget, portableDir: string): void {
+  const releaseDir = join(DESKTOP, "src-tauri/target/release");
+  const binariesDir = join(DESKTOP, "src-tauri/binaries");
+
+  mkdirSync(portableDir, { recursive: true });
+
+  // Main desktop binary
+  const mainBin = join(releaseDir, `diligent-desktop${plat.ext}`);
+  if (existsSync(mainBin)) {
+    cpSync(mainBin, join(portableDir, `diligent-desktop${plat.ext}`));
+    console.log(`   Portable: diligent-desktop${plat.ext}`);
+  }
+
+  // Sidecar binaries (strip target-triple suffix for portable layout)
+  const sidecars = ["diligent-web-server", "rg"];
+  for (const name of sidecars) {
+    const src = join(binariesDir, `${name}-${plat.tauriTriple}${plat.ext}`);
+    if (existsSync(src)) {
+      cpSync(src, join(portableDir, `${name}${plat.ext}`));
+      console.log(`   Portable: ${name}${plat.ext}`);
+    }
+  }
+
+  // Resources: defaults/
+  if (existsSync(DEFAULTS_RESOURCES)) {
+    cpSync(DEFAULTS_RESOURCES, join(portableDir, "defaults"), { recursive: true });
+    console.log("   Portable: defaults/");
+  }
+
+  // Resources: dist/client/
+  const clientResources = join(DESKTOP, "src-tauri/resources/dist/client");
+  if (existsSync(clientResources)) {
+    mkdirSync(join(portableDir, "dist"), { recursive: true });
+    cpSync(clientResources, join(portableDir, "dist/client"), { recursive: true });
+    console.log("   Portable: dist/client/");
+  }
+}
+
 function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: string[]): void {
   const bundleDir = join(DESKTOP, "src-tauri/target/release/bundle");
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
+
+  // Windows: assemble portable folder instead of collecting installer
+  if (plat.os === "windows") {
+    const portableName = `${projectArtifactName}-desktop-${version}-${plat.id}`;
+    const portableDir = join(platDir, portableName);
+    assemblePortableFolder(plat, portableDir);
+    list.push(`${portableName}/`);
+    return;
+  }
 
   // Raw binary
   const rawBin = join(releaseDir, `diligent-desktop${plat.ext}`);
@@ -285,9 +342,6 @@ function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: st
     } else if (bundleType === "dmg") {
       const src = findFirst(join(bundleDir, "dmg"), ".dmg");
       if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.dmg`, list);
-    } else if (bundleType === "nsis") {
-      const src = findFirst(join(bundleDir, "nsis"), "-setup.exe");
-      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}-setup.exe`, list);
     }
   }
 }
@@ -442,7 +496,7 @@ function cleanDir(dir: string): void {
       rmSync(full, { recursive: true, force: true });
     } catch (e: unknown) {
       const code = (e as NodeJS.ErrnoException).code;
-      if (code === "EBUSY" || code === "EPERM") {
+      if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
         console.warn(`⚠️  Skipping locked file during clean: ${full}`);
       } else {
         throw e;
