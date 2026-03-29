@@ -14,7 +14,13 @@ function createNotificationEnvironment(options?: {
   granted?: boolean;
   permissionResult?: "default" | "denied" | "granted";
 }) {
-  const sent: Array<{ id: number; title: string; body: string; extra?: Record<string, unknown> }> = [];
+  const sent: Array<{
+    id: number;
+    title: string;
+    body: string;
+    actionTypeId?: string;
+    extra?: Record<string, unknown>;
+  }> = [];
   const actionCallbacks: Array<(notification: { extra?: Record<string, unknown> }) => void> = [];
   let granted = options?.granted ?? true;
   const permissionResult = options?.permissionResult ?? "granted";
@@ -31,10 +37,12 @@ function createNotificationEnvironment(options?: {
           granted = permissionResult === "granted";
           return permissionResult;
         },
+        registerActionTypes: async () => undefined,
         sendNotification: async (payload: {
           id: number;
           title: string;
           body: string;
+          actionTypeId?: string;
           extra?: Record<string, unknown>;
         }) => {
           sent.push(payload);

@@ -566,6 +566,15 @@ export class AgentRegistry {
     return this.agents.get(threadId)?.nickname;
   }
 
+  getKnownAgents(): Array<{ threadId: string; nickname: string; description: string; status: AgentStatus }> {
+    return [...this.agents.values()].map((entry) => ({
+      threadId: entry.threadId,
+      nickname: entry.nickname,
+      description: entry.description,
+      status: entry.status,
+    }));
+  }
+
   /**
    * Restore a previously-known agent as shutdown.
    * Used on session resume to re-populate the in-memory registry

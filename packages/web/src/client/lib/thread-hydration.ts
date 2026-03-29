@@ -58,6 +58,10 @@ function setSpawnStatus(state: ThreadState, threadId: string, status: string): T
   );
 }
 
+function isFinalCollabStatus(status: string | undefined): status is string {
+  return status === "completed" || status === "errored" || status === "shutdown";
+}
+
 function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadResponse): ThreadState {
   const adapter = new ProtocolNotificationAdapter();
 
@@ -180,24 +184,37 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
 
       if (item.toolName === "wait" && typeof item.output === "string") {
         const waitData = parseWaitOutput(item.output);
-        const agents = waitData?.agents.map((agent) => ({
-          threadId: agent.threadId,
-          nickname: childNicknameByThreadId.get(agent.threadId),
-          status: agent.status,
-          message: agent.message,
-        }));
+        const snapshotWaitItem = payload.items
+          .filter(
+            (candidate): candidate is Extract<ThreadItem, { type: "collabEvent" }> =>
+              candidate.type === "collabEvent" && candidate.eventKind === "wait",
+          )
+          .findLast((candidate) => candidate.timestamp === (item.timestamp ?? item.startedAt ?? Date.now()));
+        const snapshotAgents = new Map((snapshotWaitItem?.agents ?? []).map((agent) => [agent.threadId, agent]));
+        const agents = waitData?.agents.map((agent) => {
+          const snapshotAgent = snapshotAgents.get(agent.threadId);
+          const resolvedStatus = snapshotAgent?.status ?? agent.status;
+          return {
+            threadId: agent.threadId,
+            nickname: snapshotAgent?.nickname ?? childNicknameByThreadId.get(agent.threadId),
+            status: resolvedStatus,
+            message: snapshotAgent?.message ?? agent.message,
+          };
+        });
+        const anyStillRunning = agents?.some((agent) => agent.status === "running") ?? false;
         current = withItem(current, `history:collab:wait:${item.toolCallId}`, {
           id: `history:collab:wait:${item.toolCallId}`,
           kind: "collab",
           eventType: "wait",
           agents,
-          timedOut: waitData?.timedOut,
+          status: anyStillRunning ? "running" : "completed",
+          timedOut: anyStillRunning ? waitData?.timedOut : false,
           childTools: [],
           childTimeline: undefined,
           timestamp: item.timestamp ?? item.startedAt ?? Date.now(),
         });
-        for (const agent of waitData?.agents ?? []) {
-          if (agent.status === "completed" || agent.status === "errored" || agent.status === "shutdown") {
+        for (const agent of agents ?? []) {
+          if (isFinalCollabStatus(agent.status)) {
             current = setSpawnStatus(current, agent.threadId, agent.status);
           }
         }

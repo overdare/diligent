@@ -29,6 +29,83 @@ import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
 import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-payload";
 
+function toSnapshotCollabStatus(status: { kind: string }): "running" | "completed" | "errored" | "shutdown" {
+  if (status.kind === "completed") return "completed";
+  if (status.kind === "errored") return "errored";
+  if (status.kind === "shutdown") return "shutdown";
+  return "running";
+}
+
+function toSnapshotCollabMessage(status: { kind: string; output?: string | null; error?: string }): string | undefined {
+  if (status.kind === "completed") return status.output ?? undefined;
+  if (status.kind === "errored") return status.error;
+  return undefined;
+}
+
+function applyLiveCollabStatusesToSnapshot(items: ThreadItem[], runtime: ThreadRuntime): ThreadItem[] {
+  const agents = runtime.agent?.registry?.getKnownAgents() ?? [];
+  if (agents.length === 0) {
+    return items;
+  }
+
+  const statusByThreadId = new Map(
+    agents.map((agent) => [
+      agent.threadId,
+      {
+        nickname: agent.nickname,
+        description: agent.description || undefined,
+        status: toSnapshotCollabStatus(agent.status),
+        message: toSnapshotCollabMessage(agent.status),
+      },
+    ]),
+  );
+
+  return items.map((item) => {
+    if (item.type !== "collabEvent") {
+      return item;
+    }
+
+    if (item.eventKind === "spawn" && item.childThreadId) {
+      const live = statusByThreadId.get(item.childThreadId);
+      if (!live) {
+        return item;
+      }
+      return {
+        ...item,
+        nickname: item.nickname ?? live.nickname,
+        description: item.description ?? live.description,
+        status: live.status,
+        message: live.message ?? item.message,
+      };
+    }
+
+    if (item.eventKind === "wait" && item.agents) {
+      const nextAgents = item.agents.map((agent) => {
+        const live = statusByThreadId.get(agent.threadId);
+        if (!live) {
+          return agent;
+        }
+        return {
+          ...agent,
+          nickname: agent.nickname ?? live.nickname,
+          status: live.status,
+          message: live.message ?? agent.message,
+        };
+      });
+
+      const anyStillRunning = nextAgents.some((agent) => agent.status === "running");
+      return {
+        ...item,
+        agents: nextAgents,
+        status: anyStillRunning ? "running" : "completed",
+        timedOut: anyStillRunning ? item.timedOut : false,
+      };
+    }
+
+    return item;
+  });
+}
+
 export interface ThreadRuntime {
   id: string;
   cwd: string;
@@ -354,7 +431,10 @@ export async function handleThreadRead(
 
   const messages = runtime.manager.getContext();
   const transcript = runtime.manager.getTranscript();
-  const items = buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]);
+  const items = applyLiveCollabStatusesToSnapshot(
+    buildThreadReadItems(transcript as ThreadReadTranscriptEntry[]),
+    runtime,
+  );
 
   let totalCost = 0;
   for (const msg of messages) {

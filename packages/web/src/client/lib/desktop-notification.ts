@@ -6,13 +6,20 @@ import { APP_PROJECT_NAME } from "./app-config";
 
 type NotificationPermission = "default" | "denied" | "granted";
 
+type NotificationActionType = {
+  id: string;
+  actions: Array<{ id: string; title: string; foreground?: boolean }>;
+};
+
 type NotificationApi = {
   isPermissionGranted: () => Promise<boolean>;
   requestPermission: () => Promise<NotificationPermission>;
+  registerActionTypes: (types: NotificationActionType[]) => Promise<void>;
   sendNotification: (options: {
     id: number;
     title: string;
     body: string;
+    actionTypeId?: string;
     extra?: Record<string, unknown>;
   }) => Promise<void>;
   onAction: (
@@ -40,6 +47,7 @@ type NotifyContext = {
 
 const REQUEST_DEDUPE_TTL_MS = 30_000;
 const NOTIFICATION_THREAD_ID_KEY = "threadId";
+const NOTIFICATION_ACTION_TYPE_ID = "diligent-open";
 export const DESKTOP_NOTIFICATIONS_STORAGE_KEY = "diligent.desktopNotifications.enabled";
 const MAX_NOTIFICATION_ID = 2_147_483_647;
 
@@ -73,8 +81,9 @@ async function createTauriNotificationApi(): Promise<NotificationApi | null> {
   return {
     isPermissionGranted: plugin.isPermissionGranted,
     requestPermission: plugin.requestPermission,
-    sendNotification: async ({ id, title, body, extra }) => {
-      await plugin.sendNotification({ id, title, body, extra });
+    registerActionTypes: plugin.registerActionTypes,
+    sendNotification: async ({ id, title, body, actionTypeId, extra }) => {
+      await plugin.sendNotification({ id, title, body, actionTypeId, extra });
     },
     onAction: async (callback) => plugin.onAction(callback),
   };
@@ -167,6 +176,12 @@ export class DesktopNotificationController {
     }
     this.actionListenerRegistered = true;
     try {
+      await api.registerActionTypes([
+        {
+          id: NOTIFICATION_ACTION_TYPE_ID,
+          actions: [{ id: "open", title: "Open", foreground: true }],
+        },
+      ]);
       await api.onAction((notification) => {
         const threadId = readThreadIdFromExtra(notification.extra);
         if (!threadId) {
@@ -228,7 +243,13 @@ export class DesktopNotificationController {
       return;
     }
 
-    await api.sendNotification({ id: payload.id, title: payload.title, body: payload.body, extra: payload.extra });
+    await api.sendNotification({
+      id: payload.id,
+      title: payload.title,
+      body: payload.body,
+      actionTypeId: NOTIFICATION_ACTION_TYPE_ID,
+      extra: payload.extra,
+    });
     this.recentKeys.set(payload.dedupeKey, Date.now());
     this.log("sent", context, {
       id: payload.id,
