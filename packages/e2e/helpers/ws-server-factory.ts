@@ -1,8 +1,6 @@
 // @summary Creates a real Bun WebSocket server wrapping DiligentAppServer for transport-level e2e tests
 
-import type { JSONRPCMessage } from "@diligent/protocol";
-import { JSONRPCMessageSchema } from "@diligent/protocol";
-import type { DiligentAppServer, RpcPeer } from "@diligent/runtime";
+import { createWsPeer, type DiligentAppServer } from "@diligent/runtime";
 
 interface WsData {
   connectionId: string;
@@ -53,35 +51,4 @@ export function createWsTestServer(appServer: DiligentAppServer): WsTestServer {
     url: `ws://localhost:${server.port}/rpc`,
     stop: () => server.stop(),
   };
-}
-
-function createWsPeer(ws: import("bun").ServerWebSocket<WsData>): {
-  peer: RpcPeer;
-  receive: (raw: string | Buffer) => void;
-} {
-  const listeners: Array<(msg: JSONRPCMessage) => void | Promise<void>> = [];
-
-  const peer: RpcPeer = {
-    send(message: JSONRPCMessage): void {
-      ws.send(JSON.stringify(message));
-    },
-    onMessage(listener: (msg: JSONRPCMessage) => void | Promise<void>): void {
-      listeners.push(listener);
-    },
-  };
-
-  const receive = (raw: string | Buffer): void => {
-    let parsed: JSONRPCMessage;
-    try {
-      parsed = JSONRPCMessageSchema.parse(JSON.parse(typeof raw === "string" ? raw : raw.toString()));
-    } catch {
-      ws.send(JSON.stringify({ id: "unknown", error: { code: -32700, message: "Malformed JSON" } }));
-      return;
-    }
-    for (const listener of listeners) {
-      void listener(parsed);
-    }
-  };
-
-  return { peer, receive };
 }
