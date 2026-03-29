@@ -104,7 +104,6 @@ function buildServerRequestPayload(requestId: number, request: DiligentServerReq
     };
   }
   if (request.method === DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST) {
-    const questionCount = request.params.request.questions.length;
     return {
       id: nextNotificationId(),
       title: APP_PROJECT_NAME,

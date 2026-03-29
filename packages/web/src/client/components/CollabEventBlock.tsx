@@ -180,6 +180,7 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
     cachedState?.loadedChildPreview ?? null,
   );
   const hasRunningTool = item.childTools.some((tool) => tool.status === "running");
+  const isWaitRunning = item.eventType === "wait" && item.status === "running";
   const badge = statusBadge(item.status);
   const turnInfo = item.eventType === "spawn" && item.turnNumber ? `turn ${item.turnNumber}` : null;
   const effectiveTimeline = resolveEffectiveTimeline(item.childTimeline, loadedChildPreview);
@@ -294,11 +295,16 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
       >
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {isWaitRunning ? (
+              <span
+                aria-hidden="true"
+                className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
+              />
+            ) : null}
             <span className="text-sm font-medium text-text-soft">{title}</span>
             {badge && <span className={cn("text-xs", badge.className)}>{badge.text}</span>}
             {hasRunningTool && <StatusDot color="accent" pulse />}
             {turnInfo && <span className="text-xs text-text/40">{turnInfo}</span>}
-            {item.timedOut && <span className="text-xs text-danger/80">timed out</span>}
           </div>
 
           {open ? (
@@ -306,6 +312,16 @@ export function CollabEventBlock({ item, loadChildThread }: CollabEventBlockProp
               {details ? <p className="text-xs leading-5 text-text/60">{details}</p> : null}
 
               {item.message ? <p className="text-xs text-text/65">{truncateUnicode(item.message, 240)}</p> : null}
+
+              {isWaitRunning ? (
+                <div className="flex items-center gap-2 text-xs text-accent/90">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/25 border-t-accent"
+                  />
+                  <span>Subagents are still working…</span>
+                </div>
+              ) : null}
 
               {item.eventType === "wait" && item.agents?.length ? (
                 <div className="space-y-1">

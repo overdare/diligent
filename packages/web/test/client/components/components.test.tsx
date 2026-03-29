@@ -539,6 +539,62 @@ test("collab event block uses clickable card semantics without explicit expand l
   expect(html).not.toContain(">collapse<");
 });
 
+test("collab wait event shows animated spinner while agents are still running", () => {
+  const html = renderToStaticMarkup(
+    <CollabEventBlock
+      item={{
+        id: "collab-wait-1",
+        kind: "collab",
+        eventType: "wait",
+        status: "running",
+        agents: [
+          {
+            threadId: "child-1",
+            nickname: "Juniper",
+            status: "running",
+            message: "Tracing UI state",
+          },
+        ],
+        childTools: [],
+        timestamp: 1,
+      }}
+    />,
+  );
+
+  expect(html).toContain("Waiting for Juniper");
+  expect(html).toContain("Subagents are still working…");
+  expect(html).toContain("animate-spin");
+});
+
+test("collab wait timeout keeps ongoing spinner UI without explicit timeout label", () => {
+  const html = renderToStaticMarkup(
+    <CollabEventBlock
+      item={{
+        id: "collab-wait-timeout-1",
+        kind: "collab",
+        eventType: "wait",
+        status: "running",
+        timedOut: true,
+        agents: [
+          {
+            threadId: "child-1",
+            nickname: "Juniper",
+            status: "running",
+            message: "Still tracing UI state",
+          },
+        ],
+        childTools: [],
+        timestamp: 1,
+      }}
+    />,
+  );
+
+  expect(html).toContain("Waiting for Juniper");
+  expect(html).toContain("Subagents are still working…");
+  expect(html).toContain("animate-spin");
+  expect(html).not.toContain("timed out");
+});
+
 test("collab event spawn persistence key is stable across remount-friendly ids", () => {
   const keyA = getCollabEventPersistenceKey({
     id: "collab:spawn:call-1",
