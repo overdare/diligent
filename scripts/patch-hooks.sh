@@ -2,6 +2,7 @@
 # @summary Patches lefthook-generated git hooks for Git Bash compatibility on Windows.
 # Injects LEFTHOOK_BIN using a POSIX path so Git Bash can find lefthook.exe
 # without relying on the hardcoded Windows absolute path bun generates.
+# Also ensures bun/node are in PATH for hook-invoked commands.
 
 PATCH_MARKER="# git-bash-compat-patch"
 
@@ -14,7 +15,7 @@ patch_hook() {
 
   # Build the patch block to inject after the shebang line
   PATCH=$(cat <<'PATCH_BLOCK'
-# git-bash-compat-patch: set LEFTHOOK_BIN to a POSIX path so Git Bash can execute it
+# git-bash-compat-patch: ensure lefthook, bun, and node are resolvable in Git Bash
 if [ -z "$LEFTHOOK_BIN" ]; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null)"
   if [ -n "$_root" ] && [ -f "$_root/node_modules/.bin/lefthook.exe" ]; then
@@ -22,6 +23,14 @@ if [ -z "$LEFTHOOK_BIN" ]; then
   fi
   unset _root
 fi
+# Ensure bun is in PATH (Git Bash may have a stripped-down PATH)
+export PATH="$HOME/.bun/bin:$PATH"
+# Provide a node shim when only bun is installed
+_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$_root" ] && [ -d "$_root/scripts/shims" ]; then
+  export PATH="$_root/scripts/shims:$PATH"
+fi
+unset _root
 PATCH_BLOCK
 )
 
@@ -40,4 +49,5 @@ PATCH_BLOCK
 }
 
 patch_hook ".git/hooks/pre-commit"
+patch_hook ".git/hooks/commit-msg"
 patch_hook ".git/hooks/pre-push"
