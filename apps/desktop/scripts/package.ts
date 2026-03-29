@@ -1,7 +1,7 @@
 // @summary Desktop packaging orchestrator — builds Tauri desktop app and assembles dist/
 
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
@@ -307,6 +307,24 @@ function fileSize(p: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Zip
+// ---------------------------------------------------------------------------
+
+function createPlatformZip(plat: PlatformTarget): string {
+  const platDir = join(DIST, plat.id);
+  const zipName = `${projectArtifactName}-${version}-${plat.id}.zip`;
+  const zipPath = join(DIST, zipName);
+
+  if (process.platform === "win32") {
+    run(`powershell -Command "Compress-Archive -Path '${platDir}\\*' -DestinationPath '${zipPath}' -Force"`, ROOT);
+  } else {
+    run(`zip -r "${zipPath}" .`, platDir);
+  }
+
+  return zipName;
+}
+
+// ---------------------------------------------------------------------------
 // Release metadata
 // ---------------------------------------------------------------------------
 
@@ -410,6 +428,14 @@ try {
     console.log(`\n🖥️  Building desktop: ${plat.id}`);
     buildDesktop(plat);
     collectDesktopArtifacts(plat, platDir, allArtifacts[plat.id]);
+  }
+
+  // Create per-platform zips
+  console.log("\n🗜️  Creating platform zips...");
+  for (const plat of platforms) {
+    if (plat.os !== currentOs()) continue;
+    const zipName = createPlatformZip(plat);
+    console.log(`   Created: ${zipName}`);
   }
 
   // Release metadata + checksums
