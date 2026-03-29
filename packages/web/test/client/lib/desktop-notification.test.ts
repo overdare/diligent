@@ -88,7 +88,7 @@ describe("DesktopNotificationController", () => {
     expect(setup.sent).toHaveLength(1);
     expect(setup.sent[0]).toMatchObject({
       title: "Diligent",
-      body: "A background conversation finished (turn-1).",
+      body: "Your request is complete.",
       extra: { threadId: "thread-1" },
     });
   });
@@ -150,7 +150,7 @@ describe("DesktopNotificationController", () => {
     await controller.notifyForServerRequest(10, request);
 
     expect(setup.sent).toMatchObject([
-      { title: "Diligent", body: "Input needed for 1 question.", extra: { threadId: "thread-1" } },
+      { title: "Diligent", body: "We need your input.", extra: { threadId: "thread-1" } },
     ]);
   });
 

@@ -87,7 +87,7 @@ function buildTurnCompletedPayload(notification: DiligentServerNotification): No
   return {
     id: nextNotificationId(),
     title: APP_PROJECT_NAME,
-    body: `A background conversation finished (${notification.params.turnId.slice(-6)}).`,
+    body: "Your request is complete.",
     dedupeKey: `turn-completed:${notification.params.threadId}:${notification.params.turnId}`,
     extra: { [NOTIFICATION_THREAD_ID_KEY]: notification.params.threadId },
   };
@@ -98,7 +98,7 @@ function buildServerRequestPayload(requestId: number, request: DiligentServerReq
     return {
       id: nextNotificationId(),
       title: APP_PROJECT_NAME,
-      body: `Approval needed for ${request.params.request.toolName}.`,
+      body: "We need your approval.",
       dedupeKey: `server-request:${requestId}:approval`,
       extra: { [NOTIFICATION_THREAD_ID_KEY]: request.params.threadId },
     };
@@ -108,7 +108,7 @@ function buildServerRequestPayload(requestId: number, request: DiligentServerReq
     return {
       id: nextNotificationId(),
       title: APP_PROJECT_NAME,
-      body: questionCount === 1 ? "Input needed for 1 question." : `Input needed for ${questionCount} questions.`,
+      body: "We need your input.",
       dedupeKey: `server-request:${requestId}:user-input`,
       extra: { [NOTIFICATION_THREAD_ID_KEY]: request.params.threadId },
     };
