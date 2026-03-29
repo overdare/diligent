@@ -407,6 +407,30 @@ function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): ThreadIt
   return items;
 }
 
+/**
+ * Hybrid persistence + live-state read for the `thread/read` protocol handler.
+ *
+ * This function combines two distinct data sources:
+ *  1. **Persisted JSONL** — the canonical transcript replayed by `runtime.manager`.
+ *     When the thread is idle, `reconcileFromDisk()` is called first so the in-memory
+ *     view is consistent with what is on disk.
+ *  2. **Live agent registry state** — in-memory data from
+ *     `runtime.agent?.registry?.getKnownAgents()` that is injected via
+ *     `applyLiveCollabStatusesToSnapshot()`. This state is never written to JSONL until
+ *     a collaborating agent completes its turn.
+ *
+ * **Non-idempotency during active collaboration sessions:**
+ * Two identical `thread/read` calls issued while a collaboration session is in progress
+ * may return different results because the live overlay reflects transient registry state
+ * (e.g. agent status transitions) that has not yet been persisted.  Callers must not
+ * cache or diff responses as if they were stable snapshots during this window.
+ *
+ * **Contract for future enrichments:**
+ * If you need to overlay additional non-persisted (live) state onto the response, document
+ * it in this comment block and apply it alongside `applyLiveCollabStatusesToSnapshot()`.
+ * Do not silently introduce new live-state overlays; doing so expands the non-idempotency
+ * window without making the contract visible to reviewers and consumers.
+ */
 export async function handleThreadRead(
   ctx: ThreadHandlersContext,
   threadId?: string,
