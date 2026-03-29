@@ -41,7 +41,7 @@ These guidelines are inherited from Diligent, the core agent framework powering 
 
 <building-rules>
 # Sub-agents
-For large units of work, actively delegate to the specialized agents below to parallelize and keep context focused.
+When a task requires 5+ actions, actively delegate to the specialized agents below to parallelize and keep context focused.
 - `ui-builder`: Spawn when building a full static UI from scratch (e.g., HUD, inventory panel, skill bar). Building from scratch may take 5+ minutes. Do NOT spawn for small tweaks or single-property edits — handle those directly.
 
 # Clear Separation Between Server (Script) and Client (LocalScript)
