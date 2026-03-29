@@ -8,7 +8,7 @@ import {
 } from "@diligent/protocol";
 import type { PlanState, ThreadState } from "./thread-store";
 import { reduceServerNotification } from "./thread-store";
-import { parsePlanOutput, updateItem, withItem, zeroUsage } from "./thread-utils";
+import { normalizeToolName, parsePlanOutput, updateItem, withItem, zeroUsage } from "./thread-utils";
 
 function parseSpawnOutput(output: string): { threadId?: string; nickname?: string } {
   try {
@@ -149,7 +149,9 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     }
 
     if (item.type === "toolCall") {
-      if (item.toolName === "spawn_agent" && typeof item.output === "string") {
+      const normalizedToolName = normalizeToolName(item.toolName);
+
+      if (normalizedToolName === "spawn_agent" && typeof item.output === "string") {
         const spawn = parseSpawnOutput(item.output);
         const childThreadId = spawn.threadId;
         if (childThreadId) {
@@ -182,7 +184,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
         continue;
       }
 
-      if (item.toolName === "wait" && typeof item.output === "string") {
+      if (normalizedToolName === "wait" && typeof item.output === "string") {
         const waitData = parseWaitOutput(item.output);
         const snapshotWaitItem = payload.items
           .filter(
@@ -221,7 +223,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
         continue;
       }
 
-      if (item.toolName === "close_agent" && typeof item.output === "string") {
+      if (normalizedToolName === "close_agent" && typeof item.output === "string") {
         const close = parseCloseOutput(item.output);
         const resolvedThreadId = close.threadId ?? spawnToolCallToThreadId.get(item.toolCallId);
         if (resolvedThreadId && close.status) {
@@ -281,7 +283,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
 
   let lastPlan: PlanState | null = null;
   for (const item of payload.items) {
-    if (item.type === "toolCall" && item.toolName === "plan" && typeof item.output === "string") {
+    if (item.type === "toolCall" && normalizeToolName(item.toolName) === "plan" && typeof item.output === "string") {
       const plan = parsePlanOutput(item.output);
       if (plan) {
         const allResolved = plan.steps.every((s) => s.status === "done" || s.status === "cancelled");

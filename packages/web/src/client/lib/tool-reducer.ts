@@ -4,7 +4,13 @@ import type { AgentEvent } from "@diligent/protocol";
 import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import { findCollabSpawnItem } from "./collab-reducer";
 import type { ThreadState } from "./thread-store";
-import { COLLAB_RENDERED_TOOLS, parsePlanOutput, stringifyUnknown, updateItem } from "./thread-utils";
+import {
+  COLLAB_RENDERED_TOOLS,
+  normalizeToolName,
+  parsePlanOutput,
+  stringifyUnknown,
+  updateItem,
+} from "./thread-utils";
 
 let toolRenderSeq = 0;
 
@@ -38,6 +44,7 @@ export function isToolEvent(event: AgentEvent): event is ToolAgentEvent {
 export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): ThreadState {
   switch (event.type) {
     case "tool_start": {
+      const normalizedToolName = normalizeToolName(event.toolName);
       if (event.childThreadId) {
         const spawnItem = findCollabSpawnItem(state, event.childThreadId);
         if (!spawnItem) {
@@ -82,7 +89,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
         );
       }
 
-      if (COLLAB_RENDERED_TOOLS.has(event.toolName)) return state;
+      if (COLLAB_RENDERED_TOOLS.has(normalizedToolName)) return state;
       const renderId = nextToolRenderId(event.itemId);
       if (state.itemSlots[event.itemId]) return state;
       const now = Date.now();
@@ -150,6 +157,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
     }
 
     case "tool_end": {
+      const normalizedToolName = normalizeToolName(event.toolName);
       if (event.childThreadId) {
         const spawnItem = findCollabSpawnItem(state, event.childThreadId);
         if (!spawnItem) {
@@ -217,7 +225,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
         itemSlots: remainingSlots,
       };
 
-      if (event.toolName === "plan" && event.output) {
+      if (normalizedToolName === "plan" && event.output) {
         const plan = parsePlanOutput(event.output);
         if (plan) {
           const allResolved = plan.steps.every((s) => s.status === "done" || s.status === "cancelled");

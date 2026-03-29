@@ -1,6 +1,7 @@
 // @summary Tool display name, icon, and category mapping for compact ToolCallRow rendering
 
 import type { ToolRenderPayload } from "@diligent/protocol";
+import { normalizeToolName } from "./thread-utils";
 
 export interface ToolInfo {
   displayName: string;
@@ -40,7 +41,8 @@ const TOOL_MAP: Record<string, ToolInfo> = {
 };
 
 export function getToolInfo(toolName: string): ToolInfo {
-  return TOOL_MAP[toolName.toLowerCase()] ?? { displayName: toolName, icon: "⚙", category: "action" };
+  const normalized = normalizeToolName(toolName);
+  return TOOL_MAP[normalized] ?? { displayName: toolName, icon: "⚙", category: "action" };
 }
 
 export function formatToolDurationMs(durationMs?: number): string | null {
@@ -81,7 +83,7 @@ export function isContextTool(toolName: string): boolean {
 }
 
 export function isBashTool(toolName: string): boolean {
-  return toolName.toLowerCase() === "bash";
+  return normalizeToolName(toolName) === "bash";
 }
 
 export function summarizeOutput(renderPayload?: ToolRenderPayload): string {

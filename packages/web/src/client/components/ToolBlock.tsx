@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
+import { normalizeToolName } from "../lib/thread-utils";
 import { formatToolDurationMs, getToolHeaderTitle, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { ContentText } from "./ContentText";
 import { StatusDot } from "./StatusDot";
@@ -41,7 +42,8 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const [open, setOpen] = useState(false);
   const renderPayload = item.render;
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
-  const isUserInput = item.toolName.toLowerCase() === "request_user_input";
+  const normalizedToolName = normalizeToolName(item.toolName);
+  const isUserInput = normalizedToolName === "request_user_input";
   const outputSummary = renderPayload && !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
   const showOutputSummary = Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
   const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;

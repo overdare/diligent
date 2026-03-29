@@ -3,6 +3,7 @@
 import type { ApprovalRequest, ThreadReadResponse, ThreadStatus, UserInputRequest } from "@diligent/protocol";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { RenderItem } from "../lib/thread-store";
+import { normalizeToolName } from "../lib/thread-utils";
 import { ApprovalCard } from "./ApprovalCard";
 import { AssistantMessage } from "./AssistantMessage";
 import { CollabGroup } from "./CollabGroup";
@@ -80,7 +81,8 @@ function renderGroupedItems(
     } else if (item.kind === "assistant") {
       const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
       const nextItem = items[idx + 1];
-      const isFollowedByUserInputTool = nextItem?.kind === "tool" && nextItem.toolName === "request_user_input";
+      const isFollowedByUserInputTool =
+        nextItem?.kind === "tool" && normalizeToolName(nextItem.toolName) === "request_user_input";
       const displayItem = isFollowedByUserInputTool ? { ...assistantItem, text: "" } : assistantItem;
       result.push(<AssistantMessage key={item.id} item={displayItem} />);
     }

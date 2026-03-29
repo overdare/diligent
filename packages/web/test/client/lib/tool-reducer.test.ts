@@ -122,6 +122,16 @@ test("tool_start skips collab-rendered tools (close_agent)", () => {
   expect(next.items).toHaveLength(0);
 });
 
+test("tool_start skips collab-rendered tools with namespaced name", () => {
+  const event = toolStartEvent({
+    itemId: "ts-collab-ns",
+    toolCallId: "tc-spawn-ns",
+    toolName: "overdare/spawn_agent",
+  });
+  const next = reduceToolEvent(initialThreadState, event);
+  expect(next.items).toHaveLength(0);
+});
+
 // ---------------------------------------------------------------------------
 // reduceToolEvent — tool_update (top-level)
 // ---------------------------------------------------------------------------
@@ -225,6 +235,27 @@ test("tool_end marks item as error when isError is true", () => {
   const item = state.items.find((i) => i.kind === "tool");
   expect(item?.kind === "tool" ? item.isError : false).toBe(true);
   expect(item?.kind === "tool" ? item.status : "").toBe("done");
+});
+
+test("tool_end updates plan state for namespaced plan tool", () => {
+  const start = toolStartEvent({ itemId: "te-plan-ns", toolCallId: "tc-plan-ns", toolName: "functions.plan" });
+  let state = reduceToolEvent(initialThreadState, start);
+
+  const end: ToolAgentEvent = {
+    type: "tool_end",
+    itemId: "te-plan-ns",
+    toolCallId: "tc-plan-ns",
+    toolName: "functions.plan",
+    output: JSON.stringify({
+      title: "Plan",
+      steps: [{ text: "step 1", status: "pending" }],
+    }),
+    isError: false,
+  };
+  state = reduceToolEvent(state, end);
+
+  expect(state.planState?.title).toBe("Plan");
+  expect(state.planState?.steps).toHaveLength(1);
 });
 
 test("tool_end returns state unchanged when renderId not found", () => {

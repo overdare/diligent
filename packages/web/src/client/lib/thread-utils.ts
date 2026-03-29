@@ -6,6 +6,23 @@ import type { PlanState, RenderItem, ThreadState, UsageState } from "./thread-st
 /** Tools that produce collab RenderItems — suppress duplicate ToolBlock rendering. */
 export const COLLAB_RENDERED_TOOLS = new Set(["spawn_agent", "wait", "close_agent"]);
 
+/**
+ * Normalize tool names for UI rule matching.
+ * Examples:
+ * - "request_user_input" -> "request_user_input"
+ * - "functions.request_user_input" -> "request_user_input"
+ * - "overdare/request_user_input" -> "request_user_input"
+ */
+export function normalizeToolName(toolName: string): string {
+  const raw = toolName.trim().toLowerCase();
+  if (!raw) return raw;
+
+  const slashIdx = raw.lastIndexOf("/");
+  const dotIdx = raw.lastIndexOf(".");
+  const cutIdx = Math.max(slashIdx, dotIdx);
+  return cutIdx >= 0 ? raw.slice(cutIdx + 1) : raw;
+}
+
 export const zeroUsage: UsageState = {
   inputTokens: 0,
   outputTokens: 0,

@@ -513,6 +513,34 @@ test("tool block shows request summary in header and response summary once below
   expect(html.match(/src\/ARCHITECTURE\.md/g)?.length).toBe(1);
 });
 
+test("tool block treats namespaced request_user_input as user-input tool (hides output summary)", () => {
+  const html = renderToStaticMarkup(
+    <ToolBlock
+      item={{
+        id: "tool-4",
+        kind: "tool",
+        toolName: "overdare/request_user_input",
+        inputText: '{"questions":[{"id":"q1"}]}',
+        outputText: "[Done] Answer submitted",
+        isError: false,
+        status: "done",
+        timestamp: 400,
+        toolCallId: "call-4",
+        startedAt: 300,
+        durationMs: 15,
+        render: {
+          inputSummary: "Ask player",
+          outputSummary: "Answer submitted",
+          blocks: [],
+        },
+      }}
+    />,
+  );
+
+  expect(html).toContain("Input - Ask player");
+  expect(html).not.toContain("↳ Answer submitted");
+});
+
 test("collab event block uses clickable card semantics without explicit expand labels", () => {
   const html = renderToStaticMarkup(
     <CollabEventBlock

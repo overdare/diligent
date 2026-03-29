@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import type { RenderItem } from "../lib/thread-store";
+import { normalizeToolName } from "../lib/thread-utils";
 import { getToolHeaderTitle, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { SectionLabel } from "./SectionLabel";
 import { StatusDot } from "./StatusDot";
@@ -15,7 +16,8 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
   const [open, setOpen] = useState(false);
   const renderPayload = item.render;
   const headerTitle = getToolHeaderTitle(item.toolName, renderPayload);
-  const isUserInput = item.toolName.toLowerCase() === "request_user_input";
+  const normalizedToolName = normalizeToolName(item.toolName);
+  const isUserInput = normalizedToolName === "request_user_input";
   const outputSummary = renderPayload && !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
   const showOutputSummary = Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
 
