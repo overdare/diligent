@@ -682,6 +682,14 @@ Decisions made during synthesis reviews, with rationale.
 - **References**: `packages/runtime/src/app-server/server.ts:341`, D089, D091, D043
 - **Date**: 2026-03-22
 
+### D098: Plugin-SDK ToolContext extends core ToolContext — inverted capability boundary is intentional
+- **Decision**: Keep `ToolContext` in `packages/plugin-sdk/src/index.ts` as a superset of core `ToolContext` (`packages/core/src/tool/types.ts`). Plugin-SDK `ToolContext` adds `approve()` and `ask()` methods; core `ToolContext` does not expose them.
+- **Rationale**: The two `ToolContext` types serve different populations with different access constraints. Core `ToolContext` is the minimal execution contract for built-in tools — they receive `toolCallId`, `signal`, `abort()`, and `onUpdate()`. Built-in tools access approval and user-input through runtime bridges wired outside the tool interface (the approval engine intercepts tool execution and injects decisions). Plugin tools cannot depend on runtime internals, so their `ToolContext` includes `approve()` and `ask()` as runtime-bridged callbacks injected at dispatch time. This keeps plugins self-contained while keeping the core interface minimal.
+- **Consequence**: Contributors reading `core/tool/types.ts` will see a ToolContext without `approve()`/`ask()` — this is correct and intentional. Contributors reading `plugin-sdk/src/index.ts` will see a superset — also correct. The two interfaces diverge by design and must be maintained separately. When a new runtime-mediated capability is needed for plugins (e.g., a `log()` hook), it must be added to plugin-sdk `ToolContext` with a corresponding runtime injection — it must NOT be added to core `ToolContext`.
+- **Alternatives considered**: (a) Unify into a single `ToolContext` in `@diligent/protocol` — rejected: would expose runtime control fields (`abortRequested`, `truncateDirection`) or require conditional optional fields that erode type safety. (b) Add `approve()`/`ask()` to core `ToolContext` — rejected: breaks the abstraction boundary; built-in tools would be expected to use these directly instead of via runtime bridges.
+- **References**: `packages/core/src/tool/types.ts:15-20`, `packages/plugin-sdk/src/index.ts:14-21`
+- **Date**: 2026-03-26
+
 ### D097: CLI COLLAB_TOOL_NAMES — accept local duplication with canonical reference comment
 - **Decision**: Keep `COLLAB_TOOL_NAMES` in `packages/cli/src/tui/components/thread-store-utils.ts` as a CLI-local constant with a code comment referencing the canonical source in `packages/runtime/src/tools/tool-metadata.ts`.
 - **Rationale**: The CLI constant is a UI rendering concern; the runtime constant is a tool-filtering concern derived from `TOOL_CAPABILITIES`. Moving to `@diligent/protocol` would expose a runtime implementation detail as a client-visible protocol semantic. The duplication is 4 string literals that change infrequently.
