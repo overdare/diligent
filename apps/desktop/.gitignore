@@ -6,3 +6,4 @@ src-tauri/resources/defaults/
 src-tauri/.rust-build-hash
 src-tauri/.diligent-packaging/
 src-tauri/.diligent-packaging-icons/
+src-tauri/gen/
