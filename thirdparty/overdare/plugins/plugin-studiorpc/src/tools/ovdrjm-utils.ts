@@ -104,8 +104,8 @@ function encodeOvdrjm(text: string, originalBuf: Buffer): Buffer {
 
 export function readAndWriteOvdrjm(
   cwd: string,
-  update: (rootDoc: Record<string, unknown>) => { guids: string[] },
-): { umapPath: string; ovdrjmPath: string; changedGuids: string[] } {
+  update: (rootDoc: Record<string, unknown>) => { added: { guid: string; name: string; class: string }[] },
+): { umapPath: string; ovdrjmPath: string; added: { guid: string; name: string; class: string }[] } {
   const { umapPath, ovdrjmPath } = resolveOvdrjmPathFromUmap(cwd);
   const buf = readFileSync(ovdrjmPath);
   const raw = decodeOvdrjm(buf);
@@ -113,5 +113,5 @@ export function readAndWriteOvdrjm(
   const outcome = update(parsedJson);
   const output = `${JSON.stringify(parsedJson, null, 2)}\n`;
   writeFileSync(ovdrjmPath, encodeOvdrjm(output, buf));
-  return { umapPath, ovdrjmPath, changedGuids: outcome.guids };
+  return { umapPath, ovdrjmPath, added: outcome.added };
 }

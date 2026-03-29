@@ -1,6 +1,7 @@
 // @summary Applies batched add or update instance changes to the level file.
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
+import { collectUiDiagnostics } from "../methods/instance.upsert.ts";
 import { call } from "../rpc.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
@@ -45,13 +46,15 @@ async function executeInstanceUpsert(
     };
   }
 
+  let ovdrjmRoot: OvdrjmNode | undefined;
+
   const fileResult = readAndWriteOvdrjm(cwd, (rootDoc) => {
     const root = rootDoc.Root;
     if (!isRecord(root)) {
       throw new Error("Invalid .ovdrjm format: Root object is missing.");
     }
 
-    const changedGuids: string[] = [];
+    const added: { guid: string; name: string; class: string }[] = [];
     for (const item of parsedArgs.items) {
       if (instanceUpsert.isUpdateItem(item)) {
         const target = findNodeByActorGuid(root as OvdrjmNode, item.guid);
@@ -62,7 +65,6 @@ async function executeInstanceUpsert(
         if (typeof item.name === "string") {
           target.Name = item.name;
         }
-        changedGuids.push(item.guid);
         continue;
       }
 
@@ -83,10 +85,11 @@ async function executeInstanceUpsert(
         ...(item.properties as Record<string, unknown>),
       };
       childList.push(newNode);
-      changedGuids.push(newGuid);
+      added.push({ guid: newGuid, name: item.name, class: item.class });
     }
 
-    return { guids: changedGuids };
+    ovdrjmRoot = root as OvdrjmNode;
+    return { added };
   });
 
   const executeApproval = await ctx.approve({
@@ -102,20 +105,33 @@ async function executeInstanceUpsert(
     };
   }
 
-  const result = await call("level.apply", {});
+  await call("level.apply", {});
   await call("level.save.file", {});
-  const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+  const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
+
+  const lines: string[] = [];
+  if (fileResult.added.length > 0) {
+    lines.push("Added instances:");
+    for (const a of fileResult.added) {
+      lines.push(`  - ${a.name} (${a.class}) guid=${a.guid}`);
+    }
+  }
+  if (diag.warnings.length > 0) {
+    lines.push("Mobile UI warnings:");
+    lines.push(...diag.warnings);
+  }
+  if (diag.info.length > 0) {
+    lines.push("Mobile UI suggestions:");
+    lines.push(...diag.info);
+  }
 
   return {
-    output,
+    output: lines.join("\n") || "OK",
     metadata: {
       method: "instance.upsert",
-      umapPath: fileResult.umapPath,
-      ovdrjmPath: fileResult.ovdrjmPath,
-      targetGuids: fileResult.changedGuids,
-      addCount: parsedArgs.items.filter((item) => !instanceUpsert.isUpdateItem(item)).length,
-      updateCount: parsedArgs.items.filter((item) => instanceUpsert.isUpdateItem(item)).length,
-      levelApplyResult: result,
+      added: fileResult.added,
+      ...(diag.warnings.length > 0 && { warnings: diag.warnings }),
+      ...(diag.info.length > 0 && { info: diag.info }),
     },
   };
 }

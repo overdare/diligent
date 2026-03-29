@@ -2,6 +2,7 @@ import type { Tool } from "@diligent/plugin-sdk";
 import { call } from "./rpc.ts";
 import { methodModules, mutatingMethods, renderBuilders } from "./tool-registry.ts";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool.ts";
+import { createInstanceMoveTool } from "./tools/instance-move-tool.ts";
 import { createInstanceReadTool } from "./tools/instance-read-tool.ts";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool.ts";
 
@@ -20,6 +21,7 @@ export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
     createInstanceReadTool(ctx.cwd),
     createInstanceUpsertTool(ctx.cwd),
     createInstanceDeleteTool(ctx.cwd),
+    createInstanceMoveTool(ctx.cwd),
   ];
 
   for (const mod of methodModules) {

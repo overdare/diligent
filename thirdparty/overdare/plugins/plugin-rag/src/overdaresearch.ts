@@ -56,7 +56,7 @@ export const description = `Searches OVERDARE documentation, code examples, and 
 Use this tool to find relevant OVERDARE API references, guides, code examples, Lua scripts, and asset metadata.
 
 When to use each source:
-  - Always start with topK=3~5; only increase if results are insufficient — do NOT start with topK=5 or higher
+  - Default topK by source: docs=4, code=4, assets=8; only increase if results are insufficient
   - "docs": API references, conceptual guides, configuration details, service descriptions
   - "code": Working Lua implementation examples, proven patterns, real script snippets
   - "assets": Asset catalog search returning asset metadata such as title, keywords, assetId, assetType, categoryId, and subCategoryId
@@ -76,14 +76,7 @@ export const parameters = z.object({
     .describe(
       "docs = API references and guides. code = working Lua implementation examples and patterns. assets = asset catalog search with asset metadata fields.",
     ),
-  topK: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(3)
-    .optional()
-    .describe("Number of results to return (1-20, default: 3)"),
+  topK: z.number().int().min(1).max(10).describe("Number of results to return"),
 });
 
 type Params = z.infer<typeof parameters>;
