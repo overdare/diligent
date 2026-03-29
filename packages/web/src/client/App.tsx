@@ -163,16 +163,6 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [openThread]);
 
-  // Temporarily disable the browser context menu across the whole web app.
-  // Area-specific right-click actions can be attached later on top of this.
-  useEffect(() => {
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("contextmenu", handleContextMenu);
-    return () => window.removeEventListener("contextmenu", handleContextMenu);
-  }, []);
-
   useEffect(() => {
     if (!state.toast) return;
     if (state.toast.kind === "error") {

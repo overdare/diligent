@@ -9,7 +9,12 @@ type NotificationPermission = "default" | "denied" | "granted";
 type NotificationApi = {
   isPermissionGranted: () => Promise<boolean>;
   requestPermission: () => Promise<NotificationPermission>;
-  sendNotification: (options: { title: string; body: string; extra?: Record<string, unknown> }) => Promise<void>;
+  sendNotification: (options: {
+    id: number;
+    title: string;
+    body: string;
+    extra?: Record<string, unknown>;
+  }) => Promise<void>;
   onAction: (
     callback: (notification: { extra?: Record<string, unknown> }) => void,
   ) => Promise<{ unregister: () => void }>;
@@ -22,15 +27,32 @@ type NotificationEnvironment = {
 };
 
 type NotifyPayload = {
+  id: number;
   title: string;
   body: string;
   dedupeKey: string;
   extra?: Record<string, unknown>;
 };
 
+type NotifyContext = {
+  source: "turn_completed" | "server_request";
+};
+
 const REQUEST_DEDUPE_TTL_MS = 30_000;
 const NOTIFICATION_THREAD_ID_KEY = "threadId";
 export const DESKTOP_NOTIFICATIONS_STORAGE_KEY = "diligent.desktopNotifications.enabled";
+const MAX_NOTIFICATION_ID = 2_147_483_647;
+
+let lastNotificationId = 0;
+
+function nextNotificationId(): number {
+  const now = Date.now() % MAX_NOTIFICATION_ID;
+  lastNotificationId = Math.max(now, lastNotificationId + 1);
+  if (lastNotificationId > MAX_NOTIFICATION_ID) {
+    lastNotificationId = 1;
+  }
+  return lastNotificationId;
+}
 
 function hasDesktopTauri(): boolean {
   return typeof window !== "undefined" && typeof (window as Window & { __TAURI__?: unknown }).__TAURI__ !== "undefined";
@@ -51,8 +73,8 @@ async function createTauriNotificationApi(): Promise<NotificationApi | null> {
   return {
     isPermissionGranted: plugin.isPermissionGranted,
     requestPermission: plugin.requestPermission,
-    sendNotification: async ({ title, body, extra }) => {
-      await plugin.sendNotification({ title, body, extra });
+    sendNotification: async ({ id, title, body, extra }) => {
+      await plugin.sendNotification({ id, title, body, extra });
     },
     onAction: async (callback) => plugin.onAction(callback),
   };
@@ -63,8 +85,9 @@ function buildTurnCompletedPayload(notification: DiligentServerNotification): No
     return null;
   }
   return {
+    id: nextNotificationId(),
     title: APP_PROJECT_NAME,
-    body: "A background conversation finished.",
+    body: `A background conversation finished (${notification.params.turnId.slice(-6)}).`,
     dedupeKey: `turn-completed:${notification.params.threadId}:${notification.params.turnId}`,
     extra: { [NOTIFICATION_THREAD_ID_KEY]: notification.params.threadId },
   };
@@ -73,6 +96,7 @@ function buildTurnCompletedPayload(notification: DiligentServerNotification): No
 function buildServerRequestPayload(requestId: number, request: DiligentServerRequest): NotifyPayload | null {
   if (request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) {
     return {
+      id: nextNotificationId(),
       title: APP_PROJECT_NAME,
       body: `Approval needed for ${request.params.request.toolName}.`,
       dedupeKey: `server-request:${requestId}:approval`,
@@ -82,6 +106,7 @@ function buildServerRequestPayload(requestId: number, request: DiligentServerReq
   if (request.method === DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST) {
     const questionCount = request.params.request.questions.length;
     return {
+      id: nextNotificationId(),
       title: APP_PROJECT_NAME,
       body: questionCount === 1 ? "Input needed for 1 question." : `Input needed for ${questionCount} questions.`,
       dedupeKey: `server-request:${requestId}:user-input`,
@@ -142,55 +167,75 @@ export class DesktopNotificationController {
       return;
     }
     this.actionListenerRegistered = true;
-    await api.onAction((notification) => {
-      const threadId = readThreadIdFromExtra(notification.extra);
-      if (!threadId) {
-        return;
-      }
-      if (typeof window !== "undefined") {
-        window.focus();
-      }
-      onOpenThread(threadId);
-    });
+    try {
+      await api.onAction((notification) => {
+        const threadId = readThreadIdFromExtra(notification.extra);
+        if (!threadId) {
+          return;
+        }
+        if (typeof window !== "undefined") {
+          window.focus();
+        }
+        onOpenThread(threadId);
+      });
+    } catch (error) {
+      this.actionListenerRegistered = false;
+      console.warn("[desktop-notification] action-listener-unavailable", error);
+    }
   }
 
   async notifyForNotification(notification: DiligentServerNotification): Promise<void> {
     const payload = buildTurnCompletedPayload(notification);
-    await this.notify(payload);
+    await this.notify(payload, { source: "turn_completed" });
   }
 
   async notifyForServerRequest(requestId: number, request: DiligentServerRequest): Promise<void> {
     const payload = buildServerRequestPayload(requestId, request);
-    await this.notify(payload);
+    await this.notify(payload, { source: "server_request" });
   }
 
-  private async notify(payload: NotifyPayload | null): Promise<void> {
+  private async notify(payload: NotifyPayload | null, context: NotifyContext): Promise<void> {
     if (!payload) {
+      this.log("skip:no-payload", context);
       return;
     }
     if (!this.enabled) {
+      this.log("skip:disabled", context, { dedupeKey: payload.dedupeKey });
       return;
     }
-    if (!this.environment.isDesktop() || !this.environment.isBackgrounded()) {
+    if (!this.environment.isDesktop()) {
+      this.log("skip:not-desktop", context, { dedupeKey: payload.dedupeKey });
+      return;
+    }
+    if (!this.environment.isBackgrounded()) {
+      this.log("skip:foreground", context, { dedupeKey: payload.dedupeKey });
       return;
     }
     this.pruneRecentKeys();
     if (this.recentKeys.has(payload.dedupeKey)) {
+      this.log("skip:deduped", context, { dedupeKey: payload.dedupeKey });
       return;
     }
 
     const api = await this.environment.createApi();
     if (!api) {
+      this.log("skip:no-api", context, { dedupeKey: payload.dedupeKey });
       return;
     }
 
     const granted = await this.ensurePermission(api);
     if (!granted) {
+      this.log("skip:permission-denied", context, { dedupeKey: payload.dedupeKey });
       return;
     }
 
-    await api.sendNotification({ title: payload.title, body: payload.body, extra: payload.extra });
+    await api.sendNotification({ id: payload.id, title: payload.title, body: payload.body, extra: payload.extra });
     this.recentKeys.set(payload.dedupeKey, Date.now());
+    this.log("sent", context, {
+      id: payload.id,
+      dedupeKey: payload.dedupeKey,
+      title: payload.title,
+    });
   }
 
   private async ensurePermission(api: NotificationApi): Promise<boolean> {
@@ -211,6 +256,14 @@ export class DesktopNotificationController {
         this.recentKeys.delete(key);
       }
     }
+  }
+
+  private log(event: string, context: NotifyContext, details?: Record<string, unknown>): void {
+    console.log("[desktop-notification]", event, {
+      source: context.source,
+      enabled: this.enabled,
+      ...details,
+    });
   }
 }
 

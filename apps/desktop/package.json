@@ -5,7 +5,7 @@
   "scripts": {
     "build:frontend": "bun run --cwd ../../packages/web build",
     "build:sidecar": "bun run scripts/build-sidecar.ts",
-    "dev": "bun run build:sidecar && bunx tauri dev",
+    "dev": "bun run build:frontend && bun run build:sidecar && bunx tauri dev",
     "build": "bun run build:frontend && bun run build:sidecar && bunx tauri build"
   },
   "devDependencies": {

@@ -67,6 +67,8 @@ export function useServerRequests(
     (requestId: number, request: DiligentServerRequest): void => {
       const threadId = request.params?.threadId;
 
+      onBackgroundServerRequest?.(requestId, request);
+
       if (threadId && activeThreadIdRef?.current && threadId !== activeThreadIdRef.current) {
         const prev = bufferedRef.current.get(threadId);
         if (prev) {
@@ -74,7 +76,6 @@ export function useServerRequests(
         }
         bufferedRef.current.set(threadId, { requestId, request });
         onAttention?.(threadId);
-        onBackgroundServerRequest?.(requestId, request);
         return;
       }
 

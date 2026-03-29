@@ -14,7 +14,7 @@ function createNotificationEnvironment(options?: {
   granted?: boolean;
   permissionResult?: "default" | "denied" | "granted";
 }) {
-  const sent: Array<{ title: string; body: string }> = [];
+  const sent: Array<{ id: number; title: string; body: string; extra?: Record<string, unknown> }> = [];
   const actionCallbacks: Array<(notification: { extra?: Record<string, unknown> }) => void> = [];
   let granted = options?.granted ?? true;
   const permissionResult = options?.permissionResult ?? "granted";
@@ -31,7 +31,12 @@ function createNotificationEnvironment(options?: {
           granted = permissionResult === "granted";
           return permissionResult;
         },
-        sendNotification: async (payload: { title: string; body: string }) => {
+        sendNotification: async (payload: {
+          id: number;
+          title: string;
+          body: string;
+          extra?: Record<string, unknown>;
+        }) => {
           sent.push(payload);
         },
         onAction: async (callback: (notification: { extra?: Record<string, unknown> }) => void) => {
@@ -80,9 +85,12 @@ describe("DesktopNotificationController", () => {
 
     await controller.notifyForNotification(notification);
 
-    expect(setup.sent).toEqual([
-      { title: "Diligent", body: "A background conversation finished.", extra: { threadId: "thread-1" } },
-    ]);
+    expect(setup.sent).toHaveLength(1);
+    expect(setup.sent[0]).toMatchObject({
+      title: "Diligent",
+      body: "A background conversation finished (turn-1).",
+      extra: { threadId: "thread-1" },
+    });
   });
 
   test("opens the related thread when notification action fires", async () => {
@@ -141,7 +149,7 @@ describe("DesktopNotificationController", () => {
     await controller.notifyForServerRequest(10, request);
     await controller.notifyForServerRequest(10, request);
 
-    expect(setup.sent).toEqual([
+    expect(setup.sent).toMatchObject([
       { title: "Diligent", body: "Input needed for 1 question.", extra: { threadId: "thread-1" } },
     ]);
   });

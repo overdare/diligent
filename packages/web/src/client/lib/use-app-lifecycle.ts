@@ -115,6 +115,9 @@ export function useAppRpcBindings({
       const attentionThreadId = shouldMarkAttentionThread(notification, notificationParams, activeThreadIdRef.current);
       if (attentionThreadId) {
         markAttention(attentionThreadId);
+      }
+
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
         onBackgroundNotification(notification);
       }
 

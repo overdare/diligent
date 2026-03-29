@@ -2,7 +2,10 @@
   "$schema": "../node_modules/@tauri-apps/cli/schema/acl-manifests.d.ts",
   "identifier": "default",
   "description": "Default capabilities for Diligent desktop app",
-  "windows": ["main"],
+  "windows": ["main", "app"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
   "permissions": [
     "core:default",
     "shell:allow-spawn",
