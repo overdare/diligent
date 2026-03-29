@@ -3,7 +3,7 @@
 import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 
@@ -26,6 +26,40 @@ type ThreadResetDraftAction = { type: "reset_draft"; payload: { mode: Mode } };
 type ThreadSetAction = { type: "set_threads"; payload: SessionSummary[] };
 type ThreadDispatch = (action: ThreadHydrateAction | ThreadResetDraftAction | ThreadSetAction) => void;
 
+type ActiveThreadSubscription = {
+  threadId: string;
+  subscriptionId: string;
+};
+
+export async function switchThreadSubscription({
+  rpc,
+  activeSubscription,
+  threadId,
+  activateThreadPrompts,
+}: {
+  rpc: WebRpcClient;
+  activeSubscription: ActiveThreadSubscription | null;
+  threadId: string;
+  activateThreadPrompts: (threadId: string) => void;
+}): Promise<ActiveThreadSubscription> {
+  if (activeSubscription?.threadId === threadId) {
+    activateThreadPrompts(threadId);
+    return activeSubscription;
+  }
+
+  if (activeSubscription) {
+    try {
+      await rpc.unsubscribe(activeSubscription.subscriptionId);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const subscribed = await rpc.subscribe(threadId);
+  activateThreadPrompts(threadId);
+  return { threadId, subscriptionId: subscribed.subscriptionId };
+}
+
 export function useThreadManager({
   rpcRef,
   dispatch,
@@ -34,7 +68,7 @@ export function useThreadManager({
   applySessionModel,
   resetDraftModel,
   setEffortState,
-  activateServerThread,
+  activateThreadPrompts,
   clearAttention,
   closeModals,
 }: {
@@ -45,12 +79,44 @@ export function useThreadManager({
   applySessionModel: (sessionModel?: string) => Promise<void>;
   resetDraftModel: () => void;
   setEffortState: (effort: ThinkingEffort) => void;
-  activateServerThread: (threadId: string) => void;
+  activateThreadPrompts: (threadId: string) => void;
   clearAttention: (threadId: string) => void;
   closeModals: () => void;
 }) {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
+  const activeSubscriptionRef = useRef<ActiveThreadSubscription | null>(null);
+
+  const deactivateServerThread = useCallback(async (): Promise<void> => {
+    const rpc = rpcRef.current;
+    const activeSubscription = activeSubscriptionRef.current;
+    activeSubscriptionRef.current = null;
+    if (!rpc || !activeSubscription) return;
+    try {
+      await rpc.unsubscribe(activeSubscription.subscriptionId);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [rpcRef]);
+
+  const activateServerThread = useCallback(
+    async (threadId: string): Promise<ThreadReadResponse> => {
+      const rpc = rpcRef.current;
+      if (!rpc) {
+        throw new Error("WebSocket is not connected");
+      }
+
+      activeSubscriptionRef.current = await switchThreadSubscription({
+        rpc,
+        activeSubscription: activeSubscriptionRef.current,
+        threadId,
+        activateThreadPrompts,
+      });
+
+      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
+    },
+    [rpcRef, activateThreadPrompts],
+  );
 
   const refreshThreadList = useCallback(
     async (rpc = rpcRef.current): Promise<void> => {
@@ -67,6 +133,7 @@ export function useThreadManager({
 
   const startNewThread = useCallback(async (): Promise<void> => {
     closeModals();
+    await deactivateServerThread();
     const mode = modeRef.current;
     dispatch({ type: "reset_draft", payload: { mode } });
     resetDraftModel();
@@ -74,7 +141,7 @@ export function useThreadManager({
     if (typeof window !== "undefined") {
       replaceDraftUrl();
     }
-  }, [dispatch, modeRef, resetDraftModel, setEffortState, closeModals]);
+  }, [deactivateServerThread, dispatch, modeRef, resetDraftModel, setEffortState, closeModals]);
 
   const openThread = useCallback(
     async (threadId: string): Promise<void> => {
@@ -86,7 +153,7 @@ export function useThreadManager({
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { threadId });
         if (!resumed.found || !resumed.threadId) return;
         const resumedId = resumed.threadId;
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: resumedId });
+        const history = await activateServerThread(resumedId);
 
         dispatch({ type: "hydrate", payload: { threadId: resumedId, mode, history } });
         setEffortState(history.currentEffort);
@@ -96,7 +163,6 @@ export function useThreadManager({
         await refreshThreadList(rpc);
         await applySessionModel(history.currentModel);
         clearAttention(resumedId);
-        activateServerThread(resumedId);
       } catch (error) {
         console.error(error);
       }
@@ -127,15 +193,14 @@ export function useThreadManager({
       if (activeThreadId === threadId) {
         const resumed = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME, { mostRecent: true });
         if (resumed.found && resumed.threadId) {
-          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-            threadId: resumed.threadId,
-          });
+          const history = await activateServerThread(resumed.threadId);
           dispatch({ type: "hydrate", payload: { threadId: resumed.threadId, mode, history } });
           setEffortState(history.currentEffort);
           if (typeof window !== "undefined") {
             replaceThreadUrl(resumed.threadId);
           }
         } else {
+          await deactivateServerThread();
           dispatch({ type: "reset_draft", payload: { mode } });
           resetDraftModel();
           setEffortState("medium");
@@ -157,6 +222,8 @@ export function useThreadManager({
     resetDraftModel,
     setEffortState,
     refreshThreadList,
+    activateServerThread,
+    deactivateServerThread,
   ]);
 
   return {
@@ -168,5 +235,7 @@ export function useThreadManager({
     startNewThread,
     openThread,
     confirmDeleteThread,
+    activateServerThread,
+    deactivateServerThread,
   };
 }

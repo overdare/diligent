@@ -120,7 +120,7 @@ export function App() {
     applySessionModel: providerMgr.applySessionModel,
     resetDraftModel: providerMgr.resetDraftModel,
     setEffortState,
-    activateServerThread: serverRequests.activateThread,
+    activateThreadPrompts: serverRequests.activateThread,
     clearAttention,
     closeModals,
   });
@@ -307,7 +307,7 @@ export function App() {
     modeRef,
     cwdRef,
     applySessionModel: providerMgr.applySessionModel,
-    activateServerThread: serverRequests.activateThread,
+    activateServerThread: threadMgr.activateServerThread,
     refreshThreadList: threadMgr.refreshThreadList,
   });
 

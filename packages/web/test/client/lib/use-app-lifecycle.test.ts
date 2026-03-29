@@ -36,6 +36,19 @@ test("active thread view still accepts matching thread notifications", () => {
   expect(shouldDispatchNotificationToActiveThread(notification, "thread-2")).toBe(false);
 });
 
+test("newly activated thread accepts busy status notifications", () => {
+  const notification: DiligentServerNotification = {
+    method: "thread/status/changed",
+    params: {
+      threadId: "thread-1",
+      status: "busy",
+      threadStatus: "busy",
+    },
+  };
+
+  expect(shouldDispatchNotificationToActiveThread(notification, "thread-1")).toBe(true);
+});
+
 test("thread start and resume notifications are always dispatched", () => {
   const started: DiligentServerNotification = {
     method: "thread/started",

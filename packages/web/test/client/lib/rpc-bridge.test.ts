@@ -54,7 +54,11 @@ async function withSandboxedProject<T>(run: (projectRoot: string) => Promise<T>)
   }
 }
 
-function createMinimalServer(opts: { cwd: string; toImageUrl?: (path: string) => string | undefined }) {
+function createMinimalServer(opts: {
+  cwd: string;
+  toImageUrl?: (path: string) => string | undefined;
+  completionDelayMs?: number;
+}) {
   return new DiligentAppServer({
     cwd: opts.cwd,
     resolvePaths: async (cwd) => ensureDiligentDir(cwd),
@@ -73,18 +77,20 @@ function createMinimalServer(opts: { cwd: string; toImageUrl?: (path: string) =>
             queueMicrotask(() => {
               stream.push({ type: "start" });
               stream.push({ type: "text_delta", delta: "ok" });
-              stream.push({
-                type: "done",
-                stopReason: "end_turn",
-                message: {
-                  role: "assistant",
-                  content: [{ type: "text", text: "ok" }],
-                  model: "fake",
-                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+              setTimeout(() => {
+                stream.push({
+                  type: "done",
                   stopReason: "end_turn",
-                  timestamp: Date.now(),
-                },
-              });
+                  message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: "ok" }],
+                    model: "fake",
+                    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                    stopReason: "end_turn",
+                    timestamp: Date.now(),
+                  },
+                });
+              }, opts.completionDelayMs ?? 0);
             });
             return stream as never;
           },
@@ -192,6 +198,80 @@ describe("DiligentAppServer multi-connection (web)", () => {
         | { result: { ok: boolean } }
         | undefined;
       expect(unsubResponse?.result.ok).toBe(true);
+    });
+  });
+
+  test("late subscriber can read busy state and first user message after turn already started", async () => {
+    await withSandboxedProject(async (projectRoot) => {
+      const server = createMinimalServer({ cwd: projectRoot, completionDelayMs: 150 });
+      const initiator = createFakePeer();
+      const observer = createFakePeer();
+      server.connect("c1", initiator.peer);
+      server.connect("c2", observer.peer);
+
+      sendRpc(initiator, {
+        id: 1,
+        method: "initialize",
+        params: { clientName: "t", clientVersion: "0.0.1", protocolVersion: 1 },
+      });
+      sendRpc(observer, {
+        id: 2,
+        method: "initialize",
+        params: { clientName: "t", clientVersion: "0.0.1", protocolVersion: 1 },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      sendRpc(initiator, { id: 3, method: "thread/start", params: { cwd: projectRoot, mode: "default" } });
+      const started = await waitFor(
+        initiator,
+        (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STARTED,
+      );
+      const threadId = (started as { params: { threadId: string } }).params.threadId;
+
+      sendRpc(initiator, { id: 4, method: "thread/subscribe", params: { threadId } });
+      await waitFor(initiator, (m) => "id" in m && (m as { id: unknown }).id === 4 && "result" in m);
+
+      initiator.sent.length = 0;
+      observer.sent.length = 0;
+
+      sendRpc(initiator, { id: 5, method: "turn/start", params: { threadId, message: "hello from draft" } });
+
+      await waitFor(
+        initiator,
+        (m) =>
+          "method" in m &&
+          (m as { method: string }).method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+          (m as { params?: { status?: string } }).params?.status === "busy",
+      );
+
+      sendRpc(observer, { id: 6, method: "thread/subscribe", params: { threadId } });
+      await waitFor(observer, (m) => "id" in m && (m as { id: unknown }).id === 6 && "result" in m);
+
+      sendRpc(observer, { id: 7, method: DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, params: { threadId } });
+      const readResponse = (await waitFor(
+        observer,
+        (m) => "id" in m && (m as { id: unknown }).id === 7 && "result" in m,
+      )) as {
+        result: {
+          isRunning: boolean;
+          items: Array<{
+            type: string;
+            message?: { role?: string; content?: Array<{ type: string; text?: string }> | string };
+          }>;
+        };
+      };
+
+      expect(readResponse.result.isRunning).toBe(true);
+      expect(
+        readResponse.result.items.some(
+          (item) =>
+            item.type === "userMessage" &&
+            item.message?.role === "user" &&
+            (item.message.content === "hello from draft" ||
+              (Array.isArray(item.message.content) &&
+                item.message.content.some((block) => block.type === "text" && block.text === "hello from draft"))),
+        ),
+      ).toBe(true);
     });
   });
 

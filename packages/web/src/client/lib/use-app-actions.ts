@@ -1,6 +1,6 @@
 // @summary App action handlers for sending, image uploads, slash commands, and turn controls
 
-import type { Mode, ModelInfo, ThinkingEffort } from "@diligent/protocol";
+import type { Mode, ModelInfo, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback } from "react";
 import type { AppAction, PendingImage } from "./app-state";
@@ -30,6 +30,51 @@ type SteeringControl = {
   pendingAbortRestartMessageRef: MutableRefObject<string | null>;
   suppressNextSteeringInjectedRef: MutableRefObject<boolean>;
 };
+
+export async function prepareNewThreadForFirstMessage({
+  rpc,
+  mode,
+  cwd,
+  model,
+  effort,
+  activateServerThread,
+  applySessionModel,
+  dispatch,
+  message,
+  images,
+}: {
+  rpc: WebRpcClient;
+  mode: Mode;
+  cwd: string;
+  model?: string;
+  effort: ThinkingEffort;
+  activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
+  applySessionModel: (sessionModel?: string) => Promise<void>;
+  dispatch: Dispatch<AppAction>;
+  message: string;
+  images: PendingImage[];
+}): Promise<{ threadId: string; history: ThreadReadResponse }> {
+  const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
+    cwd: cwd || "/",
+    mode,
+    model,
+  });
+  const threadId = started.threadId;
+  const history = await activateServerThread(threadId);
+  dispatch({ type: "hydrate", payload: { threadId, mode, history } });
+  if (typeof window !== "undefined") {
+    replaceThreadUrl(threadId);
+  }
+  dispatch({ type: "local_user", payload: { text: message, images } });
+  await applySessionModel(history.currentModel);
+  if (effort !== "medium") {
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
+      threadId,
+      effort,
+    });
+  }
+  return { threadId, history };
+}
 
 export function useAppActions({
   rpcRef,
@@ -91,7 +136,7 @@ export function useAppActions({
   modeRef: RefObject<Mode>;
   cwdRef: RefObject<string>;
   applySessionModel: (sessionModel?: string) => Promise<void>;
-  activateServerThread: (threadId: string) => void;
+  activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
 }) {
   const sendMessage = useCallback(async (): Promise<void> => {
@@ -110,29 +155,22 @@ export function useAppActions({
     try {
       let threadId = existingThreadId;
       if (!threadId) {
-        const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
-          cwd: cwdRef.current || "/",
+        const prepared = await prepareNewThreadForFirstMessage({
+          rpc,
           mode: modeRef.current,
+          cwd: cwdRef.current || "/",
           model: currentModelRef.current || undefined,
+          effort,
+          activateServerThread,
+          applySessionModel,
+          dispatch,
+          message,
+          images,
         });
-        threadId = started.threadId;
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
-        dispatch({ type: "hydrate", payload: { threadId, mode: modeRef.current, history } });
-        if (typeof window !== "undefined") {
-          replaceThreadUrl(threadId);
-        }
-        activateServerThread(threadId);
-        await applySessionModel(history.currentModel);
-        // Apply draft effort selection to the newly created thread.
-        if (effort !== "medium") {
-          await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
-            threadId,
-            effort,
-          });
-        }
+        threadId = prepared.threadId;
+      } else {
+        dispatch({ type: "local_user", payload: { text: message, images } });
       }
-
-      dispatch({ type: "local_user", payload: { text: message, images } });
 
       if (state.items.length === 0 && threadId) {
         dispatch({
