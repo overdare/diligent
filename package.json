@@ -6,8 +6,12 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "thirdparty/*/plugins/*"
   ],
+  "overrides": {
+    "@types/node": "25.3.0"
+  },
   "scripts": {
     "postinstall": "lefthook install --force && bash scripts/patch-hooks.sh",
     "validate:title": "bun scripts/validate-title.ts",
