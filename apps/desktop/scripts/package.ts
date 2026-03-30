@@ -169,9 +169,12 @@ function assembleDefaults(packageDir: string | undefined): void {
 }
 
 function buildSidecar(plat: PlatformTarget): void {
-  run("bun run build:sidecar", DESKTOP, {
-    TAURI_TARGET_TRIPLE: plat.tauriTriple,
-  });
+  // Skip build:sidecar script (which re-runs prepareDefaultsResources and
+  // wipes the already-assembled defaults). Instead compile the sidecar binary
+  // directly — assembleDefaults has already populated resources/defaults/.
+  const serverEntry = join(ROOT, "packages/web/src/server/index.ts");
+  const outPath = join(DESKTOP, `src-tauri/binaries/diligent-web-server-${plat.tauriTriple}${plat.ext}`);
+  run(`bun build --compile --target=${plat.bunTarget} ${serverEntry} --outfile ${outPath}`, ROOT);
 }
 
 function buildDesktop(plat: PlatformTarget): void {
@@ -196,13 +199,7 @@ function buildDesktop(plat: PlatformTarget): void {
     });
     saveRustHash(tauriDir);
   } else {
-    console.log("   Rust sources unchanged — skipping compile, bundling only");
-    run(`bunx tauri bundle --no-bundle --config "${tauriConfigPath}"`, DESKTOP, {
-      TAURI_TARGET_TRIPLE: plat.tauriTriple,
-      DILIGENT_APP_PROJECT_NAME: projectName,
-      DILIGENT_RUNTIME_VERSION: version,
-      ...(process.env.DILIGENT_UPDATE_URL ? { DILIGENT_UPDATE_URL: process.env.DILIGENT_UPDATE_URL } : {}),
-    });
+    console.log("   Rust sources unchanged — skipping compile (portable folder assembled directly)");
   }
 }
 
