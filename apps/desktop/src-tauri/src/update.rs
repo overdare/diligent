@@ -24,7 +24,7 @@ struct UpdateManifest {
     platforms: std::collections::HashMap<String, PlatformBundle>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct PlatformBundle {
     url: String,
     sha256: String,
@@ -123,6 +123,74 @@ pub fn installed_version() -> Option<InstalledVersion> {
     serde_json::from_str(&content).ok()
 }
 
+/// Result of fetching update info from the remote manifest.
+struct FetchedUpdate {
+    version: String,
+    sha256: String,
+    bytes: Vec<u8>,
+}
+
+/// Fetch manifest and download bundle on a dedicated thread.
+/// reqwest::blocking panics inside an existing tokio runtime (Tauri's setup
+/// hook runs in one), so all HTTP work must happen off the async runtime.
+fn fetch_update(manifest_url: &str) -> Result<Option<FetchedUpdate>, String> {
+    let manifest_url = manifest_url.to_string();
+    let effective_version = installed_version()
+        .map(|v| v.version)
+        .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
+    let platform = current_platform().to_string();
+
+    std::thread::spawn(move || {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
+            .build()
+            .map_err(|e| format!("http client: {e}"))?;
+
+        // 1. Fetch remote manifest
+        let manifest: UpdateManifest = client
+            .get(&manifest_url)
+            .send()
+            .map_err(|e| format!("fetch manifest: {e}"))?
+            .json()
+            .map_err(|e| format!("parse manifest: {e}"))?;
+
+        // 2. Compare versions
+        if manifest.version == effective_version {
+            return Ok(None);
+        }
+
+        // 3. Resolve platform bundle
+        let bundle = manifest
+            .platforms
+            .get(&platform)
+            .ok_or(format!("no bundle for platform {platform}"))?
+            .clone();
+
+        // 4. Download bundle
+        let response = client
+            .get(&bundle.url)
+            .send()
+            .map_err(|e| format!("download bundle: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(format!("download failed: HTTP {}", response.status()));
+        }
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| format!("read bundle bytes: {e}"))?;
+
+        Ok(Some(FetchedUpdate {
+            version: manifest.version,
+            sha256: bundle.sha256,
+            bytes: bytes.to_vec(),
+        }))
+    })
+    .join()
+    .map_err(|_| "update thread panicked".to_string())?
+}
+
 /// Run the full update cycle synchronously: check manifest, download if newer,
 /// verify checksum, and apply immediately.
 ///
@@ -139,83 +207,44 @@ pub fn run(log: &mut String) -> Result<bool, String> {
         return Ok(false); // no update URL compiled in
     }
 
-    let _ = writeln!(log, "[update] Checking for updates...");
-
-    // 1. Fetch remote manifest
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
-        .build()
-        .map_err(|e| format!("http client: {e}"))?;
-
-    let manifest: UpdateManifest = client
-        .get(&manifest_url)
-        .send()
-        .map_err(|e| format!("fetch manifest: {e}"))?
-        .json()
-        .map_err(|e| format!("parse manifest: {e}"))?;
-
-    // 2. Compare versions
     let effective_version = installed_version()
         .map(|v| v.version)
         .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
 
-    if manifest.version == effective_version {
-        let _ = writeln!(log, "[update] Already up-to-date (v{})", effective_version);
-        return Ok(false);
-    }
+    let _ = writeln!(log, "[update] Checking for updates (current: v{effective_version})...");
+
+    let fetched = match fetch_update(&manifest_url)? {
+        Some(f) => f,
+        None => {
+            let _ = writeln!(log, "[update] Already up-to-date");
+            return Ok(false);
+        }
+    };
 
     let _ = writeln!(
         log,
-        "[update] New version available: v{} (current: v{})",
-        manifest.version, effective_version
+        "[update] Downloaded v{} ({} bytes), verifying...",
+        fetched.version,
+        fetched.bytes.len()
     );
-
-    // 3. Resolve platform bundle
-    let platform = current_platform();
-    let bundle = manifest
-        .platforms
-        .get(platform)
-        .ok_or(format!("no bundle for platform {platform}"))?;
 
     let updates = updates_dir().ok_or("cannot resolve updates dir")?;
     fs::create_dir_all(&updates).map_err(|e| format!("create updates dir: {e}"))?;
 
-    // 4. Download bundle
-    let _ = writeln!(log, "[update] Downloading v{}...", manifest.version);
-
-    let response = client
-        .get(&bundle.url)
-        .send()
-        .map_err(|e| format!("download bundle: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!("download failed: HTTP {}", response.status()));
-    }
-
-    let bytes = response
-        .bytes()
-        .map_err(|e| format!("read bundle bytes: {e}"))?;
-
+    let platform = current_platform();
     let zip_path = updates.join(format!(
         "runtime-bundle-{}-{}.zip",
-        manifest.version, platform
+        fetched.version, platform
     ));
-    fs::write(&zip_path, &bytes).map_err(|e| format!("write bundle: {e}"))?;
+    fs::write(&zip_path, &fetched.bytes).map_err(|e| format!("write bundle: {e}"))?;
 
-    let _ = writeln!(
-        log,
-        "[update] Downloaded {} bytes, verifying...",
-        bytes.len()
-    );
-
-    // 5. Verify checksum
-    if !verify_sha256(&zip_path, &bundle.sha256)? {
+    // Verify checksum
+    if !verify_sha256(&zip_path, &fetched.sha256)? {
         let _ = fs::remove_file(&zip_path);
         return Err("Downloaded bundle failed SHA256 verification".into());
     }
 
-    // 6. Extract to staging directory
+    // Extract to staging directory
     let staging = updates.join("runtime_staging");
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| format!("clean staging: {e}"))?;
@@ -234,11 +263,11 @@ pub fn run(log: &mut String) -> Result<bool, String> {
         }
     }
 
-    // 7. Write version.json into staging
+    // Write version.json into staging
     let version_info = InstalledVersion {
-        version: manifest.version.clone(),
+        version: fetched.version.clone(),
         applied_at: chrono::Local::now().to_rfc3339(),
-        sha256: bundle.sha256.clone(),
+        sha256: fetched.sha256.clone(),
     };
     fs::write(
         staging.join("version.json"),
@@ -246,7 +275,7 @@ pub fn run(log: &mut String) -> Result<bool, String> {
     )
     .map_err(|e| format!("write version.json: {e}"))?;
 
-    // 8. Atomic swap: remove old runtime, rename staging
+    // Atomic swap: remove old runtime, rename staging
     let runtime = updates.join("runtime");
     if runtime.exists() {
         fs::remove_dir_all(&runtime).map_err(|e| format!("remove old runtime: {e}"))?;
