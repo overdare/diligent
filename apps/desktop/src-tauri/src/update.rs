@@ -1,4 +1,4 @@
-// @summary Runtime auto-update: check manifest, download bundle, verify SHA256, stage for next launch
+// @summary Runtime auto-update: check manifest, download bundle, verify SHA256, apply immediately
 
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -123,58 +123,99 @@ pub fn installed_version() -> Option<InstalledVersion> {
     serde_json::from_str(&content).ok()
 }
 
-/// Apply a previously-downloaded pending update.
-/// Extracts the zip to `updates/runtime/`, writes `version.json`.
-/// Returns `Ok(true)` if an update was applied, `Ok(false)` if nothing to do.
+/// Run the full update cycle synchronously: check manifest, download if newer,
+/// verify checksum, and apply immediately.
 ///
-/// Must be called synchronously at startup BEFORE sidecar spawn.
-pub fn apply_pending_update(log: &mut String) -> Result<bool, String> {
-    let updates = match updates_dir() {
-        Some(d) => d,
-        None => return Ok(false),
-    };
-
-    let manifest_path = updates.join("manifest.json");
-    if !manifest_path.exists() {
+/// Must be called at startup BEFORE sidecar spawn.
+/// Returns `Ok(true)` if an update was applied, `Ok(false)` if already up-to-date or disabled.
+pub fn run(log: &mut String) -> Result<bool, String> {
+    if is_update_disabled() {
+        let _ = writeln!(log, "[update] auto-update disabled via config");
         return Ok(false);
     }
 
-    let manifest: UpdateManifest = serde_json::from_str(
-        &fs::read_to_string(&manifest_path).map_err(|e| format!("read manifest: {e}"))?,
-    )
-    .map_err(|e| format!("parse manifest: {e}"))?;
+    let manifest_url = resolve_manifest_url();
+    if manifest_url.is_empty() {
+        return Ok(false); // no update URL compiled in
+    }
 
+    let _ = writeln!(log, "[update] Checking for updates...");
+
+    // 1. Fetch remote manifest
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    let manifest: UpdateManifest = client
+        .get(&manifest_url)
+        .send()
+        .map_err(|e| format!("fetch manifest: {e}"))?
+        .json()
+        .map_err(|e| format!("parse manifest: {e}"))?;
+
+    // 2. Compare versions
+    let effective_version = installed_version()
+        .map(|v| v.version)
+        .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
+
+    if manifest.version == effective_version {
+        let _ = writeln!(log, "[update] Already up-to-date (v{})", effective_version);
+        return Ok(false);
+    }
+
+    let _ = writeln!(
+        log,
+        "[update] New version available: v{} (current: v{})",
+        manifest.version, effective_version
+    );
+
+    // 3. Resolve platform bundle
     let platform = current_platform();
-    let bundle = match manifest.platforms.get(platform) {
-        Some(b) => b,
-        None => return Ok(false),
-    };
+    let bundle = manifest
+        .platforms
+        .get(platform)
+        .ok_or(format!("no bundle for platform {platform}"))?;
 
-    let zip_name = format!("runtime-bundle-{}-{}.zip", manifest.version, platform);
-    let zip_path = updates.join("pending").join(&zip_name);
-    if !zip_path.exists() {
-        return Ok(false);
+    let updates = updates_dir().ok_or("cannot resolve updates dir")?;
+    fs::create_dir_all(&updates).map_err(|e| format!("create updates dir: {e}"))?;
+
+    // 4. Download bundle
+    let _ = writeln!(log, "[update] Downloading v{}...", manifest.version);
+
+    let response = client
+        .get(&bundle.url)
+        .send()
+        .map_err(|e| format!("download bundle: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("download failed: HTTP {}", response.status()));
     }
 
-    // Already applied this version?
-    if let Some(installed) = installed_version() {
-        if installed.version == manifest.version {
-            let _ = writeln!(log, "[update] v{} already applied, skipping", manifest.version);
-            // Clean up stale pending zip
-            let _ = fs::remove_file(&zip_path);
-            return Ok(false);
-        }
-    }
+    let bytes = response
+        .bytes()
+        .map_err(|e| format!("read bundle bytes: {e}"))?;
 
-    let _ = writeln!(log, "[update] Applying pending update v{}...", manifest.version);
+    let zip_path = updates.join(format!(
+        "runtime-bundle-{}-{}.zip",
+        manifest.version, platform
+    ));
+    fs::write(&zip_path, &bytes).map_err(|e| format!("write bundle: {e}"))?;
 
-    // Verify checksum
+    let _ = writeln!(
+        log,
+        "[update] Downloaded {} bytes, verifying...",
+        bytes.len()
+    );
+
+    // 5. Verify checksum
     if !verify_sha256(&zip_path, &bundle.sha256)? {
         let _ = fs::remove_file(&zip_path);
-        return Err("Pending update failed SHA256 verification".into());
+        return Err("Downloaded bundle failed SHA256 verification".into());
     }
 
-    // Extract to staging directory
+    // 6. Extract to staging directory
     let staging = updates.join("runtime_staging");
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| format!("clean staging: {e}"))?;
@@ -193,7 +234,7 @@ pub fn apply_pending_update(log: &mut String) -> Result<bool, String> {
         }
     }
 
-    // Write version.json into staging
+    // 7. Write version.json into staging
     let version_info = InstalledVersion {
         version: manifest.version.clone(),
         applied_at: chrono::Local::now().to_rfc3339(),
@@ -205,131 +246,22 @@ pub fn apply_pending_update(log: &mut String) -> Result<bool, String> {
     )
     .map_err(|e| format!("write version.json: {e}"))?;
 
-    // Atomic swap: remove old runtime, rename staging
+    // 8. Atomic swap: remove old runtime, rename staging
     let runtime = updates.join("runtime");
     if runtime.exists() {
         fs::remove_dir_all(&runtime).map_err(|e| format!("remove old runtime: {e}"))?;
     }
     fs::rename(&staging, &runtime).map_err(|e| format!("rename staging to runtime: {e}"))?;
 
-    // Clean up pending zip
+    // Clean up zip
     let _ = fs::remove_file(&zip_path);
 
-    let _ = writeln!(log, "[update] Successfully applied v{}", version_info.version);
-    Ok(true)
-}
-
-/// Spawn a non-blocking background task that checks for updates and downloads
-/// the bundle if a newer version is available.
-pub fn spawn_update_check() {
-    if is_update_disabled() {
-        eprintln!("[update] auto-update disabled via config");
-        return;
-    }
-    tauri::async_runtime::spawn(async {
-        if let Err(e) = check_and_download().await {
-            eprintln!("[update] background check failed: {e}");
-        }
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Internal: check + download
-// ---------------------------------------------------------------------------
-
-async fn check_and_download() -> Result<(), String> {
-    let manifest_url = resolve_manifest_url();
-    if manifest_url.is_empty() {
-        return Ok(()); // updates disabled
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
-        .build()
-        .map_err(|e| format!("http client: {e}"))?;
-
-    // 1. Fetch remote manifest
-    let manifest: UpdateManifest = client
-        .get(&manifest_url)
-        .send()
-        .await
-        .map_err(|e| format!("fetch manifest: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("parse manifest: {e}"))?;
-
-    // 2. Save manifest locally
-    let updates = updates_dir().ok_or("cannot resolve updates dir")?;
-    fs::create_dir_all(&updates).map_err(|e| format!("create updates dir: {e}"))?;
-    fs::write(
-        updates.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest).map_err(|e| format!("serialize manifest: {e}"))?,
-    )
-    .map_err(|e| format!("write manifest: {e}"))?;
-
-    // 3. Compare versions
-    let effective_version = installed_version()
-        .map(|v| v.version)
-        .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
-
-    if manifest.version == effective_version {
-        return Ok(()); // already up to date
-    }
-
-    // 4. Resolve platform bundle
-    let platform = current_platform();
-    let bundle = manifest
-        .platforms
-        .get(platform)
-        .ok_or(format!("no bundle for platform {platform}"))?;
-
-    let pending_dir = updates.join("pending");
-    fs::create_dir_all(&pending_dir).map_err(|e| format!("create pending dir: {e}"))?;
-
-    let zip_name = format!("runtime-bundle-{}-{}.zip", manifest.version, platform);
-    let zip_path = pending_dir.join(&zip_name);
-
-    // 5. Check if already downloaded and valid
-    if zip_path.exists() {
-        if verify_sha256(&zip_path, &bundle.sha256)? {
-            return Ok(()); // already downloaded
-        }
-        let _ = fs::remove_file(&zip_path);
-    }
-
-    // 6. Download
-    let response = client
-        .get(&bundle.url)
-        .send()
-        .await
-        .map_err(|e| format!("download bundle: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!("download failed: HTTP {}", response.status()));
-    }
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("read bundle bytes: {e}"))?;
-
-    fs::write(&zip_path, &bytes).map_err(|e| format!("write bundle: {e}"))?;
-
-    // 7. Verify download
-    if !verify_sha256(&zip_path, &bundle.sha256)? {
-        let _ = fs::remove_file(&zip_path);
-        return Err("Downloaded bundle failed SHA256 verification".into());
-    }
-
-    eprintln!(
-        "[update] Downloaded v{} for {} ({} bytes)",
-        manifest.version,
-        platform,
-        bytes.len()
+    let _ = writeln!(
+        log,
+        "[update] Successfully updated to v{}",
+        version_info.version
     );
-
-    Ok(())
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ name: Overdare Release
 
 on:
   push:
-    tags: ["overdare-*"]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -33,7 +33,7 @@ jobs:
       - name: Resolve version
         shell: bash
         run: |
-          VERSION="${RELEASE_VERSION#overdare-}"
+          VERSION="${RELEASE_VERSION#v}"
           if [ -z "$VERSION" ]; then
             echo "Failed to resolve version from RELEASE_VERSION=$RELEASE_VERSION" >&2
             exit 1
@@ -52,7 +52,8 @@ jobs:
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
           path: |
-            dist/*-${{ env.VERSION }}-windows-x64.zip
+            dist/*-${{ env.VERSION }}-windows-x64.exe
+            dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
             dist/update-manifest.json
             dist/release-meta.json
             dist/checksums.sha256
@@ -64,7 +65,8 @@ jobs:
         run: |
           TAG="v$VERSION"
           gh release create "$TAG" \
-            dist/*-"$VERSION"-windows-x64.zip \
+            dist/*-"$VERSION"-windows-x64.exe \
+            dist/*-runtime-"$VERSION"-windows-x64.zip \
             dist/update-manifest.json \
             dist/checksums.sha256 \
             --title "Overdare v$VERSION" \

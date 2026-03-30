@@ -234,53 +234,18 @@ function cleanupDesktopIconOverrides(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Assemble a self-contained portable folder with all binaries and resources.
- * This replaces Tauri's installer bundles (NSIS, etc.) — the output is a flat
- * directory that can be zipped and distributed directly.
+ * Copy the Tauri desktop exe to dist/ with a release-friendly name.
+ * The exe is the thin Tauri shell — runtime components are in the runtime bundle.
  */
-function assemblePortableFolder(plat: PlatformTarget, portableDir: string): void {
+function collectDesktopExe(plat: PlatformTarget): string | undefined {
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
-  const binariesDir = join(DESKTOP, "src-tauri/binaries");
-
-  mkdirSync(portableDir, { recursive: true });
-
-  // Main desktop binary
   const mainBin = join(releaseDir, `diligent-desktop${plat.ext}`);
-  if (existsSync(mainBin)) {
-    cpSync(mainBin, join(portableDir, `diligent-desktop${plat.ext}`));
-    console.log(`   Portable: diligent-desktop${plat.ext}`);
-  }
+  if (!existsSync(mainBin)) return undefined;
 
-  // Sidecar binaries (strip target-triple suffix for portable layout)
-  for (const name of ["diligent-web-server", "rg"]) {
-    const src = join(binariesDir, `${name}-${plat.tauriTriple}${plat.ext}`);
-    if (existsSync(src)) {
-      cpSync(src, join(portableDir, `${name}${plat.ext}`));
-      console.log(`   Portable: ${name}${plat.ext}`);
-    }
-  }
-
-  // Resources: defaults/
-  if (existsSync(DEFAULTS_RESOURCES)) {
-    cpSync(DEFAULTS_RESOURCES, join(portableDir, "defaults"), { recursive: true });
-    console.log("   Portable: defaults/");
-  }
-
-  // Resources: dist/client/
-  const clientResources = join(DESKTOP, "src-tauri/resources/dist/client");
-  if (existsSync(clientResources)) {
-    mkdirSync(join(portableDir, "dist"), { recursive: true });
-    cpSync(clientResources, join(portableDir, "dist/client"), { recursive: true });
-    console.log("   Portable: dist/client/");
-  }
-}
-
-function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: string[]): void {
-  // Assemble portable folder — createPlatformZip will zip it later.
-  const portableName = `${projectArtifactName}-desktop-${version}-${plat.id}`;
-  const portableDir = join(platDir, portableName);
-  assemblePortableFolder(plat, portableDir);
-  list.push(`${portableName}/`);
+  const exeName = `${projectArtifactName}-${version}-${plat.id}${plat.ext}`;
+  cpSync(mainBin, join(DIST, exeName));
+  console.log(`   Collected: ${exeName}`);
+  return exeName;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,24 +265,6 @@ function fileSize(p: string): number {
   } catch {
     return 0;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Zip
-// ---------------------------------------------------------------------------
-
-function createPlatformZip(plat: PlatformTarget): string {
-  const platDir = join(DIST, plat.id);
-  const zipName = `${projectArtifactName}-${version}-${plat.id}.zip`;
-  const zipPath = join(DIST, zipName);
-
-  if (process.platform === "win32") {
-    run(`powershell -Command "Compress-Archive -Path '${platDir}\\*' -DestinationPath '${zipPath}' -Force"`, ROOT);
-  } else {
-    run(`zip -r "${zipPath}" .`, platDir);
-  }
-
-  return zipName;
 }
 
 // ---------------------------------------------------------------------------
@@ -462,8 +409,6 @@ try {
   // Build desktop per platform
   for (const plat of platforms) {
     allArtifacts[plat.id] = [];
-    const platDir = join(DIST, plat.id);
-    mkdirSync(platDir, { recursive: true });
 
     if (plat.os !== currentOs()) {
       console.log(`\n⚠️  Skipping ${plat.id} — Tauri requires native build (current OS: ${currentOs()})`);
@@ -476,23 +421,25 @@ try {
 
     console.log(`\n🖥️  Building desktop: ${plat.id}`);
     buildDesktop(plat);
-    collectDesktopArtifacts(plat, platDir, allArtifacts[plat.id]);
   }
 
-  // Create per-platform zips
-  console.log("\n🗜️  Creating platform zips...");
+  // Collect desktop exe(s)
+  console.log("\n📋 Collecting desktop exe...");
   for (const plat of platforms) {
     if (plat.os !== currentOs()) continue;
-    const zipName = createPlatformZip(plat);
-    console.log(`   Created: ${zipName}`);
+    const exeName = collectDesktopExe(plat);
+    if (exeName) {
+      allArtifacts[plat.id].push(exeName);
+    }
   }
 
-  // Assemble runtime bundles for auto-update
+  // Assemble runtime bundles
   console.log("\n📦 Assembling runtime bundles...");
   for (const plat of platforms) {
     if (plat.os !== currentOs()) continue;
     const bundleName = assembleRuntimeBundle(plat);
     if (bundleName) {
+      allArtifacts[plat.id].push(bundleName);
       console.log(`   Created: ${bundleName}`);
     }
   }
@@ -532,9 +479,9 @@ console.log(`\n✓ Packaging complete: ${projectName} v${version}\n`);
 for (const plat of platforms) {
   const names = allArtifacts[plat.id] ?? [];
   if (names.length === 0) continue;
-  console.log(`  ${plat.id}/`);
+  console.log(`  ${plat.id}:`);
   for (const name of names) {
-    const size = fileSize(join(DIST, plat.id, name));
+    const size = fileSize(join(DIST, name));
     const sizeStr = size > 0 ? `  ${formatSize(size)}` : "";
     console.log(`    ${name.padEnd(55)}${sizeStr}`);
   }
