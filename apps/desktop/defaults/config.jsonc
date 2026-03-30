@@ -6,4 +6,6 @@
   // "model": "claude-sonnet-4-5",
   // Skip permission prompts for tool calls (use with caution)
   // "yolo": false,
+  // Auto-update mode: "auto" (default) or "disabled"
+  // "updateMode": "auto",
 }

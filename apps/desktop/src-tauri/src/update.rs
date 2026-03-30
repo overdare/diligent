@@ -69,6 +69,40 @@ fn current_platform() -> &'static str {
     return "windows-x64";
 }
 
+/// Check if auto-update is disabled via ~/.diligent/config.jsonc `"updateMode": "disabled"`.
+fn is_update_disabled() -> bool {
+    let path = match global_dir() {
+        Some(g) => g.join("config.jsonc"),
+        None => return false,
+    };
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    // Simple check: look for "updateMode" value without full JSONC parser.
+    // Strip single-line comments before matching.
+    let stripped: String = content
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&stripped) {
+        val.get("updateMode")
+            .and_then(|v| v.as_str())
+            .map(|s| s == "disabled")
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
 /// Resolve the manifest URL.
 /// Priority: `DILIGENT_UPDATE_URL` compile-time env > empty (disabled).
 fn resolve_manifest_url() -> String {
@@ -188,6 +222,10 @@ pub fn apply_pending_update(log: &mut String) -> Result<bool, String> {
 /// Spawn a non-blocking background task that checks for updates and downloads
 /// the bundle if a newer version is available.
 pub fn spawn_update_check() {
+    if is_update_disabled() {
+        eprintln!("[update] auto-update disabled via config");
+        return;
+    }
     tauri::async_runtime::spawn(async {
         if let Err(e) = check_and_download().await {
             eprintln!("[update] background check failed: {e}");
