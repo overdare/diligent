@@ -188,7 +188,7 @@ function buildDesktop(plat: PlatformTarget): void {
 
   if (rustSourcesChanged(tauriDir)) {
     console.log("   Rust sources changed — full compile");
-    run(`bunx tauri build --bundles none --config "${tauriConfigPath}"`, DESKTOP, {
+    run(`bunx tauri build --no-bundle --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
       DILIGENT_RUNTIME_VERSION: version,
@@ -197,7 +197,7 @@ function buildDesktop(plat: PlatformTarget): void {
     saveRustHash(tauriDir);
   } else {
     console.log("   Rust sources unchanged — skipping compile, bundling only");
-    run(`bunx tauri bundle --bundles none --config "${tauriConfigPath}"`, DESKTOP, {
+    run(`bunx tauri bundle --no-bundle --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
       DILIGENT_RUNTIME_VERSION: version,
@@ -236,41 +236,10 @@ function cleanupDesktopIconOverrides(): void {
 // Artifact collection helpers
 // ---------------------------------------------------------------------------
 
-function findFirst(dir: string, ext: string): string | undefined {
-  if (!existsSync(dir)) return undefined;
-  return readdirSync(dir)
-    .filter((e) => e.endsWith(ext))
-    .map((e) => join(dir, e))
-    .at(0);
-}
-
-function copyArtifact(src: string, destDir: string, destName: string, list: string[]): void {
-  const dest = join(destDir, destName);
-  // If destination exists and is locked, remove it first then retry
-  if (existsSync(dest)) {
-    try {
-      rmSync(dest, { recursive: true, force: true });
-    } catch {
-      // Ignore — cpSync will fail with a clear error if still locked
-    }
-  }
-  if (statSync(src).isDirectory()) {
-    cpSync(src, dest, { recursive: true });
-  } else {
-    cpSync(src, dest);
-  }
-  list.push(destName);
-}
-
 /**
- * Assemble a portable release folder that mirrors the installed directory layout.
- * Structure:
- *   <portableDir>/
- *     diligent-desktop.exe
- *     diligent-web-server.exe
- *     rg.exe
- *     defaults/
- *     dist/client/
+ * Assemble a self-contained portable folder with all binaries and resources.
+ * This replaces Tauri's installer bundles (NSIS, etc.) — the output is a flat
+ * directory that can be zipped and distributed directly.
  */
 function assemblePortableFolder(plat: PlatformTarget, portableDir: string): void {
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
@@ -286,8 +255,7 @@ function assemblePortableFolder(plat: PlatformTarget, portableDir: string): void
   }
 
   // Sidecar binaries (strip target-triple suffix for portable layout)
-  const sidecars = ["diligent-web-server", "rg"];
-  for (const name of sidecars) {
+  for (const name of ["diligent-web-server", "rg"]) {
     const src = join(binariesDir, `${name}-${plat.tauriTriple}${plat.ext}`);
     if (existsSync(src)) {
       cpSync(src, join(portableDir, `${name}${plat.ext}`));
@@ -311,50 +279,11 @@ function assemblePortableFolder(plat: PlatformTarget, portableDir: string): void
 }
 
 function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: string[]): void {
-  const bundleDir = join(DESKTOP, "src-tauri/target/release/bundle");
-  const releaseDir = join(DESKTOP, "src-tauri/target/release");
-
-  // Windows: assemble portable folder and create zip archive
-  if (plat.os === "windows") {
-    const portableName = `${projectArtifactName}-desktop-${version}-${plat.id}`;
-    const portableDir = join(platDir, portableName);
-    assemblePortableFolder(plat, portableDir);
-    list.push(`${portableName}/`);
-
-    // Create zip archive of the portable folder
-    const zipName = `${portableName}.zip`;
-    const zipPath = join(platDir, zipName);
-    if (existsSync(zipPath)) rmSync(zipPath, { force: true });
-    console.log(`   Zipping portable folder → ${zipName}`);
-    execSync(
-      `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}\\*' -DestinationPath '${zipPath}' -Force"`,
-      { stdio: "inherit" },
-    );
-    list.push(zipName);
-    return;
-  }
-
-  // Raw binary
-  const rawBin = join(releaseDir, `diligent-desktop${plat.ext}`);
-  if (existsSync(rawBin)) {
-    copyArtifact(rawBin, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}${plat.ext}`, list);
-  }
-
-  for (const bundleType of plat.desktopBundleTypes) {
-    if (bundleType === "app") {
-      const src = join(bundleDir, "macos", `${projectName}.app`);
-      if (existsSync(src)) copyArtifact(src, platDir, `${projectName}-${version}.app`, list);
-    } else if (bundleType === "AppImage") {
-      const src = findFirst(join(bundleDir, "appimage"), ".AppImage");
-      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.AppImage`, list);
-    } else if (bundleType === "deb") {
-      const src = findFirst(join(bundleDir, "deb"), ".deb");
-      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.deb`, list);
-    } else if (bundleType === "dmg") {
-      const src = findFirst(join(bundleDir, "dmg"), ".dmg");
-      if (src) copyArtifact(src, platDir, `${projectArtifactName}-desktop-${version}-${plat.id}.dmg`, list);
-    }
-  }
+  // Assemble portable folder — createPlatformZip will zip it later.
+  const portableName = `${projectArtifactName}-desktop-${version}-${plat.id}`;
+  const portableDir = join(platDir, portableName);
+  assemblePortableFolder(plat, portableDir);
+  list.push(`${portableName}/`);
 }
 
 // ---------------------------------------------------------------------------
