@@ -52,8 +52,8 @@ jobs:
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
           path: |
-            dist/overdare-${{ env.VERSION }}-windows-x64.zip
-            dist/overdare-runtime-${{ env.VERSION }}-windows-x64.zip
+            dist/*-${{ env.VERSION }}-windows-x64.zip
+            dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
             dist/update-manifest.json
             dist/release-meta.json
             dist/checksums.sha256
@@ -71,10 +71,10 @@ jobs:
             --draft \
             2>/dev/null || true
 
-          # Upload assets
+          # Upload assets — use glob to match projectArtifactName
           gh release upload "$TAG" \
-            "dist/overdare-$VERSION-windows-x64.zip" \
-            "dist/overdare-runtime-$VERSION-windows-x64.zip" \
-            "dist/update-manifest.json" \
-            "dist/checksums.sha256" \
+            dist/*-"$VERSION"-windows-x64.zip \
+            dist/*-runtime-"$VERSION"-windows-x64.zip \
+            dist/update-manifest.json \
+            dist/checksums.sha256 \
             --clobber
