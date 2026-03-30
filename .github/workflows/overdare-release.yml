@@ -64,17 +64,11 @@ jobs:
         shell: bash
         run: |
           TAG="overdare-$VERSION"
-          # Create release (or skip if already exists)
           gh release create "$TAG" \
-            --title "Overdare v$VERSION" \
-            --generate-notes \
-            --draft \
-            2>/dev/null || true
-
-          # Upload assets — use glob to match projectArtifactName
-          gh release upload "$TAG" \
             dist/*-"$VERSION"-windows-x64.zip \
             dist/*-runtime-"$VERSION"-windows-x64.zip \
             dist/update-manifest.json \
             dist/checksums.sha256 \
-            --clobber
+            --title "Overdare v$VERSION" \
+            --generate-notes \
+            --draft
