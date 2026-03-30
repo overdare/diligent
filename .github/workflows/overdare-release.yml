@@ -53,7 +53,6 @@ jobs:
           name: overdare-windows-x64-${{ env.VERSION }}
           path: |
             dist/*-${{ env.VERSION }}-windows-x64.zip
-            dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
             dist/update-manifest.json
             dist/release-meta.json
             dist/checksums.sha256
@@ -66,7 +65,6 @@ jobs:
           TAG="overdare-$VERSION"
           gh release create "$TAG" \
             dist/*-"$VERSION"-windows-x64.zip \
-            dist/*-runtime-"$VERSION"-windows-x64.zip \
             dist/update-manifest.json \
             dist/checksums.sha256 \
             --title "Overdare v$VERSION" \
