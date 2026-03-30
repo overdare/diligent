@@ -6,12 +6,22 @@
     <title></title>
     <style>
       :root {
-        --bg: #0f1415;
-        --text: #eff7f8;
-        --muted: #96afb4;
-        --accent: #5ad9b8;
-        --accent-dim: rgba(90, 217, 184, 0.12);
-        --accent-border: rgba(90, 217, 184, 0.3);
+        /* Synced with packages/web core color tokens */
+        --bg: #1a1d22;
+        --text: #f3f3f4;
+        --muted: #9ca3af;
+        --accent: #3b82f6;
+        --accent-hover: #60a5fa;
+        --accent-dim: rgba(59, 130, 246, 0.16);
+        --accent-border: rgba(59, 130, 246, 0.36);
+        --panel-bg: #23272e;
+        --panel-border: #353a43;
+        --track-bg: #2a2f37;
+        --step-idle: #757b86;
+        --step-done: #dfdfe3;
+        --error: #ff8f9c;
+        --log-text: #9ca3af;
+        --log-bg: #15181d;
       }
 
       * {
@@ -36,6 +46,15 @@
         flex-direction: column;
         align-items: center;
         gap: 1.25rem;
+      }
+
+      .panel {
+        width: min(420px, 92vw);
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 10px;
+        padding: 1rem 1rem 0.9rem;
+        box-shadow: 0 10px 28px rgba(9, 11, 15, 0.45);
       }
 
       .logo {
@@ -68,12 +87,12 @@
       }
 
       .pick-btn:hover {
-        background: rgba(90, 217, 184, 0.2);
-        border-color: var(--accent);
+        background: rgba(96, 165, 250, 0.2);
+        border-color: var(--accent-hover);
       }
 
       .pick-btn:active {
-        background: rgba(90, 217, 184, 0.28);
+        background: rgba(59, 130, 246, 0.28);
       }
 
       .pick-btn:disabled {
@@ -83,7 +102,7 @@
 
       .error {
         font-size: 0.7rem;
-        color: #f87171;
+        color: var(--error);
         letter-spacing: 0.03em;
         max-width: 280px;
       }
@@ -108,6 +127,77 @@
         letter-spacing: 0.05em;
       }
 
+      .title {
+        font-size: 0.86rem;
+        color: var(--text);
+        letter-spacing: 0.03em;
+      }
+
+      .progress-track {
+        margin-top: 0.25rem;
+        width: 100%;
+        height: 5px;
+        border-radius: 999px;
+        background: var(--track-bg);
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, var(--accent-hover), transparent);
+        transform: translateX(-120%);
+        animation: progress 1.4s ease-in-out infinite;
+      }
+
+      @keyframes progress {
+        to {
+          transform: translateX(300%);
+        }
+      }
+
+      .steps {
+        margin-top: 0.6rem;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        text-align: left;
+      }
+
+      .step {
+        font-size: 0.72rem;
+        letter-spacing: 0.03em;
+        color: var(--step-idle);
+      }
+
+      .step::before {
+        content: "• ";
+      }
+
+      .step.active {
+        color: var(--accent);
+      }
+
+      .step.done {
+        color: var(--step-done);
+      }
+
+      .update-log {
+        margin-top: 0.7rem;
+        max-height: 120px;
+        overflow: auto;
+        text-align: left;
+        font-size: 0.66rem;
+        line-height: 1.45;
+        color: var(--log-text);
+        background: var(--log-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 6px;
+        padding: 0.55rem 0.6rem;
+        white-space: pre-wrap;
+      }
+
       [hidden] { display: none; }
     </style>
   </head>
@@ -121,9 +211,19 @@
 
     <!-- State 2: loading spinner (shown after folder is chosen) -->
     <div id="loading" class="container" hidden>
-      <div class="logo">Diligent</div>
-      <div class="spinner"></div>
-      <div class="status">Starting server...</div>
+      <div class="panel">
+        <div class="logo">Diligent</div>
+        <div class="spinner"></div>
+        <div id="loading-title" class="title">Preparing workspace...</div>
+        <div id="loading-status" class="status">Checking runtime updates...</div>
+        <div class="progress-track"><div class="progress-bar"></div></div>
+        <ul class="steps">
+          <li id="step-update" class="step">Checking runtime update</li>
+          <li id="step-defaults" class="step">Preparing defaults and plugins</li>
+          <li id="step-launch" class="step">Starting local server</li>
+        </ul>
+        <div id="update-log" class="update-log" hidden></div>
+      </div>
     </div>
 
     <script>
@@ -131,16 +231,70 @@
       const loadingEl = document.getElementById('loading');
       const btn = document.getElementById('pick-btn');
       const errorEl = document.getElementById('error');
+      const loadingTitleEl = document.getElementById('loading-title');
+      const loadingStatusEl = document.getElementById('loading-status');
+      const updateLogEl = document.getElementById('update-log');
+      const stepUpdateEl = document.getElementById('step-update');
+      const stepDefaultsEl = document.getElementById('step-defaults');
+      const stepLaunchEl = document.getElementById('step-launch');
+      let startupPrepared = false;
+      let startupPrepareError = null;
+      let startupPreparationPromise = null;
+      const STARTUP_UPDATE_PROGRESS_EVENT = 'startup://update-progress';
+
+      function applyUpdateStage(stage, message) {
+        const updateActiveStages = new Set(['checking', 'downloading', 'verifying', 'extracting', 'applying', 'bootstrap_required']);
+
+        if (updateActiveStages.has(stage)) {
+          setStep(stepUpdateEl, 'active');
+          setLoadingText('Preparing workspace...', message || 'Updating runtime...');
+          return;
+        }
+
+        if (stage === 'updated' || stage === 'up_to_date' || stage === 'disabled') {
+          setStep(stepUpdateEl, 'done');
+          setLoadingText('Preparing workspace...', message || 'Runtime check complete');
+        }
+      }
+
+      function toMessage(err) {
+        if (err instanceof Error) return err.message;
+        return String(err);
+      }
+
+      function resetSteps() {
+        for (const el of [stepUpdateEl, stepDefaultsEl, stepLaunchEl]) {
+          el.classList.remove('active', 'done');
+        }
+      }
+
+      function setStep(el, state) {
+        el.classList.remove('active', 'done');
+        if (state) el.classList.add(state);
+      }
+
+      function setLoadingText(title, status) {
+        loadingTitleEl.textContent = title;
+        loadingStatusEl.textContent = status;
+      }
 
       function showLoading() {
         pickerEl.hidden = true;
         loadingEl.hidden = false;
+        updateLogEl.hidden = true;
+        updateLogEl.textContent = '';
+        resetSteps();
+      }
+
+      function showPicker() {
+        pickerEl.hidden = false;
+        loadingEl.hidden = true;
       }
 
       function showPickerWithError(message) {
         pickerEl.hidden = false;
         loadingEl.hidden = true;
-        errorEl.textContent = String(message);
+        errorEl.textContent = toMessage(message);
         errorEl.hidden = false;
         btn.disabled = false;
       }
@@ -148,13 +302,77 @@
       async function launchWithCwd(cwd) {
         btn.disabled = true;
         errorEl.hidden = true;
-        showLoading();
         const { invoke } = window.__TAURI__.core;
+
+        setStep(stepUpdateEl, 'done');
+        setStep(stepDefaultsEl, 'done');
+        setStep(stepLaunchEl, null);
+
+        if (loadingEl.hidden) showLoading();
+
+        setStep(stepLaunchEl, 'active');
+        setLoadingText('Preparing workspace...', 'Starting local server...');
         await invoke('launch_server', { cwd });
+        setStep(stepLaunchEl, 'done');
+      }
+
+      async function prepareStartupOnBoot() {
+        if (startupPreparationPromise) {
+          return startupPreparationPromise;
+        }
+
+        showLoading();
+        setLoadingText('Preparing workspace...', 'Checking runtime updates...');
+        setStep(stepUpdateEl, 'active');
+
+        const { invoke } = window.__TAURI__.core;
+        const { listen } = window.__TAURI__.event;
+
+        const unlisten = await listen(STARTUP_UPDATE_PROGRESS_EVENT, (event) => {
+          const payload = event?.payload || {};
+          applyUpdateStage(payload.stage, payload.message);
+        });
+
+        let prep;
+        try {
+          startupPreparationPromise = invoke('prepare_startup');
+          prep = await startupPreparationPromise;
+          startupPreparationPromise = Promise.resolve(prep);
+        } finally {
+          unlisten();
+        }
+
+        if (Array.isArray(prep?.updateSteps) && prep.updateSteps.length > 0) {
+          for (const step of prep.updateSteps) {
+            applyUpdateStage(step?.stage, step?.message);
+          }
+        } else {
+          setStep(stepUpdateEl, 'done');
+        }
+
+        setStep(stepDefaultsEl, 'active');
+        setLoadingText('Preparing workspace...', 'Applying defaults and plugins...');
+        setStep(stepDefaultsEl, 'done');
+
+        if (prep?.updateLog && String(prep.updateLog).trim()) {
+          updateLogEl.textContent = String(prep.updateLog).trim();
+          updateLogEl.hidden = false;
+        }
+
+        startupPrepared = true;
+        startupPrepareError = null;
+        return prep;
       }
 
       btn.addEventListener('click', async () => {
         try {
+          if (!startupPrepared) {
+            if (startupPrepareError) {
+              throw startupPrepareError;
+            }
+            await prepareStartupOnBoot();
+          }
+
           const { invoke } = window.__TAURI__.core;
           const cwd = await invoke('pick_directory');
           if (!cwd) {
@@ -164,21 +382,32 @@
 
           await launchWithCwd(cwd);
         } catch (err) {
-          showPickerWithError(err);
+          showPickerWithError(toMessage(err));
         }
       });
 
       window.addEventListener('DOMContentLoaded', async () => {
         try {
+          const prep = await prepareStartupOnBoot();
+
           const { invoke } = window.__TAURI__.core;
           const startupCwd = await invoke('get_startup_cwd');
           if (!startupCwd) {
+            showPicker();
+            btn.disabled = false;
             return;
+          }
+
+          if (prep?.updateApplied) {
+            setLoadingText('Runtime updated', 'Launching with latest runtime...');
+          } else {
+            setLoadingText('Preparing workspace...', 'Starting local server...');
           }
 
           await launchWithCwd(startupCwd);
         } catch (err) {
-          showPickerWithError(err);
+          startupPrepareError = err;
+          showPickerWithError(toMessage(err));
         }
       });
     </script>
