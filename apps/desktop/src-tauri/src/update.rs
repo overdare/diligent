@@ -76,6 +76,43 @@ fn current_platform() -> &'static str {
     return "windows-x64";
 }
 
+/// Strip a single-line JSONC comment from one line of text.
+/// Only strips `//` that appears outside a quoted string, so values like
+/// `"url": "https://example.com"` are preserved correctly.
+fn strip_jsonc_line_comment(line: &str) -> &str {
+    let mut in_string = false;
+    let mut escape_next = false;
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if escape_next {
+            escape_next = false;
+            i += 1;
+            continue;
+        }
+        match chars[i] {
+            '\\' if in_string => {
+                escape_next = true;
+            }
+            '"' => {
+                in_string = !in_string;
+            }
+            '/' if !in_string && i + 1 < chars.len() && chars[i + 1] == '/' => {
+                // Find the byte offset of this character position and slice there.
+                let byte_offset = line
+                    .char_indices()
+                    .nth(i)
+                    .map(|(b, _)| b)
+                    .unwrap_or(line.len());
+                return &line[..byte_offset];
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    line
+}
+
 fn read_user_config_json() -> Option<serde_json::Value> {
     let path = match global_dir() {
         Some(g) => g.join("config.jsonc"),
@@ -86,16 +123,11 @@ fn read_user_config_json() -> Option<serde_json::Value> {
         Err(_) => return None,
     };
 
-    // Simple JSONC handling: strip single-line comments before parsing.
+    // Strip single-line JSONC comments while respecting quoted strings.
+    // A `//` that appears inside a JSON string value must not be treated as a comment.
     let stripped: String = content
         .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
+        .map(|line| strip_jsonc_line_comment(line))
         .collect::<Vec<_>>()
         .join("\n");
 
