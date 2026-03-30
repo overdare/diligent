@@ -1,6 +1,7 @@
 // @summary Tauri app builder: registers plugins, exposes pick_directory/launch_server commands
 mod init;
 mod sidecar;
+mod update;
 
 use sidecar::{start_sidecar, stop_sidecar, SidecarState};
 use std::path::PathBuf;
@@ -123,7 +124,23 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
+            // 1. Apply pending runtime update (must happen before init)
+            let mut update_log = String::new();
+            match update::apply_pending_update(&mut update_log) {
+                Ok(true) => eprintln!("[update] Applied pending runtime update"),
+                Ok(false) => {}
+                Err(e) => eprintln!("[update] Failed to apply pending update: {e}"),
+            }
+            if !update_log.is_empty() {
+                eprint!("{update_log}");
+            }
+
+            // 2. Deploy defaults (prefers updated paths if available)
             init::run(app);
+
+            // 3. Background check for next launch
+            update::spawn_update_check();
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_startup_cwd, pick_directory, launch_server])

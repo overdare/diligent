@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
+import { generateUpdateManifest } from "./lib/manifest";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
 import { createPluginBundlePlan } from "./lib/plugin-bundle";
 import { resolveDesktopIconPaths, resolveProjectName, toProjectArtifactName } from "./lib/project-name";
@@ -190,6 +191,8 @@ function buildDesktop(plat: PlatformTarget): void {
     run(`bunx tauri build --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
+      DILIGENT_RUNTIME_VERSION: version,
+      ...(process.env.DILIGENT_UPDATE_URL ? { DILIGENT_UPDATE_URL: process.env.DILIGENT_UPDATE_URL } : {}),
     });
     saveRustHash(tauriDir);
   } else {
@@ -197,6 +200,8 @@ function buildDesktop(plat: PlatformTarget): void {
     run(`bunx tauri bundle --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
+      DILIGENT_RUNTIME_VERSION: version,
+      ...(process.env.DILIGENT_UPDATE_URL ? { DILIGENT_UPDATE_URL: process.env.DILIGENT_UPDATE_URL } : {}),
     });
   }
 }
@@ -325,6 +330,59 @@ function createPlatformZip(plat: PlatformTarget): string {
 }
 
 // ---------------------------------------------------------------------------
+// Runtime bundle — sidecar + web client + plugins + defaults for auto-update
+// ---------------------------------------------------------------------------
+
+function assembleRuntimeBundle(plat: PlatformTarget): string | undefined {
+  const tauriDir = join(DESKTOP, "src-tauri");
+  const runtimeDir = join(DIST, `runtime-${plat.id}`);
+
+  // Clean and create temp assembly dir
+  if (existsSync(runtimeDir)) {
+    rmSync(runtimeDir, { recursive: true, force: true });
+  }
+  mkdirSync(runtimeDir, { recursive: true });
+
+  // 1. Copy sidecar binary
+  const sidecarName = `diligent-web-server-${plat.tauriTriple}${plat.ext}`;
+  const sidecarSrc = join(tauriDir, "binaries", sidecarName);
+  if (!existsSync(sidecarSrc)) return undefined;
+  cpSync(sidecarSrc, join(runtimeDir, `diligent-web-server${plat.ext}`));
+
+  // 2. Copy rg binary (if bundled)
+  const rgName = `rg-${plat.tauriTriple}${plat.ext}`;
+  const rgSrc = join(tauriDir, "binaries", rgName);
+  if (existsSync(rgSrc)) {
+    cpSync(rgSrc, join(runtimeDir, `rg${plat.ext}`));
+  }
+
+  // 3. Copy dist/client (React SPA)
+  const clientSrc = join(tauriDir, "resources/dist/client");
+  if (existsSync(clientSrc)) {
+    cpSync(clientSrc, join(runtimeDir, "dist/client"), { recursive: true });
+  }
+
+  // 4. Copy defaults (includes plugins)
+  if (existsSync(DEFAULTS_RESOURCES)) {
+    cpSync(DEFAULTS_RESOURCES, join(runtimeDir, "defaults"), { recursive: true });
+  }
+
+  // 5. Zip
+  const zipName = `${projectArtifactName}-runtime-${version}-${plat.id}.zip`;
+  const zipPath = join(DIST, zipName);
+  if (process.platform === "win32") {
+    run(`powershell -Command "Compress-Archive -Path '${runtimeDir}\\*' -DestinationPath '${zipPath}' -Force"`, ROOT);
+  } else {
+    run(`zip -r "${zipPath}" .`, runtimeDir);
+  }
+
+  // Clean up temp dir
+  rmSync(runtimeDir, { recursive: true, force: true });
+
+  return zipName;
+}
+
+// ---------------------------------------------------------------------------
 // Release metadata
 // ---------------------------------------------------------------------------
 
@@ -438,6 +496,28 @@ try {
     console.log(`   Created: ${zipName}`);
   }
 
+  // Assemble runtime bundles for auto-update
+  console.log("\n📦 Assembling runtime bundles...");
+  for (const plat of platforms) {
+    if (plat.os !== currentOs()) continue;
+    const bundleName = assembleRuntimeBundle(plat);
+    if (bundleName) {
+      console.log(`   Created: ${bundleName}`);
+    }
+  }
+
+  // Generate update manifest
+  console.log("\n📝 Writing update-manifest.json...");
+  const updateBaseUrl =
+    process.env.DILIGENT_UPDATE_BASE_URL || `https://github.com/example/diligent/releases/download/v${version}`;
+  generateUpdateManifest({
+    version,
+    distDir: DIST,
+    platforms,
+    baseUrl: updateBaseUrl,
+    projectArtifactName,
+  });
+
   // Release metadata + checksums
   console.log("\n📝 Writing release-meta.json...");
   writeReleaseMeta(DIST, platforms, allArtifacts);
@@ -469,4 +549,5 @@ for (const plat of platforms) {
   }
 }
 console.log(`\n  checksums.sha256`);
-console.log(`  release-meta.json\n`);
+console.log(`  release-meta.json`);
+console.log(`  update-manifest.json\n`);

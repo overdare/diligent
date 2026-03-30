@@ -10,7 +10,33 @@ use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-pub struct SidecarState(pub Mutex<Option<CommandChild>>);
+// ---------------------------------------------------------------------------
+// Managed child: supports both Tauri sidecar and direct tokio process
+// ---------------------------------------------------------------------------
+
+pub enum ManagedChild {
+    TauriChild(CommandChild),
+    TokioChild(tokio::process::Child),
+}
+
+impl ManagedChild {
+    pub fn kill(self) {
+        match self {
+            ManagedChild::TauriChild(c) => {
+                let _ = c.kill();
+            }
+            ManagedChild::TokioChild(mut c) => {
+                let _ = c.kill();
+            }
+        }
+    }
+}
+
+pub struct SidecarState(pub Mutex<Option<ManagedChild>>);
+
+// ---------------------------------------------------------------------------
+// Path resolution
+// ---------------------------------------------------------------------------
 
 fn global_dir() -> Option<PathBuf> {
     #[cfg(windows)]
@@ -31,8 +57,32 @@ fn default_web_log_path() -> Result<PathBuf, String> {
     Ok(logs_dir.join(format!("{}-{}.log", date, pid)))
 }
 
+/// Check for updated sidecar binary at ~/.diligent/updates/runtime/
+fn resolve_updated_sidecar_path() -> Option<PathBuf> {
+    let bin_name = if cfg!(windows) {
+        "diligent-web-server.exe"
+    } else {
+        "diligent-web-server"
+    };
+    let path = global_dir()?.join("updates/runtime").join(bin_name);
+    if path.exists() { Some(path) } else { None }
+}
+
+/// Check for updated dist/client at ~/.diligent/updates/runtime/dist/client/
+fn resolve_updated_dist_dir() -> Option<PathBuf> {
+    let candidate = global_dir()?.join("updates/runtime/dist/client");
+    if candidate.exists() { Some(candidate) } else { None }
+}
+
+/// Check for updated rg binary at ~/.diligent/updates/runtime/
+fn resolve_updated_rg_bin() -> Option<PathBuf> {
+    let bin_name = if cfg!(windows) { "rg.exe" } else { "rg" };
+    let path = global_dir()?.join("updates/runtime").join(bin_name);
+    if path.exists() { Some(path) } else { None }
+}
+
 /// Resolve dist/client: prefer bundle resource_dir, fall back to directory next to the exe.
-fn resolve_dist_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn resolve_bundled_dist_dir(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(resource_dir) = app.path().resource_dir() {
         let candidate = resource_dir.join("dist").join("client");
         if candidate.exists() {
@@ -46,7 +96,7 @@ fn resolve_dist_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 /// Resolve bundled rg binary path. Returns None if not found (fall back to system PATH).
-fn resolve_rg_bin() -> Option<std::path::PathBuf> {
+fn resolve_bundled_rg_bin() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
     let rg = if cfg!(windows) {
@@ -57,41 +107,132 @@ fn resolve_rg_bin() -> Option<std::path::PathBuf> {
     if rg.exists() { Some(rg) } else { None }
 }
 
+// ---------------------------------------------------------------------------
+// Sidecar lifecycle
+// ---------------------------------------------------------------------------
+
 /// Spawn the Bun web server sidecar and return the port it is listening on.
+/// Prefers updated binaries from ~/.diligent/updates/runtime/ if available.
 pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
-    let dist_dir = resolve_dist_dir(app)?;
+    // Prefer updated paths, fall back to bundled
+    let dist_dir = resolve_updated_dist_dir()
+        .map_or_else(|| resolve_bundled_dist_dir(app), Ok)?;
     let dist_dir_str = dist_dir.to_string_lossy().to_string();
+
     let log_path = default_web_log_path()?;
     let log_path_str = log_path.to_string_lossy().to_string();
 
-    // Spawn the sidecar with port=0 so the OS picks a free port
+    let rg_path = resolve_updated_rg_bin().or_else(resolve_bundled_rg_bin);
+
+    let args = [
+        "--port=0".to_string(),
+        format!("--dist-dir={}", dist_dir_str),
+        format!("--cwd={}", cwd),
+        format!("--log-file={}", log_path_str),
+    ];
+
+    if let Some(updated_sidecar) = resolve_updated_sidecar_path() {
+        spawn_updated_sidecar(app, &updated_sidecar, &args, rg_path.as_deref()).await
+    } else {
+        spawn_bundled_sidecar(app, &args, rg_path.as_deref()).await
+    }
+}
+
+/// Spawn the updated sidecar via tokio::process::Command.
+async fn spawn_updated_sidecar(
+    app: &AppHandle,
+    binary: &std::path::Path,
+    args: &[String],
+    rg_path: Option<&std::path::Path>,
+) -> Result<u16, String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let mut cmd = tokio::process::Command::new(binary);
+    cmd.args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit());
+
+    if let Some(rg) = rg_path {
+        cmd.env("DILIGENT_RG_PATH", rg.to_string_lossy().as_ref());
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn updated sidecar: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("No stdout from updated sidecar")?;
+
+    // Parse port from stdout
+    let port = {
+        let mut reader = BufReader::new(stdout);
+        let deadline = Duration::from_secs(15);
+        let mut line_buf = String::new();
+        tokio::time::timeout(deadline, async {
+            loop {
+                line_buf.clear();
+                let n = reader
+                    .read_line(&mut line_buf)
+                    .await
+                    .map_err(|e| format!("read stdout: {e}"))?;
+                if n == 0 {
+                    return Err::<u16, String>(
+                        "Sidecar stdout closed before emitting DILIGENT_PORT".into(),
+                    );
+                }
+                if let Some(port_str) = line_buf.trim().strip_prefix("DILIGENT_PORT=") {
+                    let port: u16 = port_str
+                        .trim()
+                        .parse()
+                        .map_err(|_| format!("Invalid port value: {}", port_str.trim()))?;
+                    return Ok(port);
+                }
+            }
+        })
+        .await
+        .map_err(|_| "Timed out waiting for DILIGENT_PORT from updated sidecar".to_string())?
+    }?;
+
+    // Store child for cleanup
+    let state = app.state::<SidecarState>();
+    *state.0.lock().unwrap() = Some(ManagedChild::TokioChild(child));
+
+    // Wait until /health responds
+    wait_for_health(port).await?;
+
+    Ok(port)
+}
+
+/// Spawn the bundled sidecar via Tauri's shell plugin.
+async fn spawn_bundled_sidecar(
+    app: &AppHandle,
+    args: &[String],
+    rg_path: Option<&std::path::Path>,
+) -> Result<u16, String> {
     let mut sidecar_cmd = app
         .shell()
         .sidecar("diligent-web-server")
         .map_err(|e| format!("Cannot create sidecar command: {e}"))?
-        .args([
-            "--port=0",
-            &format!("--dist-dir={}", dist_dir_str),
-            &format!("--cwd={}", cwd),
-            &format!("--log-file={}", log_path_str),
-        ]);
+        .args(args);
 
-    if let Some(rg_path) = resolve_rg_bin() {
-        sidecar_cmd = sidecar_cmd.env("DILIGENT_RG_PATH", rg_path.to_string_lossy().as_ref());
+    if let Some(rg) = rg_path {
+        sidecar_cmd = sidecar_cmd.env("DILIGENT_RG_PATH", rg.to_string_lossy().as_ref());
     }
 
     let (mut rx, child) = sidecar_cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn sidecar: {e}"))?;
 
-    // Store child for later cleanup
+    // Store child for cleanup
     let state = app.state::<SidecarState>();
-    *state.0.lock().unwrap() = Some(child);
+    *state.0.lock().unwrap() = Some(ManagedChild::TauriChild(child));
 
     // Read stdout lines looking for DILIGENT_PORT=<number>
     let port = parse_port_from_stdout(&mut rx).await?;
 
-    // Wait until /health responds (up to 30 s)
+    // Wait until /health responds
     wait_for_health(port).await?;
 
     Ok(port)
@@ -102,7 +243,7 @@ pub fn stop_sidecar(app: &AppHandle) {
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut guard) = state.0.lock() {
             if let Some(child) = guard.take() {
-                let _ = child.kill();
+                child.kill();
             }
         }
     }

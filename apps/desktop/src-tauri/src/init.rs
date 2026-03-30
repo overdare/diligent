@@ -14,6 +14,17 @@ fn global_dir() -> Option<PathBuf> {
     home.map(|h| h.join(".diligent"))
 }
 
+/// Check for updated defaults at ~/.diligent/updates/runtime/defaults/
+fn resolve_updated_defaults_dir(log: &mut String) -> Option<PathBuf> {
+    let candidate = global_dir()?.join("updates/runtime/defaults");
+    if candidate.exists() {
+        let _ = writeln!(log, "[init] Using updated defaults: {}", candidate.display());
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 /// Resolve the bundled defaults directory, trying multiple candidate paths.
 fn resolve_defaults_dir(app: &tauri::App, log: &mut String) -> Option<PathBuf> {
     // 1. resource_dir() / defaults
@@ -134,7 +145,9 @@ pub fn run(app: &tauri::App) {
         return;
     }
 
-    let defaults_dir = resolve_defaults_dir(app, &mut log);
+    // Prefer updated defaults from auto-update, fall back to bundled defaults
+    let defaults_dir = resolve_updated_defaults_dir(&mut log)
+        .or_else(|| resolve_defaults_dir(app, &mut log));
 
     if let Some(ref defaults) = defaults_dir {
         match fs::read_dir(defaults) {

@@ -14,6 +14,8 @@ jobs:
   pack-windows:
     name: Overdare Windows package
     runs-on: windows-latest
+    permissions:
+      contents: write
     env:
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
@@ -40,10 +42,39 @@ jobs:
           echo "Packaging version: $VERSION"
 
       - name: Package
+        env:
+          DILIGENT_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/update-manifest.json
+          DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/overdare-${{ env.VERSION }}
         run: bun run package --version ${{ env.VERSION }} --platforms windows-x64 --package thirdparty/overdare
 
-      - name: Upload zip
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
-          path: dist/overdare-windows-x64-${{ env.VERSION }}.zip
+          path: |
+            dist/overdare-${{ env.VERSION }}-windows-x64.zip
+            dist/overdare-runtime-${{ env.VERSION }}-windows-x64.zip
+            dist/update-manifest.json
+            dist/release-meta.json
+            dist/checksums.sha256
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="overdare-$VERSION"
+          # Create release (or skip if already exists)
+          gh release create "$TAG" \
+            --title "Overdare v$VERSION" \
+            --generate-notes \
+            --draft \
+            2>/dev/null || true
+
+          # Upload assets
+          gh release upload "$TAG" \
+            "dist/overdare-$VERSION-windows-x64.zip" \
+            "dist/overdare-runtime-$VERSION-windows-x64.zip" \
+            "dist/update-manifest.json" \
+            "dist/checksums.sha256" \
+            --clobber
