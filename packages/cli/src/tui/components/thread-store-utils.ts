@@ -8,6 +8,18 @@ import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives
 
 // Mirrors runtime's COLLAB_TOOL_NAMES (packages/runtime/src/tools/tool-metadata.ts). Update in sync if collab tool names change.
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
+
+/**
+ * Normalize tool names for rule matching. Strips namespace prefixes so that
+ * plugin-namespaced tools (e.g. "functions.spawn_agent", "overdare/spawn_agent")
+ * are recognized the same as their base names.
+ */
+export function normalizeToolName(toolName: string): string {
+  const raw = toolName.trim().toLowerCase();
+  if (!raw) return raw;
+  const cutIdx = Math.max(raw.lastIndexOf("/"), raw.lastIndexOf("."));
+  return cutIdx >= 0 ? raw.slice(cutIdx + 1) : raw;
+}
 export const TOOL_MAX_LINES = 5;
 
 export interface ToolCallState {
@@ -200,18 +212,19 @@ export function deriveToolStartState(
   event: Extract<AgentEvent, { type: "tool_start" }>,
   options: { planCallCount: number; collabAgentNamesByThreadId: Record<string, string> },
 ): { overlayMessage: string; collabState?: CollabToolState } {
-  if (event.toolName === "plan") {
+  const toolName = normalizeToolName(event.toolName);
+  if (toolName === "plan") {
     return { overlayMessage: options.planCallCount === 0 ? "Planning…" : "Updating plan…" };
   }
 
-  if (!COLLAB_TOOL_NAMES.has(event.toolName)) {
+  if (!COLLAB_TOOL_NAMES.has(toolName)) {
     return { overlayMessage: event.toolName };
   }
 
   const input = event.input as Record<string, unknown> | null;
   let spinnerLabel = event.toolName;
   let prompt: string | undefined;
-  if (event.toolName === "spawn_agent") {
+  if (toolName === "spawn_agent") {
     const agentType = (input?.agent_type as string | undefined) ?? "general";
     const description = (input?.description as string | undefined) ?? "";
     const promptText = typeof input?.message === "string" ? input.message : "";
@@ -224,7 +237,7 @@ export function deriveToolStartState(
         ? `Spawning [${agentType}] ${promptSummary}`
         : `Spawning [${agentType}]…`;
     prompt = promptText || undefined;
-  } else if (event.toolName === "wait") {
+  } else if (toolName === "wait") {
     const ids = input?.ids;
     if (Array.isArray(ids) && ids.length > 0) {
       const labels = ids.map((id) => {
@@ -235,12 +248,12 @@ export function deriveToolStartState(
     } else {
       spinnerLabel = "Waiting for agents…";
     }
-  } else if (event.toolName === "send_input") {
+  } else if (toolName === "send_input") {
     const targetId = input?.id as string | undefined;
     spinnerLabel = `Sending to ${
       (targetId ? options.collabAgentNamesByThreadId[targetId] : undefined) ?? targetId ?? "agent"
     }…`;
-  } else if (event.toolName === "close_agent") {
+  } else if (toolName === "close_agent") {
     const targetId = input?.id as string | undefined;
     spinnerLabel = `Closing ${
       (targetId ? options.collabAgentNamesByThreadId[targetId] : undefined) ?? targetId ?? "agent"
@@ -257,7 +270,7 @@ export function deriveToolUpdateMessage(
   event: Extract<AgentEvent, { type: "tool_update" }>,
   collabState?: CollabToolState,
 ): string {
-  if (COLLAB_TOOL_NAMES.has(event.toolName) && collabState) {
+  if (COLLAB_TOOL_NAMES.has(normalizeToolName(event.toolName)) && collabState) {
     return `${collabState.label} — ${event.partialResult}`;
   }
   return `${event.toolName}…`;
@@ -272,6 +285,7 @@ export function buildToolEndItem(options: {
   nowMs: number;
 }): { item: ThreadItem; collabAgentNamesByThreadId: Record<string, string>; planCallCount: number } {
   const { event, toolCall, collabState, planCallCount, collabAgentNamesByThreadId, nowMs } = options;
+  const toolName = normalizeToolName(event.toolName);
   const elapsedVal = toolCall ? formatElapsedSeconds(nowMs - toolCall.startedAt) : null;
   const elapsed = elapsedVal ? ` ${t.dim}· ${elapsedVal}${t.reset}` : "";
   const icon = event.isError ? `${t.error}✗${t.reset}` : `${t.success}⏺${t.reset}`;
@@ -280,7 +294,7 @@ export function buildToolEndItem(options: {
     toProtocolRenderPayload(event.render),
   );
 
-  if (event.toolName === "plan") {
+  if (toolName === "plan") {
     const nextPlanCallCount = planCallCount + 1;
     const parsed = parseCollabOutput(event.output);
     const isUpdate = nextPlanCallCount > 1;
@@ -306,7 +320,7 @@ export function buildToolEndItem(options: {
     };
   }
 
-  if (event.toolName === "skill") {
+  if (toolName === "skill") {
     const match = event.output.match(/<skill_content\s+name="([^"]+)"/);
     const skillName = match?.[1];
     const label = skillName ? `Loaded skill: ${skillName}` : "Loaded skill";
@@ -317,12 +331,12 @@ export function buildToolEndItem(options: {
     };
   }
 
-  if (COLLAB_TOOL_NAMES.has(event.toolName)) {
+  if (COLLAB_TOOL_NAMES.has(toolName)) {
     const parsed = parseCollabOutput(event.output);
     const lines: string[] = [];
     const nextNames = { ...collabAgentNamesByThreadId };
 
-    if (event.toolName === "spawn_agent") {
+    if (toolName === "spawn_agent") {
       const nickname = (parsed?.nickname as string | undefined) ?? "agent";
       const inputLabel = collabState?.label ?? "";
       const typeMatch = inputLabel.match(/\[([^\]]+)\]/);
@@ -347,7 +361,7 @@ export function buildToolEndItem(options: {
       return { item, collabAgentNamesByThreadId: nextNames, planCallCount };
     }
 
-    if (event.toolName === "wait") {
+    if (toolName === "wait") {
       lines.push(`${icon} Finished waiting${elapsed}`);
       if (parsed?.summary && Array.isArray(parsed.summary)) {
         for (const entry of parsed.summary as string[]) {
@@ -360,13 +374,13 @@ export function buildToolEndItem(options: {
       return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
     }
 
-    if (event.toolName === "send_input") {
+    if (toolName === "send_input") {
       const nickname = (parsed?.nickname as string | undefined) ?? "agent";
       lines.push(`${icon} Sent input → ${t.bold}${nickname}${t.reset}${elapsed}`);
       return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
     }
 
-    if (event.toolName === "close_agent") {
+    if (toolName === "close_agent") {
       const nickname = (parsed?.nickname as string | undefined) ?? "agent";
       lines.push(`${icon} Closed ${t.bold}${nickname}${t.reset}${elapsed}`);
       return { item: createToolResultItem(lines), collabAgentNamesByThreadId: nextNames, planCallCount };
