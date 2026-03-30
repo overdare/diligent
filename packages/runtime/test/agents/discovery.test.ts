@@ -29,10 +29,12 @@ describe("discoverAgents", () => {
   it("discovers agent from project-local .diligent/agents", async () => {
     const root = await createTmpDir();
     const dir = join(root, ".diligent", "agents", "code-reviewer");
+    const isolatedGlobal = join(root, ".global-diligent");
     await mkdir(dir, { recursive: true });
+    await mkdir(join(isolatedGlobal, "agents"), { recursive: true });
     await writeFile(join(dir, "AGENT.md"), makeAgentMd("code-reviewer", "Reviews code"));
 
-    const result = await discoverAgents({ cwd: root });
+    const result = await discoverAgents({ cwd: root, globalConfigDir: isolatedGlobal });
     expect(result.errors).toHaveLength(0);
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0].name).toBe("code-reviewer");
@@ -62,12 +64,18 @@ describe("discoverAgents", () => {
     const root = await createTmpDir();
     const configRootA = join(root, "extra-a");
     const configRootB = join(root, "extra-b");
+    const isolatedGlobal = join(root, ".global-diligent");
     await mkdir(join(configRootA, "reviewer"), { recursive: true });
     await mkdir(join(configRootB, "reviewer"), { recursive: true });
+    await mkdir(join(isolatedGlobal, "agents"), { recursive: true });
     await writeFile(join(configRootA, "reviewer", "AGENT.md"), makeAgentMd("reviewer", "A"));
     await writeFile(join(configRootB, "reviewer", "AGENT.md"), makeAgentMd("reviewer", "B"));
 
-    const result = await discoverAgents({ cwd: root, additionalPaths: [configRootA, configRootB] });
+    const result = await discoverAgents({
+      cwd: root,
+      additionalPaths: [configRootA, configRootB],
+      globalConfigDir: isolatedGlobal,
+    });
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0].description).toBe("A");
   });
@@ -75,9 +83,11 @@ describe("discoverAgents", () => {
   it("rejects collisions with built-in names", async () => {
     const root = await createTmpDir();
     const dir = join(root, ".diligent", "agents", "general");
+    const isolatedGlobal = join(root, ".global-diligent");
     await mkdir(dir, { recursive: true });
+    await mkdir(join(isolatedGlobal, "agents"), { recursive: true });
     await writeFile(join(dir, "AGENT.md"), makeAgentMd("general", "Override"));
-    const result = await discoverAgents({ cwd: root });
+    const result = await discoverAgents({ cwd: root, globalConfigDir: isolatedGlobal });
     expect(result.agents).toHaveLength(0);
     expect(result.errors[0]?.error).toContain("collides with built-in");
   });

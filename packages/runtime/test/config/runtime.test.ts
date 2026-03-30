@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { RuntimeConfig } from "../../src/config/runtime";
 import { loadRuntimeConfig } from "../../src/config/runtime";
 import type { DiligentPaths } from "../../src/infrastructure";
 
@@ -29,10 +30,12 @@ describe("loadRuntimeConfig", () => {
   it("loads discovered agents and adds an agents section to the system prompt", async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-config-"));
     const paths = makePaths(tmpRoot);
+    const isolatedHome = join(tmpRoot, ".isolated-home");
     await mkdir(paths.sessions, { recursive: true });
     await mkdir(paths.knowledge, { recursive: true });
     await mkdir(paths.skills, { recursive: true });
     await mkdir(paths.images, { recursive: true });
+    await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
     const agentDir = join(tmpRoot, ".diligent", "agents", "code-reviewer");
     await mkdir(agentDir, { recursive: true });
     await writeFile(
@@ -49,7 +52,17 @@ describe("loadRuntimeConfig", () => {
     );
     await writeFile(join(tmpRoot, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
-    const config = await loadRuntimeConfig(tmpRoot, paths);
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    let config: RuntimeConfig;
+    try {
+      config = await loadRuntimeConfig(tmpRoot, paths);
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
 
     expect(config.agents).toHaveLength(1);
     expect(config.agents[0]?.name).toBe("code-reviewer");
