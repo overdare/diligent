@@ -44,7 +44,7 @@ jobs:
       - name: Package
         env:
           DILIGENT_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/update-manifest.json
-          DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/overdare-${{ env.VERSION }}
+          DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}
         run: bun run package --version ${{ env.VERSION }} --platforms windows-x64 --package thirdparty/overdare
 
       - name: Upload artifacts
@@ -62,7 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="overdare-$VERSION"
+          TAG="v$VERSION"
           gh release create "$TAG" \
             dist/*-"$VERSION"-windows-x64.zip \
             dist/update-manifest.json \
