@@ -188,7 +188,7 @@ function buildDesktop(plat: PlatformTarget): void {
 
   if (rustSourcesChanged(tauriDir)) {
     console.log("   Rust sources changed — full compile");
-    run(`bunx tauri build --config "${tauriConfigPath}"`, DESKTOP, {
+    run(`bunx tauri build --bundles none --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
       DILIGENT_RUNTIME_VERSION: version,
@@ -197,7 +197,7 @@ function buildDesktop(plat: PlatformTarget): void {
     saveRustHash(tauriDir);
   } else {
     console.log("   Rust sources unchanged — skipping compile, bundling only");
-    run(`bunx tauri bundle --config "${tauriConfigPath}"`, DESKTOP, {
+    run(`bunx tauri bundle --bundles none --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
       DILIGENT_RUNTIME_VERSION: version,
