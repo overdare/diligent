@@ -314,12 +314,23 @@ function collectDesktopArtifacts(plat: PlatformTarget, platDir: string, list: st
   const bundleDir = join(DESKTOP, "src-tauri/target/release/bundle");
   const releaseDir = join(DESKTOP, "src-tauri/target/release");
 
-  // Windows: assemble portable folder instead of collecting installer
+  // Windows: assemble portable folder and create zip archive
   if (plat.os === "windows") {
     const portableName = `${projectArtifactName}-desktop-${version}-${plat.id}`;
     const portableDir = join(platDir, portableName);
     assemblePortableFolder(plat, portableDir);
     list.push(`${portableName}/`);
+
+    // Create zip archive of the portable folder
+    const zipName = `${portableName}.zip`;
+    const zipPath = join(platDir, zipName);
+    if (existsSync(zipPath)) rmSync(zipPath, { force: true });
+    console.log(`   Zipping portable folder → ${zipName}`);
+    execSync(
+      `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}\\*' -DestinationPath '${zipPath}' -Force"`,
+      { stdio: "inherit" },
+    );
+    list.push(zipName);
     return;
   }
 
