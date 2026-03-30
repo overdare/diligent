@@ -13,6 +13,9 @@ const BUNDLED_RUNTIME_VERSION: &str = match option_env!("DILIGENT_RUNTIME_VERSIO
     None => "0.0.0-dev",
 };
 
+const DEFAULT_UPDATE_MANIFEST_URL: &str =
+    "https://github.com/overdare/diligent/releases/latest/download/update-manifest.json";
+
 // ---------------------------------------------------------------------------
 // Manifest types
 // ---------------------------------------------------------------------------
@@ -56,6 +59,10 @@ fn updates_dir() -> Option<PathBuf> {
     global_dir().map(|g| g.join("updates"))
 }
 
+fn runtime_dir() -> Option<PathBuf> {
+    updates_dir().map(|u| u.join("runtime"))
+}
+
 fn current_platform() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     return "darwin-arm64";
@@ -69,18 +76,17 @@ fn current_platform() -> &'static str {
     return "windows-x64";
 }
 
-/// Check if auto-update is disabled via ~/.diligent/config.jsonc `"updateMode": "disabled"`.
-fn is_update_disabled() -> bool {
+fn read_user_config_json() -> Option<serde_json::Value> {
     let path = match global_dir() {
         Some(g) => g.join("config.jsonc"),
-        None => return false,
+        None => return None,
     };
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return false,
+        Err(_) => return None,
     };
-    // Simple check: look for "updateMode" value without full JSONC parser.
-    // Strip single-line comments before matching.
+
+    // Simple JSONC handling: strip single-line comments before parsing.
     let stripped: String = content
         .lines()
         .map(|line| {
@@ -93,23 +99,64 @@ fn is_update_disabled() -> bool {
         .collect::<Vec<_>>()
         .join("\n");
 
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&stripped) {
-        val.get("updateMode")
-            .and_then(|v| v.as_str())
-            .map(|s| s == "disabled")
-            .unwrap_or(false)
-    } else {
-        false
-    }
+    serde_json::from_str::<serde_json::Value>(&stripped).ok()
+}
+
+/// Check if auto-update is disabled via ~/.diligent/config.jsonc `"updateMode": "disabled"`.
+fn is_update_disabled() -> bool {
+    read_user_config_json()
+        .and_then(|val| {
+            val.get("updateMode")
+                .and_then(|v| v.as_str())
+                .map(|s| s == "disabled")
+        })
+        .unwrap_or(false)
 }
 
 /// Resolve the manifest URL.
-/// Priority: `DILIGENT_UPDATE_URL` compile-time env > empty (disabled).
+/// Priority: process env `DILIGENT_UPDATE_URL` > compile-time env > fixed default.
 fn resolve_manifest_url() -> String {
+    if let Ok(url) = std::env::var("DILIGENT_UPDATE_URL") {
+        let trimmed = url.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
     match option_env!("DILIGENT_UPDATE_URL") {
         Some(url) if !url.is_empty() => url.to_string(),
-        _ => String::new(),
+        _ => DEFAULT_UPDATE_MANIFEST_URL.to_string(),
     }
+}
+
+fn runtime_bootstrap_required() -> bool {
+    if BUNDLED_RUNTIME_VERSION == "0.0.0-dev" {
+        return false;
+    }
+
+    let runtime = match runtime_dir() {
+        Some(path) => path,
+        None => return false,
+    };
+
+    let sidecar_name = if cfg!(windows) {
+        "diligent-web-server.exe"
+    } else {
+        "diligent-web-server"
+    };
+
+    let has_sidecar = runtime.join(sidecar_name).exists();
+    let has_dist = runtime.join("dist/client").exists();
+
+    !(has_sidecar && has_dist)
+}
+
+fn should_download_update(
+    manifest_version: &str,
+    effective_version: &str,
+    bootstrap_required: bool,
+) -> bool {
+    bootstrap_required || manifest_version != effective_version
 }
 
 // ---------------------------------------------------------------------------
@@ -130,65 +177,125 @@ struct FetchedUpdate {
     bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone)]
+pub enum UpdateProgress {
+    Disabled,
+    BootstrapRequired,
+    Checking { current_version: String },
+    Downloading { target_version: String },
+    Verifying { target_version: String },
+    Extracting { target_version: String },
+    Applying { target_version: String },
+    UpToDate,
+    Updated { target_version: String },
+}
+
+fn report_progress(
+    progress: &mut Option<&mut dyn FnMut(UpdateProgress)>,
+    event: UpdateProgress,
+) {
+    if let Some(callback) = progress.as_deref_mut() {
+        callback(event);
+    }
+}
+
+#[cfg(windows)]
+fn hide_windows_console(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_windows_console(_cmd: &mut std::process::Command) {}
+
 /// Fetch manifest and download bundle on a dedicated thread.
 /// reqwest::blocking panics inside an existing tokio runtime (Tauri's setup
 /// hook runs in one), so all HTTP work must happen off the async runtime.
-fn fetch_update(manifest_url: &str) -> Result<Option<FetchedUpdate>, String> {
+fn fetch_update(
+    manifest_url: &str,
+    effective_version: String,
+    bootstrap_required: bool,
+    progress: &mut Option<&mut dyn FnMut(UpdateProgress)>,
+) -> Result<Option<FetchedUpdate>, String> {
     let manifest_url = manifest_url.to_string();
-    let effective_version = installed_version()
-        .map(|v| v.version)
-        .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
     let platform = current_platform().to_string();
 
-    std::thread::spawn(move || {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
-            .build()
-            .map_err(|e| format!("http client: {e}"))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent(format!("diligent-desktop/{}", BUNDLED_RUNTIME_VERSION))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
 
-        // 1. Fetch remote manifest
-        let manifest: UpdateManifest = client
-            .get(&manifest_url)
-            .send()
-            .map_err(|e| format!("fetch manifest: {e}"))?
-            .json()
-            .map_err(|e| format!("parse manifest: {e}"))?;
+    // 1. Fetch remote manifest
+    let manifest_response = client
+        .get(&manifest_url)
+        .send()
+        .map_err(|e| format!("fetch manifest: {e}"))?;
 
-        // 2. Compare versions
-        if manifest.version == effective_version {
-            return Ok(None);
-        }
+    if !manifest_response.status().is_success() {
+        return Err(format!(
+            "fetch manifest failed: HTTP {} ({})",
+            manifest_response.status(),
+            manifest_url
+        ));
+    }
 
-        // 3. Resolve platform bundle
-        let bundle = manifest
-            .platforms
-            .get(&platform)
-            .ok_or(format!("no bundle for platform {platform}"))?
-            .clone();
+    let manifest_body = manifest_response
+        .text()
+        .map_err(|e| format!("read manifest body: {e}"))?;
 
-        // 4. Download bundle
-        let response = client
-            .get(&bundle.url)
-            .send()
-            .map_err(|e| format!("download bundle: {e}"))?;
+    let manifest: UpdateManifest = serde_json::from_str(&manifest_body).map_err(|e| {
+        let preview = manifest_body
+            .replace('\n', " ")
+            .chars()
+            .take(180)
+            .collect::<String>();
+        format!(
+            "parse manifest: {e} (url: {}, body preview: {})",
+            manifest_url, preview
+        )
+    })?;
 
-        if !response.status().is_success() {
-            return Err(format!("download failed: HTTP {}", response.status()));
-        }
+    // 2. Compare versions
+    if !should_download_update(&manifest.version, &effective_version, bootstrap_required) {
+        report_progress(progress, UpdateProgress::UpToDate);
+        return Ok(None);
+    }
 
-        let bytes = response
-            .bytes()
-            .map_err(|e| format!("read bundle bytes: {e}"))?;
+    // 3. Resolve platform bundle
+    let bundle = manifest
+        .platforms
+        .get(&platform)
+        .ok_or(format!("no bundle for platform {platform}"))?
+        .clone();
 
-        Ok(Some(FetchedUpdate {
-            version: manifest.version,
-            sha256: bundle.sha256,
-            bytes: bytes.to_vec(),
-        }))
-    })
-    .join()
-    .map_err(|_| "update thread panicked".to_string())?
+    report_progress(
+        progress,
+        UpdateProgress::Downloading {
+            target_version: manifest.version.clone(),
+        },
+    );
+
+    // 4. Download bundle
+    let response = client
+        .get(&bundle.url)
+        .send()
+        .map_err(|e| format!("download bundle: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("download failed: HTTP {}", response.status()));
+    }
+
+    let bytes = response
+        .bytes()
+        .map_err(|e| format!("read bundle bytes: {e}"))?;
+
+    Ok(Some(FetchedUpdate {
+        version: manifest.version,
+        sha256: bundle.sha256,
+        bytes: bytes.to_vec(),
+    }))
 }
 
 /// Run the full update cycle synchronously: check manifest, download if newer,
@@ -196,14 +303,29 @@ fn fetch_update(manifest_url: &str) -> Result<Option<FetchedUpdate>, String> {
 ///
 /// Must be called at startup BEFORE sidecar spawn.
 /// Returns `Ok(true)` if an update was applied, `Ok(false)` if already up-to-date or disabled.
-pub fn run(log: &mut String) -> Result<bool, String> {
+pub fn run_with_progress(
+    log: &mut String,
+    mut progress: Option<&mut dyn FnMut(UpdateProgress)>,
+) -> Result<bool, String> {
     if is_update_disabled() {
         let _ = writeln!(log, "[update] auto-update disabled via config");
+        report_progress(&mut progress, UpdateProgress::Disabled);
         return Ok(false);
+    }
+
+    let bootstrap_required = runtime_bootstrap_required();
+    if bootstrap_required {
+        let _ = writeln!(log, "[update] Runtime bootstrap required (missing updated runtime)");
+        report_progress(&mut progress, UpdateProgress::BootstrapRequired);
     }
 
     let manifest_url = resolve_manifest_url();
     if manifest_url.is_empty() {
+        if bootstrap_required {
+            return Err(
+                "No update URL configured (set DILIGENT_UPDATE_URL at runtime or compile with it), cannot bootstrap runtime".to_string(),
+            );
+        }
         return Ok(false); // no update URL compiled in
     }
 
@@ -211,12 +333,25 @@ pub fn run(log: &mut String) -> Result<bool, String> {
         .map(|v| v.version)
         .unwrap_or_else(|| BUNDLED_RUNTIME_VERSION.to_string());
 
+    report_progress(
+        &mut progress,
+        UpdateProgress::Checking {
+            current_version: effective_version.clone(),
+        },
+    );
+
     let _ = writeln!(log, "[update] Checking for updates (current: v{effective_version})...");
 
-    let fetched = match fetch_update(&manifest_url)? {
+    let fetched = match fetch_update(
+        &manifest_url,
+        effective_version.clone(),
+        bootstrap_required,
+        &mut progress,
+    )? {
         Some(f) => f,
         None => {
             let _ = writeln!(log, "[update] Already up-to-date");
+            report_progress(&mut progress, UpdateProgress::UpToDate);
             return Ok(false);
         }
     };
@@ -239,6 +374,12 @@ pub fn run(log: &mut String) -> Result<bool, String> {
     fs::write(&zip_path, &fetched.bytes).map_err(|e| format!("write bundle: {e}"))?;
 
     // Verify checksum
+    report_progress(
+        &mut progress,
+        UpdateProgress::Verifying {
+            target_version: fetched.version.clone(),
+        },
+    );
     if !verify_sha256(&zip_path, &fetched.sha256)? {
         let _ = fs::remove_file(&zip_path);
         return Err("Downloaded bundle failed SHA256 verification".into());
@@ -249,6 +390,13 @@ pub fn run(log: &mut String) -> Result<bool, String> {
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| format!("clean staging: {e}"))?;
     }
+
+    report_progress(
+        &mut progress,
+        UpdateProgress::Extracting {
+            target_version: fetched.version.clone(),
+        },
+    );
     extract_zip(&zip_path, &staging)?;
 
     // Set executable permissions (unix)
@@ -280,6 +428,13 @@ pub fn run(log: &mut String) -> Result<bool, String> {
     if runtime.exists() {
         fs::remove_dir_all(&runtime).map_err(|e| format!("remove old runtime: {e}"))?;
     }
+
+    report_progress(
+        &mut progress,
+        UpdateProgress::Applying {
+            target_version: fetched.version.clone(),
+        },
+    );
     fs::rename(&staging, &runtime).map_err(|e| format!("rename staging to runtime: {e}"))?;
 
     // Clean up zip
@@ -290,6 +445,14 @@ pub fn run(log: &mut String) -> Result<bool, String> {
         "[update] Successfully updated to v{}",
         version_info.version
     );
+
+    report_progress(
+        &mut progress,
+        UpdateProgress::Updated {
+            target_version: version_info.version.clone(),
+        },
+    );
+
     Ok(true)
 }
 
@@ -333,7 +496,10 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
             zip_path.display(),
             dest.display()
         );
-        let status = std::process::Command::new("powershell")
+        let mut cmd = std::process::Command::new("powershell");
+        hide_windows_console(&mut cmd);
+
+        let status = cmd
             .args(["-NoProfile", "-Command", &script])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -389,5 +555,20 @@ mod tests {
     fn bundled_version_has_value() {
         // In dev builds this is "0.0.0-dev"; in release it's injected.
         assert!(!BUNDLED_RUNTIME_VERSION.is_empty());
+    }
+
+    #[test]
+    fn should_download_when_bootstrap_required_even_same_version() {
+        assert!(should_download_update("1.2.3", "1.2.3", true));
+    }
+
+    #[test]
+    fn should_not_download_when_same_version_and_bootstrap_not_required() {
+        assert!(!should_download_update("1.2.3", "1.2.3", false));
+    }
+
+    #[test]
+    fn should_download_when_version_differs() {
+        assert!(should_download_update("1.2.4", "1.2.3", false));
     }
 }

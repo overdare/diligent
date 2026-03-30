@@ -179,6 +179,8 @@ function buildSidecar(plat: PlatformTarget): void {
 
 function buildDesktop(plat: PlatformTarget): void {
   const tauriDir = join(DESKTOP, "src-tauri");
+  const updateUrlEnv = process.env.DILIGENT_UPDATE_URL ?? "";
+  const buildFingerprint = `runtimeVersion=${version};updateUrl=${updateUrlEnv}`;
 
   // Copy web frontend into Tauri resource tree
   const clientDist = join(ROOT, "packages/web/dist/client");
@@ -189,15 +191,15 @@ function buildDesktop(plat: PlatformTarget): void {
 
   const tauriConfigPath = join(tauriDir, ".diligent-packaging", "tauri.package.conf.json");
 
-  if (rustSourcesChanged(tauriDir)) {
+  if (rustSourcesChanged(tauriDir, { buildFingerprint })) {
     console.log("   Rust sources changed — full compile");
     run(`bunx tauri build --no-bundle --config "${tauriConfigPath}"`, DESKTOP, {
       TAURI_TARGET_TRIPLE: plat.tauriTriple,
       DILIGENT_APP_PROJECT_NAME: projectName,
       DILIGENT_RUNTIME_VERSION: version,
-      ...(process.env.DILIGENT_UPDATE_URL ? { DILIGENT_UPDATE_URL: process.env.DILIGENT_UPDATE_URL } : {}),
+      ...(updateUrlEnv ? { DILIGENT_UPDATE_URL: updateUrlEnv } : {}),
     });
-    saveRustHash(tauriDir);
+    saveRustHash(tauriDir, { buildFingerprint });
   } else {
     console.log("   Rust sources unchanged — skipping compile (portable folder assembled directly)");
   }
@@ -447,7 +449,7 @@ try {
   // Generate update manifest
   console.log("\n📝 Writing update-manifest.json...");
   const updateBaseUrl =
-    process.env.DILIGENT_UPDATE_BASE_URL || `https://github.com/example/diligent/releases/download/v${version}`;
+    process.env.DILIGENT_UPDATE_BASE_URL || `https://github.com/overdare/diligent/releases/download/v${version}`;
   generateUpdateManifest({
     version,
     distDir: DIST,

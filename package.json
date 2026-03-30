@@ -36,6 +36,7 @@
     "typecheck:examples": "NO_COLOR=1 FORCE_COLOR=0 ./thirdparty/examples/external-tool-plugin/node_modules/.bin/tsc --pretty false --noEmit -p thirdparty/examples/external-tool-plugin/tsconfig.json",
     "desktop:dev": "bun run --cwd apps/desktop dev",
     "desktop:build": "bun run --cwd apps/desktop build",
+    "desktop:build:exe-only": "bun run --cwd apps/desktop build:exe-only",
     "package": "bun run --cwd apps/desktop scripts/package.ts"
   },
   "devDependencies": {

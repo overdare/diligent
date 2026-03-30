@@ -20,6 +20,10 @@ function collectFiles(dir: string): string[] {
   return results;
 }
 
+interface ComputeRustHashOptions {
+  buildFingerprint?: string;
+}
+
 /**
  * Compute a combined SHA256 hash of all Rust-related source files.
  *
@@ -29,8 +33,9 @@ function collectFiles(dir: string): string[] {
  *   - src-tauri/build.rs
  *   - src-tauri/tauri.conf.json
  *   - src-tauri/capabilities/**  (Tauri capability JSON files)
+ *   - Optional build fingerprint (compile-time env inputs)
  */
-export function computeRustHash(tauriDir: string): string {
+export function computeRustHash(tauriDir: string, options?: ComputeRustHashOptions): string {
   const candidates: string[] = [
     join(tauriDir, "Cargo.toml"),
     join(tauriDir, "Cargo.lock"),
@@ -50,6 +55,12 @@ export function computeRustHash(tauriDir: string): string {
     hash.update(file);
     hash.update(readFileSync(file));
   }
+
+  const buildFingerprint = options?.buildFingerprint?.trim();
+  if (buildFingerprint) {
+    hash.update(`\n#build-fingerprint:${buildFingerprint}`);
+  }
+
   return hash.digest("hex");
 }
 
@@ -57,9 +68,9 @@ export function computeRustHash(tauriDir: string): string {
  * Returns true if the Rust sources have changed since the last recorded build.
  * Also returns true if no hash file exists yet.
  */
-export function rustSourcesChanged(tauriDir: string): boolean {
+export function rustSourcesChanged(tauriDir: string, options?: ComputeRustHashOptions): boolean {
   const hashFile = join(tauriDir, HASH_FILE);
-  const current = computeRustHash(tauriDir);
+  const current = computeRustHash(tauriDir, options);
   try {
     const stored = readFileSync(hashFile, "utf-8").trim();
     return current !== stored;
@@ -69,7 +80,7 @@ export function rustSourcesChanged(tauriDir: string): boolean {
 }
 
 /** Persist the current hash after a successful Rust build. */
-export function saveRustHash(tauriDir: string): void {
+export function saveRustHash(tauriDir: string, options?: ComputeRustHashOptions): void {
   const hashFile = join(tauriDir, HASH_FILE);
-  writeFileSync(hashFile, `${computeRustHash(tauriDir)}\n`);
+  writeFileSync(hashFile, `${computeRustHash(tauriDir, options)}\n`);
 }

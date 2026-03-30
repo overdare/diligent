@@ -148,6 +148,13 @@ async fn spawn_updated_sidecar(
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     let mut cmd = tokio::process::Command::new(binary);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     cmd.args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit());

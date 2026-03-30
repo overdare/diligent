@@ -5,6 +5,19 @@ use std::path::{Path, PathBuf};
 
 use tauri::Manager;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeployMode {
+    MissingOnly,
+    FullSync,
+}
+
+fn should_copy_entry(dest_exists: bool, mode: DeployMode) -> bool {
+    match mode {
+        DeployMode::MissingOnly => !dest_exists,
+        DeployMode::FullSync => true,
+    }
+}
+
 /// Global ~/.diligent directory
 fn global_dir() -> Option<PathBuf> {
     #[cfg(windows)]
@@ -26,7 +39,7 @@ fn resolve_updated_defaults_dir(log: &mut String) -> Option<PathBuf> {
 }
 
 /// Resolve the bundled defaults directory, trying multiple candidate paths.
-fn resolve_defaults_dir(app: &tauri::App, log: &mut String) -> Option<PathBuf> {
+fn resolve_defaults_dir(app: &tauri::AppHandle, log: &mut String) -> Option<PathBuf> {
     // 1. resource_dir() / defaults
     match app.path().resource_dir() {
         Ok(resource_dir) => {
@@ -82,7 +95,7 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// Deploy plugins directory: delete and re-copy each bundled package individually.
 /// Supports scoped packages (@scope/plugin-name) by iterating one level deeper.
 /// Packages not present in the bundle (e.g. user-added plugins) are left untouched.
-fn deploy_plugins(src: &Path, dest: &Path, log: &mut String) -> std::io::Result<()> {
+fn deploy_plugins(src: &Path, dest: &Path, log: &mut String, mode: DeployMode) -> std::io::Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
@@ -106,16 +119,37 @@ fn deploy_plugins(src: &Path, dest: &Path, log: &mut String) -> std::io::Result<
                 if !src_plugin.is_dir() {
                     continue;
                 }
-                if dest_plugin.exists() {
+                let exists = dest_plugin.exists();
+                if !should_copy_entry(exists, mode) {
+                    let _ = writeln!(
+                        log,
+                        "[init] Kept existing plugins/{}/{}/",
+                        name_str,
+                        plugin_name.to_string_lossy()
+                    );
+                    continue;
+                }
+                if exists {
                     fs::remove_dir_all(&dest_plugin)?;
-                    let _ = writeln!(log, "[init] Removed stale plugins/{}/{}/", name_str, plugin_name.to_string_lossy());
+                    let _ = writeln!(
+                        log,
+                        "[init] Removed stale plugins/{}/{}/",
+                        name_str,
+                        plugin_name.to_string_lossy()
+                    );
                 }
                 copy_dir_recursive(&src_plugin, &dest_plugin)?;
                 let _ = writeln!(log, "[init] Deployed plugins/{}/{}/", name_str, plugin_name.to_string_lossy());
             }
         } else {
             // Non-scoped plugin: delete dest package dir and replace
-            if dest_child.exists() {
+            let exists = dest_child.exists();
+            if !should_copy_entry(exists, mode) {
+                let _ = writeln!(log, "[init] Kept existing plugins/{}/", name_str);
+                continue;
+            }
+
+            if exists {
                 fs::remove_dir_all(&dest_child)?;
                 let _ = writeln!(log, "[init] Removed stale plugins/{}/", name_str);
             }
@@ -126,9 +160,27 @@ fn deploy_plugins(src: &Path, dest: &Path, log: &mut String) -> std::io::Result<
     Ok(())
 }
 
-/// Deploy bundled defaults on every app startup. Non-fatal: logs errors but never blocks the app.
-pub fn run(app: &tauri::App) {
+/// Deploy defaults with policy:
+/// - MissingOnly (default): copy only when target does not exist
+/// - FullSync (after update applied): replace with bundled/updated defaults
+/// Non-fatal: logs errors but never blocks the app.
+pub fn run(app: &tauri::AppHandle, update_applied: bool) {
     let mut log = String::new();
+
+    let mode = if update_applied {
+        DeployMode::FullSync
+    } else {
+        DeployMode::MissingOnly
+    };
+
+    let _ = writeln!(
+        log,
+        "[init] Deploy mode: {}",
+        match mode {
+            DeployMode::MissingOnly => "missing-only",
+            DeployMode::FullSync => "full-sync",
+        }
+    );
 
     let Some(global) = global_dir() else {
         let _ = writeln!(log, "[init] Cannot determine home directory, skipping setup");
@@ -161,6 +213,11 @@ pub fn run(app: &tauri::App) {
                     let dest = global.join(&name);
                     if src.is_file() {
                         let existed_before = dest.exists();
+                        if !should_copy_entry(existed_before, mode) {
+                            let _ = writeln!(log, "[init] Kept existing {}", dest.display());
+                            continue;
+                        }
+
                         match fs::copy(&src, &dest) {
                             Ok(_) => {
                                 if existed_before {
@@ -174,12 +231,18 @@ pub fn run(app: &tauri::App) {
                     } else if src.is_dir() {
                         if name.to_string_lossy() == "plugins" {
                             // Plugins: delete and re-copy each bundled package individually
-                            match deploy_plugins(&src, &dest, &mut log) {
+                            match deploy_plugins(&src, &dest, &mut log, mode) {
                                 Ok(_) => { let _ = writeln!(log, "[init] Deployed plugins/"); }
                                 Err(e) => { let _ = writeln!(log, "[init] Failed to deploy plugins/: {e}"); }
                             }
                         } else {
-                            if dest.exists() {
+                            let existed_before = dest.exists();
+                            if !should_copy_entry(existed_before, mode) {
+                                let _ = writeln!(log, "[init] Kept existing {}/", name.to_string_lossy());
+                                continue;
+                            }
+
+                            if existed_before {
                                 if let Err(e) = fs::remove_dir_all(&dest) {
                                     let _ = writeln!(log, "[init] Cannot replace {}: {e}", dest.display());
                                     continue;
@@ -211,4 +274,21 @@ fn global_log_path() -> PathBuf {
 
 fn flush_log(path: &Path, log: &str) {
     let _ = fs::write(path, log);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_copy_entry, DeployMode};
+
+    #[test]
+    fn missing_only_copies_only_when_target_missing() {
+        assert!(should_copy_entry(false, DeployMode::MissingOnly));
+        assert!(!should_copy_entry(true, DeployMode::MissingOnly));
+    }
+
+    #[test]
+    fn full_sync_always_copies() {
+        assert!(should_copy_entry(false, DeployMode::FullSync));
+        assert!(should_copy_entry(true, DeployMode::FullSync));
+    }
 }
