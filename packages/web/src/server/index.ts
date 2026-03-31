@@ -32,6 +32,41 @@ interface ParsedArgs {
   distDir?: string;
   cwd?: string;
   logFile?: string;
+  parentPid?: number;
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startParentWatchdog(parentPid?: number): (() => void) | null {
+  if (!parentPid || !Number.isFinite(parentPid) || parentPid <= 0) {
+    return null;
+  }
+
+  const timer = setInterval(() => {
+    if (isProcessAlive(parentPid)) {
+      return;
+    }
+
+    console.error(`[Server] Parent process ${parentPid} is gone. Exiting sidecar.`);
+    process.exit(0);
+  }, 2000);
+
+  timer.unref?.();
+
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 export async function createWebServer(options: CreateServerOptions = {}): Promise<{
@@ -287,7 +322,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const cwd = cwdArg ? cwdArg.split("=")[1] : undefined;
   const logFileArg = argv.find((arg) => arg.startsWith("--log-file="));
   const logFile = logFileArg ? logFileArg.slice("--log-file=".length) : undefined;
-  return { port: Number.isFinite(port) ? port : undefined, dev, distDir, cwd, logFile };
+  const parentPidArg = argv.find((arg) => arg.startsWith("--parent-pid="));
+  const parentPid = parentPidArg ? Number.parseInt(parentPidArg.split("=")[1], 10) : undefined;
+  return {
+    port: Number.isFinite(port) ? port : undefined,
+    dev,
+    distDir,
+    cwd,
+    logFile,
+    parentPid: Number.isFinite(parentPid) ? parentPid : undefined,
+  };
 }
 
 const isDirect = import.meta.main;
@@ -310,6 +354,7 @@ if (isDirect) {
     const serverCwd = args.cwd ?? cwd;
     const logFile = args.logFile ?? process.env.DILIGENT_WEB_LOG_FILE;
     const cleanupLogFile = logFile ? enableProcessLogFile(logFile, serverCwd) : null;
+    const cleanupParentWatchdog = startParentWatchdog(args.parentPid);
 
     createWebServer({
       port: args.port,
@@ -318,11 +363,27 @@ if (isDirect) {
       distDir: args.distDir,
     })
       .then(({ server }) => {
+        const cleanup = () => {
+          cleanupParentWatchdog?.();
+          cleanupLogFile?.();
+        };
+
+        process.once("exit", cleanup);
+        process.once("SIGTERM", () => {
+          cleanup();
+          process.exit(0);
+        });
+        process.once("SIGINT", () => {
+          cleanup();
+          process.exit(0);
+        });
+
         console.log(`DILIGENT_PORT=${server.port}`);
         console.log(`Diligent Web CLI server running at http://localhost:${server.port}`);
         console.log(`RPC endpoint: ws://localhost:${server.port}/rpc`);
       })
       .catch((error) => {
+        cleanupParentWatchdog?.();
         cleanupLogFile?.();
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Failed to start web server: ${message}`);

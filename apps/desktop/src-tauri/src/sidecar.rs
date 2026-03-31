@@ -1,6 +1,7 @@
 // @summary Sidecar lifecycle: spawn Bun web server, parse port from stdout, navigate WebView
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -20,7 +21,19 @@ pub enum ManagedChild {
 }
 
 impl ManagedChild {
+    fn pid(&self) -> Option<u32> {
+        match self {
+            ManagedChild::TauriChild(c) => Some(c.pid()),
+            ManagedChild::TokioChild(c) => c.id(),
+        }
+    }
+
     pub fn kill(self) {
+        #[cfg(windows)]
+        if let Some(pid) = self.pid() {
+            let _ = kill_process_tree_windows(pid);
+        }
+
         match self {
             ManagedChild::TauriChild(c) => {
                 let _ = c.kill();
@@ -29,6 +42,24 @@ impl ManagedChild {
                 let _ = c.kill();
             }
         }
+    }
+}
+
+#[cfg(windows)]
+fn kill_process_tree_windows(pid: u32) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let status = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map_err(|e| format!("taskkill failed to launch: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("taskkill exited with status: {status}"))
     }
 }
 
@@ -124,12 +155,13 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
 
     let rg_path = resolve_updated_rg_bin().or_else(resolve_bundled_rg_bin);
 
-    let args = [
+    let mut args = vec![
         "--port=0".to_string(),
         format!("--dist-dir={}", dist_dir_str),
         format!("--cwd={}", cwd),
         format!("--log-file={}", log_path_str),
     ];
+    args.push(format!("--parent-pid={}", std::process::id()));
 
     if let Some(updated_sidecar) = resolve_updated_sidecar_path() {
         spawn_updated_sidecar(app, &updated_sidecar, &args, rg_path.as_deref()).await
@@ -151,8 +183,10 @@ async fn spawn_updated_sidecar(
 
     #[cfg(windows)]
     {
+        // NEW_PROCESS_GROUP improves cleanup behavior when terminating process trees.
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
 
     cmd.args(args)

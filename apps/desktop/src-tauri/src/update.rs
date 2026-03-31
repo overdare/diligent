@@ -3,6 +3,8 @@
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -157,6 +159,51 @@ fn should_download_update(
     bootstrap_required: bool,
 ) -> bool {
     bootstrap_required || manifest_version != effective_version
+}
+
+fn is_windows_lock_error(err: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        err.kind() == std::io::ErrorKind::PermissionDenied
+            || matches!(err.raw_os_error(), Some(5) | Some(32))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = err;
+        false
+    }
+}
+
+fn retry_fs_op<T, F>(label: &str, mut op: F) -> Result<T, String>
+where
+    F: FnMut() -> std::io::Result<T>,
+{
+    const ATTEMPTS: usize = 8;
+    const WAIT_MS: u64 = 350;
+
+    for attempt in 1..=ATTEMPTS {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                let should_retry = is_windows_lock_error(&err) && attempt < ATTEMPTS;
+                if should_retry {
+                    thread::sleep(Duration::from_millis(WAIT_MS));
+                    continue;
+                }
+
+                if is_windows_lock_error(&err) {
+                    return Err(format!(
+                        "{label}: {err} (file may still be locked by another Diligent process or antivirus scan)"
+                    ));
+                }
+
+                return Err(format!("{label}: {err}"));
+            }
+        }
+    }
+
+    Err(format!("{label}: unexpected retry state"))
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +435,7 @@ pub fn run_with_progress(
     // Extract to staging directory
     let staging = updates.join("runtime_staging");
     if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| format!("clean staging: {e}"))?;
+        retry_fs_op("clean staging", || fs::remove_dir_all(&staging))?;
     }
 
     report_progress(
@@ -426,7 +473,7 @@ pub fn run_with_progress(
     // Atomic swap: remove old runtime, rename staging
     let runtime = updates.join("runtime");
     if runtime.exists() {
-        fs::remove_dir_all(&runtime).map_err(|e| format!("remove old runtime: {e}"))?;
+        retry_fs_op("remove old runtime", || fs::remove_dir_all(&runtime))?;
     }
 
     report_progress(
@@ -435,7 +482,7 @@ pub fn run_with_progress(
             target_version: fetched.version.clone(),
         },
     );
-    fs::rename(&staging, &runtime).map_err(|e| format!("rename staging to runtime: {e}"))?;
+    retry_fs_op("rename staging to runtime", || fs::rename(&staging, &runtime))?;
 
     // Clean up zip
     let _ = fs::remove_file(&zip_path);
