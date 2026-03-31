@@ -7,7 +7,11 @@ import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentRegistry } from "./registry";
 
 const SpawnAgentParams = z.object({
-  message: z.string().describe("The full prompt/instruction for the sub-agent"),
+  message: z
+    .string()
+    .describe(
+      "The full worker brief for the sub-agent. Include the objective, relevant context, exact scope, and expected deliverable or result shape.",
+    ),
   description: z.string().optional().describe("Brief description for status display"),
   agent_type: z.string().default("general").describe(formatAgentTypeParameterDescription()),
   resume_id: z.string().optional().describe("Session ID to resume a previous sub-agent session"),

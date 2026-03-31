@@ -156,10 +156,20 @@ export function formatSpawnAgentToolDescription(
     builtinLines +
     customSection +
     "\n\nDelegation rules:\n" +
-    "- If you delegate work to sub-agents, your primary role becomes coordinating them until they finish; do not duplicate their work while they are running.\n" +
-    "- Do not duplicate sub-agent work by searching the same areas yourself.\n" +
+    "- Once you delegate work, act as the coordinator: monitor, synthesize, and decide the next step instead of doing the same work in parallel.\n" +
+    "- Split work into distinct scopes so child agents do not overlap each other or you.\n" +
+    "- Do not duplicate child work. If a child is researching a subsystem or directory, do not search the same area yourself unless you are intentionally taking ownership back. If a child owns a scoped implementation area, do not edit the same area in parallel.\n" +
     "- Do not ask a child agent to spawn or coordinate additional sub-agents unless nested delegation was explicitly enabled for that spawn.\n" +
-    "- Write prompts as if briefing a colleague who just walked into the room: explain what you're trying to accomplish, what you already know, and what specifically you need them to find or do. Terse, vague prompts produce shallow results."
+    "\nPrompt contract:\n" +
+    "- Write the prompt as a worker brief, not a slogan. Include the objective, relevant context, what you already learned, the exact scope, and the expected deliverable.\n" +
+    "- Do not delegate understanding itself. Figure out the problem enough that you can name the exact question, files, subsystem, or task slice the child owns.\n" +
+    "- State boundaries explicitly: what the child should cover, what it should ignore, and any other agent or parent-owned work it must avoid.\n" +
+    "- If you need a specific shape back, ask for it directly in the prompt.\n" +
+    "- Terse, vague prompts produce shallow results.\n" +
+    "\nResult contract:\n" +
+    "- Ask for a concise final report rather than a replay of every step when that is all you need.\n" +
+    "- If useful, request a simple structure such as result, key files, and risks.\n" +
+    "- When results come back, synthesize them for the user instead of pasting raw child output verbatim."
   );
 }
 

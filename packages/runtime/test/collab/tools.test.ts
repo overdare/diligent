@@ -68,6 +68,8 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).toContain("wait for them before yielding");
     expect(spawnTool.description).toContain("Nested subagents are disabled by default");
     expect(spawnTool.description).toContain("your primary role becomes coordinating them until they finish");
+    expect(spawnTool.description).toContain("Prompt contract:");
+    expect(spawnTool.description).toContain("Result contract:");
     expect(spawnTool.description).toContain("Do not ask a child agent to spawn or coordinate additional sub-agents");
     expect(spawnTool.description).toContain("'general':");
     expect(spawnTool.description).toContain("'explore':");
@@ -84,6 +86,8 @@ describe("spawn_agent tool", () => {
     expect(shape.agent_type.description).toContain("'explore':");
     expect(shape.agent_type.description).not.toContain("'planner':");
     expect(shape.allow_nested_agents.description).toContain("Explicit opt-in");
+    expect(shape.message.description).toContain("full worker brief");
+    expect(shape.message.description).toContain("expected deliverable or result shape");
   });
 
   it("includes custom agents in tool description and schema description", () => {
