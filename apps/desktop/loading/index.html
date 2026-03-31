@@ -269,6 +269,12 @@
       }
 
       function setStep(el, state) {
+        if (state === 'active') {
+          for (const stepEl of [stepUpdateEl, stepDefaultsEl, stepLaunchEl]) {
+            stepEl.classList.remove('active');
+          }
+        }
+
         el.classList.remove('active', 'done');
         if (state) el.classList.add(state);
       }
@@ -299,21 +305,28 @@
         btn.disabled = false;
       }
 
-      async function launchWithCwd(cwd) {
+      async function launchWithCwd(cwd, options = {}) {
+        const showLoadingUi = options.showLoadingUi !== false;
         btn.disabled = true;
         errorEl.hidden = true;
         const { invoke } = window.__TAURI__.core;
 
-        setStep(stepUpdateEl, 'done');
-        setStep(stepDefaultsEl, 'done');
-        setStep(stepLaunchEl, null);
+        if (showLoadingUi) {
+          setStep(stepUpdateEl, 'done');
+          setStep(stepDefaultsEl, 'done');
+          setStep(stepLaunchEl, null);
 
-        if (loadingEl.hidden) showLoading();
+          if (loadingEl.hidden) showLoading();
 
-        setStep(stepLaunchEl, 'active');
-        setLoadingText('Preparing workspace...', 'Starting local server...');
+          setStep(stepLaunchEl, 'active');
+          setLoadingText('Preparing workspace...', 'Starting local server...');
+        }
+
         await invoke('launch_server', { cwd });
-        setStep(stepLaunchEl, 'done');
+
+        if (showLoadingUi) {
+          setStep(stepLaunchEl, 'done');
+        }
       }
 
       async function prepareStartupOnBoot() {
@@ -380,7 +393,7 @@
             return;
           }
 
-          await launchWithCwd(cwd);
+          await launchWithCwd(cwd, { showLoadingUi: false });
         } catch (err) {
           showPickerWithError(toMessage(err));
         }
@@ -404,7 +417,7 @@
             setLoadingText('Preparing workspace...', 'Starting local server...');
           }
 
-          await launchWithCwd(startupCwd);
+          await launchWithCwd(startupCwd, { showLoadingUi: true });
         } catch (err) {
           startupPrepareError = err;
           showPickerWithError(toMessage(err));
