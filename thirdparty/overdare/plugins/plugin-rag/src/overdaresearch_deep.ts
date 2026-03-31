@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { loadOverdareConfig } from "./config.ts";
 import { buildOriginFileRender } from "./render.ts";
 
 type ToolRenderPayload = {
@@ -66,17 +65,8 @@ interface ToolResult {
   metadata?: Record<string, unknown>;
 }
 
-function resolveAuthToken(): string {
-  const token = process.env.OVERDARE_RAG_AUTH_TOKEN || loadOverdareConfig().ragAuthToken;
-  if (!token) {
-    throw new Error("Missing OVERDARE RAG auth token.\n" + "Set ragAuthToken in ~/.diligent/overdare.jsonc");
-  }
-  return token;
-}
-
-async function fetcher(url: string, signal: AbortSignal, token: string): Promise<unknown> {
+async function fetcher(url: string, signal: AbortSignal): Promise<unknown> {
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
     signal,
   });
   if (!response.ok) {
@@ -97,7 +87,7 @@ function buildResult(action: string, requestedUrls: string[], files: unknown[], 
   };
 }
 
-async function originFile(urls: string[], signal: AbortSignal, token: string): Promise<ToolResult> {
+async function originFile(urls: string[], signal: AbortSignal): Promise<ToolResult> {
   for (const url of urls) {
     if (!url.startsWith(LUA_BUCKET) && !url.startsWith(DOCS_BUCKET)) {
       throw new Error(`URL not from allowed bucket: ${url}\nAllowed: lua-script-bucket, ovdr-docs-bucket`);
@@ -105,7 +95,7 @@ async function originFile(urls: string[], signal: AbortSignal, token: string): P
   }
 
   const params = urls.map((u) => `originFileUrl=${encodeURIComponent(u)}`).join("&");
-  const data = (await fetcher(`${BASE_URL}/api/chat/rag/origin-file?${params}`, signal, token)) as OriginFileResponse;
+  const data = (await fetcher(`${BASE_URL}/api/chat/rag/origin-file?${params}`, signal)) as OriginFileResponse;
 
   return buildResult("origin-file", urls, data.files ?? [], data.totalCount);
 }
@@ -121,12 +111,11 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     return { output: "[Rejected by user]", metadata: { error: true } };
   }
 
-  const authToken = resolveAuthToken();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    return await originFile(args.urls, controller.signal, authToken);
+    return await originFile(args.urls, controller.signal);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("OVERDARE deep search timed out");

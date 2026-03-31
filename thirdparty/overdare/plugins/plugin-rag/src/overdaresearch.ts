@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { loadOverdareConfig } from "./config.ts";
 import { buildSearchRender } from "./render.ts";
 
 type ToolRenderPayload = {
@@ -98,17 +97,6 @@ interface ToolResult {
   metadata?: Record<string, unknown>;
 }
 
-function resolveAuthToken(): string {
-  const token = process.env.OVERDARE_RAG_AUTH_TOKEN || loadOverdareConfig().ragAuthToken;
-  if (!token) {
-    throw new Error(
-      "Missing OVERDARE RAG auth token.\n" +
-        "Set OVERDARE_RAG_AUTH_TOKEN env var or ragAuthToken in ~/.diligent/overdare.jsonc",
-    );
-  }
-  return token;
-}
-
 export async function execute(args: Params, ctx: ToolContext): Promise<ToolResult> {
   const approval = await ctx.approve({
     permission: "execute",
@@ -120,8 +108,6 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     return { output: "[Rejected by user]", metadata: { error: true } };
   }
 
-  const authToken = resolveAuthToken();
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -130,7 +116,6 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
       },
       body: JSON.stringify({
         query: args.query,
