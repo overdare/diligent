@@ -621,14 +621,6 @@ export class App {
   }
 
   private async handleServerNotification(notification: DiligentServerNotification): Promise<void> {
-    if (
-      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
-      notification.params.status === "busy" &&
-      !this.runtime.isProcessing
-    ) {
-      this.beginCompactionIndicator(0);
-    }
-
     await this.eventController.handleServerNotification(notification);
 
     if (

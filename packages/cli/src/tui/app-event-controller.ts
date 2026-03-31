@@ -49,6 +49,22 @@ export class AppEventController {
       this.deps.handleAgentEvent({ type: "status_change", status: notification.params.status });
     }
 
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED) {
+      this.deps.handleAgentEvent({
+        type: "compaction_start",
+        estimatedTokens: notification.params.estimatedTokens,
+      });
+    }
+
+    if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED) {
+      this.deps.handleAgentEvent({
+        type: "compaction_end",
+        tokensBefore: notification.params.tokensBefore,
+        tokensAfter: notification.params.tokensAfter,
+        summary: `${notification.params.entryCount} entries`,
+      });
+    }
+
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED) {
       this.emitStatusSnapshot(notification.params.threadStatus);
       this.deps.handleAgentEvent({ type: "turn_start", turnId: notification.params.turnId });

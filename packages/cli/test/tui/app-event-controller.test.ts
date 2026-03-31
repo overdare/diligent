@@ -50,6 +50,48 @@ describe("AppEventController", () => {
     expect(handleAgentEvent).toHaveBeenCalledWith({ type: "status_change", status: "idle" });
   });
 
+  test("maps thread compaction notifications to compaction events", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread-1";
+    const handleAgentEvent = mock(() => {});
+    const controller = new AppEventController({
+      runtime,
+      handleAgentEvent,
+      onTurnFinished: () => {},
+      onTurnErrored: () => {},
+      onUserInputRequestResolved: () => {},
+      onAccountLoginCompleted: () => {},
+      requestApproval: async () => "once",
+      requestUserInput: async () => ({ answers: {} }),
+    });
+
+    await controller.handleServerNotification({
+      method: "thread/compaction/started",
+      params: { threadId: "thread-1", estimatedTokens: 1234 },
+    });
+
+    await controller.handleServerNotification({
+      method: "thread/compacted",
+      params: {
+        threadId: "thread-1",
+        entryCount: 3,
+        tokensBefore: 4000,
+        tokensAfter: 1800,
+      },
+    });
+
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(1, {
+      type: "compaction_start",
+      estimatedTokens: 1234,
+    });
+    expect(handleAgentEvent).toHaveBeenNthCalledWith(2, {
+      type: "compaction_end",
+      tokensBefore: 4000,
+      tokensAfter: 1800,
+      summary: "3 entries",
+    });
+  });
+
   test("applies threadStatus snapshot from agent_event before forwarding event", async () => {
     const runtime = new AppRuntimeState("default", "medium");
     runtime.currentThreadId = "thread-1";
