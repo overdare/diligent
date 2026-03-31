@@ -48,7 +48,7 @@ async function run(): Promise<void> {
   }
 
   // Step 2: Compile sidecar binary for each target
-  const serverEntry = resolve(WEB, "src/server/index.ts");
+  const serverEntry = resolve(WEB, "src/server/sidecar-main.ts");
   const targets = singleTarget ? PLATFORMS.filter((p) => p.tauriTriple === singleTarget) : PLATFORMS;
 
   if (targets.length === 0) {
