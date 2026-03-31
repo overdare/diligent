@@ -544,10 +544,10 @@ describe("App", () => {
         { timeoutMs: 4000, intervalMs: 20 },
       );
 
-      await waitFor(
-        () => !((app as unknown as { inputEditor: { busy: boolean } }).inputEditor.busy),
-        { timeoutMs: 4000, intervalMs: 20 },
-      );
+      await waitFor(() => !(app as unknown as { inputEditor: { busy: boolean } }).inputEditor.busy, {
+        timeoutMs: 4000,
+        intervalMs: 20,
+      });
     } finally {
       app.stop();
       workspace.cleanup();
