@@ -136,6 +136,9 @@ function formatCustomAgentLine(agent: ResolvedAgentDefinition): string {
   return `'${agent.name}': ${agent.description}. Default tools: ${toolSummary}.${modelSummary}`;
 }
 
+/** Maximum number of custom agents rendered with full inline descriptions. Additional agents are listed by name only. */
+const MAX_INLINE_CUSTOM_AGENTS = 10;
+
 /** Human-readable role guidance string for spawn_agent's top-level tool description. */
 export function formatSpawnAgentToolDescription(
   agentDefinitions: ResolvedAgentDefinition[] = getBuiltinAgentDefinitions(),
@@ -143,11 +146,15 @@ export function formatSpawnAgentToolDescription(
   const builtinLines = BUILTIN_AGENT_TYPE_NAMES.map(
     (name) => `- ${formatGuidanceLine(BUILTIN_AGENT_TYPES[name])}`,
   ).join("\n");
-  const customLines = agentDefinitions
-    .filter((agent) => agent.source === "user")
-    .map((agent) => `- ${formatCustomAgentLine(agent)}`)
-    .join("\n");
-  const customSection = customLines ? `\nCustom roles:\n${customLines}` : "";
+  const customAgents = agentDefinitions.filter((agent) => agent.source === "user");
+  const inlineAgents = customAgents.slice(0, MAX_INLINE_CUSTOM_AGENTS);
+  const overflowAgents = customAgents.slice(MAX_INLINE_CUSTOM_AGENTS);
+  const customLines = inlineAgents.map((agent) => `- ${formatCustomAgentLine(agent)}`).join("\n");
+  const overflowNote =
+    overflowAgents.length > 0
+      ? `\n- (+${overflowAgents.length} more: ${overflowAgents.map((a) => `'${a.name}'`).join(", ")})`
+      : "";
+  const customSection = customLines ? `\nCustom roles:\n${customLines}${overflowNote}` : "";
   return (
     "Spawn a sub-agent and return immediately with thread_id and nickname. Use 'wait' to collect results. " +
     "If sub-agents are still running, wait for them before yielding unless the user is asking an explicit question that should be answered first. " +
