@@ -69,6 +69,6 @@ jobs:
             dist/*-runtime-"$VERSION"-windows-x64.zip \
             dist/update-manifest.json \
             dist/checksums.sha256 \
-            --title "Overdare v$VERSION" \
+            --title "v$VERSION" \
             --generate-notes \
             --draft
