@@ -3,15 +3,36 @@ import type { ToolRenderPayload } from "@diligent/plugin-sdk";
 
 type TreeNode = { label: string; children?: TreeNode[] };
 
+function isStructuralSummaryLine(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (trimmed === "{" || trimmed === "[" || trimmed === "}" || trimmed === "]") return true;
+  if (/^<[^>]+>$/.test(trimmed)) return true;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return true;
+  return false;
+}
+
+function isStructuredOutput(text: string | undefined): boolean {
+  const trimmed = text?.trim();
+  if (!trimmed) return false;
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("<");
+}
+
 function firstLine(text: string, fallback: string): string {
-  return text.split("\n")[0]?.trim() || fallback;
+  if (isStructuredOutput(text)) return fallback;
+  const line = text
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => value.length > 0 && !isStructuralSummaryLine(value));
+  return line || fallback;
 }
 
 function summarizeText(text: string | undefined, fallback?: string): string | undefined {
+  if (isStructuredOutput(text)) return fallback;
   const line = text
     ?.split("\n")
     .map((value) => value.trim())
-    .find(Boolean);
+    .find((value) => value.length > 0 && !isStructuralSummaryLine(value));
   if (line) return line;
   return fallback;
 }
@@ -22,6 +43,13 @@ function summarizeCount(count: number, singular: string, plural = `${singular}s`
 
 function clip(value: string, max = 80): string {
   return value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+}
+
+function summarizeTargets(values: string[], actionWord: string): string {
+  if (values.length === 0) return actionWord;
+  if (values.length === 1) return `${actionWord} ${values[0]}`;
+  if (values.length === 2) return `${actionWord} ${values[0]}, ${values[1]}`;
+  return `${actionWord} ${values[0]}, ${values[1]} +${values.length - 2}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -88,6 +116,33 @@ export function buildDeleteRender(title: string, targetGuid: string, output: str
     outputSummary: summarizeText(output, "Deleted."),
     blocks: [
       { type: "key_value", title, items: [{ key: "targetGuid", value: targetGuid }] },
+      { type: "summary", text: firstLine(output, "Deleted."), tone: "warning" },
+    ],
+  };
+}
+
+export function buildInstanceDeleteRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const items = Array.isArray(args.items) ? args.items : [];
+  const targetGuids = items.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const guid = readString(item.targetGuid);
+    return guid ? [guid] : [];
+  });
+  const deleteCount = targetGuids.length;
+  const inputSummary = summarizeTargets(targetGuids, "delete");
+
+  return {
+    inputSummary: clip(inputSummary),
+    outputSummary: summarizeText(output, "Deleted."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio instance delete",
+        items: [
+          { key: "deletes", value: String(deleteCount) },
+          ...targetGuids.map((guid, index) => ({ key: `target${index + 1}`, value: guid })),
+        ],
+      },
       { type: "summary", text: firstLine(output, "Deleted."), tone: "warning" },
     ],
   };
@@ -235,6 +290,26 @@ export function buildInstanceUpsertRender(args: Record<string, unknown>, output:
         ],
       },
       { type: "summary", text: firstLine(output, "Instances upserted."), tone: "success" },
+    ],
+  };
+}
+
+export function buildInstanceMoveRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+  const items = Array.isArray(args.items) ? args.items : [];
+  const moveCount = items.filter(
+    (item) => isRecord(item) && readString(item.guid) && readString(item.parentGuid),
+  ).length;
+
+  return {
+    inputSummary: clip(moveCount > 0 ? summarizeCount(moveCount, "move") : "move"),
+    outputSummary: summarizeText(output, "Instances moved."),
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio instance move",
+        items: [{ key: "moves", value: String(moveCount) }],
+      },
+      { type: "summary", text: firstLine(output, "Instances moved."), tone: "success" },
     ],
   };
 }

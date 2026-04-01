@@ -2,6 +2,7 @@
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceMove from "../methods/instance.move.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
+import { buildInstanceMoveRender } from "../render.ts";
 import { call } from "../rpc.ts";
 import {
   findNodeByActorGuid,
@@ -85,6 +86,7 @@ async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolConte
 
   return {
     output,
+    render: buildInstanceMoveRender(parsedArgs as unknown as Record<string, unknown>, output),
     metadata: {
       method: "instance.move",
       umapPath: fileResult.umapPath,

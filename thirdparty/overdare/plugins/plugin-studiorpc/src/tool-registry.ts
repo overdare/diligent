@@ -17,6 +17,8 @@ import {
   buildDeleteRender,
   buildGamePlayRender,
   buildGameStopRender,
+  buildInstanceDeleteRender,
+  buildInstanceMoveRender,
   buildInstanceReadRender,
   buildInstanceUpsertRender,
   buildLevelBrowseRender,
@@ -72,12 +74,8 @@ export const renderBuilders: Record<string, RenderBuilder> = {
     buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
   studiorpc_instance_upsert: ({ normalizedArgs, output }) => buildInstanceUpsertRender(normalizedArgs, output),
-  studiorpc_instance_delete: ({ normalizedArgs, output }) =>
-    buildDeleteRender(
-      "Studio instance delete",
-      JSON.stringify((normalizedArgs.items as Array<{ targetGuid: string }>)?.map((i) => i.targetGuid) ?? []),
-      output,
-    ),
+  studiorpc_instance_delete: ({ normalizedArgs, output }) => buildInstanceDeleteRender(normalizedArgs, output),
+  studiorpc_instance_move: ({ normalizedArgs, output }) => buildInstanceMoveRender(normalizedArgs, output),
   studiorpc_game_play: ({ normalizedArgs, output }) => buildGamePlayRender(normalizedArgs, output),
   studiorpc_game_stop: ({ output }) => buildGameStopRender(output),
 };

@@ -2,6 +2,7 @@
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceDelete from "../methods/instance.delete.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
+import { buildInstanceDeleteRender } from "../render.ts";
 import { call } from "../rpc.ts";
 import {
   findNodeByActorGuid,
@@ -79,6 +80,7 @@ async function executeInstanceDelete(
 
   return {
     output,
+    render: buildInstanceDeleteRender(parsedArgs as unknown as Record<string, unknown>, output),
     metadata: {
       method: "instance.delete",
       umapPath: fileResult.umapPath,

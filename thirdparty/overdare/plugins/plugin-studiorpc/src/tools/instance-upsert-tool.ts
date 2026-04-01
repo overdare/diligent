@@ -2,6 +2,7 @@
 import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { collectUiDiagnostics } from "../methods/instance.upsert.ts";
+import { buildInstanceUpsertRender } from "../render.ts";
 import { call } from "../rpc.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
@@ -126,6 +127,7 @@ async function executeInstanceUpsert(
 
   return {
     output: lines.join("\n") || "OK",
+    render: buildInstanceUpsertRender(parsedArgs as unknown as Record<string, unknown>, lines.join("\n") || "OK"),
     metadata: {
       method: "instance.upsert",
       added: fileResult.added,

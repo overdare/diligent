@@ -7,6 +7,7 @@ import {
   serviceClassEnum,
 } from "../methods/instance.params.ts";
 import * as instanceRead from "../methods/instance.read.ts";
+import { buildInstanceReadRender } from "../render.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils.ts";
 
 const knownClasses = new Set<string>([...instanceClassEnum.options, ...serviceClassEnum.options]);
@@ -103,6 +104,7 @@ async function executeInstanceRead(args: Record<string, unknown>, _ctx: ToolCont
   const output = JSON.stringify(readable, null, 2);
   return {
     output,
+    render: buildInstanceReadRender(parsed as unknown as Record<string, unknown>, output),
     metadata: { method: "instance.read", guid: parsed.guid, recursive: parsed.recursive },
   };
 }
