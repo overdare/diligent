@@ -9,6 +9,11 @@ on:
         description: "Release version (e.g. 1.0.0)"
         required: true
         type: string
+      runtime_only:
+        description: "Build runtime + version artifacts only (skip desktop exe)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   pack-windows:
@@ -45,14 +50,33 @@ jobs:
         env:
           DILIGENT_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/update-manifest.json
           DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}
-        run: bun run package --version ${{ env.VERSION }} --platforms windows-x64 --package thirdparty/overdare
+        shell: bash
+        run: |
+          CMD="bun run package --version $VERSION --platforms windows-x64 --package thirdparty/overdare"
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.runtime_only || false }}" = "true" ]; then
+            CMD="$CMD --runtime-only"
+          fi
+          echo "Running: $CMD"
+          eval "$CMD"
 
-      - name: Upload artifacts
+      - name: Upload artifacts (full)
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.runtime_only) }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
           path: |
             dist/*-${{ env.VERSION }}-windows-x64.exe
+            dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
+            dist/update-manifest.json
+            dist/release-meta.json
+            dist/checksums.sha256
+
+      - name: Upload artifacts (runtime-only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runtime_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: overdare-windows-x64-${{ env.VERSION }}
+          path: |
             dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
             dist/update-manifest.json
             dist/release-meta.json
@@ -64,11 +88,21 @@ jobs:
         shell: bash
         run: |
           TAG="v$VERSION"
-          gh release create "$TAG" \
-            dist/*-"$VERSION"-windows-x64.exe \
-            dist/*-runtime-"$VERSION"-windows-x64.zip \
-            dist/update-manifest.json \
-            dist/checksums.sha256 \
-            --title "v$VERSION" \
-            --generate-notes \
-            --draft
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.runtime_only || false }}" = "true" ]; then
+            gh release create "$TAG" \
+              dist/*-runtime-"$VERSION"-windows-x64.zip \
+              dist/update-manifest.json \
+              dist/checksums.sha256 \
+              --title "v$VERSION" \
+              --generate-notes \
+              --draft
+          else
+            gh release create "$TAG" \
+              dist/*-"$VERSION"-windows-x64.exe \
+              dist/*-runtime-"$VERSION"-windows-x64.zip \
+              dist/update-manifest.json \
+              dist/checksums.sha256 \
+              --title "v$VERSION" \
+              --generate-notes \
+              --draft
+          fi

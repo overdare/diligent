@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
 import { generateUpdateManifest } from "./lib/manifest";
+import { shouldBuildDesktopBinary } from "./lib/package-mode";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
 import { createPluginBundlePlan } from "./lib/plugin-bundle";
 import { resolveDesktopIconPaths, resolveProjectName, toProjectArtifactName } from "./lib/project-name";
@@ -30,17 +31,21 @@ const { values } = parseArgs({
     version: { type: "string" },
     platforms: { type: "string", default: ALL_PLATFORMS.map((p) => p.id).join(",") },
     package: { type: "string" },
+    "runtime-only": { type: "boolean", default: false },
   },
 });
 
 if (!values.version) {
-  console.error("Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--package <dir>]");
+  console.error(
+    "Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--package <dir>] [--runtime-only]",
+  );
   process.exit(1);
 }
 
 const version = values.version;
 const platformIds = values.platforms!.split(",").map((s) => s.trim());
 const platforms = filterPlatforms(platformIds);
+const runtimeOnly = values["runtime-only"] === true;
 
 // Optional extra package directory passed via --package (resolved relative to repo root)
 const extraPackageDir: string | undefined = values.package ? resolve(ROOT, values.package) : undefined;
@@ -177,7 +182,7 @@ function buildSidecar(plat: PlatformTarget): void {
   run(`bun build --compile --target=${plat.bunTarget} ${serverEntry} --outfile ${outPath}`, ROOT);
 }
 
-function buildDesktop(plat: PlatformTarget): void {
+function buildDesktop(plat: PlatformTarget, options?: { runtimeOnly?: boolean }): void {
   const tauriDir = join(DESKTOP, "src-tauri");
   const updateUrlEnv = process.env.DILIGENT_UPDATE_URL ?? "";
   const buildFingerprint = `runtimeVersion=${version};updateUrl=${updateUrlEnv}`;
@@ -188,6 +193,11 @@ function buildDesktop(plat: PlatformTarget): void {
   cpSync(clientDist, resourceDist, { recursive: true });
 
   buildSidecar(plat);
+
+  if (options?.runtimeOnly === true) {
+    console.log("   Runtime-only mode enabled — skipping Tauri desktop binary build");
+    return;
+  }
 
   const tauriConfigPath = join(tauriDir, ".diligent-packaging", "tauri.package.conf.json");
 
@@ -360,6 +370,7 @@ function writeReleaseMeta(distDir: string, plats: PlatformTarget[], artifacts: R
 console.log(`\n📦 Packaging ${projectName} v${version} (desktop)`);
 console.log(`   Platforms : ${platforms.map((p) => p.id).join(", ")}`);
 console.log(`   App name  : ${projectName}`);
+console.log(`   Mode      : ${runtimeOnly ? "runtime-only" : "full"}`);
 if (extraPackageDir) {
   console.log(`   Package   : ${extraPackageDir}`);
 }
@@ -422,16 +433,18 @@ try {
     assembleDefaults(extraPackageDir);
 
     console.log(`\n🖥️  Building desktop: ${plat.id}`);
-    buildDesktop(plat);
+    buildDesktop(plat, { runtimeOnly });
   }
 
-  // Collect desktop exe(s)
-  console.log("\n📋 Collecting desktop exe...");
-  for (const plat of platforms) {
-    if (plat.os !== currentOs()) continue;
-    const exeName = collectDesktopExe(plat);
-    if (exeName) {
-      allArtifacts[plat.id].push(exeName);
+  if (shouldBuildDesktopBinary(runtimeOnly)) {
+    // Collect desktop exe(s)
+    console.log("\n📋 Collecting desktop exe...");
+    for (const plat of platforms) {
+      if (plat.os !== currentOs()) continue;
+      const exeName = collectDesktopExe(plat);
+      if (exeName) {
+        allArtifacts[plat.id].push(exeName);
+      }
     }
   }
 
