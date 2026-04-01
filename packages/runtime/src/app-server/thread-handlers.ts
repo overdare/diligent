@@ -6,6 +6,7 @@ import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import { calculateUsageCost } from "../cost";
+import { type HookResult, runHooks, runPluginHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -24,6 +25,7 @@ import type { SessionManager } from "../session/manager";
 import { deleteSession, listSessions, readSessionFile } from "../session/persistence";
 import { generateSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
+import type { CollectedPluginHooks } from "../tools/plugin-loader";
 import {
   applyLiveCollabStatusesToSnapshot,
   buildThreadReadItems,
@@ -38,6 +40,8 @@ export interface ThreadRuntime {
   modelId: string;
   runningEffortSnapshot?: ThinkingEffort;
   runningModelIdSnapshot?: string;
+  /** User ID of the connection that started the current turn (set at turn start, cleared on end). */
+  currentTurnUserId?: string;
   manager: SessionManager;
   abortController: AbortController | null;
   currentTurnId: string | null;
@@ -88,6 +92,11 @@ export interface ThreadHandlersContext {
   activeThreadId: string | null;
   threads: Map<string, ThreadRuntime>;
   knownCwds: Set<string>;
+  hooks?: DiligentConfig["hooks"];
+  /** Returns the user ID for a given connection, falling back to config userId or OS username. */
+  getUserId: (connectionId: string | undefined) => string;
+  /** Collect lifecycle hook handlers exported by enabled plugins for the given cwd. */
+  getPluginHooks: (cwd: string) => Promise<CollectedPluginHooks>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   createThreadRuntime: (
     threadId: string,
@@ -317,6 +326,7 @@ export async function handleTurnStart(
   runtime.isRunning = true;
   runtime.runningEffortSnapshot = runtime.effort;
   runtime.runningModelIdSnapshot = params.model ?? runtime.modelId;
+  runtime.currentTurnUserId = ctx.getUserId(connectionId);
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
 
@@ -354,6 +364,71 @@ export async function handleTurnStart(
           ]
         : messageForTurn;
   const userMessage = { role: "user" as const, content, timestamp };
+
+  // Run UserPromptSubmit hooks (shell commands + plugin handlers) before processing the prompt
+  const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
+  const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
+
+  if (shellHandlers.length > 0 || pluginHandlers.length > 0) {
+    const hookInput = {
+      session_id: runtime.manager.sessionId,
+      transcript_path: runtime.manager.sessionPath ?? "",
+      cwd: runtime.cwd,
+      hook_event_name: "UserPromptSubmit",
+      permission_mode: runtime.mode,
+      user_id: runtime.currentTurnUserId,
+      prompt: typeof content === "string" ? content : params.message,
+    };
+
+    let hookResult: HookResult = { blocked: false };
+    if (shellHandlers.length > 0) {
+      hookResult = await runHooks(shellHandlers, hookInput, runtime.cwd);
+    }
+    if (!hookResult.blocked && pluginHandlers.length > 0) {
+      const pluginResult = await runPluginHooks(pluginHandlers, hookInput);
+      if (pluginResult.blocked) {
+        hookResult = pluginResult;
+      } else {
+        const parts = [hookResult.additionalContext, pluginResult.additionalContext].filter(Boolean);
+        hookResult = { blocked: false, additionalContext: parts.join("\n") || undefined };
+      }
+    }
+
+    if (hookResult.blocked) {
+      // Abort the turn without running the agent
+      runtime.abortController = null;
+      runtime.isRunning = false;
+      runtime.currentTurnId = null;
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+        params: {
+          threadId: runtime.id,
+          error: {
+            message: hookResult.reason ?? "Prompt blocked by hook",
+            name: "HookBlocked",
+          },
+          fatal: false,
+        },
+      });
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
+        params: { threadId: runtime.id, turnId },
+      });
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+        params: { threadId: runtime.id, status: "idle" },
+      });
+      return { accepted: true };
+    }
+
+    // Prepend additional context from hooks to the user message if provided
+    if (hookResult.additionalContext) {
+      const contextPrefix = hookResult.additionalContext;
+      const originalText = typeof content === "string" ? content : params.message;
+      const augmentedContent = `${contextPrefix}\n\n${originalText}`;
+      Object.assign(userMessage, { content: augmentedContent });
+    }
+  }
 
   const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
   await ctx.emit({

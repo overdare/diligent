@@ -1,5 +1,6 @@
 // @summary JSON-RPC app server mapping SessionManager/AgentEvent to shared protocol requests and notifications
 
+import { userInfo } from "node:os";
 import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
 import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compaction";
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
@@ -8,7 +9,9 @@ import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
+import type { ChildStopInfo } from "../collab/types";
 import type { DiligentConfig } from "../config/schema";
+import { getLastAssistantMessage, getSessionUsage, runHooks, runPluginHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   AgentEventSchema,
@@ -32,6 +35,7 @@ import {
 } from "../protocol/index";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
+import { collectPluginHooks } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
 import {
   buildProviderList,
@@ -88,6 +92,8 @@ export interface CreateAgentArgs {
   getSessionId?: () => string | undefined;
   /** The thread's current agent, if one already exists. Passed so createAgent can reuse the registry. */
   existingAgent?: RuntimeAgent;
+  /** Called when a child agent's turn completes normally. Propagated to the collab registry. */
+  onChildStop?: (info: ChildStopInfo) => Promise<{ continueWith?: import("@diligent/core/types").Message } | undefined>;
 }
 
 export interface DiligentAppServerConfig {
@@ -116,6 +122,10 @@ export interface DiligentAppServerConfig {
   defaultEffort?: ThinkingEffort;
   /** Permission policy engine loaded from runtime config (yolo/rules). */
   permissionEngine?: PermissionEngine;
+  /** Lifecycle hooks config (UserPromptSubmit, Stop). */
+  hooks?: DiligentConfig["hooks"];
+  /** User identifier included in hook inputs. Falls back to OS username if unset. */
+  userId?: string;
 }
 
 interface ConnectedPeer {
@@ -126,6 +136,7 @@ interface ConnectedPeer {
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
+  userId?: string;
 }
 
 export class DiligentAppServer {
@@ -155,7 +166,7 @@ export class DiligentAppServer {
 
   // ─── New multi-connection API ───────────────────────────────────────────────
 
-  connect(connectionId: string, peer: RpcPeer, options?: { cwd?: string; mode?: Mode }): () => void {
+  connect(connectionId: string, peer: RpcPeer, options?: { cwd?: string; mode?: Mode; userId?: string }): () => void {
     const conn: ConnectedPeer = {
       id: connectionId,
       peer,
@@ -164,6 +175,7 @@ export class DiligentAppServer {
       cwd: options?.cwd ?? this.config.cwd ?? process.cwd(),
       mode: options?.mode ?? "default",
       effort: this.config.defaultEffort ?? "medium",
+      userId: options?.userId,
     };
     this.connections.set(connectionId, conn);
 
@@ -605,6 +617,10 @@ export class DiligentAppServer {
     try {
       await runPromise;
       wireCollabHandler(); // wire any registry created during the run
+
+      // Stop hooks (shell + plugin) are fired via SessionManager.onStop,
+      // which covers both this parent turn and all child agent turns uniformly.
+
       // Ensure all session entries are durably persisted before signaling completion.
       await runtime.manager.waitForWrites();
       await this.emit({
@@ -645,6 +661,7 @@ export class DiligentAppServer {
       runtime.runningEffortSnapshot = undefined;
       runtime.runningModelIdSnapshot = undefined;
       runtime.currentTurnId = null;
+      runtime.currentTurnUserId = undefined;
       runtime.isRunning = false;
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
@@ -811,6 +828,7 @@ export class DiligentAppServer {
             ask: (request) => this.requestUserInput(runtime.id, request),
             getSessionId: () => runtime.manager.sessionId,
             existingAgent: runtime.agent,
+            onChildStop: (info) => this.runStopHooksFor(info),
           });
           runtime.agent = newAgent;
           for (const histAgent of runtime.manager.getHistoricalCollabAgents()) {
@@ -821,6 +839,18 @@ export class DiligentAppServer {
       },
       compaction: this.config.compaction,
       knowledgePath: paths.knowledge,
+      onStop: (context, isRerun) =>
+        this.runStopHooksFor({
+          sessionId: runtime.manager.sessionId,
+          sessionPath: runtime.manager.sessionPath ?? "",
+          cwd: runtime.cwd,
+          model: runtime.runningModelIdSnapshot ?? runtime.modelId,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          permissionMode: runtime.mode,
+          userId: runtime.currentTurnUserId,
+          context,
+          isRerun,
+        }),
     });
 
     if (createNew) {
@@ -876,11 +906,62 @@ export class DiligentAppServer {
     return { cwd, tools: manager.getTools() };
   }
 
+  /**
+   * Unified Stop hook runner — called by SessionManager.onStop for both parent and child agents.
+   * Returns `{ continueWith }` when a hook blocks to re-run the agent with the reason.
+   */
+  private async runStopHooksFor(
+    info: ChildStopInfo & { permissionMode?: string; userId?: string },
+  ): Promise<{ continueWith?: import("@diligent/core/types").Message } | undefined> {
+    const stopShellHandlers = this.config.hooks?.Stop ?? [];
+    const { onStop: stopPluginHandlers } = await collectPluginHooks(this.config.toolConfig?.getTools(), info.cwd);
+
+    if (stopShellHandlers.length === 0 && stopPluginHandlers.length === 0) return;
+
+    const stopInput = {
+      session_id: info.sessionId,
+      transcript_path: info.sessionPath,
+      cwd: info.cwd,
+      hook_event_name: "Stop",
+      permission_mode: info.permissionMode,
+      stop_hook_active: info.isRerun,
+      last_assistant_message: getLastAssistantMessage(info.context),
+      usage: getSessionUsage(info.context),
+      model: info.model,
+      effort: info.effort,
+      user_id: info.userId,
+    };
+
+    let stopResult: import("../hooks/runner").HookResult = { blocked: false };
+    if (stopShellHandlers.length > 0) {
+      stopResult = await runHooks(stopShellHandlers, stopInput, info.cwd);
+    }
+    if (!stopResult.blocked && stopPluginHandlers.length > 0) {
+      const pluginResult = await runPluginHooks(stopPluginHandlers, stopInput);
+      if (pluginResult.blocked) stopResult = pluginResult;
+    }
+
+    if (stopResult.blocked && stopResult.reason) {
+      return {
+        continueWith: { role: "user" as const, content: stopResult.reason, timestamp: Date.now() },
+      };
+    }
+  }
+
   private buildThreadHandlersContext() {
     return {
       activeThreadId: this.activeThreadId,
       threads: this.threads,
       knownCwds: this.knownCwds,
+      hooks: this.config.hooks,
+      getUserId: (connectionId: string | undefined): string => {
+        if (connectionId) {
+          const conn = this.connections.get(connectionId);
+          if (conn?.userId) return conn.userId;
+        }
+        return this.config.userId ?? userInfo().username;
+      },
+      getPluginHooks: (cwd: string) => collectPluginHooks(this.config.toolConfig?.getTools(), cwd),
       resolvePaths: this.config.resolvePaths,
       createThreadRuntime: (
         threadId: string,

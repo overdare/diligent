@@ -2,12 +2,23 @@
 
 import type { ThinkingEffort } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
+import type { Message } from "@diligent/core/types";
 import type { ResolvedAgentDefinition } from "../agent/resolved-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse } from "../approval/types";
 import type { DiligentPaths } from "../infrastructure";
 import type { SessionManager } from "../session/manager";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+
+export interface ChildStopInfo {
+  sessionId: string;
+  sessionPath: string;
+  cwd: string;
+  model: string;
+  effort: ThinkingEffort;
+  context: Message[];
+  isRerun: boolean;
+}
 
 export type AgentStatus =
   | { kind: "pending" }
@@ -66,4 +77,9 @@ export interface CollabToolDeps {
   approve?: (request: ApprovalRequest) => Promise<ApprovalResponse>;
   /** Stream function for child agents — when omitted, falls back to the global stream resolver. */
   streamFn?: import("@diligent/core/llm/types").StreamFunction;
+  /**
+   * Called when a child agent's turn completes normally.
+   * Return `{ continueWith }` to re-run the child (e.g. when a Stop hook blocks).
+   */
+  onChildStop?: (info: ChildStopInfo) => Promise<{ continueWith?: Message } | undefined>;
 }

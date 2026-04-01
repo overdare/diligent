@@ -25,6 +25,33 @@ export interface ToolResult {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Input passed to plugin lifecycle hook handlers.
+ * Contains session context and event-specific fields.
+ */
+export interface PluginHookInput {
+  hook_event_name: string;
+  session_id: string;
+  transcript_path: string;
+  cwd: string;
+  permission_mode?: string;
+  user_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Return value from a plugin lifecycle hook handler.
+ * Omitting `blocked` (or returning `{}`) allows the operation to proceed.
+ */
+export interface PluginHookResult {
+  /** Return true to block the operation. */
+  blocked?: boolean;
+  /** Reason shown to the user when blocked. */
+  reason?: string;
+  /** Text prepended to the conversation context (UserPromptSubmit only). */
+  additionalContext?: string;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: generic default requires any for unparameterized Tool references
 export interface Tool<TParams extends z.ZodType = any> {
   name: string;

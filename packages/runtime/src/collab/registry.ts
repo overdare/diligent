@@ -199,9 +199,28 @@ export class AgentRegistry {
     const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
-    const childManager = factory({
+
+    // Wire onChildStop as onStop for the child manager.
+    // The `let childManager` binding is valid because onStop is only called
+    // after the manager has been fully constructed and run() completes.
+    const onChildStop = this.deps.onChildStop;
+    let childManager: SessionManager;
+
+    const childManagerConfig: Parameters<typeof factory>[0] = {
       cwd: this.deps.cwd,
       paths: this.deps.paths,
+      onStop: onChildStop
+        ? (context, isRerun) =>
+            onChildStop({
+              sessionId: childManager.sessionId,
+              sessionPath: childManager.sessionPath ?? "",
+              cwd: this.deps.cwd,
+              model: childModel.id,
+              effort: childEffort,
+              context,
+              isRerun,
+            })
+        : undefined,
       agent: async (): Promise<RuntimeAgent> => {
         const childAsk = this.deps.ask
           ? (request: import("../tools/user-input-types").UserInputRequest) =>
@@ -239,7 +258,9 @@ export class AgentRegistry {
         nickname,
         description: params.description || undefined,
       },
-    });
+    };
+
+    childManager = factory(childManagerConfig);
 
     // Use child sessionId as the canonical threadId
     const threadId = childManager.sessionId;

@@ -13,6 +13,8 @@ import type {
 } from "@diligent/plugin-sdk";
 import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { ApprovalRequest } from "../approval/types";
+import type { DiligentConfig } from "../config/schema";
+import type { PluginHookFn } from "../hooks/runner";
 import type { RuntimeToolHost } from "./capabilities";
 import type { UserInputRequest } from "./user-input-types";
 
@@ -36,6 +38,57 @@ export interface PluginLoadResult {
   error?: string;
   warnings?: string[];
   invalidTools?: InvalidPluginTool[];
+}
+
+export interface CollectedPluginHooks {
+  onUserPromptSubmit: PluginHookFn[];
+  onStop: PluginHookFn[];
+}
+
+/**
+ * Collect lifecycle hook handlers exported by enabled plugins.
+ *
+ * Plugins may optionally export:
+ *   export async function onUserPromptSubmit(input: PluginHookInput): Promise<PluginHookResult>
+ *   export async function onStop(input: PluginHookInput): Promise<PluginHookResult>
+ *
+ * Plugins that fail to load are skipped silently (non-blocking).
+ */
+export async function collectPluginHooks(
+  toolsConfig: DiligentConfig["tools"],
+  cwd: string,
+): Promise<CollectedPluginHooks> {
+  const config = toolsConfig ?? {};
+  const explicitPlugins = config.plugins ?? [];
+
+  const discoveredNames = await discoverGlobalPlugins();
+  const explicitPackageNames = new Set(explicitPlugins.map((p) => p.package));
+  const autoPlugins = discoveredNames
+    .filter((name) => !explicitPackageNames.has(name))
+    .map((name) => ({ package: name, enabled: true as const }));
+
+  const pluginConfigs = [...explicitPlugins, ...autoPlugins];
+  const result: CollectedPluginHooks = { onUserPromptSubmit: [], onStop: [] };
+
+  for (const pluginConfig of pluginConfigs) {
+    if (!(pluginConfig.enabled ?? true)) continue;
+
+    let mod: Record<string, unknown>;
+    try {
+      mod = await importPluginModule(pluginConfig.package, cwd);
+    } catch {
+      continue;
+    }
+
+    if (typeof mod.onUserPromptSubmit === "function") {
+      result.onUserPromptSubmit.push(mod.onUserPromptSubmit as PluginHookFn);
+    }
+    if (typeof mod.onStop === "function") {
+      result.onStop.push(mod.onStop as PluginHookFn);
+    }
+  }
+
+  return result;
 }
 
 type PluginToolHostContext = PluginToolContext;

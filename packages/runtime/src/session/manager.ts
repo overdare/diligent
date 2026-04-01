@@ -39,6 +39,13 @@ export interface SessionManagerConfig {
   parentSession?: string;
   /** When spawned as a sub-agent, identity info persisted in session header */
   collabMeta?: CollabSessionMeta;
+  /**
+   * Called after each successful turn (normal completion, not abort or error).
+   * Return `{ continueWith }` to re-run the agent with a follow-up message
+   * (e.g. when a Stop hook blocks). On re-runs, `isRerun` is true so hooks
+   * can set `stop_hook_active` and avoid infinite loops.
+   */
+  onStop?: (context: Message[], isRerun: boolean) => Promise<{ continueWith?: Message } | undefined>;
 }
 
 export interface ResumeSessionOptions {
@@ -265,14 +272,24 @@ export class SessionManager {
    * Compaction is handled by the Agent internally.
    */
   async run(userMessage: Message, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.runInternal(userMessage, opts, false);
+  }
+
+  private async runInternal(
+    userMessage: Message,
+    opts: { signal?: AbortSignal } | undefined,
+    isRerun: boolean,
+  ): Promise<void> {
     this.emitBusyStatus();
 
     const prepared = await this.prepareRun(userMessage);
     const { unsubscribe, getCurrentTurnId } = this.subscribeRunEvents(prepared);
 
+    let normalCompletion = false;
     try {
       await this.executeRun(prepared.agent, userMessage, opts?.signal);
       this.commitRun(prepared.turnStager);
+      normalCompletion = true;
     } catch (err) {
       this.handleRunError(err, getCurrentTurnId());
     } finally {
@@ -280,6 +297,13 @@ export class SessionManager {
     }
 
     this.throwIfAborted(opts?.signal);
+
+    if (normalCompletion && this.config.onStop) {
+      const result = await this.config.onStop(this.getContext(), isRerun);
+      if (result?.continueWith && !opts?.signal?.aborted) {
+        await this.runInternal(result.continueWith, opts, true);
+      }
+    }
   }
 
   /** Wait for all pending writes to complete. */

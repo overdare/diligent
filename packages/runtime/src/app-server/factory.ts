@@ -44,7 +44,7 @@ async function createRuntimeAgent(args: {
   getPaths: () => Promise<DiligentPaths>;
 }): Promise<RuntimeAgent> {
   const { request, runtimeConfig, getPaths } = args;
-  const { cwd, mode, effort, modelId, approve, ask, getSessionId, existingAgent } = request;
+  const { cwd, mode, effort, modelId, approve, ask, getSessionId, existingAgent, onChildStop } = request;
   const guardedSystemPrompt = withSkillGuardrail(runtimeConfig);
   const paths = await getPaths();
   const toolsResult = await buildDefaultTools({
@@ -58,6 +58,7 @@ async function createRuntimeAgent(args: {
       approve,
       ask,
       streamFn: runtimeConfig.streamFunction,
+      onChildStop,
     },
     toolsConfig: runtimeConfig.diligent.tools,
     skills: runtimeConfig.skills,
@@ -152,6 +153,8 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     providerManager: runtimeConfig.providerManager,
     permissionEngine: runtimeConfig.permissionEngine,
     skillNames: runtimeConfig.skills.map((skill) => skill.name),
+    hooks: runtimeConfig.diligent.hooks,
+    userId: runtimeConfig.diligent.userId,
     ...overrides,
   };
 
