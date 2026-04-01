@@ -67,6 +67,7 @@ import {
   handleTurnInterrupt,
   handleTurnStart,
   handleTurnSteer,
+  resetTurnRuntimeState,
   type ThreadRuntime,
 } from "./thread-handlers";
 
@@ -657,12 +658,7 @@ export class DiligentAppServer {
         registry.setCollabEventHandler(undefined);
       }
 
-      runtime.abortController = null;
-      runtime.runningEffortSnapshot = undefined;
-      runtime.runningModelIdSnapshot = undefined;
-      runtime.currentTurnId = null;
-      runtime.currentTurnUserId = undefined;
-      runtime.isRunning = false;
+      resetTurnRuntimeState(runtime);
       await this.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
         params: { threadId: runtime.id, status: "idle" },
