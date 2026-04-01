@@ -140,7 +140,11 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     }
 
     const data = (await response.json()) as RagResponse;
-    const results = (data?.results ?? []).filter((result) => result.text.length > 0);
+    const results = (data?.results ?? []).filter((result) => {
+      if ((result.text ?? "").length > 0) return true;
+      if ("script" in result && ((result as RagResult).script ?? "").length > 0) return true;
+      return false;
+    });
 
     if (args.source === "assets") {
       const assetResults = results.filter(isAssetResult).map(normalizeAssetResult);

@@ -164,7 +164,10 @@ export function buildSearchRender(args: { source: string; query: string }, resul
     };
   }
 
-  const rows = results.slice(0, 10).map((entry) => [clip(entry.text ?? "", 96), clip(entry.originFileUrl ?? "", 56)]);
+  const rows = results.slice(0, 10).map((entry) => {
+    const snippet = args.source === "code" ? entry.script?.trim() || entry.text || "" : (entry.text ?? "");
+    return [clip(snippet, 96), clip(entry.originFileUrl ?? "", 56)];
+  });
   const previewBlock =
     args.source === "code"
       ? buildCodePreviewBlock(results[0] ?? { text: "" })

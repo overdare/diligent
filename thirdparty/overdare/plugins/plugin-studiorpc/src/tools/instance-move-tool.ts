@@ -3,7 +3,7 @@ import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceMove from "../methods/instance.move.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
 import { buildInstanceMoveRender } from "../render.ts";
-import { call } from "../rpc.ts";
+import { applyAndSave } from "../rpc.ts";
 import {
   findNodeByActorGuid,
   isRecord,
@@ -67,21 +67,7 @@ async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolConte
     return { added: movedGuids.map((g) => ({ guid: g, name: "", class: "" })) };
   });
 
-  const executeApproval = await ctx.approve({
-    permission: "execute",
-    toolName,
-    description: "Studio RPC: level.apply",
-    details: { method: "level.apply", params: {} },
-  });
-  if (executeApproval === "reject") {
-    return {
-      output: "[Rejected by user]",
-      metadata: { error: true, method: "level.apply" },
-    };
-  }
-
-  const result = await call("level.apply", {});
-  await call("level.save.file", {});
+  const result = await applyAndSave();
   const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return {

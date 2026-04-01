@@ -3,7 +3,7 @@ import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceDelete from "../methods/instance.delete.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
 import { buildInstanceDeleteRender } from "../render.ts";
-import { call } from "../rpc.ts";
+import { applyAndSave } from "../rpc.ts";
 import {
   findNodeByActorGuid,
   isRecord,
@@ -58,24 +58,10 @@ async function executeInstanceDelete(
       deletedGuids.push(item.targetGuid);
     }
 
-    return { guids: deletedGuids };
+    return { deletedGuids };
   });
 
-  const executeApproval = await ctx.approve({
-    permission: "execute",
-    toolName,
-    description: "Studio RPC: level.apply",
-    details: { method: "level.apply", params: {} },
-  });
-  if (executeApproval === "reject") {
-    return {
-      output: "[Rejected by user]",
-      metadata: { error: true, method: "level.apply" },
-    };
-  }
-
-  const result = await call("level.apply", {});
-  await call("level.save.file", {});
+  const result = await applyAndSave();
   const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return {
@@ -85,7 +71,7 @@ async function executeInstanceDelete(
       method: "instance.delete",
       umapPath: fileResult.umapPath,
       ovdrjmPath: fileResult.ovdrjmPath,
-      targetGuids: fileResult.changedGuids,
+      targetGuids: fileResult.deletedGuids,
       deleteCount: parsedArgs.items.length,
       levelApplyResult: result,
     },

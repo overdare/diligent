@@ -92,6 +92,10 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - No keyboard input: Do not design interactions based on keyboard input. All player actions must be triggered through on-screen touch buttons
 - Ensure sufficient contrast between text and background. If the background is complex or has large brightness variations, use overlays or panels to maintain readability for text.
 - Top Left (Menu), Bottom Left (Joystick), Bottom Right (Jump Button) are system-default HUD elements shared across all UGC games — **NEVER** place, overlay, or wrap custom UI on top of them.
+- Use ZIndex in 100-point bands so the runtime can validate the right things together. Put UI that should be checked against normal HUD conflicts in the same ZIndex band. Runtime overlap checks compare elements inside the same band.
+  - 0-99: normal HUD/gameplay UI
+  - 100-199: intentional overlays such as loading screens, modal dimmers, tutorial blockers
+  - 200+: debug/special layers
 </building-rules>
 
 <workarounds>

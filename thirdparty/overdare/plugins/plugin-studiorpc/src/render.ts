@@ -75,8 +75,13 @@ function toTreeNode(value: Record<string, unknown>): TreeNode | undefined {
 }
 
 export function buildLevelBrowseRender(result: unknown): ToolRenderPayload | undefined {
-  if (!Array.isArray(result)) return undefined;
-  const nodes = result.flatMap((entry) => {
+  const entries = Array.isArray(result)
+    ? result
+    : isRecord(result) && Array.isArray((result as Record<string, unknown>).level)
+      ? ((result as Record<string, unknown>).level as unknown[])
+      : null;
+  if (!entries) return undefined;
+  const nodes = entries.flatMap((entry: unknown) => {
     if (!isRecord(entry)) return [];
     const node = toTreeNode(entry);
     return node ? [node] : [];

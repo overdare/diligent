@@ -3,7 +3,7 @@ import type { Tool, ToolContext, ToolResult } from "@diligent/plugin-sdk";
 import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { collectUiDiagnostics } from "../methods/instance.upsert.ts";
 import { buildInstanceUpsertRender } from "../render.ts";
-import { call } from "../rpc.ts";
+import { applyAndSave } from "../rpc.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
@@ -93,21 +93,7 @@ async function executeInstanceUpsert(
     return { added };
   });
 
-  const executeApproval = await ctx.approve({
-    permission: "execute",
-    toolName,
-    description: "Studio RPC: level.apply",
-    details: { method: "level.apply", params: {} },
-  });
-  if (executeApproval === "reject") {
-    return {
-      output: "[Rejected by user]",
-      metadata: { error: true, method: "level.apply" },
-    };
-  }
-
-  await call("level.apply", {});
-  await call("level.save.file", {});
+  await applyAndSave();
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
   const addedGuids = fileResult.added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));

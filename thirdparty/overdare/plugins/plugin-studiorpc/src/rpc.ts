@@ -47,6 +47,16 @@ function resolvePort(): number {
  *   2. ~/.diligent/overdare.jsonc config file
  *   3. Hard-coded defaults: localhost:13377
  */
+/**
+ * Apply pending level changes and save the file.
+ * Returns the result of `level.apply`.
+ */
+export async function applyAndSave(): Promise<unknown> {
+  const result = await call("level.apply", {});
+  await call("level.save.file", {});
+  return result;
+}
+
 export async function call(method: string, params?: Record<string, unknown>): Promise<unknown> {
   const host = resolveHost();
   const port = resolvePort();
