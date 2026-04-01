@@ -21,6 +21,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 interface ToolSettingsModalProps {
   threadId?: string | null;
+  runtimeVersion?: string;
   initialState?: ToolsListResponse;
   providers?: ProviderAuthStatus[];
   desktopNotificationsEnabled?: boolean;
@@ -123,6 +124,7 @@ function pluginSummary(plugin: ToolsListResponse["plugins"][number]): string {
 
 export function ToolSettingsModal({
   threadId,
+  runtimeVersion,
   initialState,
   providers,
   desktopNotificationsEnabled,
@@ -377,6 +379,18 @@ export function ToolSettingsModal({
                   </label>
                 </section>
               ) : null}
+
+              <section className="space-y-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Runtime version</h3>
+                  <p className="text-xs text-muted">Version of the runtime currently connected to this web client.</p>
+                </div>
+                <div className="rounded-lg border border-border/100 bg-surface-dark px-3 py-2.5">
+                  <div className="text-sm font-medium text-text">
+                    {runtimeVersion?.trim() ? runtimeVersion : "Unavailable"}
+                  </div>
+                </div>
+              </section>
 
               <section className="space-y-2">
                 <div>

@@ -209,6 +209,7 @@ export function useAppBootstrap({
   setCwd,
   setEffortState,
   setSkills,
+  setRuntimeVersion,
   setInitialModel,
   applySessionModel,
   refreshThreadList,
@@ -221,6 +222,7 @@ export function useAppBootstrap({
   setCwd: Dispatch<SetStateAction<string>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;
+  setRuntimeVersion: Dispatch<SetStateAction<string>>;
   setInitialModel: (modelId: string, models?: InitializeResponse["availableModels"]) => void;
   applySessionModel: (sessionModel?: string) => Promise<void>;
   refreshThreadList: (rpc?: WebRpcClient | null) => Promise<void>;
@@ -263,6 +265,7 @@ export function useAppBootstrap({
         setCwd(meta.cwd ?? "");
         setEffortState(meta.effort ?? "medium");
         setSkills(meta.skills ?? []);
+        setRuntimeVersion(meta.serverVersion ?? "");
         setInitialModel(meta.currentModel ?? "", meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
@@ -306,6 +309,7 @@ export function useAppBootstrap({
     setCwd,
     setEffortState,
     setSkills,
+    setRuntimeVersion,
     setInitialModel,
     applySessionModel,
     refreshThreadList,

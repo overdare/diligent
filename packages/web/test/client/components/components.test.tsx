@@ -99,6 +99,7 @@ test("tool settings modal renders tool and plugin rows", () => {
   const html = renderToStaticMarkup(
     <ToolSettingsModal
       threadId="thread-1"
+      runtimeVersion="1.2.3"
       initialState={{
         configPath: "/repo/.diligent/config.jsonc",
         appliesOnNextTurn: true,
@@ -156,10 +157,38 @@ test("tool settings modal renders tool and plugin rows", () => {
   );
 
   expect(html).toContain("Built-in tools");
+  expect(html).toContain("Runtime version");
+  expect(html).toContain("1.2.3");
   expect(html).toContain("bash");
   expect(html).toContain("Locked");
   expect(html).toContain("@acme/diligent-tools");
   expect(html).toContain("jira_comment");
+});
+
+test("tool settings modal shows runtime fallback when version is missing", () => {
+  const html = renderToStaticMarkup(
+    <ToolSettingsModal
+      threadId="thread-1"
+      initialState={{
+        configPath: "/repo/.diligent/config.jsonc",
+        appliesOnNextTurn: true,
+        trustMode: "full_trust",
+        conflictPolicy: "error",
+        tools: [],
+        plugins: [],
+      }}
+      onList={async () => {
+        throw new Error("unused");
+      }}
+      onSave={async () => {
+        throw new Error("unused");
+      }}
+      onClose={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Runtime version");
+  expect(html).toContain("Unavailable");
 });
 
 test("knowledge manager modal renders inline overlay controls and filter UI", () => {

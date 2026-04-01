@@ -71,6 +71,7 @@ export function App() {
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [runtimeVersion, setRuntimeVersion] = useState<string>("");
   const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
   const desktopNotificationsRef = useRef(createDesktopNotificationController());
   const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState(() =>
@@ -243,6 +244,7 @@ export function App() {
     setCwd,
     setEffortState,
     setSkills,
+    setRuntimeVersion,
     setInitialModel: providerMgr.setInitialModel,
     applySessionModel: providerMgr.applySessionModel,
     refreshThreadList: threadMgr.refreshThreadList,
@@ -527,6 +529,7 @@ export function App() {
           {showToolModal ? (
             <ToolSettingsModal
               threadId={state.activeThreadId}
+              runtimeVersion={runtimeVersion}
               providers={providerMgr.providers}
               desktopNotificationsEnabled={desktopNotificationsEnabled}
               onList={listTools}

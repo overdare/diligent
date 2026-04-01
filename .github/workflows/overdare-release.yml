@@ -46,7 +46,23 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Packaging version: $VERSION"
 
+      - name: Check existing GitHub Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" --json id >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release already exists for $TAG. Skipping package/release steps."
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+            echo "No release exists for $TAG. Continuing."
+          fi
+
       - name: Package
+        if: ${{ steps.check_release.outputs.release_exists != 'true' }}
         env:
           DILIGENT_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/update-manifest.json
           DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}
@@ -60,7 +76,7 @@ jobs:
           eval "$CMD"
 
       - name: Upload artifacts (full)
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.runtime_only) }}
+        if: ${{ steps.check_release.outputs.release_exists != 'true' && !(github.event_name == 'workflow_dispatch' && inputs.runtime_only) }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
@@ -72,7 +88,7 @@ jobs:
             dist/checksums.sha256
 
       - name: Upload artifacts (runtime-only)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runtime_only }}
+        if: ${{ steps.check_release.outputs.release_exists != 'true' && github.event_name == 'workflow_dispatch' && inputs.runtime_only }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
@@ -83,6 +99,7 @@ jobs:
             dist/checksums.sha256
 
       - name: Create GitHub Release
+        if: ${{ steps.check_release.outputs.release_exists != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -106,3 +123,8 @@ jobs:
               --generate-notes \
               --draft
           fi
+
+      - name: Skip release creation (already exists)
+        if: ${{ steps.check_release.outputs.release_exists == 'true' }}
+        shell: bash
+        run: echo "Skipped: GitHub Release already exists for v$VERSION"
