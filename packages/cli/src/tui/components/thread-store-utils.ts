@@ -1,7 +1,7 @@
 // @summary Utility helpers for ThreadStore parsing, formatting, and reducer item construction
 
 import type { AgentEvent, ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
-import { ToolRenderPayloadSchema } from "@diligent/protocol";
+import { normalizeToolName, ToolRenderPayloadSchema } from "@diligent/protocol";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
 import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives";
@@ -9,17 +9,7 @@ import type { ThreadItem, ToolResultThreadItem } from "./thread-store-primitives
 // Mirrors runtime's COLLAB_TOOL_NAMES (packages/runtime/src/tools/tool-metadata.ts). Update in sync if collab tool names change.
 export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 
-/**
- * Normalize tool names for rule matching. Strips namespace prefixes so that
- * plugin-namespaced tools (e.g. "functions.spawn_agent", "overdare/spawn_agent")
- * are recognized the same as their base names.
- */
-export function normalizeToolName(toolName: string): string {
-  const raw = toolName.trim().toLowerCase();
-  if (!raw) return raw;
-  const cutIdx = Math.max(raw.lastIndexOf("/"), raw.lastIndexOf("."));
-  return cutIdx >= 0 ? raw.slice(cutIdx + 1) : raw;
-}
+export { normalizeToolName };
 export const TOOL_MAX_LINES = 5;
 
 export interface ToolCallState {
