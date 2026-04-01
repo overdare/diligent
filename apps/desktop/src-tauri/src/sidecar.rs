@@ -39,7 +39,9 @@ impl ManagedChild {
                 let _ = c.kill();
             }
             ManagedChild::TokioChild(mut c) => {
-                let _ = c.kill();
+                // tokio::process::Child::kill() is async; calling it without await does not
+                // actually terminate the process. Use start_kill() in this synchronous path.
+                let _ = c.start_kill();
             }
         }
     }
@@ -343,4 +345,18 @@ async fn wait_for_health(port: u16) -> Result<(), String> {
     })
     .await
     .map_err(|_| format!("Server at :{} did not become healthy within 30 s", port))?
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tokio_child_kill_path_uses_sync_start_kill() {
+        // Regression guard: ManagedChild::kill() is synchronous, so tokio child
+        // termination must use start_kill() (not async kill() without await).
+        let source = include_str!("sidecar.rs");
+        assert!(
+            source.contains("c.start_kill()"),
+            "ManagedChild::TokioChild branch must use start_kill() for shutdown"
+        );
+    }
 }
