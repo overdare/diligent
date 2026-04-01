@@ -109,6 +109,11 @@ async function executeInstanceUpsert(
   await call("level.apply", {});
   await call("level.save.file", {});
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
+  const addedGuids = fileResult.added.map((item) => item.guid);
+  const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));
+  const targetGuids = [...updatedGuids, ...addedGuids];
+  const addCount = fileResult.added.length;
+  const updateCount = updatedGuids.length;
 
   const lines: string[] = [];
   if (fileResult.added.length > 0) {
@@ -130,6 +135,9 @@ async function executeInstanceUpsert(
     render: buildInstanceUpsertRender(parsedArgs as unknown as Record<string, unknown>, lines.join("\n") || "OK"),
     metadata: {
       method: "instance.upsert",
+      targetGuids,
+      addCount,
+      updateCount,
       added: fileResult.added,
       ...(diag.warnings.length > 0 && { warnings: diag.warnings }),
       ...(diag.info.length > 0 && { info: diag.info }),

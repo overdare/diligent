@@ -118,6 +118,13 @@ function inferClassFromProperties(props: Record<string, unknown>): string | unde
 
 // ---------------------------------------------------------------------------
 // Mobile UI overlap warnings (reference resolution: 1386×640)
+//
+// Validation policy:
+// - ZIndex is interpreted in 100-point bands.
+// - Only elements in the same band are checked against each other for UI-to-UI overlap.
+// - Band 0 (0-99) is the normal mobile HUD band and is checked against reserved system HUD zones.
+// - Higher bands are treated as overlay/debug layers and may intentionally cover the full screen
+//   (for example loading screens, modal dimmers, tutorial blockers).
 // ---------------------------------------------------------------------------
 
 const SCREEN_W = 1386;
@@ -248,10 +255,48 @@ interface GuiEntry {
   cls: string;
   guid: string;
   rect: Rect;
+  zIndex: number;
+  band: number;
+  isFullscreenOverlay: boolean;
   /** Full guid of this node (for ancestry checks). */
   fullGuid: string;
   /** Set of ancestor full guids from root to this node. */
   ancestors: Set<string>;
+}
+
+function getZIndex(node: Record<string, unknown>): number {
+  const raw = node.ZIndex;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+}
+
+function getZBand(zIndex: number): number {
+  if (zIndex <= 0) return 0;
+  return Math.floor(zIndex / 100);
+}
+
+function rectWidth(rect: Rect): number {
+  return rect.right - rect.left;
+}
+
+function rectHeight(rect: Rect): number {
+  return rect.bottom - rect.top;
+}
+
+function rectArea(rect: Rect): number {
+  return Math.max(0, rectWidth(rect)) * Math.max(0, rectHeight(rect));
+}
+
+function isFullscreenOverlay(rect: Rect): boolean {
+  const widthCoverage = rectWidth(rect) / SCREEN_W;
+  const heightCoverage = rectHeight(rect) / SCREEN_H;
+  const areaCoverage = rectArea(rect) / rectArea(SCREEN_RECT);
+  return widthCoverage >= 0.9 && heightCoverage >= 0.9 && areaCoverage >= 0.85;
+}
+
+function describeBand(band: number): string {
+  const min = band * 100;
+  const max = min + 99;
+  return `ZIndex band ${band} (${min}-${max})`;
 }
 
 export interface UiDiagnostics {
@@ -272,9 +317,12 @@ export function collectUiDiagnostics(root: OvdrjmNode): UiDiagnostics {
     for (let j = i + 1; j < buttons.length; j++) {
       const a = buttons[i];
       const b = buttons[j];
+      if (a.band !== b.band) continue;
+      if (a.isFullscreenOverlay || b.isFullscreenOverlay) continue;
       if (rectsOverlap(a.rect, b.rect)) {
         warnings.push(
           `"${a.name}" (${a.cls} ${a.guid}…) overlaps "${b.name}" (${b.cls} ${b.guid}…) — ` +
+            `${describeBand(a.band)}, ` +
             `(${Math.round(a.rect.left)},${Math.round(a.rect.top)})-(${Math.round(a.rect.right)},${Math.round(a.rect.bottom)}) ` +
             `vs (${Math.round(b.rect.left)},${Math.round(b.rect.top)})-(${Math.round(b.rect.right)},${Math.round(b.rect.bottom)}).`,
         );
@@ -293,10 +341,14 @@ export function collectUiDiagnostics(root: OvdrjmNode): UiDiagnostics {
       if (buttonGuids.has(a.fullGuid) && buttonGuids.has(b.fullGuid)) continue;
       // Skip ancestor-descendant pairs
       if (a.ancestors.has(b.fullGuid) || b.ancestors.has(a.fullGuid)) continue;
+      // Skip cross-band comparisons; different bands intentionally separate base HUD from overlays/debug layers.
+      if (a.band !== b.band) continue;
+      // Skip fullscreen overlay backdrops/dimmers inside overlay bands.
+      if (a.isFullscreenOverlay || b.isFullscreenOverlay) continue;
       if (rectsOverlap(a.rect, b.rect)) {
         info.push(
           `"${a.name}" (${a.cls} ${a.guid}…) overlaps "${b.name}" (${b.cls} ${b.guid}…) — ` +
-            `if unintentional, consider adjusting their positions.`,
+            `both are in ${describeBand(a.band)}; if unintentional, consider adjusting their positions.`,
         );
       }
     }
@@ -330,21 +382,35 @@ function walkNodes(
       const guid = fullGuid.slice(0, 8) || "?";
       const w = Math.round(rect.right - rect.left);
       const h = Math.round(rect.bottom - rect.top);
-      const entry: GuiEntry = { name, cls, guid, rect, fullGuid, ancestors: new Set(ancestors) };
+      const zIndex = getZIndex(node);
+      const band = getZBand(zIndex);
+      const entry: GuiEntry = {
+        name,
+        cls,
+        guid,
+        rect,
+        zIndex,
+        band,
+        isFullscreenOverlay: band > 0 && isFullscreenOverlay(rect),
+        fullGuid,
+        ancestors: new Set(ancestors),
+      };
 
       if (!isFullyTransparent(node)) {
         allGui.push(entry);
 
-        // Reserved zone overlap check
-        for (const zone of zones) {
-          if (rectsOverlap(rect, zone.rect)) {
-            const r = zone.rect;
-            warnings.push(
-              `"${name}" (${cls} ${guid}…) overlaps the ${zone.label} area ` +
-                `(${Math.round(rect.left)},${Math.round(rect.top)})-(${Math.round(rect.right)},${Math.round(rect.bottom)}) ` +
-                `vs ${zone.label} (${r.left},${r.top})-(${r.right},${r.bottom}) at ${SCREEN_W}×${SCREEN_H}. ` +
-                `If this is a layout container, set BackgroundTransparency to 1.`,
-            );
+        // Reserved zone overlap check: only the base HUD band is blocked from system UI areas.
+        if (band === 0) {
+          for (const zone of zones) {
+            if (rectsOverlap(rect, zone.rect)) {
+              const r = zone.rect;
+              warnings.push(
+                `"${name}" (${cls} ${guid}…) overlaps the ${zone.label} area ` +
+                  `(${Math.round(rect.left)},${Math.round(rect.top)})-(${Math.round(rect.right)},${Math.round(rect.bottom)}) ` +
+                  `vs ${zone.label} (${r.left},${r.top})-(${r.right},${r.bottom}) at ${SCREEN_W}×${SCREEN_H} in ${describeBand(band)}. ` +
+                  `If this is a layout container, set BackgroundTransparency to 1. Use ZIndex 100+ only for intentional overlays such as loading screens or modal blockers.`,
+              );
+            }
           }
         }
 

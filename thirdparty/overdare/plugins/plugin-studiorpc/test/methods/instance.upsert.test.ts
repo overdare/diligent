@@ -1,6 +1,6 @@
 // @summary Verifies batched instance upsert parsing and normalization.
 import { describe, expect, test } from "bun:test";
-import { isUpdateItem, parseArgs } from "../../src/methods/instance.upsert.ts";
+import { collectUiDiagnostics, isUpdateItem, parseArgs } from "../../src/methods/instance.upsert.ts";
 
 const folderDefaultProperties = {
   Anchored: true,
@@ -204,5 +204,109 @@ describe("instance.upsert args", () => {
         properties: {},
       }),
     ).toThrow();
+  });
+});
+
+describe("collectUiDiagnostics", () => {
+  test("ignores fullscreen overlays in higher ZIndex bands when checking reserved mobile HUD zones", () => {
+    const root = {
+      ActorGuid: "ROOT",
+      Name: "Root",
+      LuaChildren: [
+        {
+          ActorGuid: "SCREEN_GUI",
+          InstanceType: "ScreenGui",
+          Name: "RootGui",
+          LuaChildren: [
+            {
+              ActorGuid: "LOADING_FRAME",
+              InstanceType: "Frame",
+              Name: "LoadingOverlay",
+              ZIndex: 100,
+              Position: {
+                X: { Scale: 0, Offset: 0 },
+                Y: { Scale: 0, Offset: 0 },
+              },
+              Size: {
+                X: { Scale: 1, Offset: 0 },
+                Y: { Scale: 1, Offset: 0 },
+              },
+              BackgroundTransparency: 0,
+            },
+          ],
+        },
+      ],
+    };
+
+    const diag = collectUiDiagnostics(root);
+
+    expect(diag.warnings).toEqual([]);
+    expect(diag.info).toEqual([]);
+  });
+
+  test("checks overlap only inside the same ZIndex band", () => {
+    const root = {
+      ActorGuid: "ROOT",
+      Name: "Root",
+      LuaChildren: [
+        {
+          ActorGuid: "SCREEN_GUI",
+          InstanceType: "ScreenGui",
+          Name: "RootGui",
+          LuaChildren: [
+            {
+              ActorGuid: "BASE_BUTTON_A",
+              InstanceType: "TextButton",
+              Name: "ActionA",
+              ZIndex: 10,
+              Position: {
+                X: { Scale: 0, Offset: 600 },
+                Y: { Scale: 0, Offset: 200 },
+              },
+              Size: {
+                X: { Scale: 0, Offset: 120 },
+                Y: { Scale: 0, Offset: 120 },
+              },
+            },
+            {
+              ActorGuid: "BASE_BUTTON_B",
+              InstanceType: "TextButton",
+              Name: "ActionB",
+              ZIndex: 90,
+              Position: {
+                X: { Scale: 0, Offset: 650 },
+                Y: { Scale: 0, Offset: 220 },
+              },
+              Size: {
+                X: { Scale: 0, Offset: 120 },
+                Y: { Scale: 0, Offset: 120 },
+              },
+            },
+            {
+              ActorGuid: "OVERLAY_BUTTON",
+              InstanceType: "TextButton",
+              Name: "OverlayButton",
+              ZIndex: 110,
+              Position: {
+                X: { Scale: 0, Offset: 650 },
+                Y: { Scale: 0, Offset: 220 },
+              },
+              Size: {
+                X: { Scale: 0, Offset: 120 },
+                Y: { Scale: 0, Offset: 120 },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const diag = collectUiDiagnostics(root);
+
+    expect(diag.warnings).toHaveLength(1);
+    expect(diag.warnings[0]).toContain("ActionA");
+    expect(diag.warnings[0]).toContain("ActionB");
+    expect(diag.warnings[0]).toContain("ZIndex band 0 (0-99)");
+    expect(diag.warnings[0]).not.toContain("OverlayButton");
   });
 });
