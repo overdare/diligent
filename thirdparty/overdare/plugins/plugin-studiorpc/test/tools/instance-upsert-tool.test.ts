@@ -9,6 +9,11 @@ const levelApplyMock = mock(async () => ({ ok: true }));
 const levelSaveFileMock = mock(async () => "World file saved.");
 
 mock.module("../../src/rpc.ts", () => ({
+  applyAndSave: async () => {
+    const result = await levelApplyMock("level.apply", {});
+    await levelSaveFileMock("level.save.file", {});
+    return result;
+  },
   call: (method: string, params?: Record<string, unknown>) => {
     if (method === "level.apply") {
       return levelApplyMock(method, params);
@@ -42,6 +47,10 @@ function createWorldDocument() {
         {
           ActorGuid: "PARENT_GUID",
           Name: "ParentFolder",
+          WorldTransform: {
+            Position: { X: 10, Y: 20, Z: 30 },
+            Orientation: { X: 0, Y: 45, Z: 90 },
+          },
           LuaChildren: [
             {
               ActorGuid: "CHILD_GUID",
@@ -196,6 +205,57 @@ describe("instance-upsert-tool", () => {
 
     expect(added?.FillDirection).toBe("Vertical");
     expect(added?.SortOrder).toBe("LayoutOrder");
+  });
+
+  test("copies parent WorldTransform for VFX and light children on add", async () => {
+    const tool = createInstanceUpsertTool(tempDir);
+
+    await tool.execute(
+      {
+        items: [
+          {
+            class: "VFXPreset",
+            parentGuid: "PARENT_GUID",
+            name: "SmokeVfx",
+            properties: {
+              PresetName: "Smoke",
+              Color: [{ Time: 0, R: 255, G: 255, B: 255 }],
+            },
+          },
+          {
+            class: "PointLight",
+            parentGuid: "PARENT_GUID",
+            name: "GlowLight",
+            properties: {
+              Brightness: 5,
+            },
+          },
+          {
+            class: "Folder",
+            parentGuid: "PARENT_GUID",
+            name: "PlainFolder",
+            properties: {},
+          },
+        ],
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const savedRoot = saved.Root as {
+      LuaChildren: Array<{ LuaChildren: Array<Record<string, unknown>>; WorldTransform: unknown }>;
+    };
+    const parent = savedRoot.LuaChildren[0];
+    const children = parent.LuaChildren;
+    const vfx = children.find((node) => node.Name === "SmokeVfx");
+    const light = children.find((node) => node.Name === "GlowLight");
+    const folder = children.find((node) => node.Name === "PlainFolder");
+
+    expect(vfx?.WorldTransform).toEqual(parent.WorldTransform);
+    expect(light?.WorldTransform).toEqual(parent.WorldTransform);
+    expect(folder?.WorldTransform).toBeUndefined();
+    expect(vfx?.WorldTransform).not.toBe(parent.WorldTransform);
+    expect(light?.WorldTransform).not.toBe(parent.WorldTransform);
   });
 
   test("supports mixed update and add items", async () => {

@@ -6,6 +6,8 @@ import { buildInstanceUpsertRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
+const PARENT_WORLD_TRANSFORM_CLASSES = new Set(["VFXPreset", "ParticleEmitter", "PointLight", "SpotLight"]);
+
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
@@ -24,6 +26,36 @@ function nextObjectKey(rootDoc: Record<string, unknown>): number {
   const next = numeric + 1;
   rootDoc.MapObjectKeyIndex = next;
   return next;
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneJsonValue(entry));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneJsonValue(entry)]));
+  }
+  return value;
+}
+
+function buildAddedNode(
+  item: { class: string; name: string; properties: Record<string, unknown> },
+  rootDoc: Record<string, unknown>,
+  parent: Record<string, unknown>,
+): Record<string, unknown> {
+  const newNode: Record<string, unknown> = {
+    InstanceType: item.class,
+    ActorGuid: makeActorGuid(),
+    ObjectKey: nextObjectKey(rootDoc),
+    Name: item.name,
+    ...item.properties,
+  };
+
+  if (PARENT_WORLD_TRANSFORM_CLASSES.has(item.class) && isRecord(parent.WorldTransform)) {
+    newNode.WorldTransform = cloneJsonValue(parent.WorldTransform);
+  }
+
+  return newNode;
 }
 
 async function executeInstanceUpsert(
@@ -77,16 +109,9 @@ async function executeInstanceUpsert(
       const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
       parent.LuaChildren = childList;
 
-      const newGuid = makeActorGuid();
-      const newNode: Record<string, unknown> = {
-        InstanceType: item.class,
-        ActorGuid: newGuid,
-        ObjectKey: nextObjectKey(rootDoc),
-        Name: item.name,
-        ...(item.properties as Record<string, unknown>),
-      };
+      const newNode = buildAddedNode(item, rootDoc, parent);
       childList.push(newNode);
-      added.push({ guid: newGuid, name: item.name, class: item.class });
+      added.push({ guid: String(newNode.ActorGuid), name: item.name, class: item.class });
     }
 
     ovdrjmRoot = root as OvdrjmNode;
