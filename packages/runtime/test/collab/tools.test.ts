@@ -67,7 +67,9 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).toContain("Role selection guide:");
     expect(spawnTool.description).toContain("wait for them before yielding");
     expect(spawnTool.description).toContain("Nested subagents are disabled by default");
-    expect(spawnTool.description).toContain("your primary role becomes coordinating them until they finish");
+    expect(spawnTool.description).toContain(
+      "act as the coordinator: monitor, synthesize, and decide the next step instead of doing the same work in parallel",
+    );
     expect(spawnTool.description).toContain("Prompt contract:");
     expect(spawnTool.description).toContain("Result contract:");
     expect(spawnTool.description).toContain("Do not ask a child agent to spawn or coordinate additional sub-agents");
