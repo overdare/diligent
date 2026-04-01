@@ -127,4 +127,4 @@ jobs:
       - name: Skip release creation (already exists)
         if: ${{ steps.check_release.outputs.release_exists == 'true' }}
         shell: bash
-        run: echo "Skipped: GitHub Release already exists for v$VERSION"
+        run: 'echo "Skipped: GitHub Release already exists for v$VERSION"'
