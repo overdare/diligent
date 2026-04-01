@@ -11,6 +11,7 @@ export interface AgentDiscoveryOptions {
   cwd: string;
   globalConfigDir?: string;
   additionalPaths?: string[];
+  knownToolNames?: Iterable<string>;
 }
 
 export async function discoverAgents(options: AgentDiscoveryOptions): Promise<AgentLoadResult> {
@@ -19,7 +20,7 @@ export async function discoverAgents(options: AgentDiscoveryOptions): Promise<Ag
   const resolved = new Map<string, string>();
 
   for (const { dir, source } of getDiscoveryRoots(options)) {
-    await scanAgentDirectory(dir, source, agents, errors, resolved);
+    await scanAgentDirectory(dir, source, agents, errors, resolved, options.knownToolNames);
   }
 
   return { agents, errors };
@@ -42,6 +43,7 @@ async function scanAgentDirectory(
   agents: AgentMetadata[],
   errors: AgentLoadError[],
   resolved: Map<string, string>,
+  knownToolNames?: Iterable<string>,
 ): Promise<void> {
   let entries: Dirent[];
   try {
@@ -53,7 +55,16 @@ async function scanAgentDirectory(
   const tierSeen = new Map<string, string>();
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") continue;
-    await loadAgent(join(dir, entry.name, "AGENT.md"), entry.name, source, agents, errors, resolved, tierSeen);
+    await loadAgent(
+      join(dir, entry.name, "AGENT.md"),
+      entry.name,
+      source,
+      agents,
+      errors,
+      resolved,
+      tierSeen,
+      knownToolNames,
+    );
   }
 }
 
@@ -65,6 +76,7 @@ async function loadAgent(
   errors: AgentLoadError[],
   resolved: Map<string, string>,
   tierSeen: Map<string, string>,
+  knownToolNames?: Iterable<string>,
 ): Promise<void> {
   let content: string;
   try {
@@ -76,7 +88,7 @@ async function loadAgent(
     return;
   }
 
-  const result = parseAgentFrontmatter(content, filePath);
+  const result = parseAgentFrontmatter(content, filePath, { knownToolNames });
   if ("error" in result) {
     errors.push({ filePath, error: result.error });
     return;

@@ -55,6 +55,35 @@ describe("parseAgentFrontmatter", () => {
     expect(result.frontmatter.tools).toContain("mystery_tool");
   });
 
+  it("accepts plugin-provided tool names when they are supplied as known tools", () => {
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message));
+    };
+
+    try {
+      const content = [
+        "---",
+        "name: ui-builder",
+        "description: Builds UI",
+        "tools: studiorpc_level_browse, studiorpc_instance_upsert",
+        "---",
+        "Build the interface.",
+      ].join("\n");
+
+      const result = parseAgentFrontmatter(content, "/tmp/AGENT.md", {
+        knownToolNames: ["studiorpc_level_browse", "studiorpc_instance_upsert"],
+      });
+      expect("error" in result).toBe(false);
+      if ("error" in result) return;
+      expect(result.frontmatter.tools).toEqual(["studiorpc_level_browse", "studiorpc_instance_upsert"]);
+      expect(warnings).toHaveLength(0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it("rejects invalid model_class", () => {
     const content = ["---", "name: reviewer", "description: Reviews code", "model_class: ultra", "---", "Body"].join(
       "\n",

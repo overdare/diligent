@@ -15,10 +15,15 @@ function parseToolList(rawValue: string): string[] {
     .filter(Boolean);
 }
 
-function normalizeToolNames(tools: string[], filePath: string): { tools: string[] } | { error: string } {
+function normalizeToolNames(
+  tools: string[],
+  filePath: string,
+  knownToolNames?: ReadonlySet<string>,
+): { tools: string[] } | { error: string } {
   const normalized = new Set<string>();
+  const knownNames = knownToolNames ?? new Set(Object.keys(TOOL_CAPABILITIES));
   for (const tool of tools) {
-    if (!(tool in TOOL_CAPABILITIES)) {
+    if (!knownNames.has(tool)) {
       console.warn(`${filePath}: unknown tool in frontmatter: ${tool}`);
     }
     normalized.add(tool);
@@ -29,7 +34,9 @@ function normalizeToolNames(tools: string[], filePath: string): { tools: string[
 export function parseAgentFrontmatter(
   content: string,
   filePath: string,
+  options?: { knownToolNames?: Iterable<string> },
 ): { frontmatter: AgentFrontmatter; body: string } | { error: string } {
+  const knownToolNames = options?.knownToolNames ? new Set(options.knownToolNames) : undefined;
   const lines = content.split("\n");
   if (lines[0]?.trim() !== "---") {
     return { error: `${filePath}: missing frontmatter (no opening ---)` };
@@ -84,7 +91,7 @@ export function parseAgentFrontmatter(
 
   let tools: string[] | undefined;
   if (parsed.tools) {
-    const toolResult = normalizeToolNames(parseToolList(parsed.tools), filePath);
+    const toolResult = normalizeToolNames(parseToolList(parsed.tools), filePath, knownToolNames);
     if ("error" in toolResult) {
       return toolResult;
     }

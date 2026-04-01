@@ -91,4 +91,45 @@ describe("discoverAgents", () => {
     expect(result.agents).toHaveLength(0);
     expect(result.errors[0]?.error).toContain("collides with built-in");
   });
+
+  it("uses supplied known tool names so plugin tools do not warn during discovery", async () => {
+    const root = await createTmpDir();
+    const dir = join(root, ".diligent", "agents", "ui-builder");
+    const isolatedGlobal = join(root, ".global-diligent");
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message));
+    };
+
+    try {
+      await mkdir(dir, { recursive: true });
+      await mkdir(join(isolatedGlobal, "agents"), { recursive: true });
+      await writeFile(
+        join(dir, "AGENT.md"),
+        makeAgentMd(
+          "ui-builder",
+          "Builds UI",
+          "tools: studiorpc_level_browse, studiorpc_instance_upsert, studiorpc_level_save_file",
+        ),
+      );
+
+      const result = await discoverAgents({
+        cwd: root,
+        globalConfigDir: isolatedGlobal,
+        knownToolNames: ["studiorpc_level_browse", "studiorpc_instance_upsert", "studiorpc_level_save_file"],
+      });
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.agents).toHaveLength(1);
+      expect(result.agents[0]?.tools).toEqual([
+        "studiorpc_level_browse",
+        "studiorpc_instance_upsert",
+        "studiorpc_level_save_file",
+      ]);
+      expect(warnings).toHaveLength(0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });

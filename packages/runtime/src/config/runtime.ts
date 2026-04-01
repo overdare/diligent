@@ -19,6 +19,7 @@ import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
 import type { SkillMetadata } from "../skills/index";
 import { discoverSkills, renderSkillsSection } from "../skills/index";
+import { buildDefaultTools } from "../tools/defaults";
 import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
 import { loadDiligentConfig } from "./loader";
 import type { DiligentConfig } from "./schema";
@@ -108,9 +109,17 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   let agentsSection = "";
   const agentsEnabled = config.agents?.enabled ?? true;
   if (agentsEnabled) {
+    const toolsResult = await buildDefaultTools({
+      cwd,
+      paths,
+      toolsConfig: config.tools,
+      skills,
+      enableCollabTools: false,
+    });
     const result = await discoverAgents({
       cwd,
       additionalPaths: config.agents?.paths,
+      knownToolNames: toolsResult.toolState.map((tool) => tool.name),
     });
     agents = result.agents;
     agentsSection = renderAgentsSection(agents);
