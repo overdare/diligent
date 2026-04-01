@@ -123,6 +123,28 @@ export async function runPluginHooks(handlers: PluginHookFn[], input: HookInput)
   return { blocked: false, additionalContext: combinedContext };
 }
 
+/**
+ * Run shell handlers then plugin handlers sequentially; stop on first block.
+ * Combines additionalContext from both into a single newline-joined string.
+ */
+export async function runCombinedHooks(
+  shellHandlers: HookHandler[],
+  pluginHandlers: PluginHookFn[],
+  input: HookInput,
+  cwd: string,
+): Promise<HookResult> {
+  const shellResult =
+    shellHandlers.length > 0 ? await runHooks(shellHandlers, input, cwd) : { blocked: false as const };
+  if (shellResult.blocked) return shellResult;
+
+  const pluginResult =
+    pluginHandlers.length > 0 ? await runPluginHooks(pluginHandlers, input) : { blocked: false as const };
+  if (pluginResult.blocked) return pluginResult;
+
+  const parts = [shellResult.additionalContext, pluginResult.additionalContext].filter(Boolean);
+  return { blocked: false, additionalContext: parts.join("\n") || undefined };
+}
+
 /** Run shell command handlers sequentially; stop and return on first block. */
 export async function runHooks(handlers: HookHandler[], input: HookInput, cwd: string): Promise<HookResult> {
   let combinedContext: string | undefined;

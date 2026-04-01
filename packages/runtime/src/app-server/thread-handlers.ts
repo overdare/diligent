@@ -6,7 +6,7 @@ import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import { calculateUsageCost } from "../cost";
-import { type HookResult, runHooks, runPluginHooks } from "../hooks/runner";
+import { type HookResult, runCombinedHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -369,65 +369,50 @@ export async function handleTurnStart(
   const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
   const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
 
-  if (shellHandlers.length > 0 || pluginHandlers.length > 0) {
-    const hookInput = {
-      session_id: runtime.manager.sessionId,
-      transcript_path: runtime.manager.sessionPath ?? "",
-      cwd: runtime.cwd,
-      hook_event_name: "UserPromptSubmit",
-      permission_mode: runtime.mode,
-      user_id: runtime.currentTurnUserId,
-      prompt: typeof content === "string" ? content : params.message,
-    };
+  const hookInput = {
+    session_id: runtime.manager.sessionId,
+    transcript_path: runtime.manager.sessionPath ?? "",
+    cwd: runtime.cwd,
+    hook_event_name: "UserPromptSubmit",
+    permission_mode: runtime.mode,
+    user_id: runtime.currentTurnUserId,
+    prompt: typeof content === "string" ? content : params.message,
+  };
+  const hookResult: HookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
 
-    let hookResult: HookResult = { blocked: false };
-    if (shellHandlers.length > 0) {
-      hookResult = await runHooks(shellHandlers, hookInput, runtime.cwd);
-    }
-    if (!hookResult.blocked && pluginHandlers.length > 0) {
-      const pluginResult = await runPluginHooks(pluginHandlers, hookInput);
-      if (pluginResult.blocked) {
-        hookResult = pluginResult;
-      } else {
-        const parts = [hookResult.additionalContext, pluginResult.additionalContext].filter(Boolean);
-        hookResult = { blocked: false, additionalContext: parts.join("\n") || undefined };
-      }
-    }
-
-    if (hookResult.blocked) {
-      // Abort the turn without running the agent
-      runtime.abortController = null;
-      runtime.isRunning = false;
-      runtime.currentTurnId = null;
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-        params: {
-          threadId: runtime.id,
-          error: {
-            message: hookResult.reason ?? "Prompt blocked by hook",
-            name: "HookBlocked",
-          },
-          fatal: false,
+  if (hookResult.blocked) {
+    // Abort the turn without running the agent
+    runtime.abortController = null;
+    runtime.isRunning = false;
+    runtime.currentTurnId = null;
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      params: {
+        threadId: runtime.id,
+        error: {
+          message: hookResult.reason ?? "Prompt blocked by hook",
+          name: "HookBlocked",
         },
-      });
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
-        params: { threadId: runtime.id, turnId },
-      });
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-        params: { threadId: runtime.id, status: "idle" },
-      });
-      return { accepted: true };
-    }
+        fatal: false,
+      },
+    });
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
+      params: { threadId: runtime.id, turnId },
+    });
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "idle" },
+    });
+    return { accepted: true };
+  }
 
-    // Prepend additional context from hooks to the user message if provided
-    if (hookResult.additionalContext) {
-      const contextPrefix = hookResult.additionalContext;
-      const originalText = typeof content === "string" ? content : params.message;
-      const augmentedContent = `${contextPrefix}\n\n${originalText}`;
-      Object.assign(userMessage, { content: augmentedContent });
-    }
+  // Prepend additional context from hooks to the user message if provided
+  if (hookResult.additionalContext) {
+    const contextPrefix = hookResult.additionalContext;
+    const originalText = typeof content === "string" ? content : params.message;
+    const augmentedContent = `${contextPrefix}\n\n${originalText}`;
+    Object.assign(userMessage, { content: augmentedContent });
   }
 
   const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
