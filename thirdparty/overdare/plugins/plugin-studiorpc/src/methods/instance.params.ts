@@ -58,6 +58,8 @@ const textProperties = {
 
 export const instanceClassEnum = z.enum([
   "Part",
+  "Outline",
+  "Fill",
   "Frame",
   "ImageButton",
   "ImageLabel",
@@ -356,6 +358,25 @@ export const instancePropertiesSchema = z
       .describe(
         "Use when class=Part. Defines the 3D mesh shape, transform, size (in cm), color, material, physics, and collision properties.",
       ),
+    z
+      .object({
+        Color: rgb.optional(),
+        Thickness: z.number().optional(),
+        Adornee: z.string().describe("InstanceGuid of the target instance to outline").optional(),
+        Enabled: z.boolean().optional(),
+      })
+      .strict()
+      .describe("Use when class=Outline. Overlay effect with edge color/thickness around an adornee instance."),
+    z
+      .object({
+        Color: rgb.optional(),
+        DepthMode: z.enum(["AlwaysOnTop", "VisibleWhenNotOccluded", "VisibleWhenOccluded"]).optional(),
+        Transparency: z.number().describe("(0~1)").optional(),
+        Adornee: z.string().describe("InstanceGuid of the target instance to fill").optional(),
+        Enabled: z.boolean().optional(),
+      })
+      .strict()
+      .describe("Use when class=Fill. Overlay effect with color fill over an adornee instance."),
     z
       .object({
         ...guiObjectProperties,

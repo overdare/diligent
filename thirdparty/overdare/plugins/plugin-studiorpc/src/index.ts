@@ -53,10 +53,6 @@ export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
           ? mod.normalizeArgs(args as Record<string, unknown>)
           : (args as Record<string, unknown>);
         const result = await call(rpcMethod, normalizedArgs);
-
-        if (method === "asset-drawer.import") {
-          await new Promise((r) => setTimeout(r, 3000));
-        }
         if (mutatingMethods.has(method)) {
           await call("level.save.file", {});
         }

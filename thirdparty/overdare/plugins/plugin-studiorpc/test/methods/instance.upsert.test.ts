@@ -14,6 +14,56 @@ const modelDefaultProperties = {
 };
 
 describe("instance.upsert args", () => {
+  test("parses Outline and Fill class properties", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "Outline",
+          parentGuid: "ROOT",
+          name: "EnemyOutline",
+          properties: {
+            Color: { R: 255, G: 0, B: 0 },
+            Thickness: 2,
+            Enabled: true,
+          },
+        },
+        {
+          class: "Fill",
+          parentGuid: "ROOT",
+          name: "EnemyFill",
+          properties: {
+            Color: { R: 255, G: 255, B: 0 },
+            DepthMode: "AlwaysOnTop",
+            Transparency: 0.4,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.items).toEqual([
+      {
+        class: "Outline",
+        parentGuid: "ROOT",
+        name: "EnemyOutline",
+        properties: {
+          Color: { R: 255, G: 0, B: 0 },
+          Thickness: 2,
+          Enabled: true,
+        },
+      },
+      {
+        class: "Fill",
+        parentGuid: "ROOT",
+        name: "EnemyFill",
+        properties: {
+          Color: { R: 255, G: 255, B: 0 },
+          DepthMode: "AlwaysOnTop",
+          Transparency: 0.4,
+        },
+      },
+    ]);
+  });
+
   test("parses add items without explicit mode", () => {
     const parsed = parseArgs({
       items: [
