@@ -19,6 +19,21 @@ interface OverdareConfig {
   };
 }
 
+function isTruthy(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function shouldSkipAnalyticsSend(): boolean {
+  const allowInTest = isTruthy(process.env.DILIGENT_ANALYTICS_ALLOW_IN_TEST);
+  if (allowInTest) return false;
+
+  const isTestEnv = process.env.NODE_ENV === "test";
+  const isCiEnv = isTruthy(process.env.CI);
+  return isTestEnv || isCiEnv;
+}
+
 function stripJsonComments(text: string): string {
   return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
@@ -58,6 +73,8 @@ interface UsageData {
 }
 
 export async function onStop(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (shouldSkipAnalyticsSend()) return {};
+
   const config = loadOverdareConfig();
   const endpoint = config.analytics?.endpoint ?? process.env.DILIGENT_ANALYTICS_URL ?? DEFAULT_ENDPOINT;
   const apiKey = config.analytics?.apiKey ?? process.env.DILIGENT_ANALYTICS_KEY ?? BUILTIN_API_KEY;
