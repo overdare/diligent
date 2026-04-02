@@ -42,8 +42,17 @@ export function createPluginBundlePlan(options: {
   const outFile = join(outDir, "index.js");
   const srcPkg = JSON.parse(readFileSync(join(options.pluginDir, "package.json"), "utf-8")) as SourcePackageJson;
 
+  // Inject build-time defines (e.g. analytics API key from CI secrets).
+  // Only alphanumeric + underscore + hyphen values are allowed to prevent shell injection.
+  const SAFE_VALUE = /^[\w\-.]+$/;
+  const defines = Object.entries(process.env)
+    .filter(([k]) => k.startsWith("PLUGIN_DEFINE_"))
+    .filter(([, v]) => v && SAFE_VALUE.test(v))
+    .map(([k, v]) => `--define __${k.slice("PLUGIN_DEFINE_".length)}__='"${v}"'`)
+    .join(" ");
+
   return {
-    buildCommand: `bun build --target bun --outfile ${outFile} ${pluginEntry}`,
+    buildCommand: `bun build --target bun ${defines} --outfile ${outFile} ${pluginEntry}`,
     buildCwd: options.rootDir,
     outDir,
     outFile,

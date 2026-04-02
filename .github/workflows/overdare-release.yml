@@ -66,6 +66,7 @@ jobs:
         env:
           DILIGENT_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/update-manifest.json
           DILIGENT_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}
+          PLUGIN_DEFINE_SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
         shell: bash
         run: |
           CMD="bun run package --version $VERSION --platforms windows-x64 --package thirdparty/overdare"
