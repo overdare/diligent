@@ -14,6 +14,50 @@ const modelDefaultProperties = {
 };
 
 describe("instance.upsert args", () => {
+  test("parses ProximityPrompt class properties and applies defaults", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "ProximityPrompt",
+          parentGuid: "ROOT",
+          name: "DoorPrompt",
+          properties: {
+            KeyboardKeyCode: "E",
+            UIOffset: { X: 0, Y: 0 },
+            Exclusivity: "OnePerButton",
+            HoldDuration: 0,
+            MaxActivationDistance: 200,
+            ObjectText: "ObjectText",
+            ActionText: "Interact",
+            ClickablePrompt: true,
+            Enabled: true,
+            RequiresLineOfSight: true,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.items).toEqual([
+      {
+        class: "ProximityPrompt",
+        parentGuid: "ROOT",
+        name: "DoorPrompt",
+        properties: {
+          KeyboardKeyCode: "E",
+          UIOffset: { X: 0, Y: 0 },
+          Exclusivity: "OnePerButton",
+          HoldDuration: 0,
+          MaxActivationDistance: 200,
+          ObjectText: "ObjectText",
+          ActionText: "Interact",
+          ClickablePrompt: true,
+          Enabled: true,
+          RequiresLineOfSight: true,
+        },
+      },
+    ]);
+  });
+
   test("parses Outline and Fill class properties", () => {
     const parsed = parseArgs({
       items: [

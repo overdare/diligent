@@ -100,6 +100,7 @@ export const instanceClassEnum = z.enum([
   "SoundGroup",
   "SpawnLocation",
   "UIAspectRatioConstraint",
+  "ProximityPrompt",
 ]);
 
 export const serviceClassEnum = z.enum([
@@ -916,6 +917,23 @@ export const instancePropertiesSchema = z
       })
       .strict()
       .describe("Use when class=UIAspectRatioConstraint. Locks the aspect ratio of a sibling UI element."),
+    z
+      .object({
+        KeyboardKeyCode: z.string().describe('e.g. "E"').optional(),
+        UIOffset: z.object({ X: z.number(), Y: z.number() }).optional(),
+        Exclusivity: z.enum(["OnePerButton", "OneGlobally", "AlwaysShow"]).optional(),
+        HoldDuration: z.number().default(0),
+        MaxActivationDistance: z.number().default(200),
+        ObjectText: z.string().optional(),
+        ActionText: z.string().default("Interact"),
+        ClickablePrompt: z.boolean().default(true),
+        Enabled: z.boolean().default(true),
+        RequiresLineOfSight: z.boolean().default(true),
+      })
+      .strict()
+      .describe(
+        "Use when class=ProximityPrompt. Configures nearby interaction prompt behavior including key binding, UI offset, exclusivity mode, distance, and line-of-sight requirements.",
+      ),
     workspaceServiceSchema,
     lightingServiceSchema,
     atmosphereServiceSchema,
