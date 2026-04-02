@@ -11,7 +11,7 @@ import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
 import type { ChildStopInfo } from "../collab/types";
 import type { DiligentConfig } from "../config/schema";
-import { getLastAssistantMessage, getSessionUsage, runHooks, runPluginHooks } from "../hooks/runner";
+import { getLastAssistantMessage, getTurnUsage, runHooks, runPluginHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   AgentEventSchema,
@@ -930,7 +930,7 @@ export class DiligentAppServer {
       permission_mode: info.permissionMode,
       stop_hook_active: info.isRerun,
       last_assistant_message: getLastAssistantMessage(info.context),
-      usage: getSessionUsage(info.context),
+      usage: getTurnUsage(info.context),
       model: info.model,
       provider: info.provider,
       effort: info.effort,

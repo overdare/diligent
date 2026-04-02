@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HookInput } from "../../src/hooks/runner";
-import { getLastAssistantMessage, runHooks } from "../../src/hooks/runner";
+import { getLastAssistantMessage, getTurnUsage, runHooks } from "../../src/hooks/runner";
 
 const FIXTURE_CWD = tmpdir();
 
@@ -187,5 +187,60 @@ describe("getLastAssistantMessage", () => {
       { role: "assistant" as const, content: "Second response", timestamp: 3 },
     ];
     expect(getLastAssistantMessage(messages)).toBe("Second response");
+  });
+});
+
+describe("getTurnUsage", () => {
+  test("returns zero when no assistant message exists in current turn", () => {
+    const usage = getTurnUsage([
+      { role: "user", content: "hello", timestamp: 1 },
+      { role: "tool_result", toolCallId: "tc1", toolName: "read", output: "ok", isError: false, timestamp: 2 },
+    ]);
+    expect(usage).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  });
+
+  test("counts only assistant usage after the latest user message", () => {
+    const usage = getTurnUsage([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "prev turn" }],
+        model: "fake-model",
+        usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 5, cacheWriteTokens: 1 },
+        stopReason: "end_turn",
+        timestamp: 1,
+      },
+      { role: "user", content: "current turn", timestamp: 2 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "tool_use" }],
+        model: "fake-model",
+        usage: { inputTokens: 30, outputTokens: 10, cacheReadTokens: 2, cacheWriteTokens: 0 },
+        stopReason: "tool_use",
+        timestamp: 3,
+      },
+      {
+        role: "tool_result",
+        toolCallId: "tc2",
+        toolName: "grep",
+        output: "result",
+        isError: false,
+        timestamp: 4,
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "final" }],
+        model: "fake-model",
+        usage: { inputTokens: 40, outputTokens: 15, cacheReadTokens: 3, cacheWriteTokens: 1 },
+        stopReason: "end_turn",
+        timestamp: 5,
+      },
+    ]);
+
+    expect(usage).toEqual({
+      inputTokens: 70,
+      outputTokens: 25,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 1,
+    });
   });
 });
