@@ -23,6 +23,7 @@ interface CreateServerOptions {
   port?: number;
   dev?: boolean;
   cwd?: string;
+  userId?: string;
   distDir?: string;
 }
 
@@ -31,6 +32,7 @@ interface ParsedArgs {
   dev: boolean;
   distDir?: string;
   cwd?: string;
+  userId?: string;
   logFile?: string;
   parentPid?: number;
 }
@@ -79,6 +81,12 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   const paths = await ensureDiligentDir(cwd);
   const runtimeConfig = await loadRuntimeConfig(cwd, paths);
+  if (options.userId?.trim()) {
+    runtimeConfig.diligent = {
+      ...runtimeConfig.diligent,
+      userId: options.userId.trim(),
+    };
+  }
 
   let lastRegistry: AgentRegistry | undefined;
 
@@ -172,7 +180,7 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
       open(ws) {
         const { peer, receive } = createWsPeer(ws);
         peerReceivers.set(ws.data.connectionId, receive);
-        appServer.connect(ws.data.connectionId, peer);
+        appServer.connect(ws.data.connectionId, peer, { userId: runtimeConfig.diligent.userId });
       },
       message(ws, raw) {
         peerReceivers.get(ws.data.connectionId)?.(raw);
@@ -320,6 +328,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const distDir = distArg ? distArg.split("=")[1] : undefined;
   const cwdArg = argv.find((arg) => arg.startsWith("--cwd="));
   const cwd = cwdArg ? cwdArg.split("=")[1] : undefined;
+  const userIdArg = argv.find((arg) => arg.startsWith("--userid="));
+  const userId = userIdArg ? userIdArg.slice("--userid=".length) : undefined;
   const logFileArg = argv.find((arg) => arg.startsWith("--log-file="));
   const logFile = logFileArg ? logFileArg.slice("--log-file=".length) : undefined;
   const parentPidArg = argv.find((arg) => arg.startsWith("--parent-pid="));
@@ -329,6 +339,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     dev,
     distDir,
     cwd,
+    userId,
     logFile,
     parentPid: Number.isFinite(parentPid) ? parentPid : undefined,
   };
@@ -360,6 +371,7 @@ if (isDirect) {
       port: args.port,
       dev: args.dev,
       cwd: serverCwd,
+      userId: args.userId,
       distDir: args.distDir,
     })
       .then(({ server }) => {

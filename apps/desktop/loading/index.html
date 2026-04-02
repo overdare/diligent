@@ -307,6 +307,7 @@
 
       async function launchWithCwd(cwd, options = {}) {
         const showLoadingUi = options.showLoadingUi !== false;
+        const userid = options.userid ?? null;
         btn.disabled = true;
         errorEl.hidden = true;
         const { invoke } = window.__TAURI__.core;
@@ -322,7 +323,7 @@
           setLoadingText('Preparing workspace...', 'Starting local server...');
         }
 
-        await invoke('launch_server', { cwd });
+        await invoke('launch_server', { cwd, userid });
 
         if (showLoadingUi) {
           setStep(stepLaunchEl, 'done');
@@ -393,7 +394,8 @@
             return;
           }
 
-          await launchWithCwd(cwd, { showLoadingUi: false });
+          const startupUserId = await invoke('get_startup_userid');
+          await launchWithCwd(cwd, { showLoadingUi: false, userid: startupUserId });
         } catch (err) {
           showPickerWithError(toMessage(err));
         }
@@ -405,6 +407,7 @@
 
           const { invoke } = window.__TAURI__.core;
           const startupCwd = await invoke('get_startup_cwd');
+          const startupUserId = await invoke('get_startup_userid');
           if (!startupCwd) {
             showPicker();
             btn.disabled = false;
@@ -417,7 +420,7 @@
             setLoadingText('Preparing workspace...', 'Starting local server...');
           }
 
-          await launchWithCwd(startupCwd, { showLoadingUi: true });
+          await launchWithCwd(startupCwd, { showLoadingUi: true, userid: startupUserId });
         } catch (err) {
           startupPrepareError = err;
           showPickerWithError(toMessage(err));

@@ -146,7 +146,7 @@ fn resolve_bundled_rg_bin() -> Option<PathBuf> {
 
 /// Spawn the Bun web server sidecar and return the port it is listening on.
 /// Prefers updated binaries from ~/.diligent/updates/runtime/ if available.
-pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
+pub async fn start_sidecar(app: &AppHandle, cwd: &str, userid: Option<&str>) -> Result<u16, String> {
     // Prefer updated paths, fall back to bundled
     let dist_dir = resolve_updated_dist_dir()
         .map_or_else(|| resolve_bundled_dist_dir(app), Ok)?;
@@ -163,6 +163,9 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str) -> Result<u16, String> {
         format!("--cwd={}", cwd),
         format!("--log-file={}", log_path_str),
     ];
+    if let Some(userid) = userid.filter(|value| !value.is_empty()) {
+        args.push(format!("--userid={}", userid));
+    }
     args.push(format!("--parent-pid={}", std::process::id()));
 
     if let Some(updated_sidecar) = resolve_updated_sidecar_path() {

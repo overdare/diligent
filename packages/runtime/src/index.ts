@@ -77,11 +77,13 @@ export {
   DiligentConfigSchema,
   discoverInstructions,
   getGlobalConfigPath,
+  getGlobalUserIdPath,
   getProjectConfigPath,
   loadDiligentConfig,
   loadRuntimeConfig,
   mergeConfig,
   normalizeStoredToolsConfig,
+  resolveConfiguredUserId,
   writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "./config";

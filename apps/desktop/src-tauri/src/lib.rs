@@ -44,6 +44,35 @@ where
     None
 }
 
+fn parse_startup_userid_from_args<I, T>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString>,
+{
+    let mut args = args.into_iter().map(|arg| arg.into()).peekable();
+
+    while let Some(arg) = args.next() {
+        let arg = arg.to_string_lossy();
+        if let Some(value) = arg.strip_prefix("--userid=") {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+            continue;
+        }
+
+        if arg == "--userid" {
+            if let Some(value) = args.next() {
+                let value: std::ffi::OsString = value.into();
+                if !value.is_empty() {
+                    return Some(value.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn resolve_startup_cwd() -> Option<String> {
     let raw = parse_startup_cwd_from_args(std::env::args_os())?;
     let path = PathBuf::from(raw);
@@ -63,6 +92,11 @@ fn resolve_startup_cwd() -> Option<String> {
 #[tauri::command]
 fn get_startup_cwd() -> Option<String> {
     resolve_startup_cwd()
+}
+
+#[tauri::command]
+fn get_startup_userid() -> Option<String> {
+    parse_startup_userid_from_args(std::env::args_os())
 }
 
 #[derive(serde::Serialize)]
@@ -207,8 +241,8 @@ async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String>
 
 /// Start the sidecar with the given cwd, then open the main app window.
 #[tauri::command]
-async fn launch_server(app: tauri::AppHandle, cwd: String) -> Result<(), String> {
-    let port = start_sidecar(&app, &cwd).await?;
+async fn launch_server(app: tauri::AppHandle, cwd: String, userid: Option<String>) -> Result<(), String> {
+    let port = start_sidecar(&app, &cwd, userid.as_deref()).await?;
 
     let url_str = format!("http://127.0.0.1:{}", port);
     let parsed: tauri::Url = url_str.parse().map_err(|e| format!("URL parse error: {e}"))?;
@@ -247,6 +281,7 @@ pub fn run() {
         .manage(SidecarState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             get_startup_cwd,
+            get_startup_userid,
             prepare_startup,
             pick_directory,
             launch_server
@@ -273,7 +308,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_startup_cwd_from_args;
+    use super::{parse_startup_cwd_from_args, parse_startup_userid_from_args};
 
     #[test]
     fn parses_equals_form_cwd_argument() {
@@ -296,6 +331,30 @@ mod tests {
     #[test]
     fn ignores_empty_equals_form_cwd_argument() {
         let result = parse_startup_cwd_from_args(["diligent-desktop", "--cwd="]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn parses_equals_form_userid_argument() {
+        let result = parse_startup_userid_from_args(["diligent-desktop", "--userid=test-user"]);
+        assert_eq!(result.as_deref(), Some("test-user"));
+    }
+
+    #[test]
+    fn parses_split_form_userid_argument() {
+        let result = parse_startup_userid_from_args(["diligent-desktop", "--userid", "test-user"]);
+        assert_eq!(result.as_deref(), Some("test-user"));
+    }
+
+    #[test]
+    fn ignores_missing_userid_value() {
+        let result = parse_startup_userid_from_args(["diligent-desktop", "--userid"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn ignores_empty_equals_form_userid_argument() {
+        let result = parse_startup_userid_from_args(["diligent-desktop", "--userid="]);
         assert_eq!(result, None);
     }
 }

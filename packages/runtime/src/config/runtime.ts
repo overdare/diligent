@@ -23,6 +23,7 @@ import { buildDefaultTools } from "../tools/defaults";
 import { buildSystemPromptWithKnowledge, discoverInstructions } from "./instructions";
 import { loadDiligentConfig } from "./loader";
 import type { DiligentConfig } from "./schema";
+import { resolveConfiguredUserId } from "./user-id";
 
 export interface RuntimeConfig {
   model: Model | undefined;
@@ -46,6 +47,7 @@ export interface RuntimeConfig {
 
 export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Promise<RuntimeConfig> {
   const { config, sources } = await loadDiligentConfig(cwd);
+  const resolvedUserId = await resolveConfiguredUserId(config.userId);
   const instructions = await discoverInstructions(cwd);
 
   // Create ProviderManager — no throw on missing keys, deferred to call time
@@ -167,7 +169,10 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     effort: (config.effort ?? "medium") as ThinkingEffort,
     systemPrompt,
     streamFunction,
-    diligent: config,
+    diligent: {
+      ...config,
+      userId: resolvedUserId,
+    },
     sources,
     skills,
     agents,

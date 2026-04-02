@@ -5,6 +5,7 @@ export type { RuntimeConfig } from "./runtime";
 export { loadRuntimeConfig } from "./runtime";
 export type { DiligentConfig } from "./schema";
 export { DEFAULT_CONFIG, DiligentConfigSchema } from "./schema";
+export { getGlobalUserIdPath, resolveConfiguredUserId } from "./user-id";
 export type { StoredToolsConfig, ToolConfigPatch, ToolPluginPatch, WriteToolsConfigResult } from "./writer";
 export {
   applyToolConfigPatch,
