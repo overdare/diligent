@@ -17,6 +17,7 @@ export interface ChildStopInfo {
   model: string;
   provider?: string;
   effort: ThinkingEffort;
+  userId?: string;
   context: Message[];
   isRerun: boolean;
 }
@@ -82,5 +83,7 @@ export interface CollabToolDeps {
    * Called when a child agent's turn completes normally.
    * Return `{ continueWith }` to re-run the child (e.g. when a Stop hook blocks).
    */
+  /** User ID to propagate into child stop hook inputs. */
+  userId?: string;
   onChildStop?: (info: ChildStopInfo) => Promise<{ continueWith?: Message } | undefined>;
 }

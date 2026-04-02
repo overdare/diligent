@@ -44,7 +44,7 @@ async function createRuntimeAgent(args: {
   getPaths: () => Promise<DiligentPaths>;
 }): Promise<RuntimeAgent> {
   const { request, runtimeConfig, getPaths } = args;
-  const { cwd, mode, effort, modelId, approve, ask, getSessionId, existingAgent, onChildStop } = request;
+  const { cwd, mode, effort, modelId, approve, ask, getSessionId, existingAgent, onChildStop, userId } = request;
   const guardedSystemPrompt = withSkillGuardrail(runtimeConfig);
   const paths = await getPaths();
   const toolsResult = await buildDefaultTools({
@@ -59,6 +59,7 @@ async function createRuntimeAgent(args: {
       ask,
       streamFn: runtimeConfig.streamFunction,
       onChildStop,
+      userId,
     },
     toolsConfig: runtimeConfig.diligent.tools,
     skills: runtimeConfig.skills,

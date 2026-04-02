@@ -94,6 +94,8 @@ export interface CreateAgentArgs {
   existingAgent?: RuntimeAgent;
   /** Called when a child agent's turn completes normally. Propagated to the collab registry. */
   onChildStop?: (info: ChildStopInfo) => Promise<{ continueWith?: import("@diligent/core/types").Message } | undefined>;
+  /** User ID propagated to child agent stop hooks. */
+  userId?: string;
 }
 
 export interface DiligentAppServerConfig {
@@ -829,6 +831,7 @@ export class DiligentAppServer {
             getSessionId: () => runtime.manager.sessionId,
             existingAgent: runtime.agent,
             onChildStop: (info) => this.runStopHooksFor(info),
+            userId: runtime.currentTurnUserId,
           });
           runtime.agent = newAgent;
           for (const histAgent of runtime.manager.getHistoricalCollabAgents()) {

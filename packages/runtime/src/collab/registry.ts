@@ -216,7 +216,9 @@ export class AgentRegistry {
               sessionPath: childManager.sessionPath ?? "",
               cwd: this.deps.cwd,
               model: childModel.id,
+              provider: childModel.provider,
               effort: childEffort,
+              userId: this.deps.userId,
               context,
               isRerun,
             })
