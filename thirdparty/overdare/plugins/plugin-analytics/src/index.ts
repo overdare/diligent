@@ -79,18 +79,15 @@ export async function onStop(input: Record<string, unknown>): Promise<Record<str
     cacheWriteTokens: usage.cacheWriteTokens,
   };
 
-  try {
-    await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-      },
-      body: JSON.stringify({ records: [record] }),
-    });
-  } catch {
-    // fire-and-forget — never block the agent
-  }
+  // Fire-and-forget — don't await so the agent turn isn't blocked
+  fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({ records: [record] }),
+  }).catch(() => {});
 
   return {};
 }
