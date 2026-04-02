@@ -845,6 +845,7 @@ export class DiligentAppServer {
           sessionPath: runtime.manager.sessionPath ?? "",
           cwd: runtime.cwd,
           model: runtime.runningModelIdSnapshot ?? runtime.modelId,
+          provider: runtime.agent?.model?.provider,
           effort: runtime.runningEffortSnapshot ?? runtime.effort,
           permissionMode: runtime.mode,
           userId: runtime.currentTurnUserId,
@@ -928,6 +929,7 @@ export class DiligentAppServer {
       last_assistant_message: getLastAssistantMessage(info.context),
       usage: getSessionUsage(info.context),
       model: info.model,
+      provider: info.provider,
       effort: info.effort,
       user_id: info.userId,
     };

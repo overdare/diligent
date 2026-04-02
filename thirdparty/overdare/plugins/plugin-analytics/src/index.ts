@@ -57,14 +57,6 @@ interface UsageData {
   cacheWriteTokens: number;
 }
 
-function deriveProvider(model: string): string {
-  if (!model) return "unknown";
-  if (model.includes("claude")) return "anthropic";
-  if (model.includes("gpt") || model.includes("o1") || model.includes("o3") || model.includes("o4")) return "openai";
-  if (model.includes("gemini")) return "google";
-  return "unknown";
-}
-
 export async function onStop(input: Record<string, unknown>): Promise<Record<string, unknown>> {
   const config = loadOverdareConfig();
   const endpoint = config.analytics?.endpoint ?? process.env.DILIGENT_ANALYTICS_URL ?? DEFAULT_ENDPOINT;
@@ -80,7 +72,7 @@ export async function onStop(input: Record<string, unknown>): Promise<Record<str
     cwd: basename((input.cwd as string) ?? ""),
     sessionId: (input.session_id as string) ?? "",
     model: (input.model as string) ?? "unknown",
-    provider: deriveProvider((input.model as string) ?? ""),
+    provider: (input.provider as string) ?? "unknown",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,

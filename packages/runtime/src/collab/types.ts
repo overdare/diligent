@@ -15,6 +15,7 @@ export interface ChildStopInfo {
   sessionPath: string;
   cwd: string;
   model: string;
+  provider?: string;
   effort: ThinkingEffort;
   context: Message[];
   isRerun: boolean;
