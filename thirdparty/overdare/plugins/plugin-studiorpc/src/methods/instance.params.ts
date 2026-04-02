@@ -919,13 +919,13 @@ export const instancePropertiesSchema = z
       .describe("Use when class=UIAspectRatioConstraint. Locks the aspect ratio of a sibling UI element."),
     z
       .object({
-        KeyboardKeyCode: z.string().describe('e.g. "E"').optional(),
+        KeyboardKeyCode: z.string().describe('e.g. "E"'),
         UIOffset: z.object({ X: z.number(), Y: z.number() }).optional(),
         Exclusivity: z.enum(["OnePerButton", "OneGlobally", "AlwaysShow"]).optional(),
         HoldDuration: z.number().default(0),
         MaxActivationDistance: z.number().default(200),
-        ObjectText: z.string().optional(),
-        ActionText: z.string().default("Interact"),
+        ObjectText: z.string(),
+        ActionText: z.string(),
         ClickablePrompt: z.boolean().default(true),
         Enabled: z.boolean().default(true),
         RequiresLineOfSight: z.boolean().default(true),

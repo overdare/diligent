@@ -58,6 +58,24 @@ describe("instance.upsert args", () => {
     ]);
   });
 
+  test("rejects ProximityPrompt when required fields are missing", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "ProximityPrompt",
+            parentGuid: "ROOT",
+            name: "DoorPrompt",
+            properties: {
+              UIOffset: { X: 0, Y: 0 },
+              Exclusivity: "OnePerButton",
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   test("parses Outline and Fill class properties", () => {
     const parsed = parseArgs({
       items: [
