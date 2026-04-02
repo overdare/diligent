@@ -106,10 +106,16 @@ async function executeInstanceUpsert(
         throw new Error(`Parent ActorGuid not found in .ovdrjm: ${item.parentGuid}`);
       }
 
+      if (item.class === "MaterialVariant" && parent.InstanceType !== "MaterialService") {
+        throw new Error(
+          `MaterialVariant can only be created under MaterialService, but parent is ${String(parent.InstanceType ?? "unknown")}`,
+        );
+      }
+
       const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
       parent.LuaChildren = childList;
 
-      const newNode = buildAddedNode(item, rootDoc, parent);
+      const newNode = buildAddedNode({ ...item, properties: item.properties ?? {} }, rootDoc, parent);
       childList.push(newNode);
       added.push({ guid: String(newNode.ActorGuid), name: item.name, class: item.class });
     }

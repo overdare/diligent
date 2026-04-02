@@ -93,6 +93,13 @@ export const instanceClassEnum = z.enum([
   "MeshPart",
   "Animation",
   "HumanoidDescription",
+  "Camera",
+  "MaterialVariant",
+  "ScreenGui",
+  "SimulationBall",
+  "SoundGroup",
+  "SpawnLocation",
+  "UIAspectRatioConstraint",
 ]);
 
 export const serviceClassEnum = z.enum([
@@ -807,6 +814,108 @@ export const instancePropertiesSchema = z
       .describe(
         "Use when class=HumanoidDescription. Configures character appearance: body part meshes, textures, colors, animations, scale, and accessories.",
       ),
+    z
+      .object({
+        CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
+        CameraOffset: vec3.optional(),
+        CameraSubject: z.string().describe("InstanceGuid of the subject to follow").optional(),
+        CameraType: z
+          .enum(["Fixed", "Attach", "Watch", "Track", "Follow", "Custom", "Scriptable", "Orbital"])
+          .optional(),
+        EnableSmoothFollow: z.boolean().optional(),
+        EnableSmoothRotation: z.boolean().optional(),
+        FieldOfView: z.number().optional(),
+        Focus: z.object({ Position: vec3, Orientation: vec3 }).optional(),
+        FollowMaxDistance: z.number().optional(),
+        SmoothFollowSpeed: z.number().optional(),
+        SmoothRotationSpeed: z.number().optional(),
+      })
+      .strict()
+      .describe("Use when class=Camera. Controls the world camera: type, FOV, follow/smooth settings, and CFrame."),
+    z
+      .object({
+        BaseMaterial: materialEnum.optional(),
+        Color: rgb.optional(),
+        ColorMap: z.string().describe("Texture asset ID").optional(),
+        Emissive: rgb.optional(),
+        EmissiveIntensity: z.number().optional(),
+        EmissiveMap: z.string().describe("Texture asset ID").optional(),
+        Metalness: z.number().describe("(0~1)").optional(),
+        MetalnessMap: z.string().describe("Texture asset ID").optional(),
+        MetersPerTile: z.number().optional(),
+        NormalMap: z.string().describe("Texture asset ID").optional(),
+        Roughness: z.number().describe("(0~1)").optional(),
+        RoughnessMap: z.string().describe("Texture asset ID").optional(),
+      })
+      .strict()
+      .describe("Use when class=MaterialVariant. Custom material override with PBR texture maps and surface color."),
+    z
+      .object({
+        DisplayOrder: z.number().optional(),
+        Enabled: z.boolean().default(true),
+      })
+      .strict()
+      .describe("Use when class=ScreenGui. Full-screen GUI container; controls display layer order and visibility."),
+    z
+      .object({
+        BallRadius: z.number().optional(),
+        BallState: z.string().describe('e.g. "Idle"').optional(),
+        CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
+        Color: rgb.optional(),
+        EnablePathMarker: z.boolean().optional(),
+        IsPathMarkerWorldSpace: z.boolean().optional(),
+        Material: materialEnum.optional(),
+        MaterialVariant: z.string().optional(),
+        PathMarkerScale: z.number().optional(),
+        SlomoFactor: z.number().optional(),
+        TextureId: z.string().describe("Texture asset ID").optional(),
+      })
+      .strict()
+      .describe(
+        "Use when class=SimulationBall. Physics-simulated ball with trajectory, material, and path marker settings.",
+      ),
+    z
+      .object({
+        Volume: z.number().describe("multiplier (0~10)").default(1),
+      })
+      .strict()
+      .describe("Use when class=SoundGroup. Groups Sounds under a shared volume multiplier."),
+    z
+      .object({
+        Shape: z.enum(["Block", "Ball", "Cylinder"]).optional(),
+        CFrame: z.object({ Position: vec3, Orientation: vec3 }).optional(),
+        Size: vec3.describe("units in cm").optional(),
+        Anchored: z.boolean().default(true),
+        CanCollide: z.boolean().default(true),
+        CanQuery: z.boolean().default(true),
+        CanTouch: z.boolean().default(true),
+        CastShadow: z.boolean().optional(),
+        CollisionGroup: z.string().optional(),
+        Color: rgb.optional(),
+        Locked: z.boolean().optional(),
+        Mass: z.number().optional(),
+        Massless: z.boolean().optional(),
+        Material: materialEnum.optional(),
+        MaterialVariant: z.string().optional(),
+        Reflectance: z.number().describe("(0~1)").optional(),
+        RootPriority: z.number().optional(),
+        Transparency: z.number().describe("(0~1)").optional(),
+        Enabled: z.boolean().optional(),
+        Neutral: z.boolean().optional(),
+        TeamColor: rgb.optional(),
+      })
+      .strict()
+      .describe(
+        "Use when class=SpawnLocation. Player spawn point with team color, neutral flag, and all Part physics properties.",
+      ),
+    z
+      .object({
+        AspectRatio: z.number().optional(),
+        AspectType: z.string().describe('e.g. "FitWithinMaxSize"').optional(),
+        DominantAxis: z.string().describe('e.g. "Width"').optional(),
+      })
+      .strict()
+      .describe("Use when class=UIAspectRatioConstraint. Locks the aspect ratio of a sibling UI element."),
     workspaceServiceSchema,
     lightingServiceSchema,
     atmosphereServiceSchema,
