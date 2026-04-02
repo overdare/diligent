@@ -36,6 +36,23 @@ export interface PluginHookInput {
   cwd: string;
   permission_mode?: string;
   user_id?: string;
+  /** Present on Stop hook events only. True when a stop hook itself triggered this stop. */
+  stop_hook_active?: boolean;
+  /** Token usage for the current turn (Stop hook only). */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  };
+  /** Model identifier used for the turn (Stop hook only). */
+  model?: string;
+  /** Provider identifier used for the turn (Stop hook only). */
+  provider?: string;
+  /** Effort level used for the turn, if applicable (Stop hook only). */
+  effort?: string;
+  /** Text content of the last assistant message in the turn (Stop hook only). */
+  last_assistant_message?: string;
   [key: string]: unknown;
 }
 
