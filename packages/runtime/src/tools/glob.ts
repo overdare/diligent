@@ -36,7 +36,15 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
 
       try {
         const rgBin = process.env.DILIGENT_RG_PATH ?? "rg";
-        const [stdout, , exitCode] = await spawnCollect([rgBin, "--files", "--glob", args.pattern, searchPath]);
+        const [stdout, , exitCode] = await spawnCollect([
+          rgBin,
+          "--files",
+          "--no-ignore",
+          "--hidden",
+          "--glob",
+          args.pattern,
+          searchPath,
+        ]);
 
         if (exitCode !== 0 && !stdout.trim()) {
           const output = "No files found matching pattern.";
