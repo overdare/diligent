@@ -96,7 +96,7 @@ describe("executeTool", () => {
       description: "Returns big output with head_tail hint",
       parameters: z.object({}),
       async execute() {
-        const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`).join("\n");
+        const lines = Array.from({ length: 6000 }, (_, i) => `line ${i}`).join("\n");
         return { output: lines, truncateDirection: "head_tail" as const };
       },
     };
@@ -105,7 +105,7 @@ describe("executeTool", () => {
 
     const result = await executeTool(registry, toolCall, makeCtx());
     expect(result.output).toContain("line 0"); // head preserved
-    expect(result.output).toContain("line 2999"); // tail preserved
+    expect(result.output).toContain("line 5999"); // tail preserved
     expect(result.output).toContain("omitted"); // head_tail marker
     expect(result.output).toContain("WARNING"); // warning marker
     expect(result.truncateDirection).toBe("head_tail");
