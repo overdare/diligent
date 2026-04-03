@@ -35,7 +35,38 @@ function shouldSkipAnalyticsSend(): boolean {
 }
 
 function stripJsonComments(text: string): string {
-  return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  let result = "";
+  let i = 0;
+  let inString = false;
+
+  while (i < text.length) {
+    if (inString) {
+      if (text[i] === "\\") {
+        result += text[i] + (text[i + 1] ?? "");
+        i += 2;
+      } else if (text[i] === '"') {
+        result += text[i++];
+        inString = false;
+      } else {
+        result += text[i++];
+      }
+    } else if (text[i] === '"') {
+      result += text[i++];
+      inString = true;
+    } else if (text[i] === "/" && text[i + 1] === "/") {
+      // Line comment — skip to end of line
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (text[i] === "/" && text[i + 1] === "*") {
+      // Block comment — skip to closing */
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i += 2;
+    } else {
+      result += text[i++];
+    }
+  }
+
+  return result;
 }
 
 let cached: OverdareConfig | undefined;
