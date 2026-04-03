@@ -50,6 +50,20 @@ export interface ThreadRuntime {
   agent?: RuntimeAgent;
 }
 
+/**
+ * Reset all turn-lifecycle state on a ThreadRuntime after a turn ends (normally, via abort, or via
+ * hook block before the agent loop starts). Centralises the field list so both the normal finally
+ * path in server.ts and the pre-agent hook-blocked path stay in sync.
+ */
+export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
+  runtime.abortController = null;
+  runtime.currentTurnId = null;
+  runtime.currentTurnUserId = undefined;
+  runtime.runningEffortSnapshot = undefined;
+  runtime.runningModelIdSnapshot = undefined;
+  runtime.isRunning = false;
+}
+
 const BUILTIN_COMMAND_NAMES = new Set([
   "help",
   "model",
@@ -396,9 +410,7 @@ export async function handleTurnStart(
 
     if (hookResult.blocked) {
       // Abort the turn without running the agent
-      runtime.abortController = null;
-      runtime.isRunning = false;
-      runtime.currentTurnId = null;
+      resetTurnRuntimeState(runtime);
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
         params: {
