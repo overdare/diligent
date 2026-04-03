@@ -52,7 +52,10 @@ export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
         const normalizedArgs = mod.normalizeArgs
           ? mod.normalizeArgs(args as Record<string, unknown>)
           : (args as Record<string, unknown>);
-        const result = await call(rpcMethod, normalizedArgs);
+        let result: unknown = await call(rpcMethod, normalizedArgs);
+        if (mod.postProcess) {
+          result = mod.postProcess(result, args as Record<string, unknown>);
+        }
         if (mutatingMethods.has(method)) {
           await call("level.save.file", {});
         }

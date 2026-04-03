@@ -32,6 +32,7 @@ type MethodModule = {
   params: z.ZodType;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
+  postProcess?: (result: unknown, args: Record<string, unknown>) => unknown;
 };
 
 type RenderBuilder = (ctx: {
