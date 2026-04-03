@@ -118,6 +118,35 @@ export async function runPluginHooks(handlers: PluginHookFn[], input: HookInput)
   return { blocked: false, additionalContext: combinedContext };
 }
 
+/**
+ * Runs shell command handlers followed by plugin handlers (shell-then-plugin dispatch).
+ * Stops on first block. Merges additionalContext from both stages when not blocked.
+ */
+export async function runCombinedHooks(
+  shellHandlers: HookHandler[],
+  pluginHandlers: PluginHookFn[],
+  input: HookInput,
+  cwd: string,
+): Promise<HookResult> {
+  let result: HookResult = { blocked: false };
+
+  if (shellHandlers.length > 0) {
+    result = await runHooks(shellHandlers, input, cwd);
+  }
+
+  if (!result.blocked && pluginHandlers.length > 0) {
+    const pluginResult = await runPluginHooks(pluginHandlers, input);
+    if (pluginResult.blocked) {
+      result = pluginResult;
+    } else {
+      const parts = [result.additionalContext, pluginResult.additionalContext].filter(Boolean);
+      result = { blocked: false, additionalContext: parts.join("\n") || undefined };
+    }
+  }
+
+  return result;
+}
+
 /** Run shell command handlers sequentially; stop and return on first block. */
 export async function runHooks(handlers: HookHandler[], input: HookInput, cwd: string): Promise<HookResult> {
   let combinedContext: string | undefined;

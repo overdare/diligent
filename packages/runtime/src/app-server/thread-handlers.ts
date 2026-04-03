@@ -6,7 +6,7 @@ import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { getGlobalConfigPath, writeGlobalToolsConfig } from "../config/writer";
 import { calculateUsageCost } from "../cost";
-import { type HookResult, runHooks, runPluginHooks } from "../hooks/runner";
+import { runCombinedHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -394,19 +394,7 @@ export async function handleTurnStart(
       prompt: typeof content === "string" ? content : params.message,
     };
 
-    let hookResult: HookResult = { blocked: false };
-    if (shellHandlers.length > 0) {
-      hookResult = await runHooks(shellHandlers, hookInput, runtime.cwd);
-    }
-    if (!hookResult.blocked && pluginHandlers.length > 0) {
-      const pluginResult = await runPluginHooks(pluginHandlers, hookInput);
-      if (pluginResult.blocked) {
-        hookResult = pluginResult;
-      } else {
-        const parts = [hookResult.additionalContext, pluginResult.additionalContext].filter(Boolean);
-        hookResult = { blocked: false, additionalContext: parts.join("\n") || undefined };
-      }
-    }
+    const hookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
 
     if (hookResult.blocked) {
       // Abort the turn without running the agent
