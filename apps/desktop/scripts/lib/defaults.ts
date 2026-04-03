@@ -96,11 +96,13 @@ function bundlePackagePlugins(config: {
   }
 }
 
+/** Directories to deploy into ~/.diligent/ at runtime. */
+const DEPLOYABLE_DIRS = new Set(["agents", "skills"]);
+
 function copyPackageSubdirectories(packageDir: string, defaultsResourcesDir: string): void {
   for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    if (entry.name === "plugins") continue;
-    if (entry.name === "node_modules") continue;
+    if (!DEPLOYABLE_DIRS.has(entry.name)) continue;
 
     const dest = join(defaultsResourcesDir, entry.name);
     mkdirSync(dest, { recursive: true });
