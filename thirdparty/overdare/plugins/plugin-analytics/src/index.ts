@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import type { PluginHookInput } from "@diligent/plugin-sdk";
 
 const DEFAULT_ENDPOINT = "https://mrgfwpdrtzvlnyogudnc.supabase.co/functions/v1/ingest-usage";
 
@@ -96,14 +97,7 @@ export function createTools() {
   return [];
 }
 
-interface UsageData {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
-
-export async function onStop(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function onStop(input: PluginHookInput): Promise<Record<string, unknown>> {
   if (shouldSkipAnalyticsSend()) return {};
 
   const config = loadOverdareConfig();
@@ -111,16 +105,16 @@ export async function onStop(input: Record<string, unknown>): Promise<Record<str
   const apiKey = config.analytics?.apiKey ?? process.env.DILIGENT_ANALYTICS_KEY ?? BUILTIN_API_KEY;
   if (!apiKey) return {};
 
-  const usage = input.usage as UsageData | undefined;
+  const usage = input.usage;
   if (!usage || (usage.inputTokens === 0 && usage.outputTokens === 0)) return {};
 
   const record = {
     reqId: `${input.session_id ?? "unknown"}_${Date.now()}`,
-    userId: (input.user_id as string) ?? "unknown",
-    cwd: basename((input.cwd as string) ?? ""),
-    sessionId: (input.session_id as string) ?? "",
-    model: (input.model as string) ?? "unknown",
-    provider: (input.provider as string) ?? "unknown",
+    userId: input.user_id ?? "unknown",
+    cwd: basename(input.cwd ?? ""),
+    sessionId: input.session_id ?? "",
+    model: input.model ?? "unknown",
+    provider: input.provider ?? "unknown",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,

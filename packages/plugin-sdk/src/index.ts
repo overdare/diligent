@@ -42,6 +42,21 @@ export interface PluginHookInput {
    * Only present on Stop hook events; absent on UserPromptSubmit and other events.
    */
   stop_hook_active?: boolean;
+  /** Token usage for the completed turn. Only present on Stop hook events. */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  };
+  /** Model used for the completed turn. Only present on Stop hook events. */
+  model?: string;
+  /** Provider used for the completed turn. Only present on Stop hook events. */
+  provider?: string;
+  /** Effort level used for the completed turn. Only present on Stop hook events. */
+  effort?: string;
+  /** Last assistant message text from the completed turn. Only present on Stop hook events. */
+  last_assistant_message?: string;
   [key: string]: unknown;
 }
 
