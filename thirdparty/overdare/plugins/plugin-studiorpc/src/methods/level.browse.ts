@@ -14,10 +14,10 @@ export const params = z.object({
   maxDepth: z
     .number()
     .int()
-    .min(0)
+    .min(1)
     .optional()
     .describe(
-      "Maximum depth of children to return. 0 = no children, 1 = direct children only, etc. Omit for unlimited depth. Recommended to start with 1.",
+      "Maximum depth of the tree to return. 1 = top-level nodes only, 2 = nodes + direct children, etc. 0 or omit for unlimited depth. Recommended to start with 1.",
     ),
 });
 
@@ -51,13 +51,13 @@ function filterByClass(nodes: BrowseNode[], classType: string): BrowseNode[] {
   return result;
 }
 
-function truncateDepth(nodes: BrowseNode[], maxDepth: number, current = 0): BrowseNode[] {
+function truncateDepth(nodes: BrowseNode[], maxDepth: number, depth = 1): BrowseNode[] {
   return nodes.map((node) => {
-    if (current >= maxDepth || !node.children) {
+    if (depth >= maxDepth || !node.children) {
       const { children: _, ...rest } = node as BrowseNode & { children?: unknown };
       return rest as BrowseNode;
     }
-    return { ...node, children: truncateDepth(node.children, maxDepth, current + 1) };
+    return { ...node, children: truncateDepth(node.children, maxDepth, depth + 1) };
   });
 }
 
@@ -89,7 +89,7 @@ export function postProcess(result: unknown, args: Record<string, unknown>): unk
     nodes = filterByClass(nodes, classType);
   }
 
-  const maxDepth = typeof args.maxDepth === "number" ? args.maxDepth : undefined;
+  const maxDepth = typeof args.maxDepth === "number" && args.maxDepth > 0 ? args.maxDepth : undefined;
   if (maxDepth !== undefined) {
     nodes = truncateDepth(nodes, maxDepth);
   }
