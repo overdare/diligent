@@ -2,6 +2,7 @@
 
 import type { ApprovalRequest, ThreadReadResponse, ThreadStatus, UserInputRequest } from "@diligent/protocol";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { CHAT_NEAR_BOTTOM_THRESHOLD_PX, isNearBottom } from "../lib/scroll-utils";
 import type { RenderItem } from "../lib/thread-store";
 import { normalizeToolName } from "../lib/thread-utils";
 import { ApprovalCard } from "./ApprovalCard";
@@ -115,25 +116,50 @@ function MessageListImpl({
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const nearBottom = isNearBottom(
+      {
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight,
+      },
+      CHAT_NEAR_BOTTOM_THRESHOLD_PX,
+    );
     isAtBottomRef.current = nearBottom;
     setShowScrollBtn(!nearBottom);
   };
 
-  // Auto-scroll when new items arrive (only if already near bottom)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: items.length and threadStatus are intentional triggers
+  // Auto-scroll when content updates (including streaming deltas) if user is already near bottom
+  // biome-ignore lint/correctness/useExhaustiveDependencies: items reference and threadStatus are intentional triggers
   useEffect(() => {
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      bottomRef.current?.scrollIntoView({ behavior: threadStatus === "busy" ? "auto" : "smooth" });
     }
-  }, [items.length, threadStatus]);
+  }, [items, threadStatus]);
 
   // Watch for content height changes (e.g. plan updates) and auto-scroll / re-evaluate button visibility
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    isAtBottomRef.current = isNearBottom(
+      {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+      },
+      CHAT_NEAR_BOTTOM_THRESHOLD_PX,
+    );
+    setShowScrollBtn(!isAtBottomRef.current);
+
     const observer = new ResizeObserver(() => {
-      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+      const nearBottom = isNearBottom(
+        {
+          scrollHeight: container.scrollHeight,
+          scrollTop: container.scrollTop,
+          clientHeight: container.clientHeight,
+        },
+        CHAT_NEAR_BOTTOM_THRESHOLD_PX,
+      );
       if (isAtBottomRef.current) {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
         setShowScrollBtn(false);
