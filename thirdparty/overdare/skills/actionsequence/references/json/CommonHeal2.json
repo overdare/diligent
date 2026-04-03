@@ -1,0 +1,314 @@
+{
+	"Class": "/Script/LuaAPI.ActionSequence",
+	"Header":
+	{
+		"version": 1,
+		"createTime": "2026.03.18-20.20.26",
+		"lastModifyTime": "2026.03.18-20.20.26"
+	},
+	"ActionSequenceID": "",
+	"SequencerDescription": "",
+	"Length": 1.3487919569015503,
+	"Tracks": [
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+			"OvdrAssetId":
+			{
+				"ovdrAssetId": "ovdrassetid://18853100"
+			},
+			"BlendInTime": 0,
+			"BlendOutTime": 0.19333299994468689,
+			"SlotType": "UpperBody",
+			"TrackID":
+			{
+				"a": -1515212475,
+				"b": 1140905007,
+				"c": -489882964,
+				"d": 158238191
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1.3487919569015503,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceControlTrack",
+			"RefObjectPath":
+			{
+				"path": "VFX_SoftHeal",
+				"softObjectPath": ""
+			},
+			"AttachmentOffset":
+			{
+				"socketName": "Name",
+				"isAttach": true,
+				"relativeLocation":
+				{
+					"x": 0,
+					"y": 72.211427999999998,
+					"z": 0
+				},
+				"relativeRotation":
+				{
+					"pitch": 0,
+					"yaw": 0,
+					"roll": 0
+				}
+			},
+			"ProxyData":
+			{
+				"Class": "/Script/LuaAPI.ProxyLuaPartData",
+				"Name": "VFX_SoftHeal_0",
+				"Props":
+				{
+					"KeyframeGroup_Shape":
+					{
+						"channels": [
+							{
+								"enumPtr": "None",
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "Value"
+					},
+					"KeyframeGroup_Transparency":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "Value"
+					},
+					"KeyframeGroup_CanCollide":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "Value"
+					},
+					"KeyframeGroup_CanTouch":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "Value"
+					},
+					"Size":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "X"
+					},
+					"OriginPosition":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "X"
+					},
+					"OriginRotation":
+					{
+						"channels": [
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							},
+							{
+								"keyframes": []
+							}
+						],
+						"keyframeDataType": "X"
+					}
+				},
+				"Children": [
+					{
+						"Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
+						"Name": "VFXPreset_0",
+						"Props":
+						{
+							"KeyframeGroup_Enabled":
+							{
+								"channels": [
+									{
+										"keyframes": [
+											{
+												"value": false,
+												"time": 0
+											},
+											{
+												"value": true,
+												"time": 0.30220833420753479
+											}
+										]
+									}
+								],
+								"keyframeDataType": "Value"
+							}
+						},
+						"Children": []
+					}
+				]
+			},
+			"TrackID":
+			{
+				"a": 1895974882,
+				"b": 1089431520,
+				"c": -703798625,
+				"d": -122262884
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1.3487919569015503,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceEventTrack",
+			"Markers":
+			{
+				"channels": [
+					{
+						"keyframes": [
+							{
+								"value": "ActiveTrigger",
+								"time": 0.304749995470047
+							}
+						]
+					}
+				],
+				"keyframeDataType": "Value"
+			},
+			"TrackID":
+			{
+				"a": 1216696183,
+				"b": 1196990881,
+				"c": -1380918099,
+				"d": 459646959
+			},
+			"IsEnable": true,
+			"StartTime": 0.25204166769981384,
+			"EndTime": 0.304749995470047,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "ActiveSkill",
+			"TrackID":
+			{
+				"a": -1527305667,
+				"b": 1275003062,
+				"c": 268453311,
+				"d": 190914507
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1.3487919569015503,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "Sequence",
+			"TrackID":
+			{
+				"a": -424660924,
+				"b": 1336933636,
+				"c": 2146494369,
+				"d": 345912503
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1.3487919569015503,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "CancelWindow",
+			"TrackID":
+			{
+				"a": 945583028,
+				"b": 1154965297,
+				"c": -1509923138,
+				"d": -308524183
+			},
+			"IsEnable": true,
+			"StartTime": 1.3266667127609253,
+			"EndTime": 1.3487917184829712,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		}
+	],
+	"InputActionSignalNames":
+	{
+	},
+	"UniqueActionSignalNames": []
+}

@@ -1,0 +1,116 @@
+{
+	"Class": "/Script/LuaAPI.ActionSequence",
+	"Header":
+	{
+		"version": 1,
+		"createTime": "2026.03.18-19.25.56",
+		"lastModifyTime": "2026.03.18-19.25.56"
+	},
+	"ActionSequenceID": "",
+	"SequencerDescription": "",
+	"Length": 1,
+	"Tracks": [
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+			"OvdrAssetId":
+			{
+				"ovdrAssetId": "ovdrassetid://22848400"
+			},
+			"BlendInTime": 0,
+			"BlendOutTime": 0,
+			"SlotType": "FullBody",
+			"TrackID":
+			{
+				"a": 1371229984,
+				"b": 1266500692,
+				"c": -197874524,
+				"d": -1903060765
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "ActiveSkill",
+			"TrackID":
+			{
+				"a": -617115405,
+				"b": 1333579434,
+				"c": -810299508,
+				"d": -1276863423
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "Sequence",
+			"TrackID":
+			{
+				"a": 397955296,
+				"b": 1273707023,
+				"c": -88004698,
+				"d": -3526985
+			},
+			"IsEnable": true,
+			"StartTime": 0,
+			"EndTime": 1,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		},
+		{
+			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+			"TriggerName": "CancelWindow",
+			"TrackID":
+			{
+				"a": 1587099288,
+				"b": 1243252821,
+				"c": 1111791289,
+				"d": -1250980941
+			},
+			"IsEnable": true,
+			"StartTime": 0.97874999046325684,
+			"EndTime": 1,
+			"ParentTrackID":
+			{
+				"a": 0,
+				"b": 0,
+				"c": 0,
+				"d": 0
+			},
+			"ChildTrackIDs": [],
+			"IsLock": false
+		}
+	],
+	"InputActionSignalNames":
+	{
+	},
+	"UniqueActionSignalNames": []
+}
