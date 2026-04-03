@@ -195,6 +195,82 @@ describe("plan render payload builder", () => {
   });
 });
 
+describe("skill render payload builder", () => {
+  test("start shows skill name", () => {
+    const payload = createToolStartRenderPayload("skill", { name: "commit" });
+    expect(payload?.inputSummary).toBe("Skill: commit");
+  });
+
+  test("end shows loaded summary on success", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "skill",
+      input: { name: "commit" },
+      output: '<skill_content name="commit">\n# Skill: commit\n\nbody\n</skill_content>',
+      isError: false,
+    });
+    expect(payload?.inputSummary).toBe("Skill: commit");
+    expect(payload?.outputSummary).toBe('Skill "commit" loaded');
+    expect(payload?.blocks[0]).toMatchObject({ type: "summary", tone: "success" });
+  });
+
+  test("end shows error summary on failure", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "skill",
+      input: { name: "unknown" },
+      output: 'Skill "unknown" not found. Available skills: commit, review',
+      isError: true,
+    });
+    expect(payload?.outputSummary).toContain("not found");
+    expect(payload?.blocks[0]).toMatchObject({ type: "text", title: "Error", isError: true });
+  });
+});
+
+describe("request_user_input render payload builder", () => {
+  const questions = [
+    {
+      id: "lang",
+      header: "Language",
+      question: "Which language?",
+      options: [{ label: "TS", description: "TypeScript" }],
+    },
+    {
+      id: "style",
+      header: "Style",
+      question: "Which style?",
+      options: [{ label: "Minimal", description: "Minimal style" }],
+    },
+  ];
+
+  test("start shows question headers", () => {
+    const payload = createToolStartRenderPayload("request_user_input", { questions });
+    expect(payload?.inputSummary).toBe("Language, Style");
+  });
+
+  test("end shows received summary on success", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "request_user_input",
+      input: { questions },
+      output: "[Language] Which language?\nAnswer: TS\n\n[Style] Which style?\nAnswer: Minimal",
+      isError: false,
+    });
+    expect(payload?.inputSummary).toBe("Language, Style");
+    expect(payload?.outputSummary).toBe("User input received");
+    expect(payload?.blocks[0]).toMatchObject({ type: "key_value", title: "Questions" });
+    expect(payload?.blocks[1]).toMatchObject({ type: "summary", tone: "success" });
+  });
+
+  test("end shows cancelled summary when user cancels", () => {
+    const payload = createToolEndRenderPayloadFromInput({
+      toolName: "request_user_input",
+      input: { questions },
+      output: "[Cancelled by user]\n\n[Language] Which language?\n[Style] Which style?",
+      isError: false,
+    });
+    expect(payload?.outputSummary).toBe("Cancelled by user");
+    expect(payload?.blocks[0]).toMatchObject({ type: "summary", tone: "warning" });
+  });
+});
+
 describe("tool start render payload builder", () => {
   test("uses file target summary for apply_patch request", () => {
     const payload = createToolStartRenderPayload("apply_patch", {

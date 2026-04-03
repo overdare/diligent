@@ -97,6 +97,80 @@ const RENDER_STRATEGIES: Map<string, RenderStrategy> = new Map([
     },
   ],
   [
+    "skill",
+    {
+      startInputSummary: (parsedInput) => {
+        const name = typeof parsedInput?.name === "string" ? parsedInput.name : undefined;
+        return summarizeRenderText(name ? `Skill: ${name}` : "Skill", 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const name = typeof parsedInput?.name === "string" ? parsedInput.name : "skill";
+        const inputSummary = summarizeRenderText(name ? `Skill: ${name}` : "Skill", 120);
+        if (isError) {
+          return {
+            inputSummary,
+            outputSummary: summarizeRenderText(output) ?? "Skill failed",
+            blocks: [{ type: "text", title: "Error", text: output, isError: true }],
+          };
+        }
+        return {
+          inputSummary,
+          outputSummary: `Skill "${name}" loaded`,
+          blocks: [{ type: "summary", text: `Skill "${name}" loaded`, tone: "success" }],
+        };
+      },
+    },
+  ],
+  [
+    "request_user_input",
+    {
+      startInputSummary: (parsedInput) => {
+        const questions = Array.isArray(parsedInput?.questions) ? parsedInput.questions : [];
+        const headers = questions
+          .map((q: Record<string, unknown>) => (typeof q?.header === "string" ? q.header : ""))
+          .filter(Boolean);
+        if (headers.length === 0) return "Asking user…";
+        return summarizeRenderText(headers.join(", "), 120);
+      },
+      endRender: (parsedInput, output, isError) => {
+        const questions = Array.isArray(parsedInput?.questions) ? parsedInput.questions : [];
+        const headers = questions
+          .map((q: Record<string, unknown>) => (typeof q?.header === "string" ? q.header : ""))
+          .filter(Boolean);
+        const inputSummary = headers.length > 0 ? summarizeRenderText(headers.join(", "), 120) : "User input";
+
+        const cancelled = output.startsWith("[Cancelled by user]");
+        if (cancelled) {
+          return {
+            inputSummary,
+            outputSummary: "Cancelled by user",
+            blocks: [{ type: "summary", text: "Cancelled by user", tone: "warning" }],
+          };
+        }
+
+        const answerItems = questions.map((q: Record<string, unknown>) => {
+          const header = typeof q?.header === "string" ? q.header : "?";
+          const question = typeof q?.question === "string" ? q.question : "";
+          return { key: header, value: question };
+        });
+
+        const blocks: ToolRenderPayload["blocks"] = [];
+        if (answerItems.length > 0) blocks.push({ type: "key_value", title: "Questions", items: answerItems });
+        if (isError) {
+          blocks.push({ type: "text", title: "Error", text: output, isError: true });
+        } else {
+          blocks.push({ type: "summary", text: "User input received", tone: "success" });
+        }
+
+        return {
+          inputSummary,
+          outputSummary: isError ? "User input failed" : "User input received",
+          blocks,
+        };
+      },
+    },
+  ],
+  [
     "read",
     {
       startInputSummary: (parsedInput) => {
@@ -173,13 +247,18 @@ export function createToolEndRenderPayloadFromInput(args: {
   const strategy = RENDER_STRATEGIES.get(normalizedToolName);
   if (strategy?.endRender) {
     const result = strategy.endRender(parsedInput, args.output, args.isError);
-    if (result !== undefined) return result;
+    if (result !== undefined) {
+      if (args.isError) return ensureErrorBlocks(result, args.output);
+      return result;
+    }
   }
-  return createTextRenderPayload(
+  const fallback = createTextRenderPayload(
     summarizeRenderText(stringifyInputPreview(args.input), 120),
     args.output,
     args.isError,
   );
+  if (fallback && args.isError) return ensureErrorBlocks(fallback, args.output);
+  return fallback;
 }
 
 export function summarizeRenderText(text: string | undefined, maxLength = 80): string | undefined {
@@ -519,6 +598,19 @@ export function createSearchKnowledgeRenderPayload(
     outputSummary: firstLine ?? (matches.length === 0 ? "No knowledge entries found" : undefined),
     blocks,
   };
+}
+
+/**
+ * Ensures an error payload always contains a visible text block with the full
+ * error output so users can see what went wrong. If the payload already has a
+ * text block with `isError: true`, it is left as-is.
+ */
+function ensureErrorBlocks(payload: ToolRenderPayload, output: string): ToolRenderPayload {
+  const hasErrorText = payload.blocks.some((block) => block.type === "text" && block.isError === true);
+  const blocks = hasErrorText
+    ? payload.blocks
+    : [...payload.blocks, { type: "text" as const, title: "Error", text: output, isError: true as const }];
+  return { ...payload, blocks };
 }
 
 function buildPatchInputSummary(files: DiffFile[]): string | undefined {

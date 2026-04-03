@@ -99,10 +99,8 @@ export async function call(method: string, params?: Record<string, unknown>): Pr
         cleanup();
         reject(
           new Error(
-            `Studio RPC request timed out after ${TIMEOUT_MS / 1000}s.\n` +
-              `Method: ${method}\n` +
-              `Server: ${host}:${port}\n` +
-              `Make sure OVERDARE Studio is running with the RPC server enabled.`,
+            `Studio RPC timed out (${method}).\n` +
+              `Make sure OVERDARE Studio is running. If the problem persists, restart the agent.`,
           ),
         );
       });
@@ -131,33 +129,20 @@ export async function call(method: string, params?: Record<string, unknown>): Pr
             resolve(response.result);
           }
         } catch {
-          reject(
-            new Error(
-              `Failed to parse Studio RPC response.\n` +
-                `Received: ${line.substring(0, 200)}\n` +
-                `This may indicate a protocol mismatch or server error.`,
-            ),
-          );
+          reject(new Error(`Failed to parse Studio RPC response.\nReceived: ${line.substring(0, 200)}`));
         }
       });
     });
 
-    socket.on("error", (err: Error & { code?: string }) => {
+    socket.on("error", () => {
       settle(() => {
         cleanup();
-        let errorMsg = `Could not connect to Studio RPC server at ${host}:${port}.`;
-        if (err.code === "ECONNREFUSED") {
-          errorMsg +=
-            `\n\nMake sure OVERDARE Studio is running with the RPC server enabled.` +
-            `\n\nTo use a custom host/port, set environment variables:` +
-            `\n  STUDIO_HOST=${host}` +
-            `\n  STUDIO_PORT=${port}`;
-        } else if (err.code === "ETIMEDOUT") {
-          errorMsg += `\n\nConnection timed out. Check your network or firewall settings.`;
-        } else {
-          errorMsg += `\n\nError: ${err.message}`;
-        }
-        reject(new Error(errorMsg));
+        reject(
+          new Error(
+            `Could not connect to Studio RPC server.\n` +
+              `Make sure OVERDARE Studio is running. If the problem persists, restart the agent.`,
+          ),
+        );
       });
     });
   });
