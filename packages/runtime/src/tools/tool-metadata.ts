@@ -20,9 +20,9 @@ export interface ToolCapabilities {
 /** Central registry of built-in tool capabilities. */
 export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   // Core agent tools
-  request_user_input: { immutable: true, planModeAllowed: true },
+  request_user_input: { immutable: true, planModeAllowed: true, hasCustomRender: true },
   plan: { immutable: true, planModeAllowed: true, hasCustomRender: true },
-  skill: { immutable: true, planModeAllowed: true },
+  skill: { immutable: true, planModeAllowed: true, hasCustomRender: true },
 
   // Read-only filesystem tools (plan-mode safe)
   read: { planModeAllowed: true, hasCustomRender: true },
