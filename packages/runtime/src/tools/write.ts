@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
 import { createFileRenderPayload, createTextRenderPayload } from "./render-payload";
 
@@ -92,7 +92,8 @@ Usage:
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.`,
     parameters: WriteAbsoluteParams,
     async execute(args, ctx): Promise<ToolResult> {
-      const { file_path, content } = args;
+      const file_path = stripExtendedLengthPrefix(args.file_path);
+      const { content } = args;
       if (!isAbsolute(file_path)) {
         const output = `Error: file_path must be absolute: ${file_path}`;
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };

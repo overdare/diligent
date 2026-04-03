@@ -3,7 +3,7 @@
 import { stat } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { spawnCollect } from "../util/process";
 import { createGlobRenderPayload, createTextRenderPayload } from "./render-payload";
 
@@ -28,7 +28,9 @@ export function createGlobTool(cwd: string): Tool<typeof GlobParams> {
     parameters: GlobParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const searchPath = (args.path ?? cwd).replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+      const searchPath = stripExtendedLengthPrefix(args.path ?? cwd)
+        .replace(/\\/g, "/")
+        .replace(/\/{2,}/g, "/");
       if (!isAbsolute(searchPath)) {
         const output = `Error: path must be absolute: ${searchPath}`;
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };

@@ -106,6 +106,24 @@ describe("glob - Windows path normalization", () => {
     expect(capturedSearchPath(spy)).toBe("C:/Users/alice/git");
   });
 
+  it("strips \\\\?\\ extended-length prefix from path", async () => {
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts\n"));
+    const tool = createGlobTool(UNIX_CWD);
+
+    await tool.execute({ pattern: "**/*.ts", path: "\\\\?\\C:\\Users\\alice\\git\\diligent" }, mockCtx);
+
+    expect(capturedSearchPath(spy)).toBe(WIN_CWD_FORWARD);
+  });
+
+  it("strips \\\\?\\ extended-length prefix from cwd", async () => {
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts\n"));
+    const tool = createGlobTool("\\\\?\\C:\\Users\\alice\\git\\diligent");
+
+    await tool.execute({ pattern: "**/*.ts" }, mockCtx);
+
+    expect(capturedSearchPath(spy)).toBe(WIN_CWD_FORWARD);
+  });
+
   it("rejects relative paths with error", async () => {
     const tool = createGlobTool(UNIX_CWD);
 
@@ -173,5 +191,14 @@ describe("grep - Windows path normalization", () => {
     await tool.execute({ pattern: "foo", path: "/home/user/project/src" }, mockCtx);
 
     expect(capturedSearchPath(spy)).toBe("/home/user/project/src");
+  });
+
+  it("strips \\\\?\\ extended-length prefix from path", async () => {
+    spy = spyOn(childProcess, "spawn").mockReturnValue(mockProc("file.ts:1:match\n"));
+    const tool = createGrepTool(UNIX_CWD);
+
+    await tool.execute({ pattern: "foo", path: "\\\\?\\C:\\Users\\alice\\git\\diligent" }, mockCtx);
+
+    expect(capturedSearchPath(spy)).toBe(WIN_CWD_FORWARD);
   });
 });

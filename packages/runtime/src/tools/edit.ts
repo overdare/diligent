@@ -3,7 +3,7 @@ import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
 import {
   createEditDiffRenderPayload,
@@ -120,7 +120,8 @@ Usage:
     parameters: EditParams,
 
     async execute(args, ctx): Promise<ToolResult> {
-      const { file_path, old_string, new_string, replace_all } = args;
+      const file_path = stripExtendedLengthPrefix(args.file_path);
+      const { old_string, new_string, replace_all } = args;
 
       if (!isAbsolute(file_path)) {
         return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };
@@ -264,7 +265,8 @@ If you want to create a new file, use:
     parameters: MultiEditParams,
 
     async execute(args, ctx): Promise<ToolResult> {
-      const { file_path, edits } = args;
+      const file_path = stripExtendedLengthPrefix(args.file_path);
+      const { edits } = args;
 
       if (!isAbsolute(file_path)) {
         return { output: `Error: file_path must be absolute: ${file_path}`, metadata: { error: true } };

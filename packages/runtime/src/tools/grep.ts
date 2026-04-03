@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { spawnCollect } from "../util/process";
 import { createGrepRenderPayload, createTextRenderPayload } from "./render-payload";
 
@@ -30,7 +30,9 @@ export function createGrepTool(cwd: string): Tool<typeof GrepParams> {
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
       const rawPath = args.path ? (isAbsolute(args.path) ? args.path : resolve(cwd, args.path)) : cwd;
-      const searchPath = rawPath.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+      const searchPath = stripExtendedLengthPrefix(rawPath)
+        .replace(/\\/g, "/")
+        .replace(/\/{2,}/g, "/");
 
       const rgBin = process.env.DILIGENT_RG_PATH ?? "rg";
       const rgArgs: string[] = [rgBin, "-n"];

@@ -2,7 +2,7 @@
 import { readdir } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { createListRenderPayload, createTextRenderPayload } from "./render-payload";
 
 const LsParams = z.object({
@@ -18,7 +18,7 @@ export function createLsTool(): Tool<typeof LsParams> {
     parameters: LsParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const { path } = args;
+      const path = stripExtendedLengthPrefix(args.path);
       if (!isAbsolute(path)) {
         const output = `Error: path must be absolute: ${path}`;
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };

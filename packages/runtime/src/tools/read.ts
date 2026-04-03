@@ -2,7 +2,7 @@
 
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { isAbsolute, stripExtendedLengthPrefix } from "../util/path";
 import { createTextRenderPayload, summarizeRenderText } from "./render-payload";
 
 const ReadParams = z.object({
@@ -95,7 +95,8 @@ export function createReadTool(): Tool<typeof ReadParams> {
     parameters: ReadParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const { file_path, offset, limit } = args;
+      const file_path = stripExtendedLengthPrefix(args.file_path);
+      const { offset, limit } = args;
       if (!isAbsolute(file_path)) {
         const output = `Error: file_path must be absolute: ${file_path}`;
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
