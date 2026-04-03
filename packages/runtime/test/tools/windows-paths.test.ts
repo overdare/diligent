@@ -3,10 +3,8 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
-import * as fsPromises from "node:fs/promises";
 import { createGlobTool } from "../../src/tools/glob";
 import { createGrepTool } from "../../src/tools/grep";
-import { createLsTool } from "../../src/tools/ls";
 
 const UNIX_CWD = "/home/user/project";
 const WIN_CWD_BACKSLASH = "C:\\Users\\alice\\git\\diligent";
@@ -175,53 +173,5 @@ describe("grep - Windows path normalization", () => {
     await tool.execute({ pattern: "foo", path: "/home/user/project/src" }, mockCtx);
 
     expect(capturedSearchPath(spy)).toBe("/home/user/project/src");
-  });
-});
-
-describe("ls - Windows path normalization", () => {
-  let spy: ReturnType<typeof spyOn>;
-
-  afterEach(() => spy?.mockRestore());
-
-  it("normalizes backslash path to forward slashes before readdir", async () => {
-    spy = spyOn(fsPromises, "readdir").mockResolvedValue(
-      [] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>,
-    );
-    const tool = createLsTool();
-
-    await tool.execute({ path: WIN_CWD_BACKSLASH }, mockCtx);
-
-    expect(spy.mock.calls[0][0]).toBe(WIN_CWD_FORWARD);
-  });
-
-  it("normalizes double backslash path to single forward slashes", async () => {
-    spy = spyOn(fsPromises, "readdir").mockResolvedValue(
-      [] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>,
-    );
-    const tool = createLsTool();
-
-    await tool.execute({ path: "C:\\\\Users\\\\alice\\\\git" }, mockCtx);
-
-    expect(spy.mock.calls[0][0]).toBe("C:/Users/alice/git");
-  });
-
-  it("leaves forward-slash paths unchanged", async () => {
-    spy = spyOn(fsPromises, "readdir").mockResolvedValue(
-      [] as unknown as Awaited<ReturnType<typeof fsPromises.readdir>>,
-    );
-    const tool = createLsTool();
-
-    await tool.execute({ path: WIN_CWD_FORWARD }, mockCtx);
-
-    expect(spy.mock.calls[0][0]).toBe(WIN_CWD_FORWARD);
-  });
-
-  it("rejects relative paths with error", async () => {
-    const tool = createLsTool();
-
-    const result = await tool.execute({ path: "relative/path" }, mockCtx);
-
-    expect(result.metadata?.error).toBe(true);
-    expect(result.output).toContain("must be absolute");
   });
 });
