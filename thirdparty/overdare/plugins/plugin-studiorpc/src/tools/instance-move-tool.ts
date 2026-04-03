@@ -67,7 +67,7 @@ async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolConte
     return { added: movedGuids.map((g) => ({ guid: g, name: "", class: "" })) };
   });
 
-  const result = await applyAndSave();
+  const result = await applyAndSave(cwd);
   const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return {

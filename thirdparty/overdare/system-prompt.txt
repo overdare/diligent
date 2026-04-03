@@ -148,19 +148,6 @@ Use explicit Luau type annotations wherever possible.
 - **Arrays:** `local players: {Player} = {}`
 - **Functions:** `local function GetScore(id: number): number`
 
-# File header (first lines of each script)
-Use a multi-line comment block with at least: title, fileName, contentSummary, keywords.
-When modifying an existing script, update the header fields if the content or purpose has changed.
-
-```lua
---[[
-@title: Animation Module
-@fileName: AnimationModule.lua
-@contentSummary: Provides animation management for player characters. Handles loading and playing animation tracks (idle, run, bomb-carrying). Manages animation lifecycle and state.
-@keywords: animation, player animation, animation tracks, humanoid, idle, run, carry, load animation, play animation
-]]--
-```
-
 # Explicit Dependencies
 When a script `require()`s other modules, declare those dependencies clearly at the top of the file (e.g., in a comment block). Keep dependencies one-way and avoid circular requires.
 - List every required module in a "Dependencies" comment.

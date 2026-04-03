@@ -61,7 +61,7 @@ async function executeInstanceDelete(
     return { deletedGuids };
   });
 
-  const result = await applyAndSave();
+  const result = await applyAndSave(cwd);
   const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return {

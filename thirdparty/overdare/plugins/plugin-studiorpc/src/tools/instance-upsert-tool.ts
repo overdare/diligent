@@ -6,8 +6,6 @@ import { buildInstanceUpsertRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
-const PARENT_WORLD_TRANSFORM_CLASSES = new Set(["VFXPreset", "ParticleEmitter", "PointLight", "SpotLight"]);
-
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
@@ -28,20 +26,9 @@ function nextObjectKey(rootDoc: Record<string, unknown>): number {
   return next;
 }
 
-function cloneJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => cloneJsonValue(entry));
-  }
-  if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneJsonValue(entry)]));
-  }
-  return value;
-}
-
 function buildAddedNode(
   item: { class: string; name: string; properties: Record<string, unknown> },
   rootDoc: Record<string, unknown>,
-  parent: Record<string, unknown>,
 ): Record<string, unknown> {
   const newNode: Record<string, unknown> = {
     InstanceType: item.class,
@@ -50,10 +37,6 @@ function buildAddedNode(
     Name: item.name,
     ...item.properties,
   };
-
-  if (PARENT_WORLD_TRANSFORM_CLASSES.has(item.class) && isRecord(parent.WorldTransform)) {
-    newNode.WorldTransform = cloneJsonValue(parent.WorldTransform);
-  }
 
   return newNode;
 }
@@ -115,7 +98,7 @@ async function executeInstanceUpsert(
       const childList = Array.isArray(parent.LuaChildren) ? parent.LuaChildren : [];
       parent.LuaChildren = childList;
 
-      const newNode = buildAddedNode({ ...item, properties: item.properties ?? {} }, rootDoc, parent);
+      const newNode = buildAddedNode({ ...item, properties: item.properties ?? {} }, rootDoc);
       childList.push(newNode);
       added.push({ guid: String(newNode.ActorGuid), name: item.name, class: item.class });
     }
@@ -124,7 +107,7 @@ async function executeInstanceUpsert(
     return { added };
   });
 
-  await applyAndSave();
+  await applyAndSave(cwd);
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
   const addedGuids = fileResult.added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));
