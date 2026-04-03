@@ -366,14 +366,17 @@ function walkNodes(
   buttons: GuiEntry[],
   allGui: GuiEntry[],
   ancestors: Set<string>,
+  insideScreenGui = false,
 ): void {
   const cls = typeof node.InstanceType === "string" ? node.InstanceType : undefined;
   const fullGuid = typeof node.ActorGuid === "string" ? node.ActorGuid : "";
 
   let childRect = parentRect;
+  let childInsideScreenGui = insideScreenGui;
 
   if (cls && SCREEN_GUI_CLASSES.has(cls)) {
     childRect = SCREEN_RECT;
+    childInsideScreenGui = true;
   } else if (cls && GUI_OBJECT_CLASSES.has(cls)) {
     const rect = resolveRect(node, parentRect);
     if (rect) {
@@ -396,7 +399,11 @@ function walkNodes(
         ancestors: new Set(ancestors),
       };
 
-      if (!isFullyTransparent(node)) {
+      // Only validate nodes that are descendants of a ScreenGui.
+      // Nodes under ReplicatedStorage etc. are templates cloned at runtime
+      // into a different parent — their Scale values resolve against the
+      // wrong parent rect here, producing false-positive overlaps.
+      if (!isFullyTransparent(node) && childInsideScreenGui) {
         allGui.push(entry);
 
         // Reserved zone overlap check: only the base HUD band is blocked from system UI areas.
@@ -437,7 +444,17 @@ function walkNodes(
   if (Array.isArray(node.LuaChildren)) {
     for (const child of node.LuaChildren) {
       if (child != null && typeof child === "object") {
-        walkNodes(child as OvdrjmNode, childRect, zones, warnings, info, buttons, allGui, childAncestors);
+        walkNodes(
+          child as OvdrjmNode,
+          childRect,
+          zones,
+          warnings,
+          info,
+          buttons,
+          allGui,
+          childAncestors,
+          childInsideScreenGui,
+        );
       }
     }
   }

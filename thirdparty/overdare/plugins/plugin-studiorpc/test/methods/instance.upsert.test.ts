@@ -306,6 +306,44 @@ describe("collectUiDiagnostics", () => {
     expect(diag.info).toEqual([]);
   });
 
+  test("skips overlap checks for nodes outside ScreenGui (e.g. ReplicatedStorage templates)", () => {
+    const root = {
+      ActorGuid: "ROOT",
+      Name: "Root",
+      LuaChildren: [
+        {
+          ActorGuid: "REPLICATED_STORAGE",
+          InstanceType: "ReplicatedStorage",
+          Name: "ReplicatedStorage",
+          LuaChildren: [
+            {
+              ActorGuid: "TEMPLATE_BUTTON",
+              InstanceType: "TextButton",
+              Name: "AttackButton",
+              ZIndex: 0,
+              Position: {
+                X: { Scale: 0.3, Offset: 0 },
+                Y: { Scale: 0.6, Offset: 0 },
+              },
+              Size: {
+                X: { Scale: 0.2, Offset: 0 },
+                Y: { Scale: 0.2, Offset: 0 },
+              },
+              AnchorPoint: { X: 1, Y: 1 },
+              BackgroundTransparency: 0,
+            },
+          ],
+        },
+      ],
+    };
+
+    const diag = collectUiDiagnostics(root);
+
+    // Template buttons in ReplicatedStorage should produce zero warnings
+    expect(diag.warnings).toEqual([]);
+    expect(diag.info).toEqual([]);
+  });
+
   test("checks overlap only inside the same ZIndex band", () => {
     const root = {
       ActorGuid: "ROOT",
