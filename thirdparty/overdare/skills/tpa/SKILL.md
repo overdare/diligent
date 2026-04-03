@@ -9,7 +9,7 @@ Read TPA project info from the Knowledge Tool.
 
 ### If TPA info does not exist
 
-Ask the user whether they want to use the TPA template. Using the template makes it easy to build a third-person action game, but making it uniquely yours will take a bit more effort.
+Use request_user_input to ask the user whether they want to use the TPA template. Using the template makes it easy to build a third-person action game, but making it uniquely yours will take a bit more effort.
 
 - **Yes** → Download the template, record in Knowledge Tool, then proceed.
 - **No** → Do not invoke this skill again.
