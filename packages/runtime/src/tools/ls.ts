@@ -18,7 +18,7 @@ export function createLsTool(): Tool<typeof LsParams> {
     parameters: LsParams,
     supportParallel: true,
     async execute(args): Promise<ToolResult> {
-      const { path } = args;
+      const path = args.path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
       if (!isAbsolute(path)) {
         const output = `Error: path must be absolute: ${path}`;
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
