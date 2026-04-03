@@ -1,14 +1,14 @@
 // @summary Desktop packaging orchestrator — builds Tauri desktop app and assembles dist/
 
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generateChecksums } from "./lib/checksum";
+import { prepareDefaultsResources } from "./lib/defaults";
 import { generateUpdateManifest } from "./lib/manifest";
 import { shouldBuildDesktopBinary } from "./lib/package-mode";
 import { ALL_PLATFORMS, filterPlatforms, type PlatformTarget } from "./lib/platforms";
-import { createPluginBundlePlan } from "./lib/plugin-bundle";
 import { resolveDesktopIconPaths, resolveProjectName, toProjectArtifactName } from "./lib/project-name";
 import { rustSourcesChanged, saveRustHash } from "./lib/rust-cache";
 import { injectVersion, restoreVersion, toTauriVersion, type VersionBackup } from "./lib/version";
@@ -81,96 +81,15 @@ function buildWebFrontend(): void {
 // Defaults assembly — bundled plugin(s) + default config → resources/defaults/
 // ---------------------------------------------------------------------------
 
-const DEFAULTS_SRC = join(DESKTOP, "defaults");
 const DEFAULTS_RESOURCES = join(DESKTOP, "src-tauri/resources/defaults");
 
-/**
- * Bundle a plugin directory to a single ESM file using `bun build`.
- * Output: resources/defaults/plugins/<pluginName>/index.js + package.json
- *
- * Also copies any non-source asset files (e.g. binaries, .d.lua) from the
- * plugin root directory alongside the bundled output.
- */
-function bundlePlugin(pluginDir: string, pluginName: string): void {
-  const plan = createPluginBundlePlan({
-    rootDir: ROOT,
-    defaultsResourcesDir: DEFAULTS_RESOURCES,
-    pluginDir,
-    pluginName,
-  });
-  const outDir = plan.outDir;
-  mkdirSync(outDir, { recursive: true });
-
-  run(plan.buildCommand, plan.buildCwd);
-
-  writeFileSync(join(outDir, "package.json"), `${JSON.stringify(plan.outputPackageJson, null, 2)}\n`);
-  console.log(`   Bundled plugin: ${pluginName} → ${plan.outFile}`);
-
-  for (const fileName of plan.assetFiles) {
-    cpSync(join(pluginDir, fileName), join(outDir, fileName));
-    console.log(`   Copied asset:   ${pluginName}/${fileName}`);
-  }
-}
-
 function assembleDefaults(packageDir: string | undefined): void {
-  // Clean and recreate defaults resources dir
-  if (existsSync(DEFAULTS_RESOURCES)) {
-    rmSync(DEFAULTS_RESOURCES, { recursive: true, force: true });
-  }
-  mkdirSync(DEFAULTS_RESOURCES, { recursive: true });
-
-  // Ensure plugins/ directory always exists (required by tauri.conf.json resources)
-  mkdirSync(join(DEFAULTS_RESOURCES, "plugins"), { recursive: true });
-
-  // Copy default config template
-  const configSrc = join(DEFAULTS_SRC, "config.jsonc");
-  if (existsSync(configSrc)) {
-    cpSync(configSrc, join(DEFAULTS_RESOURCES, "config.jsonc"));
-    console.log("   Copied config.jsonc template");
-  }
-
-  // Bundle plugins from --package directory
-  if (packageDir) {
-    if (!existsSync(packageDir)) {
-      console.warn(`⚠️  --package dir not found, skipping: ${packageDir}`);
-    } else {
-      // Copy config and resource files from package root (skip source/build artifacts)
-      const SKIP_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".lock", ".lockb"]);
-      const SKIP_FILES = new Set(["package.json", "tsconfig.json", "bun.lock", "bun.lockb"]);
-      for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
-        if (!entry.isFile()) continue;
-        if (SKIP_FILES.has(entry.name)) continue;
-        if (SKIP_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf(".")))) continue;
-        cpSync(join(packageDir, entry.name), join(DEFAULTS_RESOURCES, entry.name));
-        console.log(`   Copied file:     ${entry.name}`);
-      }
-
-      // Bundle plugins from plugins/ subdirectory (new structure)
-      const pluginsSubDir = join(packageDir, "plugins");
-      if (existsSync(pluginsSubDir)) {
-        for (const entry of readdirSync(pluginsSubDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const subDir = join(pluginsSubDir, entry.name);
-          const pkgJsonPath = join(subDir, "package.json");
-          if (existsSync(join(subDir, "src/index.ts")) && existsSync(pkgJsonPath)) {
-            const pluginName = (JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as { name: string }).name;
-            bundlePlugin(subDir, pluginName);
-          }
-        }
-      }
-
-      // Copy plain subdirectories (docs, assets, etc.) directly under defaults/
-      for (const entry of readdirSync(packageDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name === "plugins") continue; // already handled above
-        if (entry.name === "node_modules") continue;
-        const dest = join(DEFAULTS_RESOURCES, entry.name);
-        mkdirSync(dest, { recursive: true });
-        cpSync(join(packageDir, entry.name), dest, { recursive: true });
-        console.log(`   Copied dir:      ${entry.name}/`);
-      }
-    }
-  }
+  prepareDefaultsResources({
+    rootDir: ROOT,
+    desktopDir: DESKTOP,
+    packageDir,
+    run,
+  });
 }
 
 function buildSidecar(plat: PlatformTarget): void {

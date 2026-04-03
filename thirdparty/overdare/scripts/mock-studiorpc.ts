@@ -160,6 +160,19 @@ function toBrowseNode(node: MockNode): Record<string, unknown> {
   };
 }
 
+function filterByClass(nodes: Record<string, unknown>[], classType: string): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  for (const node of nodes) {
+    const children = Array.isArray(node.children)
+      ? filterByClass(node.children as Record<string, unknown>[], classType)
+      : [];
+    if (node.class === classType || children.length > 0) {
+      result.push({ ...node, children });
+    }
+  }
+  return result;
+}
+
 function toReadableNode(node: MockNode, recursive: boolean): Record<string, unknown> {
   return {
     guid: node.guid,
@@ -174,7 +187,19 @@ function toReadableNode(node: MockNode, recursive: boolean): Record<string, unkn
 
 function buildDefaultHandlers(): Record<string, StudioRpcMockHandler> {
   return {
-    "level.browse": ({ state }) => state.roots.map(toBrowseNode),
+    "level.browse": ({ request, state }) => {
+      const startGuid = typeof request.params?.startGuid === "string" ? request.params.startGuid : undefined;
+      const classType = typeof request.params?.classType === "string" ? request.params.classType : undefined;
+      let nodes: Record<string, unknown>[];
+      if (startGuid) {
+        const start = findNode(state.roots, startGuid);
+        if (!start) return rpcError(-32001, `Start GUID not found: ${startGuid}`);
+        nodes = [toBrowseNode(start)];
+      } else {
+        nodes = state.roots.map(toBrowseNode);
+      }
+      return classType ? filterByClass(nodes, classType) : nodes;
+    },
     "level.save.file": () => "World file saved.",
     "level.apply": () => ({ ok: true }),
     "game.play": ({ request }) => {
