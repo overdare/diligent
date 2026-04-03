@@ -70,11 +70,11 @@ export async function executeTool(
       output:
         truncated.output +
         TRUNCATION_WARNING +
-        `\n(truncated from ${truncated.originalLines} lines / ${truncated.originalBytes} bytes. Full output at: ${savedPath})`,
+        `\n(truncated from ${truncated.originalBytes} bytes. Full output at: ${savedPath})`,
       metadata: {
         ...result.metadata,
         truncated: true,
-        truncatedFrom: { bytes: truncated.originalBytes, lines: truncated.originalLines },
+        truncatedFrom: { bytes: truncated.originalBytes },
         fullOutputPath: savedPath,
       },
       truncateDirection: direction,
