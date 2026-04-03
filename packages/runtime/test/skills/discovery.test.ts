@@ -34,7 +34,7 @@ describe("discoverSkills", () => {
     await mkdir(skillDir, { recursive: true });
     await writeFile(join(skillDir, "SKILL.md"), makeSkillMd("my-skill", "A test skill"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.errors).toHaveLength(0);
     expect(result.skills).toHaveLength(1);
@@ -51,7 +51,7 @@ describe("discoverSkills", () => {
     await mkdir(skillsDir, { recursive: true });
     await writeFile(join(skillsDir, "my-skill.md"), makeSkillMd("my-skill", "A flat skill"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.errors).toHaveLength(0);
     expect(result.skills).toHaveLength(1);
@@ -66,7 +66,7 @@ describe("discoverSkills", () => {
     await mkdir(hiddenDir, { recursive: true });
     await writeFile(join(hiddenDir, "SKILL.md"), makeSkillMd("hidden-skill", "Should be skipped"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.skills).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
@@ -78,7 +78,7 @@ describe("discoverSkills", () => {
     await mkdir(nmDir, { recursive: true });
     await writeFile(join(nmDir, "SKILL.md"), makeSkillMd("node-modules", "Should be skipped"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.skills).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
@@ -113,7 +113,7 @@ describe("discoverSkills", () => {
     const root = await createTmpDir();
     // Don't create any skill directories
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.skills).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
@@ -133,7 +133,7 @@ describe("discoverSkills", () => {
     await mkdir(goodDir, { recursive: true });
     await writeFile(join(goodDir, "SKILL.md"), makeSkillMd("good-skill", "A good skill"));
 
-    const result = await discoverSkills({ cwd: root });
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
 
     expect(result.skills).toHaveLength(1);
     expect(result.skills[0].name).toBe("good-skill");

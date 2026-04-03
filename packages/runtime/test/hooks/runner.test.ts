@@ -125,24 +125,27 @@ describe("runHooks", () => {
 
   describe("hook input", () => {
     test("hook receives JSON on stdin with correct fields", async () => {
-      const scriptPath = join(FIXTURE_CWD, "check-input.sh");
+      const scriptPath = join(FIXTURE_CWD, "check-input.js");
       await Bun.write(
         scriptPath,
-        `#!/bin/bash
-INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name')
-PROMPT=$(echo "$INPUT" | jq -r '.prompt')
-if [ "$SESSION_ID" = "test-session" ] && [ "$HOOK_EVENT" = "UserPromptSubmit" ] && [ "$PROMPT" = "hello world" ]; then
-  exit 0
-fi
-echo "unexpected input: $INPUT" >&2
-exit 2
-`,
+        `let data = "";
+process.stdin.on("data", (chunk) => { data += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const input = JSON.parse(data);
+    if (input.session_id === "test-session" && input.hook_event_name === "UserPromptSubmit" && input.prompt === "hello world") {
+      process.exit(0);
+    }
+    process.stderr.write("unexpected input: " + data);
+    process.exit(2);
+  } catch (e) {
+    process.stderr.write("parse error: " + e.message);
+    process.exit(2);
+  }
+});`,
       );
-      await Bun.spawn(["chmod", "+x", scriptPath]).exited;
 
-      const result = await runHooks([handler(`bash "${scriptPath}"`)], BASE_INPUT, FIXTURE_CWD);
+      const result = await runHooks([handler(`node "${scriptPath}"`)], BASE_INPUT, FIXTURE_CWD);
       expect(result.blocked).toBe(false);
     });
   });
