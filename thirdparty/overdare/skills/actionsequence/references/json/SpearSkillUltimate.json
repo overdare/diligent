@@ -1,1062 +1,949 @@
 {
-	"Class": "/Script/LuaAPI.ActionSequence",
-	"Header":
-	{
-		"version": 1,
-		"createTime": "2026.03.13-20.00.09",
-		"lastModifyTime": "2026.03.13-20.00.09"
-	},
-	"ActionSequenceID": "",
-	"SequencerDescription": "SpearUtimateSkill",
-	"Length": 2.8605830669403076,
-	"Tracks": [
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
-			"OvdrAssetId":
-			{
-				"ovdrAssetId": "ovdrassetid://18201100"
-			},
-			"BlendInTime": 0,
-			"BlendOutTime": 0,
-			"SlotType": "FullBody",
-			"TrackID":
-			{
-				"a": -355074200,
-				"b": 1286727128,
-				"c": -1231196493,
-				"d": 14090657
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 0.69999998807907104,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
-			"OvdrAssetId":
-			{
-				"ovdrAssetId": "ovdrassetid://23667100"
-			},
-			"BlendInTime": 0,
-			"BlendOutTime": 0,
-			"SlotType": "FullBody",
-			"TrackID":
-			{
-				"a": 731211572,
-				"b": 1136539493,
-				"c": 1126415282,
-				"d": -781716051
-			},
-			"IsEnable": true,
-			"StartTime": 0.609416663646698,
-			"EndTime": 1.9427499771118164,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
-			"OvdrAssetId":
-			{
-				"ovdrAssetId": "ovdrassetid://23668200"
-			},
-			"BlendInTime": 0,
-			"BlendOutTime": 0,
-			"SlotType": "FullBody",
-			"TrackID":
-			{
-				"a": 1430197352,
-				"b": 1109491362,
-				"c": -539368049,
-				"d": 1968210436
-			},
-			"IsEnable": true,
-			"StartTime": 1.7606666088104248,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceControlTrack",
-			"RefObjectPath":
-			{
-				"path": "VFX_SpinTrail",
-				"softObjectPath": ""
-			},
-			"AttachmentOffset":
-			{
-				"socketName": "Name",
-				"isAttach": true,
-				"relativeLocation":
-				{
-					"x": 0,
-					"y": 45.246363000000002,
-					"z": 0
-				},
-				"relativeRotation":
-				{
-					"pitch": 0,
-					"yaw": 0,
-					"roll": 0
-				}
-			},
-			"ProxyData":
-			{
-				"Class": "/Script/LuaAPI.ProxyLuaPartData",
-				"Name": "VFX_SpinTrail_0",
-				"Props":
-				{
-					"KeyframeGroup_Shape":
-					{
-						"channels": [
-							{
-								"enumPtr": "None",
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_Transparency":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanCollide":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanTouch":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"Size":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginPosition":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginRotation":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					}
-				},
-				"Children": [
-					{
-						"Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
-						"Name": "VFXPreset_0",
-						"Props":
-						{
-							"KeyframeGroup_Enabled":
-							{
-								"channels": [
-									{
-										"keyframes": [
-											{
-												"value": false,
-												"time": 0
-											},
-											{
-												"value": true,
-												"time": 2.0617084503173828
-											}
-										]
-									}
-								],
-								"keyframeDataType": "Value"
-							}
-						},
-						"Children": []
-					}
-				]
-			},
-			"TrackID":
-			{
-				"a": 1293915596,
-				"b": 1173232805,
-				"c": 718939811,
-				"d": 115731082
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceControlTrack",
-			"RefObjectPath":
-			{
-				"path": "VFX_Punch",
-				"softObjectPath": ""
-			},
-			"AttachmentOffset":
-			{
-				"socketName": "Name",
-				"isAttach": true,
-				"relativeLocation":
-				{
-					"x": 251.60139899999999,
-					"y": 49.160066,
-					"z": 0
-				},
-				"relativeRotation":
-				{
-					"pitch": 0,
-					"yaw": 0,
-					"roll": 0
-				}
-			},
-			"ProxyData":
-			{
-				"Class": "/Script/LuaAPI.ProxyLuaPartData",
-				"Name": "VFX_Punch_0",
-				"Props":
-				{
-					"KeyframeGroup_Shape":
-					{
-						"channels": [
-							{
-								"enumPtr": "None",
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_Transparency":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanCollide":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanTouch":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"Size":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginPosition":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginRotation":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					}
-				},
-				"Children": [
-					{
-						"Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
-						"Name": "VFXPreset_0",
-						"Props":
-						{
-							"KeyframeGroup_Enabled":
-							{
-								"channels": [
-									{
-										"keyframes": [
-											{
-												"value": false,
-												"time": 0
-											},
-											{
-												"value": true,
-												"time": 0.35720834136009216
-											}
-										]
-									}
-								],
-								"keyframeDataType": "Value"
-							}
-						},
-						"Children": []
-					}
-				]
-			},
-			"TrackID":
-			{
-				"a": -1640843289,
-				"b": 1080863407,
-				"c": -358447172,
-				"d": -1287596392
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceControlTrack",
-			"RefObjectPath":
-			{
-				"path": "VFX_FireDrop",
-				"softObjectPath": ""
-			},
-			"AttachmentOffset":
-			{
-				"socketName": "Name",
-				"isAttach": true,
-				"relativeLocation":
-				{
-					"x": 221.463043,
-					"y": 17.469930000000002,
-					"z": 0
-				},
-				"relativeRotation":
-				{
-					"pitch": 0,
-					"yaw": 0,
-					"roll": 0
-				}
-			},
-			"ProxyData":
-			{
-				"Class": "/Script/LuaAPI.ProxyLuaPartData",
-				"Name": "VFX_FireDrop_0",
-				"Props":
-				{
-					"KeyframeGroup_Shape":
-					{
-						"channels": [
-							{
-								"enumPtr": "None",
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_Transparency":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanCollide":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"KeyframeGroup_CanTouch":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "Value"
-					},
-					"Size":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginPosition":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					},
-					"OriginRotation":
-					{
-						"channels": [
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							},
-							{
-								"keyframes": []
-							}
-						],
-						"keyframeDataType": "X"
-					}
-				},
-				"Children": [
-					{
-						"Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
-						"Name": "VFXPreset_0",
-						"Props":
-						{
-							"KeyframeGroup_Enabled":
-							{
-								"channels": [
-									{
-										"keyframes": [
-											{
-												"value": false,
-												"time": 0
-											},
-											{
-												"value": true,
-												"time": 1.2467213869094849
-											}
-										]
-									}
-								],
-								"keyframeDataType": "Value"
-							}
-						},
-						"Children": []
-					}
-				]
-			},
-			"TrackID":
-			{
-				"a": -1874339100,
-				"b": 1139053133,
-				"c": 772001714,
-				"d": -1061970559
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceCameraFOVTrack",
-			"FieldOfView":
-			{
-				"channels": [
-					{
-						"keyframes": [
-							{
-								"value": 90,
-								"time": 0.26970833539962769
-							},
-							{
-								"value": 60,
-								"time": 0.31529805064201355
-							},
-							{
-								"value": 90,
-								"time": 0.47570833563804626
-							},
-							{
-								"value": 90,
-								"time": 0.71476000547409058
-							},
-							{
-								"value": 120,
-								"time": 0.96262502670288086
-							},
-							{
-								"value": 120,
-								"time": 1.2491562366485596
-							},
-							{
-								"value": 90,
-								"time": 1.2772089242935181
-							}
-						]
-					}
-				],
-				"keyframeDataType": "Value"
-			},
-			"BlendIn": 0,
-			"BlendOut": 0,
-			"TrackID":
-			{
-				"a": 936191470,
-				"b": 1254231740,
-				"c": 630952633,
-				"d": -361617457
-			},
-			"IsEnable": true,
-			"StartTime": 0.26970833539962769,
-			"EndTime": 1.2772089242935181,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceCameraShakeTrack",
-			"ShakeType": "Heavy",
-			"Scale": 5,
-			"CameraShakeBase":
-			{
-				"Class": "/Game/CreatorPlatform/_Master/CameraShake/AS_Heavy.AS_Heavy_C",
-				"bSingleInstance": false,
-				"RootShakePattern":
-				{
-					"Class": "/Script/GameplayCameras.WaveOscillatorCameraShakePattern",
-					"LocationAmplitudeMultiplier": 1.5,
-					"LocationFrequencyMultiplier": 1,
-					"X":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Y":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Z":
-					{
-						"amplitude": 30,
-						"frequency": 12,
-						"initialOffsetType": "Random"
-					},
-					"RotationAmplitudeMultiplier": 0,
-					"RotationFrequencyMultiplier": 0,
-					"Pitch":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Yaw":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Roll":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"FOV":
-					{
-						"amplitude": 0,
-						"frequency": 0,
-						"initialOffsetType": "Random"
-					},
-					"Duration": 0.27999997138977051,
-					"BlendInTime": 0.30000001192092896,
-					"BlendOutTime": 0.89999997615814209
-				}
-			},
-			"CameraShakeDefaultDuration": 0.2800000011920929,
-			"TrackID":
-			{
-				"a": 396067558,
-				"b": 1239235640,
-				"c": 242422951,
-				"d": -691266856
-			},
-			"IsEnable": true,
-			"StartTime": 1.252666711807251,
-			"EndTime": 1.5326666831970215,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceCameraShakeTrack",
-			"ShakeType": "Heavy",
-			"Scale": 3,
-			"CameraShakeBase":
-			{
-				"Class": "/Game/CreatorPlatform/_Master/CameraShake/AS_Heavy.AS_Heavy_C",
-				"bSingleInstance": false,
-				"RootShakePattern":
-				{
-					"Class": "/Script/GameplayCameras.WaveOscillatorCameraShakePattern",
-					"LocationAmplitudeMultiplier": 1.5,
-					"LocationFrequencyMultiplier": 1,
-					"X":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Y":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Z":
-					{
-						"amplitude": 30,
-						"frequency": 12,
-						"initialOffsetType": "Random"
-					},
-					"RotationAmplitudeMultiplier": 0,
-					"RotationFrequencyMultiplier": 0,
-					"Pitch":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Yaw":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"Roll":
-					{
-						"amplitude": 1,
-						"frequency": 1,
-						"initialOffsetType": "Random"
-					},
-					"FOV":
-					{
-						"amplitude": 0,
-						"frequency": 0,
-						"initialOffsetType": "Random"
-					},
-					"Duration": 0.27999997138977051,
-					"BlendInTime": 0.30000001192092896,
-					"BlendOutTime": 0.89999997615814209
-				}
-			},
-			"CameraShakeDefaultDuration": 0.27999997138977051,
-			"TrackID":
-			{
-				"a": 645480656,
-				"b": 1216096421,
-				"c": 297854907,
-				"d": -277024605
-			},
-			"IsEnable": true,
-			"StartTime": 2.0242917537689209,
-			"EndTime": 2.3042917251586914,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceEventTrack",
-			"Markers":
-			{
-				"channels": [
-					{
-						"keyframes": [
-							{
-								"value": "Dash",
-								"time": 0.30768558382987976
-							}
-						]
-					}
-				],
-				"keyframeDataType": "Value"
-			},
-			"TrackID":
-			{
-				"a": 1316049167,
-				"b": 1078867746,
-				"c": -1591495532,
-				"d": 1430561966
-			},
-			"IsEnable": true,
-			"StartTime": 0.30768558382987976,
-			"EndTime": 0.30768558382987976,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceCollisionTrack",
-			"KeyframeTriggers":
-			{
-				"channels": [
-					{
-						"keyframes": [
-							{
-								"value": "HitTrigger",
-								"time": 0.35752415657043457
-							},
-							{
-								"value": "HitTrigger",
-								"time": 1.2486754655838013
-							},
-							{
-								"value": "HitTrigger",
-								"time": 2.0617084503173828
-							}
-						]
-					}
-				],
-				"keyframeDataType": "Value"
-			},
-			"KeyframeDataList": [
-				{
-					"Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
-					"Time": 0.35752415657043457,
-					"CollisionEventName": "HitTrigger",
-					"ColliderType": "Box",
-					"Collider":
-					{
-						"Class": "/Script/LuaAPI.ActionSequenceColliderBox",
-						"BoxExtent":
-						{
-							"x": 113.32015800000001,
-							"y": 100,
-							"z": 262.60071299999998
-						}
-					},
-					"AttachmentOffset":
-					{
-						"socketName": "None",
-						"isAttach": true,
-						"relativeLocation":
-						{
-							"x": 0,
-							"y": 0,
-							"z": -181.27058099999999
-						},
-						"relativeRotation":
-						{
-							"pitch": 0,
-							"yaw": 0,
-							"roll": 0
-						}
-					},
-					"CollisionGroup": "Default"
-				},
-				{
-					"Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
-					"Time": 1.2486754655838013,
-					"CollisionEventName": "HitTrigger",
-					"ColliderType": "Sphere",
-					"Collider":
-					{
-						"Class": "/Script/LuaAPI.ActionSequenceColliderSphere",
-						"Radius": 176.07398986816406
-					},
-					"AttachmentOffset":
-					{
-						"socketName": "None",
-						"isAttach": true,
-						"relativeLocation":
-						{
-							"x": 0,
-							"y": 0,
-							"z": -203.47034099999999
-						},
-						"relativeRotation":
-						{
-							"pitch": 0,
-							"yaw": 0,
-							"roll": 0
-						}
-					},
-					"CollisionGroup": "Default"
-				},
-				{
-					"Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
-					"Time": 2.0617084503173828,
-					"CollisionEventName": "HitTrigger",
-					"ColliderType": "Sphere",
-					"Collider":
-					{
-						"Class": "/Script/LuaAPI.ActionSequenceColliderSphere",
-						"Radius": 377.50921630859375
-					},
-					"AttachmentOffset":
-					{
-						"socketName": "None",
-						"isAttach": true,
-						"relativeLocation":
-						{
-							"x": 0,
-							"y": 0,
-							"z": 0
-						},
-						"relativeRotation":
-						{
-							"pitch": 0,
-							"yaw": 0,
-							"roll": 0
-						}
-					},
-					"CollisionGroup": "Default"
-				}
-			],
-			"TrackID":
-			{
-				"a": -1420830627,
-				"b": 1115171322,
-				"c": 1546849679,
-				"d": -1280576450
-			},
-			"IsEnable": true,
-			"StartTime": 0.35752415657043457,
-			"EndTime": 2.0617084503173828,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "ActiveSkill",
-			"TrackID":
-			{
-				"a": -1152228424,
-				"b": 1086118867,
-				"c": 1420385178,
-				"d": -140940706
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "Sequence",
-			"TrackID":
-			{
-				"a": -47706370,
-				"b": 1108709925,
-				"c": 216824219,
-				"d": 564068496
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 2.8605830669403076,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "CancelWindow",
-			"TrackID":
-			{
-				"a": 308969692,
-				"b": 1250354889,
-				"c": -1496669550,
-				"d": -842428254
-			},
-			"IsEnable": true,
-			"StartTime": 2.7241249084472656,
-			"EndTime": 2.8605000972747803,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		}
-	],
-	"InputActionSignalNames":
-	{
-	},
-	"UniqueActionSignalNames": []
+  "Class": "/Script/LuaAPI.ActionSequence",
+  "Header": {
+    "version": 1,
+    "createTime": "2026.03.13-20.00.09",
+    "lastModifyTime": "2026.03.13-20.00.09"
+  },
+  "ActionSequenceID": "",
+  "SequencerDescription": "SpearUtimateSkill",
+  "Length": 2.8605830669403076,
+  "Tracks": [
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+      "OvdrAssetId": {
+        "ovdrAssetId": "ovdrassetid://18201100"
+      },
+      "BlendInTime": 0,
+      "BlendOutTime": 0,
+      "SlotType": "FullBody",
+      "TrackID": {
+        "a": -355074200,
+        "b": 1286727128,
+        "c": -1231196493,
+        "d": 14090657
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 0.69999998807907104,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+      "OvdrAssetId": {
+        "ovdrAssetId": "ovdrassetid://23667100"
+      },
+      "BlendInTime": 0,
+      "BlendOutTime": 0,
+      "SlotType": "FullBody",
+      "TrackID": {
+        "a": 731211572,
+        "b": 1136539493,
+        "c": 1126415282,
+        "d": -781716051
+      },
+      "IsEnable": true,
+      "StartTime": 0.609416663646698,
+      "EndTime": 1.9427499771118164,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+      "OvdrAssetId": {
+        "ovdrAssetId": "ovdrassetid://23668200"
+      },
+      "BlendInTime": 0,
+      "BlendOutTime": 0,
+      "SlotType": "FullBody",
+      "TrackID": {
+        "a": 1430197352,
+        "b": 1109491362,
+        "c": -539368049,
+        "d": 1968210436
+      },
+      "IsEnable": true,
+      "StartTime": 1.7606666088104248,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceControlTrack",
+      "RefObjectPath": {
+        "path": "VFX_SpinTrail",
+        "softObjectPath": ""
+      },
+      "AttachmentOffset": {
+        "socketName": "Name",
+        "isAttach": true,
+        "relativeLocation": {
+          "x": 0,
+          "y": 45.246363000000002,
+          "z": 0
+        },
+        "relativeRotation": {
+          "pitch": 0,
+          "yaw": 0,
+          "roll": 0
+        }
+      },
+      "ProxyData": {
+        "Class": "/Script/LuaAPI.ProxyLuaPartData",
+        "Name": "VFX_SpinTrail_0",
+        "Props": {
+          "KeyframeGroup_Shape": {
+            "channels": [
+              {
+                "enumPtr": "None",
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_Transparency": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanCollide": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanTouch": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "Size": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginPosition": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginRotation": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          }
+        },
+        "Children": [
+          {
+            "Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
+            "Name": "VFXPreset_0",
+            "Props": {
+              "KeyframeGroup_Enabled": {
+                "channels": [
+                  {
+                    "keyframes": [
+                      {
+                        "value": false,
+                        "time": 0
+                      },
+                      {
+                        "value": true,
+                        "time": 2.0617084503173828
+                      }
+                    ]
+                  }
+                ],
+                "keyframeDataType": "Value"
+              }
+            },
+            "Children": []
+          }
+        ]
+      },
+      "TrackID": {
+        "a": 1293915596,
+        "b": 1173232805,
+        "c": 718939811,
+        "d": 115731082
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceControlTrack",
+      "RefObjectPath": {
+        "path": "VFX_Punch",
+        "softObjectPath": ""
+      },
+      "AttachmentOffset": {
+        "socketName": "Name",
+        "isAttach": true,
+        "relativeLocation": {
+          "x": 251.60139899999999,
+          "y": 49.160066,
+          "z": 0
+        },
+        "relativeRotation": {
+          "pitch": 0,
+          "yaw": 0,
+          "roll": 0
+        }
+      },
+      "ProxyData": {
+        "Class": "/Script/LuaAPI.ProxyLuaPartData",
+        "Name": "VFX_Punch_0",
+        "Props": {
+          "KeyframeGroup_Shape": {
+            "channels": [
+              {
+                "enumPtr": "None",
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_Transparency": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanCollide": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanTouch": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "Size": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginPosition": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginRotation": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          }
+        },
+        "Children": [
+          {
+            "Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
+            "Name": "VFXPreset_0",
+            "Props": {
+              "KeyframeGroup_Enabled": {
+                "channels": [
+                  {
+                    "keyframes": [
+                      {
+                        "value": false,
+                        "time": 0
+                      },
+                      {
+                        "value": true,
+                        "time": 0.35720834136009216
+                      }
+                    ]
+                  }
+                ],
+                "keyframeDataType": "Value"
+              }
+            },
+            "Children": []
+          }
+        ]
+      },
+      "TrackID": {
+        "a": -1640843289,
+        "b": 1080863407,
+        "c": -358447172,
+        "d": -1287596392
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceControlTrack",
+      "RefObjectPath": {
+        "path": "VFX_FireDrop",
+        "softObjectPath": ""
+      },
+      "AttachmentOffset": {
+        "socketName": "Name",
+        "isAttach": true,
+        "relativeLocation": {
+          "x": 221.463043,
+          "y": 17.469930000000002,
+          "z": 0
+        },
+        "relativeRotation": {
+          "pitch": 0,
+          "yaw": 0,
+          "roll": 0
+        }
+      },
+      "ProxyData": {
+        "Class": "/Script/LuaAPI.ProxyLuaPartData",
+        "Name": "VFX_FireDrop_0",
+        "Props": {
+          "KeyframeGroup_Shape": {
+            "channels": [
+              {
+                "enumPtr": "None",
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_Transparency": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanCollide": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "KeyframeGroup_CanTouch": {
+            "channels": [
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "Value"
+          },
+          "Size": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginPosition": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          },
+          "OriginRotation": {
+            "channels": [
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              },
+              {
+                "keyframes": []
+              }
+            ],
+            "keyframeDataType": "X"
+          }
+        },
+        "Children": [
+          {
+            "Class": "/Script/LuaAPI.ProxyLuaVFXPresetData",
+            "Name": "VFXPreset_0",
+            "Props": {
+              "KeyframeGroup_Enabled": {
+                "channels": [
+                  {
+                    "keyframes": [
+                      {
+                        "value": false,
+                        "time": 0
+                      },
+                      {
+                        "value": true,
+                        "time": 1.2467213869094849
+                      }
+                    ]
+                  }
+                ],
+                "keyframeDataType": "Value"
+              }
+            },
+            "Children": []
+          }
+        ]
+      },
+      "TrackID": {
+        "a": -1874339100,
+        "b": 1139053133,
+        "c": 772001714,
+        "d": -1061970559
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceCameraFOVTrack",
+      "FieldOfView": {
+        "channels": [
+          {
+            "keyframes": [
+              {
+                "value": 90,
+                "time": 0.26970833539962769
+              },
+              {
+                "value": 60,
+                "time": 0.31529805064201355
+              },
+              {
+                "value": 90,
+                "time": 0.47570833563804626
+              },
+              {
+                "value": 90,
+                "time": 0.71476000547409058
+              },
+              {
+                "value": 120,
+                "time": 0.96262502670288086
+              },
+              {
+                "value": 120,
+                "time": 1.2491562366485596
+              },
+              {
+                "value": 90,
+                "time": 1.2772089242935181
+              }
+            ]
+          }
+        ],
+        "keyframeDataType": "Value"
+      },
+      "BlendIn": 0,
+      "BlendOut": 0,
+      "TrackID": {
+        "a": 936191470,
+        "b": 1254231740,
+        "c": 630952633,
+        "d": -361617457
+      },
+      "IsEnable": true,
+      "StartTime": 0.26970833539962769,
+      "EndTime": 1.2772089242935181,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceCameraShakeTrack",
+      "ShakeType": "Heavy",
+      "Scale": 5,
+      "CameraShakeBase": {
+        "Class": "/Game/CreatorPlatform/_Master/CameraShake/AS_Heavy.AS_Heavy_C",
+        "bSingleInstance": false,
+        "RootShakePattern": {
+          "Class": "/Script/GameplayCameras.WaveOscillatorCameraShakePattern",
+          "LocationAmplitudeMultiplier": 1.5,
+          "LocationFrequencyMultiplier": 1,
+          "X": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Y": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Z": {
+            "amplitude": 30,
+            "frequency": 12,
+            "initialOffsetType": "Random"
+          },
+          "RotationAmplitudeMultiplier": 0,
+          "RotationFrequencyMultiplier": 0,
+          "Pitch": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Yaw": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Roll": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "FOV": {
+            "amplitude": 0,
+            "frequency": 0,
+            "initialOffsetType": "Random"
+          },
+          "Duration": 0.27999997138977051,
+          "BlendInTime": 0.30000001192092896,
+          "BlendOutTime": 0.89999997615814209
+        }
+      },
+      "CameraShakeDefaultDuration": 0.2800000011920929,
+      "TrackID": {
+        "a": 396067558,
+        "b": 1239235640,
+        "c": 242422951,
+        "d": -691266856
+      },
+      "IsEnable": true,
+      "StartTime": 1.252666711807251,
+      "EndTime": 1.5326666831970215,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceCameraShakeTrack",
+      "ShakeType": "Heavy",
+      "Scale": 3,
+      "CameraShakeBase": {
+        "Class": "/Game/CreatorPlatform/_Master/CameraShake/AS_Heavy.AS_Heavy_C",
+        "bSingleInstance": false,
+        "RootShakePattern": {
+          "Class": "/Script/GameplayCameras.WaveOscillatorCameraShakePattern",
+          "LocationAmplitudeMultiplier": 1.5,
+          "LocationFrequencyMultiplier": 1,
+          "X": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Y": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Z": {
+            "amplitude": 30,
+            "frequency": 12,
+            "initialOffsetType": "Random"
+          },
+          "RotationAmplitudeMultiplier": 0,
+          "RotationFrequencyMultiplier": 0,
+          "Pitch": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Yaw": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "Roll": {
+            "amplitude": 1,
+            "frequency": 1,
+            "initialOffsetType": "Random"
+          },
+          "FOV": {
+            "amplitude": 0,
+            "frequency": 0,
+            "initialOffsetType": "Random"
+          },
+          "Duration": 0.27999997138977051,
+          "BlendInTime": 0.30000001192092896,
+          "BlendOutTime": 0.89999997615814209
+        }
+      },
+      "CameraShakeDefaultDuration": 0.27999997138977051,
+      "TrackID": {
+        "a": 645480656,
+        "b": 1216096421,
+        "c": 297854907,
+        "d": -277024605
+      },
+      "IsEnable": true,
+      "StartTime": 2.0242917537689209,
+      "EndTime": 2.3042917251586914,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceEventTrack",
+      "Markers": {
+        "channels": [
+          {
+            "keyframes": [
+              {
+                "value": "Dash",
+                "time": 0.30768558382987976
+              }
+            ]
+          }
+        ],
+        "keyframeDataType": "Value"
+      },
+      "TrackID": {
+        "a": 1316049167,
+        "b": 1078867746,
+        "c": -1591495532,
+        "d": 1430561966
+      },
+      "IsEnable": true,
+      "StartTime": 0.30768558382987976,
+      "EndTime": 0.30768558382987976,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceCollisionTrack",
+      "KeyframeTriggers": {
+        "channels": [
+          {
+            "keyframes": [
+              {
+                "value": "HitTrigger",
+                "time": 0.35752415657043457
+              },
+              {
+                "value": "HitTrigger",
+                "time": 1.2486754655838013
+              },
+              {
+                "value": "HitTrigger",
+                "time": 2.0617084503173828
+              }
+            ]
+          }
+        ],
+        "keyframeDataType": "Value"
+      },
+      "KeyframeDataList": [
+        {
+          "Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
+          "Time": 0.35752415657043457,
+          "CollisionEventName": "HitTrigger",
+          "ColliderType": "Box",
+          "Collider": {
+            "Class": "/Script/LuaAPI.ActionSequenceColliderBox",
+            "BoxExtent": {
+              "x": 113.32015800000001,
+              "y": 100,
+              "z": 262.60071299999998
+            }
+          },
+          "AttachmentOffset": {
+            "socketName": "None",
+            "isAttach": true,
+            "relativeLocation": {
+              "x": 0,
+              "y": 0,
+              "z": -181.27058099999999
+            },
+            "relativeRotation": {
+              "pitch": 0,
+              "yaw": 0,
+              "roll": 0
+            }
+          },
+          "CollisionGroup": "Default"
+        },
+        {
+          "Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
+          "Time": 1.2486754655838013,
+          "CollisionEventName": "HitTrigger",
+          "ColliderType": "Sphere",
+          "Collider": {
+            "Class": "/Script/LuaAPI.ActionSequenceColliderSphere",
+            "Radius": 176.07398986816406
+          },
+          "AttachmentOffset": {
+            "socketName": "None",
+            "isAttach": true,
+            "relativeLocation": {
+              "x": 0,
+              "y": 0,
+              "z": -203.47034099999999
+            },
+            "relativeRotation": {
+              "pitch": 0,
+              "yaw": 0,
+              "roll": 0
+            }
+          },
+          "CollisionGroup": "Default"
+        },
+        {
+          "Class": "/Script/LuaAPI.ActionSequenceCollisionKeyframeData",
+          "Time": 2.0617084503173828,
+          "CollisionEventName": "HitTrigger",
+          "ColliderType": "Sphere",
+          "Collider": {
+            "Class": "/Script/LuaAPI.ActionSequenceColliderSphere",
+            "Radius": 377.50921630859375
+          },
+          "AttachmentOffset": {
+            "socketName": "None",
+            "isAttach": true,
+            "relativeLocation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "relativeRotation": {
+              "pitch": 0,
+              "yaw": 0,
+              "roll": 0
+            }
+          },
+          "CollisionGroup": "Default"
+        }
+      ],
+      "TrackID": {
+        "a": -1420830627,
+        "b": 1115171322,
+        "c": 1546849679,
+        "d": -1280576450
+      },
+      "IsEnable": true,
+      "StartTime": 0.35752415657043457,
+      "EndTime": 2.0617084503173828,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "ActiveSkill",
+      "TrackID": {
+        "a": -1152228424,
+        "b": 1086118867,
+        "c": 1420385178,
+        "d": -140940706
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "Sequence",
+      "TrackID": {
+        "a": -47706370,
+        "b": 1108709925,
+        "c": 216824219,
+        "d": 564068496
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 2.8605830669403076,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "CancelWindow",
+      "TrackID": {
+        "a": 308969692,
+        "b": 1250354889,
+        "c": -1496669550,
+        "d": -842428254
+      },
+      "IsEnable": true,
+      "StartTime": 2.7241249084472656,
+      "EndTime": 2.8605000972747803,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    }
+  ],
+  "InputActionSignalNames": {},
+  "UniqueActionSignalNames": []
 }

@@ -1,116 +1,104 @@
 {
-	"Class": "/Script/LuaAPI.ActionSequence",
-	"Header":
-	{
-		"version": 1,
-		"createTime": "2026.03.18-19.25.56",
-		"lastModifyTime": "2026.03.18-19.25.56"
-	},
-	"ActionSequenceID": "",
-	"SequencerDescription": "",
-	"Length": 1.1666669845581055,
-	"Tracks": [
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
-			"OvdrAssetId":
-			{
-				"ovdrAssetId": "ovdrassetid://22847200"
-			},
-			"BlendInTime": 0,
-			"BlendOutTime": 0,
-			"SlotType": "FullBody",
-			"TrackID":
-			{
-				"a": 1371229984,
-				"b": 1266500692,
-				"c": -197874524,
-				"d": -1903060765
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 1.1666669845581055,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "ActiveSkill",
-			"TrackID":
-			{
-				"a": -1127598979,
-				"b": 1183137124,
-				"c": 511205775,
-				"d": 859965788
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 1.1666669845581055,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "Sequence",
-			"TrackID":
-			{
-				"a": 1444425160,
-				"b": 1106191693,
-				"c": 834328761,
-				"d": 1663827443
-			},
-			"IsEnable": true,
-			"StartTime": 0,
-			"EndTime": 1.1666669845581055,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		},
-		{
-			"Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
-			"TriggerName": "CancelWindow",
-			"TrackID":
-			{
-				"a": -105399696,
-				"b": 1166772591,
-				"c": -1277172572,
-				"d": 1325072029
-			},
-			"IsEnable": true,
-			"StartTime": 1.140708327293396,
-			"EndTime": 1.1666250228881836,
-			"ParentTrackID":
-			{
-				"a": 0,
-				"b": 0,
-				"c": 0,
-				"d": 0
-			},
-			"ChildTrackIDs": [],
-			"IsLock": false
-		}
-	],
-	"InputActionSignalNames":
-	{
-	},
-	"UniqueActionSignalNames": []
+  "Class": "/Script/LuaAPI.ActionSequence",
+  "Header": {
+    "version": 1,
+    "createTime": "2026.03.18-19.25.56",
+    "lastModifyTime": "2026.03.18-19.25.56"
+  },
+  "ActionSequenceID": "",
+  "SequencerDescription": "",
+  "Length": 1.1666669845581055,
+  "Tracks": [
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
+      "OvdrAssetId": {
+        "ovdrAssetId": "ovdrassetid://22847200"
+      },
+      "BlendInTime": 0,
+      "BlendOutTime": 0,
+      "SlotType": "FullBody",
+      "TrackID": {
+        "a": 1371229984,
+        "b": 1266500692,
+        "c": -197874524,
+        "d": -1903060765
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 1.1666669845581055,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "ActiveSkill",
+      "TrackID": {
+        "a": -1127598979,
+        "b": 1183137124,
+        "c": 511205775,
+        "d": 859965788
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 1.1666669845581055,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "Sequence",
+      "TrackID": {
+        "a": 1444425160,
+        "b": 1106191693,
+        "c": 834328761,
+        "d": 1663827443
+      },
+      "IsEnable": true,
+      "StartTime": 0,
+      "EndTime": 1.1666669845581055,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    },
+    {
+      "Class": "/Script/LuaAPI.ActionSequenceTriggerTrack",
+      "TriggerName": "CancelWindow",
+      "TrackID": {
+        "a": -105399696,
+        "b": 1166772591,
+        "c": -1277172572,
+        "d": 1325072029
+      },
+      "IsEnable": true,
+      "StartTime": 1.140708327293396,
+      "EndTime": 1.1666250228881836,
+      "ParentTrackID": {
+        "a": 0,
+        "b": 0,
+        "c": 0,
+        "d": 0
+      },
+      "ChildTrackIDs": [],
+      "IsLock": false
+    }
+  ],
+  "InputActionSignalNames": {},
+  "UniqueActionSignalNames": []
 }
