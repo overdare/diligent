@@ -115,9 +115,10 @@ Some Roblox features are not yet available in OVERDARE. Use the following workar
 
 <lua-files>
 - Lua files live under `./Lua`
-- File naming convention: `ObjectName.lua` or `ObjectName_*.lua` (e.g., `PlayerController.lua`, `PlayerController_2.lua`)
 - **For NEW/DELETING scripts:** Use StudioRpc to create/delete — never create/delete files under `./Lua` directly
-- **For EDITING existing scripts:** Use Edit/ApplyPatch tool ONLY. do NOT delete and re-add via StudioRpc just to modify content, EDIT the original script in place.
+- **For EDITING existing scripts:** First use `level.browse` to find the matching filename in the game tree, then use Edit/ApplyPatch tool to edit it in place. Do NOT use ls/glob to search for files.
+  - Path mapping: if `level.browse` returns `combat_2.Lua`, the actual file path is `./Lua/combat_2.lua` (i.e. `./Lua/<name>`)
+- DO NOT delete and re-add via StudioRpc just to modify content.
 
 # Game Play and Lua Logs
 - After calling `studiorpc_game_play`, Lua logs from the play session are written to `./Play.log`

@@ -8,7 +8,7 @@ type ToolRenderPayload = {
 };
 
 const BASE_URL = "https://aiguide.overdare.com";
-const TIMEOUT_MS = 5_000;
+const TIMEOUT_MS = 10_000;
 
 interface RagResult {
   text: string;
@@ -121,7 +121,7 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
         query: args.query,
         version: "3",
         source: args.source,
-        topK: args.topK ?? 3,
+        topK: args.topK ?? 4,
         threshold: 0.5,
       }),
       signal: controller.signal,
