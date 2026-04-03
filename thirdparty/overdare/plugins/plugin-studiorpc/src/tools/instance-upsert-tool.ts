@@ -107,7 +107,7 @@ async function executeInstanceUpsert(
     return { added };
   });
 
-  await applyAndSave(cwd);
+  await applyAndSave();
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
   const addedGuids = fileResult.added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));

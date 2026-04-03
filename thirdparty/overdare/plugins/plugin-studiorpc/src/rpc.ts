@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import net from "node:net";
-import path from "node:path";
 import readline from "node:readline";
 import { loadOverdareConfig } from "./config.ts";
 
@@ -51,46 +49,12 @@ function resolvePort(): number {
  */
 /**
  * Apply pending level changes and save the file.
- *
- * Safety strategy:
- *   1. Rename `Lua/` → `Lua_Backup/` (preserves existing scripts)
- *   2. Call `level.apply`
- *   3a. On success — remove `Lua_Backup/` and save
- *   3b. On failure — restore `Lua_Backup/` back to `Lua/` and re-throw
+ * Returns the result of `level.apply`.
  */
-export async function applyAndSave(cwd: string): Promise<unknown> {
-  const luaDir = path.join(cwd, "Lua");
-  const backupDir = path.join(cwd, "Lua_Backup");
-
-  const hasLua = fs.existsSync(luaDir);
-
-  if (hasLua) {
-    // Clean up stale backup from a previous failed run
-    if (fs.existsSync(backupDir)) {
-      fs.rmSync(backupDir, { recursive: true, force: true });
-    }
-    fs.renameSync(luaDir, backupDir);
-  }
-
-  try {
-    const result = await call("level.apply", {});
-    // apply succeeded — clean up backup
-    if (hasLua) {
-      fs.rmSync(backupDir, { recursive: true, force: true });
-    }
-    await call("level.save.file", {});
-    return result;
-  } catch (err) {
-    // apply failed — restore backup
-    if (hasLua && fs.existsSync(backupDir)) {
-      // Remove any partial Lua/ that level.apply may have created
-      if (fs.existsSync(luaDir)) {
-        fs.rmSync(luaDir, { recursive: true, force: true });
-      }
-      fs.renameSync(backupDir, luaDir);
-    }
-    throw err;
-  }
+export async function applyAndSave(): Promise<unknown> {
+  const result = await call("level.apply", {});
+  await call("level.save.file", {});
+  return result;
 }
 
 export async function call(method: string, params?: Record<string, unknown>): Promise<unknown> {

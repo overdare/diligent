@@ -9,7 +9,7 @@ const levelApplyMock = mock(async () => ({ ok: true }));
 const levelSaveFileMock = mock(async () => "World file saved.");
 
 mock.module("../../src/rpc.ts", () => ({
-  applyAndSave: async (_cwd: string) => {
+  applyAndSave: async () => {
     const result = await levelApplyMock("level.apply", {});
     await levelSaveFileMock("level.save.file", {});
     return result;
