@@ -74,7 +74,7 @@ function toTreeNode(value: Record<string, unknown>): TreeNode | undefined {
   return { label, ...(children.length > 0 ? { children } : {}) };
 }
 
-export function buildLevelBrowseRender(result: unknown): ToolRenderPayload | undefined {
+export function buildLevelBrowseRender(result: unknown, args: Record<string, unknown>): ToolRenderPayload | undefined {
   const entries = Array.isArray(result)
     ? result
     : isRecord(result) && Array.isArray((result as Record<string, unknown>).level)
@@ -87,10 +87,29 @@ export function buildLevelBrowseRender(result: unknown): ToolRenderPayload | und
     return node ? [node] : [];
   });
   if (nodes.length === 0) return undefined;
+
+  const startGuid = readString(args.startGuid);
+  const classType = readString(args.classType);
+  const maxDepth = typeof args.maxDepth === "number" ? args.maxDepth : undefined;
+
+  const inputParts: string[] = ["browse"];
+  if (startGuid) inputParts.push(`from:${startGuid}`);
+  if (classType) inputParts.push(`class:${classType}`);
+  if (maxDepth !== undefined) inputParts.push(`depth:${maxDepth}`);
+  const inputSummary = clip(inputParts.join(" "));
+
+  const kvItems: { key: string; value: string }[] = [];
+  if (startGuid) kvItems.push({ key: "startGuid", value: startGuid });
+  if (classType) kvItems.push({ key: "classType", value: classType });
+  if (maxDepth !== undefined) kvItems.push({ key: "maxDepth", value: String(maxDepth) });
+
   return {
-    inputSummary: "level tree",
+    inputSummary,
     outputSummary: summarizeCount(nodes.length, "root node"),
-    blocks: [{ type: "tree", title: "Level tree", nodes }],
+    blocks: [
+      ...(kvItems.length > 0 ? [{ type: "key_value" as const, title: "Level browse", items: kvItems }] : []),
+      { type: "tree", title: "Level tree", nodes },
+    ],
   };
 }
 

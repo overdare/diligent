@@ -36,6 +36,7 @@ type MethodModule = {
 };
 
 type RenderBuilder = (ctx: {
+  args: Record<string, unknown>;
   normalizedArgs: Record<string, unknown>;
   output: string;
   result: unknown;
@@ -68,7 +69,7 @@ export const renderBuilders: Record<string, RenderBuilder> = {
     buildAssetManagerImageImportRender(result, normalizedArgs, output),
   studiorpc_action_sequencer_service_apply_json: ({ normalizedArgs, output }) =>
     buildActionSequencerApplyJsonRender(normalizedArgs, output),
-  studiorpc_level_browse: ({ result }) => buildLevelBrowseRender(result),
+  studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_script_add: ({ normalizedArgs, output }) => buildScriptAddRender(normalizedArgs, output),
   studiorpc_script_delete: ({ normalizedArgs, output }) =>

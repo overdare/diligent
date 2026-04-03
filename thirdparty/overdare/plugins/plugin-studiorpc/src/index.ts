@@ -61,7 +61,7 @@ export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
         }
         const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         const renderBuilder = renderBuilders[toolName];
-        const render = renderBuilder?.({ normalizedArgs, output, result });
+        const render = renderBuilder?.({ args: args as Record<string, unknown>, normalizedArgs, output, result });
 
         return {
           output,
