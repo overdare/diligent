@@ -36,6 +36,12 @@ export interface PluginHookInput {
   cwd: string;
   permission_mode?: string;
   user_id?: string;
+  /**
+   * Set to `true` when the current turn was triggered by a Stop hook that returned `blocked: true`.
+   * Plugins should check this field and avoid blocking again to prevent infinite re-run loops.
+   * Only present on Stop hook events; absent on UserPromptSubmit and other events.
+   */
+  stop_hook_active?: boolean;
   [key: string]: unknown;
 }
 
