@@ -1,6 +1,6 @@
 # TPA Template V4 — Architecture Index
 
-Third-Person Action game template for OVERDARE engine.
+Third-Person Action PvP game template for OVERDARE engine.
 Uses Action Sequence for skill timing. MVC + Data-Driven + Plugin architecture.
 
 ## Layers (top→bottom dependency, top = most edited)

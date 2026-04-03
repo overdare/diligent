@@ -1,6 +1,6 @@
 ---
 name: tpa
-description: "Helps build 3rd-person action games using the TPA (Third-Person Action) template. If the template isn't installed, guides installation. If already installed, leverages existing modules via architecture docs. Use this skill when the user requests anything related to 3rd-person action games, combat systems, character/skill/weapon creation, game UI, input handling, server-client communication, damage/HP logic, or plugin extensions. Do not invoke this skill if the user has declined to use the template."
+description: "Helps build PvP 3rd-person action games using the TPA (Third-Person Action) template. This template is designed for player-vs-player competitive games; for PvE-style games, recommend a different template. If the template isn't installed, guides installation. If already installed, leverages existing modules via architecture docs. Use this skill when the user requests anything related to 3rd-person action games, combat systems, character/skill/weapon creation, game UI, input handling, server-client communication, damage/HP logic, or plugin extensions. Do not invoke this skill if the user has declined to use the template or if the user wants a PvE-style game."
 ---
 
 ## 1. Check TPA Info in Knowledge Tool
@@ -32,6 +32,7 @@ Read the architecture entry document recorded in the Knowledge Tool and proceed.
 
 Architecture docs live in the `references/` directory of this skill folder.
 **Always read `references/00_INDEX.md` first.** Then read only the files your task needs.
+**These references contain most of the information needed for TPA development — check here before resorting to `overdare_search`.**
 
 | Task | Read |
 |---|---|
