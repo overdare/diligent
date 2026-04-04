@@ -1,4 +1,5 @@
 .PHONY: help test test-e2e lint lint-fix typecheck build build-all dev clean \
+       release-local \
        setup check-env config \
        web-dev web-build web-start \
        debug-dev debug-build \
@@ -24,6 +25,7 @@ help:
 	@echo "Build:"
 	@echo "  build           Build native binary (current platform)"
 	@echo "  build-all       Build for all platforms (linux/darwin/windows)"
+	@echo "  release-local   Build and install diligent into a user bin directory"
 	@echo "  web-build       Build web frontend (Vite)"
 	@echo "  debug-build     Build debug-viewer (Vite)"
 	@echo "  desktop-build   Build desktop app (Tauri)"
@@ -111,6 +113,29 @@ build:
 
 build-all:
 	bun run build:all
+
+release-local: build
+	@bin_dir="$$BIN_DIR"; \
+	if [ -z "$$bin_dir" ]; then \
+	  for candidate in $$(printf '%s\n' "$$PATH" | tr ':' '\n'); do \
+	    case "$$candidate" in \
+	      "$$HOME"/*) \
+	        case "$$candidate" in \
+	          */node_modules/.bin) ;; \
+	          *) bin_dir="$$candidate"; break ;; \
+	        esac ;; \
+	    esac; \
+	  done; \
+	fi; \
+	if [ -z "$$bin_dir" ]; then bin_dir="$$HOME/.local/bin"; fi; \
+	mkdir -p "$$bin_dir"; \
+	cp -f dist/diligent "$$bin_dir/diligent"; \
+	chmod +x "$$bin_dir/diligent"; \
+	echo "Released diligent locally to $$bin_dir/diligent"; \
+	case ":$$PATH:" in \
+	  *:"$$bin_dir":*) ;; \
+	  *) echo "Note: $$bin_dir is not currently on PATH. Add it to use 'diligent' directly." ;; \
+	esac
 
 clean:
 	rm -rf dist/
