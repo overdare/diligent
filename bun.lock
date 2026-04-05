@@ -150,6 +150,9 @@
     "thirdparty/overdare/plugins/plugin-analytics": {
       "name": "@overdare/plugin-analytics",
       "version": "0.1.0",
+      "dependencies": {
+        "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
+      },
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^5.7.0",
@@ -823,6 +826,8 @@
     "zod-to-json-schema": ["zod-to-json-schema@3.25.1", "", { "peerDependencies": { "zod": "^3.25 || ^4" } }, "sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA=="],
 
     "@diligent/debug-viewer/marked": ["marked@15.0.12", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
+
+    "@overdare/plugin-analytics/@diligent/plugin-sdk": ["@diligent/plugin-sdk@file:packages/plugin-sdk", { "dependencies": { "@diligent/protocol": "workspace:*", "zod": "^3.24.0" }, "devDependencies": { "@types/bun": "^1.3.0", "typescript": "^5.7.0" } }],
 
     "@overdare/plugin-studiorpc/@diligent/plugin-sdk": ["@diligent/plugin-sdk@file:packages/plugin-sdk", { "dependencies": { "@diligent/protocol": "workspace:*", "zod": "^3.24.0" }, "devDependencies": { "@types/bun": "^1.3.0", "typescript": "^5.7.0" } }],
 
