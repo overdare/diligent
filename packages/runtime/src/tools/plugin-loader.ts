@@ -45,6 +45,8 @@ export interface CollectedPluginHooks {
   onStop: PluginHookFn[];
 }
 
+const pluginHooksCache = new Map<string, CollectedPluginHooks>();
+
 /**
  * Collect lifecycle hook handlers exported by enabled plugins.
  *
@@ -52,12 +54,19 @@ export interface CollectedPluginHooks {
  *   export async function onUserPromptSubmit(input: PluginHookInput): Promise<PluginHookResult>
  *   export async function onStop(input: PluginHookInput): Promise<PluginHookResult>
  *
+ * Results are cached per (toolsConfig, cwd) tuple. The cache is invalidated when
+ * the serialized config key changes, which happens when plugin list or enabled state changes.
+ *
  * Plugins that fail to load are skipped silently (non-blocking).
  */
 export async function collectPluginHooks(
   toolsConfig: DiligentConfig["tools"],
   cwd: string,
 ): Promise<CollectedPluginHooks> {
+  const cacheKey = JSON.stringify({ toolsConfig: toolsConfig ?? null, cwd });
+  const cached = pluginHooksCache.get(cacheKey);
+  if (cached) return cached;
+
   const config = toolsConfig ?? {};
   const explicitPlugins = config.plugins ?? [];
 
@@ -88,6 +97,7 @@ export async function collectPluginHooks(
     }
   }
 
+  pluginHooksCache.set(cacheKey, result);
   return result;
 }
 
