@@ -82,11 +82,32 @@ export interface StreamOptions {
   turnStateRef?: { value: string | undefined };
 }
 
-export interface ToolDefinition {
+export interface FunctionToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
 }
+
+export interface ProviderBuiltinToolDefinition {
+  kind: "provider_builtin";
+  capability: "websearch" | "webfetch";
+  options?: {
+    maxUses?: number;
+    allowedDomains?: string[];
+    blockedDomains?: string[];
+    citationsEnabled?: boolean;
+    maxContentTokens?: number;
+    userLocation?: {
+      type: "approximate";
+      city?: string;
+      region?: string;
+      country?: string;
+      timezone?: string;
+    };
+  };
+}
+
+export type ToolDefinition = FunctionToolDefinition | ProviderBuiltinToolDefinition;
 
 // Provider error classification (D010)
 export type ProviderErrorType =

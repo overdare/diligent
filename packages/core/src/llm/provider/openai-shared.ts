@@ -3,7 +3,7 @@ import type { ResponseInputItem, ResponseInputMessageContentList } from "openai/
 import type { EventStream } from "../../event-stream";
 import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../../types";
 import { materializeUserContentBlocks } from "../image-io";
-import type { Model, ProviderEvent, ProviderResult, ToolDefinition } from "../types";
+import type { FunctionToolDefinition, Model, ProviderEvent, ProviderResult, ToolDefinition } from "../types";
 import { ProviderError } from "../types";
 
 export type ResponsesReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
@@ -106,13 +106,15 @@ export function buildTools(
   parameters: Record<string, unknown>;
   strict?: boolean;
 }> {
-  return tools.map((t) => ({
-    type: "function" as const,
-    name: t.name,
-    description: t.description,
-    parameters: { type: "object", ...t.inputSchema },
-    ...(strict !== undefined && { strict }),
-  }));
+  return tools
+    .filter((t): t is FunctionToolDefinition => !("kind" in t))
+    .map((t) => ({
+      type: "function" as const,
+      name: t.name,
+      description: t.description,
+      parameters: { type: "object", ...t.inputSchema },
+      ...(strict !== undefined && { strict }),
+    }));
 }
 
 export async function buildResponsesRequestBody(input: {

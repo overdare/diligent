@@ -21,9 +21,36 @@ export const UsageSchema = z.object({
 });
 export type Usage = z.infer<typeof UsageSchema>;
 
+// ── Web tool citation schemas (P061) ─────────────────────────────────────────
+
+export const WebSearchCitationSchema = z.object({
+  type: z.literal("web_search_citation"),
+  url: z.string(),
+  title: z.string().optional(),
+  citedText: z.string().optional(),
+  encryptedIndex: z.string().optional(),
+});
+export type WebSearchCitation = z.infer<typeof WebSearchCitationSchema>;
+
+export const DocumentCharCitationSchema = z.object({
+  type: z.literal("document_char_citation"),
+  documentIndex: z.number().int().optional(),
+  startCharIndex: z.number().int().optional(),
+  endCharIndex: z.number().int().optional(),
+  citedText: z.string().optional(),
+  encryptedIndex: z.string().optional(),
+});
+export type DocumentCharCitation = z.infer<typeof DocumentCharCitationSchema>;
+
+export const CitationSchema = z.discriminatedUnion("type", [WebSearchCitationSchema, DocumentCharCitationSchema]);
+export type Citation = z.infer<typeof CitationSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const TextBlockSchema = z.object({
   type: z.literal("text"),
   text: z.string(),
+  citations: z.array(CitationSchema).optional(),
 });
 export type TextBlock = z.infer<typeof TextBlockSchema>;
 
@@ -60,12 +87,65 @@ export const ToolCallBlockSchema = z.object({
 });
 export type ToolCallBlock = z.infer<typeof ToolCallBlockSchema>;
 
+// ── Provider-executed web tool blocks (P061) ─────────────────────────────────
+
+const ProviderNameEnumSchema = z.enum(["openai", "chatgpt", "anthropic"]);
+
+export const ProviderToolUseBlockSchema = z.object({
+  type: z.literal("provider_tool_use"),
+  id: z.string(),
+  provider: ProviderNameEnumSchema,
+  name: z.enum(["web_search", "web_fetch"]),
+  input: z.record(z.unknown()),
+});
+export type ProviderToolUseBlock = z.infer<typeof ProviderToolUseBlockSchema>;
+
+export const WebSearchResultBlockSchema = z.object({
+  type: z.literal("web_search_result"),
+  toolUseId: z.string(),
+  provider: ProviderNameEnumSchema,
+  results: z.array(
+    z.object({
+      url: z.string(),
+      title: z.string().optional(),
+      pageAge: z.string().optional(),
+      encryptedContent: z.string().optional(),
+    }),
+  ),
+  error: z.object({ code: z.string(), message: z.string().optional() }).optional(),
+});
+export type WebSearchResultBlock = z.infer<typeof WebSearchResultBlockSchema>;
+
+export const WebFetchResultBlockSchema = z.object({
+  type: z.literal("web_fetch_result"),
+  toolUseId: z.string(),
+  provider: ProviderNameEnumSchema,
+  url: z.string(),
+  document: z
+    .object({
+      mimeType: z.string(),
+      text: z.string().optional(),
+      base64Data: z.string().optional(),
+      title: z.string().optional(),
+      citationsEnabled: z.boolean().optional(),
+    })
+    .optional(),
+  retrievedAt: z.string().optional(),
+  error: z.object({ code: z.string(), message: z.string().optional() }).optional(),
+});
+export type WebFetchResultBlock = z.infer<typeof WebFetchResultBlockSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const ContentBlockSchema = z.union([
   TextBlockSchema,
   ImageBlockSchema,
   LocalImageBlockSchema,
   ThinkingBlockSchema,
   ToolCallBlockSchema,
+  ProviderToolUseBlockSchema,
+  WebSearchResultBlockSchema,
+  WebFetchResultBlockSchema,
 ]);
 export type ContentBlock = z.infer<typeof ContentBlockSchema>;
 

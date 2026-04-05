@@ -52,7 +52,9 @@ export {
   supportsThinkingNone,
 } from "./thinking-effort";
 export type {
+  FunctionToolDefinition,
   Model,
+  ProviderBuiltinToolDefinition,
   ProviderErrorType,
   ProviderEvent,
   ProviderResult,

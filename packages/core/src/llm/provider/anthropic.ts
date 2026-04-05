@@ -5,6 +5,7 @@ import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from 
 import { isNetworkError } from "../errors";
 import { materializeUserContentBlocks } from "../image-io";
 import type {
+  FunctionToolDefinition,
   Model,
   ProviderEvent,
   ProviderResult,
@@ -219,18 +220,26 @@ function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
         name: block.name,
         input: block.input,
       };
+    case "provider_tool_use":
+    case "web_search_result":
+    case "web_fetch_result":
+      // Provider-executed web tool blocks are not sent back as local tool calls.
+      // Full Anthropic serialization of these blocks is handled in P061 Task 6.
+      throw new Error(`Anthropic serialization of '${block.type}' blocks is not yet implemented`);
   }
 }
 
 function convertTools(tools: ToolDefinition[]): Anthropic.Tool[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: {
-      type: "object" as const,
-      ...t.inputSchema,
-    },
-  }));
+  return tools
+    .filter((t): t is FunctionToolDefinition => !("kind" in t))
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: {
+        type: "object" as const,
+        ...t.inputSchema,
+      },
+    }));
 }
 
 function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantMessage {

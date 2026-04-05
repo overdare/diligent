@@ -31,11 +31,13 @@ export {
 export type { OpenAIOAuthTokens } from "./auth/index";
 export { EventStream } from "./event-stream";
 export type {
+  FunctionToolDefinition,
   Model,
   ModelClass,
   ModelDefinition,
   NativeCompactFn,
   NativeCompactionLookup,
+  ProviderBuiltinToolDefinition,
   ProviderErrorType,
   ProviderEvent,
   ProviderName,
