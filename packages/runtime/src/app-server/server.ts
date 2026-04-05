@@ -11,7 +11,7 @@ import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
 import type { ChildStopInfo } from "../collab/types";
 import type { DiligentConfig } from "../config/schema";
-import { getLastAssistantMessage, getTurnUsage, runHooks, runPluginHooks } from "../hooks/runner";
+import { getLastAssistantMessage, getTurnUsage, runCombinedHooks } from "../hooks/runner";
 import type { DiligentPaths } from "../infrastructure";
 import {
   AgentEventSchema,
@@ -933,14 +933,7 @@ export class DiligentAppServer {
       user_id: info.userId,
     };
 
-    let stopResult: import("../hooks/runner").HookResult = { blocked: false };
-    if (stopShellHandlers.length > 0) {
-      stopResult = await runHooks(stopShellHandlers, stopInput, info.cwd);
-    }
-    if (!stopResult.blocked && stopPluginHandlers.length > 0) {
-      const pluginResult = await runPluginHooks(stopPluginHandlers, stopInput);
-      if (pluginResult.blocked) stopResult = pluginResult;
-    }
+    const stopResult = await runCombinedHooks(stopShellHandlers, stopPluginHandlers, stopInput, info.cwd);
 
     if (stopResult.blocked && stopResult.reason) {
       return {
