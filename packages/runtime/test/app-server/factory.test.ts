@@ -1,6 +1,7 @@
 // @summary Tests for createAppServerConfig factory — validates config assembly and override merging
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModelInfoList } from "@diligent/core/llm/models";
 import { ProviderManager } from "@diligent/core/llm/provider-manager";
@@ -121,17 +122,30 @@ describe("createAppServerConfig", () => {
     expect(config.compaction).toBeDefined();
   });
 
-  it("modelConfig.onModelChange updates runtimeConfig.model", () => {
-    const runtimeConfig = makeRuntimeConfig();
-    const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+  it("modelConfig.onModelChange updates runtimeConfig.model", async () => {
+    const originalHome = process.env.HOME;
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-factory-home-"));
+    tempHomes.push(fakeHome);
+    process.env.HOME = fakeHome;
 
-    config.modelConfig?.onModelChange("claude-haiku-4-5");
-    expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5");
+    try {
+      const runtimeConfig = makeRuntimeConfig();
+      const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+
+      config.modelConfig?.onModelChange("claude-haiku-4-5");
+      expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5");
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
   });
 
   it("does not persist thread-scoped model changes to the global config", async () => {
     const originalHome = process.env.HOME;
-    const fakeHome = await mkdtemp(join(process.cwd(), ".tmp-factory-home-"));
+    const fakeHome = await mkdtemp(join(tmpdir(), "diligent-factory-home-"));
     tempHomes.push(fakeHome);
     process.env.HOME = fakeHome;
 
