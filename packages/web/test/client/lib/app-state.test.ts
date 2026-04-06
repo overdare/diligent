@@ -237,6 +237,18 @@ test("consume_first_pending_steer removes head entry only", () => {
   expect(next.pendingSteers).toEqual(["b", "c"]);
 });
 
+test("compaction_error clears compacting state", () => {
+  const next = appReducer(
+    {
+      ...initialThreadState,
+      isCompacting: true,
+    },
+    { type: "compaction_error" },
+  );
+
+  expect(next.isCompacting).toBe(false);
+});
+
 test("resolveDraftModel prefers initial model when available", () => {
   const next = resolveDraftModel({
     initialModel: "gpt-5",

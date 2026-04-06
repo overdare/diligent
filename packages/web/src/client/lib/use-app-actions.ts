@@ -76,6 +76,32 @@ export async function prepareNewThreadForFirstMessage({
   return { threadId, history };
 }
 
+export async function runThreadCompaction({
+  rpc,
+  threadId,
+  mode,
+  dispatch,
+}: {
+  rpc: WebRpcClient;
+  threadId: string;
+  mode: Mode;
+  dispatch: Dispatch<AppAction>;
+}): Promise<void> {
+  try {
+    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId }, null);
+    const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
+      threadId,
+    });
+    dispatch({ type: "hydrate", payload: { threadId, mode, history } });
+  } catch (error) {
+    dispatch({ type: "compaction_error" });
+    dispatch({
+      type: "show_info_toast",
+      payload: error instanceof Error ? error.message : "Compaction failed.",
+    });
+  }
+}
+
 export function useAppActions({
   rpcRef,
   state,
@@ -254,21 +280,12 @@ export function useAppActions({
     void (async () => {
       const rpc = rpcRef.current;
       if (!rpc || !state.activeThreadId || state.isCompacting) return;
-      try {
-        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId: state.activeThreadId });
-        const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
-          threadId: state.activeThreadId,
-        });
-        dispatch({ type: "hydrate", payload: { threadId: state.activeThreadId, mode: state.mode, history } });
-      } catch (error) {
-        dispatch({
-          type: "compaction_error",
-        });
-        dispatch({
-          type: "show_info_toast",
-          payload: error instanceof Error ? error.message : "Compaction failed.",
-        });
-      }
+      await runThreadCompaction({
+        rpc,
+        threadId: state.activeThreadId,
+        mode: state.mode,
+        dispatch,
+      });
     })();
   }, [rpcRef, state.activeThreadId, state.mode, state.isCompacting, dispatch]);
 

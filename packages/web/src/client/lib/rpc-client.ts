@@ -42,7 +42,7 @@ type WebResult<M extends WebMethod> = Extract<DiligentClientResponse, { method: 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
+  timeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 interface PendingServerRequest {
@@ -102,7 +102,10 @@ export class WebRpcClient {
     this.emitConnection("disconnected");
   }
 
-  async initialize(params: RequestParams<"initialize">, timeoutMs = 30_000): Promise<RequestResult<"initialize">> {
+  async initialize(
+    params: RequestParams<"initialize">,
+    timeoutMs: number | null = 30_000,
+  ): Promise<RequestResult<"initialize">> {
     const result = await this.requestRaw("initialize", params, timeoutMs);
     this.resubscribeAll();
     return result as RequestResult<"initialize">;
@@ -111,17 +114,21 @@ export class WebRpcClient {
   async request<M extends Exclude<RequestMethod, "initialize">>(
     method: M,
     params: RequestParams<M>,
-    timeoutMs = 30_000,
+    timeoutMs: number | null = 30_000,
   ): Promise<RequestResult<M>> {
     const result = await this.requestRaw(method, params, timeoutMs);
     return result as RequestResult<M>;
   }
 
-  async webRequest<M extends WebMethod>(method: M, params: WebParams<M>, timeoutMs = 30_000): Promise<WebResult<M>> {
+  async webRequest<M extends WebMethod>(
+    method: M,
+    params: WebParams<M>,
+    timeoutMs: number | null = 30_000,
+  ): Promise<WebResult<M>> {
     return this.requestRaw(method, params, timeoutMs) as Promise<WebResult<M>>;
   }
 
-  async requestRaw(method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
+  async requestRaw(method: string, params: unknown, timeoutMs: number | null = 30_000): Promise<unknown> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error("WebSocket is not connected");
@@ -131,10 +138,13 @@ export class WebRpcClient {
     const payload: JSONRPCRequest = { id, method, params };
 
     return new Promise<unknown>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`RPC timeout for ${method}`));
-      }, timeoutMs);
+      const timeoutId =
+        timeoutMs == null
+          ? null
+          : setTimeout(() => {
+              this.pending.delete(id);
+              reject(new Error(`RPC timeout for ${method}`));
+            }, timeoutMs);
 
       this.pending.set(id, { resolve, reject, timeoutId });
       ws.send(JSON.stringify(payload));
@@ -314,7 +324,7 @@ export class WebRpcClient {
     const id = Number(response.id);
     const pending = this.pending.get(id);
     if (pending) {
-      clearTimeout(pending.timeoutId);
+      if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
       this.pending.delete(id);
 
       if ("error" in response) {
@@ -344,7 +354,7 @@ export class WebRpcClient {
 
   private rejectPending(reason: string): void {
     for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timeoutId);
+      if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
       pending.reject(new Error(reason));
       this.pending.delete(id);
     }

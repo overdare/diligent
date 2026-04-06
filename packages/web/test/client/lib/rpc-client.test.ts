@@ -149,6 +149,33 @@ test("sends raw json-rpc request and resolves response", async () => {
   client.disconnect();
 });
 
+test("request accepts null timeout for long-running rpc calls", async () => {
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+  const client = new WebRpcClient("ws://example.test/rpc");
+  await client.connect();
+  await client.initialize({
+    clientName: "diligent-web",
+    clientVersion: "0.0.1",
+    protocolVersion: 1,
+  });
+
+  const rawPromise = client.requestRaw("slow/method", { ok: true }, null);
+  const sent = FakeWebSocket.instances[0]?.sent.map((entry) => JSON.parse(entry));
+  const request = sent?.find((entry) => entry.method === "slow/method");
+  expect(request?.id).toBeDefined();
+
+  FakeWebSocket.instances[0]!.onmessage?.({
+    data: JSON.stringify({
+      id: request!.id,
+      result: { ok: true },
+    }),
+  });
+
+  await expect(rawPromise).resolves.toEqual({ ok: true });
+  client.disconnect();
+});
+
 test("initialize result is the bootstrap source and triggers resubscribe", async () => {
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 

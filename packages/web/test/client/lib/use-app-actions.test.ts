@@ -1,8 +1,13 @@
 // @summary Tests for web app action helpers that decide which composer input state to clear on send and first-thread setup
 
 import { expect, mock, test } from "bun:test";
+import type { Mode } from "@diligent/protocol";
 import type { PendingImage } from "../../../src/client/lib/app-state";
-import { clearComposerInputAfterSend, prepareNewThreadForFirstMessage } from "../../../src/client/lib/use-app-actions";
+import {
+  clearComposerInputAfterSend,
+  prepareNewThreadForFirstMessage,
+  runThreadCompaction,
+} from "../../../src/client/lib/use-app-actions";
 
 test("clearComposerInputAfterSend clears draft input when sending first message from new conversation", () => {
   const clearThreadInput = mock(() => {});
@@ -99,4 +104,85 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
       delete (globalThis as { window?: Window }).window;
     }
   }
+});
+
+test("runThreadCompaction waits without client RPC timeout and hydrates after success", async () => {
+  const request = mock(async (method: string, params: unknown, timeoutMs?: number) => {
+    if (method === "thread/compact/start") {
+      expect(params).toEqual({ threadId: "thread-1" });
+      expect(timeoutMs).toBeNull();
+      return { compacted: true };
+    }
+    if (method === "thread/read") {
+      expect(params).toEqual({ threadId: "thread-1" });
+      return {
+        cwd: "/repo",
+        items: [],
+        entryCount: 1,
+        isRunning: false,
+        currentEffort: "medium",
+        currentModel: "gpt-5",
+      };
+    }
+    throw new Error(`unexpected method: ${method}`);
+  });
+  const dispatch = mock(() => {});
+  const rpc = { request } as never;
+
+  await runThreadCompaction({
+    rpc,
+    threadId: "thread-1",
+    mode: "default" as Mode,
+    dispatch,
+  });
+
+  expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/compact/start", "thread/read"]);
+  expect(dispatch.mock.calls).toEqual([
+    [
+      {
+        type: "hydrate",
+        payload: {
+          threadId: "thread-1",
+          mode: "default",
+          history: {
+            cwd: "/repo",
+            items: [],
+            entryCount: 1,
+            isRunning: false,
+            currentEffort: "medium",
+            currentModel: "gpt-5",
+          },
+        },
+      },
+    ],
+  ]);
+});
+
+test("runThreadCompaction surfaces compaction request errors and clears compacting state", async () => {
+  const request = mock(async () => {
+    throw new Error("RPC timeout for thread/compact/start");
+  });
+  const dispatch = mock(() => {});
+  const rpc = { request } as never;
+
+  await runThreadCompaction({
+    rpc,
+    threadId: "thread-1",
+    mode: "default" as Mode,
+    dispatch,
+  });
+
+  expect(dispatch.mock.calls).toEqual([
+    [
+      {
+        type: "compaction_error",
+      },
+    ],
+    [
+      {
+        type: "show_info_toast",
+        payload: "RPC timeout for thread/compact/start",
+      },
+    ],
+  ]);
 });
