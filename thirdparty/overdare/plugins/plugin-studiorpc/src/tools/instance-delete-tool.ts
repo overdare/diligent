@@ -4,6 +4,7 @@ import * as instanceDelete from "../methods/instance.delete.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
 import { buildInstanceDeleteRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
+import type { WriteLock } from "../write-lock.ts";
 import {
   findNodeByActorGuid,
   isRecord,
@@ -18,6 +19,7 @@ async function executeInstanceDelete(
   args: Record<string, unknown>,
   ctx: ToolContext,
   cwd: string,
+  writeLock: WriteLock,
 ): Promise<ToolResult> {
   const toolName = "studiorpc_instance_delete";
   const parsedArgs = instanceDelete.parseArgs(args);
@@ -35,6 +37,18 @@ async function executeInstanceDelete(
     };
   }
 
+  const release = await writeLock.acquire();
+  try {
+    return await executeInstanceDeleteInner(parsedArgs, cwd);
+  } finally {
+    release();
+  }
+}
+
+async function executeInstanceDeleteInner(
+  parsedArgs: ReturnType<typeof instanceDelete.parseArgs>,
+  cwd: string,
+): Promise<ToolResult> {
   const fileResult = readAndWriteOvdrjm(cwd, (rootDoc) => {
     const root = rootDoc.Root;
     if (!isRecord(root)) {
@@ -78,13 +92,13 @@ async function executeInstanceDelete(
   };
 }
 
-export function createInstanceDeleteTool(cwd: string): Tool {
+export function createInstanceDeleteTool(cwd: string, writeLock: WriteLock): Tool {
   return {
     name: "studiorpc_instance_delete",
     description: instanceDelete.description,
     parameters: instanceDelete.params,
     async execute(args, ctx) {
-      return executeInstanceDelete(args, ctx, cwd);
+      return executeInstanceDelete(args, ctx, cwd, writeLock);
     },
   };
 }

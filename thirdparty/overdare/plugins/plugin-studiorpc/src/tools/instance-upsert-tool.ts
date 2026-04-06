@@ -4,6 +4,7 @@ import * as instanceUpsert from "../methods/instance.upsert.ts";
 import { collectUiDiagnostics } from "../methods/instance.upsert.ts";
 import { buildInstanceUpsertRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
+import type { WriteLock } from "../write-lock.ts";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
@@ -45,6 +46,7 @@ async function executeInstanceUpsert(
   args: Record<string, unknown>,
   ctx: ToolContext,
   cwd: string,
+  writeLock: WriteLock,
 ): Promise<ToolResult> {
   const toolName = "studiorpc_instance_upsert";
   const parsedArgs = instanceUpsert.parseArgs(args);
@@ -62,6 +64,18 @@ async function executeInstanceUpsert(
     };
   }
 
+  const release = await writeLock.acquire();
+  try {
+    return await executeInstanceUpsertInner(parsedArgs, cwd);
+  } finally {
+    release();
+  }
+}
+
+async function executeInstanceUpsertInner(
+  parsedArgs: ReturnType<typeof instanceUpsert.parseArgs>,
+  cwd: string,
+): Promise<ToolResult> {
   let ovdrjmRoot: OvdrjmNode | undefined;
 
   const fileResult = readAndWriteOvdrjm(cwd, (rootDoc) => {
@@ -145,14 +159,14 @@ async function executeInstanceUpsert(
   };
 }
 
-export function createInstanceUpsertTool(cwd: string): Tool {
+export function createInstanceUpsertTool(cwd: string, writeLock: WriteLock): Tool {
   return {
     name: toToolName(instanceUpsert.method),
     description: instanceUpsert.description,
     parameters: instanceUpsert.params,
     parseArgs: (raw) => instanceUpsert.parseArgs(raw as Record<string, unknown>),
     async execute(args, ctx) {
-      return executeInstanceUpsert(args, ctx, cwd);
+      return executeInstanceUpsert(args, ctx, cwd, writeLock);
     },
   };
 }

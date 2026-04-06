@@ -4,6 +4,7 @@ import * as instanceMove from "../methods/instance.move.ts";
 import { serviceClassEnum } from "../methods/instance.params.ts";
 import { buildInstanceMoveRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
+import type { WriteLock } from "../write-lock.ts";
 import {
   findNodeByActorGuid,
   isRecord,
@@ -14,7 +15,12 @@ import {
 
 const serviceClasses = new Set<string>(serviceClassEnum.options);
 
-async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolContext, cwd: string): Promise<ToolResult> {
+async function executeInstanceMove(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  cwd: string,
+  writeLock: WriteLock,
+): Promise<ToolResult> {
   const toolName = "studiorpc_instance_move";
   const parsedArgs = instanceMove.parseArgs(args);
 
@@ -31,6 +37,18 @@ async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolConte
     };
   }
 
+  const release = await writeLock.acquire();
+  try {
+    return await executeInstanceMoveInner(parsedArgs, cwd);
+  } finally {
+    release();
+  }
+}
+
+async function executeInstanceMoveInner(
+  parsedArgs: ReturnType<typeof instanceMove.parseArgs>,
+  cwd: string,
+): Promise<ToolResult> {
   const fileResult = readAndWriteOvdrjm(cwd, (rootDoc) => {
     const root = rootDoc.Root;
     if (!isRecord(root)) {
@@ -84,13 +102,13 @@ async function executeInstanceMove(args: Record<string, unknown>, ctx: ToolConte
   };
 }
 
-export function createInstanceMoveTool(cwd: string): Tool {
+export function createInstanceMoveTool(cwd: string, writeLock: WriteLock): Tool {
   return {
     name: "studiorpc_instance_move",
     description: instanceMove.description,
     parameters: instanceMove.params,
     async execute(args, ctx) {
-      return executeInstanceMove(args, ctx, cwd);
+      return executeInstanceMove(args, ctx, cwd, writeLock);
     },
   };
 }

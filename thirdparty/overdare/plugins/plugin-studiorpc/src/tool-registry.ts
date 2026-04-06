@@ -2,7 +2,8 @@
 import type { ToolRenderPayload } from "@diligent/plugin-sdk";
 import type { z } from "zod";
 import * as actionSequencerApplyJson from "./methods/action-sequencer-service.apply-json.ts";
-import * as assetDrawerImport from "./methods/asset-drawer.import.ts";
+// biome-ignore lint/correctness/noUnusedImports: temporarily disabled — kept for easy re-enable
+import * as _assetDrawerImport from "./methods/asset-drawer.import.ts";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import.ts";
 import * as gamePlay from "./methods/game.play.ts";
 import * as gameStop from "./methods/game.stop.ts";
@@ -11,8 +12,9 @@ import * as levelSaveFile from "./methods/level.save.file.ts";
 import * as scriptAdd from "./methods/script.add.ts";
 import * as scriptDelete from "./methods/script.delete.ts";
 import {
+  // biome-ignore lint/correctness/noUnusedImports: temporarily disabled — kept for easy re-enable
+  buildAssetDrawerImportRender as _buildAssetDrawerImportRender,
   buildActionSequencerApplyJsonRender,
-  buildAssetDrawerImportRender,
   buildAssetManagerImageImportRender,
   buildDeleteRender,
   buildGamePlayRender,
@@ -43,7 +45,7 @@ type RenderBuilder = (ctx: {
 }) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
-  assetDrawerImport,
+  // _assetDrawerImport, // temporarily disabled
   assetManagerImageImport,
   actionSequencerApplyJson,
   levelBrowse,
@@ -56,7 +58,7 @@ export const methodModules: MethodModule[] = [
 
 /** Methods that mutate the level and should trigger an automatic save after execution. */
 export const mutatingMethods = new Set([
-  assetDrawerImport.method,
+  // _assetDrawerImport.method, // temporarily disabled
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
   scriptAdd.method,
@@ -64,7 +66,7 @@ export const mutatingMethods = new Set([
 ]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
-  studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
+  // studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => _buildAssetDrawerImportRender(normalizedArgs, output), // temporarily disabled
   studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
     buildAssetManagerImageImportRender(result, normalizedArgs, output),
   studiorpc_action_sequencer_service_apply_json: ({ normalizedArgs, output }) =>
