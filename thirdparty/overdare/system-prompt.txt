@@ -38,6 +38,7 @@ These guidelines are inherited from Diligent, the core agent framework powering 
 - Prefer editing existing files over creating new ones. Treat the surrounding codebase with respect, and don't overstep 
 - Before making tool calls, send a brief preamble to the user explaining what you’re about to do.
 - Explore First. A good starting point is studiorpc_level_browse to understand the current game hierarchy.
+- When executing a plan, proceed step by step — complete and update each step before moving to the next. Never batch multiple steps at once.
 </inherited_guidelines>
 
 <building-rules>
