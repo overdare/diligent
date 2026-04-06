@@ -122,4 +122,27 @@ describe("apply_patch tool", () => {
     expect(result.metadata?.error).toBe(true);
     expect(result.output).toContain("Patch paths must be relative");
   });
+
+  test("applies same-file multiple hunks correctly even when order is reversed", async () => {
+    const target = join(tmpDir, "multi.txt");
+    await writeFile(target, "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", "utf-8");
+
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: multi.txt",
+      "@@",
+      "-h",
+      "+H",
+      "+H2",
+      "@@",
+      "-b",
+      "+B",
+      "+B2",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(target, "utf-8")).toBe("a\nB\nB2\nc\nd\ne\nf\ng\nH\nH2\ni\nj\n");
+  });
 });

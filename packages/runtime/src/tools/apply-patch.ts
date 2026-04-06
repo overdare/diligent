@@ -391,11 +391,11 @@ function deriveNewContent(filePath: string, content: string, chunks: UpdateChunk
 
   for (const chunk of chunks) {
     if (chunk.context) {
-      const contextIndex = seekSequence(original, [chunk.context], lineIndex);
+      const contextIndex = seekSequenceWithFallback(original, [chunk.context], lineIndex);
       if (contextIndex === -1) {
         throw new Error(`Failed to find context '${chunk.context}' in ${filePath}`);
       }
-      lineIndex = contextIndex + 1;
+      lineIndex = Math.max(lineIndex, contextIndex + 1);
     }
 
     if (chunk.oldLines.length === 0) {
@@ -406,14 +406,14 @@ function deriveNewContent(filePath: string, content: string, chunks: UpdateChunk
 
     let pattern = chunk.oldLines;
     let replacement = chunk.newLines;
-    let found = seekSequence(original, pattern, lineIndex, chunk.isEndOfFile);
+    let found = seekSequenceWithFallback(original, pattern, lineIndex, chunk.isEndOfFile);
 
     if (found === -1 && pattern.length > 0 && pattern[pattern.length - 1] === "") {
       pattern = pattern.slice(0, -1);
       if (replacement.length > 0 && replacement[replacement.length - 1] === "") {
         replacement = replacement.slice(0, -1);
       }
-      found = seekSequence(original, pattern, lineIndex, chunk.isEndOfFile);
+      found = seekSequenceWithFallback(original, pattern, lineIndex, chunk.isEndOfFile);
     }
 
     if (found === -1) {
@@ -421,8 +421,10 @@ function deriveNewContent(filePath: string, content: string, chunks: UpdateChunk
     }
 
     replacements.push([found, pattern.length, replacement]);
-    lineIndex = found + pattern.length;
+    lineIndex = Math.max(lineIndex, found + pattern.length);
   }
+
+  replacements.sort((lhs, rhs) => lhs[0] - rhs[0]);
 
   const next = [...original];
   for (let i = replacements.length - 1; i >= 0; i--) {
@@ -432,6 +434,13 @@ function deriveNewContent(filePath: string, content: string, chunks: UpdateChunk
 
   if (next.length === 0) return "";
   return `${next.join("\n")}\n`;
+}
+
+function seekSequenceWithFallback(lines: string[], pattern: string[], start: number, eof = false): number {
+  const primary = seekSequence(lines, pattern, start, eof);
+  if (primary !== -1) return primary;
+  if (start <= 0) return -1;
+  return seekSequence(lines, pattern, 0, eof);
 }
 
 function normalizeUnicode(value: string): string {
