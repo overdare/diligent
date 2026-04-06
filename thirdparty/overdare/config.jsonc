@@ -6,9 +6,7 @@
   "tools": {
     "builtin": {
       "bash": false,
-      "edit": false,
-      "multi_edit": false,
-      "write": false
+      "web_action": false
     }
   }
 }
