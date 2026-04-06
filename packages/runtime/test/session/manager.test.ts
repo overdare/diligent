@@ -81,6 +81,16 @@ async function setupDir(): Promise<string> {
   return dir;
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 500): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManagerConfig {
   return {
     cwd: dir,
@@ -229,6 +239,131 @@ describe("SessionManager", () => {
 
     expect(mgr.getContext().map((msg) => msg.role)).toEqual(["user", "assistant"]);
     expect(mgr.entryCount).toBe(2);
+  });
+
+  test("run() persists assistant tool requests before tool execution finishes", async () => {
+    const dir = await setupDir();
+    let releaseTool: (() => void) | null = null;
+    const blockingTool: Tool = {
+      name: "hold",
+      description: "Block until released",
+      parameters: z.object({}),
+      async execute() {
+        await new Promise<void>((resolve) => {
+          releaseTool = resolve;
+        });
+        return { output: "released" };
+      },
+    };
+
+    let providerCallCount = 0;
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [blockingTool], {
+        effort: "medium",
+        llmMsgStreamFn: ((_model, _context, _options) => {
+          if (providerCallCount++ === 0) {
+            return createProviderEventStream(
+              makeAssistantMessage([{ type: "tool_call", id: "tc_hold", name: "hold", input: {} }], "tool_use"),
+            );
+          }
+
+          return createProviderEventStream(makeAssistant("done"));
+        }) as StreamFunction,
+      }),
+    });
+    await mgr.create();
+
+    const runPromise = mgr.run({ role: "user", content: "run hold", timestamp: Date.now() });
+
+    await waitFor(() => releaseTool !== null);
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].type).toBe("message");
+    expect(entries[0]?.type === "message" ? entries[0].message.role : null).toBe("user");
+    expect(entries[1]?.type === "message" ? entries[1].message.role : null).toBe("assistant");
+    if (entries[1]?.type === "message" && entries[1].message.role === "assistant") {
+      expect(entries[1].message.stopReason).toBe("tool_use");
+      expect(entries[1].message.content.some((block) => block.type === "tool_call")).toBe(true);
+    }
+
+    releaseTool?.();
+    await runPromise;
+    await mgr.waitForWrites();
+  });
+
+  test("run() persists tool results before the final assistant message completes", async () => {
+    const dir = await setupDir();
+    const fastTool: Tool = {
+      name: "echo",
+      description: "Return a fixed result",
+      parameters: z.object({}),
+      async execute() {
+        return { output: "tool-finished" };
+      },
+    };
+
+    let releaseFinalAssistant: (() => void) | null = null;
+    let providerCallCount = 0;
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [fastTool], {
+        effort: "medium",
+        llmMsgStreamFn: ((_model, _context, _options) => {
+          if (providerCallCount++ === 0) {
+            return createProviderEventStream(
+              makeAssistantMessage([{ type: "tool_call", id: "tc_echo", name: "echo", input: {} }], "tool_use"),
+            );
+          }
+
+          const stream = new EventStream<ProviderEvent, ProviderResult>(
+            (event) => event.type === "done" || event.type === "error",
+            (event) => {
+              if (event.type === "done") return { message: event.message };
+              throw (event as { type: "error"; error: Error }).error;
+            },
+          );
+
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({ type: "text_delta", delta: "waiting" });
+          });
+
+          releaseFinalAssistant = () => {
+            stream.push({ type: "done", stopReason: "end_turn", message: makeAssistant("final answer") });
+          };
+          return stream;
+        }) as StreamFunction,
+      }),
+    });
+    await mgr.create();
+
+    const runPromise = mgr.run({ role: "user", content: "run echo", timestamp: Date.now() });
+
+    await waitFor(() => releaseFinalAssistant !== null);
+    await mgr.waitForWrites();
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries).toHaveLength(3);
+    expect(entries[0]?.type === "message" ? entries[0].message.role : null).toBe("user");
+    expect(entries[1]?.type === "message" ? entries[1].message.role : null).toBe("assistant");
+    expect(entries[2]?.type === "message" ? entries[2].message.role : null).toBe("tool_result");
+    if (entries[2]?.type === "message" && entries[2].message.role === "tool_result") {
+      expect(entries[2].message.toolName).toBe("echo");
+      expect(entries[2].message.output).toBe("tool-finished");
+    }
+
+    releaseFinalAssistant?.();
+    await runPromise;
+    await mgr.waitForWrites();
+
+    const finalSession = await readSessionFile(mgr.sessionPath!);
+    expect(finalSession.entries).toHaveLength(4);
+    expect(finalSession.entries[3]?.type === "message" ? finalSession.entries[3].message.role : null).toBe("assistant");
   });
 
   test("resume() loads session from disk", async () => {

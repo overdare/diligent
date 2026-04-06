@@ -40,6 +40,7 @@ export interface RuntimeConfig {
     enabled: boolean;
     reservePercent: number;
     keepRecentTokens: number;
+    timeoutMs: number;
   };
   permissionEngine: PermissionEngine;
   providerManager: ProviderManager;
@@ -181,6 +182,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
       enabled: config.compaction?.enabled ?? true,
       reservePercent: config.compaction?.reservePercent ?? 14,
       keepRecentTokens: config.compaction?.keepRecentTokens ?? 20000,
+      timeoutMs: config.compaction?.timeoutMs ?? 180_000,
     },
     permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
     providerManager,

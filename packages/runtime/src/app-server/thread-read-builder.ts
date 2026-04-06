@@ -8,7 +8,7 @@ import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } fro
 import type { ThreadRuntime } from "./thread-handlers";
 
 export type ThreadReadTranscriptEntry =
-  | { type: "compaction"; id: string; timestamp: string; summary: string }
+  | { type: "compaction"; id: string; timestamp: string; summary: string; displaySummary?: string }
   | { type: "message"; id: string; timestamp: string; message: UserMessage | AssistantMessage | ToolResultMessage };
 
 function toSnapshotCollabStatus(status: { kind: string }): "running" | "completed" | "errored" | "shutdown" {
@@ -126,6 +126,7 @@ export function buildThreadReadItems(transcript: ThreadReadTranscriptEntry[]): T
         type: "compaction",
         itemId: entry.id,
         summary: typeof entry.summary === "string" ? entry.summary : "",
+        displaySummary: entry.displaySummary,
         timestamp: entryTimestamp,
         tokensBefore: 0,
         tokensAfter: 0,

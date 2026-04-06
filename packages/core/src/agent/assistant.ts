@@ -70,6 +70,7 @@ export async function streamAssistantMessage(
     };
     sessionId?: string;
     signal?: AbortSignal;
+    compactionSummary?: Record<string, unknown>;
   },
   runtime: {
     tools: Tool[];
@@ -83,6 +84,7 @@ export async function streamAssistantMessage(
     systemPrompt: runtime.systemPrompt,
     messages,
     tools: runtime.tools.map(toToolDefinition),
+    compactionSummary: request.compactionSummary,
   };
 
   const promptHashes = computePromptContextHashes(context);

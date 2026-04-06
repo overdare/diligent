@@ -1,10 +1,14 @@
 // @summary Builds model context and raw transcript views from tree-structured session entries with compaction support
 import { buildMessagesFromCompaction } from "@diligent/core/agent/compaction";
+import { resolveModel } from "@diligent/core/llm/models";
 import type { Message } from "@diligent/core/types";
+import type { AssistantMessage } from "@diligent/protocol";
 import type { CompactionEntry, SessionEntry } from "./types";
 
 export interface SessionContext {
   messages: Message[];
+  providerMessages: Message[];
+  compactionSummary?: Record<string, unknown>;
   currentModel?: { provider: string; modelId: string };
   currentEffort?: "none" | "low" | "medium" | "high" | "max";
 }
@@ -25,6 +29,7 @@ export type SessionTranscriptEntry =
       id: string;
       timestamp: string;
       summary: string;
+      displaySummary?: string;
     };
 
 function getPathEntries(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
@@ -70,7 +75,7 @@ export function buildSessionContext(
   const { includeCompactionSummary = true } = options;
   const path = getPathEntries(entries, leafId);
   if (path.length === 0) {
-    return { messages: [] };
+    return { messages: [], providerMessages: [] };
   }
   // Find the latest CompactionEntry on the path
   let lastCompaction: CompactionEntry | undefined;
@@ -84,18 +89,29 @@ export function buildSessionContext(
   }
 
   const messages: Message[] = [];
+  const providerMessages: Message[] = [];
   let currentModel: { provider: string; modelId: string } | undefined;
   let currentEffort: "none" | "low" | "medium" | "high" | "max" | undefined;
+  let lastAssistantModelId: string | undefined;
 
   if (lastCompaction && includeCompactionSummary) {
-    // Rebuild [recentUserMessages..., summaryMessage] — same structure as live compaction
-    messages.push(
-      ...buildMessagesFromCompaction(
+    if (lastCompaction.compactionSummary) {
+      if (lastCompaction.displaySummary?.trim()) {
+        messages.push({
+          role: "user",
+          content: lastCompaction.displaySummary,
+          timestamp: Date.parse(lastCompaction.timestamp),
+        });
+      }
+    } else if (lastCompaction.summary && lastCompaction.recentUserMessages) {
+      const rebuilt = buildMessagesFromCompaction(
         lastCompaction.recentUserMessages,
         lastCompaction.summary,
         Date.parse(lastCompaction.timestamp),
-      ),
-    );
+      );
+      messages.push(...rebuilt);
+      providerMessages.push(...rebuilt);
+    }
 
     // 3. Process entries AFTER compactionIndex only (new turns)
     for (let i = compactionIndex + 1; i < path.length; i++) {
@@ -104,6 +120,10 @@ export function buildSessionContext(
       switch (entry.type) {
         case "message":
           messages.push(entry.message);
+          providerMessages.push(entry.message);
+          if (entry.message.role === "assistant") {
+            lastAssistantModelId = (entry.message as AssistantMessage).model;
+          }
           break;
         case "model_change":
           currentModel = { provider: entry.provider, modelId: entry.modelId };
@@ -118,6 +138,10 @@ export function buildSessionContext(
       switch (entry.type) {
         case "message":
           messages.push(entry.message);
+          providerMessages.push(entry.message);
+          if (entry.message.role === "assistant") {
+            lastAssistantModelId = (entry.message as AssistantMessage).model;
+          }
           break;
         case "model_change":
           currentModel = { provider: entry.provider, modelId: entry.modelId };
@@ -131,9 +155,21 @@ export function buildSessionContext(
 
   return {
     messages,
-    currentModel,
+    providerMessages,
+    compactionSummary: lastCompaction?.compactionSummary,
+    currentModel: currentModel ?? resolveModelFromId(lastAssistantModelId),
     currentEffort,
   };
+}
+
+function resolveModelFromId(modelId: string | undefined): { provider: string; modelId: string } | undefined {
+  if (!modelId) return undefined;
+  try {
+    const model = resolveModel(modelId);
+    return { provider: model.provider, modelId: model.id };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -160,7 +196,8 @@ export function buildSessionTranscript(entries: SessionEntry[], leafId?: string 
           type: "compaction",
           id: entry.id,
           timestamp: entry.timestamp,
-          summary: entry.summary,
+          summary: entry.summary ?? entry.displaySummary ?? "Compacted",
+          displaySummary: entry.displaySummary,
         });
         break;
     }

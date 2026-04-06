@@ -5,13 +5,15 @@ export interface NativeCompactionInput {
   model: Model;
   systemPrompt: SystemSection[];
   messages: import("../../types").Message[];
+  compactionSummary?: Record<string, unknown>;
   sessionId?: string;
   signal?: AbortSignal;
 }
 
 export interface NativeCompactionSuccess {
   status: "ok";
-  summary: string;
+  summary?: string;
+  compactionSummary?: Record<string, unknown>;
 }
 
 export interface NativeCompactionUnsupported {

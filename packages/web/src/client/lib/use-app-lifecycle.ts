@@ -125,13 +125,6 @@ export function useAppRpcBindings({
         if (!notificationParams) {
           return;
         }
-        console.log("[App][thread-status] notification", {
-          notificationThreadId: notificationParams.threadId,
-          status: notificationParams.status,
-          activeThreadId: activeThreadIdRef.current,
-          currentUiThreadStatus: stateRef.current.threadStatus,
-          itemCount: stateRef.current.items.length,
-        });
         void refreshThreadList(rpc);
 
         const rehydrateThreadId = shouldRehydrateAfterIdleStatus(
@@ -141,16 +134,9 @@ export function useAppRpcBindings({
           activeThreadIdRef.current,
         );
         if (rehydrateThreadId) {
-          console.log("[App] thread/status/changed idle with in-flight items — re-hydrating thread", rehydrateThreadId);
           void rpc
             .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: rehydrateThreadId })
             .then((history) => {
-              console.log("[App][thread-status] rehydrate after idle notification", {
-                threadId: rehydrateThreadId,
-                isRunning: history.isRunning,
-                itemCount: history.items.length,
-                entryCount: history.entryCount,
-              });
               dispatch({
                 type: "hydrate",
                 payload: { threadId: rehydrateThreadId, mode: stateRef.current.mode, history },

@@ -370,6 +370,7 @@ describe("DiligentAppServer multi-connection (web)", () => {
         (m) => "method" in m && m.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED,
       );
       expect(notification).toBeTruthy();
+      expect((notification as { params: { summary: string } }).params.summary.length).toBeGreaterThan(0);
     });
   });
 });

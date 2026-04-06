@@ -160,7 +160,7 @@ export class AppSessionLifecycle {
 
     for (const item of thread.items) {
       if (item.type === "compaction") {
-        this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${item.summary}]${t.reset}`, ""]);
+        this.deps.chatView.addLines([`  ${t.dim}[Compacted: ${item.displaySummary ?? item.summary}]${t.reset}`, ""]);
         continue;
       }
       if (item.type === "userMessage") {

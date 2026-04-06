@@ -531,6 +531,7 @@ export const ThreadItemSchema = z.union([
     type: z.literal("compaction"),
     itemId: z.string(),
     summary: z.string(),
+    displaySummary: z.string().optional(),
     timestamp: z.number().int().optional(),
     tokensBefore: z.number().int().nonnegative(),
     tokensAfter: z.number().int().nonnegative(),

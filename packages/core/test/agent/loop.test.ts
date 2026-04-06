@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Agent } from "../../src/agent/agent";
 import type { CoreAgentEvent } from "../../src/agent/types";
 import { EventStream } from "../../src/event-stream";
+import type { NativeCompactFn, NativeCompactionInput } from "../../src/llm/provider/native-compaction";
 import type {
   Model,
   ProviderEvent,
@@ -398,5 +399,51 @@ describe("Agent loop", () => {
     expect(events.filter((event) => event.type === "tool_start")).toHaveLength(2);
     expect(events.filter((event) => event.type === "tool_end")).toHaveLength(1);
     expect(result.filter((message) => message.role === "tool_result")).toHaveLength(0);
+  });
+});
+
+describe("Agent compactionSummary persistence", () => {
+  test("prompt() persists compactionSummary produced by auto-compaction across calls", async () => {
+    const compactionSummary = { type: "compaction", encrypted_content: "opaque-blob" };
+
+    const nativeCompactFn: NativeCompactFn = async (_input: NativeCompactionInput) => ({
+      status: "ok",
+      summary: "compacted",
+      compactionSummary,
+    });
+
+    // contextWindow=100, reservePercent=90 → threshold=10 tokens
+    // The assistant mock returns usage={inputTokens:10, outputTokens:5, ...} = 15 total,
+    // which exceeds the threshold on the second prompt call, triggering auto-compaction.
+    const smallModel: Model = {
+      id: "test-model",
+      provider: "test",
+      contextWindow: 100,
+      maxOutputTokens: 50,
+    };
+
+    const assistantMsg = makeAssistant([{ type: "text", text: "ok" }]);
+    const streamFn = createMockStreamFunction([assistantMsg, assistantMsg]);
+
+    const agent = new Agent(smallModel, [{ label: "sys", content: "sys" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: streamFn,
+      llmCompactionFn: nativeCompactFn,
+      compaction: { reservePercent: 90, keepRecentTokens: 0 },
+    });
+
+    const userMsg = (text: string): Message => ({ role: "user", content: text, timestamp: Date.now() });
+
+    // First prompt: no compaction (conversation too small)
+    await agent.prompt(userMsg("first"));
+    const summaryAfterFirst = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
+    expect(summaryAfterFirst).toBeUndefined();
+
+    // Second prompt: conversation includes prior assistant message with usage=15 tokens > threshold=10
+    // Auto-compaction fires and the returned compactionSummary must be persisted on the Agent
+    await agent.prompt(userMsg("second"));
+    const summaryAfterSecond = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
+
+    expect(summaryAfterSecond).toEqual(compactionSummary);
   });
 });

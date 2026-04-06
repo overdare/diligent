@@ -67,10 +67,13 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           model: model.id,
           max_tokens: options.maxTokens ?? model.maxOutputTokens,
           system: systemBlocks,
-          messages: await convertMessages(context.messages),
+          messages: await convertMessages(context.messages, context.compactionSummary),
           ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
           ...thinkingConfig,
         } as Anthropic.MessageCreateParams;
+
+        if (context.compactionSummary) {
+        }
 
         if (process.env.ANTHROPIC_DEBUG_REQUEST === "1") {
           console.error("[anthropic.endpoint]", debugEndpoint);
@@ -169,8 +172,16 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
   };
 }
 
-async function convertMessages(messages: Message[]): Promise<Anthropic.MessageParam[]> {
+export async function convertMessages(
+  messages: Message[],
+  compactionSummary?: Record<string, unknown>,
+): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
+
+  const compactedUserMessage = toAnthropicCompactionUserMessage(compactionSummary);
+  if (compactedUserMessage) {
+    result.push(compactedUserMessage);
+  }
 
   for (const msg of messages) {
     if (msg.role === "user") {
@@ -213,6 +224,40 @@ async function convertMessages(messages: Message[]): Promise<Anthropic.MessagePa
   }
 
   return result;
+}
+
+function toAnthropicCompactionUserMessage(
+  compactionSummary?: Record<string, unknown>,
+): Anthropic.MessageParam | undefined {
+  if (!isRecord(compactionSummary)) return undefined;
+  if (compactionSummary.type !== "compaction") return undefined;
+  const content = typeof compactionSummary.content === "string" ? compactionSummary.content.trim() : "";
+  if (!content) return undefined;
+  return {
+    role: "user",
+    content: [{ type: "text", text: content }],
+  };
+}
+
+function ensureAnthropicCompactionConversationEndsWithUser(
+  messages: Anthropic.MessageParam[],
+): Anthropic.MessageParam[] {
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  if (lastUserIndex === -1) {
+    return [];
+  }
+
+  const normalized = messages.slice(0, lastUserIndex + 1);
+  if (lastUserIndex !== messages.length - 1) {
+  }
+  return normalized;
 }
 
 function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
@@ -338,9 +383,30 @@ function mapStopReason(reason: string | null): StopReason {
       return "tool_use";
     case "max_tokens":
       return "max_tokens";
+    case "compaction":
+      return "end_turn";
     default:
       return "end_turn";
   }
+}
+
+function extractAnthropicCompactionSummary(content: unknown): Record<string, unknown> | undefined {
+  if (!Array.isArray(content)) return undefined;
+  for (const rawBlock of content) {
+    if (!isRecord(rawBlock)) continue;
+    if (rawBlock.type !== "compaction") continue;
+    if (typeof rawBlock.content !== "string" || !rawBlock.content.trim()) continue;
+
+    const block: Record<string, unknown> = {
+      type: "compaction",
+      content: rawBlock.content,
+    };
+    if (isRecord(rawBlock.cache_control)) {
+      block.cache_control = rawBlock.cache_control;
+    }
+    return block;
+  }
+  return undefined;
 }
 
 // TODO: Track actual inputTokens for proactive compaction (D-compact)
@@ -529,11 +595,23 @@ function toAnthropicBlocks(sections: SystemSection[]): AnthropicTextBlock[] {
 }
 
 export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string): NativeCompactFn {
-  const endpoint = `${resolveAnthropicBaseUrl(baseUrl)}/messages/compact`;
+  const endpoint = `${resolveAnthropicBaseUrl(baseUrl)}/messages`;
   return async (input) => {
+    const rawMessages = await convertMessages(input.messages, input.compactionSummary);
+    const normalizedMessages = ensureAnthropicCompactionConversationEndsWithUser(rawMessages);
     const body: Record<string, unknown> = {
       model: input.model.id,
-      messages: await convertMessages(input.messages),
+      max_tokens: Math.max(256, Math.min(input.model.maxOutputTokens, 4_096)),
+      messages: normalizedMessages,
+      context_management: {
+        edits: [
+          {
+            type: "compact_20260112",
+            trigger: { type: "input_tokens", value: 50_000 },
+            pause_after_compaction: true,
+          },
+        ],
+      },
     };
     if (input.systemPrompt.length > 0) body.system = toAnthropicBlocks(input.systemPrompt);
 
@@ -543,21 +621,57 @@ export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "compact-2026-01-12",
       },
       body: JSON.stringify(body),
       signal: input.signal,
     });
 
     if (!response.ok) {
+      const errorDetails = await readErrorBody(response);
       if (response.status === 400 || response.status === 404 || response.status === 405 || response.status === 422) {
-        return { status: "unsupported", reason: `status_${response.status}` };
+        return {
+          status: "unsupported",
+          reason: errorDetails ? `status_${response.status} ${errorDetails}` : `status_${response.status}`,
+        };
       }
-      throw new Error(`Anthropic native compaction failed (${response.status})`);
+      throw new Error(
+        errorDetails
+          ? `Anthropic native compaction failed (${response.status}) ${errorDetails}`
+          : `Anthropic native compaction failed (${response.status})`,
+      );
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
-    const summary = typeof payload.summary === "string" ? payload.summary : undefined;
-    if (!summary?.trim()) return { status: "unsupported", reason: "missing_summary" };
-    return { status: "ok", summary };
+    const compactionSummary = extractAnthropicCompactionSummary(payload.content);
+    const summary = typeof compactionSummary?.content === "string" ? compactionSummary.content : undefined;
+    const stopReason = typeof payload.stop_reason === "string" ? payload.stop_reason : undefined;
+    const payloadKeys = Object.keys(payload).slice(0, 8).join(",") || "none";
+    if (!summary?.trim() || !compactionSummary) {
+      return {
+        status: "unsupported",
+        reason: `missing_compaction_block stop_reason=${stopReason ?? "-"} payload_keys=${payloadKeys}`,
+      };
+    }
+    return { status: "ok", summary, compactionSummary };
   };
+}
+
+async function readErrorBody(response: Response): Promise<string | undefined> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = (await response.json()) as Record<string, unknown>;
+      return JSON.stringify(payload);
+    } catch {
+      return undefined;
+    }
+  }
+
+  try {
+    const text = (await response.text()).trim();
+    return text || undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -33,6 +33,7 @@ export interface SessionManagerConfig {
     enabled: boolean;
     reservePercent: number;
     keepRecentTokens: number;
+    timeoutMs?: number;
   };
   knowledgePath?: string;
   sessionId?: string;
@@ -204,14 +205,25 @@ export class SessionManager {
     return buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {}).currentEffort;
   }
 
-  async compactNow(): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
+  async compactNow(): Promise<{
+    compacted: boolean;
+    entryCount: number;
+    tokensBefore: number;
+    tokensAfter: number;
+    summary: string;
+  }> {
     await this.waitForWrites();
     const context = buildSessionContext(this.state.getCommittedEntries(), this.state.getCommittedLeafId(), {});
-    const compactionConfig = this.config.compaction ?? { enabled: true, reservePercent: 16, keepRecentTokens: 20000 };
+    const compactionConfig = this.config.compaction ?? {
+      enabled: true,
+      reservePercent: 16,
+      keepRecentTokens: 20000,
+      timeoutMs: 180_000,
+    };
 
     const agentResult = this.resolveAgent();
     const agent = agentResult instanceof Promise ? await agentResult : agentResult;
-    agent.restore(context.messages);
+    agent.restoreCompactionState(context.providerMessages, context.compactionSummary);
     agent.setCompactionConfig({
       reservePercent: compactionConfig.reservePercent,
       keepRecentTokens: compactionConfig.keepRecentTokens,
@@ -220,15 +232,19 @@ export class SessionManager {
 
     let tokensBefore = 0;
     let tokensAfter = 0;
+    let summary = "";
     const unsub = agent.agentStream.subscribe((event: CoreAgentEvent) => {
       this.emitToListeners(event);
       if (event.type === "compaction_end") {
         tokensBefore = event.tokensBefore;
         tokensAfter = event.tokensAfter;
+        summary = event.summary;
         this.persistCompactionEntry({
           summary: event.summary,
+          displaySummary: event.compactionSummary ? "Compacted" : event.summary,
           recentUserMessages: selectForCompaction(context.messages, compactionConfig.keepRecentTokens)
             .recentUserMessages,
+          compactionSummary: event.compactionSummary,
           tokensBefore: event.tokensBefore,
           tokensAfter: event.tokensAfter,
         });
@@ -242,7 +258,7 @@ export class SessionManager {
     }
 
     await this.waitForWrites();
-    return { compacted: true, entryCount: this.entryCount, tokensBefore, tokensAfter };
+    return { compacted: true, entryCount: this.entryCount, tokensBefore, tokensAfter, summary };
   }
 
   appendModelChange(provider: string, modelId: string): void {
@@ -338,11 +354,12 @@ export class SessionManager {
       agent.setCompactionConfig({
         reservePercent: compactionConfig.reservePercent,
         keepRecentTokens: compactionConfig.keepRecentTokens,
+        timeoutMs: compactionConfig.timeoutMs,
       });
     }
 
     if (agent !== this._initializedAgent) {
-      agent.restore(context.messages);
+      agent.restoreCompactionState(context.providerMessages, context.compactionSummary);
       this._initializedAgent = agent;
     }
 
@@ -369,6 +386,10 @@ export class SessionManager {
       turnStager.handleEvent(event, keepRecentTokens);
       this.emitToListeners(event);
 
+      if (shouldFlushTurnProgress(event)) {
+        this.flushTurnProgress(turnStager);
+      }
+
       const snapshot = turnStager.getSnapshot();
       this.state.setPending(snapshot.entries, snapshot.leafId);
     });
@@ -384,7 +405,7 @@ export class SessionManager {
   }
 
   private commitRun(turnStager: TurnStager): void {
-    this.appendEntries(turnStager.getSnapshot().entries);
+    this.appendEntries(turnStager.flushPendingEntries());
   }
 
   private handleRunError(err: unknown, turnId?: string): void {
@@ -412,7 +433,9 @@ export class SessionManager {
 
   private persistCompactionEntry(event: {
     summary: string;
-    recentUserMessages: Message[];
+    displaySummary?: string;
+    recentUserMessages?: Message[];
+    compactionSummary?: Record<string, unknown>;
     tokensBefore: number;
     tokensAfter: number;
   }): void {
@@ -422,7 +445,9 @@ export class SessionManager {
       parentId: this.state.getCommittedLeafId(),
       timestamp: new Date().toISOString(),
       summary: event.summary,
+      displaySummary: event.compactionSummary ? "Compacted" : event.displaySummary,
       recentUserMessages: event.recentUserMessages,
+      compactionSummary: event.compactionSummary,
       tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter,
     };
@@ -510,36 +535,7 @@ export class SessionManager {
   }
 
   private handleUsageEvent(usage: { cacheReadTokens: number }): void {
-    const prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
-    if (usage.cacheReadTokens < prevCacheRead) {
-      const sessionEntryCount = this.state.getCommittedEntries().length;
-      const prevPromptHashes = this.prevPromptHashesBySession.get(this.persistence.sessionId) ?? [];
-      const currPromptHashes = this.currPromptHashesBySession.get(this.persistence.sessionId) ?? [];
-      const sharedPrefixCount = sharedPrefixLength(prevPromptHashes, currPromptHashes);
-      const fullyMatchedPrefix = sharedPrefixCount === Math.min(prevPromptHashes.length, currPromptHashes.length);
-      if (fullyMatchedPrefix) {
-        console.error(
-          "[SessionManager] Cache drop session=%s entries=%d: %d -> %d",
-          this.persistence.sessionId,
-          sessionEntryCount,
-          prevCacheRead,
-          usage.cacheReadTokens,
-        );
-      } else {
-        console.error(
-          "[SessionManager] Cache drop session=%s entries=%d: %d -> %d prefix=partial(%d/%d,%d) prevSig=%s currSig=%s",
-          this.persistence.sessionId,
-          sessionEntryCount,
-          prevCacheRead,
-          usage.cacheReadTokens,
-          sharedPrefixCount,
-          prevPromptHashes.length,
-          currPromptHashes.length,
-          prevPromptHashes.join("|"),
-          currPromptHashes.join("|"),
-        );
-      }
-    }
+    const _prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
     this.prevCacheReadBySession.set(this.persistence.sessionId, usage.cacheReadTokens);
   }
 
@@ -576,6 +572,7 @@ export class SessionManager {
   }
 
   private appendEntries(entries: SessionEntry[]): void {
+    if (entries.length === 0) return;
     this.state.appendCommitted(entries);
     this.persistence.appendMany(entries, (error, entry) => {
       const detail = entry.type === "message" ? entry.message.role : entry.type;
@@ -586,6 +583,13 @@ export class SessionManager {
         error instanceof Error ? error.message : String(error),
       );
     });
+  }
+
+  private flushTurnProgress(turnStager: TurnStager): void {
+    const entries = turnStager.flushPendingEntries();
+    if (entries.length === 0) return;
+    this.appendEntries(entries);
+    this.state.clearPending();
   }
 
   private emitToListeners(event: CoreAgentEvent): void {
@@ -649,11 +653,6 @@ function summarizeTailEntryIds(entries: SessionEntry[], count = 3): string {
     .join(",");
 }
 
-function sharedPrefixLength(a: readonly string[], b: readonly string[]): number {
-  const max = Math.min(a.length, b.length);
-  let index = 0;
-  while (index < max && a[index] === b[index]) {
-    index += 1;
-  }
-  return index;
+function shouldFlushTurnProgress(event: CoreAgentEvent): boolean {
+  return (event.type === "message_end" && event.message.stopReason === "tool_use") || event.type === "tool_end";
 }

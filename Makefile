@@ -130,6 +130,7 @@ release-local: build
 	if [ -z "$$bin_dir" ]; then bin_dir="$$HOME/.local/bin"; fi; \
 	mkdir -p "$$bin_dir"; \
 	cp -f dist/diligent "$$bin_dir/diligent"; \
+	if [ "$(shell uname -s)" = "Darwin" ]; then codesign --force --sign - "$$bin_dir/diligent"; fi; \
 	chmod +x "$$bin_dir/diligent"; \
 	echo "Released diligent locally to $$bin_dir/diligent"; \
 	case ":$$PATH:" in \

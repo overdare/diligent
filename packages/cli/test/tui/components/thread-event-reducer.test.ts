@@ -81,6 +81,26 @@ describe("reduceThreadEvent", () => {
     expect(result.state.items).toEqual([{ id: "compaction-item" }]);
   });
 
+  test("error clears busy and compaction state immediately", () => {
+    const result = reduceThreadEvent(
+      createState({
+        overlayStatus: { message: "Compacting…", kind: "default", startedAt: 1000 },
+        statusBeforeCompaction: "Thinking…",
+        isThreadBusy: true,
+        busyStartedAt: 1000,
+      }),
+      { type: "error", error: { message: "too small", name: "Error" }, fatal: false },
+      createDeps(2000),
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.state.isThreadBusy).toBe(false);
+    expect(result.state.busyStartedAt).toBeNull();
+    expect(result.state.statusBeforeCompaction).toBeNull();
+    expect(result.state.overlayStatus).toBeNull();
+    expect(result.state.items).toEqual([{ id: "error" }]);
+  });
+
   test("message_start resets assistant-stream state and opens markdown via effects", () => {
     const initial = createState();
     const result = reduceThreadEvent(initial, { type: "message_start" }, createDeps());

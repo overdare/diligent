@@ -251,6 +251,26 @@ test("context message renders checkpoint language and expandable summary area", 
   expect(html).toContain('aria-expanded="false"');
 });
 
+test("assistant message can suppress thinking block during compaction", () => {
+  const html = renderToStaticMarkup(
+    <AssistantMessage
+      suppressThinking
+      item={{
+        id: "assistant-thinking-hidden",
+        kind: "assistant",
+        text: "",
+        thinking: "internal reasoning",
+        contentBlocks: [],
+        thinkingDone: false,
+        timestamp: 1,
+        reasoningDurationMs: 0,
+      }}
+    />,
+  );
+
+  expect(html).toBe('<div class="pb-1"></div>');
+});
+
 test("empty state renders connect CTA when provider is not configured", () => {
   const html = renderToStaticMarkup(
     <EmptyState hasProvider={false} oauthPending={false} onOpenProviders={() => {}} onQuickConnectChatGPT={() => {}} />,
@@ -405,6 +425,42 @@ test("input dock renders pending image preview and add-images action", () => {
   expect(html).toContain('placeholder="Ask anything or attach images…"');
   expect(html).toContain("minimal");
   expect(html).toContain("minimal");
+});
+
+test("input dock compaction menu does not show compacting label swap", () => {
+  const html = renderToStaticMarkup(
+    <InputDock
+      input=""
+      onInputChange={() => {}}
+      onSend={() => {}}
+      onSteer={() => {}}
+      onInterrupt={() => {}}
+      onCompactionClick={() => {}}
+      isCompacting={true}
+      canSend={true}
+      canSteer={true}
+      threadStatus="idle"
+      mode="default"
+      onModeChange={() => {}}
+      effort="medium"
+      onEffortChange={() => {}}
+      currentModel="gpt-5"
+      availableModels={[]}
+      onModelChange={() => {}}
+      usage={{ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0 }}
+      currentContextTokens={0}
+      contextWindow={0}
+      hasProvider={true}
+      supportsVision={false}
+      supportsThinking={false}
+      pendingImages={[]}
+      isUploadingImages={false}
+      onAddImages={() => {}}
+      onRemoveImage={() => {}}
+    />,
+  );
+
+  expect(html).not.toContain("Compacting…");
 });
 
 test("input dock shows uploading state and disables send affordance", () => {

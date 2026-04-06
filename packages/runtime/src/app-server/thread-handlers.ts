@@ -290,7 +290,7 @@ export async function handleThreadRead(
 export async function handleThreadCompactStart(
   ctx: ThreadHandlersContext,
   threadId?: string,
-): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number }> {
+): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number; summary: string }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   if (runtime.isRunning) throw new Error("Cannot compact while a turn is running");
 
@@ -313,9 +313,23 @@ export async function handleThreadCompactStart(
         entryCount: result.entryCount,
         tokensBefore: result.tokensBefore,
         tokensAfter: result.tokensAfter,
+        summary: result.summary,
       },
     });
     return result;
+  } catch (error) {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      params: {
+        threadId: runtime.id,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "Error",
+        },
+        fatal: false,
+      },
+    });
+    throw error;
   } finally {
     runtime.isRunning = false;
     await ctx.emit({
@@ -341,6 +355,15 @@ export async function handleTurnStart(
   runtime.runningEffortSnapshot = runtime.effort;
   runtime.runningModelIdSnapshot = params.model ?? runtime.modelId;
   runtime.currentTurnUserId = ctx.getUserId(connectionId);
+
+  const effectiveModelId = runtime.runningModelIdSnapshot;
+  const lastRecordedModelId = runtime.manager.getCurrentModel()?.modelId;
+  if (effectiveModelId !== lastRecordedModelId) {
+    const model = resolveModel(effectiveModelId);
+    runtime.manager.appendModelChange(model.provider, model.id);
+    runtime.modelId = effectiveModelId;
+  }
+
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
 

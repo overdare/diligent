@@ -19,6 +19,8 @@ describe("handleTurnStart slash skill rewriting", () => {
         run: async (userMessage: { content: string | unknown[] }) => {
           capturedUserMessage = userMessage;
         },
+        getCurrentModel: () => undefined,
+        appendModelChange: () => {},
       } as unknown as ThreadRuntime["manager"],
       abortController: null,
       currentTurnId: null,
@@ -84,6 +86,8 @@ describe("handleTurnStart slash skill rewriting", () => {
         run: async (userMessage: { content: string | unknown[] }) => {
           capturedUserMessage = userMessage;
         },
+        getCurrentModel: () => undefined,
+        appendModelChange: () => {},
       } as unknown as ThreadRuntime["manager"],
       abortController: null,
       currentTurnId: null,

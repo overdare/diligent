@@ -4,7 +4,7 @@ import type { Message } from "@diligent/core/types";
 import type { Mode } from "../agent/mode";
 
 /** Session file format version. Increment when entry schema changes. */
-export const SESSION_VERSION = 8;
+export const SESSION_VERSION = 9;
 
 /** Unique entry ID — 8-char hex */
 export function generateEntryId(): string {
@@ -77,8 +77,10 @@ export interface CompactionEntry {
   id: string;
   parentId: string | null;
   timestamp: string;
-  summary: string;
-  recentUserMessages: Message[];
+  summary?: string;
+  displaySummary?: string;
+  recentUserMessages?: Message[];
+  compactionSummary?: Record<string, unknown>;
   tokensBefore: number;
   tokensAfter: number;
 }

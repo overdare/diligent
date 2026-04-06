@@ -99,6 +99,7 @@ export type CoreAgentEvent =
       tokensBefore: number;
       tokensAfter: number;
       summary: string;
+      compactionSummary?: Record<string, unknown>;
     };
 
 export type AgentListener = (event: CoreAgentEvent) => void;
@@ -119,6 +120,7 @@ export class AgentStream {
 export interface CompactionConfig {
   reservePercent: number;
   keepRecentTokens: number;
+  timeoutMs?: number;
 }
 
 export interface LLMRetryConfig {

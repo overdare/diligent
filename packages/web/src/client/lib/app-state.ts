@@ -29,7 +29,8 @@ export type AppAction =
   | { type: "consume_first_pending_steer" }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
-  | { type: "clear_toast" };
+  | { type: "clear_toast" }
+  | { type: "compaction_error" };
 
 export function appReducer(state: ThreadState, action: AppAction): ThreadState {
   const isDraftOptimisticThread = (thread: SessionSummary): boolean =>
@@ -133,5 +134,6 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
     };
   }
   if (action.type === "clear_toast") return { ...state, toast: null };
+  if (action.type === "compaction_error") return { ...state, isCompacting: false };
   return state;
 }

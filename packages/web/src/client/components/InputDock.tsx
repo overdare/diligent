@@ -313,11 +313,6 @@ export function InputDock({
       <div
         className={`relative rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
       >
-        {isCompacting ? (
-          <div className="mb-3 rounded-lg border border-accent/30 bg-surface-dark px-3 py-2 text-xs text-accent">
-            Compacting context…
-          </div>
-        ) : null}
         {pendingImages.length > 0 ? (
           <div className="mb-3 flex flex-wrap gap-2">
             {pendingImages.map((image) => (
@@ -509,7 +504,7 @@ export function InputDock({
                                 : "text-muted hover:bg-fill-ghost-hover hover:text-text"
                             }`}
                           >
-                            {isCompacting ? "Compacting…" : "Compact now"}
+                            Compact now
                           </button>
                         </div>
                       ) : null}

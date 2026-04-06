@@ -3,7 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { EventStream } from "@diligent/core/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
 import type { Message, UserMessage } from "@diligent/core/types";
-import { compact, compactMessages, generateSummary } from "../../src/llm/compaction";
+import {
+  compact,
+  compactMessages,
+  generateSummary,
+  NATIVE_COMPACTION_MIN_INPUT_TOKENS,
+} from "../../src/llm/compaction";
 
 // --- Helper factories ---
 
@@ -110,7 +115,7 @@ describe("compact", () => {
   it("uses provider-native compaction when adapter succeeds", async () => {
     const result = await compact({
       model: { ...TEST_MODEL, provider: "openai" },
-      messages: [userMsg("hello"), assistantMsg("world")],
+      messages: [userMsg("x".repeat(NATIVE_COMPACTION_MIN_INPUT_TOKENS * 4))],
       systemPrompt: [{ label: "test", content: "test" }],
       config: {
         reservePercent: 16,
@@ -118,22 +123,22 @@ describe("compact", () => {
       llmCompactionFn: async () => ({ status: "ok", summary: "native summary" }),
     });
 
-    expect(result).toBe("native summary");
+    expect(result).toEqual({ mode: "native", displaySummary: "native summary", compactionSummary: undefined });
   });
 
-  it("falls back to local compaction when native path is unsupported", async () => {
-    const result = await compact({
-      model: { ...TEST_MODEL, provider: "openai" },
-      messages: [userMsg("hello"), assistantMsg("world")],
-      systemPrompt: [{ label: "test", content: "test" }],
-      config: {
-        reservePercent: 16,
-      },
-      llmCompactionFn: async () => ({ status: "unsupported", reason: "not_available" }),
-      streamFn: makeStreamFn("local summary"),
-    });
-
-    expect(result).toBe("local summary");
+  it("throws when native compaction is configured but reports unsupported", async () => {
+    await expect(
+      compact({
+        model: { ...TEST_MODEL, provider: "openai" },
+        messages: [userMsg("x".repeat(NATIVE_COMPACTION_MIN_INPUT_TOKENS * 4))],
+        systemPrompt: [{ label: "test", content: "test" }],
+        config: {
+          reservePercent: 16,
+        },
+        llmCompactionFn: async () => ({ status: "unsupported", reason: "not_available" }),
+        streamFn: makeStreamFn("local summary"),
+      }),
+    ).rejects.toThrow("Native compaction is configured");
   });
 
   it("skips native when lookup returns undefined for provider", async () => {
@@ -146,6 +151,46 @@ describe("compact", () => {
       streamFn: makeStreamFn("local only"),
     });
 
-    expect(result).toBe("local only");
+    expect(result).toEqual({ mode: "local", displaySummary: "local only" });
+  });
+
+  it("uses native compaction even below the old shared threshold when adapter exists", async () => {
+    let nativeCalls = 0;
+    const result = await compact({
+      model: { ...TEST_MODEL, provider: "openai" },
+      messages: [userMsg("hello"), assistantMsg("world")],
+      systemPrompt: [{ label: "test", content: "test" }],
+      config: {
+        reservePercent: 16,
+      },
+      llmCompactionFn: async () => {
+        nativeCalls += 1;
+        return { status: "ok", summary: "native summary" };
+      },
+      streamFn: makeStreamFn("local summary"),
+    });
+
+    expect(nativeCalls).toBe(1);
+    expect(result).toEqual({ mode: "native", displaySummary: "native summary", compactionSummary: undefined });
+  });
+
+  it("forwards compactionSummary to native compaction", async () => {
+    let capturedSummary: Record<string, unknown> | undefined;
+
+    await compact({
+      model: { ...TEST_MODEL, provider: "openai" },
+      messages: [userMsg("follow up")],
+      systemPrompt: [{ label: "test", content: "test" }],
+      compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      config: {
+        reservePercent: 16,
+      },
+      llmCompactionFn: async (input) => {
+        capturedSummary = input.compactionSummary;
+        return { status: "ok", compactionSummary: { type: "compaction", encrypted_content: "next" } };
+      },
+    });
+
+    expect(capturedSummary).toEqual({ type: "compaction", encrypted_content: "opaque" });
   });
 });

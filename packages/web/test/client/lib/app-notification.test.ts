@@ -21,6 +21,21 @@ test("deriveAgentEvents maps thread status notifications to status_change event"
   expect(deriveAgentEvents(notification)).toEqual([{ type: "status_change", status: "busy" }]);
 });
 
+test("deriveAgentEvents maps ERROR notifications to error event", () => {
+  const notification: DiligentServerNotification = {
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+    params: {
+      threadId: "t1",
+      error: { message: "Compaction failed", name: "Error" },
+      fatal: false,
+    },
+  };
+
+  expect(deriveAgentEvents(notification)).toEqual([
+    { type: "error", error: { message: "Compaction failed", name: "Error" }, fatal: false },
+  ]);
+});
+
 test("filterSteeringInjectedEvents removes steering_injected and consumes suppression", () => {
   const result = filterSteeringInjectedEvents(
     [

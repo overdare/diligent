@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getGlobalConfigPath, saveGlobalModel } from "@diligent/runtime";
 import { applyEdits, type Edit, format, modify } from "jsonc-parser";
 
 const GLOBAL_CONFIG_PATH = join(homedir(), ".diligent", "config.jsonc");
@@ -15,10 +16,8 @@ export async function saveApiKey(
   apiKey: string,
   configPath: string = GLOBAL_CONFIG_PATH,
 ): Promise<void> {
-  // Ensure directory exists
   await mkdir(dirname(configPath), { recursive: true });
 
-  // Read existing content or start with empty object
   let content = "{}";
   try {
     const file = Bun.file(configPath);
@@ -29,50 +28,8 @@ export async function saveApiKey(
     // File doesn't exist, use default
   }
 
-  // Apply modification using jsonc-parser
   const path = ["provider", provider, "apiKey"];
   const edits: Edit[] = modify(content, path, apiKey, {
-    formattingOptions: {
-      tabSize: 2,
-      insertSpaces: true,
-      eol: "\n",
-    },
-  });
-
-  const updated = applyEdits(content, edits);
-
-  // Format if it was a fresh file
-  if (content === "{}") {
-    const formatEdits = format(updated, undefined, {
-      tabSize: 2,
-      insertSpaces: true,
-      eol: "\n",
-    });
-    const formatted = applyEdits(updated, formatEdits);
-    await Bun.write(configPath, formatted);
-  } else {
-    await Bun.write(configPath, updated);
-  }
-}
-
-/**
- * Save the selected model to the global config file.
- * Uses jsonc-parser to preserve existing comments and formatting.
- */
-export async function saveModel(modelId: string, configPath: string = GLOBAL_CONFIG_PATH): Promise<void> {
-  await mkdir(dirname(configPath), { recursive: true });
-
-  let content = "{}";
-  try {
-    const file = Bun.file(configPath);
-    if (await file.exists()) {
-      content = await file.text();
-    }
-  } catch {
-    // File doesn't exist, use default
-  }
-
-  const edits: Edit[] = modify(content, ["model"], modelId, {
     formattingOptions: { tabSize: 2, insertSpaces: true, eol: "\n" },
   });
   const updated = applyEdits(content, edits);
@@ -85,7 +42,10 @@ export async function saveModel(modelId: string, configPath: string = GLOBAL_CON
   }
 }
 
-/** Get the global config file path */
-export function getGlobalConfigPath(): string {
-  return GLOBAL_CONFIG_PATH;
-}
+export { getGlobalConfigPath };
+
+/**
+ * Save the selected model to the global config file.
+ * Delegates to the runtime implementation.
+ */
+export const saveModel = saveGlobalModel;

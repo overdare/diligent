@@ -66,7 +66,6 @@ export function App() {
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
-  const [isCompacting, setIsCompacting] = useState(false);
   // Threads needing attention (turn completed, approval/user-input buffered while user is elsewhere)
   const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
   // Skills received from server at init
@@ -175,7 +174,6 @@ export function App() {
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
-  const showCompactingIndicator = isCompacting;
   const activeInputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
   const activeInput = threadMgr.threadInputs[activeInputKey] ?? "";
   const setActiveInput = useCallback(
@@ -276,7 +274,6 @@ export function App() {
     pendingImages,
     canSend,
     isUploadingImages,
-    isCompacting,
     supportsVision,
     effort,
     slashCommands,
@@ -287,7 +284,6 @@ export function App() {
     clearDraftInput,
     setPendingImages,
     setIsUploadingImages,
-    setIsCompacting,
     setEffortState,
     changeModel: providerMgr.changeModel,
     startNewThread,
@@ -461,11 +457,11 @@ export function App() {
           {/* Thread title bar */}
           <div className="flex shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5 py-3">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-icon-success)]" aria-hidden="true" />
-            {(state.threadStatus !== "idle" || showCompactingIndicator) && (
+            {(state.threadStatus !== "idle" || state.isCompacting) && (
               <span
-                className={`shrink-0 font-mono text-xs ${showCompactingIndicator || state.threadStatus === "busy" ? "text-text-success" : "text-danger"}`}
+                className={`shrink-0 font-mono text-xs ${state.isCompacting || state.threadStatus === "busy" ? "text-text-success" : "text-danger"}`}
               >
-                {showCompactingIndicator
+                {state.isCompacting
                   ? "Compacting..."
                   : state.threadStatus === "busy"
                     ? "Running..."
@@ -485,6 +481,7 @@ export function App() {
             oauthPending={oauthPending}
             onOpenProviders={handleOpenProviders}
             onQuickConnectChatGPT={handleQuickConnectChatGPT}
+            isCompacting={state.isCompacting}
             approvalPrompt={approvalPrompt}
             questionPrompt={questionPrompt}
             onLoadChildThread={loadChildThread}
@@ -501,7 +498,7 @@ export function App() {
             onSteer={handleSteer}
             onInterrupt={handleInterrupt}
             onCompactionClick={handleCompactionClick}
-            isCompacting={isCompacting}
+            isCompacting={state.isCompacting}
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}

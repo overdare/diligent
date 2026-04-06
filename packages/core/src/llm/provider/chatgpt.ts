@@ -9,10 +9,11 @@ import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
 import {
   buildResponsesRequestBody,
-  convertMessages,
   describeCompactionPayload,
   extractCompactionSummary,
+  extractCompactionSummaryItem,
   handleResponsesAPIEvents,
+  toResponseInputItems,
 } from "./openai-shared";
 
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -78,6 +79,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           model: resolveChatGPTModelId(model.id),
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
+          compactionSummary: context.compactionSummary,
           tools: context.tools,
           useReasoning,
           effort,
@@ -241,7 +243,7 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
 
     const body: Record<string, unknown> = {
       model: resolveChatGPTModelId(input.model.id),
-      input: await convertMessages(input.messages),
+      input: await toResponseInputItems({ messages: input.messages, compactionSummary: input.compactionSummary }),
     };
     if (input.systemPrompt.length > 0) body.instructions = flattenSections(input.systemPrompt);
 
@@ -263,9 +265,10 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
 
     const payload = (await response.json()) as Record<string, unknown>;
     const summary = extractCompactionSummary(payload);
-    if (!summary?.trim()) {
+    const compactionSummary = extractCompactionSummaryItem(payload);
+    if (!summary?.trim() && !compactionSummary) {
       return { status: "unsupported", reason: `missing_summary ${describeCompactionPayload(payload)}` };
     }
-    return { status: "ok", summary };
+    return { status: "ok", summary, compactionSummary };
   };
 }

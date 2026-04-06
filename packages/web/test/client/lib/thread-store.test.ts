@@ -1,6 +1,6 @@
 // @summary Tests for thread-state reducer behavior over item lifecycle notifications
 import { expect, test } from "bun:test";
-import type { DiligentServerNotification } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS, type DiligentServerNotification } from "@diligent/protocol";
 import { ProtocolNotificationAdapter } from "@diligent/runtime/client";
 import {
   hydrateFromThreadRead,
@@ -214,6 +214,94 @@ test("computes tool duration when tool completes", () => {
   } finally {
     Date.now = realNow;
   }
+});
+
+test("compaction notifications render the actual summary in context items", () => {
+  resetAdapter();
+
+  const summary = "Another language model started...\n\nActual compacted summary";
+  const compacted: DiligentServerNotification = {
+    method: "thread/compacted",
+    params: {
+      threadId: "t1",
+      entryCount: 3,
+      tokensBefore: 4000,
+      tokensAfter: 1800,
+      summary,
+    },
+  };
+
+  const next = reduce(initialThreadState, compacted);
+  const context = next.items.find((item) => item.kind === "context");
+  expect(context).toBeDefined();
+  expect(context && context.kind === "context" ? context.summary : "").toBe(summary);
+  expect(next.isCompacting).toBe(false);
+});
+
+test("thread compaction started toggles compacting state immediately", () => {
+  resetAdapter();
+
+  const started: DiligentServerNotification = {
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED,
+    params: {
+      threadId: "t1",
+      estimatedTokens: 1234,
+    },
+  };
+
+  const next = reduce(initialThreadState, started);
+  expect(next.isCompacting).toBe(true);
+});
+
+test("thread compacted notification adds context item without waiting for rehydrate", () => {
+  resetAdapter();
+
+  const next = reduce(initialThreadState, {
+    method: "thread/compacted",
+    params: {
+      threadId: "t1",
+      entryCount: 1,
+      tokensBefore: 4000,
+      tokensAfter: 2000,
+      summary: "Compacted",
+    },
+  });
+
+  expect(next.items.some((item) => item.kind === "context" && item.summary === "Compacted")).toBe(true);
+  expect(next.isCompacting).toBe(false);
+});
+
+test("error during compaction clears compacting and busy state immediately", () => {
+  resetAdapter();
+
+  const next = reduce(
+    {
+      ...initialThreadState,
+      activeThreadId: "t1",
+      threadStatus: "busy",
+      isCompacting: true,
+      activeTurnId: "turn-1",
+      activeTurnStartedAt: 1000,
+      activeReasoningStartedAt: 1100,
+      activeReasoningDurationMs: 50,
+    },
+    {
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      params: {
+        threadId: "t1",
+        error: { message: "Estimated Token is below 50000", name: "Error" },
+        fatal: false,
+      },
+    },
+  );
+
+  expect(next.threadStatus).toBe("idle");
+  expect(next.isCompacting).toBe(false);
+  expect(next.activeTurnId).toBeNull();
+  expect(next.activeTurnStartedAt).toBeNull();
+  expect(next.activeReasoningStartedAt).toBeNull();
+  expect(next.activeReasoningDurationMs).toBe(0);
+  expect(next.toast?.message).toBe("Estimated Token is below 50000");
 });
 
 test("plan tool completion sets planState when unresolved steps remain", () => {
@@ -955,6 +1043,35 @@ test("hydrateFromThreadRead restores post-compaction history from snapshot items
   expect(assistantTexts).toEqual(["old assistant"]);
   expect(contexts).toHaveLength(1);
   expect(contexts[0] && contexts[0].kind === "context" ? contexts[0].summary : "").toBe("Compacted summary");
+});
+
+test("hydrateFromThreadRead preserves detailed compaction summary when displaySummary is condensed", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    items: [
+      {
+        type: "compaction",
+        itemId: "c1",
+        timestamp: 300,
+        summary: "## Goal\nRecover Anthropic compacted details",
+        displaySummary: "Compacted",
+        tokensBefore: 0,
+        tokensAfter: 0,
+      },
+    ],
+    errors: [],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+    currentEffort: "medium",
+    currentModel: "x",
+    totalCost: 0,
+  });
+
+  const contexts = hydrated.items.filter((item) => item.kind === "context");
+  expect(contexts).toHaveLength(1);
+  expect(contexts[0] && contexts[0].kind === "context" ? contexts[0].summary : "").toContain(
+    "Recover Anthropic compacted details",
+  );
 });
 
 test("hydrateFromThreadRead keeps tool_result even without prior tool_call block", () => {

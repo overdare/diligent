@@ -109,4 +109,18 @@ describe("ProviderManager", () => {
     expect(pm.hasOAuthFor("chatgpt")).toBe(true);
     expect(pm.getMaskedKey("chatgpt")).toBe("ChatGPT OAuth");
   });
+
+  test("anthropic native compaction is disabled by default", () => {
+    const pm = new ProviderManager({});
+    pm.setApiKey("anthropic", "sk-ant-test");
+
+    expect(pm.createNativeCompactionForProvider("anthropic")).toBeUndefined();
+  });
+
+  test("openai native compaction remains enabled when api key exists", () => {
+    const pm = new ProviderManager({});
+    pm.setApiKey("openai", "sk-openai-test");
+
+    expect(typeof pm.createNativeCompactionForProvider("openai")).toBe("function");
+  });
 });

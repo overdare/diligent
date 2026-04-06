@@ -90,7 +90,7 @@ export class ProtocolNotificationAdapter {
             type: "compaction_end",
             tokensBefore: notification.params.tokensBefore,
             tokensAfter: notification.params.tokensAfter,
-            summary: `${notification.params.entryCount} entries`,
+            summary: notification.params.summary,
           },
         ];
       case DILIGENT_SERVER_NOTIFICATION_METHODS.COLLAB_SPAWN_BEGIN:

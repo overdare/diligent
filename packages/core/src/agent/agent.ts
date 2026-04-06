@@ -24,6 +24,7 @@ export class Agent {
   private retryConfig: LLMRetryConfig;
   private compactionConfig: CompactionConfig;
   private messages: Message[] = [];
+  private compactionSummary?: Record<string, unknown>;
   private pendingSteeringMessages: Message[] = [];
   private _running = false;
   private sessionId?: string;
@@ -37,6 +38,7 @@ export class Agent {
     this.compactionConfig = opts?.compaction ?? {
       reservePercent: 14,
       keepRecentTokens: 20_000,
+      timeoutMs: 180_000,
     };
     this.retryConfig = opts?.retry ?? {
       maxRetries: 5,
@@ -65,6 +67,12 @@ export class Agent {
   /** Restore conversation history (called once when resuming a session). */
   restore(messages: Message[]): void {
     this.messages = [...messages];
+    this.compactionSummary = undefined;
+  }
+
+  restoreCompactionState(messages: Message[], compactionSummary?: Record<string, unknown>): void {
+    this.messages = [...messages];
+    this.compactionSummary = compactionSummary;
   }
 
   /** Get the current conversation messages. */
@@ -83,8 +91,11 @@ export class Agent {
     try {
       const nextMessages = [...this.messages, userMessage];
       const result = await runAgentLoop(nextMessages, this.createLoopRuntime(), signal);
-      this.messages = result;
-      return result;
+      this.messages = result.messages;
+      if (result.compactionSummary !== undefined) {
+        this.compactionSummary = result.compactionSummary;
+      }
+      return result.messages;
     } finally {
       this._running = false;
       this.drainPendingMessages();
@@ -104,6 +115,7 @@ export class Agent {
       llmCompactionFn: this.llmCompactionFn,
       stream: this.agentStream,
       sessionId: this.sessionId,
+      compactionSummary: this.compactionSummary,
       hooks: {
         drainSteeringMessages: () => this.drainPendingMessages(),
         pendingSteeringCount: () => this.pendingSteeringMessages.length,
@@ -150,12 +162,15 @@ export class Agent {
       messages: this.messages,
       model: this.model,
       systemPrompt: this.systemPrompt,
+      compactionSummary: this.compactionSummary,
       compactionConfig: this.compactionConfig,
       llmMsgStreamFn: this.llmMsgStreamFn,
       llmCompactionFn: this.llmCompactionFn,
       stream: this.agentStream,
+      sessionId: this.sessionId,
       signal,
     });
     this.messages = result.messages;
+    this.compactionSummary = result.compactionSummary;
   }
 }

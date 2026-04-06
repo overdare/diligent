@@ -12,6 +12,7 @@ export {
   getGlobalConfigPath,
   getProjectConfigPath,
   normalizeStoredToolsConfig,
+  saveGlobalModel,
   writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "./writer";

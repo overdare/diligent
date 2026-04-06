@@ -8,6 +8,7 @@ import { normalizeToolName } from "../lib/thread-utils";
 import { ApprovalCard } from "./ApprovalCard";
 import { AssistantMessage } from "./AssistantMessage";
 import { CollabGroup } from "./CollabGroup";
+import { CompactingIndicator } from "./CompactingIndicator";
 import { ContextMessage } from "./ContextMessage";
 import { EmptyState } from "./EmptyState";
 import { QuestionCard } from "./QuestionCard";
@@ -35,6 +36,7 @@ interface MessageListProps {
   oauthPending?: boolean;
   onOpenProviders: () => void;
   onQuickConnectChatGPT?: () => void;
+  isCompacting?: boolean;
   approvalPrompt?: { request: ApprovalRequest; onDecide: (decision: "once" | "always" | "reject") => void } | null;
   questionPrompt?: {
     request: UserInputRequest;
@@ -85,7 +87,7 @@ function renderGroupedItems(
       const isFollowedByUserInputTool =
         nextItem?.kind === "tool" && normalizeToolName(nextItem.toolName) === "request_user_input";
       const displayItem = isFollowedByUserInputTool ? { ...assistantItem, text: "" } : assistantItem;
-      result.push(<AssistantMessage key={item.id} item={displayItem} />);
+      result.push(<AssistantMessage key={item.id} item={displayItem} suppressThinking={false} />);
     }
   }
   flushCollab();
@@ -100,6 +102,7 @@ function MessageListImpl({
   oauthPending,
   onOpenProviders,
   onQuickConnectChatGPT,
+  isCompacting,
   approvalPrompt,
   questionPrompt,
   onLoadChildThread,
@@ -178,6 +181,15 @@ function MessageListImpl({
     () => renderGroupedItems(items, threadCwd, onLoadChildThread),
     [items, threadCwd, onLoadChildThread],
   );
+  const visibleItems = useMemo(
+    () =>
+      isCompacting
+        ? items.map((item) =>
+            item.kind === "assistant" ? <AssistantMessage key={item.id} item={item} suppressThinking /> : null,
+          )
+        : null,
+    [items, isCompacting],
+  );
 
   return (
     <div className="relative min-h-0 flex-1 bg-bg-sunken">
@@ -191,12 +203,20 @@ function MessageListImpl({
           />
         ) : (
           <div className="space-y-3">
-            {groupedItems}
+            {isCompacting ? groupedItems.map((node, index) => visibleItems?.[index] ?? node) : groupedItems}
 
-            {threadStatus === "busy" && !approvalPrompt && !questionPrompt ? (
+            {threadStatus === "busy" && !isCompacting && !approvalPrompt && !questionPrompt ? (
               <div className="py-1">
                 <div className="flex items-center pt-1">
                   <StreamingIndicator />
+                </div>
+              </div>
+            ) : null}
+
+            {isCompacting ? (
+              <div className="py-1">
+                <div className="flex items-center pt-1">
+                  <CompactingIndicator />
                 </div>
               </div>
             ) : null}

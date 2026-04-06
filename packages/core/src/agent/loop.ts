@@ -26,6 +26,7 @@ export interface LoopRuntime {
   llmCompactionFn?: NativeCompactFn;
   stream: AgentStream;
   sessionId?: string;
+  compactionSummary?: Record<string, unknown>;
   hooks: {
     drainSteeringMessages: () => Message[];
     pendingSteeringCount: () => number;
@@ -36,7 +37,7 @@ export async function runAgentLoop(
   messages: Message[],
   runtime: LoopRuntime,
   userSignal?: AbortSignal,
-): Promise<Message[]> {
+): Promise<{ messages: Message[]; compactionSummary?: Record<string, unknown> }> {
   const { config, streamFunction, stream, hooks } = runtime;
   const toolAbortController = new AbortController();
   const signal = AbortSignal.any([toolAbortController.signal, userSignal].filter((s): s is AbortSignal => s != null));
@@ -47,6 +48,7 @@ export async function runAgentLoop(
     llmCompactionFn: runtime.llmCompactionFn,
     sessionId: runtime.sessionId,
     signal,
+    compactionSummary: runtime.compactionSummary,
   };
   const conversation = [...messages];
   const doomLoopTracker = new DoomLoopDetector();
@@ -125,7 +127,7 @@ export async function runAgentLoop(
     stream.emit({ type: "agent_end", messages: conversation });
   }
 
-  return conversation;
+  return { messages: conversation, compactionSummary: loopRequest.compactionSummary };
 }
 
 async function compactIfNeeded(
@@ -136,6 +138,7 @@ async function compactIfNeeded(
     llmCompactionFn?: NativeCompactFn;
     sessionId?: string;
     signal?: AbortSignal;
+    compactionSummary?: Record<string, unknown>;
   },
   stream: AgentStream,
 ): Promise<void> {
@@ -155,6 +158,7 @@ async function compactIfNeeded(
     messages,
     model: request.config.model,
     systemPrompt: request.config.systemPrompt,
+    compactionSummary: request.compactionSummary,
     sessionId: request.sessionId,
     compactionConfig: config,
     llmMsgStreamFn: request.streamFunction,
@@ -163,4 +167,5 @@ async function compactIfNeeded(
     signal: request.signal,
   });
   messages.splice(0, messages.length, ...result.messages);
+  request.compactionSummary = result.compactionSummary;
 }

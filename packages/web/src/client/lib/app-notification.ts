@@ -65,6 +65,9 @@ export function deriveAgentEvents(notification: DiligentServerNotification): Age
       },
     ];
   }
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR) {
+    return [{ type: "error", error: notification.params.error, fatal: notification.params.fatal }];
+  }
   return [];
 }
 

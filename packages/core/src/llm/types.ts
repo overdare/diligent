@@ -69,6 +69,7 @@ export interface StreamContext {
   systemPrompt: SystemSection[];
   messages: Message[];
   tools: ToolDefinition[];
+  compactionSummary?: Record<string, unknown>;
 }
 
 export interface StreamOptions {

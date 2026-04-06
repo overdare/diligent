@@ -12,22 +12,32 @@ export interface TurnStagerSnapshot {
 }
 
 export class TurnStager {
-  private stagedEntries: SessionEntry[] = [];
-  private stagedLeafId: string | null;
+  private pendingEntries: SessionEntry[] = [];
+  private currentLeafId: string | null;
   private stagedConversation: Message[];
 
   constructor(baseLeafId: string | null, baseConversation: Message[], userMessage: Message) {
-    this.stagedLeafId = baseLeafId;
+    this.currentLeafId = baseLeafId;
     this.stagedConversation = [...baseConversation];
     this.stageMessage(userMessage);
   }
 
   handleEvent(event: CoreAgentEvent, keepRecentTokens: number): void {
-    if (event.type === "turn_end") {
+    if (event.type === "message_end") {
       this.stageMessage(event.message);
-      for (const toolResult of event.toolResults) {
-        this.stageMessage(toolResult);
-      }
+      return;
+    }
+
+    if (event.type === "tool_end") {
+      this.stageMessage({
+        role: "tool_result",
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        output: event.output,
+        isError: event.isError,
+        timestamp: Date.now(),
+        render: event.render,
+      });
       return;
     }
 
@@ -40,10 +50,14 @@ export class TurnStager {
 
     if (event.type === "compaction_end") {
       const recentUserMessages = selectForCompaction(this.stagedConversation, keepRecentTokens).recentUserMessages;
-      this.stagedConversation = buildMessagesFromCompaction(recentUserMessages, event.summary, Date.now());
+      this.stagedConversation = event.compactionSummary
+        ? []
+        : buildMessagesFromCompaction(recentUserMessages, event.summary, Date.now());
       this.stageCompaction({
         summary: event.summary,
+        displaySummary: event.compactionSummary ? "Compacted" : event.summary,
         recentUserMessages,
+        compactionSummary: event.compactionSummary,
         tokensBefore: event.tokensBefore,
         tokensAfter: event.tokensAfter,
       });
@@ -52,9 +66,16 @@ export class TurnStager {
 
   getSnapshot(): TurnStagerSnapshot {
     return {
-      entries: [...this.stagedEntries],
-      leafId: this.stagedLeafId,
+      entries: [...this.pendingEntries],
+      leafId: this.currentLeafId,
     };
+  }
+
+  flushPendingEntries(): SessionEntry[] {
+    if (this.pendingEntries.length === 0) return [];
+    const entries = [...this.pendingEntries];
+    this.pendingEntries = [];
+    return entries;
   }
 
   private stageMessage(message: Message): void {
@@ -62,7 +83,7 @@ export class TurnStager {
     this.stageEntry({
       type: "message",
       id: generateEntryId(),
-      parentId: this.stagedLeafId,
+      parentId: this.currentLeafId,
       timestamp: new Date().toISOString(),
       message,
     });
@@ -70,17 +91,21 @@ export class TurnStager {
 
   private stageCompaction(event: {
     summary: string;
-    recentUserMessages: Message[];
+    displaySummary?: string;
+    recentUserMessages?: Message[];
+    compactionSummary?: Record<string, unknown>;
     tokensBefore: number;
     tokensAfter: number;
   }): void {
     const entry: CompactionEntry = {
       type: "compaction",
       id: generateEntryId(),
-      parentId: this.stagedLeafId,
+      parentId: this.currentLeafId,
       timestamp: new Date().toISOString(),
       summary: event.summary,
+      displaySummary: event.displaySummary,
       recentUserMessages: event.recentUserMessages,
+      compactionSummary: event.compactionSummary,
       tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter,
     };
@@ -88,7 +113,7 @@ export class TurnStager {
   }
 
   private stageEntry(entry: SessionEntry): void {
-    this.stagedEntries.push(entry);
-    this.stagedLeafId = entry.id;
+    this.pendingEntries.push(entry);
+    this.currentLeafId = entry.id;
   }
 }

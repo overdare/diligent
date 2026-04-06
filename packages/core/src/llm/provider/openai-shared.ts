@@ -81,6 +81,17 @@ export async function convertMessages(messages: Message[]): Promise<ResponseInpu
   return result;
 }
 
+export async function toResponseInputItems(input: {
+  messages: Message[];
+  compactionSummary?: Record<string, unknown>;
+}): Promise<ResponseInputItem[]> {
+  const convertedMessages = await convertMessages(input.messages);
+  if (input.compactionSummary) {
+    return [input.compactionSummary as unknown as ResponseInputItem, ...convertedMessages];
+  }
+  return convertedMessages;
+}
+
 export function mapStopReason(status: string | undefined): StopReason {
   switch (status) {
     case "completed":
@@ -183,6 +194,7 @@ export function buildTools(tools: ToolDefinition[], strict?: boolean): OpenAIRes
 export async function buildResponsesRequestBody(input: {
   model: string;
   messages: Message[];
+  compactionSummary?: Record<string, unknown>;
   systemInstructions?: string;
   tools?: ToolDefinition[];
   sessionId?: string;
@@ -197,7 +209,10 @@ export async function buildResponsesRequestBody(input: {
   const body: Record<string, unknown> = {
     model: input.model,
     stream: true,
-    input: await convertMessages(input.messages),
+    input: await toResponseInputItems({
+      messages: input.messages,
+      compactionSummary: input.compactionSummary,
+    }),
   };
   if (input.systemInstructions) body.instructions = input.systemInstructions;
   if (input.sessionId) body.prompt_cache_key = input.sessionId;
@@ -259,6 +274,42 @@ function pushReasoningSummary(chunks: string[], value: unknown): void {
   }
 }
 
+function extractCompactionTranscriptFromOutput(output: unknown): string | undefined {
+  if (!Array.isArray(output)) return undefined;
+
+  const parts: string[] = [];
+  for (const rawItem of output) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const item = rawItem as Record<string, unknown>;
+    if (item.type !== "message") continue;
+
+    const role = typeof item.role === "string" ? item.role : undefined;
+    if (!Array.isArray(item.content)) continue;
+
+    const textChunks: string[] = [];
+    for (const rawPart of item.content) {
+      if (!rawPart || typeof rawPart !== "object") continue;
+      const part = rawPart as Record<string, unknown>;
+      const type = typeof part.type === "string" ? part.type : undefined;
+      if ((type === "input_text" || type === "output_text" || type === "text") && typeof part.text === "string") {
+        const trimmed = part.text.trim();
+        if (trimmed.length > 0) textChunks.push(trimmed);
+      }
+    }
+
+    if (textChunks.length === 0) continue;
+    const body = textChunks.join("\n");
+    if (role === "assistant") {
+      parts.push(`<assistant>\n${body}\n</assistant>`);
+    } else {
+      parts.push(`<user>\n${body}\n</user>`);
+    }
+  }
+
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
+}
+
 function extractCompactionSummaryFromOutput(output: unknown): string | undefined {
   if (!Array.isArray(output)) return undefined;
 
@@ -271,32 +322,35 @@ function extractCompactionSummaryFromOutput(output: unknown): string | undefined
     pushReasoningSummary(chunks, item.summary);
     pushText(chunks, item.compaction_summary);
     pushText(chunks, item.compacted_summary);
-    pushText(chunks, item.text);
+    if (item.type !== "message" || !Array.isArray(item.content)) {
+      pushText(chunks, item.text);
+    }
 
     if (item.type === "message") {
       if (Array.isArray(item.content)) {
         for (const rawPart of item.content) {
           if (typeof rawPart === "string") {
-            pushText(chunks, rawPart);
             continue;
           }
           if (!rawPart || typeof rawPart !== "object") continue;
           const part = rawPart as Record<string, unknown>;
-          pushText(chunks, part.text);
           pushText(chunks, part.summary);
           pushReasoningSummary(chunks, part.summary);
           pushText(chunks, part.compaction_summary);
-          if (part.type === "output_text" || part.type === "input_text" || part.type === "text") {
+          pushText(chunks, part.compacted_summary);
+          if (part.type === "output_text" || part.type === "text") {
             pushText(chunks, part.text);
           }
         }
       } else {
-        pushText(chunks, item.content);
+        if (typeof item.role !== "string" || item.role !== "user") {
+          pushText(chunks, item.content);
+        }
       }
       continue;
     }
 
-    if (item.type === "output_text" || item.type === "input_text" || item.type === "text") {
+    if (item.type === "output_text" || item.type === "text") {
       pushText(chunks, item.text);
     }
   }
@@ -307,7 +361,7 @@ function extractCompactionSummaryFromOutput(output: unknown): string | undefined
 
 function summarizeOutputShape(output: unknown): string {
   if (!Array.isArray(output)) return "none";
-  const shapes = output.slice(0, 4).map((rawItem) => {
+  const shapes = output.slice(0, 8).map((rawItem) => {
     if (!rawItem || typeof rawItem !== "object") return "unknown";
     const item = rawItem as Record<string, unknown>;
     const itemType = typeof item.type === "string" ? item.type : "unknown";
@@ -325,20 +379,50 @@ function summarizeOutputShape(output: unknown): string {
   return shapes.join(";") || "empty";
 }
 
+function countStructuredCompactionItems(output: unknown): number {
+  if (!Array.isArray(output)) return 0;
+  return output.filter((rawItem) => {
+    if (!rawItem || typeof rawItem !== "object") return false;
+    const item = rawItem as Record<string, unknown>;
+    const itemType = typeof item.type === "string" ? item.type : "";
+    return itemType === "compaction" || itemType === "compaction_summary";
+  }).length;
+}
+
 export function describeCompactionPayload(payload: Record<string, unknown>): string {
   const keys = Object.keys(payload);
   const topKeys = keys.length > 0 ? keys.slice(0, 8).join(",") : "none";
   const outputLen = Array.isArray(payload.output) ? payload.output.length : 0;
   const outputShape = summarizeOutputShape(payload.output);
-  return `payload_keys=${topKeys} output_items=${outputLen} output_shape=${outputShape}`;
+  const structuredCompactionItems = countStructuredCompactionItems(payload.output);
+  return `payload_keys=${topKeys} output_items=${outputLen} output_shape=${outputShape} structured_compaction_items=${structuredCompactionItems}`;
 }
 
 export function extractCompactionSummary(payload: Record<string, unknown>): string | undefined {
   if (typeof payload.summary === "string") return payload.summary;
   if (typeof payload.compaction_summary === "string") return payload.compaction_summary;
   if (typeof payload.compacted_summary === "string") return payload.compacted_summary;
+  if (extractCompactionSummaryItem(payload)) return undefined;
   const fromOutput = extractCompactionSummaryFromOutput(payload.output);
   if (fromOutput) return fromOutput;
+  const transcript = extractCompactionTranscriptFromOutput(payload.output);
+  if (transcript) return transcript;
+  return undefined;
+}
+
+export function extractCompactionSummaryItem(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!Array.isArray(payload.output)) return undefined;
+  for (const rawItem of payload.output) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const item = rawItem as Record<string, unknown>;
+    const itemType = typeof item.type === "string" ? item.type : "";
+    if (
+      (itemType === "compaction" || itemType === "compaction_summary") &&
+      typeof item.encrypted_content === "string"
+    ) {
+      return { type: "compaction", encrypted_content: item.encrypted_content };
+    }
+  }
   return undefined;
 }
 
@@ -506,11 +590,6 @@ function reduceResponsesAPIEvent(
       if (!providerToolUse) return [];
       state.pendingProviderToolUses.set(providerToolUse.id, providerToolUse);
       state.contentBlocks.push(providerToolUse);
-      debugWebBlockEmission("stream_start", model.provider, {
-        blockType: providerToolUse.type,
-        toolUseId: providerToolUse.id,
-        blockName: providerToolUse.name,
-      });
       return [{ type: "content_block", block: providerToolUse }];
     }
 
@@ -573,25 +652,12 @@ function reduceResponsesAPIEvent(
       if (webSearchResult) {
         state.pendingWebSearchResults.set(toolUseId, webSearchResult);
         state.contentBlocks.push(webSearchResult);
-        debugWebBlockEmission("stream_done", model.provider, {
-          blockType: webSearchResult.type,
-          toolUseId,
-          resultCount: webSearchResult.results.length,
-          hasError: webSearchResult.error !== undefined,
-        });
         return [{ type: "content_block", block: webSearchResult }];
       }
       const webFetchResult = createWebFetchResultBlock(event.item, toolUseId, model.provider);
       if (webFetchResult) {
         state.pendingWebFetchResults.set(toolUseId, webFetchResult);
         state.contentBlocks.push(webFetchResult);
-        debugWebBlockEmission("stream_done", model.provider, {
-          blockType: webFetchResult.type,
-          toolUseId,
-          url: webFetchResult.url,
-          hasDocument: webFetchResult.document !== undefined,
-          hasError: webFetchResult.error !== undefined,
-        });
         return [{ type: "content_block", block: webFetchResult }];
       }
       return [];
@@ -599,13 +665,6 @@ function reduceResponsesAPIEvent(
 
     case "response_completed":
       state.pendingCompletedResponse = event.response;
-      debugWebBlockEmission("response_completed", model.provider, {
-        status: event.status,
-        outputItems: Array.isArray(event.response?.output) ? event.response.output.length : 0,
-        pendingToolUses: state.pendingProviderToolUses.size,
-        pendingSearchResults: state.pendingWebSearchResults.size,
-        pendingFetchResults: state.pendingWebFetchResults.size,
-      });
       applyCompletedResponseFallbacks(state, event.response, model.provider);
       state.usage = mapUsage(event.usage);
       state.stopReason = mapStopReason(event.status);
@@ -756,15 +815,6 @@ function debugWebSearchPayload(
   console.log(`[llm:web-tools] ${JSON.stringify(summary)}`);
 }
 
-function debugWebBlockEmission(
-  source: "stream_start" | "stream_done" | "response_completed" | "completed_fallback",
-  provider: string,
-  details: Record<string, unknown>,
-): void {
-  if (process.env.DILIGENT_DEBUG_WEB_TOOLS !== "1") return;
-  console.log(`[llm:web-tools:emit] ${JSON.stringify({ source, provider, ...details })}`);
-}
-
 function collectCompletedWebSearchCalls(response: Record<string, unknown> | undefined): Record<string, unknown>[] {
   const output = response?.output;
   if (!Array.isArray(output)) return [];
@@ -818,15 +868,7 @@ function applyCompletedResponseFallbacks(
 
   const recoveredCalls = recoveredToolUses + recoveredSearchResults + recoveredFetchResults;
   if (recoveredCalls > 0) {
-    debugWebBlockEmission("completed_fallback", provider, {
-      recoveredCalls,
-      recoveredToolUses,
-      recoveredSearchResults,
-      recoveredFetchResults,
-      existingToolUses: state.pendingProviderToolUses.size,
-      existingSearchResults: state.pendingWebSearchResults.size,
-      existingFetchResults: state.pendingWebFetchResults.size,
-    });
+    return;
   }
 }
 

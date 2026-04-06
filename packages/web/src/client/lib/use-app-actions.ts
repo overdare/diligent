@@ -85,7 +85,6 @@ export function useAppActions({
   pendingImages,
   canSend,
   isUploadingImages,
-  isCompacting,
   supportsVision,
   effort,
   slashCommands,
@@ -96,7 +95,6 @@ export function useAppActions({
   clearDraftInput,
   setPendingImages,
   setIsUploadingImages,
-  setIsCompacting,
   setEffortState,
   changeModel,
   startNewThread,
@@ -116,7 +114,6 @@ export function useAppActions({
   pendingImages: PendingImage[];
   canSend: boolean;
   isUploadingImages: boolean;
-  isCompacting: boolean;
   supportsVision: boolean;
   effort: ThinkingEffort;
   slashCommands: SlashCommand[];
@@ -127,7 +124,6 @@ export function useAppActions({
   clearDraftInput: () => void;
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
   setIsUploadingImages: Dispatch<SetStateAction<boolean>>;
-  setIsCompacting: Dispatch<SetStateAction<boolean>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
   changeModel: (modelId: string, threadId?: string) => Promise<void>;
   startNewThread: () => Promise<void>;
@@ -257,26 +253,24 @@ export function useAppActions({
   const handleCompactionClick = useCallback(() => {
     void (async () => {
       const rpc = rpcRef.current;
-      if (!rpc || !state.activeThreadId || isCompacting) return;
-      setIsCompacting(true);
-      dispatch({ type: "show_info_toast", payload: "Manual compaction in progress…" });
+      if (!rpc || !state.activeThreadId || state.isCompacting) return;
       try {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START, { threadId: state.activeThreadId });
         const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, {
           threadId: state.activeThreadId,
         });
         dispatch({ type: "hydrate", payload: { threadId: state.activeThreadId, mode: state.mode, history } });
-        dispatch({ type: "show_info_toast", payload: "Thread compacted." });
       } catch (error) {
         dispatch({
-          type: "show_info_toast",
-          payload: error instanceof Error ? error.message : "Manual compaction failed.",
+          type: "compaction_error",
         });
-      } finally {
-        setIsCompacting(false);
+        dispatch({
+          type: "show_info_toast",
+          payload: error instanceof Error ? error.message : "Compaction failed.",
+        });
       }
     })();
-  }, [rpcRef, state.activeThreadId, state.mode, isCompacting, setIsCompacting, dispatch]);
+  }, [rpcRef, state.activeThreadId, state.mode, state.isCompacting, dispatch]);
 
   const handleAddImages = useCallback(
     async (files: FileList | File[]): Promise<void> => {

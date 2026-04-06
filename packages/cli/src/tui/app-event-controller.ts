@@ -61,7 +61,7 @@ export class AppEventController {
         type: "compaction_end",
         tokensBefore: notification.params.tokensBefore,
         tokensAfter: notification.params.tokensAfter,
-        summary: `${notification.params.entryCount} entries`,
+        summary: notification.params.summary,
       });
     }
 
@@ -90,10 +90,16 @@ export class AppEventController {
 
     if (
       notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR &&
-      this.deps.runtime.pendingTurn &&
       (!notification.params.threadId || notification.params.threadId === this.deps.runtime.currentThreadId)
     ) {
-      this.deps.onTurnErrored(notification.params.error.message);
+      this.deps.handleAgentEvent({
+        type: "error",
+        error: notification.params.error,
+        fatal: notification.params.fatal,
+      });
+      if (this.deps.runtime.pendingTurn) {
+        this.deps.onTurnErrored(notification.params.error.message);
+      }
     }
 
     if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED) {

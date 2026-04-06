@@ -182,6 +182,11 @@ export class App {
       onTurnErrored: (message) => {
         this.suppressNextSteeringInjectedCommit = false;
         this.pendingAbortRestartMessage = null;
+        this.runtime.isProcessing = false;
+        this.runtime.cancelRequested = false;
+        this.inputEditor.setBusy(false);
+        this.statusBar.update({ status: "idle" });
+        this.renderer.requestRender();
         this.runtime.pendingTurn?.reject(new Error(message));
       },
       onUserInputRequestResolved: () => {

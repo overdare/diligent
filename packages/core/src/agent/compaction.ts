@@ -1,11 +1,18 @@
 // @summary Agent-layer compaction helpers — shouldCompact, message selection, runCompaction
 
-import { compact as llmCompact } from "../llm/compaction";
+import { compact as llmCompact, NATIVE_COMPACTION_MIN_INPUT_TOKENS } from "../llm/compaction";
 import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import { estimateTokens } from "../llm/tokens";
 import type { Model, StreamFunction, SystemSection } from "../llm/types";
 import type { AssistantMessage, Message } from "../types";
 import type { AgentStream, CompactionConfig } from "./types";
+
+const DEFAULT_COMPACTION_TIMEOUT_MS = 180_000;
+
+function createCompactionSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
 
 export type { CompactionPrompts, CompactMessagesResult } from "../llm/compaction";
 // Re-export estimateTokens and LLM-layer compaction types so consumers can import from either location
@@ -121,6 +128,7 @@ export interface RunCompactionInput {
   messages: Message[];
   model: Model;
   systemPrompt: SystemSection[];
+  compactionSummary?: Record<string, unknown>;
   sessionId?: string;
   compactionConfig: CompactionConfig;
   llmMsgStreamFn: StreamFunction;
@@ -132,6 +140,7 @@ export interface RunCompactionInput {
 export interface RunCompactionResult {
   summary: string;
   messages: Message[];
+  compactionSummary?: Record<string, unknown>;
 }
 
 /**
@@ -169,25 +178,37 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     input.compactionConfig.keepRecentTokens,
   );
   const tokensBefore = estimateTokens(input.messages);
+  if (input.llmCompactionFn != null && tokensBefore < NATIVE_COMPACTION_MIN_INPUT_TOKENS) {
+    throw new Error(
+      `Cannot compact: estimated ${tokensBefore.toLocaleString()} tokens is below the ${NATIVE_COMPACTION_MIN_INPUT_TOKENS.toLocaleString()} minimum required for native compaction.`,
+    );
+  }
+  const timeoutMs = input.compactionConfig.timeoutMs ?? DEFAULT_COMPACTION_TIMEOUT_MS;
+  const compactionSignal = createCompactionSignal(input.signal, timeoutMs);
   input.stream.emit({ type: "compaction_start", estimatedTokens: tokensBefore });
   const result = await llmCompact({
     model: input.model,
     messages: messagesToSummarize,
     systemPrompt: input.systemPrompt,
+    compactionSummary: input.compactionSummary,
     sessionId: input.sessionId,
     config: input.compactionConfig,
-    signal: input.signal,
+    signal: compactionSignal,
     streamFn: input.llmMsgStreamFn,
     llmCompactionFn: input.llmCompactionFn,
   });
-  const summary = `${COMPACTION_SUMMARY_PREFIX}\n\n${result}`;
-  const messages = buildMessagesFromCompaction(recentUserMessages, summary, Date.now());
+  const summary =
+    result.mode === "local"
+      ? `${COMPACTION_SUMMARY_PREFIX}\n\n${result.displaySummary ?? ""}`.trim()
+      : (result.displaySummary ?? "");
+  const messages = result.compactionSummary ? [] : buildMessagesFromCompaction(recentUserMessages, summary, Date.now());
   const tokensAfter = estimateTokens(messages);
   input.stream.emit({
     type: "compaction_end",
     tokensBefore: tokensBefore,
     tokensAfter,
     summary,
+    compactionSummary: result.compactionSummary,
   });
-  return { summary, messages };
+  return { summary, messages, compactionSummary: result.compactionSummary };
 }

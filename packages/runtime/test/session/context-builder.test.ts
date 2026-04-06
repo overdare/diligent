@@ -198,6 +198,34 @@ describe("buildSessionContext", () => {
     expect(ctx.messages[2].role).toBe("user");
   });
 
+  it("returns compaction summary separately for native compaction entries", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      displaySummary: "Compacted",
+      compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old message 1"),
+      makeMsg("a2", "a1", "assistant", "old response 1"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new message"),
+    ];
+
+    const ctx = buildSessionContext(entries);
+    expect(ctx.compactionSummary).toEqual({ type: "compaction", encrypted_content: "opaque" });
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.providerMessages).toHaveLength(1);
+    expect(msgContent(ctx.messages[0])).toBe("Compacted");
+    expect(msgContent(ctx.messages[1])).toBe("new message");
+    expect(msgContent(ctx.providerMessages[0])).toBe("new message");
+  });
+
   it("no compaction — existing behavior unchanged", () => {
     const entries: SessionEntry[] = [makeMsg("a1", null, "user", "hello"), makeMsg("a2", "a1", "assistant", "hi")];
     const ctx = buildSessionContext(entries);
@@ -214,7 +242,7 @@ describe("buildSessionTranscript", () => {
       id: "c1",
       parentId: "a2",
       timestamp: "2026-02-25T10:01:00.000Z",
-      summary: "Compacted summary",
+      displaySummary: "Compacted summary",
       recentUserMessages: [{ role: "user", content: "kept user msg", timestamp: 1708900000000 }],
       tokensBefore: 50000,
       tokensAfter: 5000,
@@ -236,5 +264,33 @@ describe("buildSessionTranscript", () => {
     expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
       "Compacted summary",
     );
+  });
+
+  it("preserves detailed native compaction summary separately from display label", () => {
+    const compaction: CompactionEntry = {
+      type: "compaction",
+      id: "c1",
+      parentId: "a2",
+      timestamp: "2026-02-25T10:01:00.000Z",
+      summary: "## Goal\nRecover Anthropic compacted details",
+      displaySummary: "Compacted",
+      compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      tokensBefore: 50000,
+      tokensAfter: 5000,
+    };
+
+    const entries: SessionEntry[] = [
+      makeMsg("a1", null, "user", "old user"),
+      makeMsg("a2", "a1", "assistant", "old assistant"),
+      compaction,
+      makeMsg("a3", "c1", "user", "new user"),
+    ];
+
+    const transcript = buildSessionTranscript(entries);
+    expect(transcript[2]).toMatchObject({ type: "compaction" });
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].summary : "").toContain(
+      "Recover Anthropic compacted details",
+    );
+    expect(transcript[2] && transcript[2].type === "compaction" ? transcript[2].displaySummary : "").toBe("Compacted");
   });
 });

@@ -4,6 +4,7 @@ import type { ProviderName } from "@diligent/core/llm/types";
 import { MODE_SYSTEM_PROMPT_SUFFIXES, type Mode, PLAN_MODE_ALLOWED_TOOLS } from "../agent/mode";
 import { RuntimeAgent } from "../agent/runtime-agent";
 import type { RuntimeConfig } from "../config/runtime";
+import { saveGlobalModel } from "../config/writer";
 import { type DiligentPaths, ensureDiligentDir } from "../infrastructure";
 import { buildDefaultTools } from "../tools/defaults";
 import type { CreateAgentArgs, DiligentAppServerConfig } from "./server";
@@ -84,6 +85,7 @@ async function createRuntimeAgent(args: {
       compaction: {
         reservePercent: runtimeConfig.compaction.reservePercent,
         keepRecentTokens: runtimeConfig.compaction.keepRecentTokens,
+        timeoutMs: runtimeConfig.compaction.timeoutMs,
       },
     },
     toolsResult.registry,
@@ -148,6 +150,9 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       onModelChange: (modelId, threadId) => {
         if (!threadId) {
           runtimeConfig.model = resolveModel(modelId);
+          saveGlobalModel(modelId).catch((err) => {
+            console.warn("[config] Failed to persist model selection:", err);
+          });
         }
       },
     },

@@ -17,9 +17,10 @@ function formatMs(ms?: number): string | null {
 
 interface AssistantMessageProps {
   item: Extract<RenderItem, { kind: "assistant" }>;
+  suppressThinking?: boolean;
 }
 
-export function AssistantMessage({ item }: AssistantMessageProps) {
+export function AssistantMessage({ item, suppressThinking = false }: AssistantMessageProps) {
   const hasThinking = item.thinking.length > 0;
   const hasText = item.text.length > 0;
   const hasStructuredBlocks = item.contentBlocks.length > 0;
@@ -31,7 +32,7 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
 
   return (
     <div className="pb-1">
-      {hasThinking && (
+      {hasThinking && !suppressThinking && (
         <div className="pb-3">
           <ThinkingBlock
             text={item.thinking}

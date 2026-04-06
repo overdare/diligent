@@ -81,6 +81,7 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     activeReasoningDurationMs: 0,
     threadStatus: payload.isRunning ? "busy" : "idle",
     planState: null,
+    isCompacting: false,
     usage: { ...zeroUsage },
     currentContextTokens: 0,
   };

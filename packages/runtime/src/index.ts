@@ -84,6 +84,7 @@ export {
   mergeConfig,
   normalizeStoredToolsConfig,
   resolveConfiguredUserId,
+  saveGlobalModel,
   writeGlobalToolsConfig,
   writeProjectToolsConfig,
 } from "./config";

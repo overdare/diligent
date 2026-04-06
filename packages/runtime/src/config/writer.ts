@@ -64,6 +64,30 @@ export function getGlobalConfigPath(): string {
   return join(home, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE);
 }
 
+/**
+ * Save the selected model to the global config file (~/.diligent/config.jsonc).
+ * Preserves existing comments and formatting via jsonc-parser.
+ */
+export async function saveGlobalModel(modelId: string): Promise<void> {
+  const configPath = getGlobalConfigPath();
+  await mkdir(dirname(configPath), { recursive: true });
+
+  let content = "{}\n";
+  const file = Bun.file(configPath);
+  if (await file.exists()) {
+    content = await file.text();
+  }
+
+  const edits = modify(content, ["model"], modelId, { formattingOptions: JSONC_FORMAT_OPTIONS });
+  const updated = applyEdits(content, edits);
+  if (content.trim() === "{}" || content.trim() === "") {
+    const formatEdits = format(updated, undefined, JSONC_FORMAT_OPTIONS);
+    await Bun.write(configPath, applyEdits(updated, formatEdits));
+  } else {
+    await Bun.write(configPath, updated);
+  }
+}
+
 export function normalizeStoredToolsConfig(
   tools: DiligentConfig["tools"] | ToolConfigPatch | undefined,
 ): StoredToolsConfig | undefined {

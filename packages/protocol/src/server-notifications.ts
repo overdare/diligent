@@ -54,6 +54,7 @@ export const ThreadCompactedNotificationSchema = z.object({
     entryCount: z.number().int().nonnegative(),
     tokensBefore: z.number().int().nonnegative(),
     tokensAfter: z.number().int().nonnegative(),
+    summary: z.string(),
   }),
 });
 export type ThreadCompactedNotification = z.infer<typeof ThreadCompactedNotificationSchema>;

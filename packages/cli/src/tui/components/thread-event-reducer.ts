@@ -363,6 +363,9 @@ export function reduceThreadEvent<TItem>(
         effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
           ...state,
+          isThreadBusy: false,
+          busyStartedAt: null,
+          statusBeforeCompaction: null,
           overlayStatus: null,
           thinkingStartTime: null,
           thinkingText: "",

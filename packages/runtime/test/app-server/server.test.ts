@@ -1,6 +1,6 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
-import { describe, expect, it, setDefaultTimeout } from "bun:test";
+import { describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2035,6 +2035,88 @@ describe("DiligentAppServer", () => {
     expect(statusEvents.length).toBeGreaterThanOrEqual(2);
     expect(statusEvents[0]?.params.status).toBe("busy");
     expect(statusEvents[statusEvents.length - 1]?.params.status).toBe("idle");
+
+    await rm(projectRoot, { recursive: true, force: true });
+  });
+
+  it("emits error notification before idle when manual compaction fails", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer({
+      cwd: projectRoot,
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      createAgent: () =>
+        new RuntimeAgent(FAKE_MODEL, [{ label: "base", content: "test" }], [], {
+          effort: "medium",
+          ...fakeConfig(() => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "hello" }],
+                  model: "fake-model",
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+
+            return stream as never;
+          }),
+        }),
+    });
+
+    const connection = connectTestPeer(server);
+
+    try {
+      const start = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 302,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const startResult = readResult(start) as { threadId: string };
+
+      const runtime = (
+        server as unknown as { threads: Map<string, { manager: { compactNow: () => Promise<unknown> } }> }
+      ).threads.get(startResult.threadId);
+      if (!runtime) throw new Error("missing runtime");
+      runtime.manager.compactNow = mock(async () => {
+        throw new Error("Estimated Token is below 50000");
+      });
+
+      const compactResponse = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 303,
+        method: "thread/compact/start",
+        params: { threadId: startResult.threadId },
+      });
+      expect(() => readResult(compactResponse)).toThrow("Estimated Token is below 50000");
+
+      const threadNotifications = connection.notifications.filter(
+        (notification) => "threadId" in notification.params && notification.params.threadId === startResult.threadId,
+      );
+      const errorIndex = threadNotifications.findIndex(
+        (notification) => notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      );
+      const idleIndex = threadNotifications.findIndex(
+        (notification) =>
+          notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+          notification.params.status === "idle",
+      );
+
+      expect(errorIndex).toBeGreaterThan(-1);
+      expect(idleIndex).toBeGreaterThan(errorIndex);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 
   it("rebinds collab handler when registry instance changes between turns", async () => {

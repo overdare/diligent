@@ -1,6 +1,7 @@
 // @summary Tests for agent-layer compaction helpers — token estimation, shouldCompact, selectForCompaction
 import { describe, expect, it } from "bun:test";
 import { EventStream } from "@diligent/core/event-stream";
+import { NATIVE_COMPACTION_MIN_INPUT_TOKENS } from "@diligent/core/llm/compaction";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
 import { resolveMaxTokens } from "@diligent/core/llm/types";
 import type { Message, UserMessage } from "@diligent/core/types";
@@ -221,8 +222,8 @@ describe("selectForCompaction", () => {
 });
 
 describe("runCompaction", () => {
-  it("always rebuilds summary as a user turn, including native summaries", async () => {
-    const messages: Message[] = [userMsg("first"), assistantMsg("reply"), userMsg("second")];
+  it("rebuilds summary messages when native compaction returns only display summary", async () => {
+    const messages: Message[] = [userMsg("x".repeat(NATIVE_COMPACTION_MIN_INPUT_TOKENS * 4))];
     const stream = new AgentStream();
     const result = await runCompaction({
       messages,
@@ -237,17 +238,66 @@ describe("runCompaction", () => {
       stream,
     });
 
-    expect(result.messages).toHaveLength(3);
-    expect(userContent(result.messages[0])).toBe("first");
-    expect(userContent(result.messages[1])).toBe("second");
-    expect(result.messages[2]?.role).toBe("user");
-    const summaryMessage = result.messages[2];
-    expect(summaryMessage?.role).toBe("user");
-    expect(
-      summaryMessage && summaryMessage.role === "user" && typeof summaryMessage.content === "string"
-        ? summaryMessage.content
-        : "",
-    ).toContain("native summary");
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]?.role).toBe("user");
+    expect(result.messages[1]?.role).toBe("user");
+    expect(result.summary).toBe("native summary");
+    expect(result.compactionSummary).toBeUndefined();
+  });
+
+  it("returns native compaction summary without coercing it into summary messages", async () => {
+    const messages: Message[] = [userMsg("x".repeat(NATIVE_COMPACTION_MIN_INPUT_TOKENS * 4))];
+    const stream = new AgentStream();
+    const result = await runCompaction({
+      messages,
+      model: { ...TEST_MODEL, provider: "openai" },
+      systemPrompt: [],
+      compactionConfig: {
+        reservePercent: 16,
+        keepRecentTokens: 50,
+      },
+      llmMsgStreamFn: makeStreamFn("unused summary"),
+      llmCompactionFn: async () => ({
+        status: "ok",
+        compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      }),
+      stream,
+    });
+
+    expect(result.messages).toEqual([]);
+    expect(result.compactionSummary).toEqual({ type: "compaction", encrypted_content: "opaque" });
+  });
+
+  it("forwards compactionSummary and sessionId to native compaction", async () => {
+    const messages: Message[] = [{ role: "user", content: "x".repeat(200_001), timestamp: 0 }];
+    const stream = new AgentStream();
+    let capturedSessionId: string | undefined;
+    let capturedCompactionSummary: Record<string, unknown> | undefined;
+
+    await runCompaction({
+      messages,
+      model: { ...TEST_MODEL, provider: "openai" },
+      systemPrompt: [],
+      compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+      sessionId: "session-123",
+      compactionConfig: {
+        reservePercent: 16,
+        keepRecentTokens: 50,
+      },
+      llmMsgStreamFn: makeStreamFn("unused summary"),
+      llmCompactionFn: async (input) => {
+        capturedSessionId = input.sessionId;
+        capturedCompactionSummary = input.compactionSummary;
+        return {
+          status: "ok",
+          compactionSummary: { type: "compaction", encrypted_content: "next-opaque" },
+        };
+      },
+      stream,
+    });
+
+    expect(capturedSessionId).toBe("session-123");
+    expect(capturedCompactionSummary).toEqual({ type: "compaction", encrypted_content: "opaque" });
   });
 });
 

@@ -49,6 +49,12 @@ export interface CompactMessagesResult {
   tokensAfter: number;
 }
 
+export interface LLMCompactResult {
+  mode: "local" | "native";
+  displaySummary?: string;
+  compactionSummary?: Record<string, unknown>;
+}
+
 export interface GenerateSummaryOptions {
   signal?: AbortSignal;
   reservePercent?: number;
@@ -65,6 +71,7 @@ export interface LLMCompactInput {
   /** Messages to summarize (pre-selected by caller via selectForCompaction). */
   messages: Message[];
   systemPrompt: SystemSection[];
+  compactionSummary?: Record<string, unknown>;
   sessionId?: string;
   config: LLMCompactConfig;
   signal?: AbortSignal;
@@ -79,6 +86,8 @@ type CompactionResolver = (provider: string) => NativeCompactFn | undefined;
 const STATIC_COMPACTION_RESOLVERS: Partial<Record<string, CompactionResolver>> = {
   // Intentionally empty for now: authenticated providers should pass llmCompactionFn via AgentOptions.
 };
+
+export const NATIVE_COMPACTION_MIN_INPUT_TOKENS = 50_000;
 
 /** Resolve a provider-native compaction function for the given provider from static definitions. */
 export function resolveCompaction(provider: string): NativeCompactFn | undefined {
@@ -150,24 +159,30 @@ export async function compactMessages(
 }
 
 /**
- * Native-first summary pipeline: tries provider-native summary first, falls back to local LLM summarization.
+ * Summary pipeline: use provider-native compaction when available, otherwise local LLM summarization.
  */
-export async function compact(input: LLMCompactInput): Promise<string> {
+export async function compact(input: LLMCompactInput): Promise<LLMCompactResult> {
   const nativeCompactFn = input.llmCompactionFn ?? resolveCompaction(input.model.provider);
 
   if (nativeCompactFn) {
-    try {
-      const nativeResult = await nativeCompactFn({
-        model: input.model,
-        systemPrompt: input.systemPrompt,
-        messages: input.messages,
-        sessionId: input.sessionId,
-        signal: input.signal,
-      });
-      if (nativeResult.status === "ok") {
-        return nativeResult.summary.trim();
-      }
-    } catch {}
+    const nativeResult = await nativeCompactFn({
+      model: input.model,
+      systemPrompt: input.systemPrompt,
+      messages: input.messages,
+      compactionSummary: input.compactionSummary,
+      sessionId: input.sessionId,
+      signal: input.signal,
+    });
+    if (nativeResult.status === "ok") {
+      return {
+        mode: "native",
+        displaySummary: nativeResult.summary?.trim() || undefined,
+        compactionSummary: nativeResult.compactionSummary,
+      };
+    }
+    throw new Error(
+      `Native compaction is configured for provider=${input.model.provider} model=${input.model.id} but returned unsupported${nativeResult.reason ? `: ${nativeResult.reason}` : ""}`,
+    );
   }
 
   const streamFunction = input.streamFn ?? resolveStream(input.model.provider as ProviderName);
@@ -178,5 +193,8 @@ export async function compact(input: LLMCompactInput): Promise<string> {
     { reservePercent: input.config.reservePercent, prompts: input.config.prompts },
     input.signal,
   );
-  return local;
+  return {
+    mode: "local",
+    displaySummary: local.trim(),
+  };
 }

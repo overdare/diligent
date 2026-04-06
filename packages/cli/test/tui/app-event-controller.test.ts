@@ -77,6 +77,7 @@ describe("AppEventController", () => {
         entryCount: 3,
         tokensBefore: 4000,
         tokensAfter: 1800,
+        summary: "Actual compacted summary",
       },
     });
 
@@ -88,7 +89,7 @@ describe("AppEventController", () => {
       type: "compaction_end",
       tokensBefore: 4000,
       tokensAfter: 1800,
-      summary: "3 entries",
+      summary: "Actual compacted summary",
     });
   });
 
@@ -147,6 +148,43 @@ describe("AppEventController", () => {
 
     expect(handleAgentEvent).toHaveBeenNthCalledWith(1, { type: "status_change", status: "busy" });
     expect(handleAgentEvent).toHaveBeenNthCalledWith(2, { type: "turn_start", turnId: "turn-1" });
+  });
+
+  test("forwards server error notification as agent error before rejecting pending turn", async () => {
+    const runtime = new AppRuntimeState("default", "medium");
+    runtime.currentThreadId = "thread-1";
+    runtime.pendingTurn = {
+      resolve: () => {},
+      reject: () => {},
+    };
+    const handleAgentEvent = mock(() => {});
+    const onTurnErrored = mock(() => {});
+    const controller = new AppEventController({
+      runtime,
+      handleAgentEvent,
+      onTurnFinished: () => {},
+      onTurnErrored,
+      onUserInputRequestResolved: () => {},
+      onAccountLoginCompleted: () => {},
+      requestApproval: async () => "once",
+      requestUserInput: async () => ({ answers: {} }),
+    });
+
+    await controller.handleServerNotification({
+      method: "error",
+      params: {
+        threadId: "thread-1",
+        error: { message: "Estimated Token is below 50000", name: "Error" },
+        fatal: false,
+      },
+    });
+
+    expect(handleAgentEvent).toHaveBeenCalledWith({
+      type: "error",
+      error: { message: "Estimated Token is below 50000", name: "Error" },
+      fatal: false,
+    });
+    expect(onTurnErrored).toHaveBeenCalledWith("Estimated Token is below 50000");
   });
 
   test("delegates approval server requests", async () => {

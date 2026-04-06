@@ -24,6 +24,7 @@ export interface AppConfig {
     enabled: boolean;
     reservePercent: number;
     keepRecentTokens: number;
+    timeoutMs: number;
   };
   providerManager: ProviderManager;
 }
@@ -49,6 +50,7 @@ export async function loadConfig(cwd: string = process.cwd(), paths?: DiligentPa
       enabled: runtime.compaction.enabled,
       reservePercent: runtime.compaction.reservePercent,
       keepRecentTokens: runtime.compaction.keepRecentTokens,
+      timeoutMs: runtime.compaction.timeoutMs,
     },
     providerManager: runtime.providerManager,
   };

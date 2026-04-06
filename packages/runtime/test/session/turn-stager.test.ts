@@ -21,10 +21,10 @@ describe("TurnStager", () => {
     }
   });
 
-  test("stages turn_end assistant and tool_result messages in order", () => {
+  test("stages assistant and tool_result messages as their events arrive", () => {
     const stager = new TurnStager(null, [], makeUser("hello"));
-    const event: CoreAgentEvent = {
-      type: "turn_end",
+    const messageEnd: CoreAgentEvent = {
+      type: "message_end",
       turnId: "t1",
       message: {
         role: "assistant",
@@ -34,19 +34,20 @@ describe("TurnStager", () => {
         stopReason: "tool_use",
         timestamp: Date.now(),
       },
-      toolResults: [
-        {
-          role: "tool_result",
-          toolCallId: "tc_1",
-          toolName: "echo",
-          output: "ok",
-          isError: false,
-          timestamp: Date.now(),
-        },
-      ],
+    };
+    const toolEnd: CoreAgentEvent = {
+      type: "tool_end",
+      turnId: "t1",
+      toolCallId: "tc_1",
+      toolName: "echo",
+      input: {},
+      output: "ok",
+      isError: false,
+      timestamp: Date.now(),
     };
 
-    stager.handleEvent(event, 20_000);
+    stager.handleEvent(messageEnd, 20_000);
+    stager.handleEvent(toolEnd, 20_000);
     const snapshot = stager.getSnapshot();
 
     expect(snapshot.entries).toHaveLength(3);
@@ -73,5 +74,26 @@ describe("TurnStager", () => {
     const snapshot = stager.getSnapshot();
     expect(snapshot.entries).toHaveLength(2);
     expect(snapshot.entries[1]?.type).toBe("compaction");
+  });
+
+  test("preserves compaction summary on compaction_end", () => {
+    const stager = new TurnStager(null, [], makeUser("hello"));
+    stager.handleEvent(
+      {
+        type: "compaction_end",
+        turnId: "t1",
+        summary: "Compacted",
+        compactionSummary: { type: "compaction", encrypted_content: "opaque" },
+        tokensBefore: 100,
+        tokensAfter: 20,
+      },
+      20_000,
+    );
+
+    const snapshot = stager.getSnapshot();
+    expect(snapshot.entries[1]?.type).toBe("compaction");
+    if (snapshot.entries[1]?.type === "compaction") {
+      expect(snapshot.entries[1].compactionSummary).toEqual({ type: "compaction", encrypted_content: "opaque" });
+    }
   });
 });

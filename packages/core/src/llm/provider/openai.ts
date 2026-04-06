@@ -8,11 +8,12 @@ import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
 import {
   buildResponsesRequestBody,
-  convertMessages,
   describeCompactionPayload,
   extractCompactionSummary,
+  extractCompactionSummaryItem,
   handleResponsesAPIEvents,
   isContextOverflow,
+  toResponseInputItems,
 } from "./openai-shared";
 
 export function createOpenAIStream(apiKey?: string, baseUrl?: string): StreamFunction {
@@ -36,6 +37,7 @@ export function createOpenAIStream(apiKey?: string, baseUrl?: string): StreamFun
           model: model.id,
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
+          compactionSummary: context.compactionSummary,
           tools: context.tools,
           strictTools: false,
           sessionId: options.sessionId,
@@ -174,7 +176,10 @@ export function createOpenAINativeCompaction(apiKey: string, baseUrl?: string): 
   return async (input) => {
     const body: Record<string, unknown> = {
       model: input.model.id,
-      input: await convertMessages(input.messages),
+      input: await toResponseInputItems({
+        messages: input.messages,
+        compactionSummary: input.compactionSummary,
+      }),
     };
     if (input.systemPrompt.length > 0) body.instructions = flattenSections(input.systemPrompt);
 
@@ -199,10 +204,11 @@ export function createOpenAINativeCompaction(apiKey: string, baseUrl?: string): 
 
     const payload = (await response.json()) as Record<string, unknown>;
     const summary = extractCompactionSummary(payload);
-    if (!summary?.trim()) {
+    const compactionSummary = extractCompactionSummaryItem(payload);
+    if (!summary?.trim() && !compactionSummary) {
       return { status: "unsupported", reason: `missing_summary ${describeCompactionPayload(payload)}` };
     }
-    return { status: "ok", summary };
+    return { status: "ok", summary, compactionSummary };
   };
 }
 

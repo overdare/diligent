@@ -156,6 +156,7 @@ export interface ThreadState {
   activeTurnStartedAt: number | null;
   activeReasoningStartedAt: number | null;
   activeReasoningDurationMs: number;
+  isCompacting: boolean;
 }
 
 export const initialThreadState: ThreadState = {
@@ -178,6 +179,7 @@ export const initialThreadState: ThreadState = {
   activeTurnStartedAt: null,
   activeReasoningStartedAt: null,
   activeReasoningDurationMs: 0,
+  isCompacting: false,
 };
 
 let renderSeq = 0;
@@ -366,15 +368,22 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
 
     case "error":
-      return {
+      return settleInFlightItems({
         ...state,
+        threadStatus: "idle",
+        isCompacting: false,
+        itemSlots: {},
+        activeTurnId: null,
+        activeTurnStartedAt: null,
+        activeReasoningStartedAt: null,
+        activeReasoningDurationMs: 0,
         toast: {
           id: `err-${Date.now()}`,
           kind: "error",
           message: event.error.message,
           fatal: event.fatal,
         },
-      };
+      });
 
     case "knowledge_saved":
       return {
@@ -387,24 +396,17 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
 
     case "compaction_start":
-      return {
-        ...state,
-        toast: {
-          id: `compaction-start-${Date.now()}`,
-          kind: "info",
-          message: `Compacting context (${Math.round(event.estimatedTokens / 1000)}k tokens)…`,
-        },
-      };
+      return { ...state, isCompacting: true };
 
     case "compaction_end": {
-      return {
-        ...state,
-        toast: {
-          id: `compaction-end-${Date.now()}`,
-          kind: "info",
-          message: `Compacted: ${Math.round(event.tokensBefore / 1000)}k → ${Math.round(event.tokensAfter / 1000)}k tokens`,
-        },
-      };
+      const contextKey = `event:compaction:${Date.now()}`;
+      const nextState = { ...state, isCompacting: false };
+      return withItem(nextState, contextKey, {
+        id: contextKey,
+        kind: "context",
+        summary: event.summary,
+        timestamp: Date.now(),
+      });
     }
 
     case "steering_injected": {
@@ -557,6 +559,7 @@ function handleTurnInterruptedNotification(state: ThreadState): ThreadState {
   const settled = settleInFlightItems({
     ...state,
     threadStatus: "idle",
+    isCompacting: false,
     itemSlots: {},
     activeTurnId: null,
     activeTurnStartedAt: null,
@@ -579,6 +582,19 @@ function handleTurnCompletedNotification(state: ThreadState, turnId: string): Th
   return applyLatestAssistantDurations(settled, turnDurationMs, reasoningDurationMs);
 }
 
+function upsertLiveCompactionItem(state: ThreadState, summary: string, timestamp: number): ThreadState {
+  const existing = state.items.findLast((item) => item.kind === "context");
+  if (existing?.kind === "context") {
+    return updateItem(state, existing.id, (item) => (item.kind === "context" ? { ...item, summary, timestamp } : item));
+  }
+  return withItem(state, `event:compaction:${timestamp}`, {
+    id: `event:compaction:${timestamp}`,
+    kind: "context",
+    summary,
+    timestamp,
+  });
+}
+
 export function reduceServerNotification(
   state: ThreadState,
   notification: DiligentServerNotification,
@@ -597,6 +613,18 @@ export function reduceServerNotification(
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
     return handleTurnInterruptedNotification(stateWithAuthoritativeStatus);
+  }
+
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED) {
+    return { ...stateWithAuthoritativeStatus, isCompacting: true };
+  }
+
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTED) {
+    return upsertLiveCompactionItem(
+      { ...stateWithAuthoritativeStatus, isCompacting: false },
+      notification.params.summary,
+      Date.now(),
+    );
   }
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
