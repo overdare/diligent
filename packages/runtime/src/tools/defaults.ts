@@ -67,7 +67,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
         pluginErrors: [],
       }
     : await (async () => {
-        const webEnabled = toolsConfig?.web !== false;
+        const webEnabled = toolsConfig?.web_action !== false;
 
         const builtinTools: Tool[] = [
           createBashTool(cwd, host),

@@ -28,7 +28,7 @@ function standardBuiltins(): Tool[] {
     mockTool("skill"),
     mockTool("bash"),
     mockTool("read"),
-    mockTool("web"),
+    mockTool("web_action"),
     mockTool("write"),
   ];
 }
@@ -100,7 +100,15 @@ describe("buildToolCatalog", () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(builtins, undefined, "/tmp");
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual([
+      "plan",
+      "request_user_input",
+      "skill",
+      "bash",
+      "read",
+      "web_action",
+      "write",
+    ]);
     expect(result.state).toHaveLength(7);
     expect(result.plugins).toEqual([]);
     for (const entry of result.state) {
@@ -117,24 +125,40 @@ describe("buildToolCatalog", () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(builtins, {}, "/tmp");
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual([
+      "plan",
+      "request_user_input",
+      "skill",
+      "bash",
+      "read",
+      "web_action",
+      "write",
+    ]);
     expect(result.state).toHaveLength(7);
     expect(result.plugins).toEqual([]);
     expect(result.pluginErrors).toEqual([]);
   });
 
-  it("does not treat tools.web as a catalog toggle by itself", async () => {
+  it("does not treat tools.web_action as a catalog toggle by itself", async () => {
     const builtins = standardBuiltins();
-    const result = await buildToolCatalog(builtins, { web: false }, "/tmp");
+    const result = await buildToolCatalog(builtins, { web_action: false }, "/tmp");
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual([
+      "plan",
+      "request_user_input",
+      "skill",
+      "bash",
+      "read",
+      "web_action",
+      "write",
+    ]);
   });
 
   it("excludes a disabled non-immutable builtin", async () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(builtins, { builtin: { bash: false } }, "/tmp");
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "read", "web_action", "write"]);
     const bashState = result.state.find((s) => s.name === "bash");
     expect(bashState).toBeDefined();
     expect(bashState!.enabled).toBe(false);
@@ -180,7 +204,7 @@ describe("buildToolCatalog", () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(builtins, { builtin: { bash: false, write: false } }, "/tmp");
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "read", "web"]);
+    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "read", "web_action"]);
     const bashState = result.state.find((s) => s.name === "bash");
     const writeState = result.state.find((s) => s.name === "write");
     expect(bashState!.enabled).toBe(false);
@@ -202,7 +226,7 @@ describe("buildToolCatalog", () => {
       expect(entry!.pluginPackage).toBeUndefined();
     }
 
-    for (const name of ["bash", "read", "web", "write"]) {
+    for (const name of ["bash", "read", "web_action", "write"]) {
       const entry = stateByName.get(name);
       expect(entry).toBeDefined();
       expect(entry!.source).toBe("builtin");
@@ -226,7 +250,7 @@ describe("buildToolCatalog", () => {
     const builtins = standardBuiltins();
     const result = await buildToolCatalog(
       builtins,
-      { builtin: { bash: false, read: false, web: false, write: false } },
+      { builtin: { bash: false, read: false, web_action: false, write: false } },
       "/tmp",
     );
 
@@ -259,7 +283,7 @@ describe("buildToolCatalog", () => {
       "skill",
       "bash",
       "read",
-      "web",
+      "web_action",
       "write",
       "plugin_tool",
     ]);
@@ -310,7 +334,15 @@ describe("buildToolCatalog", () => {
       "/tmp",
     );
 
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual([
+      "plan",
+      "request_user_input",
+      "skill",
+      "bash",
+      "read",
+      "web_action",
+      "write",
+    ]);
     expect(result.plugins).toEqual([
       {
         package: "@test/catalog-plugin",
@@ -443,7 +475,7 @@ describe("buildToolCatalog", () => {
       "skill",
       "bash",
       "read",
-      "web",
+      "web_action",
       "write",
       "plugin_tool",
       "good_plugin_tool",
@@ -573,7 +605,15 @@ describe("buildToolCatalog", () => {
 
     const result = await buildToolCatalog(standardBuiltins(), {}, "/tmp");
     expect(result.plugins).toEqual([]);
-    expect(toolNames(result.tools)).toEqual(["plan", "request_user_input", "skill", "bash", "read", "web", "write"]);
+    expect(toolNames(result.tools)).toEqual([
+      "plan",
+      "request_user_input",
+      "skill",
+      "bash",
+      "read",
+      "web_action",
+      "write",
+    ]);
   });
 
   // ── Existing global-dir test (kept for regression) ─────────────────────────

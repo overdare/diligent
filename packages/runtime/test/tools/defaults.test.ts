@@ -7,14 +7,14 @@ describe("buildDefaultTools web gating", () => {
     const result = await buildDefaultTools({ cwd: "/tmp" });
     const names = result.tools.map((tool) => tool.name);
 
-    expect(names).toContain("web");
+    expect(names).toContain("web_action");
   });
 
-  test("omits provider-native web placeholder tool when tools.web is false", async () => {
-    const result = await buildDefaultTools({ cwd: "/tmp", toolsConfig: { web: false } });
+  test("omits provider-native web placeholder tool when tools.web_action is false", async () => {
+    const result = await buildDefaultTools({ cwd: "/tmp", toolsConfig: { web_action: false } });
     const names = result.tools.map((tool) => tool.name);
 
-    expect(names).not.toContain("web");
-    expect(result.toolState.find((entry) => entry.name === "web")).toBeUndefined();
+    expect(names).not.toContain("web_action");
+    expect(result.toolState.find((entry) => entry.name === "web_action")).toBeUndefined();
   });
 });

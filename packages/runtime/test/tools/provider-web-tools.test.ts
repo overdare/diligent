@@ -14,7 +14,7 @@ function makeCtx(): ToolContext {
 
 describe("provider-native web built-ins", () => {
   test("tool metadata marks web as a provider built-in", () => {
-    expect(TOOL_CAPABILITIES.web).toMatchObject({
+    expect(TOOL_CAPABILITIES.web_action).toMatchObject({
       executionMode: "provider_builtin",
       providerCapability: "web",
     });
@@ -22,7 +22,7 @@ describe("provider-native web built-ins", () => {
 
   test("web placeholder tool is exposed for catalog/config flows", async () => {
     const tool = createWebTool();
-    expect(tool.name).toBe("web");
+    expect(tool.name).toBe("web_action");
     expect(tool.description).toContain("native web capability");
 
     const result = await tool.execute({ query: "diligent" }, makeCtx());

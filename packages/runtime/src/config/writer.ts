@@ -32,14 +32,14 @@ export interface ToolPluginPatch extends BasePluginConfig {
 }
 
 export interface ToolConfigPatch {
-  web?: boolean;
+  web_action?: boolean;
   builtin?: Record<string, boolean>;
   plugins?: ToolPluginPatch[];
   conflictPolicy?: ConflictPolicy;
 }
 
 export interface StoredToolsConfig {
-  web?: false;
+  web_action?: false;
   builtin?: Record<string, false>;
   plugins?: Array<{
     package: string;
@@ -69,17 +69,17 @@ export function normalizeStoredToolsConfig(
 ): StoredToolsConfig | undefined {
   if (!tools) return undefined;
 
-  const web = tools.web === false ? false : undefined;
+  const webAction = tools.web_action === false ? false : undefined;
   const normalizedBuiltin = normalizeFalseOnlyMap(tools.builtin);
   const plugins = normalizePluginConfigs(tools.plugins);
   const conflictPolicy = tools.conflictPolicy && tools.conflictPolicy !== "error" ? tools.conflictPolicy : undefined;
 
-  if (web === undefined && !normalizedBuiltin && !plugins && !conflictPolicy) {
+  if (webAction === undefined && !normalizedBuiltin && !plugins && !conflictPolicy) {
     return undefined;
   }
 
   return {
-    ...(web === false ? { web } : {}),
+    ...(webAction === false ? { web_action: webAction } : {}),
     ...(normalizedBuiltin ? { builtin: normalizedBuiltin } : {}),
     ...(plugins ? { plugins } : {}),
     ...(conflictPolicy ? { conflictPolicy } : {}),
@@ -90,13 +90,13 @@ export function applyToolConfigPatch(
   current: DiligentConfig["tools"] | undefined,
   patch: ToolConfigPatch,
 ): StoredToolsConfig | undefined {
-  const nextWeb = patch.web ?? current?.web;
+  const nextWebAction = patch.web_action ?? current?.web_action;
   const mergedBuiltin = mergeBooleanMaps(current?.builtin, patch.builtin);
   const mergedPlugins = mergePluginPatches(current?.plugins ?? [], patch.plugins ?? []);
   const nextConflictPolicy = patch.conflictPolicy ?? current?.conflictPolicy;
 
   return normalizeStoredToolsConfig({
-    web: nextWeb,
+    web_action: nextWebAction,
     builtin: mergedBuiltin,
     plugins: mergedPlugins,
     conflictPolicy: nextConflictPolicy,

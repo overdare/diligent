@@ -351,7 +351,7 @@ describe("Agent", () => {
       BASE_CONFIG.systemPrompt,
       [
         {
-          name: "web",
+          name: "web_action",
           description: "Use the web",
           parameters: z.object({ url: z.string().url(), prompt: z.string().optional() }),
           async execute() {

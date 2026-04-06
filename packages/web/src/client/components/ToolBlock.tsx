@@ -46,11 +46,11 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const isUserInput = normalizedToolName === "request_user_input";
   const outputSummary = renderPayload && !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
   const showOutputSummary =
-    normalizedToolName !== "web" && Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
+    normalizedToolName !== "web_action" && Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
   const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;
 
   const isStreaming = item.status === "streaming";
-  const isWebTool = normalizedToolName === "web";
+  const isWebTool = normalizedToolName === "web_action";
 
   const statusEl =
     isStreaming && !isWebTool ? (

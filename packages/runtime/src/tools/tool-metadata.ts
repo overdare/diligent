@@ -34,7 +34,7 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   grep: { planModeAllowed: true },
   ls: { planModeAllowed: true },
   search_knowledge: { planModeAllowed: true, hasCustomRender: true },
-  web: { executionMode: "provider_builtin", providerCapability: "web" },
+  web_action: { executionMode: "provider_builtin", providerCapability: "web" },
 
   // Write tools (excluded from plan mode)
   bash: { hasCustomRender: true },

@@ -10,11 +10,11 @@ const WebParams = z.object({
 
 export function createWebTool(): Tool<typeof WebParams> {
   return {
-    name: "web",
+    name: "web_action",
     description: "Use the active provider's native web capability for search and page fetching.",
     parameters: WebParams,
     execute: async () => ({
-      output: "web is handled by the active provider and should not execute locally.",
+      output: "web_action is handled by the active provider and should not execute locally.",
     }),
   };
 }

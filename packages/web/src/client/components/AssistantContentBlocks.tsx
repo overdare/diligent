@@ -64,7 +64,7 @@ function makeToolItem(args: {
   return {
     id: args.key,
     kind: "tool",
-    toolName: "web",
+    toolName: "web_action",
     inputText: args.inputSummary ?? "",
     outputText: args.outputText ?? "",
     isError: args.isError ?? false,

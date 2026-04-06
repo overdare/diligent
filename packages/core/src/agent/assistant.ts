@@ -27,7 +27,7 @@ function toFunctionToolDefinition(tool: Pick<Tool, "name" | "description" | "par
 }
 
 function toToolDefinition(tool: Pick<Tool, "name" | "description" | "parameters">): ToolDefinition {
-  if (tool.name === "web") {
+  if (tool.name === "web_action") {
     return {
       kind: "provider_builtin",
       capability: "web",

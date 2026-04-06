@@ -39,7 +39,7 @@ describe("provider builtin tool mapping", () => {
   test("maps web to provider_builtin and keeps regular tools as function", async () => {
     let capturedContext: StreamContext | undefined;
 
-    const agent = new Agent(TEST_MODEL, [], [makeTool("read"), makeTool("web")], {
+    const agent = new Agent(TEST_MODEL, [], [makeTool("read"), makeTool("web_action")], {
       effort: "medium",
       compaction: { reservePercent: 16, keepRecentTokens: 20_000 },
       llmMsgStreamFn: (_model, context) => {

@@ -584,7 +584,7 @@ export class DiligentAppServer {
   private async handleToolsSet(
     threadId: string | undefined,
     params: {
-      web?: boolean;
+      web_action?: boolean;
       builtin?: Record<string, boolean>;
       plugins?: Array<{ package: string; enabled?: boolean; tools?: Record<string, boolean>; remove?: boolean }>;
       conflictPolicy?: ToolConflictPolicy;

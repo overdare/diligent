@@ -133,7 +133,7 @@ export const DiligentConfigSchema = z
     // Tool configuration (P032)
     tools: z
       .object({
-        web: z.boolean().optional(),
+        web_action: z.boolean().optional(),
         builtin: z.record(z.string(), z.boolean()).optional(),
         plugins: z
           .array(
