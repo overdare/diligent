@@ -2,9 +2,19 @@
 
 import type { NativeCompactFn } from "../llm/provider/native-compaction";
 import type { ProviderErrorType, StreamFunction, ThinkingEffort } from "../llm/types";
-import type { AssistantMessage, Message, ToolRenderPayloadLike, ToolResultMessage, Usage } from "../types";
+import type {
+  AssistantMessage,
+  ContentBlock,
+  Message,
+  ToolRenderPayloadLike,
+  ToolResultMessage,
+  Usage,
+} from "../types";
 
-export type MessageDelta = { type: "text_delta"; delta: string } | { type: "thinking_delta"; delta: string };
+export type MessageDelta =
+  | { type: "text_delta"; delta: string }
+  | { type: "thinking_delta"; delta: string }
+  | { type: "content_block_delta"; block: ContentBlock };
 
 // D086: Serializable error representation for events crossing core↔consumer boundary
 export interface SerializableError {

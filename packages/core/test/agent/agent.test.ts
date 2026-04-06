@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { CoreAgentEvent } from "@diligent/core/agent";
 import { Agent } from "@diligent/core/agent";
 import { EventStream } from "@diligent/core/event-stream";
-import type { Model, ProviderEvent, ProviderResult } from "@diligent/core/llm/types";
+import type { Model, ProviderEvent, ProviderResult, ToolDefinition } from "@diligent/core/llm/types";
 import { ProviderError } from "@diligent/core/llm/types";
 import type { AssistantMessage } from "@diligent/core/types";
 import { z } from "zod";
@@ -342,5 +342,102 @@ describe("Agent", () => {
       expect(errorEvent.error.statusCode).toBe(400);
       expect(errorEvent.error.isRetryable).toBe(false);
     }
+  });
+
+  test("provider-native web tools are passed as normalized provider built-ins", async () => {
+    let capturedTools: ToolDefinition[] = [];
+    const agent = new Agent(
+      TEST_MODEL,
+      BASE_CONFIG.systemPrompt,
+      [
+        {
+          name: "web",
+          description: "Use the web",
+          parameters: z.object({ url: z.string().url(), prompt: z.string().optional() }),
+          async execute() {
+            return { output: "unused" };
+          },
+        },
+        {
+          name: "read",
+          description: "Read a file",
+          parameters: z.object({ filePath: z.string() }),
+          async execute() {
+            return { output: "unused" };
+          },
+        },
+      ],
+      {
+        effort: BASE_CONFIG.effort,
+        compaction: BASE_CONFIG.compaction,
+        llmMsgStreamFn: (_model: Model, ctx: { tools: ToolDefinition[] }) => {
+          capturedTools = ctx.tools;
+          return makeStreamFn(makeAssistant("ok"))();
+        },
+      },
+    );
+
+    await agent.prompt({ role: "user", content: "hi", timestamp: Date.now() });
+
+    expect(capturedTools).toEqual([
+      { kind: "provider_builtin", capability: "web", options: { citationsEnabled: true } },
+      {
+        kind: "function",
+        name: "read",
+        description: "Read a file",
+        inputSchema: {
+          type: "object",
+          properties: {
+            filePath: { type: "string" },
+          },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+      },
+    ]);
+  });
+
+  test("provider-native web tools are absent when not provided to the agent", async () => {
+    let capturedTools: ToolDefinition[] = [];
+    const agent = new Agent(
+      TEST_MODEL,
+      BASE_CONFIG.systemPrompt,
+      [
+        {
+          name: "read",
+          description: "Read a file",
+          parameters: z.object({ filePath: z.string() }),
+          async execute() {
+            return { output: "unused" };
+          },
+        },
+      ],
+      {
+        effort: BASE_CONFIG.effort,
+        compaction: BASE_CONFIG.compaction,
+        llmMsgStreamFn: (_model: Model, ctx: { tools: ToolDefinition[] }) => {
+          capturedTools = ctx.tools;
+          return makeStreamFn(makeAssistant("ok"))();
+        },
+      },
+    );
+
+    await agent.prompt({ role: "user", content: "hi", timestamp: Date.now() });
+
+    expect(capturedTools).toEqual([
+      {
+        kind: "function",
+        name: "read",
+        description: "Read a file",
+        inputSchema: {
+          type: "object",
+          properties: {
+            filePath: { type: "string" },
+          },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+      },
+    ]);
   });
 });

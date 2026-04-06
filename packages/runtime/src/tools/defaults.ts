@@ -20,6 +20,7 @@ import { createRequestUserInputTool } from "./request-user-input";
 import { createSearchKnowledgeTool } from "./search-knowledge";
 import { createSkillTool } from "./skill";
 import { createUpdateKnowledgeTool } from "./update-knowledge";
+import { createWebTool } from "./web";
 
 export interface BuildDefaultToolsResult {
   tools: Tool[];
@@ -66,6 +67,8 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
         pluginErrors: [],
       }
     : await (async () => {
+        const webEnabled = toolsConfig?.web !== false;
+
         const builtinTools: Tool[] = [
           createBashTool(cwd, host),
           createSkillTool(skills),
@@ -77,6 +80,10 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
           createPlanTool(),
           createRequestUserInputTool(host),
         ];
+
+        if (webEnabled) {
+          builtinTools.push(createWebTool());
+        }
 
         if (paths) {
           builtinTools.push(createSearchKnowledgeTool(paths.knowledge));

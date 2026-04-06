@@ -2,19 +2,40 @@
 
 import { createHash } from "node:crypto";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { Model, StreamContext, StreamFunction, SystemSection, ThinkingEffort, ToolDefinition } from "../llm/types";
+import type {
+  FunctionToolDefinition,
+  Model,
+  StreamContext,
+  StreamFunction,
+  SystemSection,
+  ThinkingEffort,
+  ToolDefinition,
+} from "../llm/types";
 import { resolveMaxTokens } from "../llm/types";
 import type { Tool } from "../tool/types";
 import type { AssistantMessage, Message } from "../types";
 import type { AgentStream } from "./types";
 
-function toToolDefinition(tool: Pick<Tool, "name" | "description" | "parameters">): ToolDefinition {
+function toFunctionToolDefinition(tool: Pick<Tool, "name" | "description" | "parameters">): FunctionToolDefinition {
   const { $schema, ...schema } = zodToJsonSchema(tool.parameters) as Record<string, unknown>;
   return {
+    kind: "function",
     name: tool.name,
     description: tool.description,
     inputSchema: schema,
   };
+}
+
+function toToolDefinition(tool: Pick<Tool, "name" | "description" | "parameters">): ToolDefinition {
+  if (tool.name === "web") {
+    return {
+      kind: "provider_builtin",
+      capability: "web",
+      options: { citationsEnabled: true },
+    };
+  }
+
+  return toFunctionToolDefinition(tool);
 }
 
 function createAssistantMessage(model: string): AssistantMessage {
@@ -109,6 +130,17 @@ export async function streamAssistantMessage(
             event.type === "text_delta"
               ? { type: "text_delta", delta: event.delta }
               : { type: "thinking_delta", delta: event.delta },
+        });
+        break;
+      }
+      case "content_block": {
+        currentMessage = ensureCurrentMessage(currentMessage, request.config.model.id, stream, messageItemId);
+        currentMessage.content.push(event.block);
+        stream.emit({
+          type: "message_delta",
+          itemId: messageItemId,
+          message: currentMessage,
+          delta: { type: "content_block_delta", block: event.block },
         });
         break;
       }

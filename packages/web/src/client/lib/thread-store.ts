@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   ApprovalRequest,
   AssistantMessage,
+  ContentBlock,
   DiligentServerNotification,
   Mode,
   SessionSummary,
@@ -64,6 +65,7 @@ export type RenderItem =
       kind: "assistant";
       text: string;
       thinking: string;
+      contentBlocks: ContentBlock[];
       thinkingDone: boolean;
       timestamp: number;
       reasoningDurationMs?: number;
@@ -225,6 +227,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             kind: "assistant",
             text: "",
             thinking: "",
+            contentBlocks: [],
             thinkingDone: false,
             timestamp:
               typeof (event as { timestamp?: number }).timestamp === "number"
@@ -245,8 +248,9 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       }
       const renderId = state.itemSlots[event.itemId];
       if (!renderId) return state;
+      const delta = event.delta;
 
-      if (event.delta.type === "text_delta") {
+      if (delta.type === "text_delta") {
         const nextState =
           state.activeReasoningStartedAt !== null
             ? {
@@ -257,15 +261,26 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
               }
             : state;
         return updateItem(nextState, renderId, (item) =>
-          item.kind === "assistant" ? { ...item, text: item.text + event.delta.delta, thinkingDone: true } : item,
+          item.kind === "assistant" ? { ...item, text: item.text + delta.delta, thinkingDone: true } : item,
         );
       }
 
-      if (event.delta.type === "thinking_delta") {
+      if (delta.type === "thinking_delta") {
         const nextState =
           state.activeReasoningStartedAt === null ? { ...state, activeReasoningStartedAt: Date.now() } : state;
         return updateItem(nextState, renderId, (item) =>
-          item.kind === "assistant" ? { ...item, thinking: item.thinking + event.delta.delta } : item,
+          item.kind === "assistant" ? { ...item, thinking: item.thinking + delta.delta } : item,
+        );
+      }
+
+      if (delta.type === "content_block_delta") {
+        return updateItem(state, renderId, (item) =>
+          item.kind === "assistant"
+            ? {
+                ...item,
+                contentBlocks: [...item.contentBlocks, delta.block],
+              }
+            : item,
         );
       }
 
@@ -295,6 +310,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
             ? {
                 ...current,
                 thinkingDone: true,
+                contentBlocks: event.message.content,
                 timestamp:
                   typeof (event as { timestamp?: number }).timestamp === "number"
                     ? (event as { timestamp?: number }).timestamp!

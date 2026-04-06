@@ -108,4 +108,72 @@ describe("createAnthropicStream", () => {
     expect(request.output_config).toBeUndefined();
     expect(request.temperature).toBe(0.25);
   });
+
+  test("adds Anthropic native web_search tool for provider web capability", async () => {
+    await collectRequest(baseModel({}), {
+      effort: "medium",
+    });
+
+    const stream = createAnthropicStream("test-key")(
+      baseModel({}),
+      {
+        ...EMPTY_CONTEXT,
+        tools: [
+          {
+            kind: "provider_builtin",
+            capability: "web",
+            options: {
+              allowedDomains: ["example.com"],
+              maxUses: 2,
+              userLocation: { type: "approximate", country: "US", region: "CA" },
+            },
+          },
+        ],
+      },
+      { effort: "medium" },
+    );
+
+    await stream.result();
+    const lastRequest = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(lastRequest.tools).toEqual([
+      {
+        type: "web_search_20260209",
+        name: "web_search",
+        allowed_domains: ["example.com"],
+        max_uses: 2,
+        user_location: { type: "approximate", country: "US", region: "CA" },
+      },
+    ]);
+  });
+
+  test("adds Anthropic native web_fetch tool when maxContentTokens is configured", async () => {
+    const stream = createAnthropicStream("test-key")(
+      baseModel({}),
+      {
+        ...EMPTY_CONTEXT,
+        tools: [
+          {
+            kind: "provider_builtin",
+            capability: "web",
+            options: {
+              allowedDomains: ["example.com"],
+              maxContentTokens: 4000,
+            },
+          },
+        ],
+      },
+      { effort: "medium" },
+    );
+
+    await stream.result();
+    const lastRequest = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(lastRequest.tools).toEqual([
+      {
+        type: "web_fetch_20260209",
+        name: "web_fetch",
+        allowed_domains: ["example.com"],
+        max_content_tokens: 4000,
+      },
+    ]);
+  });
 });

@@ -24,6 +24,27 @@ export type Usage = z.infer<typeof UsageSchema>;
 export const TextBlockSchema = z.object({
   type: z.literal("text"),
   text: z.string(),
+  citations: z
+    .array(
+      z.discriminatedUnion("type", [
+        z.object({
+          type: z.literal("web_search_result_location"),
+          url: z.string(),
+          title: z.string().optional(),
+          encryptedIndex: z.string().optional(),
+          citedText: z.string().optional(),
+        }),
+        z.object({
+          type: z.literal("char_location"),
+          documentIndex: z.number().int().nonnegative(),
+          documentTitle: z.string().optional(),
+          startCharIndex: z.number().int().nonnegative(),
+          endCharIndex: z.number().int().nonnegative(),
+          citedText: z.string().optional(),
+        }),
+      ]),
+    )
+    .optional(),
 });
 export type TextBlock = z.infer<typeof TextBlockSchema>;
 
@@ -60,12 +81,62 @@ export const ToolCallBlockSchema = z.object({
 });
 export type ToolCallBlock = z.infer<typeof ToolCallBlockSchema>;
 
+export const ProviderToolUseBlockSchema = z.object({
+  type: z.literal("provider_tool_use"),
+  id: z.string(),
+  provider: z.enum(["openai", "chatgpt", "anthropic"]),
+  name: z.enum(["web_search", "web_fetch"]),
+  input: z.record(z.unknown()),
+});
+export type ProviderToolUseBlock = z.infer<typeof ProviderToolUseBlockSchema>;
+
+export const WebSearchResultSchema = z.object({
+  url: z.string(),
+  title: z.string().optional(),
+  pageAge: z.string().optional(),
+  snippet: z.string().optional(),
+  encryptedContent: z.string().optional(),
+});
+export type WebSearchResult = z.infer<typeof WebSearchResultSchema>;
+
+export const WebSearchResultBlockSchema = z.object({
+  type: z.literal("web_search_result"),
+  toolUseId: z.string(),
+  provider: z.enum(["openai", "chatgpt", "anthropic"]),
+  results: z.array(WebSearchResultSchema),
+  error: z.object({ code: z.string(), message: z.string().optional() }).optional(),
+});
+export type WebSearchResultBlock = z.infer<typeof WebSearchResultBlockSchema>;
+
+export const WebFetchDocumentSchema = z.object({
+  mimeType: z.string(),
+  text: z.string().optional(),
+  base64Data: z.string().optional(),
+  title: z.string().optional(),
+  citationsEnabled: z.boolean().optional(),
+});
+export type WebFetchDocument = z.infer<typeof WebFetchDocumentSchema>;
+
+export const WebFetchResultBlockSchema = z.object({
+  type: z.literal("web_fetch_result"),
+  toolUseId: z.string(),
+  provider: z.enum(["openai", "chatgpt", "anthropic"]),
+  url: z.string(),
+  document: WebFetchDocumentSchema.optional(),
+  retrievedAt: z.string().optional(),
+  error: z.object({ code: z.string(), message: z.string().optional() }).optional(),
+});
+export type WebFetchResultBlock = z.infer<typeof WebFetchResultBlockSchema>;
+
 export const ContentBlockSchema = z.union([
   TextBlockSchema,
   ImageBlockSchema,
   LocalImageBlockSchema,
   ThinkingBlockSchema,
   ToolCallBlockSchema,
+  ProviderToolUseBlockSchema,
+  WebSearchResultBlockSchema,
+  WebFetchResultBlockSchema,
 ]);
 export type ContentBlock = z.infer<typeof ContentBlockSchema>;
 
@@ -232,6 +303,7 @@ export type Message = z.infer<typeof MessageSchema>;
 export const MessageDeltaSchema = z.union([
   z.object({ type: z.literal("text_delta"), delta: z.string() }),
   z.object({ type: z.literal("thinking_delta"), delta: z.string() }),
+  z.object({ type: z.literal("content_block_delta"), block: ContentBlockSchema }),
 ]);
 export type MessageDelta = z.infer<typeof MessageDeltaSchema>;
 

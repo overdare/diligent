@@ -5,6 +5,7 @@ import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from 
 import { isNetworkError } from "../errors";
 import { materializeUserContentBlocks } from "../image-io";
 import type {
+  FunctionToolDefinition,
   Model,
   ProviderEvent,
   ProviderResult,
@@ -16,6 +17,10 @@ import type {
 } from "../types";
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
+
+type ProviderToolUseBlock = Extract<ContentBlock, { type: "provider_tool_use" }>;
+type WebSearchResultBlock = Extract<ContentBlock, { type: "web_search_result" }>;
+type WebFetchResultBlock = Extract<ContentBlock, { type: "web_fetch_result" }>;
 
 export function createAnthropicStream(apiKey?: string, baseUrl?: string): StreamFunction {
   const resolvedApiKey = resolveAnthropicApiKey(apiKey);
@@ -101,6 +106,11 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
             stream.push({ type: "text_end", text: block.text });
           } else if (block.type === "thinking") {
             stream.push({ type: "thinking_end", thinking: block.thinking });
+          } else if (block.type === "server_tool_use") {
+            const providerToolUse = createProviderToolUseBlock(block);
+            if (providerToolUse) {
+              stream.push({ type: "content_block", block: providerToolUse });
+            }
           } else if (block.type === "tool_use") {
             stream.push({
               type: "tool_call_end",
@@ -109,13 +119,30 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
               input: block.input as Record<string, unknown>,
             });
             activeToolId = undefined;
+          } else if (block.type === "web_search_tool_result") {
+            const webSearchResult = createWebSearchResultBlock(block);
+            if (webSearchResult) {
+              stream.push({ type: "content_block", block: webSearchResult });
+            }
+          } else if (block.type === "web_fetch_tool_result") {
+            const webFetchResult = createWebFetchResultBlock(block);
+            if (webFetchResult) {
+              stream.push({ type: "content_block", block: webFetchResult });
+            }
           }
         });
 
         sdkStream.on("streamEvent", (event) => {
-          if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-            activeToolId = event.content_block.id;
-            stream.push({ type: "tool_call_start", id: event.content_block.id, name: event.content_block.name });
+          if (event.type === "content_block_start") {
+            if (event.content_block.type === "tool_use") {
+              activeToolId = event.content_block.id;
+              stream.push({ type: "tool_call_start", id: event.content_block.id, name: event.content_block.name });
+            } else if (event.content_block.type === "server_tool_use") {
+              const providerToolUse = createProviderToolUseBlock(event.content_block);
+              if (providerToolUse) {
+                stream.push({ type: "content_block", block: providerToolUse });
+              }
+            }
           }
         });
 
@@ -219,18 +246,46 @@ function convertContentBlock(block: ContentBlock): Anthropic.ContentBlockParam {
         name: block.name,
         input: block.input,
       };
+    default:
+      throw new Error(`Unsupported content block for Anthropic conversion: ${block.type}`);
   }
 }
 
-function convertTools(tools: ToolDefinition[]): Anthropic.Tool[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: {
-      type: "object" as const,
-      ...t.inputSchema,
-    },
-  }));
+function convertTools(tools: ToolDefinition[]): Anthropic.MessageCreateParams["tools"] {
+  return tools.flatMap((tool) => {
+    if (tool.kind === "provider_builtin" && tool.capability === "web") {
+      return [createAnthropicWebTool(tool)];
+    }
+    if (tool.kind !== "function") return [];
+    const t: FunctionToolDefinition = tool;
+    return [
+      {
+        name: t.name,
+        description: t.description,
+        input_schema: {
+          type: "object" as const,
+          ...t.inputSchema,
+        },
+      },
+    ];
+  });
+}
+
+function createAnthropicWebTool(tool: Extract<ToolDefinition, { kind: "provider_builtin" }>): Anthropic.Tool {
+  const options = tool.options;
+  const hasFetchSettings = Boolean(options?.maxContentTokens);
+  const webToolType = hasFetchSettings ? "web_fetch_20260209" : "web_search_20260209";
+  const userLocation = options?.userLocation;
+
+  return {
+    type: webToolType,
+    name: hasFetchSettings ? "web_fetch" : "web_search",
+    ...(options?.maxUses !== undefined ? { max_uses: options.maxUses } : {}),
+    ...(options?.allowedDomains?.length ? { allowed_domains: options.allowedDomains } : {}),
+    ...(options?.blockedDomains?.length ? { blocked_domains: options.blockedDomains } : {}),
+    ...(userLocation ? { user_location: toAnthropicUserLocation(userLocation) } : {}),
+    ...(hasFetchSettings ? { max_content_tokens: options?.maxContentTokens } : {}),
+  } as unknown as Anthropic.Tool;
 }
 
 function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantMessage {
@@ -246,6 +301,12 @@ function mapToAssistantMessage(msg: Anthropic.Message, model: Model): AssistantM
       };
     } else if (block.type === "thinking") {
       return { type: "thinking", thinking: block.thinking, signature: block.signature };
+    } else if (block.type === "server_tool_use") {
+      return createProviderToolUseBlock(block) ?? { type: "text", text: "" };
+    } else if (block.type === "web_search_tool_result") {
+      return createWebSearchResultBlock(block) ?? { type: "text", text: "" };
+    } else if (block.type === "web_fetch_tool_result") {
+      return createWebFetchResultBlock(block) ?? { type: "text", text: "" };
     }
     return { type: "text", text: "" };
   });
@@ -353,6 +414,91 @@ function resolveAnthropicApiKey(apiKey?: string): string {
 
 function resolveAnthropicSdkBaseUrl(baseUrl?: string): string {
   return (baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
+}
+
+function toAnthropicUserLocation(
+  location: NonNullable<NonNullable<Extract<ToolDefinition, { kind: "provider_builtin" }>["options"]>["userLocation"]>,
+) {
+  return {
+    type: location.type,
+    ...(location.city ? { city: location.city } : {}),
+    ...(location.region ? { region: location.region } : {}),
+    ...(location.country ? { country: location.country } : {}),
+    ...(location.timezone ? { timezone: location.timezone } : {}),
+  };
+}
+
+function createProviderToolUseBlock(block: Anthropic.ServerToolUseBlock): ProviderToolUseBlock | undefined {
+  if (block.name !== "web_search" && block.name !== "web_fetch") return undefined;
+  return {
+    type: "provider_tool_use",
+    id: block.id,
+    provider: "anthropic",
+    name: block.name,
+    input: isRecord(block.input) ? block.input : {},
+  };
+}
+
+function createWebSearchResultBlock(block: Anthropic.WebSearchToolResultBlock): WebSearchResultBlock {
+  if (!Array.isArray(block.content)) {
+    return {
+      type: "web_search_result",
+      toolUseId: block.tool_use_id,
+      provider: "anthropic",
+      results: [],
+      error: { code: block.content.error_code },
+    };
+  }
+
+  return {
+    type: "web_search_result",
+    toolUseId: block.tool_use_id,
+    provider: "anthropic",
+    results: block.content.map((result) => ({
+      url: result.url,
+      title: result.title,
+      ...(result.page_age ? { pageAge: result.page_age } : {}),
+      ...(result.encrypted_content ? { encryptedContent: result.encrypted_content } : {}),
+    })),
+  };
+}
+
+function createWebFetchResultBlock(block: Anthropic.WebFetchToolResultBlock): WebFetchResultBlock {
+  if (block.content.type === "web_fetch_tool_result_error") {
+    return {
+      type: "web_fetch_result",
+      toolUseId: block.tool_use_id,
+      provider: "anthropic",
+      url: "",
+      error: { code: block.content.error_code },
+    };
+  }
+
+  return {
+    type: "web_fetch_result",
+    toolUseId: block.tool_use_id,
+    provider: "anthropic",
+    url: block.content.url,
+    document: {
+      mimeType: block.content.content.source.media_type,
+      ...(extractFetchText(block.content) ? { text: extractFetchText(block.content) } : {}),
+      ...(block.content.content.title ? { title: block.content.content.title } : {}),
+      citationsEnabled: true,
+    },
+    ...(block.content.retrieved_at ? { retrievedAt: block.content.retrieved_at } : {}),
+  };
+}
+
+function extractFetchText(block: Anthropic.WebFetchBlock): string | undefined {
+  const source = block.content.source;
+  if (source.type === "text") {
+    return source.data;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 interface AnthropicTextBlock {

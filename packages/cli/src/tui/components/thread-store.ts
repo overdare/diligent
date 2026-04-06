@@ -27,6 +27,8 @@ import {
   getWorkingSpinnerFrame,
   isChildScopedStreamEvent,
   parseSpawnChildThreadId,
+  renderAssistantMessageBlocks,
+  renderAssistantStructuredItems,
   TOOL_MAX_LINES,
   toProtocolRenderPayload,
   truncateMiddle,
@@ -153,6 +155,32 @@ export class ThreadStore {
       this.applyReducerState(reduced.state);
       this.runReducerEffects(reduced.effects);
 
+      if (event.type === "message_delta" && event.delta.type === "content_block_delta") {
+        const structuredItems = renderAssistantStructuredItems({
+          ...event.message,
+          content: [event.delta.block],
+        });
+        if (structuredItems.length > 0) {
+          this.items.push(...structuredItems);
+        }
+      }
+
+      if (event.type === "message_end" && "message" in event && event.message) {
+        const messageContent = Array.isArray(event.message.content) ? event.message.content : [];
+        const rendered = renderAssistantMessageBlocks({
+          ...event.message,
+          content: messageContent.filter(
+            (block) =>
+              block.type !== "provider_tool_use" &&
+              block.type !== "web_search_result" &&
+              block.type !== "web_fetch_result",
+          ),
+        });
+        if (rendered.extras.length > 0) {
+          this.items.push({ kind: "plain", lines: rendered.extras });
+        }
+      }
+
       if (reduced.requestRender) {
         this.options.requestRender();
       }
@@ -263,6 +291,11 @@ export class ThreadStore {
 
   addLines(lines: string[]): void {
     this.items.push({ kind: "plain", lines });
+    this.options.requestRender();
+  }
+
+  addStructuredItem(item: ThreadItem): void {
+    this.items.push(item);
     this.options.requestRender();
   }
 

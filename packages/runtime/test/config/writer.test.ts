@@ -29,6 +29,7 @@ describe("normalizeStoredToolsConfig", () => {
   it("stores only user-intent false overrides and non-default conflict policy", () => {
     expect(
       normalizeStoredToolsConfig({
+        web: false,
         builtin: { bash: false, read: true },
         plugins: [
           {
@@ -40,6 +41,7 @@ describe("normalizeStoredToolsConfig", () => {
         conflictPolicy: "error",
       }),
     ).toEqual({
+      web: false,
       builtin: { bash: false },
       plugins: [
         {
@@ -61,6 +63,13 @@ describe("normalizeStoredToolsConfig", () => {
       plugins: [{ package: "@acme/diligent-tools" }],
     });
   });
+
+  it("stores web only when the user disables it", () => {
+    expect(normalizeStoredToolsConfig({ web: false, builtin: { bash: true }, conflictPolicy: "error" })).toEqual({
+      web: false,
+    });
+    expect(normalizeStoredToolsConfig({ web: true, builtin: { bash: true }, conflictPolicy: "error" })).toBeUndefined();
+  });
 });
 
 describe("applyToolConfigPatch", () => {
@@ -68,6 +77,7 @@ describe("applyToolConfigPatch", () => {
     expect(
       applyToolConfigPatch(
         {
+          web: false,
           builtin: { bash: false },
           plugins: [
             {
@@ -84,6 +94,7 @@ describe("applyToolConfigPatch", () => {
           conflictPolicy: "builtin_wins",
         },
         {
+          web: true,
           builtin: { read: false, bash: true },
           plugins: [
             { package: "@acme/one", enabled: true, tools: { jira_comment: true, jira_open: false } },
@@ -115,6 +126,7 @@ describe("writeProjectToolsConfig", () => {
     const cwd = await makeTempProject();
 
     const result = await writeProjectToolsConfig(cwd, {
+      web: false,
       builtin: { bash: false },
       plugins: [{ package: "@acme/diligent-tools", tools: { jira_comment: false } }],
     });
@@ -124,9 +136,11 @@ describe("writeProjectToolsConfig", () => {
 
     expect(result.configPath).toBe(configPath);
     expect(text).toContain('"tools"');
+    expect(text).toContain('"web": false');
     expect(text).toContain('"bash": false');
     expect(text).toContain('"package": "@acme/diligent-tools"');
     expect(result.tools).toEqual({
+      web: false,
       builtin: { bash: false },
       plugins: [{ package: "@acme/diligent-tools", tools: { jira_comment: false } }],
     });
@@ -154,6 +168,7 @@ describe("writeProjectToolsConfig", () => {
     );
 
     await writeProjectToolsConfig(cwd, {
+      web: false,
       builtin: { read: false },
       plugins: [{ package: "@acme/diligent-tools", enabled: false, tools: { jira_comment: false } }],
       conflictPolicy: "plugin_wins",
@@ -163,6 +178,7 @@ describe("writeProjectToolsConfig", () => {
     expect(text).toContain("// keep provider comment");
     expect(text).toContain('"provider"');
     expect(text).toContain('"apiKey": "secret"');
+    expect(text).toContain('"web": false');
     expect(text).toContain('"bash": false');
     expect(text).toContain('"read": false');
     expect(text).toContain('"conflictPolicy": "plugin_wins"');
@@ -227,12 +243,14 @@ describe("writeProjectToolsConfig", () => {
     const cwd = await makeTempProject();
 
     const result = await writeProjectToolsConfig(cwd, {
+      web: false,
       builtin: { bash: false },
       conflictPolicy: "builtin_wins",
     });
 
     expect(result.config.model).toBeUndefined();
     expect(result.config.tools).toEqual({
+      web: false,
       builtin: { bash: false },
       conflictPolicy: "builtin_wins",
     });
@@ -247,6 +265,7 @@ describe("writeGlobalToolsConfig", () => {
 
     try {
       const result = await writeGlobalToolsConfig({
+        web: false,
         plugins: [{ package: "@acme/diligent-tools", tools: { jira_comment: false } }],
       });
 
@@ -254,6 +273,7 @@ describe("writeGlobalToolsConfig", () => {
       const text = await Bun.file(configPath).text();
       expect(result.configPath).toBe(configPath);
       expect(text).toContain('"tools"');
+      expect(text).toContain('"web": false');
       expect(text).toContain('"package": "@acme/diligent-tools"');
       expect(text).toContain('"jira_comment": false');
     } finally {

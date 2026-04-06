@@ -52,7 +52,9 @@ export {
   supportsThinkingNone,
 } from "./thinking-effort";
 export type {
+  FunctionToolDefinition,
   Model,
+  ProviderBuiltinToolDefinition,
   ProviderErrorType,
   ProviderEvent,
   ProviderResult,
@@ -61,5 +63,6 @@ export type {
   StreamOptions,
   SystemSection,
   ToolDefinition,
+  WebToolUserLocation,
 } from "./types";
 export { ProviderError } from "./types";

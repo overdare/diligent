@@ -3,7 +3,7 @@ import type {
   ThinkingEffort as ProtocolThinkingEffort,
 } from "@diligent/protocol";
 import type { EventStream } from "../event-stream";
-import type { AssistantMessage, Message, StopReason, Usage } from "../types";
+import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from "../types";
 
 export interface SystemSection {
   tag?: string; // XML wrapper: "knowledge", "user_instructions", "collaboration_mode"
@@ -82,11 +82,35 @@ export interface StreamOptions {
   turnStateRef?: { value: string | undefined };
 }
 
-export interface ToolDefinition {
+export interface WebToolUserLocation {
+  type: "approximate";
+  city?: string;
+  region?: string;
+  country?: string;
+  timezone?: string;
+}
+
+export interface FunctionToolDefinition {
+  kind: "function";
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
 }
+
+export interface ProviderBuiltinToolDefinition {
+  kind: "provider_builtin";
+  capability: "web";
+  options?: {
+    maxUses?: number;
+    allowedDomains?: string[];
+    blockedDomains?: string[];
+    citationsEnabled?: boolean;
+    maxContentTokens?: number;
+    userLocation?: WebToolUserLocation;
+  };
+}
+
+export type ToolDefinition = FunctionToolDefinition | ProviderBuiltinToolDefinition;
 
 // Provider error classification (D010)
 export type ProviderErrorType =
@@ -118,6 +142,7 @@ export type ProviderEvent =
   | { type: "text_end"; text: string }
   | { type: "thinking_delta"; delta: string }
   | { type: "thinking_end"; thinking: string }
+  | { type: "content_block"; block: ContentBlock }
   | { type: "tool_call_start"; id: string; name: string }
   | { type: "tool_call_delta"; id: string; delta: string }
   | { type: "tool_call_end"; id: string; name: string; input: Record<string, unknown> }

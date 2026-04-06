@@ -6,6 +6,7 @@ import { displayWidth } from "../framework/string-width";
 import type { Component } from "../framework/types";
 import { MarkdownView } from "./markdown-view";
 import { ThreadStore, UserMessageView } from "./thread-store";
+import type { ThreadItem } from "./thread-store-primitives";
 import {
   renderCommittedTranscriptItems,
   renderTranscript,
@@ -80,6 +81,11 @@ export class ChatView implements Component {
 
   addLines(lines: string[]): void {
     this.store.addLines(lines);
+    this.flushPendingCommittedItems();
+  }
+
+  addStructuredItem(item: ThreadItem): void {
+    this.store.addStructuredItem(item);
     this.flushPendingCommittedItems();
   }
 

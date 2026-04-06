@@ -1,6 +1,12 @@
 // @summary Utility helpers for ThreadStore parsing, formatting, and reducer item construction
 
-import type { AgentEvent, ThreadReadResponse, ToolRenderPayload } from "@diligent/protocol";
+import type {
+  AgentEvent,
+  AssistantMessage,
+  TextBlock,
+  ThreadReadResponse,
+  ToolRenderPayload,
+} from "@diligent/protocol";
 import { normalizeToolName, ToolRenderPayloadSchema } from "@diligent/protocol";
 import { renderToolPayload } from "../render-blocks";
 import { t } from "../theme";
@@ -118,6 +124,154 @@ export function buildChildDetailLines(payload: ThreadReadResponse): string[] {
     `${t.dim}    assistant=${assistantCount}, tools=${toolCount}${t.reset}`,
     ...previewLines,
   ];
+}
+
+function summarizeProviderToolInput(input: Record<string, unknown>): string | undefined {
+  const type = typeof input.type === "string" ? input.type : undefined;
+  if (type === "search") {
+    const query = typeof input.query === "string" ? input.query : undefined;
+    return query ? `Searched ${query}` : "Searching the web";
+  }
+  if (type === "open_page") {
+    const url = typeof input.url === "string" ? input.url : undefined;
+    return url ? `Opened ${url}` : "Opening page";
+  }
+  if (type === "find_in_page") {
+    const url = typeof input.url === "string" ? input.url : undefined;
+    const pattern = typeof input.pattern === "string" ? input.pattern : undefined;
+    if (url && pattern) return `Found “${pattern}” in ${url}`;
+    if (url) return `Opened ${url}`;
+    if (pattern) return `Finding “${pattern}” in page`;
+    return "Finding in page";
+  }
+  return type;
+}
+
+function buildProviderToolItem(summary: string, details: string[] = []): ToolResultThreadItem {
+  const header = `${t.success}⏺${t.reset} Web Action`;
+  return createToolResultItem([header, ...details], `⎿  ${summary}`);
+}
+
+export function renderAssistantStructuredItems(
+  message: Pick<AssistantMessage, "content"> | { content?: AssistantMessage["content"] },
+): ThreadItem[] {
+  if (!Array.isArray(message.content)) {
+    return [];
+  }
+
+  const items: ThreadItem[] = [];
+  for (const block of message.content) {
+    switch (block.type) {
+      case "provider_tool_use": {
+        const summary = summarizeProviderToolInput(block.input) ?? "Searching the web";
+        items.push(buildProviderToolItem(summary));
+        break;
+      }
+      case "web_search_result": {
+        if (block.error) {
+          const message = block.error.message ? `${block.error.code}: ${block.error.message}` : block.error.code;
+          items.push(buildProviderToolItem("Web search failed", [`${t.error}  ${message}${t.reset}`]));
+          break;
+        }
+
+        const summary = `Found ${block.results.length} result${block.results.length === 1 ? "" : "s"}`;
+        const details: string[] = [];
+        if (block.results.length > 0) {
+          details.push(
+            `${t.dim}  Found ${block.results.length} result${block.results.length === 1 ? "" : "s"}${t.reset}`,
+          );
+        }
+        for (const result of block.results.slice(0, 5)) {
+          const title = result.title?.trim() || result.url;
+          details.push(`${t.dim}  • ${title}${t.reset}`);
+          if (result.url && result.url !== title) {
+            details.push(`${t.dim}    ${result.url}${t.reset}`);
+          }
+        }
+        if (block.results.length > 5) {
+          details.push(`${t.dim}  … +${block.results.length - 5} more results${t.reset}`);
+        }
+        items.push(buildProviderToolItem(summary, details));
+        break;
+      }
+      case "web_fetch_result": {
+        if (block.error) {
+          const message = block.error.message ? `${block.error.code}: ${block.error.message}` : block.error.code;
+          items.push(buildProviderToolItem("Opening page failed", [`${t.error}  ${message}${t.reset}`]));
+          break;
+        }
+
+        const summary = `Opened ${block.document?.title ?? block.url}`;
+        const details: string[] = [`${t.dim}  ${block.url}${t.reset}`];
+        if (block.document?.mimeType) {
+          details.push(`${t.dim}  type: ${block.document.mimeType}${t.reset}`);
+        }
+        items.push(buildProviderToolItem(summary, details));
+        break;
+      }
+      case "text": {
+        const citations = renderTextCitations(block);
+        if (citations.length > 0) {
+          items.push({ kind: "plain", lines: citations });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return items;
+}
+
+function renderTextCitations(block: TextBlock): string[] {
+  if (!block.citations || block.citations.length === 0) return [];
+  const lines: string[] = [];
+  for (const citation of block.citations.slice(0, 5)) {
+    if (citation.type === "web_search_result_location") {
+      const label = citation.title?.trim() || citation.url;
+      lines.push(`${t.dim}[source] ${label}${citation.url !== label ? ` — ${citation.url}` : ""}${t.reset}`);
+      continue;
+    }
+    const title = citation.documentTitle?.trim() || `document ${citation.documentIndex}`;
+    lines.push(`${t.dim}[source] ${title} chars ${citation.startCharIndex}-${citation.endCharIndex}${t.reset}`);
+  }
+  if (block.citations.length > 5) {
+    lines.push(`${t.dim}[source] … +${block.citations.length - 5} more citations${t.reset}`);
+  }
+  return lines;
+}
+
+export function renderAssistantMessageBlocks(
+  message: Pick<AssistantMessage, "content"> | { content?: AssistantMessage["content"] },
+): { thinking: string; text: string; extras: string[] } {
+  const thinkingParts: string[] = [];
+  const textParts: string[] = [];
+  const extras: string[] = [];
+
+  if (!Array.isArray(message.content)) {
+    return { thinking: "", text: "", extras };
+  }
+
+  for (const block of message.content) {
+    switch (block.type) {
+      case "thinking":
+        thinkingParts.push(block.thinking);
+        break;
+      case "text":
+        textParts.push(block.text);
+        extras.push(...renderTextCitations(block));
+        break;
+      default:
+        break;
+    }
+  }
+
+  return {
+    thinking: thinkingParts.join(""),
+    text: textParts.join(""),
+    extras,
+  };
 }
 
 export function isChildScopedStreamEvent(event: AgentEvent): boolean {

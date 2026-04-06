@@ -15,6 +15,10 @@ export interface ToolCapabilities {
   collabExcluded?: true;
   /** Has custom render logic in render-payload.ts for richer UI display. */
   hasCustomRender?: true;
+  /** Execution path for the tool. Defaults to local execution. */
+  executionMode?: "local" | "provider_builtin";
+  /** Provider-native capability exposed behind a built-in tool name. */
+  providerCapability?: "web";
 }
 
 /** Central registry of built-in tool capabilities. */
@@ -30,6 +34,7 @@ export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
   grep: { planModeAllowed: true },
   ls: { planModeAllowed: true },
   search_knowledge: { planModeAllowed: true, hasCustomRender: true },
+  web: { executionMode: "provider_builtin", providerCapability: "web" },
 
   // Write tools (excluded from plan mode)
   bash: { hasCustomRender: true },

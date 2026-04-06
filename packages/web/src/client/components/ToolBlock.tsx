@@ -45,19 +45,22 @@ export function ToolBlock({ item }: ToolBlockProps) {
   const normalizedToolName = normalizeToolName(item.toolName);
   const isUserInput = normalizedToolName === "request_user_input";
   const outputSummary = renderPayload && !isUserInput && item.status === "done" ? summarizeOutput(renderPayload) : "";
-  const showOutputSummary = Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
+  const showOutputSummary =
+    normalizedToolName !== "web" && Boolean(outputSummary) && outputSummary !== summarizeInput(renderPayload);
   const durationLabel = item.status === "done" ? formatToolDurationMs(item.durationMs) : null;
 
   const isStreaming = item.status === "streaming";
+  const isWebTool = normalizedToolName === "web";
 
-  const statusEl = isStreaming ? (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
-      <StatusDot color="accent" pulse />
-      <span>running</span>
-    </span>
-  ) : item.isError ? (
-    <span className="shrink-0 text-xs text-danger">error</span>
-  ) : null;
+  const statusEl =
+    isStreaming && !isWebTool ? (
+      <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
+        <StatusDot color="accent" pulse />
+        <span>running</span>
+      </span>
+    ) : item.isError ? (
+      <span className="shrink-0 text-xs text-danger">error</span>
+    ) : null;
 
   const chevronEl = !isStreaming ? (
     <span

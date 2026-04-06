@@ -6,6 +6,7 @@ import type { AssistantMessage, ContentBlock, Message, StopReason, Usage } from 
 import { isNetworkError } from "../errors";
 import { flattenSections } from "../system-sections";
 import type {
+  FunctionToolDefinition,
   Model,
   ProviderEvent,
   ProviderResult,
@@ -194,11 +195,17 @@ function convertToGeminiContents(messages: Message[]): GeminiContent[] {
 function convertToGeminiTools(tools: ToolDefinition[]): { functionDeclarations: FunctionDeclaration[] }[] {
   return [
     {
-      functionDeclarations: tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        parameters: { type: "object", ...t.inputSchema } as unknown as FunctionDeclaration["parameters"],
-      })),
+      functionDeclarations: tools.flatMap((tool) => {
+        if (tool.kind !== "function") return [];
+        const t: FunctionToolDefinition = tool;
+        return [
+          {
+            name: t.name,
+            description: t.description,
+            parameters: { type: "object", ...t.inputSchema } as unknown as FunctionDeclaration["parameters"],
+          },
+        ];
+      }),
     },
   ];
 }

@@ -91,4 +91,52 @@ describe("AppSessionLifecycle", () => {
       cost: 0.01,
     });
   });
+
+  test("hydrateThreadHistory restores provider-native web blocks as plain transcript lines", async () => {
+    const { lifecycle, addAssistantMessage, addLines } = createLifecycleWithThreadRead({
+      items: [
+        {
+          type: "agentMessage",
+          itemId: "a1",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "provider_tool_use",
+                id: "ws_1",
+                provider: "openai",
+                name: "web_search",
+                input: { type: "search", query: "bun release" },
+              },
+              {
+                type: "web_search_result",
+                toolUseId: "ws_1",
+                provider: "openai",
+                results: [{ url: "https://example.com", title: "Example" }],
+              },
+              {
+                type: "text",
+                text: "Here you go.",
+                citations: [{ type: "web_search_result_location", url: "https://example.com", title: "Example" }],
+              },
+            ],
+            model: "test-model",
+            usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+            stopReason: "end_turn",
+            timestamp: 2,
+          },
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          cost: 0,
+          timestamp: 2,
+        },
+      ],
+    });
+
+    await (lifecycle as never).hydrateThreadHistory();
+
+    expect(addAssistantMessage).toHaveBeenCalledWith("Here you go.");
+    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("Searched bun release")]));
+    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("Found 1 result")]));
+    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("[source] Example")]));
+  });
 });

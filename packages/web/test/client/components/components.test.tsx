@@ -276,6 +276,7 @@ test("assistant message renders completed footer when turn duration is available
         kind: "assistant",
         text: "Done.",
         thinking: "Checked relevant files",
+        contentBlocks: [{ type: "text", text: "Done." }],
         thinkingDone: true,
         timestamp: 1,
         reasoningDurationMs: 1200,
@@ -297,6 +298,7 @@ test("assistant message keeps divider even when persisted duration is unavailabl
         kind: "assistant",
         text: "Persisted reply",
         thinking: "",
+        contentBlocks: [{ type: "text", text: "Persisted reply" }],
         thinkingDone: true,
         timestamp: 2,
       }}
@@ -305,6 +307,54 @@ test("assistant message keeps divider even when persisted duration is unavailabl
 
   expect(html).toContain("h-px w-full bg-border/10");
   expect(html).not.toContain("Completed in");
+});
+
+test("assistant message renders provider-native web blocks and citations", () => {
+  const html = renderToStaticMarkup(
+    <AssistantMessage
+      item={{
+        id: "assistant-web-1",
+        kind: "assistant",
+        text: "Found it.",
+        thinking: "",
+        contentBlocks: [
+          {
+            type: "provider_tool_use",
+            id: "ws_1",
+            provider: "openai",
+            name: "web_search",
+            input: { query: "diligent" },
+          },
+          {
+            type: "web_search_result",
+            toolUseId: "ws_1",
+            provider: "openai",
+            results: [{ url: "https://example.com", title: "Example", snippet: "Result snippet" }],
+          },
+          {
+            type: "text",
+            text: "Found it.",
+            citations: [
+              { type: "web_search_result_location", url: "https://example.com", title: "Example", citedText: "Found" },
+            ],
+          },
+        ],
+        thinkingDone: true,
+        timestamp: 3,
+      }}
+    />,
+  );
+
+  expect(html).toContain("Web Action");
+  expect(html).toContain("Web Action - Searching diligent");
+  expect(html).toContain("Web Action - Found 1 result");
+  expect(html).toContain("Example");
+  expect(html).not.toContain("animate-pulse");
+  expect(html).not.toContain(">running<");
+  expect(html).not.toContain("↳ Found 1 result");
+  expect(html).toContain("Source 1:");
+  expect(html).not.toContain("chatgpt");
+  expect(html).not.toContain("openai");
 });
 
 test("input dock renders pending image preview and add-images action", () => {

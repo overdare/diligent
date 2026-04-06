@@ -32,12 +32,14 @@ export interface ToolPluginPatch extends BasePluginConfig {
 }
 
 export interface ToolConfigPatch {
+  web?: boolean;
   builtin?: Record<string, boolean>;
   plugins?: ToolPluginPatch[];
   conflictPolicy?: ConflictPolicy;
 }
 
 export interface StoredToolsConfig {
+  web?: false;
   builtin?: Record<string, false>;
   plugins?: Array<{
     package: string;
@@ -67,15 +69,17 @@ export function normalizeStoredToolsConfig(
 ): StoredToolsConfig | undefined {
   if (!tools) return undefined;
 
+  const web = tools.web === false ? false : undefined;
   const normalizedBuiltin = normalizeFalseOnlyMap(tools.builtin);
   const plugins = normalizePluginConfigs(tools.plugins);
   const conflictPolicy = tools.conflictPolicy && tools.conflictPolicy !== "error" ? tools.conflictPolicy : undefined;
 
-  if (!normalizedBuiltin && !plugins && !conflictPolicy) {
+  if (web === undefined && !normalizedBuiltin && !plugins && !conflictPolicy) {
     return undefined;
   }
 
   return {
+    ...(web === false ? { web } : {}),
     ...(normalizedBuiltin ? { builtin: normalizedBuiltin } : {}),
     ...(plugins ? { plugins } : {}),
     ...(conflictPolicy ? { conflictPolicy } : {}),
@@ -86,11 +90,13 @@ export function applyToolConfigPatch(
   current: DiligentConfig["tools"] | undefined,
   patch: ToolConfigPatch,
 ): StoredToolsConfig | undefined {
+  const nextWeb = patch.web ?? current?.web;
   const mergedBuiltin = mergeBooleanMaps(current?.builtin, patch.builtin);
   const mergedPlugins = mergePluginPatches(current?.plugins ?? [], patch.plugins ?? []);
   const nextConflictPolicy = patch.conflictPolicy ?? current?.conflictPolicy;
 
   return normalizeStoredToolsConfig({
+    web: nextWeb,
     builtin: mergedBuiltin,
     plugins: mergedPlugins,
     conflictPolicy: nextConflictPolicy,

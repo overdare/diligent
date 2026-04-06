@@ -100,6 +100,7 @@ describe("loadDiligentConfig", () => {
       globalConfigFile,
       JSON.stringify({
         tools: {
+          web: false,
           builtin: { bash: false },
           plugins: [{ package: "@acme/global-tools", tools: { global_tool: false } }],
         },
@@ -117,6 +118,7 @@ describe("loadDiligentConfig", () => {
 
     const { config } = await loadDiligentConfig(TEST_ROOT);
     expect(config.tools).toEqual({
+      web: false,
       builtin: { bash: false },
       plugins: [{ package: "@acme/global-tools", enabled: true, tools: { global_tool: false } }],
     });

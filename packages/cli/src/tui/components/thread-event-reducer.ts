@@ -133,6 +133,15 @@ export function reduceThreadEvent<TItem>(
         };
       }
 
+      if (event.delta.type === "content_block_delta") {
+        return {
+          handled: true,
+          requestRender: true,
+          effects: [{ kind: "cleanup_status_timers_if_idle" }],
+          state,
+        };
+      }
+
       const items = [...state.items];
       let thinkingText = state.thinkingText;
       let thinkingStartTime = state.thinkingStartTime;

@@ -1,6 +1,7 @@
 // @summary Assistant message with left decoration bar, agent icon, thinking block, and markdown content
 
 import type { RenderItem } from "../lib/thread-store";
+import { AssistantContentBlocks } from "./AssistantContentBlocks";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingBlock } from "./ThinkingBlock";
 
@@ -21,11 +22,12 @@ interface AssistantMessageProps {
 export function AssistantMessage({ item }: AssistantMessageProps) {
   const hasThinking = item.thinking.length > 0;
   const hasText = item.text.length > 0;
+  const hasStructuredBlocks = item.contentBlocks.length > 0;
   const turnDuration = formatMs(item.turnDurationMs);
   const reasoningDuration = formatMs(item.reasoningDurationMs);
   const showTurnDivider = item.thinkingDone;
 
-  if (!hasThinking && !hasText) return null;
+  if (!hasThinking && !hasText && !hasStructuredBlocks) return null;
 
   return (
     <div className="pb-1">
@@ -38,7 +40,11 @@ export function AssistantMessage({ item }: AssistantMessageProps) {
           />
         </div>
       )}
-      {hasText && <MarkdownContent text={item.text} />}
+      {hasStructuredBlocks ? (
+        <AssistantContentBlocks blocks={item.contentBlocks} />
+      ) : hasText ? (
+        <MarkdownContent text={item.text} />
+      ) : null}
       {showTurnDivider ? (
         <div className="pb-2 pt-3">
           <div className="h-px w-full bg-border/10" />

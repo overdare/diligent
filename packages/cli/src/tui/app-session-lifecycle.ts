@@ -9,6 +9,7 @@ import type { AppRuntimeState } from "./app-runtime-state";
 import type { ChatView } from "./components/chat-view";
 import type { InputEditor } from "./components/input-editor";
 import type { StatusBar } from "./components/status-bar";
+import { renderAssistantMessageBlocks, renderAssistantStructuredItems } from "./components/thread-store-utils";
 import type { TUIRenderer } from "./framework/renderer";
 import type { Terminal } from "./framework/terminal";
 import type { InputHistory } from "./input-history";
@@ -174,17 +175,20 @@ export class AppSessionLifecycle {
         continue;
       }
       if (item.type === "agentMessage") {
-        const thinking = item.message.content
-          .filter((block) => block.type === "thinking")
-          .map((block) => block.thinking)
-          .join("");
+        const rendered = renderAssistantMessageBlocks(item.message);
+        const thinking = rendered.thinking;
         if (thinking.trim()) this.deps.chatView.addThinkingMessage(thinking, item.reasoningDurationMs);
 
-        const text = item.message.content
-          .filter((block) => block.type === "text")
-          .map((block) => block.text)
-          .join("");
+        const text = rendered.text;
         if (text.length > 0) this.deps.chatView.addAssistantMessage(text);
+        const structuredItems = renderAssistantStructuredItems(item.message);
+        for (const structuredItem of structuredItems) {
+          if ("kind" in structuredItem && structuredItem.kind === "plain") {
+            this.deps.chatView.addLines(structuredItem.lines);
+            continue;
+          }
+          this.deps.chatView.addStructuredItem(structuredItem);
+        }
         if (item.usage) {
           this.deps.chatView.handleEvent({
             type: "usage",

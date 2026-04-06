@@ -10,6 +10,7 @@ import {
   DiligentServerRequestResponseSchema,
   DiligentServerRequestSchema,
   InitializeResponseSchema,
+  MessageSchema,
   PluginDescriptorSchema,
   ToolDescriptorSchema,
   ToolRenderPayloadSchema,
@@ -86,6 +87,63 @@ describe("protocol/flow", () => {
             webUrl: "/_diligent/image/thread-1/shot.png",
           },
         },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts normalized provider-native web tool transcript blocks", () => {
+    expect(
+      MessageSchema.safeParse({
+        role: "assistant",
+        model: "gpt-5",
+        usage: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        stopReason: "end_turn",
+        timestamp: 1,
+        content: [
+          {
+            type: "provider_tool_use",
+            id: "toolu_1",
+            provider: "openai",
+            name: "web_search",
+            input: { query: "diligent" },
+          },
+          {
+            type: "web_search_result",
+            toolUseId: "toolu_1",
+            provider: "openai",
+            results: [
+              {
+                url: "https://example.com",
+                title: "Example",
+                snippet: "Example snippet",
+              },
+            ],
+          },
+          {
+            type: "text",
+            text: "Found it.",
+            citations: [
+              {
+                type: "web_search_result_location",
+                url: "https://example.com",
+                title: "Example",
+                citedText: "Example snippet",
+              },
+            ],
+          },
+          {
+            type: "web_fetch_result",
+            toolUseId: "toolu_2",
+            provider: "anthropic",
+            url: "https://example.com/doc",
+            document: {
+              mimeType: "text/html",
+              text: "Hello",
+              title: "Doc",
+              citationsEnabled: true,
+            },
+          },
+        ],
       }).success,
     ).toBe(true);
   });

@@ -560,6 +560,7 @@ export async function handleToolsSet(
   },
   threadId: string | undefined,
   params: {
+    web?: boolean;
     builtin?: Record<string, boolean>;
     plugins?: Array<{ package: string; enabled?: boolean; tools?: Record<string, boolean>; remove?: boolean }>;
     conflictPolicy?: ToolConflictPolicy;
@@ -574,6 +575,7 @@ export async function handleToolsSet(
 }> {
   const { cwd } = await ctx.resolveToolsContext(threadId);
   const writeResult = await writeGlobalToolsConfig({
+    web: params.web,
     builtin: params.builtin,
     plugins: params.plugins,
     conflictPolicy: params.conflictPolicy,

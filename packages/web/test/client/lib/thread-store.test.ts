@@ -90,6 +90,59 @@ test("merges item started/delta/completed into single assistant item", () => {
   expect(assistant && assistant.kind === "assistant" ? assistant.text : "").toBe("hello");
 });
 
+test("assistant message appends provider-native web blocks during message_delta", () => {
+  const startedEvent = {
+    type: "message_start",
+    itemId: "item1",
+    message: {
+      role: "assistant",
+      content: [],
+      model: "x",
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      stopReason: "end_turn",
+      timestamp: 1,
+    },
+  } as const;
+  const deltaEvent = {
+    type: "message_delta",
+    itemId: "item1",
+    message: startedEvent.message,
+    delta: {
+      type: "content_block_delta",
+      block: {
+        type: "provider_tool_use",
+        id: "ws_1",
+        provider: "openai",
+        name: "web_search",
+        input: { type: "search", query: "diligent" },
+      },
+    },
+  } as const;
+
+  const started: DiligentServerNotification = {
+    method: "agent/event",
+    params: { threadId: "t1", turnId: "turn1", threadStatus: "busy", event: startedEvent },
+  };
+  const delta: DiligentServerNotification = {
+    method: "agent/event",
+    params: { threadId: "t1", turnId: "turn1", threadStatus: "busy", event: deltaEvent },
+  };
+
+  const next = reduceServerNotification(initialThreadState, started, [startedEvent]);
+  const finalState = reduceServerNotification(next, delta, [deltaEvent]);
+  const assistant = finalState.items.find((item) => item.kind === "assistant");
+  expect(assistant).toBeDefined();
+  expect(assistant && assistant.kind === "assistant" ? assistant.contentBlocks : []).toEqual([
+    {
+      type: "provider_tool_use",
+      id: "ws_1",
+      provider: "openai",
+      name: "web_search",
+      input: { type: "search", query: "diligent" },
+    },
+  ]);
+});
+
 test("ignores duplicate started item events", () => {
   resetAdapter();
   const started: DiligentServerNotification = {
@@ -762,6 +815,78 @@ test("hydrateFromThreadRead keeps assistant text when snapshot has message_end o
   expect(assistant).toBeDefined();
   expect(assistant && assistant.kind === "assistant" ? assistant.text : "").toBe("assistant from snapshot");
   expect(assistant && assistant.kind === "assistant" ? assistant.thinkingDone : false).toBe(true);
+  expect(assistant && assistant.kind === "assistant" ? assistant.contentBlocks : []).toEqual([
+    { type: "text", text: "assistant from snapshot" },
+  ]);
+});
+
+test("hydrateFromThreadRead preserves provider-native web blocks and citations on assistant items", () => {
+  const hydrated = hydrateFromThreadRead(initialThreadState, {
+    cwd: "/repo",
+    items: [
+      {
+        type: "agentMessage",
+        itemId: "a-web-1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "provider_tool_use",
+              id: "ws_1",
+              provider: "openai",
+              name: "web_search",
+              input: { query: "diligent" },
+            },
+            {
+              type: "web_search_result",
+              toolUseId: "ws_1",
+              provider: "openai",
+              results: [{ url: "https://example.com", title: "Example", snippet: "Result snippet" }],
+            },
+            {
+              type: "text",
+              text: "Found it.",
+              citations: [
+                {
+                  type: "web_search_result_location",
+                  url: "https://example.com",
+                  title: "Example",
+                  citedText: "Found",
+                },
+              ],
+            },
+          ],
+          model: "gpt-5",
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 123,
+        },
+      },
+    ],
+    hasFollowUp: false,
+    entryCount: 1,
+    isRunning: false,
+    currentEffort: "medium",
+  });
+
+  const assistant = hydrated.items.find((item) => item.kind === "assistant");
+  expect(assistant).toBeDefined();
+  expect(assistant && assistant.kind === "assistant" ? assistant.contentBlocks : []).toEqual([
+    { type: "provider_tool_use", id: "ws_1", provider: "openai", name: "web_search", input: { query: "diligent" } },
+    {
+      type: "web_search_result",
+      toolUseId: "ws_1",
+      provider: "openai",
+      results: [{ url: "https://example.com", title: "Example", snippet: "Result snippet" }],
+    },
+    {
+      type: "text",
+      text: "Found it.",
+      citations: [
+        { type: "web_search_result_location", url: "https://example.com", title: "Example", citedText: "Found" },
+      ],
+    },
+  ]);
 });
 
 test("hydrateFromThreadRead restores post-compaction history from snapshot items", () => {

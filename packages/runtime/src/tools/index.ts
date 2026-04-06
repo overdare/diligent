@@ -36,4 +36,5 @@ export { createSearchKnowledgeTool } from "./search-knowledge";
 export { createSkillTool, registerSkillTool } from "./skill";
 export { createUpdateKnowledgeTool } from "./update-knowledge";
 export type { UserInputQuestion, UserInputRequest, UserInputResponse, UserInputSource } from "./user-input-types";
+export { createWebTool } from "./web";
 export { createWriteAbsoluteTool, createWriteTool } from "./write";
