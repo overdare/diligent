@@ -110,11 +110,11 @@ describe("ProviderManager", () => {
     expect(pm.getMaskedKey("chatgpt")).toBe("ChatGPT OAuth");
   });
 
-  test("anthropic native compaction is disabled by default", () => {
+  test("anthropic native compaction is enabled by default", () => {
     const pm = new ProviderManager({});
     pm.setApiKey("anthropic", "sk-ant-test");
 
-    expect(pm.createNativeCompactionForProvider("anthropic")).toBeUndefined();
+    expect(pm.createNativeCompactionForProvider("anthropic")).toBeDefined();
   });
 
   test("openai native compaction remains enabled when api key exists", () => {

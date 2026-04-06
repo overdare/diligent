@@ -13,7 +13,7 @@ describe("resolveModel", () => {
   it("infers anthropic from claude- prefix", () => {
     const model = resolveModel("claude-opus-4-20250514");
     expect(model.provider).toBe("anthropic");
-    expect(model.contextWindow).toBe(200_000);
+    expect(model.contextWindow).toBe(300_000);
   });
 
   it("infers openai from gpt- prefix", () => {
@@ -31,6 +31,12 @@ describe("resolveModel", () => {
   it("defaults unknown model to anthropic", () => {
     const model = resolveModel("unknown-model");
     expect(model.provider).toBe("anthropic");
+    expect(model.contextWindow).toBe(300_000);
+  });
+
+  it("uses 300k context for known Sonnet and Opus models", () => {
+    expect(resolveModel("claude-sonnet-4-6").contextWindow).toBe(300_000);
+    expect(resolveModel("claude-opus-4-6").contextWindow).toBe(300_000);
   });
 
   it("infers chatgpt from chatgpt- prefix", () => {

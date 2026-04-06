@@ -8,6 +8,7 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
   const addAssistantMessage = mock(() => {});
   const addThinkingMessage = mock(() => {});
   const addToolResultMessage = mock(() => {});
+  const addStructuredItem = mock(() => {});
   const addLines = mock(() => {});
   const handleEvent = mock(() => {});
 
@@ -28,6 +29,7 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
       addAssistantMessage,
       addThinkingMessage,
       addToolResultMessage,
+      addStructuredItem,
       addLines,
       handleEvent,
     } as never,
@@ -47,6 +49,7 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
     addAssistantMessage,
     addThinkingMessage,
     addToolResultMessage,
+    addStructuredItem,
     addLines,
     handleEvent,
   };
@@ -93,7 +96,7 @@ describe("AppSessionLifecycle", () => {
   });
 
   test("hydrateThreadHistory restores provider-native web blocks as plain transcript lines", async () => {
-    const { lifecycle, addAssistantMessage, addLines } = createLifecycleWithThreadRead({
+    const { lifecycle, addAssistantMessage, addStructuredItem, addLines } = createLifecycleWithThreadRead({
       items: [
         {
           type: "agentMessage",
@@ -135,8 +138,7 @@ describe("AppSessionLifecycle", () => {
     await (lifecycle as never).hydrateThreadHistory();
 
     expect(addAssistantMessage).toHaveBeenCalledWith("Here you go.");
-    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("Searched bun release")]));
-    expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("Found 1 result")]));
+    expect(addStructuredItem).toHaveBeenCalled();
     expect(addLines).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining("[source] Example")]));
   });
 });

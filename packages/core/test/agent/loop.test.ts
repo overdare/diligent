@@ -418,8 +418,8 @@ describe("Agent compactionSummary persistence", () => {
     const smallModel: Model = {
       id: "test-model",
       provider: "test",
-      contextWindow: 100,
-      maxOutputTokens: 50,
+      contextWindow: 200_000,
+      maxOutputTokens: 4096,
     };
 
     const assistantMsg = makeAssistant([{ type: "text", text: "ok" }]);
@@ -429,18 +429,19 @@ describe("Agent compactionSummary persistence", () => {
       effort: "medium",
       llmMsgStreamFn: streamFn,
       llmCompactionFn: nativeCompactFn,
-      compaction: { reservePercent: 90, keepRecentTokens: 0 },
+      compaction: { reservePercent: 70, keepRecentTokens: 0 },
     });
 
-    const userMsg = (text: string): Message => ({ role: "user", content: text, timestamp: Date.now() });
+    const bigContent = "x".repeat(200_001);
+    const userMsg = (text: string): Message => ({ role: "user", content: text + bigContent, timestamp: Date.now() });
 
-    // First prompt: no compaction (conversation too small)
+    // First prompt: no compaction (first turn, not enough history)
     await agent.prompt(userMsg("first"));
     const summaryAfterFirst = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
     expect(summaryAfterFirst).toBeUndefined();
 
-    // Second prompt: conversation includes prior assistant message with usage=15 tokens > threshold=10
-    // Auto-compaction fires and the returned compactionSummary must be persisted on the Agent
+    // Second prompt: total messages (~100k tokens) exceed threshold (60k = 200k × 0.3)
+    // Auto-compaction fires and the returned compactionSummary must be persisted on the Agent.
     await agent.prompt(userMsg("second"));
     const summaryAfterSecond = (agent as unknown as { compactionSummary?: Record<string, unknown> }).compactionSummary;
 

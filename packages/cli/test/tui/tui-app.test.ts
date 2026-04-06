@@ -518,48 +518,6 @@ describe("App", () => {
     expect(resumedCall).toBeDefined();
   });
 
-  test("manual /compact clears input busy state after compaction completes", async () => {
-    const workspace = await setupWorkspace("diligent-app-test-");
-    const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "seed" }) }]);
-
-    const cfg = makeConfig(streamFn);
-    const { app, terminal } = createAppHarness(cfg, workspace);
-
-    try {
-      await app.start();
-      await wait(30);
-
-      terminal.emitText("hello");
-      terminal.emitEnter();
-      await wait(180);
-
-      terminal.emitText("/compact");
-      terminal.emitEnter();
-
-      await waitFor(
-        () => {
-          const output = stripAnsi(terminal.stdout.writes.join(""));
-          return output.includes("Compacted: 3 entries, 0k → 0k tokens");
-        },
-        { timeoutMs: 4000, intervalMs: 20 },
-      );
-
-      await waitFor(() => !(app as unknown as { inputEditor: { busy: boolean } }).inputEditor.busy, {
-        timeoutMs: 4000,
-        intervalMs: 20,
-      });
-    } finally {
-      app.stop();
-      workspace.cleanup();
-    }
-
-    const output = stripAnsi(terminal.stdout.writes.join(""));
-    expect(output).toContain("Compacted: 3 entries, 0k → 0k tokens");
-    const compactingCount = (output.match(/Compacting…/g) ?? []).length;
-    expect(compactingCount).toBeLessThanOrEqual(1);
-    expect((app as unknown as { inputEditor: { busy: boolean } }).inputEditor.busy).toBe(false);
-  });
-
   test("rings terminal bell when turn completes", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);

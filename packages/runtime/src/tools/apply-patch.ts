@@ -1,9 +1,8 @@
 // @summary Applies codex-style Begin/End patch envelopes with strict verification
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
-import { isAbsolute } from "../util/path";
+import { dirnameCrossPlatform, isAbsolute, relativeCrossPlatform, resolveCrossPlatformPath } from "../util/path";
 import { type RuntimeToolHost, requestToolApproval } from "./capabilities";
 import { createPatchDiffRenderPayload, createTextRenderPayload } from "./render-payload";
 
@@ -169,8 +168,8 @@ It is important to remember:
       }
 
       const summaryLines = changes.map((change) => {
-        const relSource = normalizeRelPath(relative(cwd, change.sourcePath));
-        const relTarget = normalizeRelPath(relative(cwd, change.targetPath));
+        const relSource = normalizeRelPath(relativeCrossPlatform(cwd, change.sourcePath));
+        const relTarget = normalizeRelPath(relativeCrossPlatform(cwd, change.targetPath));
         if (change.type === "add") return `A ${relTarget}`;
         if (change.type === "delete") return `D ${relSource}`;
         if (change.type === "move") return `M ${relSource} -> ${relTarget}`;
@@ -320,7 +319,7 @@ function resolvePatchPath(cwd: string, patchPath: string): string {
   if (isAbsolute(patchPath)) {
     throw new Error(`Patch paths must be relative, got absolute path: ${patchPath}`);
   }
-  return resolve(cwd, patchPath);
+  return resolveCrossPlatformPath(cwd, patchPath);
 }
 
 async function verifyAndPlanChanges(hunks: PatchHunk[], cwd: string): Promise<FileChange[]> {
@@ -509,7 +508,7 @@ async function applyChanges(changes: FileChange[]): Promise<void> {
       continue;
     }
 
-    await mkdir(dirname(change.targetPath), { recursive: true });
+    await mkdir(dirnameCrossPlatform(change.targetPath), { recursive: true });
     await writeFile(change.targetPath, change.after, "utf-8");
 
     if (change.type === "move" && change.sourcePath !== change.targetPath) {

@@ -123,6 +123,22 @@ describe("apply_patch tool", () => {
     expect(result.output).toContain("Patch paths must be relative");
   });
 
+  test("rejects Windows extended-length absolute paths in patch headers", async () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: \\\\?\\C:\\repo\\target.txt",
+      "@@",
+      "-a",
+      "+b",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain("Patch paths must be relative");
+  });
+
   test("applies same-file multiple hunks correctly even when order is reversed", async () => {
     const target = join(tmpDir, "multi.txt");
     await writeFile(target, "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", "utf-8");

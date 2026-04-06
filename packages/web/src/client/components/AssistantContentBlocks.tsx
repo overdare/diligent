@@ -8,6 +8,37 @@ interface AssistantContentBlocksProps {
   blocks: ContentBlock[];
 }
 
+function hasVisibleText(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+export function isToolLikeAssistantContentBlock(block: ContentBlock): boolean {
+  return block.type === "provider_tool_use" || block.type === "web_search_result" || block.type === "web_fetch_result";
+}
+
+export function isRenderableAssistantContentBlock(block: ContentBlock): boolean {
+  switch (block.type) {
+    case "thinking":
+      return false;
+    case "text":
+      return hasVisibleText(block.text);
+    case "provider_tool_use":
+      return hasVisibleText(summarizeProviderInput(block));
+    case "web_search_result":
+      return block.results.length > 0 || hasVisibleText(block.error?.message) || hasVisibleText(block.error?.code);
+    case "web_fetch_result":
+      return (
+        hasVisibleText(block.document?.text) ||
+        hasVisibleText(block.document?.title) ||
+        hasVisibleText(block.url) ||
+        hasVisibleText(block.error?.message) ||
+        hasVisibleText(block.error?.code)
+      );
+    default:
+      return false;
+  }
+}
+
 function CitationList({ block }: { block: Extract<ContentBlock, { type: "text" }> }) {
   if (!block.citations || block.citations.length === 0) return null;
   return (
@@ -181,7 +212,7 @@ function WebFetchResultBlockView({
 }
 
 export function AssistantContentBlocks({ blocks }: AssistantContentBlocksProps) {
-  const visibleBlocks = blocks.filter((block) => block.type !== "thinking");
+  const visibleBlocks = blocks.filter(isRenderableAssistantContentBlock);
   if (visibleBlocks.length === 0) return null;
 
   return (

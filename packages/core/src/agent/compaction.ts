@@ -178,11 +178,10 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     input.compactionConfig.keepRecentTokens,
   );
   const tokensBefore = estimateTokens(input.messages);
-  if (input.llmCompactionFn != null && tokensBefore < NATIVE_COMPACTION_MIN_INPUT_TOKENS) {
-    throw new Error(
-      `Cannot compact: estimated ${tokensBefore.toLocaleString()} tokens is below the ${NATIVE_COMPACTION_MIN_INPUT_TOKENS.toLocaleString()} minimum required for native compaction.`,
-    );
-  }
+  const effectiveLlmCompactionFn =
+    input.llmCompactionFn != null && tokensBefore < NATIVE_COMPACTION_MIN_INPUT_TOKENS
+      ? undefined
+      : input.llmCompactionFn;
   const timeoutMs = input.compactionConfig.timeoutMs ?? DEFAULT_COMPACTION_TIMEOUT_MS;
   const compactionSignal = createCompactionSignal(input.signal, timeoutMs);
   input.stream.emit({ type: "compaction_start", estimatedTokens: tokensBefore });
@@ -195,7 +194,7 @@ export async function runCompaction(input: RunCompactionInput): Promise<RunCompa
     config: input.compactionConfig,
     signal: compactionSignal,
     streamFn: input.llmMsgStreamFn,
-    llmCompactionFn: input.llmCompactionFn,
+    llmCompactionFn: effectiveLlmCompactionFn,
   });
   const summary =
     result.mode === "local"

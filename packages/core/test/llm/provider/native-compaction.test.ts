@@ -25,7 +25,7 @@ const OPENAI_MODEL: Model = {
 const ANTHROPIC_MODEL: Model = {
   id: "claude-sonnet-4-6",
   provider: "anthropic",
-  contextWindow: 200_000,
+  contextWindow: 300_000,
   maxOutputTokens: 16_000,
   supportsThinking: true,
 };

@@ -27,6 +27,8 @@ test("loads model from config.jsonc and returns required fields", async () => {
 
   await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
+  const origHome = process.env.HOME;
+  process.env.HOME = base;
   try {
     const config = await loadRuntimeConfig(base, paths);
 
@@ -35,6 +37,7 @@ test("loads model from config.jsonc and returns required fields", async () => {
     expect(Array.isArray(config.systemPrompt)).toBe(true);
     expect(config.systemPrompt.length).toBeGreaterThan(0);
   } finally {
+    process.env.HOME = origHome;
     rmSync(base, { recursive: true, force: true });
   }
 });
@@ -46,6 +49,8 @@ test("compaction defaults when not configured", async () => {
 
   await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
+  const origHome = process.env.HOME;
+  process.env.HOME = base;
   try {
     const config = await loadRuntimeConfig(base, paths);
 
@@ -53,6 +58,7 @@ test("compaction defaults when not configured", async () => {
     expect(config.compaction.reservePercent).toBe(14);
     expect(config.compaction.keepRecentTokens).toBe(20000);
   } finally {
+    process.env.HOME = origHome;
     rmSync(base, { recursive: true, force: true });
   }
 });
@@ -64,10 +70,13 @@ test("mode defaults to default when not configured", async () => {
 
   await Bun.write(join(base, ".diligent", "config.jsonc"), JSON.stringify({ model: "claude-sonnet-4-6" }));
 
+  const origHome = process.env.HOME;
+  process.env.HOME = base;
   try {
     const config = await loadRuntimeConfig(base, paths);
     expect(config.mode).toBe("default");
   } finally {
+    process.env.HOME = origHome;
     rmSync(base, { recursive: true, force: true });
   }
 });

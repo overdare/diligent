@@ -336,6 +336,7 @@ test("thread compacted maps to compaction_end", () => {
       entryCount: 3,
       tokensBefore: 15000,
       tokensAfter: 9000,
+      summary: "3 entries",
     },
   };
 

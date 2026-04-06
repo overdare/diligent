@@ -44,7 +44,7 @@ const { createAnthropicStream } = await import("../../../src/llm/provider/anthro
 const MODEL: Model = {
   id: "claude-sonnet-4-6",
   provider: "anthropic",
-  contextWindow: 200_000,
+  contextWindow: 300_000,
   maxOutputTokens: 8_000,
   supportsThinking: true,
 };

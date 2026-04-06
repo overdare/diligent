@@ -1,7 +1,11 @@
 // @summary Assistant message with left decoration bar, agent icon, thinking block, and markdown content
 
 import type { RenderItem } from "../lib/thread-store";
-import { AssistantContentBlocks } from "./AssistantContentBlocks";
+import {
+  AssistantContentBlocks,
+  isRenderableAssistantContentBlock,
+  isToolLikeAssistantContentBlock,
+} from "./AssistantContentBlocks";
 import { MarkdownContent } from "./MarkdownContent";
 import { ThinkingBlock } from "./ThinkingBlock";
 
@@ -23,10 +27,12 @@ interface AssistantMessageProps {
 export function AssistantMessage({ item, suppressThinking = false }: AssistantMessageProps) {
   const hasThinking = item.thinking.length > 0;
   const hasText = item.text.length > 0;
-  const hasStructuredBlocks = item.contentBlocks.length > 0;
+  const renderableContentBlocks = item.contentBlocks.filter(isRenderableAssistantContentBlock);
+  const hasStructuredBlocks = renderableContentBlocks.length > 0;
+  const hasToolLikeBlocks = renderableContentBlocks.some(isToolLikeAssistantContentBlock);
   const turnDuration = formatMs(item.turnDurationMs);
   const reasoningDuration = formatMs(item.reasoningDurationMs);
-  const showTurnDivider = item.thinkingDone;
+  const showTurnDivider = item.thinkingDone && !hasToolLikeBlocks;
 
   if (!hasThinking && !hasText && !hasStructuredBlocks) return null;
 

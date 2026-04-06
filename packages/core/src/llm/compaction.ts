@@ -162,7 +162,7 @@ export async function compactMessages(
  * Summary pipeline: use provider-native compaction when available, otherwise local LLM summarization.
  */
 export async function compact(input: LLMCompactInput): Promise<LLMCompactResult> {
-  const nativeCompactFn = input.llmCompactionFn ?? resolveCompaction(input.model.provider);
+  const nativeCompactFn = input.llmCompactionFn;
 
   if (nativeCompactFn) {
     const nativeResult = await nativeCompactFn({

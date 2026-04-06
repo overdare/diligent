@@ -24,7 +24,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "claude-opus-4-6",
     provider: "anthropic",
-    contextWindow: 200_000,
+    contextWindow: 300_000,
     maxOutputTokens: 128_000,
     inputCostPer1M: 5.0,
     outputCostPer1M: 25.0,
@@ -41,7 +41,7 @@ export const KNOWN_MODELS: ModelDefinition[] = [
   {
     id: "claude-sonnet-4-6",
     provider: "anthropic",
-    contextWindow: 200_000,
+    contextWindow: 300_000,
     maxOutputTokens: 64_000,
     inputCostPer1M: 3.0,
     outputCostPer1M: 15.0,
@@ -304,7 +304,7 @@ export function resolveModel(modelId: string): Model {
     return {
       id: modelId,
       provider: "anthropic",
-      contextWindow: 200_000,
+      contextWindow: 300_000,
       maxOutputTokens: 16_384,
       supportsThinking: true,
     };
@@ -326,7 +326,7 @@ export function resolveModel(modelId: string): Model {
   return {
     id: modelId,
     provider: "anthropic",
-    contextWindow: 200_000,
+    contextWindow: 300_000,
     maxOutputTokens: 16_384,
     supportsThinking: true,
   };

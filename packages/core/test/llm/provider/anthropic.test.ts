@@ -10,7 +10,7 @@ import type { AssistantMessage } from "../../../src/types";
 const TEST_MODEL: Model = {
   id: "claude-sonnet-4-20250514",
   provider: "anthropic",
-  contextWindow: 200_000,
+  contextWindow: 300_000,
   maxOutputTokens: 16_384,
 };
 

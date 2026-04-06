@@ -20,7 +20,7 @@ const bashTool = createBashTool(process.cwd());
 const TEST_MODEL: Model = {
   id: process.env.DILIGENT_MODEL ?? "claude-sonnet-4-20250514",
   provider: "anthropic",
-  contextWindow: 200_000,
+  contextWindow: 300_000,
   maxOutputTokens: 16_384,
 };
 

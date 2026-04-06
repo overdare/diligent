@@ -375,6 +375,44 @@ test("assistant message renders provider-native web blocks and citations", () =>
   expect(html).toContain("Source 1:");
   expect(html).not.toContain("chatgpt");
   expect(html).not.toContain("openai");
+  expect(html).not.toContain('class="pb-2 pt-3"');
+  expect(html).not.toContain("Completed in");
+});
+
+test("assistant message suppresses empty provider-native tool blocks", () => {
+  const html = renderToStaticMarkup(
+    <AssistantMessage
+      item={{
+        id: "assistant-web-empty-1",
+        kind: "assistant",
+        text: "",
+        thinking: "",
+        contentBlocks: [
+          {
+            type: "provider_tool_use",
+            id: "wf_1",
+            provider: "anthropic",
+            name: "web_fetch",
+            input: {},
+          },
+          {
+            type: "web_search_result",
+            toolUseId: "wf_1",
+            provider: "anthropic",
+            results: [],
+          },
+          {
+            type: "text",
+            text: "   ",
+          },
+        ],
+        thinkingDone: true,
+        timestamp: 4,
+      }}
+    />,
+  );
+
+  expect(html).toBe("");
 });
 
 test("input dock renders pending image preview and add-images action", () => {
