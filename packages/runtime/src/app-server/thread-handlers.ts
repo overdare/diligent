@@ -313,7 +313,7 @@ export async function handleThreadCompactStart(
         entryCount: result.entryCount,
         tokensBefore: result.tokensBefore,
         tokensAfter: result.tokensAfter,
-        summary: `${result.entryCount} entries`,
+        summary: result.summary,
       },
     });
     return result;
