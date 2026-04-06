@@ -26,5 +26,8 @@ jobs/
 # Test temp directories
 **/tmp-watcher-test/
 
+# Runtime logs
+**/.diligent/logs/
+
 # Alias file (symlink)
 CLAUDE.md

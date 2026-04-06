@@ -1,3 +1,0 @@
-2026-04-06T13:45:55.121Z [llm:retry] stream error attempt=1/5 retryable=false type=unknown status=404 message=404 {"type":"error","error":{"type":"not_found_error","message":"model: cluade-sonnet-4-6"},"request_id":"req_011CZnct28vm79oKFKaD51qm"}
-2026-04-06T13:45:55.122Z [llm:retry] giving up attempt=1/5 reason=delta_already_sent type=unknown status=404
-2026-04-06T13:45:55.126Z [SessionManager] Run error session=20260406134552676000-aef5cd name=ProviderError message=404 {"type":"error","error":{"type":"not_found_error","message":"model: cluade-sonnet-4-6"},"request_id":"req_011CZnct28vm79oKFKaD51qm"} lastPersisted=none
