@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool/types";
-import { createApplyPatchTool } from "@diligent/runtime/tools";
+import { createApplyPatchTool, parsePatch } from "@diligent/runtime/tools";
 
 function makeCtx(): ToolContext {
   return {
@@ -160,5 +160,170 @@ describe("apply_patch tool", () => {
     const result = await tool.execute({ patch }, makeCtx());
     expect(result.metadata?.error).not.toBe(true);
     expect(await readFile(target, "utf-8")).toBe("a\nB\nB2\nc\nd\ne\nf\ng\nH\nH2\ni\nj\n");
+  });
+});
+
+describe("unicode normalization gaps vs codex-rs", () => {
+  let tmpDir: string;
+  let tool: ReturnType<typeof createApplyPatchTool>;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "apply-patch-unicode-"));
+    tool = createApplyPatchTool(tmpDir);
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  async function assertUnicodePatchApplied(fileContent: string, patchOldLine: string): Promise<void> {
+    const target = join(tmpDir, "unicode.txt");
+    await writeFile(target, `before\n${fileContent}\nafter\n`, "utf-8");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: unicode.txt",
+      "@@",
+      ` before`,
+      `-${patchOldLine}`,
+      `+replaced`,
+      ` after`,
+      "*** End Patch",
+    ].join("\n");
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    const content = await readFile(target, "utf-8");
+    expect(content).toBe("before\nreplaced\nafter\n");
+  }
+
+  test("matches U+2212 mathematical minus sign via ascii dash in patch", async () => {
+    await assertUnicodePatchApplied("a\u2212b", "a-b");
+  });
+
+  test("matches U+2002 en-space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u2002world", "hello world");
+  });
+
+  test("matches U+2003 em-space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u2003world", "hello world");
+  });
+
+  test("matches U+2004 three-per-em space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u2004world", "hello world");
+  });
+
+  test("matches U+2005 four-per-em space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u2005world", "hello world");
+  });
+
+  test("matches U+2009 thin space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u2009world", "hello world");
+  });
+
+  test("matches U+200A hair space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u200Aworld", "hello world");
+  });
+
+  test("matches U+202F narrow no-break space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u202Fworld", "hello world");
+  });
+
+  test("matches U+205F medium mathematical space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u205Fworld", "hello world");
+  });
+
+  test("matches U+3000 ideographic space via regular space in patch", async () => {
+    await assertUnicodePatchApplied("hello\u3000world", "hello world");
+  });
+});
+
+describe("heredoc stripping", () => {
+  let tmpDir: string;
+  let tool: ReturnType<typeof createApplyPatchTool>;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "apply-patch-heredoc-"));
+    tool = createApplyPatchTool(tmpDir);
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  const ADD_PATCH_BODY = ["*** Begin Patch", "*** Add File: created.txt", "+hello", "*** End Patch"].join("\n");
+
+  test("strips bash -lc double-quoted heredoc with literal \\n escapes", async () => {
+    const escaped = ADD_PATCH_BODY.replace(/\n/g, "\\n");
+    const patch = `bash -lc "apply_patch <<'EOF'\\n${escaped}\\nEOF"`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(join(tmpDir, "created.txt"), "utf-8")).toBe("hello\n");
+  });
+
+  test("strips bash -lc double-quoted heredoc with actual newlines", async () => {
+    const patch = `bash -lc "apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF"`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(join(tmpDir, "created.txt"), "utf-8")).toBe("hello\n");
+  });
+
+  test("strips standalone apply_patch <<'EOF' heredoc", async () => {
+    const patch = `apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(join(tmpDir, "created.txt"), "utf-8")).toBe("hello\n");
+  });
+
+  test("strips cd && apply_patch <<'EOF' heredoc (ignores cd path)", async () => {
+    const patch = `cd /some/path && apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(join(tmpDir, "created.txt"), "utf-8")).toBe("hello\n");
+  });
+});
+
+describe("strict vs lenient parsing mode", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "apply-patch-strict-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  const ADD_PATCH_BODY = ["*** Begin Patch", "*** Add File: strict.txt", "+hello", "*** End Patch"].join("\n");
+
+  test("lenient mode (default) accepts heredoc-wrapped patch", async () => {
+    const tool = createApplyPatchTool(tmpDir);
+    const patch = `apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+  });
+
+  test("strict mode rejects heredoc-wrapped patch", async () => {
+    const tool = createApplyPatchTool(tmpDir, undefined, { strict: true });
+    const patch = `apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    const result = await tool.execute({ patch }, makeCtx());
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toMatch(/invalid patch format/i);
+  });
+
+  test("strict mode accepts bare patch", async () => {
+    const tool = createApplyPatchTool(tmpDir, undefined, { strict: true });
+    const result = await tool.execute({ patch: ADD_PATCH_BODY }, makeCtx());
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(join(tmpDir, "strict.txt"), "utf-8")).toBe("hello\n");
+  });
+
+  test("parsePatch strict mode rejects heredoc-wrapped patch", () => {
+    const patch = `apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    expect(() => parsePatch(patch, { strict: true })).toThrow(/invalid patch format/i);
+  });
+
+  test("parsePatch lenient mode (default) accepts heredoc-wrapped patch", () => {
+    const patch = `apply_patch <<'EOF'\n${ADD_PATCH_BODY}\nEOF`;
+    expect(() => parsePatch(patch)).not.toThrow();
+    expect(parsePatch(patch)).toHaveLength(1);
   });
 });

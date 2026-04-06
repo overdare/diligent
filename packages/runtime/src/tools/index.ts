@@ -1,7 +1,8 @@
 export type { CollabToolDeps } from "../collab";
 // Collab tools (non-blocking multi-agent)
 export { AgentRegistry, createCollabTools } from "../collab";
-export { createApplyPatchTool } from "./apply-patch";
+export type { ApplyPatchOptions } from "./apply-patch";
+export { createApplyPatchTool, parsePatch } from "./apply-patch";
 export { createBashTool, filterSensitiveEnv } from "./bash";
 // Tool catalog (P032)
 export type { PluginLoadError, PluginStateEntry, ToolCatalogResult, ToolStateEntry, ToolStateReason } from "./catalog";

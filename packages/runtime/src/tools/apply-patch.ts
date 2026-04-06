@@ -1,4 +1,4 @@
-// @summary Applies codex-style Begin/End patch envelopes with strict verification
+// @summary Applies codex-style Begin/End patch envelopes with lenient/strict verification
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool/types";
 import { z } from "zod";
@@ -33,7 +33,15 @@ interface FileChange {
 const BEGIN_MARKER = "*** Begin Patch";
 const END_MARKER = "*** End Patch";
 
-export function createApplyPatchTool(cwd: string, host?: RuntimeToolHost): Tool<typeof ApplyPatchParams> {
+export interface ApplyPatchOptions {
+  strict?: boolean;
+}
+
+export function createApplyPatchTool(
+  cwd: string,
+  host?: RuntimeToolHost,
+  options?: ApplyPatchOptions,
+): Tool<typeof ApplyPatchParams> {
   return {
     name: "apply_patch",
     description: `Use the \`apply_patch\` tool to edit files.
@@ -107,7 +115,7 @@ It is important to remember:
     async execute(args, ctx): Promise<ToolResult> {
       let hunks: PatchHunk[];
       try {
-        hunks = parsePatch(args.patch);
+        hunks = parsePatch(args.patch, options);
       } catch (error) {
         const output = `apply_patch verification failed: ${error instanceof Error ? error.message : String(error)}`;
         return {
@@ -197,15 +205,41 @@ function normalizeNewlines(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-function stripHeredoc(value: string): string {
-  const match = value.match(/^(?:cat\s+)?<<['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1\s*$/);
-  return match ? match[2] : value;
+function stripShellWrapper(value: string): string {
+  // bash -lc "apply_patch <<'EOF'\n...\nEOF"  (literal \n escapes)
+  const bashLcLiteralNl = value.match(/^bash\s+-\S*l\S*c\s+"([\s\S]+)"\s*$/);
+  if (bashLcLiteralNl) {
+    const inner = bashLcLiteralNl[1].replace(/\\n/g, "\n").replace(/\\'/g, "'").replace(/\\"/g, '"');
+    return stripShellWrapper(inner);
+  }
+
+  // bash -lc 'apply_patch <<'\''EOF'\'' ... EOF'  (actual newlines)
+  const bashLcActualNl = value.match(/^bash\s+-\S*l\S*c\s+'([\s\S]+)'\s*$/);
+  if (bashLcActualNl) {
+    return stripShellWrapper(bashLcActualNl[1].replace(/\\'/g, "'"));
+  }
+
+  // [cd /path &&] apply_patch <<'DELIM'\n...\nDELIM
+  const applyPatchHeredoc = value.match(
+    /(?:^|.*&&\s+)apply_patch\s+<<['"]{0,1}(\w+)['"]{0,1}\s*\n([\s\S]*?)\n\1['"]{0,1}\s*$/,
+  );
+  if (applyPatchHeredoc) return applyPatchHeredoc[2];
+
+  // cat <<'DELIM'\n...\nDELIM  or bare <<'DELIM'\n...\nDELIM
+  const bareHeredoc = value.match(/^(?:cat\s+)?<<['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1\s*$/);
+  if (bareHeredoc) return bareHeredoc[2];
+
+  return value;
 }
 
-function parsePatch(rawPatch: string): PatchHunk[] {
+export function parsePatch(rawPatch: string, options?: ApplyPatchOptions): PatchHunk[] {
   if (!rawPatch.trim()) throw new Error("patch is empty");
 
-  const normalized = stripHeredoc(normalizeNewlines(rawPatch).trim());
+  const trimmed = normalizeNewlines(rawPatch).trim();
+  if (options?.strict && stripShellWrapper(trimmed) !== trimmed) {
+    throw new Error("Invalid patch format: shell wrapper not allowed in strict mode");
+  }
+  const normalized = options?.strict ? trimmed : stripShellWrapper(trimmed);
   const lines = normalized.split("\n");
   const begin = lines.findIndex((line) => line.trim() === BEGIN_MARKER);
   const end = lines.findIndex((line) => line.trim() === END_MARKER);
@@ -446,9 +480,9 @@ function normalizeUnicode(value: string): string {
   return value
     .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
     .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
     .replace(/\u2026/g, "...")
-    .replace(/\u00A0/g, " ");
+    .replace(/[\u00A0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000]/g, " ");
 }
 
 function tryMatch(
