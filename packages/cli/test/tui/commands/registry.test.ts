@@ -29,6 +29,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
   const configManager: ConfigManager = {
     setMode: () => {},
     setEffort: async () => {},
+    setModel: async () => {},
     reloadConfig: async () => {},
   };
 

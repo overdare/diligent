@@ -176,6 +176,7 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         setMode: (mode) => deps.configManager.setMode(mode),
         currentEffort: deps.getCurrentEffort(),
         setEffort: (effort) => deps.configManager.setEffort(effort),
+        setModel: (modelId) => deps.configManager.setModel(modelId),
         clearChatHistory: () => deps.clearChatHistory(),
         clearScreenAndResetRenderer: () => deps.clearScreenAndResetRenderer(),
         startNewThread: async () => {

@@ -51,6 +51,8 @@ export interface CommandContext {
   currentEffort: ThinkingEffort;
   /** Change thinking effort for the active thread */
   setEffort: (effort: ThinkingEffort) => Promise<void>;
+  /** Change model for the active thread or global default when no thread is active */
+  setModel: (modelId: string) => Promise<void>;
   /** Clear chat view history (for new thread) */
   clearChatHistory: () => void;
   /** Clear terminal screen and reset renderer bookkeeping */

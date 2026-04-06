@@ -2,7 +2,6 @@
 import { resolveModel } from "@diligent/core";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { createChatGPTOAuthBinding, removeAuthKey, removeOAuthTokens, saveAuthKey } from "@diligent/runtime";
-import { saveModel } from "../../../config-writer";
 import {
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
@@ -146,9 +145,9 @@ async function switchProvider(provider: ProviderName, ctx: CommandContext): Prom
   const defaultModelId = DEFAULT_MODELS[provider];
   const model = resolveModel(defaultModelId);
   ctx.config.model = model;
+  await ctx.setModel(model.id);
   ctx.onModelChanged(model.id);
   ctx.displayLines([`  Provider: ${t.bold}${provider}${t.reset}  Model: ${t.bold}${model.id}${t.reset}`]);
-  saveModel(model.id).catch(() => {});
 }
 
 export async function disconnectProvider(provider: ProviderName, ctx: CommandContext): Promise<void> {
@@ -231,9 +230,9 @@ async function startChatGPTOAuthFlow(ctx: CommandContext): Promise<void> {
     // Switch to default Codex model
     const model = resolveModel(DEFAULT_MODELS.chatgpt);
     ctx.config.model = model;
+    await ctx.setModel(model.id);
     ctx.onModelChanged(model.id);
     ctx.displayLines([`  Model: ${t.bold}${model.id}${t.reset}`]);
-    saveModel(model.id).catch(() => {});
   } catch (err) {
     ctx.displayError(`OAuth failed: ${err instanceof Error ? err.message : String(err)}`);
   }

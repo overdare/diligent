@@ -1,5 +1,7 @@
 // @summary Tests for createAppServerConfig factory — validates config assembly and override merging
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { getModelInfoList } from "@diligent/core/llm/models";
 import { ProviderManager } from "@diligent/core/llm/provider-manager";
 import type { Model } from "@diligent/core/llm/types";
@@ -42,6 +44,12 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     ...overrides,
   };
 }
+
+const tempHomes: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 describe("createAppServerConfig", () => {
   it("produces a valid config from a minimal RuntimeConfig", () => {
@@ -119,6 +127,30 @@ describe("createAppServerConfig", () => {
 
     config.modelConfig?.onModelChange("claude-haiku-4-5");
     expect(runtimeConfig.model?.id).toBe("claude-haiku-4-5");
+  });
+
+  it("does not persist thread-scoped model changes to the global config", async () => {
+    const originalHome = process.env.HOME;
+    const fakeHome = await mkdtemp(join(process.cwd(), ".tmp-factory-home-"));
+    tempHomes.push(fakeHome);
+    process.env.HOME = fakeHome;
+
+    try {
+      const runtimeConfig = makeRuntimeConfig();
+      const config = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
+
+      config.modelConfig?.onModelChange("claude-haiku-4-5", "thread-child");
+
+      expect(runtimeConfig.model?.id).toBe("claude-sonnet-4-6");
+      const configPath = join(fakeHome, ".diligent", "config.jsonc");
+      expect(await Bun.file(configPath).exists()).toBe(false);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
   });
 
   it("toolConfig.setTools updates runtimeConfig.diligent.tools", () => {

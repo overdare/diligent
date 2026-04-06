@@ -28,6 +28,7 @@ export interface ConfigManagerDeps {
 export interface ConfigManager {
   setMode: (mode: ProtocolMode) => void;
   setEffort: (effort: ThinkingEffort) => Promise<void>;
+  setModel: (modelId: string) => Promise<void>;
   reloadConfig: () => Promise<void>;
 }
 
@@ -51,6 +52,15 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, { threadId, effort });
       deps.setCurrentEffort(effort);
       deps.updateStatusBar({ effort });
+      deps.requestRender();
+    },
+
+    async setModel(modelId: string): Promise<void> {
+      const rpc = deps.getRpcClient();
+      if (!rpc) return;
+      const threadId = deps.getCurrentThreadId() ?? undefined;
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET, { threadId, model: modelId });
+      deps.updateStatusBar({ model: modelId });
       deps.requestRender();
     },
 

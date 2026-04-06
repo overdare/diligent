@@ -49,6 +49,7 @@ function makeContext(config: AppConfig, overrides?: Partial<CommandContext>): Co
     setMode: () => {},
     currentEffort: "medium",
     setEffort: async () => {},
+    setModel: async () => {},
     clearChatHistory: () => {},
     clearScreenAndResetRenderer: () => {},
     startNewThread: async () => "thread-1",
@@ -126,5 +127,27 @@ describe("modelCommand picker", () => {
     expect(modelItems.every((item) => resolveModel(item.value).provider === "anthropic")).toBe(true);
     expect(capturedItems.some((item) => item.header && item.label.includes("anthropic"))).toBe(true);
     expect(capturedItems.some((item) => item.header && item.label.includes("openai"))).toBe(false);
+  });
+
+  it("routes explicit model changes through the thread-aware setter", async () => {
+    const providerManager = {
+      hasKeyFor: mock((_provider: string) => true),
+    };
+    const setModel = mock(async (_modelId: string) => {});
+    const onModelChanged = mock((_modelId: string) => {});
+
+    const config = makeConfig("claude-sonnet-4-6", providerManager as unknown as AppConfig["providerManager"]);
+    const ctx = makeContext(config, {
+      threadId: "thread-child",
+      setModel,
+      onModelChanged,
+    });
+
+    await modelCommand.handler("claude-haiku-4-5", ctx);
+
+    expect(setModel).toHaveBeenCalledTimes(1);
+    expect(setModel).toHaveBeenCalledWith("claude-haiku-4-5");
+    expect(onModelChanged).toHaveBeenCalledWith("claude-haiku-4-5");
+    expect(config.model.id).toBe("claude-haiku-4-5");
   });
 });
