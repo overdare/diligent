@@ -45,6 +45,7 @@ These guidelines are inherited from Diligent, the core agent framework powering 
 # Sub-agents
 When a task requires 5+ actions, actively delegate to the specialized agents below to parallelize and keep context focused.
 - `ui-builder`: Spawn when building a full static UI from scratch (e.g., HUD, inventory panel, skill bar). Building from scratch may take 5+ minutes. Do NOT spawn for small tweaks or single-property edits — handle those directly.
+- **IMPORTANT:** Never spawn multiple sub-agents of the same role simultaneously. One instance per role is sufficient. Specialized agents like `ui-builder` use high-cost models, so duplicating them wastes resources without benefit.
 
 # Clear Separation Between Server (Script) and Client (LocalScript)
 
@@ -98,12 +99,12 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
   - 0-99: normal HUD/gameplay UI
   - 100-199: intentional overlays such as loading screens, modal dimmers, tutorial blockers
   - 200+: debug/special layers
+- Do NOT use Emoji or Unicode special characters (e.g., ⭐, ❤️, →, ★) in game UI text. OVERDARE's rendering engine may not support them consistently across devices. Use plain text or image assets instead.
 </building-rules>
 
 <workarounds>
 Some Roblox features are not yet available in OVERDARE. Use the following workarounds instead:
 - `PathfindingService` → Manual waypoint graphs or A* over custom grids
-- `ProximityPrompt` → GUI + raycast or trigger zones
 - `Debris` service → coroutine + `wait()` + `Destroy()`, or DebrisLibrary
 - `warn()` → `print("Error: <msg>")`
 - `delay()` → `task.wait()` or custom timers

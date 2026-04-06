@@ -134,6 +134,8 @@ If the Lua file does not exist, use the studiorpc_script_add tool to generate it
 Returns the luau-lsp analyze output. For folders, results are grouped per file with a summary at the end.
 If no issues are found, returns "No issues found. Code is valid." (single file) or "[OK] filename" per file.
 
+Among the reported errors, Instance property-related errors are critical and must be addressed. Other errors are generally less important and can be deprioritized.
+
 Configuration (environment variables):
   - LUAU_LSP_PATH: path to luau-lsp binary (default: bundled sidecar or PATH)
   - OVERDARE_TYPES_PATH: path to overdare-types.d.lua type definitions`;
