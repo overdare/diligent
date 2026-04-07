@@ -35,24 +35,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=30")
-          ASSET_URL=$(python3 - <<'PY' "$RELEASE_JSON"
-          import json
-          import sys
-
-          releases = json.loads(sys.argv[1])
-          for release in releases:
-              for asset in release.get("assets", []):
-                  name = asset.get("name", "")
-                  if name.startswith("diligent-") and name.endswith("-linux-x64"):
-                      print(asset["url"])
-                      raise SystemExit(0)
-
-          raise SystemExit("No diligent Linux x64 release asset found")
-          PY
-          )
           mkdir -p .bin
-          gh api "$ASSET_URL" -H "Accept: application/octet-stream" > .bin/diligent
+          gh release download latest \
+            --repo "${{ github.repository }}" \
+            --pattern 'diligent-*-linux-x64' \
+            --dir .bin
+          BIN_PATH=$(find .bin -maxdepth 1 -type f -name 'diligent-*-linux-x64' | head -n 1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "Failed to download diligent latest Linux x64 binary" >&2
+            exit 1
+          fi
+          mv "$BIN_PATH" .bin/diligent
           chmod +x .bin/diligent
           ./.bin/diligent --version
 
