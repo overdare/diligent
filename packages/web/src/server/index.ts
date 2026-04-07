@@ -1,5 +1,5 @@
 // @summary Bun server entrypoint for Web CLI with /rpc WebSocket, persisted image routes, and static file hosting
-import { createWriteStream, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, realpathSync, type WriteStream } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   type AgentRegistry,
@@ -259,16 +259,29 @@ function inferImageMediaType(path: string): string {
   return "application/octet-stream";
 }
 
-function enableProcessLogFile(logFile: string, baseDir: string): () => void {
+export function enableProcessLogFile(logFile: string, baseDir: string): () => void {
   const resolvedPath = resolve(baseDir, logFile);
-  mkdirSync(dirname(resolvedPath), { recursive: true });
-
-  const stream = createWriteStream(resolvedPath, { flags: "a" });
   const originalStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
   const originalStderrWrite = process.stderr.write.bind(process.stderr) as typeof process.stderr.write;
 
   let mirrorEnabled = true;
   let reportedStreamError = false;
+  let stream: WriteStream | null = null;
+
+  const ensureStream = (): WriteStream | null => {
+    if (stream) {
+      return stream;
+    }
+    try {
+      mkdirSync(dirname(resolvedPath), { recursive: true });
+      stream = createWriteStream(resolvedPath, { flags: "a" });
+      stream.on("error", reportStreamError);
+      return stream;
+    } catch (error) {
+      reportStreamError(error);
+      return null;
+    }
+  };
 
   const reportStreamError = (error: unknown): void => {
     if (reportedStreamError) return;
@@ -278,24 +291,24 @@ function enableProcessLogFile(logFile: string, baseDir: string): () => void {
     originalStderrWrite(`[webserver-log] Failed to write log file ${resolvedPath}: ${message}\n`);
   };
 
-  stream.on("error", reportStreamError);
-
   const mirrorWrite = (chunk: unknown, encoding?: unknown): void => {
     if (!mirrorEnabled) return;
+    const activeStream = ensureStream();
+    if (!activeStream) return;
     try {
       if (typeof chunk === "string") {
         if (typeof encoding === "string") {
-          stream.write(chunk, encoding as BufferEncoding);
+          activeStream.write(chunk, encoding as BufferEncoding);
         } else {
-          stream.write(chunk);
+          activeStream.write(chunk);
         }
         return;
       }
       if (chunk instanceof Uint8Array) {
-        stream.write(chunk);
+        activeStream.write(chunk);
         return;
       }
-      stream.write(String(chunk));
+      activeStream.write(String(chunk));
     } catch (error) {
       reportStreamError(error);
     }
@@ -316,7 +329,7 @@ function enableProcessLogFile(logFile: string, baseDir: string): () => void {
   return () => {
     process.stdout.write = originalStdoutWrite;
     process.stderr.write = originalStderrWrite;
-    stream.end();
+    stream?.end();
   };
 }
 
