@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .bin
-          gh release download latest \
+          gh release download \
             --repo "${{ github.repository }}" \
             --pattern 'diligent-*-linux-x64' \
             --dir .bin
