@@ -66,6 +66,7 @@ export class SessionManager {
   private prevCacheReadBySession = new Map<string, number>();
   private prevPromptHashesBySession = new Map<string, string[]>();
   private currPromptHashesBySession = new Map<string, string[]>();
+  private promptSignatureCountBySession = new Map<string, number>();
   /** Track which agent instance has been restored with session history */
   private _initializedAgent: Agent | null = null;
 
@@ -82,7 +83,7 @@ export class SessionManager {
   /** Create a new session */
   async create(): Promise<void> {
     this.state.reset();
-    this.prevCacheReadBySession.clear();
+    this.resetUsageDebugState();
     this._initializedAgent = null;
     this.persistence.resetForCreate();
     await this.persistence.create();
@@ -90,7 +91,7 @@ export class SessionManager {
 
   /** Resume an existing session */
   async resume(options: ResumeSessionOptions): Promise<boolean> {
-    this.prevCacheReadBySession.clear();
+    this.resetUsageDebugState();
     const entries = await this.persistence.resume(options);
     if (!entries) return false;
 
@@ -535,8 +536,40 @@ export class SessionManager {
   }
 
   private handleUsageEvent(usage: { cacheReadTokens: number }): void {
-    const _prevCacheRead = this.prevCacheReadBySession.get(this.persistence.sessionId) ?? 0;
-    this.prevCacheReadBySession.set(this.persistence.sessionId, usage.cacheReadTokens);
+    const sessionId = this.persistence.sessionId;
+    const prevCacheRead = this.prevCacheReadBySession.get(sessionId) ?? 0;
+    const currCacheRead = usage.cacheReadTokens;
+    const turn = this.promptSignatureCountBySession.get(sessionId) ?? 0;
+    const prevPromptHashes = this.prevPromptHashesBySession.get(sessionId) ?? [];
+    const currPromptHashes = this.currPromptHashesBySession.get(sessionId) ?? [];
+    const commonPrefix = sharedPrefixLength(prevPromptHashes, currPromptHashes);
+
+    if (prevCacheRead > currCacheRead) {
+      this.emitPrefixCompareLog({
+        sessionId,
+        turn,
+        prevCacheRead,
+        currCacheRead,
+        commonPrefix,
+        prevPromptHashes,
+        currPromptHashes,
+        reason: "cache_read_decreased",
+      });
+    }
+    if (turn >= 2 && currCacheRead === 0) {
+      this.emitPrefixCompareLog({
+        sessionId,
+        turn,
+        prevCacheRead,
+        currCacheRead,
+        commonPrefix,
+        prevPromptHashes,
+        currPromptHashes,
+        reason: "turn_ge_2_cache_read_zero",
+      });
+    }
+
+    this.prevCacheReadBySession.set(sessionId, currCacheRead);
   }
 
   private handlePromptSignatureEvent(hashes: string[]): void {
@@ -546,6 +579,29 @@ export class SessionManager {
       this.prevPromptHashesBySession.set(sessionId, prev);
     }
     this.currPromptHashesBySession.set(sessionId, hashes);
+    this.promptSignatureCountBySession.set(sessionId, (this.promptSignatureCountBySession.get(sessionId) ?? 0) + 1);
+  }
+
+  private emitPrefixCompareLog(payload: {
+    sessionId: string;
+    turn: number;
+    prevCacheRead: number;
+    currCacheRead: number;
+    commonPrefix: number;
+    prevPromptHashes: string[];
+    currPromptHashes: string[];
+    reason: "cache_read_decreased" | "turn_ge_2_cache_read_zero";
+  }): void {
+    console.error(
+      `[usage:prefix-compare] session=${payload.sessionId} turn=${payload.turn} prevCacheRead=${payload.prevCacheRead} currCacheRead=${payload.currCacheRead} commonPrefix=${payload.commonPrefix} prevHashes=${JSON.stringify(payload.prevPromptHashes)} currHashes=${JSON.stringify(payload.currPromptHashes)} reason=${payload.reason}`,
+    );
+  }
+
+  private resetUsageDebugState(): void {
+    this.prevCacheReadBySession.clear();
+    this.prevPromptHashesBySession.clear();
+    this.currPromptHashesBySession.clear();
+    this.promptSignatureCountBySession.clear();
   }
 
   private createMessageEntry(message: Message, parentId: string | null): SessionEntry {
@@ -655,4 +711,13 @@ function summarizeTailEntryIds(entries: SessionEntry[], count = 3): string {
 
 function shouldFlushTurnProgress(event: CoreAgentEvent): boolean {
   return (event.type === "message_end" && event.message.stopReason === "tool_use") || event.type === "tool_end";
+}
+
+function sharedPrefixLength(a: readonly string[], b: readonly string[]): number {
+  const limit = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < limit && a[index] === b[index]) {
+    index += 1;
+  }
+  return index;
 }

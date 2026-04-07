@@ -1,5 +1,5 @@
 // @summary Tests for session manager creation, persistence, and resumption
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -572,5 +572,34 @@ describe("SessionManager", () => {
     ).toBe(true);
     expect(events.some((event) => event.type === "tool_end")).toBe(true);
     expect(summaryIndex).toBeGreaterThan(-1);
+  });
+
+  test("logs usage prefix compare on second turn when cacheReadTokens is zero", async () => {
+    const dir = await setupDir();
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response1 = makeAssistantMessage([{ type: "text", text: "turn one" }]);
+      response1.usage.cacheReadTokens = 9;
+
+      const response2 = makeAssistantMessage([{ type: "text", text: "turn two" }]);
+      response2.usage.cacheReadTokens = 0;
+
+      const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([response1, response2])));
+      await mgr.create();
+
+      await mgr.run({ role: "user", content: "first", timestamp: Date.now() });
+      await mgr.run({ role: "user", content: "second", timestamp: Date.now() });
+
+      const logs = errorSpy.mock.calls.map((call) => call.join(" "));
+      const prefixLogs = logs.filter((log) => log.includes("[usage:prefix-compare]"));
+
+      expect(prefixLogs.some((log) => log.includes("reason=turn_ge_2_cache_read_zero"))).toBe(true);
+      expect(prefixLogs.some((log) => log.includes("reason=cache_read_decreased"))).toBe(true);
+      expect(prefixLogs.some((log) => log.includes("turn=2"))).toBe(true);
+      expect(prefixLogs.some((log) => log.includes("currCacheRead=0"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
