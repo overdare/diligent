@@ -1,0 +1,83 @@
+name: passion-junior
+
+on:
+  schedule:
+    - cron: '0 22 * * *' # Run 1 hour after tech-lead review (07:00 KST = 22:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download latest diligent Linux binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=30")
+          ASSET_URL=$(python3 - <<'PY' "$RELEASE_JSON"
+          import json
+          import sys
+
+          releases = json.loads(sys.argv[1])
+          for release in releases:
+              for asset in release.get("assets", []):
+                  name = asset.get("name", "")
+                  if name.startswith("diligent-") and name.endswith("-linux-x64"):
+                      print(asset["url"])
+                      raise SystemExit(0)
+
+          raise SystemExit("No diligent Linux x64 release asset found")
+          PY
+          )
+          mkdir -p .bin
+          gh api "$ASSET_URL" -H "Accept: application/octet-stream" > .bin/diligent
+          chmod +x .bin/diligent
+          ./.bin/diligent --version
+
+      - name: Configure Diligent auth
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.diligent
+          cat > ~/.diligent/auth.jsonc <<EOF
+          {
+            "anthropic": "${ANTHROPIC_API_KEY}"
+          }
+          EOF
+          cat > ~/.diligent/config.jsonc <<'EOF'
+          {
+            "model": "claude-sonnet-4-6"
+          }
+          EOF
+
+      - name: Configure git
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Verify gh auth
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh auth status
+
+      - name: Run passion-junior skill
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./.bin/diligent --yolo --prompt "The user invoked /passion-junior. Before any other action, call the skill tool with the skill name \"passion-junior\". Then execute the skill fully in this repository. You may use the provided GitHub token for PR and branch operations as needed."
