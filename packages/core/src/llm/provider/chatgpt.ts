@@ -65,8 +65,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           headers["ChatGPT-Account-ID"] = tokens.account_id;
         }
         if (options.sessionId) {
-          headers["x-client-request-id"] = options.sessionId;
-          headers.conversation_id = options.sessionId;
+          headers.session_id = options.sessionId;
         }
         if (options.turnStateRef?.value !== undefined) {
           headers["x-codex-turn-state"] = options.turnStateRef.value;
@@ -81,6 +80,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           messages: context.messages,
           compactionSummary: context.compactionSummary,
           tools: context.tools,
+          sessionId: options.sessionId,
           useReasoning,
           effort,
           store: false,
@@ -238,7 +238,6 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
     if (tokens.account_id) headers["ChatGPT-Account-ID"] = tokens.account_id;
     if (input.sessionId) {
       headers.session_id = input.sessionId;
-      headers.conversation_id = input.sessionId;
     }
 
     const body: Record<string, unknown> = {
