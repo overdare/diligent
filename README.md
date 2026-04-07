@@ -14,8 +14,6 @@ yet the most diligent coding agent
 
 **Transparency over complexity** — LLMs are non-deterministic, making agent behavior inherently unpredictable. Without transparency, development becomes increasingly difficult. Keep things simple so every layer can be debugged, experimented with, measured, verified, and improved — continuously.
 
-**When everything is "important," nothing is** — The agent harness should not try to do everything. Find the few moves that truly matter.
-
 ## Getting Started
 
 Requires [Bun](https://bun.sh) v1.2+.
@@ -65,18 +63,6 @@ Examples:
 - `fix(cli): prevent duplicate redraw on resize`
 - `chore(ci): bump github actions versions`
 
-## Completion bell (terminal)
-
-Diligent rings the terminal bell when a turn completes in CLI/TUI.
-
-You can disable it in `.diligent/config.jsonc`:
-
-```jsonc
-{
-  "terminalBell": false
-}
-```
-
 ## Tool settings
 
 Diligent supports project-local tool settings for:
@@ -88,3 +74,9 @@ Diligent supports project-local tool settings for:
 Use the Tool settings entry in Web or `/tools` in TUI.
 
 See [`docs/guide/tool-settings.md`](docs/guide/tool-settings.md) for the trust model, config format, plugin contract, the external-style sample plugin at `thirdparty/examples/external-tool-plugin/`, and current limitations.
+
+## References
+
+- [codex](https://github.com/openai/codex) — OpenAI Codex CLI
+- [pi-mono](https://github.com/badlogic/pi-mono) — badlogic's pi-mono
+- [opencode](https://github.com/anomalyco/opencode) — Anomaly's opencode

@@ -104,13 +104,13 @@ The checked-in codex-rs reference confirms the following useful patterns:
 - codex-rs supports both persistent forks and `ephemeral: true` in-memory forks
 - codex-rs can fork from a selected branch point by truncating history before the nth user message
 
-Concrete references:
+Concrete upstream references consulted during planning:
 
-- `docs/references/codex/codex-rs/app-server/README.md`
-- `docs/references/codex/codex-rs/app-server-protocol/schema/typescript/v2/ThreadForkParams.ts`
-- `docs/references/codex/codex-rs/app-server/src/codex_message_processor.rs`
-- `docs/references/codex/codex-rs/core/src/thread_manager.rs`
-- `docs/references/codex/codex-rs/core/tests/suite/fork_thread.rs`
+- `codex-rs/app-server/README.md`
+- `codex-rs/app-server-protocol/schema/typescript/v2/ThreadForkParams.ts`
+- `codex-rs/app-server/src/codex_message_processor.rs`
+- `codex-rs/core/src/thread_manager.rs`
+- `codex-rs/core/tests/suite/fork_thread.rs`
 
 ### What we should adopt from codex-rs
 

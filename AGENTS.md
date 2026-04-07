@@ -21,7 +21,6 @@ Read only what your task requires.
 | Source code — e2e (integration tests) | `packages/e2e/` |
 | Product and usage guides | `docs/guide/` |
 | Planning, decisions & phase specs | `docs/plan/` |
-| Reference codebases (codex, opencode, pi-mono) | `docs/references/` |
 | Past tech-lead assessments | `docs/review/` |
 | Pending work items | Project knowledge backlog entries |
 

@@ -17,9 +17,6 @@ dist/
 # Secrets
 .env
 
-# Claude Code local
-.claude/settings.local.json
-.claude/worktrees/
 # Terminal Bench job outputs
 jobs/
 
@@ -29,5 +26,3 @@ jobs/
 # Runtime logs
 **/.diligent/logs/
 
-# Alias file (symlink)
-CLAUDE.md
