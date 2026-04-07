@@ -16,7 +16,7 @@ Read only what your task requires.
 | Source code — plugin SDK for external tool packages | `packages/plugin-sdk/` |
 | Source code — cli (TUI) | `packages/cli/` |
 | Source code — web (React + Tailwind web frontend) | `packages/web/` |
-| Source code — desktop (Tauri v2 native app) | `apps/desktop/` |
+| Source code — desktop (Tauri v2 native app) | `apps/overdare-agent/` |
 | Source code — debug-viewer (React web viewer) | `packages/debug-viewer/` |
 | Source code — e2e (integration tests) | `packages/e2e/` |
 | Product and usage guides | `docs/guide/` |

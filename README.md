@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/desktop/src-tauri/icons/icon.svg" width="120" height="120" />
+  <img src="assets/icon.svg" width="120" height="120" />
 </p>
 
 # diligent
@@ -45,7 +45,7 @@ make dev
 - `packages/plugin-sdk` — public SDK for external tool plugins
 - `packages/cli` — CLI entrypoint and TUI client
 - `packages/web` — Bun web server and React web client
-- `apps/desktop` — Tauri shell around the web frontend and Bun sidecar
+- `apps/overdare-agent` — Tauri shell around the web frontend and Bun sidecar
 - `packages/debug-viewer` — viewer for inspecting `.diligent/` project data
 - `packages/e2e` — end-to-end protocol/runtime tests
 

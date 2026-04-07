@@ -31,7 +31,7 @@ The architecture is organized around four product goals:
 | `packages/plugin-sdk` | Public SDK types and contracts for external JavaScript tool plugins |
 | `packages/cli` | Bun CLI entrypoint, stdio app-server transport, TUI client |
 | `packages/web` | Bun web server + React web client over WebSocket JSON-RPC |
-| `apps/desktop` | Tauri shell around the web frontend and Bun sidecar |
+| `apps/overdare-agent` | Tauri shell around the web frontend and Bun sidecar |
 | `packages/debug-viewer` | Viewer for inspecting `.diligent/` data |
 | `packages/e2e` | End-to-end tests spanning protocol and runtime behavior |
 
@@ -175,7 +175,7 @@ The web server should stay thin: runtime behavior belongs in `@diligent/runtime`
 
 ### `@diligent/desktop`
 
-`apps/desktop` wraps the web client in Tauri and builds a Bun sidecar. Desktop intentionally reuses the same server and frontend architecture rather than maintaining a native-only agent path.
+`apps/overdare-agent` wraps the web client in Tauri and builds a Bun sidecar. Desktop intentionally reuses the same server and frontend architecture rather than maintaining a native-only agent path.
 
 ## Current Runtime Flow
 

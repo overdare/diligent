@@ -58,9 +58,10 @@
       "!**/.claude",
       "!research",
       "!docs/references",
-      "!apps/desktop/loading",
-      "!apps/desktop/src-tauri/gen",
-      "!apps/desktop/src-tauri/target"
+      "!apps/overdare-agent/loading",
+      "!apps/overdare-agent/src-tauri/gen",
+      "!apps/overdare-agent/src-tauri/resources/bootstrap",
+      "!apps/overdare-agent/src-tauri/target"
     ]
   }
 }

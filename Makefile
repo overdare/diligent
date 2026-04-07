@@ -101,10 +101,10 @@ check-desktop:
 	@echo "All desktop prerequisites met. Run: make desktop-dev"
 
 desktop-dev: node_modules
-	bun run --cwd apps/desktop dev
+	bun run --cwd apps/overdare-agent dev
 
 desktop-build: node_modules
-	bun run --cwd apps/desktop build
+	bun run --cwd apps/overdare-agent build
 
 # --- Build ---
 

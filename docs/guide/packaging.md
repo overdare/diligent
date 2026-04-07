@@ -12,7 +12,7 @@ Diligent packaging spans three related product surfaces:
 
 Desktop packaging is the most involved path because it combines a Tauri shell, a bundled web frontend, and a compiled Bun sidecar.
 
-Today, the documented packaging pipeline is primarily the desktop packaging pipeline under `apps/desktop/scripts/`.
+Today, the documented packaging pipeline is primarily the desktop packaging pipeline under `apps/overdare-agent/scripts/`.
 
 That pipeline owns:
 
@@ -28,12 +28,12 @@ That pipeline owns:
 Current operator-facing entry points are:
 
 - repo root: `bun run package`
-- desktop package script: `bun run apps/desktop/scripts/package.ts --version <semver> ...`
+- desktop package script: `bun run apps/overdare-agent/scripts/package.ts --version <semver> ...`
 - desktop build shortcut: `bun run desktop:build`
 - Windows thin-shell helper: `bun run desktop:build:exe-only`
-- sidecar-only helper: `apps/desktop/scripts/build-sidecar.ts`
+- sidecar-only helper: `apps/overdare-agent/scripts/build-sidecar.ts`
 
-`apps/desktop/scripts/package.ts` is the main release-oriented path.
+`apps/overdare-agent/scripts/package.ts` is the main release-oriented path.
 
 ## Current pipeline shape
 
@@ -42,7 +42,7 @@ At a high level, packaging does the following:
 1. resolve version, platform set, branding inputs, and packaging mode
 2. inject temporary version/branding data into packaging-time files
 3. build the web frontend with the selected project name
-4. assemble `src-tauri/resources/defaults`
+4. assemble `src-tauri/resources/bootstrap`
 5. compile the sidecar server for each requested native-build platform
 6. optionally build the Tauri desktop shell binary
 7. collect desktop executable artifacts into `dist/`
@@ -64,7 +64,6 @@ Current packaging supports controls such as:
 
 - version selection
 - platform selection
-- `--package <dir>` for package-specific branding inputs
 - `--runtime-only` for runtime bundle assembly without full desktop shell packaging
 
 Packaging also considers update-related inputs that affect build outputs and fingerprints.
@@ -78,7 +77,7 @@ Current script behavior worth noting:
 
 ## Platform model
 
-The current platform table is defined in `apps/desktop/scripts/lib/platforms.ts`.
+The current platform table is defined in `apps/overdare-agent/scripts/lib/platforms.ts`.
 
 Known targets currently include:
 
@@ -97,27 +96,28 @@ Each platform maps packaging-time concerns together:
 
 ## Defaults resource assembly
 
-Packaging prepares `apps/desktop/src-tauri/resources/defaults/` before the desktop build and runtime-bundle assembly steps.
+Packaging prepares `apps/overdare-agent/src-tauri/resources/bootstrap/` before the desktop build and runtime-bundle assembly steps.
 
-Current defaults assembly includes:
+Current bootstrap assembly includes:
 
-- base `config.jsonc` template from `apps/desktop/defaults/`
-- optional package-root files copied from `--package <dir>`
-- bundled plugins found under `<packageDir>/plugins`
+- base `config.jsonc` template from `apps/overdare-agent/bootstrap/`
+- app-root files copied from `apps/overdare-agent/` into packaged bootstrap
+- bundled plugins found under `apps/overdare-agent/plugins`
 - deployable subdirectories currently limited to `agents/` and `skills/`
 
-The package-root copy intentionally skips code-oriented files such as `package.json`, TypeScript/JavaScript sources, and lockfiles.
+The app-root copy intentionally skips code-oriented files such as `package.json`, TypeScript/JavaScript sources, and lockfiles.
 
-Bundled package plugins are built into the packaged defaults so branded products can ship plugin code without requiring the target project to install npm packages separately.
+Bundled app plugins are built into the packaged bootstrap so branded products can ship plugin code without requiring the target project to install npm packages separately.
 
-## Branding and package-specific builds
+## Branding and app-owned builds
 
-Package-specific metadata can change visible branding inputs such as project name and desktop icons without requiring a separate codebase.
+App-owned metadata defines visible branding inputs such as project name and desktop icons.
 
-Current branding inputs come from `<packageDir>/package.json` under the `diligent` key:
+Current branding inputs come from `apps/overdare-agent/package.json` under the `diligent` key:
 
 - `projectName`
 - `desktopIcons`
+- `desktopStorageNamespace`
 
 Current behavior:
 
@@ -140,7 +140,7 @@ Current packaging behavior names the compiled sidecar by Tauri target triple dur
 
 The sidecar-only helper script can also:
 
-- prepare defaults resources
+- prepare bootstrap resources
 - build missing web assets if needed
 - compile sidecars for one or more targets
 - copy `dist/client` into the Tauri resource tree
@@ -168,7 +168,7 @@ During bundle assembly, the temporary runtime directory contains:
 - compiled sidecar binary
 - bundled `rg` binary when present
 - web client assets under `dist/client`
-- packaged defaults under `defaults/`
+- packaged bootstrap under `bootstrap/`
 
 ## Update metadata
 
@@ -203,22 +203,22 @@ That script builds only the thin desktop executable and related metadata, withou
 ## Change checklist
 
 1. Decide whether the change affects desktop shell packaging, runtime bundle assembly, or both.
-2. If the shipped runtime contents change, update defaults/resource assembly and runtime bundle layout together.
+2. If the shipped runtime contents change, update bootstrap/resource assembly and runtime bundle layout together.
 3. If branding or versioned metadata changes, update the inject/restore path and artifact naming consistently.
 4. If a new platform is introduced, update platform definitions before changing packaging orchestration.
 5. Verify whether update-manifest generation and checksum output also need changes.
 
 ## Key code paths
 
-- `apps/desktop/scripts/package.ts`
-- `apps/desktop/scripts/build-exe-only.ts`
-- `apps/desktop/scripts/build-sidecar.ts`
-- `apps/desktop/scripts/lib/defaults.ts`
-- `apps/desktop/scripts/lib/manifest.ts`
-- `apps/desktop/scripts/lib/platforms.ts`
-- `apps/desktop/scripts/lib/project-name.ts`
-- `apps/desktop/scripts/lib/package-mode.ts`
-- `apps/desktop/scripts/lib/version.ts`
-- `apps/desktop/scripts/lib/rust-cache.ts`
-- `apps/desktop/README.md`
+- `apps/overdare-agent/scripts/package.ts`
+- `apps/overdare-agent/scripts/build-exe-only.ts`
+- `apps/overdare-agent/scripts/build-sidecar.ts`
+- `apps/overdare-agent/scripts/lib/bootstrap.ts`
+- `apps/overdare-agent/scripts/lib/manifest.ts`
+- `apps/overdare-agent/scripts/lib/platforms.ts`
+- `apps/overdare-agent/scripts/lib/project-name.ts`
+- `apps/overdare-agent/scripts/lib/package-mode.ts`
+- `apps/overdare-agent/scripts/lib/version.ts`
+- `apps/overdare-agent/scripts/lib/rust-cache.ts`
+- `apps/overdare-agent/README.md`
 - `package.json`

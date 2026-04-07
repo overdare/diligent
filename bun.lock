@@ -11,11 +11,56 @@
         "lefthook": "^2.1.2",
       },
     },
-    "apps/desktop": {
-      "name": "@diligent/desktop",
+    "apps/overdare-agent": {
+      "name": "@overdare/agent-desktop",
       "version": "0.0.1",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
+      },
+    },
+    "apps/overdare-agent/plugins/plugin-analytics": {
+      "name": "@overdare/plugin-analytics",
+      "version": "0.1.0",
+      "dependencies": {
+        "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.7.0",
+      },
+    },
+    "apps/overdare-agent/plugins/plugin-rag": {
+      "name": "@overdare/plugin-rag",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.24.0",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.7.0",
+      },
+    },
+    "apps/overdare-agent/plugins/plugin-studiorpc": {
+      "name": "@overdare/plugin-studiorpc",
+      "version": "0.1.0",
+      "dependencies": {
+        "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
+        "zod": "^3.24.0",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.7.0",
+      },
+    },
+    "apps/overdare-agent/plugins/plugin-validator": {
+      "name": "@overdare/plugin-validator",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.24.0",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.7.0",
       },
     },
     "packages/cli": {
@@ -147,51 +192,6 @@
         "vite": "^6.0.0",
       },
     },
-    "thirdparty/overdare/plugins/plugin-analytics": {
-      "name": "@overdare/plugin-analytics",
-      "version": "0.1.0",
-      "dependencies": {
-        "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.7.0",
-      },
-    },
-    "thirdparty/overdare/plugins/plugin-rag": {
-      "name": "@overdare/plugin-rag",
-      "version": "0.1.0",
-      "dependencies": {
-        "zod": "^3.24.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.7.0",
-      },
-    },
-    "thirdparty/overdare/plugins/plugin-studiorpc": {
-      "name": "@overdare/plugin-studiorpc",
-      "version": "0.1.0",
-      "dependencies": {
-        "@diligent/plugin-sdk": "file:../../../../packages/plugin-sdk",
-        "zod": "^3.24.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.7.0",
-      },
-    },
-    "thirdparty/overdare/plugins/plugin-validator": {
-      "name": "@overdare/plugin-validator",
-      "version": "0.1.0",
-      "dependencies": {
-        "zod": "^3.24.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.7.0",
-      },
-    },
   },
   "overrides": {
     "@types/node": "25.3.0",
@@ -264,8 +264,6 @@
     "@diligent/core": ["@diligent/core@workspace:packages/core"],
 
     "@diligent/debug-viewer": ["@diligent/debug-viewer@workspace:packages/debug-viewer"],
-
-    "@diligent/desktop": ["@diligent/desktop@workspace:apps/desktop"],
 
     "@diligent/e2e": ["@diligent/e2e@workspace:packages/e2e"],
 
@@ -349,13 +347,15 @@
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
 
-    "@overdare/plugin-analytics": ["@overdare/plugin-analytics@workspace:thirdparty/overdare/plugins/plugin-analytics"],
+    "@overdare/agent-desktop": ["@overdare/agent-desktop@workspace:apps/overdare-agent"],
 
-    "@overdare/plugin-rag": ["@overdare/plugin-rag@workspace:thirdparty/overdare/plugins/plugin-rag"],
+    "@overdare/plugin-analytics": ["@overdare/plugin-analytics@workspace:apps/overdare-agent/plugins/plugin-analytics"],
 
-    "@overdare/plugin-studiorpc": ["@overdare/plugin-studiorpc@workspace:thirdparty/overdare/plugins/plugin-studiorpc"],
+    "@overdare/plugin-rag": ["@overdare/plugin-rag@workspace:apps/overdare-agent/plugins/plugin-rag"],
 
-    "@overdare/plugin-validator": ["@overdare/plugin-validator@workspace:thirdparty/overdare/plugins/plugin-validator"],
+    "@overdare/plugin-studiorpc": ["@overdare/plugin-studiorpc@workspace:apps/overdare-agent/plugins/plugin-studiorpc"],
+
+    "@overdare/plugin-validator": ["@overdare/plugin-validator@workspace:apps/overdare-agent/plugins/plugin-validator"],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
