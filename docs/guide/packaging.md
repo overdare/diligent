@@ -64,7 +64,7 @@ Current packaging supports controls such as:
 
 - version selection
 - platform selection
-- `--runtime-only` for runtime bundle assembly without full desktop shell packaging
+- `--skip-desktop-binary` for runtime bundle assembly without full desktop shell packaging
 
 Packaging also considers update-related inputs that affect build outputs and fingerprints.
 
@@ -145,9 +145,9 @@ The sidecar-only helper script can also:
 - compile sidecars for one or more targets
 - copy `dist/client` into the Tauri resource tree
 
-## Runtime-only mode
+## Skip-desktop-binary mode
 
-`--runtime-only` skips the Tauri desktop shell build but still performs the shared runtime bundle work.
+`--skip-desktop-binary` skips the Tauri desktop shell build but still performs the shared runtime bundle work.
 
 This mode is for producing runtime-update artifacts without rebuilding the full desktop shell.
 

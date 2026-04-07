@@ -1,5 +1,5 @@
-// @summary Helpers for packaging mode selection between full and runtime-only builds.
+// @summary Helpers for packaging mode selection between full and skip-desktop-binary builds.
 
-export function shouldBuildDesktopBinary(runtimeOnly: boolean): boolean {
-  return runtimeOnly === false;
+export function shouldBuildDesktopBinary(skipDesktopBinary: boolean): boolean {
+  return skipDesktopBinary === false;
 }

@@ -30,19 +30,19 @@ const { values } = parseArgs({
   options: {
     version: { type: "string" },
     platforms: { type: "string", default: ALL_PLATFORMS.map((p) => p.id).join(",") },
-    "runtime-only": { type: "boolean", default: false },
+    "skip-desktop-binary": { type: "boolean", default: false },
   },
 });
 
 if (!values.version) {
-  console.error("Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--runtime-only]");
+  console.error("Usage: bun run scripts/package.ts --version <semver> [--platforms p1,p2] [--skip-desktop-binary]");
   process.exit(1);
 }
 
 const version = values.version;
 const platformIds = values.platforms!.split(",").map((s) => s.trim());
 const platforms = filterPlatforms(platformIds);
-const runtimeOnly = values["runtime-only"] === true;
+const skipDesktopBinary = values["skip-desktop-binary"] === true;
 const projectName = resolveProjectName();
 const projectArtifactName = toProjectArtifactName(projectName);
 const desktopIconPaths = resolveDesktopIconPaths();
@@ -94,7 +94,7 @@ function buildSidecar(plat: PlatformTarget): void {
   run(`bun build --compile --target=${plat.bunTarget} ${serverEntry} --outfile ${outPath}`, ROOT);
 }
 
-function buildDesktop(plat: PlatformTarget, options?: { runtimeOnly?: boolean }): void {
+function buildDesktop(plat: PlatformTarget, options?: { skipDesktopBinary?: boolean }): void {
   const tauriDir = join(DESKTOP, "src-tauri");
   const updateUrlEnv = process.env.DILIGENT_UPDATE_URL ?? "";
   const buildFingerprint = `runtimeVersion=${version};updateUrl=${updateUrlEnv}`;
@@ -106,8 +106,8 @@ function buildDesktop(plat: PlatformTarget, options?: { runtimeOnly?: boolean })
 
   buildSidecar(plat);
 
-  if (options?.runtimeOnly === true) {
-    console.log("   Runtime-only mode enabled — skipping Tauri desktop binary build");
+  if (options?.skipDesktopBinary === true) {
+    console.log("   Skip-desktop-binary mode enabled — skipping Tauri desktop binary build");
     return;
   }
 
@@ -282,7 +282,7 @@ function writeReleaseMeta(distDir: string, plats: PlatformTarget[], artifacts: R
 console.log(`\n📦 Packaging ${projectName} v${version} (desktop)`);
 console.log(`   Platforms : ${platforms.map((p) => p.id).join(", ")}`);
 console.log(`   App name  : ${projectName}`);
-console.log(`   Mode      : ${runtimeOnly ? "runtime-only" : "full"}`);
+console.log(`   Mode      : ${skipDesktopBinary ? "skip-desktop-binary" : "full"}`);
 if (desktopIconPaths) {
   console.log(`   Icons     : ${desktopIconPaths.length} custom icon(s)`);
 }
@@ -342,10 +342,10 @@ try {
     assembleBootstrap();
 
     console.log(`\n🖥️  Building desktop: ${plat.id}`);
-    buildDesktop(plat, { runtimeOnly });
+    buildDesktop(plat, { skipDesktopBinary });
   }
 
-  if (shouldBuildDesktopBinary(runtimeOnly)) {
+  if (shouldBuildDesktopBinary(skipDesktopBinary)) {
     // Collect desktop exe(s)
     console.log("\n📋 Collecting desktop exe...");
     for (const plat of platforms) {

@@ -19,7 +19,7 @@ yet the most diligent coding agent
 Requires [Bun](https://bun.sh) v1.2+.
 
 ```sh
-git clone https://github.com/devbv/diligent.git && cd diligent
+git clone https://github.com/overdare/diligent.git && cd diligent
 bun install
 make dev
 ```

@@ -9,8 +9,8 @@ on:
         description: "Release version (e.g. 1.0.0)"
         required: true
         type: string
-      runtime_only:
-        description: "Build runtime + version artifacts only (skip desktop exe)"
+      skip_desktop_binary:
+        description: "Skip desktop binary packaging while still building other release artifacts"
         required: false
         default: false
         type: boolean
@@ -24,7 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
-      runtime_only: ${{ steps.resolve.outputs.runtime_only }}
+      skip_desktop_binary: ${{ steps.resolve.outputs.skip_desktop_binary }}
       release_exists: ${{ steps.check_release.outputs.release_exists }}
 
     steps:
@@ -39,17 +39,17 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.runtime_only || false }}" = "true" ]; then
-            RUNTIME_ONLY=true
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.skip_desktop_binary || false }}" = "true" ]; then
+            SKIP_DESKTOP_BINARY=true
           else
-            RUNTIME_ONLY=false
+            SKIP_DESKTOP_BINARY=false
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "runtime_only=$RUNTIME_ONLY" >> "$GITHUB_OUTPUT"
+          echo "skip_desktop_binary=$SKIP_DESKTOP_BINARY" >> "$GITHUB_OUTPUT"
           echo "Packaging version: $VERSION"
-          echo "Runtime-only mode: $RUNTIME_ONLY"
+          echo "Skip desktop binary: $SKIP_DESKTOP_BINARY"
 
       - name: Check existing GitHub Release
         id: check_release
@@ -95,14 +95,14 @@ jobs:
         shell: bash
         run: |
           CMD="bun run package --version $VERSION --platforms windows-x64"
-          if [ "${{ needs.prepare.outputs.runtime_only }}" = "true" ]; then
-            CMD="$CMD --runtime-only"
+          if [ "${{ needs.prepare.outputs.skip_desktop_binary }}" = "true" ]; then
+            CMD="$CMD --skip-desktop-binary"
           fi
           echo "Running: $CMD"
           eval "$CMD"
 
       - name: Upload artifacts (full)
-        if: ${{ needs.prepare.outputs.runtime_only != 'true' }}
+        if: ${{ needs.prepare.outputs.skip_desktop_binary != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
@@ -110,8 +110,8 @@ jobs:
             dist/*-${{ env.VERSION }}-windows-x64.exe
             dist/*-runtime-${{ env.VERSION }}-windows-x64.zip
 
-      - name: Upload artifacts (runtime-only)
-        if: ${{ needs.prepare.outputs.runtime_only == 'true' }}
+      - name: Upload artifacts (skip desktop binary)
+        if: ${{ needs.prepare.outputs.skip_desktop_binary == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-windows-x64-${{ env.VERSION }}
@@ -147,14 +147,14 @@ jobs:
         shell: bash
         run: |
           CMD="bun run package --version $VERSION --platforms darwin-arm64"
-          if [ "${{ needs.prepare.outputs.runtime_only }}" = "true" ]; then
-            CMD="$CMD --runtime-only"
+          if [ "${{ needs.prepare.outputs.skip_desktop_binary }}" = "true" ]; then
+            CMD="$CMD --skip-desktop-binary"
           fi
           echo "Running: $CMD"
           eval "$CMD"
 
       - name: Upload artifacts (full)
-        if: ${{ needs.prepare.outputs.runtime_only != 'true' }}
+        if: ${{ needs.prepare.outputs.skip_desktop_binary != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-darwin-arm64-${{ env.VERSION }}
@@ -162,8 +162,8 @@ jobs:
             dist/*-${{ env.VERSION }}-darwin-arm64
             dist/*-runtime-${{ env.VERSION }}-darwin-arm64.zip
 
-      - name: Upload artifacts (runtime-only)
-        if: ${{ needs.prepare.outputs.runtime_only == 'true' }}
+      - name: Upload artifacts (skip desktop binary)
+        if: ${{ needs.prepare.outputs.skip_desktop_binary == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: overdare-darwin-arm64-${{ env.VERSION }}
@@ -211,7 +211,7 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
-      RUNTIME_ONLY: ${{ needs.prepare.outputs.runtime_only }}
+      SKIP_DESKTOP_BINARY: ${{ needs.prepare.outputs.skip_desktop_binary }}
       RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}
 
     steps:
@@ -254,7 +254,7 @@ jobs:
           from pathlib import Path
 
           version = os.environ["VERSION"]
-          runtime_only = os.environ["RUNTIME_ONLY"] == "true"
+          skip_desktop_binary = os.environ["SKIP_DESKTOP_BINARY"] == "true"
           release_base_url = os.environ["RELEASE_BASE_URL"]
           dist = Path("dist")
           files = sorted(path for path in dist.iterdir() if path.is_file())
@@ -289,9 +289,9 @@ jobs:
                       "sha256": sha256(path),
                       "size": path.stat().st_size,
                   }
-              elif not runtime_only and name.endswith(f"-{version}-windows-x64.exe"):
+              elif not skip_desktop_binary and name.endswith(f"-{version}-windows-x64.exe"):
                   artifacts["windows-x64"].append(name)
-              elif not runtime_only and name.endswith(f"-{version}-darwin-arm64"):
+              elif not skip_desktop_binary and name.endswith(f"-{version}-darwin-arm64"):
                   artifacts["darwin-arm64"].append(name)
               elif name.endswith(f"-{version}-linux-x64"):
                   artifacts["linux-x64"].append(name)
@@ -327,7 +327,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if [ "$RUNTIME_ONLY" = "true" ]; then
+          if [ "$SKIP_DESKTOP_BINARY" = "true" ]; then
               gh release create "$TAG" \
               dist/*-"$VERSION"-linux-x64 \
               dist/*-runtime-"$VERSION"-windows-x64.zip \
