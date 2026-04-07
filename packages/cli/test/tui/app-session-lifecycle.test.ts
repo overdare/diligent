@@ -1,6 +1,7 @@
 // @summary Tests resume history hydration behavior in AppSessionLifecycle
 
 import { describe, expect, mock, test } from "bun:test";
+import { resolveModel } from "@diligent/runtime";
 import { AppSessionLifecycle } from "../../src/tui/app-session-lifecycle";
 
 function createLifecycleWithThreadRead(threadRead: unknown) {
@@ -56,6 +57,92 @@ function createLifecycleWithThreadRead(threadRead: unknown) {
 }
 
 describe("AppSessionLifecycle", () => {
+  test("start falls back to a connected provider model when configured provider is missing", async () => {
+    const setupWizardRun = mock(async () => {});
+    const statusBarUpdate = mock(() => {});
+
+    const lifecycle = new AppSessionLifecycle({
+      config: {
+        model: resolveModel("claude-sonnet-4-6"),
+        diligent: {},
+        providerManager: {
+          hasKeyFor: (provider: string) => provider === "openai",
+          getConfiguredProviders: () => ["openai"],
+        },
+      } as never,
+      runtime: { currentMode: "default", currentEffort: "medium" } as never,
+      terminal: { columns: 100 } as never,
+      renderer: { setFocus: () => {}, start: () => {}, requestRender: () => {} } as never,
+      inputHistory: { load: async () => {} } as never,
+      inputEditor: { reloadHistory: () => {} } as never,
+      statusBar: { update: statusBarUpdate } as never,
+      chatView: { addLines: () => {} } as never,
+      setupWizard: { runSetupWizard: setupWizardRun } as never,
+      threadManager: {
+        startNewThread: async () => {},
+        readThread: async () => null,
+      } as never,
+      pathsAvailable: true,
+      getRpcClient: () =>
+        ({
+          request: async () => ({}),
+          notify: async () => {},
+        }) as never,
+      restartRpcClient: async () => {},
+      pkgVersion: "0.0.0-test",
+    });
+
+    await lifecycle.start();
+
+    expect(setupWizardRun).not.toHaveBeenCalled();
+    expect((lifecycle as never).deps.config.model.provider).toBe("openai");
+    expect((lifecycle as never).deps.config.model.id).toBe("gpt-5.3-codex");
+    expect(statusBarUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.3-codex",
+      }),
+    );
+  });
+
+  test("start runs setup wizard when no provider is connected", async () => {
+    const setupWizardRun = mock(async () => {});
+
+    const lifecycle = new AppSessionLifecycle({
+      config: {
+        model: resolveModel("claude-sonnet-4-6"),
+        diligent: {},
+        providerManager: {
+          hasKeyFor: () => false,
+          getConfiguredProviders: () => [],
+        },
+      } as never,
+      runtime: { currentMode: "default", currentEffort: "medium" } as never,
+      terminal: { columns: 100 } as never,
+      renderer: { setFocus: () => {}, start: () => {}, requestRender: () => {} } as never,
+      inputHistory: { load: async () => {} } as never,
+      inputEditor: { reloadHistory: () => {} } as never,
+      statusBar: { update: () => {} } as never,
+      chatView: { addLines: () => {} } as never,
+      setupWizard: { runSetupWizard: setupWizardRun } as never,
+      threadManager: {
+        startNewThread: async () => {},
+        readThread: async () => null,
+      } as never,
+      pathsAvailable: true,
+      getRpcClient: () =>
+        ({
+          request: async () => ({}),
+          notify: async () => {},
+        }) as never,
+      restartRpcClient: async () => {},
+      pkgVersion: "0.0.0-test",
+    });
+
+    await lifecycle.start();
+
+    expect(setupWizardRun).toHaveBeenCalledTimes(1);
+  });
+
   test("hydrateThreadHistory restores user and assistant messages from snapshot items", async () => {
     const { lifecycle, addUserMessage, addAssistantMessage, addLines, handleEvent } = createLifecycleWithThreadRead({
       items: [

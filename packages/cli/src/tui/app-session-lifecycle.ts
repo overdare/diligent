@@ -3,7 +3,7 @@
 import { DILIGENT_CLIENT_NOTIFICATION_METHODS, DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { getThinkingEffortLabel, resolveModel } from "@diligent/runtime";
 import type { AppConfig } from "../config";
-import type { ProviderName } from "../provider-manager";
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, type ProviderName } from "../provider-manager";
 import { buildWelcomeBanner } from "./app-presenter";
 import type { AppRuntimeState } from "./app-runtime-state";
 import type { ChatView } from "./components/chat-view";
@@ -49,6 +49,8 @@ export class AppSessionLifecycle {
     this.deps.renderer.setFocus(this.deps.inputEditor);
     this.deps.renderer.start();
 
+    await this.ensureConfiguredProviderOrFallback();
+
     this.deps.statusBar.update({
       model: this.deps.config.model.id,
       contextWindow: this.deps.config.model.contextWindow,
@@ -58,11 +60,6 @@ export class AppSessionLifecycle {
       effort: this.deps.runtime.currentEffort,
       effortLabel: getThinkingEffortLabel(this.deps.runtime.currentEffort, this.deps.config.model),
     });
-
-    const currentProvider = (this.deps.config.model.provider ?? "anthropic") as ProviderName;
-    if (!this.deps.config.providerManager.hasKeyFor(currentProvider)) {
-      await this.deps.setupWizard.runSetupWizard();
-    }
 
     const welcomeLines = buildWelcomeBanner({
       version: this.deps.pkgVersion,
@@ -98,6 +95,22 @@ export class AppSessionLifecycle {
     }
 
     this.deps.renderer.requestRender();
+  }
+
+  private async ensureConfiguredProviderOrFallback(): Promise<void> {
+    const currentProvider = (this.deps.config.model.provider ?? DEFAULT_PROVIDER) as ProviderName;
+    if (this.deps.config.providerManager.hasKeyFor(currentProvider)) {
+      return;
+    }
+
+    const fallbackProvider = this.deps.config.providerManager.getConfiguredProviders()[0];
+    if (fallbackProvider) {
+      const fallbackModelId = DEFAULT_MODELS[fallbackProvider];
+      this.deps.config.model = resolveModel(fallbackModelId);
+      return;
+    }
+
+    await this.deps.setupWizard.runSetupWizard();
   }
 
   async syncActiveThreadState(): Promise<void> {
