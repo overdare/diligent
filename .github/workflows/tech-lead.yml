@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./.bin/diligent --yolo --prompt "The user invoked /tech-lead. Before any other action, call the skill tool with the skill name \"tech-lead\". Then execute the skill fully in this repository."
+          ./.bin/diligent --yolo --prompt "/tech-lead"
 
       - name: Commit and push
         if: steps.guard.outputs.skip == 'false'

@@ -73,4 +73,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ./.bin/diligent --yolo --prompt "The user invoked /passion-junior. Before any other action, call the skill tool with the skill name \"passion-junior\". Then execute the skill fully in this repository. You may use the provided GitHub token for PR and branch operations as needed."
+          ./.bin/diligent --yolo --prompt "/passion-junior"
