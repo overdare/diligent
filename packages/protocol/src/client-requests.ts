@@ -135,6 +135,7 @@ export const ThreadCompactStartResponseSchema = z.object({
   entryCount: z.number().int().nonnegative(),
   tokensBefore: z.number().int().nonnegative(),
   tokensAfter: z.number().int().nonnegative(),
+  summary: z.string(),
 });
 export type ThreadCompactStartResponse = z.infer<typeof ThreadCompactStartResponseSchema>;
 
