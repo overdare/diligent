@@ -3,7 +3,8 @@
        setup check-env config \
        web-dev web-build web-start \
        debug-dev debug-build \
-       desktop-dev desktop-build check-desktop
+       desktop-dev desktop-build check-desktop \
+       check
 
 help:
 	@echo "Usage: make <target>"
@@ -21,6 +22,7 @@ help:
 	@echo "  lint            Lint (Biome)"
 	@echo "  lint-fix        Lint + auto-fix"
 	@echo "  typecheck       TypeScript type check"
+	@echo "  check           Typecheck + test all packages (workspace coherence)"
 	@echo ""
 	@echo "Build:"
 	@echo "  build           Build native binary (current platform)"
@@ -57,6 +59,9 @@ lint-fix: node_modules
 
 typecheck: node_modules
 	bun run typecheck
+
+check: node_modules
+	bun run verify
 
 dev: node_modules
 	bun run packages/cli/src/index.ts
