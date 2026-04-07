@@ -22,13 +22,19 @@ Read only what your task requires.
 | Product and usage guides | `docs/guide/` |
 | Planning, decisions & phase specs | `docs/plan/` |
 | Reference codebases (codex, opencode, pi-mono) | `docs/references/` |
-| Layer research & analysis | `docs/research/` |
 | Past tech-lead assessments | `docs/review/` |
 | Pending work items | Project knowledge backlog entries |
 
 ## Code Explore System
 
 Most source files include a `@summary` annotation on the first line: `// @summary <desc>` (or `# @summary` for .py). Use it as a quick routing hint, but do not assume it is universal. Skip index.ts, types.ts, and config files first.
+
+## Documentation Routing
+
+- Start with `ARCHITECTURE.md` for cross-package invariants, ownership boundaries, and shared frontend/backend rules.
+- Use `docs/guide/*` for feature-specific behavior, examples, and change procedures.
+- Treat `docs/plan/*` as future-facing or historical planning material, not as the source of truth for current implemented behavior.
+- Do not infer shared architecture from a single client or package implementation alone.
 
 
 ## Rules

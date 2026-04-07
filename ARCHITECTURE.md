@@ -62,6 +62,22 @@ CLI/TUI                         Web UI                         Desktop UI
    └──────────── model providers / file system / shell ───────────┘
 ```
 
+## Documentation Map
+
+Use this document for repository-wide architectural invariants, layer boundaries, and ownership rules.
+
+Feature-specific behavior should be documented under `docs/guide/`. Those guides should hold detailed examples, edge cases, and step-by-step change procedures.
+
+Current guides:
+
+- Session lifecycle: `docs/guide/session-lifecycle.md`
+- Collaboration: `docs/guide/collaboration.md`
+- Provider auth: `docs/guide/provider-auth.md`
+- Compaction: `docs/guide/compaction.md`
+- Packaging: `docs/guide/packaging.md`
+- Tool settings: `docs/guide/tool-settings.md`
+- Tool rendering: `docs/guide/tool-rendering.md`
+
 ## Frontend Protocol Philosophy
 
 Diligent uses **one backend protocol with multiple transports**.
@@ -78,6 +94,8 @@ Practical consequences:
 2. **Protocol is the contract.** Anything that crosses the frontend/backend boundary should be modeled in `@diligent/protocol`.
 3. **Desktop is not a fourth backend.** It reuses the web stack rather than forking agent behavior.
 4. **Transport adapters stay small.** Stdio and WebSocket layers only adapt messages; they should not own business logic.
+
+Detailed guidance for the current structured tool-rendering flow lives in `docs/guide/tool-rendering.md`.
 
 ## Package Responsibilities
 
@@ -173,7 +191,7 @@ That loader is responsible for:
 - loading knowledge for prompt injection
 - discovering skills
 - constructing the `ProviderManager`
-- loading API keys and ChatGPT OAuth tokens
+- loading provider auth state
 - creating the shared stream function
 - creating the permission engine
 
@@ -204,6 +222,8 @@ Both CLI and Web reuse this factory to avoid diverging initialization logic.
 - pending server requests
 
 The app server accepts client requests, injects session defaults when needed, dispatches thread/turn/config/auth/tool handlers, and broadcasts notifications to subscribed peers.
+
+Thread-scoped notifications follow a subscription fanout model: subscribed peers receive thread events first, while fallback broadcast and initiator-aware suppression help reduce duplicate echoes when multiple clients are connected.
 
 ### 4. Thread and turn execution
 
@@ -240,6 +260,8 @@ Key characteristics:
 - **Shape:** tree-structured entries with `id` / `parentId`
 - **Capabilities:** resume, branching history, compaction entries, mode/model/effort changes, steering persistence, collab metadata
 
+Child sessions created by collaboration flows carry explicit parent linkage and child-agent metadata, distinguishing them structurally from top-level sessions.
+
 Runtime derives two different views from session data:
 
 - **context view** for future model calls
@@ -272,9 +294,15 @@ Current provider-related behavior includes:
 - known model registry and model resolution
 - provider-specific streaming through `ProviderManager`
 - API-key-backed providers from `~/.diligent/auth.jsonc`
-- ChatGPT OAuth via runtime-managed external auth binding
+- runtime-managed external auth bindings such as ChatGPT OAuth
 - shared stream proxy creation for agent execution
 - provider-aware native compaction support where available
+
+Runtime supports both API-key-backed provider auth and runtime-managed ChatGPT OAuth token handling.
+
+Thinking effort is a first-class runtime concept with model/provider capability mapping, persisted effort changes, and turn-time effort snapshots in the app server.
+
+Compaction uses a proportional reserve threshold and can incorporate actual assistant usage tokens when available, rather than relying only on a fixed heuristic buffer.
 
 The design goal is to keep provider-specific mechanics reusable while leaving user-facing auth flows to runtime.
 
@@ -437,7 +465,7 @@ Some important implementation realities are worth calling out explicitly:
 - `SessionManager` is currently a major orchestration hub and coupling point.
 - `thread/read` and live notifications are not yet perfectly symmetrical in shape; clients still perform some hydration work.
 - Runtime already contains client-facing helpers such as notification adapters to reduce duplicated frontend logic.
-- Tool rendering and UI presentation continue to evolve independently from the protocol schema itself.
+- Structured tool rendering now uses protocol-defined payloads and block schemas, while Web and TUI presentation details still evolve per client.
 
 These are not necessarily problems, but they are useful context when planning refactors.
 
