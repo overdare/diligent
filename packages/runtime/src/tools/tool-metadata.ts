@@ -1,10 +1,16 @@
 // @summary Central tool metadata registry — single source of truth for built-in tool capabilities
 
+import { COLLAB_TOOL_NAMES, CUSTOM_RENDER_TOOLS } from "@diligent/protocol";
+
+export { COLLAB_TOOL_NAMES, CUSTOM_RENDER_TOOLS };
+
 /**
  * Capabilities for a built-in tool.
  * When adding a new tool, add an entry here and set each applicable flag.
- * The derived sets (IMMUTABLE_TOOLS, PLAN_MODE_ALLOWED_TOOLS, COLLAB_TOOL_NAMES,
- * CUSTOM_RENDER_TOOLS) are generated from this registry — no manual sync required.
+ * The derived sets (IMMUTABLE_TOOLS, PLAN_MODE_ALLOWED_TOOLS) are generated from this registry.
+ * COLLAB_TOOL_NAMES and CUSTOM_RENDER_TOOLS are defined in @diligent/protocol/tool-classification
+ * and re-exported here for backward compatibility. When adding a tool with collabExcluded or
+ * hasCustomRender, update both this registry AND the corresponding set in protocol.
  */
 export interface ToolCapabilities {
   /** Cannot be disabled by user config (D027). */
@@ -60,19 +66,5 @@ export const IMMUTABLE_TOOLS = new Set(
 export const PLAN_MODE_ALLOWED_TOOLS = new Set(
   Object.entries(TOOL_CAPABILITIES)
     .filter(([, caps]) => caps.planModeAllowed)
-    .map(([name]) => name),
-);
-
-/** Collab layer tools — excluded from child agents. */
-export const COLLAB_TOOL_NAMES = new Set(
-  Object.entries(TOOL_CAPABILITIES)
-    .filter(([, caps]) => caps.collabExcluded)
-    .map(([name]) => name),
-);
-
-/** Tools with custom render logic in render-payload.ts. */
-export const CUSTOM_RENDER_TOOLS = new Set(
-  Object.entries(TOOL_CAPABILITIES)
-    .filter(([, caps]) => caps.hasCustomRender)
     .map(([name]) => name),
 );
