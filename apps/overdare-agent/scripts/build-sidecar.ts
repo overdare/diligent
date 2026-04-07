@@ -30,9 +30,9 @@ async function run(): Promise<void> {
     rootDir: ROOT,
     desktopDir: DESKTOP,
     run(command, cwd) {
-      const result = Bun.spawnSync(command.split(" "), { cwd, stdio: ["inherit", "inherit", "inherit"] });
+      const result = Bun.spawnSync(command, { cwd, stdio: ["inherit", "inherit", "inherit"] });
       if (result.exitCode !== 0) {
-        throw new Error(`Bootstrap preparation command failed: ${command}`);
+        throw new Error(`Bootstrap preparation command failed: ${command.join(" ")}`);
       }
     },
   });

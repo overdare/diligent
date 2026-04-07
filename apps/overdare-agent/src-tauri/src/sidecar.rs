@@ -67,6 +67,10 @@ fn kill_process_tree_windows(pid: u32) -> Result<(), String> {
 
 pub struct SidecarState(pub Mutex<Option<ManagedChild>>);
 
+fn should_prefer_bundled_runtime_for_current_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 // ---------------------------------------------------------------------------
 // Path resolution
 // ---------------------------------------------------------------------------
@@ -147,6 +151,10 @@ fn resolve_bundled_rg_bin() -> Option<PathBuf> {
 /// Spawn the Bun web server sidecar and return the port it is listening on.
 /// Prefers updated binaries from ~/.diligent/updates/runtime/ if available.
 pub async fn start_sidecar(app: &AppHandle, cwd: &str, userid: Option<&str>) -> Result<u16, String> {
+    if should_prefer_bundled_runtime_for_current_build() {
+        return start_bundled_sidecar(app, cwd, userid).await;
+    }
+
     // Prefer updated paths, fall back to bundled
     let dist_dir = resolve_updated_dist_dir()
         .map_or_else(|| resolve_bundled_dist_dir(app), Ok)?;
@@ -173,6 +181,29 @@ pub async fn start_sidecar(app: &AppHandle, cwd: &str, userid: Option<&str>) -> 
     } else {
         spawn_bundled_sidecar(app, &args, rg_path.as_deref()).await
     }
+}
+
+async fn start_bundled_sidecar(app: &AppHandle, cwd: &str, userid: Option<&str>) -> Result<u16, String> {
+    let dist_dir = resolve_bundled_dist_dir(app)?;
+    let dist_dir_str = dist_dir.to_string_lossy().to_string();
+
+    let log_path = default_web_log_path()?;
+    let log_path_str = log_path.to_string_lossy().to_string();
+
+    let rg_path = resolve_bundled_rg_bin();
+
+    let mut args = vec![
+        "--port=0".to_string(),
+        format!("--dist-dir={}", dist_dir_str),
+        format!("--cwd={}", cwd),
+        format!("--log-file={}", log_path_str),
+    ];
+    if let Some(userid) = userid.filter(|value| !value.is_empty()) {
+        args.push(format!("--userid={}", userid));
+    }
+    args.push(format!("--parent-pid={}", std::process::id()));
+
+    spawn_bundled_sidecar(app, &args, rg_path.as_deref()).await
 }
 
 /// Spawn the updated sidecar via tokio::process::Command.
@@ -352,6 +383,8 @@ async fn wait_for_health(port: u16) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use super::should_prefer_bundled_runtime_for_current_build;
+
     #[test]
     fn tokio_child_kill_path_uses_sync_start_kill() {
         // Regression guard: ManagedChild::kill() is synchronous, so tokio child
@@ -361,5 +394,10 @@ mod tests {
             source.contains("c.start_kill()"),
             "ManagedChild::TokioChild branch must use start_kill() for shutdown"
         );
+    }
+
+    #[test]
+    fn desktop_dev_builds_prefer_bundled_runtime_assets() {
+        assert!(should_prefer_bundled_runtime_for_current_build());
     }
 }

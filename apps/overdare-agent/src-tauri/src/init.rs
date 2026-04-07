@@ -11,6 +11,10 @@ enum DeployMode {
     FullSync,
 }
 
+fn should_skip_bootstrap_sync_for_current_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 fn should_copy_entry(dest_exists: bool, mode: DeployMode) -> bool {
     match mode {
         DeployMode::MissingOnly => !dest_exists,
@@ -167,6 +171,15 @@ fn deploy_plugins(src: &Path, dest: &Path, log: &mut String, mode: DeployMode) -
 pub fn run(app: &tauri::AppHandle, update_applied: bool) {
     let mut log = String::new();
 
+    if should_skip_bootstrap_sync_for_current_build() {
+        let _ = writeln!(
+            log,
+            "[init] Skipping bootstrap/plugin sync in desktop-dev (tauri dev/debug build)"
+        );
+        flush_log(&global_log_path(), &log);
+        return;
+    }
+
     let mode = if update_applied {
         DeployMode::FullSync
     } else {
@@ -278,7 +291,7 @@ fn flush_log(path: &Path, log: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{should_copy_entry, DeployMode};
+    use super::{should_copy_entry, should_skip_bootstrap_sync_for_current_build, DeployMode};
 
     #[test]
     fn missing_only_copies_only_when_target_missing() {
@@ -290,5 +303,10 @@ mod tests {
     fn full_sync_always_copies() {
         assert!(should_copy_entry(false, DeployMode::FullSync));
         assert!(should_copy_entry(true, DeployMode::FullSync));
+    }
+
+    #[test]
+    fn desktop_dev_builds_skip_bootstrap_sync() {
+        assert!(should_skip_bootstrap_sync_for_current_build());
     }
 }

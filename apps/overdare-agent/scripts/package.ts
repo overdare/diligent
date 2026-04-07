@@ -1,6 +1,6 @@
 // @summary Desktop packaging orchestrator — builds Tauri desktop app and assembles dist/
 
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -61,8 +61,18 @@ function currentOs(): "darwin" | "linux" | "windows" {
 // Build helpers
 // ---------------------------------------------------------------------------
 
-function run(cmd: string, cwd: string = ROOT, env?: NodeJS.ProcessEnv): void {
-  execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, ...env } });
+function run(cmd: string | string[], cwd: string = ROOT, env?: NodeJS.ProcessEnv): void {
+  const mergedEnv = { ...process.env, ...env };
+  if (Array.isArray(cmd)) {
+    const [file, ...args] = cmd;
+    const result = spawnSync(file, args, { cwd, stdio: "inherit", env: mergedEnv });
+    if (result.status !== 0) {
+      throw new Error(`Command failed: ${cmd.join(" ")}`);
+    }
+    return;
+  }
+
+  execSync(cmd, { cwd, stdio: "inherit", env: mergedEnv });
 }
 
 function buildWebFrontend(): void {

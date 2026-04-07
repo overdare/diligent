@@ -7,7 +7,7 @@ import { createPluginBundlePlan } from "./plugin-bundle";
 export type PrepareBootstrapResourcesConfig = {
   rootDir: string;
   desktopDir: string;
-  run(command: string, cwd: string): void;
+  run(command: string[], cwd: string): void;
 };
 
 export function prepareBootstrapResources(config: PrepareBootstrapResourcesConfig): void {
@@ -58,7 +58,7 @@ function bundleAppPlugins(config: {
   rootDir: string;
   bootstrapResourcesDir: string;
   appDir: string;
-  run(command: string, cwd: string): void;
+  run(command: string[], cwd: string): void;
 }): void {
   const pluginsSubDir = join(config.appDir, "plugins");
   if (!existsSync(pluginsSubDir)) return;
@@ -79,7 +79,7 @@ function bundleAppPlugins(config: {
     });
 
     mkdirSync(plan.outDir, { recursive: true });
-    config.run(plan.buildCommand, plan.buildCwd);
+    config.run(plan.buildArgs, plan.buildCwd);
     writeFileSync(join(plan.outDir, "package.json"), `${JSON.stringify(plan.outputPackageJson, null, 2)}\n`);
     console.log(`   Bundled plugin: ${pluginName} → ${plan.outFile}`);
 

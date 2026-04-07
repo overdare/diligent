@@ -1,8 +1,6 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -10,7 +8,7 @@ on:
         required: true
         type: string
       skip_desktop_binary:
-        description: "Skip desktop binary packaging while still building other release artifacts"
+        description: "Skip desktop binary packaging"
         required: false
         default: false
         type: boolean

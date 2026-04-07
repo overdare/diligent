@@ -1,7 +1,6 @@
 // @summary Integration test: verifies the build-time plugin bundle output matches runtime plugin-loader expectations.
 
 import { expect, test } from "bun:test";
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,7 +66,10 @@ export async function createTools() {
       rootDir,
       desktopDir,
       run(command, cwd) {
-        execSync(command, { cwd, stdio: "pipe" });
+        const result = Bun.spawnSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+        if (result.exitCode !== 0) {
+          throw new Error(result.stderr.toString());
+        }
       },
     });
 

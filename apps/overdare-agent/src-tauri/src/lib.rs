@@ -157,10 +157,45 @@ fn map_update_progress(progress: update::UpdateProgress) -> StartupUpdateStep {
     StartupUpdateStep { stage, message }
 }
 
+fn should_skip_runtime_update_for_current_build() -> bool {
+    cfg!(debug_assertions)
+}
+
+fn resolve_init_log_path() -> Option<String> {
+    #[cfg(windows)]
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    #[cfg(not(windows))]
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    home.map(|h| {
+        h.join(".diligent")
+            .join("init.log")
+            .to_string_lossy()
+            .to_string()
+    })
+}
+
 /// Run startup preparation before launching sidecar:
 /// update check/apply + bootstrap deployment.
 #[tauri::command]
 async fn prepare_startup(app: tauri::AppHandle) -> Result<StartupPreparationResult, String> {
+    if should_skip_runtime_update_for_current_build() {
+        let update_log = "[update] Skipping runtime GitHub update in desktop-dev (tauri dev/debug build)\n".to_string();
+        let update_steps = vec![StartupUpdateStep {
+            stage: "disabled".to_string(),
+            message: "Runtime update skipped in desktop dev".to_string(),
+        }];
+
+        eprint!("{update_log}");
+        init::run(&app, false);
+
+        return Ok(StartupPreparationResult {
+            update_applied: false,
+            update_log,
+            init_log_path: resolve_init_log_path(),
+            update_steps,
+        });
+    }
+
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StartupUpdateStep>();
 
     let update_task = tauri::async_runtime::spawn_blocking(move || {
@@ -198,23 +233,10 @@ async fn prepare_startup(app: tauri::AppHandle) -> Result<StartupPreparationResu
 
     init::run(&app, update_applied);
 
-    let init_log_path = {
-        #[cfg(windows)]
-        let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
-        #[cfg(not(windows))]
-        let home = std::env::var_os("HOME").map(PathBuf::from);
-        home.map(|h| {
-            h.join(".diligent")
-                .join("init.log")
-                .to_string_lossy()
-                .to_string()
-        })
-    };
-
     Ok(StartupPreparationResult {
         update_applied,
         update_log,
-        init_log_path,
+        init_log_path: resolve_init_log_path(),
         update_steps,
     })
 }
@@ -308,7 +330,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_startup_cwd_from_args, parse_startup_userid_from_args};
+    use super::{
+        parse_startup_cwd_from_args, parse_startup_userid_from_args,
+        should_skip_runtime_update_for_current_build,
+    };
 
     #[test]
     fn parses_equals_form_cwd_argument() {
@@ -356,5 +381,10 @@ mod tests {
     fn ignores_empty_equals_form_userid_argument() {
         let result = parse_startup_userid_from_args(["overdare-agent-desktop", "--userid="]);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn desktop_dev_builds_skip_runtime_update_checks() {
+        assert!(should_skip_runtime_update_for_current_build());
     }
 }

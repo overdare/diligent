@@ -24,9 +24,15 @@ test("createPluginBundlePlan builds plugins from the repo root without running i
     });
 
     expect(plan.buildCwd).toBe(rootDir);
-    expect(plan.buildCommand).toContain("bun build --target bun");
-    expect(plan.buildCommand).toContain("--outfile");
-    expect(plan.buildCommand).not.toContain("bun install");
+    expect(plan.buildArgs).toEqual([
+      "bun",
+      "build",
+      "--target",
+      "bun",
+      "--outfile",
+      plan.outFile,
+      join(pluginDir, "src/index.ts"),
+    ]);
     expect(plan.outputPackageJson).toEqual({
       name: "@acme/plugin-example",
       version: "1.2.3",
@@ -34,6 +40,46 @@ test("createPluginBundlePlan builds plugins from the repo root without running i
       main: "index.js",
     });
   } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("createPluginBundlePlan omits empty define placeholders when no plugin defines are set", () => {
+  const rootDir = join(tmpdir(), `desktop-plugin-defines-${Date.now()}`);
+  const pluginDir = join(rootDir, "thirdparty/plugin-example");
+  const bootstrapResourcesDir = join(rootDir, "apps/overdare-agent/src-tauri/resources/bootstrap");
+
+  mkdirSync(join(pluginDir, "src"), { recursive: true });
+  writeFileSync(join(pluginDir, "src", "index.ts"), "export const ok = true;\n");
+  writeFileSync(join(pluginDir, "package.json"), JSON.stringify({ version: "1.2.3" }));
+
+  const previousDefines = Object.fromEntries(
+    Object.keys(process.env)
+      .filter((key) => key.startsWith("PLUGIN_DEFINE_"))
+      .map((key) => [key, process.env[key]]),
+  );
+
+  for (const key of Object.keys(previousDefines)) {
+    delete process.env[key];
+  }
+
+  try {
+    const plan = createPluginBundlePlan({
+      rootDir,
+      bootstrapResourcesDir,
+      pluginDir,
+      pluginName: "@acme/plugin-example",
+    });
+
+    expect(plan.buildArgs).not.toContain("");
+  } finally {
+    for (const [key, value] of Object.entries(previousDefines)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     rmSync(rootDir, { recursive: true, force: true });
   }
 });
