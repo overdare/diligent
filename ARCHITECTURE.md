@@ -306,6 +306,26 @@ Compaction uses a proportional reserve threshold and can incorporate actual assi
 
 The design goal is to keep provider-specific mechanics reusable while leaving user-facing auth flows to runtime.
 
+### Provider-native content blocks and extension protocol
+
+Some providers expose first-class capabilities (web search, web fetch) that arrive as native content blocks in the model response rather than as Diligent tool calls. These are represented in the protocol as `ProviderToolUseBlock`, `WebSearchResultBlock`, and `WebFetchResultBlock` (see `packages/protocol/src/data-model.ts`).
+
+The `ProviderToolUseBlockSchema` uses two enums that act as the primary extensibility constraint:
+
+- **`name`** — the capability name: currently `"web_search" | "web_fetch"`
+- **`provider`** — the originating provider: currently `"openai" | "chatgpt" | "anthropic"`
+
+**Extension procedure** — when adding a new provider-native capability (e.g., code execution, file generation) or a new provider (e.g., Gemini):
+
+1. **Schema update** — extend both enums in `ProviderToolUseBlockSchema` (and the matching `provider` enum in `WebSearchResultBlockSchema` / `WebFetchResultBlockSchema` if the new capability produces result blocks).
+2. **Provider adapter** — add normalization logic in the relevant provider adapter (`packages/core/src/providers/`), mapping the raw SDK response to the normalized block schema.
+3. **Consumer updates** — update all pattern-match sites that switch on `name` or `provider`:
+   - Web: `packages/web/src/client/components/AssistantContentBlocks.tsx`
+   - CLI: `packages/cli/src/tui/components/thread-store-utils.ts`
+4. **E2E test** — add a test case in `packages/e2e/` that validates the full pipeline from mock provider response through session persistence to `thread/read`.
+
+The `WebSearchResultBlockSchema` and `WebFetchResultBlockSchema` mirror the `provider` enum and must be extended in sync. If the new capability does not produce a separate result block (just a tool-use block), only steps 1–3 apply.
+
 ## Tool System
 
 ### Tool contract
