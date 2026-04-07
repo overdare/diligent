@@ -680,6 +680,10 @@ export class SessionManager {
   get entryCount(): number {
     return this.state.entryCount;
   }
+
+  dispose(): void {
+    this.resetUsageDebugState();
+  }
 }
 
 function summarizeLastPersistedMessage(entries: SessionEntry[]): string {

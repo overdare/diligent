@@ -541,6 +541,7 @@ export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: s
 
   const deleted = deletedFromDisk || knownInMemory;
   if (deleted) {
+    existing?.manager.dispose();
     ctx.threads.delete(threadId);
     if (ctx.activeThreadId === threadId) {
       ctx.setActiveThreadId(null);
