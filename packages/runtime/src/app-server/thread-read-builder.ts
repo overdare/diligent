@@ -4,7 +4,7 @@ import { resolveModel } from "@diligent/core/llm/models";
 import type { ToolRenderPayload } from "@diligent/protocol";
 import { calculateUsageCost } from "../cost";
 import type { AssistantMessage, ThreadItem, ToolResultMessage, UserMessage } from "../protocol/index";
-import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-payload";
+import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../tools/render-strategies";
 import type { ThreadRuntime } from "./thread-handlers";
 
 export type ThreadReadTranscriptEntry =

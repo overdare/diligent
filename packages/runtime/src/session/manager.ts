@@ -7,7 +7,7 @@ import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
 import { calculateUsageCost } from "../cost";
 import type { DiligentPaths } from "../infrastructure";
-import { createToolStartRenderPayload } from "../tools/render-payload";
+import { createToolStartRenderPayload } from "../tools/render-strategies";
 import { buildSessionContext, buildSessionTranscript } from "./context-builder";
 import { SessionPersistence, type SessionReconcileResult } from "./persistence";
 import { SessionStateStore } from "./state-store";
