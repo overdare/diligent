@@ -312,5 +312,6 @@ Priority Actions must be real implementation or decision-update work. Do not add
 - **Respect decisions, but verify they still match reality.** Recommend updates to decisions rather than silently ignoring them.
 - **Optimize for a solo developer + AI-assisted workflow.** Recommendations must fit focused sessions, not imaginary committee process.
 - **Prioritize compounding risks.** Small sync points that repeat are more dangerous than one large isolated file.
+- **Prefer architectural docs over inline comments for durable guidance.** When documentation is needed, explicitly consider updating `docs/*` or `ARCHITECTURE.md` first instead of adding code comments.
 - **Call out resolved-by-decomposition outcomes.** If a prior risk was structurally removed, record that clearly instead of keeping it alive as a stale issue.
 - **Earn the Novel Perspective section.** If every finding could have been predicted from the prior review, the review did not go deep enough.
