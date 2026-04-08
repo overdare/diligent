@@ -81,6 +81,20 @@ export const ToolCallBlockSchema = z.object({
 });
 export type ToolCallBlock = z.infer<typeof ToolCallBlockSchema>;
 
+/**
+ * ProviderToolUseBlock — provider-native capability block (e.g. web search, web fetch).
+ *
+ * Extension procedure: when adding a new provider-native capability:
+ *   1. Add the new `name` literal to the `name` enum union below (e.g. "code_execution").
+ *   2. Add the `provider` literal if a new provider is being introduced.
+ *   3. Update consumer switch statements in:
+ *      - packages/web/src/client/components/AssistantContentBlocks.tsx
+ *      - packages/cli/src/tui/components/thread-store-utils.ts
+ *   4. Add an e2e scenario to packages/e2e/provider-native-blocks.test.ts.
+ *
+ * The `name` and `provider` enums here are the authoritative contract; every consumer
+ * that branches on these values must be updated together to avoid silent miss-branches.
+ */
 export const ProviderToolUseBlockSchema = z.object({
   type: z.literal("provider_tool_use"),
   id: z.string(),
