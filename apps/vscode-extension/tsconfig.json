@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "types": ["bun", "node"],
+    "types": ["bun-types", "node", "vscode"],
+    "ignoreDeprecations": "5.0",
     "lib": ["ESNext", "DOM"]
   },
   "include": ["src/**/*", "test/**/*"]

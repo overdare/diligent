@@ -10,7 +10,6 @@ export async function resolveUserInputRequest(params: UserInputRequestParams): P
       const picked = await vscode.window.showQuickPick(
         question.options.map((option) => ({ label: option.label, description: option.description })),
         {
-          title: question.header,
           placeHolder: question.question,
           canPickMany: true,
           ignoreFocusOut: true,
@@ -23,7 +22,6 @@ export async function resolveUserInputRequest(params: UserInputRequestParams): P
     const picked = await vscode.window.showQuickPick(
       question.options.map((option) => ({ label: option.label, description: option.description })),
       {
-        title: question.header,
         placeHolder: question.question,
         ignoreFocusOut: true,
       },
@@ -35,8 +33,8 @@ export async function resolveUserInputRequest(params: UserInputRequestParams): P
     }
 
     const typed = await vscode.window.showInputBox({
-      title: question.header,
       prompt: question.question,
+      placeHolder: question.header,
       password: question.is_secret === true,
       ignoreFocusOut: true,
     });

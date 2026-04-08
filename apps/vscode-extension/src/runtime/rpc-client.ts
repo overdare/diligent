@@ -18,7 +18,7 @@ import {
   DiligentServerRequestResponseSchema,
   JSONRPCMessageSchema,
 } from "@diligent/protocol";
-import { createNdjsonParser, formatNdjsonMessage } from "@diligent/runtime";
+import { createNdjsonParser, formatNdjsonMessage } from "./ndjson";
 
 type RequestMethod = DiligentClientRequest["method"];
 type RequestParams<M extends RequestMethod> = Extract<DiligentClientRequest, { method: M }>["params"];

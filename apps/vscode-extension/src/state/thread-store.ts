@@ -14,6 +14,7 @@ export interface ExtensionThreadState {
   availableModels: InitializeResponse["availableModels"];
   activeThreadId: string | null;
   activeThreadStatus: ThreadStatus | null;
+  threadStatuses: Record<string, ThreadStatus | null | undefined>;
   threads: SessionSummary[];
   threadReads: Record<string, ThreadReadResponse | undefined>;
   lastError: string | null;
@@ -27,6 +28,7 @@ export class ThreadStore {
     availableModels: [],
     activeThreadId: null,
     activeThreadStatus: null,
+    threadStatuses: {},
     threads: [],
     threadReads: {},
     lastError: null,
@@ -44,6 +46,7 @@ export class ThreadStore {
     return {
       ...this.state,
       threads: [...this.state.threads],
+      threadStatuses: { ...this.state.threadStatuses },
       threadReads: { ...this.state.threadReads },
     };
   }
@@ -68,18 +71,27 @@ export class ThreadStore {
   }
 
   setActiveThread(threadId: string | null): void {
-    this.state = { ...this.state, activeThreadId: threadId };
+    this.state = {
+      ...this.state,
+      activeThreadId: threadId,
+      activeThreadStatus: threadId ? (this.state.threadStatuses[threadId] ?? null) : null,
+    };
     this.emit();
   }
 
   setThreadRead(threadId: string, read: ThreadReadResponse): void {
+    const nextStatus: ThreadStatus = read.isRunning ? "busy" : "idle";
     this.state = {
       ...this.state,
+      activeThreadStatus: this.state.activeThreadId === threadId ? nextStatus : this.state.activeThreadStatus,
+      threadStatuses: {
+        ...this.state.threadStatuses,
+        [threadId]: nextStatus,
+      },
       threadReads: {
         ...this.state.threadReads,
         [threadId]: read,
       },
-      activeThreadStatus: read.isRunning ? "busy" : "idle",
     };
     this.emit();
   }
@@ -92,10 +104,7 @@ export class ThreadStore {
   applyNotification(notification: DiligentServerNotification): void {
     switch (notification.method) {
       case "thread/status/changed": {
-        if (notification.params.threadId === this.state.activeThreadId) {
-          this.state = { ...this.state, activeThreadStatus: notification.params.status };
-          this.emit();
-        }
+        this.setThreadStatus(notification.params.threadId, notification.params.status);
         return;
       }
       case "thread/started": {
@@ -109,23 +118,29 @@ export class ThreadStore {
         return;
       }
       case "turn/started": {
-        if (notification.params.threadId === this.state.activeThreadId) {
-          this.state = { ...this.state, activeThreadStatus: notification.params.threadStatus ?? "busy" };
-          this.emit();
-        }
+        this.setThreadStatus(notification.params.threadId, notification.params.threadStatus ?? "busy");
         return;
       }
       case "turn/completed":
       case "turn/interrupted": {
-        if (notification.params.threadId === this.state.activeThreadId) {
-          this.state = { ...this.state, activeThreadStatus: notification.params.threadStatus ?? "idle" };
-          this.emit();
-        }
+        this.setThreadStatus(notification.params.threadId, notification.params.threadStatus ?? "idle");
         return;
       }
       default:
         return;
     }
+  }
+
+  private setThreadStatus(threadId: string, status: ThreadStatus): void {
+    this.state = {
+      ...this.state,
+      activeThreadStatus: this.state.activeThreadId === threadId ? status : this.state.activeThreadStatus,
+      threadStatuses: {
+        ...this.state.threadStatuses,
+        [threadId]: status,
+      },
+    };
+    this.emit();
   }
 
   private emit(): void {

@@ -14,7 +14,7 @@ export class ThreadTreeItem extends vscode.TreeItem {
     this.tooltip = `${summary.cwd}\n${summary.path}`;
     this.contextValue = THREAD_TREE_ITEM_CONTEXT;
     this.command = {
-      command: "diligent.sendPrompt",
+      command: "diligent.openConversation",
       title: "Open Thread",
       arguments: [summary.id],
     };

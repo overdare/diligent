@@ -18,7 +18,7 @@ After this work, a developer can install a VSIX, open a workspace, start Diligen
 - `@diligent/protocol` remains the shared frontend/backend contract for initialize, thread, turn, tool, auth, and server-request flows.
 - `packages/cli/src/index.ts` and `packages/cli/src/app-server-stdio.ts` continue to support `diligent app-server --stdio`.
 - `packages/runtime/src/app-server/server.ts` remains the source of truth for thread lifecycle, approvals, user-input requests, and notification broadcasting.
-- Bun workspace support remains available for adding a new `packages/vscode/` package.
+- Bun workspace support remains available for adding a new `apps/vscode-extension/` package.
 
 ## Artifact
 
@@ -44,7 +44,7 @@ Agent → streaming output, tool calls, and thread status appear in the Conversa
 
 | Area | What Changes |
 |------|-------------|
-| `packages/vscode/` | New VS Code extension package for activation, commands, thread tree, webview, and child-process RPC transport |
+| `apps/vscode-extension/` | New VS Code extension package for activation, commands, thread tree, webview, and child-process RPC transport |
 | `packages/protocol/` | Reuse existing request/notification schemas directly from the extension; add only narrowly scoped shared models if the extension reveals protocol gaps |
 | `packages/cli/` | Keep `app-server --stdio` as the extension launch target; add only focused compatibility improvements if extension needs them |
 | `docs/guide/` | Add extension-specific setup and operation guide once implemented |
@@ -121,7 +121,7 @@ The initial implementation should not depend on those enterprise deployment path
 
 ## File Manifest
 
-### packages/vscode/
+### apps/vscode-extension/
 
 | File | Action | Description |
 |------|--------|------------|
@@ -175,7 +175,7 @@ The initial implementation should not depend on those enterprise deployment path
 
 ### Task 1: Create the extension package and contribution manifest
 
-**Files:** `packages/vscode/package.json`, `packages/vscode/tsconfig.json`, `packages/vscode/src/extension.ts`, `packages/vscode/src/manifest.ts`, `package.json`
+**Files:** `apps/vscode-extension/package.json`, `apps/vscode-extension/tsconfig.json`, `apps/vscode-extension/src/extension.ts`, `apps/vscode-extension/src/manifest.ts`, `package.json`
 **Decisions:** D055
 
 Create a dedicated workspace package for the VS Code extension. The package must declare a custom view container, at least one native tree view, one webview view, and the initial command surface.
@@ -221,7 +221,7 @@ export const COMMANDS = {
 
 ### Task 2: Implement stdio child-process transport against the existing app-server
 
-**Files:** `packages/vscode/src/runtime/diligent-process.ts`, `packages/vscode/src/runtime/rpc-client.ts`, `packages/vscode/src/runtime/thread-session.ts`, `packages/vscode/test/runtime/rpc-client.test.ts`
+**Files:** `apps/vscode-extension/src/runtime/diligent-process.ts`, `apps/vscode-extension/src/runtime/rpc-client.ts`, `apps/vscode-extension/src/runtime/thread-session.ts`, `apps/vscode-extension/test/runtime/rpc-client.test.ts`
 **Decisions:** D046, D055
 
 Implement a transport layer that launches `diligent app-server --stdio` and communicates using the same NDJSON-framed JSON-RPC model already used by CLI/TUI.
@@ -260,7 +260,7 @@ export class DiligentRpcClient {
 
 ### Task 3: Build extension-side state and thread list UX
 
-**Files:** `packages/vscode/src/state/thread-store.ts`, `packages/vscode/src/views/thread-tree-provider.ts`, `packages/vscode/src/extension.ts`, `packages/vscode/test/runtime/thread-session.test.ts`
+**Files:** `apps/vscode-extension/src/state/thread-store.ts`, `apps/vscode-extension/src/views/thread-tree-provider.ts`, `apps/vscode-extension/src/extension.ts`, `apps/vscode-extension/test/runtime/thread-session.test.ts`
 **Decisions:** D055
 
 Create an extension-side store that tracks:
@@ -295,7 +295,7 @@ export class ThreadTreeProvider implements vscode.TreeDataProvider<ThreadTreeIte
 
 ### Task 4: Build the dedicated conversation view bridge and UI shell
 
-**Files:** `packages/vscode/src/views/conversation-view-provider.ts`, `packages/vscode/src/views/webview/protocol.ts`, `packages/vscode/src/views/webview/index.ts`, `packages/vscode/src/views/webview/app.ts`, `packages/vscode/src/views/webview/styles.css`
+**Files:** `apps/vscode-extension/src/views/conversation-view-provider.ts`, `apps/vscode-extension/src/views/webview/protocol.ts`, `apps/vscode-extension/src/views/webview/index.ts`, `apps/vscode-extension/src/views/webview/app.ts`, `apps/vscode-extension/src/views/webview/styles.css`
 
 Implement a `WebviewView` for the conversation surface. The extension host is the authority for VS Code APIs, process control, and server requests. The webview should remain a render-and-intent surface.
 
@@ -336,7 +336,7 @@ export type WebviewToHostMessage =
 
 ### Task 5: Map server requests into VS Code-native UX
 
-**Files:** `packages/vscode/src/server-requests/approval.ts`, `packages/vscode/src/server-requests/user-input.ts`, `packages/vscode/src/runtime/thread-session.ts`, `packages/vscode/src/views/conversation-view-provider.ts`
+**Files:** `apps/vscode-extension/src/server-requests/approval.ts`, `apps/vscode-extension/src/server-requests/user-input.ts`, `apps/vscode-extension/src/runtime/thread-session.ts`, `apps/vscode-extension/src/views/conversation-view-provider.ts`
 **Decisions:** D098
 
 Handle `approval/request` and `userInput/request` without inventing a new runtime-side capability boundary. The extension consumes the existing protocol, presents UI in VS Code, and returns the protocol-shaped response.
@@ -369,7 +369,7 @@ export async function resolveUserInputRequest(
 
 ### Task 6: Package, test, and document the internal distribution workflow
 
-**Files:** `packages/vscode/test/integration/extension.integration.test.ts`, `docs/guide/vscode-extension.md`, `package.json`
+**Files:** `apps/vscode-extension/test/integration/extension.integration.test.ts`, `docs/guide/vscode-extension.md`, `package.json`
 
 Add repeatable package/test scripts and document internal installation.
 
@@ -378,9 +378,9 @@ Expected scripts:
 ```json
 {
   "scripts": {
-    "vscode:build": "bun run --cwd packages/vscode build",
-    "vscode:test": "bun run --cwd packages/vscode test",
-    "vscode:package": "bun run --cwd packages/vscode package"
+    "vscode:build": "bun run --cwd apps/vscode-extension build",
+    "vscode:test": "bun run --cwd apps/vscode-extension test",
+    "vscode:package": "bun run --cwd apps/vscode-extension package"
   }
 }
 ```
@@ -398,7 +398,7 @@ Guide topics:
 
 ## Acceptance Criteria
 
-1. A new `packages/vscode/` extension package exists and builds successfully.
+1. A new `apps/vscode-extension/` extension package exists and builds successfully.
 2. Installing the generated VSIX adds a dedicated `Diligent` view container in the VS Code Activity Bar.
 3. The extension launches `diligent app-server --stdio` locally and completes `initialize` successfully.
 4. The `Threads` native tree view lists top-level threads for the current workspace and allows switching the active thread.
@@ -411,7 +411,7 @@ Guide topics:
 
 | Category | What to Test | How |
 |----------|-------------|-----|
-| Unit | NDJSON framing, request correlation, process shutdown, state-store updates | `bun test packages/vscode/test/runtime/` |
+| Unit | NDJSON framing, request correlation, process shutdown, state-store updates | `bun test apps/vscode-extension/test/runtime/` |
 | Integration | Extension activation, view registration, command wiring, process boot | VS Code extension test runner (`@vscode/test-electron`) |
 | Integration | End-to-end prompt flow against spawned app-server in a fixture workspace | extension integration test with real child process |
 | Manual | Install VSIX, open workspace, create thread, send prompt, handle approval | clean VS Code profile + local Diligent binary |

@@ -13,12 +13,15 @@ export async function resolveApprovalRequest(params: ApprovalRequestParams): Pro
     message,
     {
       modal: true,
-      detail,
     },
     { title: "Allow once", decision: "once" as const },
     { title: "Always allow", decision: "always" as const },
     { title: "Reject", decision: "reject" as const },
   );
+
+  if (detail) {
+    void vscode.window.showInformationMessage(detail);
+  }
 
   return { decision: choice?.decision ?? "reject" };
 }

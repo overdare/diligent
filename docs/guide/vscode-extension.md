@@ -20,7 +20,7 @@ From the repository root:
 bun run vscode:build
 ```
 
-This writes the packaged extension files to `packages/vscode/dist/`.
+This writes the packaged extension files to `apps/vscode-extension/dist/`.
 
 ## Package a VSIX
 
@@ -31,7 +31,7 @@ bun run vscode:package
 The generated artifact is written to:
 
 ```text
-packages/vscode/dist/diligent.vsix
+apps/vscode-extension/dist/diligent.vsix
 ```
 
 ## Install from VSIX
@@ -39,7 +39,7 @@ packages/vscode/dist/diligent.vsix
 1. Open VS Code.
 2. Open the Extensions view.
 3. Run **Extensions: Install from VSIX...**.
-4. Select `packages/vscode/dist/diligent.vsix`.
+4. Select `apps/vscode-extension/dist/diligent.vsix`.
 
 After install, the Activity Bar shows a **Diligent** container.
 

@@ -30,7 +30,7 @@ export interface ThreadSessionServerRequestHandlers {
 
 export class ThreadSession {
   private readonly rpc = new DiligentRpcClient();
-  private subscriptionId: string | null = null;
+  private readonly subscriptions = new Map<string, string>();
   private started = false;
 
   constructor(
@@ -47,9 +47,9 @@ export class ThreadSession {
       this.store.setConnection("starting", null);
       const handle = this.process.start(this.config.processOptions);
       await this.rpc.start({
-        stdin: handle.stdin,
-        stdout: handle.stdout,
-        stderr: handle.stderr,
+        stdin: handle.stdin as import("node:stream").Writable,
+        stdout: handle.stdout as import("node:stream").Readable,
+        stderr: handle.stderr as import("node:stream").Readable,
         kill: () => handle.kill(),
         exit: handle.exit,
       });
@@ -82,35 +82,42 @@ export class ThreadSession {
       cwd: this.config.cwd,
       mode: "default",
     });
-    await this.selectThread(response.threadId);
+    await this.ensureSubscribed(response.threadId);
+    this.store.setActiveThread(response.threadId);
+    await this.readThread(response.threadId);
     await this.refreshThreads();
     return response.threadId;
   }
 
   async selectThread(threadId: string): Promise<ThreadReadResponse> {
-    if (this.subscriptionId) {
-      await this.rpc
-        .request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE, { subscriptionId: this.subscriptionId })
-        .catch(() => undefined);
-      this.subscriptionId = null;
-    }
-    const subscription = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId });
-    this.subscriptionId = subscription.subscriptionId;
+    await this.ensureSubscribed(threadId);
     this.store.setActiveThread(threadId);
-    const read = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
-    this.store.setThreadRead(threadId, read);
+    return (await this.readThread(threadId)) as ThreadReadResponse;
+  }
+
+  async readThread(threadId?: string): Promise<ThreadReadResponse | null> {
+    const selectedThreadId = threadId ?? this.store.snapshot().activeThreadId;
+    if (!selectedThreadId) {
+      return null;
+    }
+
+    const read = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: selectedThreadId });
+    this.store.setThreadRead(selectedThreadId, read);
     return read;
   }
 
-  async sendPrompt(text: string): Promise<void> {
+  async sendPrompt(text: string, threadId?: string): Promise<string> {
     const state = this.store.snapshot();
-    const threadId = state.activeThreadId ?? (await this.createThread());
-    await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId, message: text });
+    const targetThreadId = threadId ?? state.activeThreadId ?? (await this.createThread());
+    await this.ensureSubscribed(targetThreadId);
+    this.store.setActiveThread(targetThreadId);
+    await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId: targetThreadId, message: text });
+    return targetThreadId;
   }
 
-  async interrupt(): Promise<boolean> {
+  async interrupt(threadId?: string): Promise<boolean> {
     const result = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
-      threadId: this.store.snapshot().activeThreadId ?? undefined,
+      threadId: threadId ?? this.store.snapshot().activeThreadId ?? undefined,
     });
     return result.interrupted;
   }
@@ -120,7 +127,16 @@ export class ThreadSession {
     await this.process.dispose();
     this.store.setConnection("stopped", null);
     this.started = false;
-    this.subscriptionId = null;
+    this.subscriptions.clear();
+  }
+
+  private async ensureSubscribed(threadId: string): Promise<void> {
+    if (this.subscriptions.has(threadId)) {
+      return;
+    }
+
+    const subscription = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE, { threadId });
+    this.subscriptions.set(threadId, subscription.subscriptionId);
   }
 
   private async handleServerRequest(

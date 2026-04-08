@@ -60,5 +60,6 @@ describe("ThreadStore", () => {
     expect(snapshot.activeThreadId).toBe("thread-1");
     expect(snapshot.threadReads["thread-1"]?.cwd).toBe("/tmp");
     expect(snapshot.activeThreadStatus).toBe("busy");
+    expect(snapshot.threadStatuses["thread-1"]).toBe("busy");
   });
 });

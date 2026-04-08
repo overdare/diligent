@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="210" fill="#3B1F0E"/>
+
+  <!-- Ears (behind head) -->
+  <ellipse cx="318" cy="310" rx="88" ry="105" fill="#2E1709"/>
+  <ellipse cx="706" cy="310" rx="88" ry="105" fill="#2E1709"/>
+  <ellipse cx="318" cy="314" rx="58" ry="72" fill="#B96840"/>
+  <ellipse cx="706" cy="314" rx="58" ry="72" fill="#B96840"/>
+
+  <!-- Head -->
+  <circle cx="512" cy="490" r="238" fill="#7A4220"/>
+
+  <!-- Face patch -->
+  <ellipse cx="512" cy="548" rx="172" ry="162" fill="#C47848"/>
+
+  <!-- Eyes -->
+  <circle cx="428" cy="462" r="50" fill="#0D0500"/>
+  <circle cx="596" cy="462" r="50" fill="#0D0500"/>
+  <!-- Shine -->
+  <circle cx="444" cy="445" r="16" fill="white" opacity="0.9"/>
+  <circle cx="612" cy="445" r="16" fill="white" opacity="0.9"/>
+
+  <!-- Nose -->
+  <ellipse cx="512" cy="565" rx="52" ry="36" fill="#160800"/>
+
+  <!-- Mouth curve -->
+  <path d="M 468 610 Q 512 645 556 610" stroke="#160800" stroke-width="7" fill="none" stroke-linecap="round"/>
+
+  <!-- Teeth -->
+  <rect x="472" y="610" width="55" height="74" rx="11" fill="#FFFEF0"/>
+  <rect x="497" y="610" width="5" height="74" fill="#CCCCB5"/>
+  <rect x="502" y="610" width="55" height="74" rx="11" fill="#FFFEF0"/>
+
+  <!-- Tail (flat, at bottom) -->
+  <ellipse cx="512" cy="886" rx="155" ry="65" fill="#5A3015"/>
+  <!-- Tail cross-hatch lines -->
+  <line x1="390" y1="865" x2="634" y2="865" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="380" y1="886" x2="644" y2="886" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="392" y1="907" x2="632" y2="907" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="420" y1="840" x2="420" y2="928" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="470" y1="828" x2="470" y2="936" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="512" y1="824" x2="512" y2="938" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="554" y1="828" x2="554" y2="936" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+  <line x1="604" y1="840" x2="604" y2="928" stroke="#3B1F0E" stroke-width="5" opacity="0.5"/>
+
+  <!-- Body (small peek) -->
+  <ellipse cx="512" cy="780" rx="155" ry="90" fill="#7A4220"/>
+</svg>
