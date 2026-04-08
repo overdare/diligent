@@ -39,7 +39,10 @@
     "desktop:dev": "bun run --cwd apps/overdare-agent dev",
     "desktop:build": "bun run --cwd apps/overdare-agent build",
     "desktop:build:exe-only": "bun run --cwd apps/overdare-agent build:exe-only",
-    "package": "bun run --cwd apps/overdare-agent scripts/package.ts"
+    "package": "bun run --cwd apps/overdare-agent scripts/package.ts",
+    "vscode:build": "bun run --cwd packages/vscode build",
+    "vscode:test": "bun run --cwd packages/vscode test",
+    "vscode:package": "bun run --cwd packages/vscode package"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
