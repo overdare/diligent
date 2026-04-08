@@ -289,8 +289,8 @@ export class ThreadStore {
     }
   }
 
-  addLines(lines: string[]): void {
-    this.items.push({ kind: "plain", lines });
+  addLines(lines: string[], options?: { separateBefore?: boolean }): void {
+    this.items.push({ kind: "plain", lines, separateBefore: options?.separateBefore === true });
     this.options.requestRender();
   }
 

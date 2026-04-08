@@ -1,7 +1,7 @@
 // @summary Tests for transcript store state reduction and rendering-adjacent behavior
 import { describe, expect, test } from "bun:test";
 import { ThreadStore } from "../../../src/tui/components/thread-store";
-import { renderTranscript } from "../../../src/tui/components/transcript-render";
+import { renderCommittedTranscriptItems, renderTranscript } from "../../../src/tui/components/transcript-render";
 
 function stripAnsi(input: string): string {
   let out = "";
@@ -237,6 +237,27 @@ describe("ThreadStore", () => {
     store.handleEvent({ type: "status_change", status: "idle" });
     const afterIdle = renderTranscript(store, 80).map(stripAnsi);
     expect(afterIdle.some((line) => line.includes("Working…"))).toBe(false);
+  });
+
+  test("transcript only inserts blank separator for explicit loop-end style lines", () => {
+    const store = new ThreadStore({ requestRender: () => {} });
+
+    store.addUserMessage("run this", { requestRender: false });
+    store.addToolResultMessage({ toolName: "bash", output: "ok", isError: false });
+    store.addAssistantMessage("done");
+    store.addLines(["⏱ Loop 9.4s · Thought 0ms"], { separateBefore: true });
+
+    const lines = renderCommittedTranscriptItems(store.getItems(), 80).map(stripAnsi);
+    const toolIndex = lines.findIndex((line) => line.includes("bash"));
+    const assistantIndex = lines.findIndex((line) => line.includes("done"));
+    const timingIndex = lines.findIndex((line) => line.includes("Loop 9.4s"));
+
+    expect(toolIndex).toBeGreaterThan(0);
+    expect(assistantIndex).toBeGreaterThan(toolIndex);
+    expect(lines[toolIndex - 1]).not.toBe("");
+    expect(lines[assistantIndex - 1]).not.toBe("");
+    expect(timingIndex).toBeGreaterThan(assistantIndex);
+    expect(lines[timingIndex - 1]).toBe("");
   });
 
   test("read tool result header does not synthesize client render payloads", () => {

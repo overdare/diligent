@@ -174,20 +174,33 @@ export class App {
       handleAgentEvent: (event) => this.handleAgentEvent(event),
       onTurnFinished: () => {
         this.chatView.finishTurn();
-        this.ringTerminalBell();
         this.appendLocalTurnTimingLine();
+        const restartingAfterInterrupt = this.pendingAbortRestartMessage !== null;
+        if (!restartingAfterInterrupt) {
+          this.ringTerminalBell();
+        }
+        const pendingTurn = this.runtime.pendingTurn;
+        this.runtime.pendingTurn = null;
+        if (!restartingAfterInterrupt) {
+          this.runtime.isProcessing = false;
+          this.inputEditor.setBusy(false);
+          this.statusBar.update({ status: "idle" });
+        }
         this.runtime.cancelRequested = false;
-        this.runtime.pendingTurn?.resolve();
+        pendingTurn?.resolve();
+        this.renderer.requestRender();
       },
       onTurnErrored: (message) => {
         this.suppressNextSteeringInjectedCommit = false;
         this.pendingAbortRestartMessage = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
+        const pendingTurn = this.runtime.pendingTurn;
+        this.runtime.pendingTurn = null;
         this.inputEditor.setBusy(false);
         this.statusBar.update({ status: "idle" });
         this.renderer.requestRender();
-        this.runtime.pendingTurn?.reject(new Error(message));
+        pendingTurn?.reject(new Error(message));
       },
       onUserInputRequestResolved: () => {
         this.runtime.activeQuestionCancel?.();
@@ -433,14 +446,6 @@ export class App {
       return;
     }
     if (event.type === "steering_injected") {
-      const queuedSteers = this.runtime.drainPendingSteers();
-      this.viewModel.prompt.setPendingSteers([]);
-
-      if (this.suppressNextSteeringInjectedCommit) {
-        this.suppressNextSteeringInjectedCommit = false;
-        return;
-      }
-
       const injectedTexts = event.messages
         .map((message) => {
           if (message.role !== "user") return null;
@@ -454,12 +459,22 @@ export class App {
         })
         .filter((content): content is string => content !== null);
 
+      if (this.suppressNextSteeringInjectedCommit) {
+        this.suppressNextSteeringInjectedCommit = false;
+        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteers);
+        return;
+      }
+
       const expectedCount = Math.max(0, event.messageCount);
-      const consumed = queuedSteers.slice(0, expectedCount);
+      const consumed = this.runtime.consumePendingSteersByText(injectedTexts);
       const fallbackCount = Math.max(0, (expectedCount > 0 ? expectedCount : injectedTexts.length) - consumed.length);
       if (fallbackCount > 0) {
-        consumed.push(...injectedTexts.slice(0, fallbackCount));
+        consumed.push(...this.runtime.consumePendingSteersFallback(fallbackCount));
       }
+      if (consumed.length === 0 && injectedTexts.length > 0) {
+        consumed.push(...injectedTexts.slice(0, expectedCount > 0 ? expectedCount : injectedTexts.length));
+      }
+      this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteers);
 
       if (consumed.length > 0) {
         this.chatView.commitSteeringMessages(consumed);
@@ -515,6 +530,12 @@ export class App {
   private handleCancel(): void {
     if (this.runtime.isProcessing && this.rpcClient && this.runtime.currentThreadId) {
       if (this.runtime.cancelRequested) {
+        this.runtime.cancelRequested = false;
+        this.runtime.isProcessing = false;
+        this.runtime.pendingTurn = null;
+        this.inputEditor.setBusy(false);
+        this.statusBar.update({ status: "idle" });
+        this.renderer.requestRender();
         return;
       }
       this.runtime.cancelRequested = true;
@@ -559,13 +580,32 @@ export class App {
     }
 
     this.pendingAbortRestartMessage = null;
+    this.runtime.isProcessing = true;
+    this.inputEditor.setBusy(true);
+    this.statusBar.update({ status: "busy" });
     this.commitLocalUserMessage(restartMessage);
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
-      threadId,
-      message: restartMessage,
-      content: [{ type: "text", text: restartMessage }],
-      model: this.config.model.id || undefined,
-    });
+    try {
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+        threadId,
+        message: restartMessage,
+        content: [{ type: "text", text: restartMessage }],
+        model: this.config.model.id || undefined,
+      });
+    } catch (error) {
+      this.runtime.isProcessing = false;
+      this.runtime.cancelRequested = false;
+      this.inputEditor.setBusy(false);
+      this.statusBar.update({ status: "idle" });
+      this.chatView.handleEvent({
+        type: "error",
+        error: {
+          name: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+        fatal: false,
+      });
+      this.renderer.requestRender();
+    }
   }
 
   private handleAppServerStderr(line: string): void {
@@ -667,7 +707,7 @@ export class App {
         : this.runtime.reasoningAccumulatedMs;
     const line = buildTurnTimingLine({ loopMs, thinkingMs });
     if (line) {
-      this.chatView.addLines([line]);
+      this.chatView.addLines([line], { separateBefore: true });
     }
 
     this.runtime.turnStartedAtMs = null;

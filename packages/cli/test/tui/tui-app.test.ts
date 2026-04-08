@@ -518,6 +518,88 @@ describe("App", () => {
     expect(resumedCall).toBeDefined();
   });
 
+  test("interrupted turn restart keeps processing alive until restarted turn completes", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
+
+    const cfg = makeConfig(streamFn);
+    const { app, terminal } = createAppHarness(cfg, workspace);
+    try {
+      await app.start();
+      await wait(30);
+      const runtime = (app as unknown as { runtime: { isProcessing: boolean } }).runtime;
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await wait(80);
+
+      terminal.emitText("retry with changes");
+      terminal.emitEnter();
+      await wait(40);
+
+      terminal.emitCtrlC();
+
+      await waitFor(() => calls.length >= 2 && runtime.isProcessing === false, { timeoutMs: 4000, intervalMs: 20 });
+
+      terminal.emitText("final check");
+      terminal.emitEnter();
+
+      await waitFor(() => calls.length >= 3, { timeoutMs: 4000, intervalMs: 20 });
+
+      const finalCall = calls.at(-1);
+      expect(finalCall).toBeDefined();
+      expect(
+        finalCall?.messages.some((message) => {
+          if (message.role !== "user") return false;
+          if (typeof message.content === "string") return message.content === "final check";
+          const text = message.content
+            .filter((block): block is { type: "text"; text: string } => block.type === "text")
+            .map((block) => block.text)
+            .join("\n");
+          return text === "final check";
+        }),
+      ).toBe(true);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+  });
+
+  test("steering_injected only removes acknowledged pending steers", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const streamFn = createScriptedStreamFunction([{ awaitAbort: true }]);
+
+    const cfg = makeConfig(streamFn);
+    const { app, terminal } = createAppHarness(cfg, workspace);
+    try {
+      await app.start();
+      await wait(30);
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await wait(80);
+
+      terminal.emitText("first steer");
+      terminal.emitEnter();
+      await wait(30);
+
+      terminal.emitText("second steer");
+      terminal.emitEnter();
+      await wait(120);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(terminal.stdout.writes.join(""));
+    expect(output).toContain("first steer");
+    expect(output).toContain("⚑ second steer");
+  });
+
   test("rings terminal bell when turn completes", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const streamFn = createScriptedStreamFunction([{ message: createAssistantMessage({ text: "ok" }) }]);
