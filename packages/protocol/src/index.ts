@@ -6,5 +6,5 @@ export * from "./methods";
 export * from "./notification-adapter";
 export * from "./server-notifications";
 export * from "./server-requests";
-export * from "./tool-name";
 export * from "./tool-classification";
+export * from "./tool-name";

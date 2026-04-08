@@ -7,12 +7,7 @@
  * packages/runtime/src/tools/tool-metadata.ts (TOOL_CAPABILITIES registry).
  * CLI imports this directly; runtime re-exports it for backward compatibility.
  */
-export const COLLAB_TOOL_NAMES = new Set([
-  "spawn_agent",
-  "wait",
-  "send_input",
-  "close_agent",
-]);
+export const COLLAB_TOOL_NAMES = new Set(["spawn_agent", "wait", "send_input", "close_agent"]);
 
 /**
  * Tools that have custom render logic for richer UI display.
