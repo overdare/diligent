@@ -737,7 +737,3 @@ function isAbsolutePath(pathValue: string): boolean {
   if (pathValue.startsWith("/")) return true;
   return /^[a-zA-Z]:\//.test(pathValue);
 }
-
-export type { RenderStrategy } from "./render-strategies";
-// Re-export dispatchers from render-strategies for backward compatibility
-export { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "./render-strategies";
