@@ -338,6 +338,66 @@ export function buildInstanceMoveRender(args: Record<string, unknown>, output: s
   };
 }
 
+export function buildScriptGrepRender(pattern: string, matchCount: number, scriptsSearched: number): ToolRenderPayload {
+  return {
+    inputSummary: clip(`grep ${pattern}`),
+    outputSummary: matchCount === 0 ? "no matches" : `${matchCount} match${matchCount === 1 ? "" : "es"}`,
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio script grep",
+        items: [
+          { key: "pattern", value: pattern },
+          { key: "matches", value: String(matchCount) },
+          { key: "scripts searched", value: String(scriptsSearched) },
+        ],
+      },
+      ...(matchCount === 0 ? [{ type: "summary" as const, text: "No matches found.", tone: "info" as const }] : []),
+    ],
+  };
+}
+
+export function buildScriptReadRender(targetGuid: string, scriptName: string, lineCount: number): ToolRenderPayload {
+  return {
+    inputSummary: clip(scriptName || targetGuid),
+    outputSummary: `${lineCount} line${lineCount === 1 ? "" : "s"} read`,
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio script read",
+        items: [
+          { key: "targetGuid", value: targetGuid },
+          { key: "name", value: scriptName },
+          { key: "lines", value: String(lineCount) },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildScriptEditRender(
+  args: { targetGuid: string; old_string: string; new_string: string; replace_all: boolean },
+  output: string,
+  count: number,
+): ToolRenderPayload {
+  return {
+    inputSummary: clip(`edit ${args.targetGuid}`),
+    outputSummary: `${count} edit${count === 1 ? "" : "s"} applied`,
+    blocks: [
+      {
+        type: "key_value",
+        title: "Studio script edit",
+        items: [
+          { key: "targetGuid", value: args.targetGuid },
+          { key: "replacements", value: String(count) },
+          ...(args.replace_all ? [{ key: "replace_all", value: "true" }] : []),
+        ],
+      },
+      { type: "summary", text: firstLine(output, "Script edited."), tone: "success" },
+    ],
+  };
+}
+
 export function buildActionSequencerApplyJsonRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const instanceGuid = readString(args.instanceGuid) ?? "";
   const jsonFilePath = readString(args.jsonFilePath) ?? "";

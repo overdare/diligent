@@ -6,10 +6,9 @@ import {
   createGrepRenderPayload,
   createPatchDiffRenderPayload,
   createPlanRenderPayload,
-  createToolEndRenderPayloadFromInput,
-  createToolStartRenderPayload,
   createUpdateKnowledgeRenderPayload,
 } from "../../src/tools/render-payload";
+import { createToolEndRenderPayloadFromInput, createToolStartRenderPayload } from "../../src/tools/render-strategies";
 
 describe("search render payload builders", () => {
   const cwd = process.cwd().replace(/\\/g, "/");

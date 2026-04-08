@@ -49,7 +49,7 @@ export const manifest = {
 
 // ── Tool factory ──────────────────────────────────────────────────────────────
 
-export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
+export async function createTools(pluginCtx: { cwd: string }): Promise<Tool[]> {
   return [
     {
       name: validatelua.name,
@@ -57,7 +57,7 @@ export async function createTools(_ctx: { cwd: string }): Promise<Tool[]> {
       parameters: validatelua.parameters,
       supportParallel: false,
       async execute(args, ctx) {
-        return validatelua.execute(args as z.infer<typeof validatelua.parameters>, ctx);
+        return validatelua.execute(args as z.infer<typeof validatelua.parameters>, ctx, pluginCtx.cwd);
       },
     },
   ];

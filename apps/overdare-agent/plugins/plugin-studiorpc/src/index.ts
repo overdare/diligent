@@ -5,6 +5,11 @@ import { createInstanceDeleteTool } from "./tools/instance-delete-tool.ts";
 import { createInstanceMoveTool } from "./tools/instance-move-tool.ts";
 import { createInstanceReadTool } from "./tools/instance-read-tool.ts";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool.ts";
+import { createScriptAddTool } from "./tools/script-add-tool.ts";
+import { createScriptDeleteTool } from "./tools/script-delete-tool.ts";
+import { createScriptEditTool } from "./tools/script-edit-tool.ts";
+import { createScriptGrepTool } from "./tools/script-grep-tool.ts";
+import { createScriptReadTool } from "./tools/script-read-tool.ts";
 import { createWriteLock } from "./write-lock.ts";
 
 export const manifest = {
@@ -25,6 +30,11 @@ export async function createTools(ctx: { cwd: string }): Promise<Tool[]> {
     createInstanceUpsertTool(ctx.cwd, writeLock),
     createInstanceDeleteTool(ctx.cwd, writeLock),
     createInstanceMoveTool(ctx.cwd, writeLock),
+    createScriptReadTool(ctx.cwd),
+    createScriptGrepTool(ctx.cwd),
+    createScriptAddTool(ctx.cwd, writeLock),
+    createScriptDeleteTool(ctx.cwd, writeLock),
+    createScriptEditTool(ctx.cwd, writeLock),
   ];
 
   for (const mod of methodModules) {

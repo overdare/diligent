@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { access, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -16,28 +17,62 @@ type ToolRenderPayload = {
 
 const execFileAsync = promisify(execFile);
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── .ovdrjm helpers (minimal subset) ─────────────────────────────────────────
 
-async function findLuaFiles(dirPath: string): Promise<string[]> {
-  const results: string[] = [];
-  const entries = await readdir(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...(await findLuaFiles(fullPath)));
-    } else if (entry.isFile() && (entry.name.endsWith(".lua") || entry.name.endsWith(".luau"))) {
-      results.push(fullPath);
+type OvdrjmNode = Record<string, unknown> & {
+  ActorGuid?: unknown;
+  LuaChildren?: unknown;
+};
+
+function findNodeByActorGuid(node: OvdrjmNode, targetGuid: string): OvdrjmNode | undefined {
+  if (typeof node.ActorGuid === "string" && node.ActorGuid === targetGuid) return node;
+  if (!Array.isArray(node.LuaChildren)) return undefined;
+  for (const child of node.LuaChildren) {
+    if (typeof child !== "object" || child === null) continue;
+    const found = findNodeByActorGuid(child as OvdrjmNode, targetGuid);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function collectAllScripts(node: OvdrjmNode): OvdrjmNode[] {
+  const result: OvdrjmNode[] = [];
+  const instanceType = typeof node.InstanceType === "string" ? node.InstanceType : undefined;
+  if (instanceType && SCRIPT_CLASSES.has(instanceType)) {
+    result.push(node);
+  }
+  if (Array.isArray(node.LuaChildren)) {
+    for (const child of node.LuaChildren) {
+      if (typeof child === "object" && child !== null) {
+        result.push(...collectAllScripts(child as OvdrjmNode));
+      }
     }
   }
-  return results;
+  return result;
 }
+
+function readOvdrjmRoot(cwd: string): OvdrjmNode {
+  const entries = readdirSync(cwd, { withFileTypes: true });
+  const umapFile = entries.find((e) => e.isFile() && e.name.toLowerCase().endsWith(".umap"));
+  if (!umapFile) throw new Error("No .umap file found in current working directory.");
+  const ovdrjmPath = join(cwd, umapFile.name.replace(/\.umap$/i, ".ovdrjm"));
+  const buf = readFileSync(ovdrjmPath);
+  const raw = buf[0] === 0xff && buf[1] === 0xfe ? new TextDecoder("utf-16le").decode(buf) : buf.toString("utf-8");
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const root = parsed.Root;
+  if (typeof root !== "object" || root === null) throw new Error("Invalid .ovdrjm format: Root object is missing.");
+  return root as OvdrjmNode;
+}
+
+const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function ensureSetupFiles(dir: string): Promise<string> {
   const luaurcPath = join(dir, ".luaurc");
   if (!existsSync(luaurcPath)) {
     await writeFile(luaurcPath, JSON.stringify({ languageMode: "strict" }, null, 2), "utf-8");
   }
-
   const sourcemapPath = join(dir, "sourcemap.temp.json");
   if (!existsSync(sourcemapPath)) {
     await writeFile(
@@ -46,15 +81,7 @@ async function ensureSetupFiles(dir: string): Promise<string> {
       "utf-8",
     );
   }
-
   return sourcemapPath;
-}
-
-async function removeBOM(filePath: string): Promise<void> {
-  const buf = await readFile(filePath);
-  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
-    await writeFile(filePath, buf.subarray(3));
-  }
 }
 
 function filterOutput(raw: string): string {
@@ -65,83 +92,50 @@ function filterOutput(raw: string): string {
     .trim();
 }
 
-// ── Plugin directory resolution ───────────────────────────────────────────────
+// ── Plugin directory resolution ──────────────────────────────────────────────
 
-/**
- * Resolve the plugin's own root directory.
- *
- * - Compiled (index.js at plugin root): dirname(import.meta.url) = plugin root
- * - Dev source (src/validatelua.ts):    dirname(import.meta.url) = src/ → go up one level
- */
 function getPluginDir(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url));
   return path.basename(dir) === "src" ? path.dirname(dir) : dir;
 }
 
-// ── Config resolution ─────────────────────────────────────────────────────────
+// ── Config resolution ────────────────────────────────────────────────────────
 
-/**
- * Resolve luau-lsp binary path.
- *
- * Priority:
- *   1. LUAU_LSP_PATH env var
- *   2. config.luauLspPath  (~/.diligent/overdare.jsonc)
- *   3. <pluginDir>/luaulsp[.exe]  (bundled alongside plugin)
- *   4. "luau-lsp" (PATH lookup)
- */
 function resolveLuauLspPath(): string {
   if (process.env.LUAU_LSP_PATH) return process.env.LUAU_LSP_PATH;
-
   const cfg = loadOverdareConfig();
   if (cfg.luauLspPath) return cfg.luauLspPath;
-
   const bin = process.platform === "win32" ? "luau-lsp.exe" : "luau-lsp";
   const bundled = join(getPluginDir(), bin);
   return existsSync(bundled) ? bundled : "luau-lsp";
 }
 
-/**
- * Resolve OVERDARE type definitions path.
- *
- * Priority:
- *   1. OVERDARE_TYPES_PATH env var
- *   2. config.typesPath  (~/.diligent/overdare.jsonc)
- *   3. <pluginDir>/overdare-types.d.lua  (bundled alongside plugin)
- *   4. undefined (run without types)
- */
 function resolveTypesPath(): string | undefined {
   if (process.env.OVERDARE_TYPES_PATH) return process.env.OVERDARE_TYPES_PATH;
-
   const cfg = loadOverdareConfig();
   if (cfg.typesPath) return cfg.typesPath;
-
   const bundled = join(getPluginDir(), "overdare-types.d.lua");
   return existsSync(bundled) ? bundled : undefined;
 }
 
-// ── Exported tool shape ───────────────────────────────────────────────────────
+// ── Exported tool shape ──────────────────────────────────────────────────────
 
 export const name = "validatelua";
 
-export const description = `Validates Luau script code for type errors and lint warnings using luau-lsp analyze. Call this tool to ensure code quality.
+export const description = `Validates Luau script code for type errors and lint warnings using luau-lsp analyze.
 
-Takes a \`filePath\` parameter containing either:
-- A path to a single Luau file (.lua / .luau)
-- A path to a folder — all *.lua / *.luau files inside (recursively) will be validated
+Takes \`targetGuids\` — an array of script GUIDs to validate. If omitted, validates ALL scripts in the level.
+Reads script Source from the .ovdrjm level file, writes to temp files, runs luau-lsp, and returns results.
 
-If the Lua file does not exist, use the studiorpc_script_add tool to generate it under ./Lua/ first.
+Returns the luau-lsp analyze output grouped per script. If no issues are found, returns "[OK] ScriptName" per script.
 
-Returns the luau-lsp analyze output. For folders, results are grouped per file with a summary at the end.
-If no issues are found, returns "No issues found. Code is valid." (single file) or "[OK] filename" per file.
-
-Among the reported errors, Instance property-related errors are critical and must be addressed. Other errors are generally less important and can be deprioritized.
-
-Configuration (environment variables):
-  - LUAU_LSP_PATH: path to luau-lsp binary (default: bundled sidecar or PATH)
-  - OVERDARE_TYPES_PATH: path to overdare-types.d.lua type definitions`;
+Among the reported errors, Instance property-related errors are critical and must be addressed. Other errors are generally less important and can be deprioritized.`;
 
 export const parameters = z.object({
-  filePath: z.string().describe("Path to a Luau file or a folder containing Luau files to validate"),
+  targetGuids: z
+    .array(z.string())
+    .optional()
+    .describe("GUIDs of scripts to validate. If omitted, validates all scripts in the level."),
 });
 
 type Params = z.infer<typeof parameters>;
@@ -163,12 +157,49 @@ interface ToolResult {
   metadata?: Record<string, unknown>;
 }
 
-export async function execute(args: Params, ctx: ToolContext): Promise<ToolResult> {
+interface ScriptInfo {
+  guid: string;
+  name: string;
+  source: string;
+}
+
+function resolveScripts(cwd: string, targetGuids?: string[]): ScriptInfo[] {
+  const root = readOvdrjmRoot(cwd);
+
+  if (!targetGuids || targetGuids.length === 0) {
+    // Validate all scripts
+    const allScripts = collectAllScripts(root);
+    return allScripts.map((node) => ({
+      guid: typeof node.ActorGuid === "string" ? node.ActorGuid : "",
+      name: typeof node.Name === "string" ? node.Name : "unnamed",
+      source: typeof node.Source === "string" ? node.Source : "",
+    }));
+  }
+
+  // Validate specific GUIDs
+  const scripts: ScriptInfo[] = [];
+  for (const guid of targetGuids) {
+    const target = findNodeByActorGuid(root, guid);
+    if (!target) throw new Error(`ActorGuid not found: ${guid}`);
+    const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
+    if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+      throw new Error(`Instance ${guid} is ${instanceType ?? "unknown"}, not a script.`);
+    }
+    scripts.push({
+      guid,
+      name: typeof target.Name === "string" ? target.Name : "unnamed",
+      source: typeof target.Source === "string" ? target.Source : "",
+    });
+  }
+  return scripts;
+}
+
+export async function execute(args: Params, ctx: ToolContext, cwd: string): Promise<ToolResult> {
   const approval = await ctx.approve({
     permission: "execute",
     toolName: name,
-    description: `Validate Luau: ${args.filePath}`,
-    details: { filePath: args.filePath },
+    description: `Validate Luau: ${args.targetGuids?.length ?? "all"} script(s)`,
+    details: { targetGuids: args.targetGuids },
   });
   if (approval === "reject") {
     return { output: "[Rejected by user]", metadata: { error: true } };
@@ -200,103 +231,119 @@ export async function execute(args: Params, ctx: ToolContext): Promise<ToolResul
     }
   }
 
-  // Verify target path exists
+  // Resolve scripts from .ovdrjm
+  let scripts: ScriptInfo[];
   try {
-    await access(args.filePath);
-  } catch {
-    throw new Error(`Path not found: ${args.filePath}`);
-  }
-
-  const targetStat = await stat(args.filePath);
-  const isDirectory = targetStat.isDirectory();
-
-  let luaFiles: string[];
-  let rootDir: string;
-
-  if (isDirectory) {
-    luaFiles = await findLuaFiles(args.filePath);
-    rootDir = args.filePath;
-    if (luaFiles.length === 0) {
-      return {
-        output: "No .lua / .luau files found in the specified directory.",
-        render: buildValidateLuaRender(args.filePath, "No .lua / .luau files found in the specified directory."),
-        metadata: { fileCount: 0, issueCount: 0 },
-      };
-    }
-  } else {
-    luaFiles = [args.filePath];
-    rootDir = path.dirname(args.filePath);
-  }
-
-  // Strip BOM from all files before analysis
-  for (const file of luaFiles) {
-    await removeBOM(file);
-  }
-
-  // Ensure .luaurc and sourcemap.temp.json exist in root dir
-  const sourcemapPath = await ensureSetupFiles(rootDir);
-
-  // Build luau-lsp analyze arguments
-  const analyzeArgs = ["analyze", "--sourcemap", sourcemapPath];
-  if (typesPath) {
-    analyzeArgs.push("--definitions", typesPath);
-  }
-  analyzeArgs.push(...luaFiles);
-
-  // Run analysis (non-zero exit = issues found, we catch and use the output)
-  const { stdout, stderr } = await execFileAsync(luauLspPath, analyzeArgs).catch(
-    (error: { stdout?: string; stderr?: string }) => ({
-      stdout: error.stdout ?? "",
-      stderr: error.stderr ?? "",
-    }),
-  );
-
-  const rawOutput = filterOutput([stdout, stderr].filter(Boolean).join("\n"));
-
-  // ── Single file ──────────────────────────────────────────────────────────────
-  if (!isDirectory || luaFiles.length === 1) {
+    scripts = resolveScripts(cwd, args.targetGuids);
+  } catch (err) {
     return {
-      output: rawOutput || "No issues found. Code is valid.",
-      render: buildValidateLuaRender(args.filePath, rawOutput || "No issues found. Code is valid."),
-      metadata: { fileCount: 1, issueCount: rawOutput ? 1 : 0 },
+      output: `Error: ${err instanceof Error ? err.message : String(err)}`,
+      metadata: { error: true },
     };
   }
 
-  // ── Multi-file: group output lines per file ──────────────────────────────────
-  const fileIssues = new Map<string, string[]>();
-  for (const file of luaFiles) {
-    fileIssues.set(file, []);
+  if (scripts.length === 0) {
+    return {
+      output: "No scripts found in the level.",
+      render: buildValidateLuaRender("(no scripts)", "No scripts found in the level."),
+      metadata: { fileCount: 0, issueCount: 0 },
+    };
   }
 
-  for (const line of rawOutput.split("\n")) {
-    if (!line.trim()) continue;
+  // Write scripts to temp directory
+  const tempDir = await mkdtemp(join(tmpdir(), "validatelua-"));
+  try {
+    // Map: temp file path → ScriptInfo
+    const fileToScript = new Map<string, ScriptInfo>();
+    const luaFiles: string[] = [];
+
+    for (const script of scripts) {
+      const fileName = `${script.guid}.lua`;
+      const filePath = join(tempDir, fileName);
+      await writeFile(filePath, script.source, "utf-8");
+      fileToScript.set(filePath, script);
+      luaFiles.push(filePath);
+    }
+
+    // Setup luaurc and sourcemap in temp dir
+    const sourcemapPath = await ensureSetupFiles(tempDir);
+
+    // Build luau-lsp analyze arguments
+    const analyzeArgs = ["analyze", "--sourcemap", sourcemapPath];
+    if (typesPath) {
+      analyzeArgs.push("--definitions", typesPath);
+    }
+    analyzeArgs.push(...luaFiles);
+
+    // Run analysis
+    const { stdout, stderr } = await execFileAsync(luauLspPath, analyzeArgs).catch(
+      (error: { stdout?: string; stderr?: string }) => ({
+        stdout: error.stdout ?? "",
+        stderr: error.stderr ?? "",
+      }),
+    );
+
+    const rawOutput = filterOutput([stdout, stderr].filter(Boolean).join("\n"));
+
+    // ── Single script ──────────────────────────────────────────────────────────
+    if (scripts.length === 1) {
+      const script = scripts[0];
+      // Replace temp file paths with script name in output
+      const output = rawOutput
+        ? rawOutput.replaceAll(luaFiles[0], `${script.name} [${script.guid}]`)
+        : "No issues found. Code is valid.";
+      return {
+        output,
+        render: buildValidateLuaRender(`${script.name} [${script.guid}]`, output),
+        metadata: { fileCount: 1, issueCount: rawOutput ? 1 : 0, scripts: [{ guid: script.guid, name: script.name }] },
+      };
+    }
+
+    // ── Multi-script: group output lines per script ────────────────────────────
+    const fileIssues = new Map<string, string[]>();
     for (const file of luaFiles) {
-      if (line.startsWith(`${file}(`) || line.startsWith(`${file}:`)) {
-        fileIssues.get(file)!.push(line);
-        break;
+      fileIssues.set(file, []);
+    }
+
+    for (const line of rawOutput.split("\n")) {
+      if (!line.trim()) continue;
+      for (const file of luaFiles) {
+        if (line.startsWith(`${file}(`) || line.startsWith(`${file}:`)) {
+          fileIssues.get(file)!.push(line);
+          break;
+        }
       }
     }
-  }
 
-  let totalIssues = 0;
-  const sections: string[] = [];
+    let totalIssues = 0;
+    const sections: string[] = [];
 
-  for (const file of luaFiles) {
-    const issues = fileIssues.get(file)!;
-    const relPath = path.relative(rootDir, file);
-    if (issues.length === 0) {
-      sections.push(`[OK] ${relPath}`);
-    } else {
-      totalIssues += issues.length;
-      sections.push(`[${issues.length} issue(s)] ${relPath}\n${issues.join("\n")}`);
+    for (const file of luaFiles) {
+      const script = fileToScript.get(file)!;
+      const issues = fileIssues.get(file)!;
+      const label = `${script.name} [${script.guid}]`;
+      if (issues.length === 0) {
+        sections.push(`[OK] ${label}`);
+      } else {
+        totalIssues += issues.length;
+        const mappedIssues = issues.map((line) => line.replaceAll(file, label));
+        sections.push(`[${issues.length} issue(s)] ${label}\n${mappedIssues.join("\n")}`);
+      }
     }
+
+    sections.push(`\n--- ${scripts.length} script(s) checked, ${totalIssues} issue(s) found ---`);
+
+    const output = sections.join("\n\n");
+    return {
+      output,
+      render: buildValidateLuaRender(`${scripts.length} scripts`, output),
+      metadata: {
+        fileCount: scripts.length,
+        issueCount: totalIssues,
+        scripts: scripts.map((s) => ({ guid: s.guid, name: s.name })),
+      },
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
-
-  sections.push(`\n--- ${luaFiles.length} file(s) checked, ${totalIssues} issue(s) found ---`);
-
-  return {
-    output: sections.join("\n\n"),
-    render: buildValidateLuaRender(args.filePath, sections.join("\n\n")),
-    metadata: { fileCount: luaFiles.length, issueCount: totalIssues },
-  };
 }

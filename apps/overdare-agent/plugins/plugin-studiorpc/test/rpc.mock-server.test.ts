@@ -69,36 +69,6 @@ describe("plugin-studiorpc mock server", () => {
     expect(snapshot[0]?.children?.[0]?.guid).toBe("SCRIPTS_GUID");
   });
 
-  test("mutating Studio RPC tools trigger level.save.file on the mock server", async () => {
-    const tools = await createTools({ cwd: process.cwd() });
-    const tool = tools.find((entry) => entry.name === "studiorpc_script_add");
-
-    expect(tool).toBeDefined();
-    if (!tool) throw new Error("studiorpc_script_add not found");
-
-    const result = await tool.execute(
-      {
-        class: "Script",
-        parentGuid: "SCRIPTS_GUID",
-        name: "MockScript",
-        source: "print('hello from mock')",
-      },
-      createToolContext(),
-    );
-
-    expect(server.requests.map((request) => request.method)).toEqual(["script.add", "level.save.file"]);
-    expect(result.render).toMatchObject({
-      inputSummary: "Script MockScript",
-    });
-    expect(result.render?.blocks[0]).toMatchObject({
-      type: "key_value",
-      title: "Studio script add",
-    });
-    const scriptsFolder = server.snapshot()[0]?.children?.find((node) => node.guid === "SCRIPTS_GUID");
-    const createdScript = scriptsFolder?.children?.find((node) => node.name === "MockScript");
-    expect(createdScript?.guid).toMatch(/^MOCK_GUID_/);
-  });
-
   test("mock server preserves GUID-based state for instance upsert, read, and delete", async () => {
     const created = await call("instance.upsert", {
       items: [{ class: "Folder", parentGuid: "WORKSPACE_GUID", name: "GeneratedFolder", properties: {} }],

@@ -9,14 +9,15 @@ import * as gamePlay from "./methods/game.play.ts";
 import * as gameStop from "./methods/game.stop.ts";
 import * as levelBrowse from "./methods/level.browse.ts";
 import * as levelSaveFile from "./methods/level.save.file.ts";
-import * as scriptAdd from "./methods/script.add.ts";
-import * as scriptDelete from "./methods/script.delete.ts";
+// biome-ignore lint/correctness/noUnusedImports: script.add moved to tools/script-add-tool.ts
+import * as _scriptAdd from "./methods/script.add.ts";
+// biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
+import * as _scriptDelete from "./methods/script.delete.ts";
 import {
   // biome-ignore lint/correctness/noUnusedImports: temporarily disabled — kept for easy re-enable
   buildAssetDrawerImportRender as _buildAssetDrawerImportRender,
   buildActionSequencerApplyJsonRender,
   buildAssetManagerImageImportRender,
-  buildDeleteRender,
   buildGamePlayRender,
   buildGameStopRender,
   buildInstanceDeleteRender,
@@ -25,7 +26,6 @@ import {
   buildInstanceUpsertRender,
   buildLevelBrowseRender,
   buildLevelSaveFileRender,
-  buildScriptAddRender,
 } from "./render.ts";
 
 type MethodModule = {
@@ -50,8 +50,8 @@ export const methodModules: MethodModule[] = [
   actionSequencerApplyJson,
   levelBrowse,
   levelSaveFile,
-  scriptAdd,
-  scriptDelete,
+  // scriptAdd — moved to tools/script-add-tool.ts
+  // scriptDelete — moved to tools/script-delete-tool.ts
   gamePlay,
   gameStop,
 ];
@@ -61,8 +61,8 @@ export const mutatingMethods = new Set([
   // _assetDrawerImport.method, // temporarily disabled
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
-  scriptAdd.method,
-  scriptDelete.method,
+  // scriptAdd.method — moved to tools/script-add-tool.ts
+  // scriptDelete.method — moved to tools/script-delete-tool.ts
 ]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
@@ -73,9 +73,8 @@ export const renderBuilders: Record<string, RenderBuilder> = {
     buildActionSequencerApplyJsonRender(normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
-  studiorpc_script_add: ({ normalizedArgs, output }) => buildScriptAddRender(normalizedArgs, output),
-  studiorpc_script_delete: ({ normalizedArgs, output }) =>
-    buildDeleteRender("Studio script delete", String(normalizedArgs.targetGuid ?? ""), output),
+  // studiorpc_script_add — moved to tools/script-add-tool.ts
+  // studiorpc_script_delete — moved to tools/script-delete-tool.ts
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
   studiorpc_instance_upsert: ({ normalizedArgs, output }) => buildInstanceUpsertRender(normalizedArgs, output),
   studiorpc_instance_delete: ({ normalizedArgs, output }) => buildInstanceDeleteRender(normalizedArgs, output),
