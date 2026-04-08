@@ -16,6 +16,7 @@ export type ThreadItem =
   | {
       kind: "plain";
       lines: string[];
+      separateBefore?: boolean;
     }
   | {
       kind: "assistant_chunk";

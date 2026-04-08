@@ -1,0 +1,124 @@
+{
+  "name": "diligent-vscode",
+  "version": "0.0.1",
+  "type": "module",
+  "displayName": "Diligent",
+  "description": "Internal VS Code extension for Diligent threads and conversation views.",
+  "publisher": "diligent-internal",
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "files": [
+    "dist/**",
+    "media/**",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun run src/build.ts",
+    "test": "bun test",
+    "package": "bun run build && bunx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license --out ./dist/diligent.vsix"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "activationEvents": [
+    "onView:diligent.threads",
+    "onCommand:diligent.newThread",
+    "onCommand:diligent.openConversation",
+    "onCommand:diligent.sendPrompt"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "diligent",
+          "title": "Diligent",
+          "icon": "media/diligent.svg"
+        }
+      ]
+    },
+    "views": {
+      "diligent": [
+        {
+          "id": "diligent.threads",
+          "name": "Threads"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "diligent.startServer",
+        "title": "Diligent: Start Server"
+      },
+      {
+        "command": "diligent.newThread",
+        "title": "Diligent: Start New Thread"
+      },
+      {
+        "command": "diligent.openConversation",
+        "title": "Diligent: Open Conversation"
+      },
+      {
+        "command": "diligent.sendPrompt",
+        "title": "Diligent: Send Prompt"
+      },
+      {
+        "command": "diligent.interrupt",
+        "title": "Diligent: Interrupt"
+      },
+      {
+        "command": "diligent.refreshThreads",
+        "title": "Diligent: Refresh Threads"
+      },
+      {
+        "command": "diligent.openLogs",
+        "title": "Diligent: Open Logs"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "diligent.newThread",
+          "when": "view == diligent.threads",
+          "group": "navigation"
+        },
+        {
+          "command": "diligent.refreshThreads",
+          "when": "view == diligent.threads",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Diligent",
+      "properties": {
+        "diligent.binaryPath": {
+          "type": "string",
+          "default": "diligent",
+          "description": "Path to the Diligent CLI binary used for `diligent app-server --stdio`."
+        },
+        "diligent.serverArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional CLI arguments passed before `app-server --stdio`."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "@diligent/protocol": "workspace:*",
+    "@diligent/runtime": "workspace:*",
+    "@types/node": "25.3.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "bun-types": "^1.3.10",
+    "marked": "^16.2.1",
+    "typescript": "^5.7.0",
+    "@types/mocha": "^10.0.10"
+  }
+}

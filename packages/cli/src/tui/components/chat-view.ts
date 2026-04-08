@@ -32,6 +32,7 @@ export class ChatView implements Component {
   private liveStackView: Component;
   private hasCommittedHistory = false;
   private committedHistoryLines: string[] = [];
+  private lastCommittedItem: ThreadItem | null = null;
   private readonly requestRender: () => void;
   private readonly getCommitWidth: () => number;
   private readonly onCommittedLines: ((lines: string[]) => void) | null;
@@ -79,8 +80,8 @@ export class ChatView implements Component {
     this.flushPendingCommittedItems();
   }
 
-  addLines(lines: string[]): void {
-    this.store.addLines(lines);
+  addLines(lines: string[], options?: { separateBefore?: boolean }): void {
+    this.store.addLines(lines, options);
     this.flushPendingCommittedItems();
   }
 
@@ -112,6 +113,7 @@ export class ChatView implements Component {
     this.store.clearHistory();
     this.hasCommittedHistory = false;
     this.committedHistoryLines = [];
+    this.lastCommittedItem = null;
   }
 
   clearActive(): void {
@@ -125,6 +127,7 @@ export class ChatView implements Component {
 
   finishTurn(): void {
     this.store.finishTurn();
+    this.flushPendingCommittedItems();
   }
 
   getLastUsage(): { input: number; output: number; cost: number } | null {
@@ -177,12 +180,14 @@ export class ChatView implements Component {
     const lines = renderCommittedTranscriptItems(items, width, {
       includeLeadingSeparator: this.hasCommittedHistory,
       toolResultsExpanded: this.store.isToolResultsExpanded(),
+      previousItem: this.lastCommittedItem,
     });
     if (lines.length === 0) {
       return;
     }
 
     this.committedHistoryLines.push(...lines);
+    this.lastCommittedItem = items[items.length - 1] ?? this.lastCommittedItem;
     this.onCommittedLines?.(lines);
     this.hasCommittedHistory = true;
     this.requestRender();

@@ -44,20 +44,28 @@ export function renderTranscript(store: ThreadStore, width: number): string[] {
 export function renderCommittedTranscriptItems(
   items: ThreadItem[],
   width: number,
-  options?: { includeLeadingSeparator?: boolean; toolResultsExpanded?: boolean },
+  options?: { includeLeadingSeparator?: boolean; toolResultsExpanded?: boolean; previousItem?: ThreadItem | null },
 ): string[] {
   const lines: string[] = [];
+  let previousItem: ThreadItem | null = options?.previousItem ?? null;
   for (const item of items) {
     const itemLines = renderTranscriptItemLines(item, width, options?.toolResultsExpanded === true);
     if (itemLines.length === 0) {
       continue;
     }
     const shouldSeparate =
-      !(item instanceof MarkdownView) && !("kind" in item && item.kind === "assistant_chunk" && item.continued);
+      (!(item instanceof UserMessageView) && "kind" in item && item.kind === "plain" && item.separateBefore) ||
+      (!(item instanceof UserMessageView) &&
+        item.kind === "assistant_chunk" &&
+        !item.continued &&
+        previousItem !== null &&
+        !(previousItem instanceof UserMessageView) &&
+        previousItem.kind === "thinking");
     if (shouldSeparate && (lines.length > 0 || options?.includeLeadingSeparator === true)) {
       lines.push("");
     }
     lines.push(...itemLines);
+    previousItem = item;
   }
   return lines;
 }
@@ -202,32 +210,46 @@ export function renderTranscriptSections(
     return pendingSteers.map((message) => `${t.accent}${prefix}${label}${renderPreview(message)}${t.reset}`);
   };
 
+  let previousItem: ThreadItem | null = null;
   for (const item of store.getItems()) {
+    const shouldSeparate = !(item instanceof UserMessageView) && item.kind === "plain" && item.separateBefore === true;
+    if (shouldSeparate) {
+      pushSeparator(historyLines, "item:plain:separate-before");
+    }
+
+    if (
+      !(item instanceof UserMessageView) &&
+      item.kind === "assistant_chunk" &&
+      !item.continued &&
+      previousItem !== null &&
+      !(previousItem instanceof UserMessageView) &&
+      previousItem.kind === "thinking"
+    ) {
+      pushSeparator(historyLines, "item:assistant-after-thinking");
+    }
+
     if (item instanceof UserMessageView) {
-      pushSeparator(historyLines, "item:user");
       historyLines.push(...item.render(width));
+      previousItem = item;
       continue;
     }
 
     if (item.kind === "assistant_chunk") {
-      if (!item.continued) {
-        pushSeparator(historyLines, "item:assistant_chunk");
-      }
       historyLines.push(...renderAssistantChunkLines(item.text, width, item.continued));
+      previousItem = item;
       continue;
     }
 
     if (item.kind === "thinking") {
-      pushSeparator(historyLines, "item:thinking");
       historyLines.push(item.header);
       if (item.bodyLines.length > 0) {
         historyLines.push(...item.bodyLines.map((line) => `${t.boldOff}${t.dim}  ${line}${t.reset}`));
       }
+      previousItem = item;
       continue;
     }
 
     if (item.kind === "tool_result") {
-      pushSeparator(historyLines, "item:tool_result");
       const hint = store.isToolResultsExpanded()
         ? ` ${t.dim}(ctrl+o to collapse)${t.reset}`
         : ` ${t.dim}(ctrl+o to expand)${t.reset}`;
@@ -255,9 +277,10 @@ export function renderTranscriptSections(
           historyLines.push(...previewLines.map((line) => `  ${line}`));
         }
       }
+      previousItem = item;
     } else {
-      pushSeparator(historyLines, "item:plain");
       historyLines.push(...item.lines);
+      previousItem = item;
     }
   }
 

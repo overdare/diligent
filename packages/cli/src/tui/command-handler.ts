@@ -114,13 +114,12 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
         await turnCompleted;
       } catch (err) {
         deps.handleTurnError(err);
+        deps.setPendingTurn(null);
+        deps.setIsProcessing(false);
+        deps.finishTurn();
+        deps.updateStatusBar({ status: "idle" });
+        deps.requestRender();
       }
-
-      deps.setPendingTurn(null);
-      deps.setIsProcessing(false);
-      deps.finishTurn();
-      deps.updateStatusBar({ status: "idle" });
-      deps.requestRender();
     },
 
     async handleCommand(name: string, args: string | undefined): Promise<void> {
