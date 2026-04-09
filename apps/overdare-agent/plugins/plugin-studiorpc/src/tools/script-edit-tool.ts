@@ -102,6 +102,7 @@ async function executeScriptEdit(
   const release = await writeLock.acquire();
   try {
     let count = 0;
+    let scriptName: string | undefined;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
       const root = rootDoc.Root;
@@ -122,6 +123,7 @@ async function executeScriptEdit(
         );
       }
 
+      scriptName = typeof target.Name === "string" ? target.Name : undefined;
       const source = typeof target.Source === "string" ? target.Source : "";
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
@@ -134,7 +136,7 @@ async function executeScriptEdit(
     const output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
     return {
       output,
-      render: buildScriptEditRender({ targetGuid, old_string, new_string, replace_all }, output, count),
+      render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
       metadata: { method: "script.edit", targetGuid, count },
     };
   } catch (err) {

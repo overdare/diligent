@@ -84,10 +84,28 @@ async function ensureSetupFiles(dir: string): Promise<string> {
   return sourcemapPath;
 }
 
+const IGNORED_PATTERNS = [
+  "[INFO]",
+  "'Instance'",
+  "Unknown require",
+  "Argument count mismatch",
+  "Unknown type used in",
+  "Expected this to be",
+  "Expected type",
+  "but got 'nil'",
+  "could be nil",
+  "Cannot call a value of type nil",
+  "Type 'nil'",
+  "cannot be compared",
+  "not found in table",
+  "not compatible with type",
+  "does not have key",
+];
+
 function filterOutput(raw: string): string {
   return raw
     .split("\n")
-    .filter((line) => !line.includes("[INFO]") && !line.includes("'Instance'"))
+    .filter((line) => !IGNORED_PATTERNS.some((p) => line.includes(p)))
     .join("\n")
     .trim();
 }

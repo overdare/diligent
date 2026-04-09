@@ -1,6 +1,6 @@
 --#METADATA#{"CREATABLE_INSTANCES": ["AngularVelocity", "Animation", "AnimationTrack", "Animator", "Atmosphere", "Attachment", "Backpack", "BackpackItem", "BasePart", "BaseScript", "Beam", "BillboardGui", "BindableEvent", "BlendSpace", "Bone", "BoolValue", "Camera", "CharacterMesh", "CollectionService", "Constraint", "ContextActionService", "CoreGui", "DataModel", "DataStore", "DataStoreGetOptions", "DataStoreIncrementOptions", "DataStoreInfo", "DataStoreKeyInfo", "DataStoreKeyPages", "DataStoreListingPages", "DataStoreService", "DataStoreSetOptions", "Fill", "Folder", "FormFactorPart", "Frame", "GenericSettings", "GlobalDataStore", "GuiBase2d", "GuiButton", "GuiObject", "HttpService", "Humanoid", "HumanoidDescription", "ImageButton", "ImageLabel", "InputObject", "Instance", "IntValue", "LayerCollector", "Light", "Lighting", "LinearVelocity", "LocalScript", "LuaSourceContainer", "MarketplaceService", "MaterialService", "MaterialVariant", "MeshPart", "Model", "ModuleScript", "Mouse", "NumberValue", "OrderedDataStore", "Outline", "OverlayBase", "PVInstance", "Pages", "Part", "ParticleEmitter", "PhysicsService", "Player", "PlayerGui", "PlayerScripts", "Players", "PointLight", "RemoteEvent", "ReplicatedStorage", "RunService", "ScreenGui", "Script", "ScrollingFrame", "ServerScriptService", "ServerStorage", "ServiceProvider", "SimulationBall", "Skeleton", "Sound", "SoundGroup", "SoundService", "SpawnLocation", "SpotLight", "StarterCharacterScripts", "StarterGui", "StarterPack", "StarterPlayer", "StarterPlayerScripts", "StringValue", "SurfaceGui", "SurfaceGuiBase", "Team", "Teams", "TeleportService", "TextButton", "TextLabel", "Tool", "Trail", "Tween", "TweenBase", "TweenService", "UIAspectRatioConstraint", "UIGridLayout", "UIGridStyleLayout", "UIListLayout", "UserGameSettings", "UserInputService", "UserSettings", "VFXPreset", "VectorForce", "Workspace", "WorldRankService", "WorldRoot", "WrapLayer", "WrapTarget"], "SERVICES": ["CollectionService", "ContextActionService", "DataStoreService", "HttpService", "Lighting", "MarketplaceService", "MaterialService", "PhysicsService", "Players", "ReplicatedStorage", "RunService", "ServerScriptService", "ServerStorage", "SoundService", "TeleportService", "TweenService", "UserInputService", "Workspace", "WorldRankService"]}
 -- Overdare API Type Definitions
--- Auto-generated on 2026-02-19 14:39:38
+-- Auto-generated on 2026-04-09 13:23:45
 -- DO NOT EDIT MANUALLY
 
 -- Event Types
@@ -132,7 +132,7 @@ declare Color3: {
 }
 
 declare class ColorSequence
-	KeyPoints: {any}
+	Keypoints: {any}
 end
 
 declare ColorSequence: {
@@ -173,7 +173,7 @@ declare NumberRange: {
 }
 
 declare class NumberSequence
-	KeyPoints: number
+	Keypoints: number
 end
 
 declare NumberSequence: {
@@ -816,8 +816,8 @@ declare class ParticleEmitterShapeInOut extends EnumItem
 end
 
 declare class ParticleEmitterShapeInOut_INTERNAL extends Enum
-	OutWard: ParticleEmitterShapeInOut
-	InWard: ParticleEmitterShapeInOut
+	Outward: ParticleEmitterShapeInOut
+	Inward: ParticleEmitterShapeInOut
 end
 
 declare class ParticleEmitterShapeStyle extends EnumItem
@@ -1099,6 +1099,7 @@ declare class Instance extends InstanceBase
 	function GetChildren(self): {any}
 	function GetChildrenNum(self): number
 	function GetDescendants(self): {any}
+	function GetPropertyChangedSignal(self, propertyName: string): ScriptSignal
 	function GetTags(self): {any}
 	function HasTag(self, tag: string): boolean
 	function IsA(self, InClassName: string): boolean
@@ -1119,9 +1120,7 @@ end
 declare class Constraint extends Instance
 	Attachment0: Attachment
 	Attachment1: Attachment
-	Color: Color3
 	Enabled: boolean
-	Visible: boolean
 end
 
 declare class AngularVelocity extends Constraint
@@ -1142,14 +1141,9 @@ declare class AnimationTrack extends Instance
 	Looped: boolean
 	Priority: AnimationPriority
 	Speed: number
-	TimePosition: number
 	UpperBodyAnimation: boolean
-	WeightCurrent: number
-	WeightTarget: number
 	function AdjustSpeed(self, InSpeed: number): ()
-	function AdjustWeight(self, InWeight: number, InFadeTime: number): ()
 	function GetMarkerReachedSignal(self, InName: string): ScriptSignal
-	function GetTimeOfKeyframe(self, InName: string): number
 	function Play(self, InFadeTime: number, InWeight: number, InSpeed: number): ()
 	function Stop(self, InFadeTime: number): ()
 	DidLoop: ScriptSignal
@@ -1159,15 +1153,7 @@ declare class AnimationTrack extends Instance
 end
 
 declare class Animator extends Instance
-	EvaluationThrottled: boolean
-	PreferLodEnabled: boolean
-	RootMotion: CFrame
-	RootMotionWeight: number
-	function ApplyJointVelocities(self, motors: any): ()
-	function GetPlayingAnimationTracks(self): {any}
 	function LoadAnimation(self, InAnimation: Animation): AnimationTrack
-	function RegisterEvaluationParallelCallback(self, InFunction: any): ()
-	function StepAnimations(self, InDeltaTime: number): ()
 end
 
 declare class Atmosphere extends Instance
@@ -1212,45 +1198,31 @@ end
 
 declare class BasePart extends PVInstance
 	Anchored: boolean
-	AssemblyAngularVelocity: Vector3
-	AssemblyCenterOfMass: Vector3
 	AssemblyLinearVelocity: Vector3
-	AssemblyMass: number
+	AssemblyRootPart: BasePart
 	BrickColor: BrickColor
-	CFrame: CFrame
 	CanClimb: boolean
 	CanCollide: boolean
 	CanQuery: boolean
 	CanTouch: boolean
 	CastShadow: boolean
-	CenterOfMass: Vector3
+	CFrame: CFrame
 	CollisionGroup: string
 	Color: Color3
 	CurrentPhysicalProperties: PhysicalProperties
 	CustomPhysicalProperties: PhysicalProperties
-	ExtentsCFrame: CFrame
-	ExtentsSize: Vector3
-	LocalTransparencyModifier: number
 	Locked: boolean
-	Mass: number
-	Massless: boolean
 	Material: Material
 	MaterialVariant: string
 	Orientation: Vector3
 	Position: Vector3
-	ReceiveAge: number
-	Reflectance: number
-	ResizeIncrement: number
-	RootPriority: number
-	Rotation: Vector3
 	Size: Vector3
 	TraceGroupName: string
 	Transparency: number
 	function ApplyImpulse(self, impulse: Vector3): ()
 	function GetMass(self): number
-	function PivotTo(self, InTargetCFrame: CFrame): ()
-	TouchEnded: ScriptSignal
 	Touched: ScriptSignal
+	TouchEnded: ScriptSignal
 end
 
 declare class LuaSourceContainer extends Instance
@@ -1313,9 +1285,6 @@ declare class BindableEvent extends Instance
 end
 
 declare class BlendSpace extends Instance
-	AnimationIDs: {any}
-	BlendByInertialization: boolean
-	BlendTime: number
 end
 
 declare class Bone extends Attachment
@@ -1330,14 +1299,13 @@ declare class BoolValue extends ValueBase
 end
 
 declare class Camera extends Instance
-	CFrame: CFrame
 	CameraOffset: Vector3
 	CameraSubject: Instance
 	CameraType: CameraType
+	CFrame: CFrame
 	EnableSmoothFollow: boolean
 	EnableSmoothRotation: boolean
 	FieldOfView: number
-	Focus: CFrame
 	FollowMaxDistance: number
 	SmoothFollowSpeed: number
 	SmoothRotationSpeed: number
@@ -1349,16 +1317,13 @@ declare class Camera extends Instance
 end
 
 declare class CharacterMesh extends Instance
-	BaseTextureId: number
-	MeshId: number
-	OverlayTextureId: number
 end
 
 declare class CollectionService extends Instance
 	function AddTag(self, instance: Instance, tag: string): ()
-	function GetTagged(self, tag: string): ()
-	function GetTags(self): ()
-	function HasTag(self): ()
+	function GetTagged(self, tag: string): {any}
+	function GetTags(self, instance: Instance): {any}
+	function HasTag(self, instance: Instance, tag: string): boolean
 	function RemoveTag(self, instance: Instance, tag: string): ()
 end
 
@@ -1385,6 +1350,7 @@ declare class ServiceProvider extends Instance
 end
 
 declare class DataModel extends ServiceProvider
+	Workspace: Workspace
 	function DisableJoin(self): ()
 	function EnableJoin(self): ()
 	function IsJoinEnabled(self): boolean
@@ -1438,8 +1404,6 @@ end
 declare class DataStoreService extends Instance
 	function GetDataStore(self, InName: string, InScope: string): GlobalDataStore
 	function GetGlobalDataStore(self): GlobalDataStore
-	function GetOrderedDataStore(self, InName: string, InScope: string): OrderedDataStore
-	function ListDataStoresAsync(self, InPrefix: string, InPageSize: number, InCursor: string): DataStoreListingPages
 end
 
 declare class DataStoreSetOptions extends Instance
@@ -1462,6 +1426,7 @@ declare class Folder extends Instance
 end
 
 declare class Part extends BasePart
+	BaseplateGrid: boolean
 	Shape: PartType
 end
 
@@ -1511,8 +1476,6 @@ end
 
 declare class Humanoid extends Instance
 	AirControl: number
-	AutoJumpEnabled: boolean
-	AutoRotate: boolean
 	AutomaticScalingEnabled: boolean
 	BlendSpace: BlendSpace
 	CameraOffset: Vector3
@@ -1521,14 +1484,11 @@ declare class Humanoid extends Instance
 	CharacterMeshPos: Vector3
 	DefaultBlendSpace: BlendSpace
 	DisplayDistanceType: HumanoidDisplayDistanceType
-	DisplayName: string
 	FallingDeceleration: number
 	FallingLateralFriction: number
 	GravityScale: number
 	GroundFriction: number
 	Health: number
-	HealthDisplayDistance: number
-	HipHeight: number
 	HitboxType: HitboxType
 	IgnoreBaseRotation: boolean
 	Jump: boolean
@@ -1539,50 +1499,34 @@ declare class Humanoid extends Instance
 	MaxHealth: number
 	MaxJumpCount: number
 	MaxSlopeAngle: number
-	MoveDirection: Vector3
-	PlatformStand: boolean
 	RootPart: BasePart
 	RotationSpeed: number
-	Sit: boolean
 	StompJumpMultiplier: number
 	UseJumpPower: boolean
-	WalkSpeed: number
-	WalkToPart: Instance
-	WalkToPoint: Vector3
 	WalkingDeceleration: number
-	function AddAccessory(self, InAccessory: Instance): ()
+	WalkSpeed: number
+	WalkToPart: BasePart
+	WalkToPoint: Vector3
 	function ApplyDescription(self, InDescription: HumanoidDescription, InAssetTypeVerification: AssetTypeVerification): ()
-	function ApplyDescriptionReset(self, InDescription: HumanoidDescription, InAssetTypeVerification: AssetTypeVerification): ()
 	function ChangeState(self, StateType: HumanoidStateType): ()
 	function EquipTool(self, InTool: Instance): ()
-	function GetAccessories(self): any
 	function GetAppliedDescription(self): HumanoidDescription
-	function GetState(self): HumanoidStateType
+	function GetState(self): any
 	function LoadAnimation(self, InAnimation: Animation): AnimationTrack
-	function MoveTo(self, InPosition: Vector3, InWalkToPart: Instance): ()
-	function RemoveAccessories(self): ()
+	function MoveTo(self, InPosition: Vector3, InWalkToPart: BasePart): ()
 	function SetStateEnabled(self, InHumanoidStateType: HumanoidStateType, bInEnabled: boolean): ()
 	function TakeDamage(self, InDamage: number): ()
 	function UnequipTools(self): ()
-	ApplyDescriptionFinished: ScriptSignal
 	Climbing: ScriptSignal
-	ClusterCompositionFinished: ScriptSignal
 	Died: ScriptSignal
-	EmoteTriggered: ScriptSignal
-	FallingDown: ScriptSignal
 	FreeFalling: ScriptSignal
-	GettingUp: ScriptSignal
 	HealthChanged: ScriptSignal
 	Jumping: ScriptSignal
 	Landed: ScriptSignal
 	MoveToFinished: ScriptSignal
-	PlatformStanding: ScriptSignal
-	PlatformStandingMoving: ScriptSignal
 	Running: ScriptSignal
 	StateChanged: ScriptSignal
-	StateEnabledChanged: ScriptSignal
 	Swimming: ScriptSignal
-	Touched: ScriptSignal
 end
 
 declare class HumanoidDescription extends Instance
@@ -1643,8 +1587,6 @@ declare class HumanoidDescription extends Instance
 	function SetAccessories(self, InAccessories: {any}, InIncludeRigidAccessories: boolean): ()
 	function SetEmotes(self, InEmotes: any): ()
 	function SetEquippedEmotes(self, InEquippedEmotes: {any}): ()
-	EmotesChanged: ScriptSignal
-	EquippedEmotesChanged: ScriptSignal
 end
 
 declare class ImageButton extends GuiButton
@@ -1682,7 +1624,6 @@ declare class Light extends Instance
 	Brightness: number
 	Color: Color3
 	Enabled: boolean
-	Shadows: boolean
 end
 
 declare class Lighting extends Instance
@@ -1702,6 +1643,7 @@ declare class Lighting extends Instance
 	NightBrightness: number
 	RealTimeDayDuration: number
 	Saturation: number
+	ShadowDetailLevel: ShadowDetailLevel
 	SkyColorInfluence: number
 	StarsBrightness: number
 	StarsColor: Color3
@@ -1714,11 +1656,9 @@ declare class Lighting extends Instance
 end
 
 declare class LinearVelocity extends Constraint
-	ForceLimitMode: ForceLimitMode
 	ForceLimitsEnabled: boolean
 	LineDirection: Vector3
 	LineVelocity: number
-	MaxAxesForce: Vector3
 	MaxForce: number
 	PlaneVelocity: Vector2
 	PrimaryTangentAxis: Vector3
@@ -1739,85 +1679,99 @@ declare class MarketplaceService extends Instance
 end
 
 declare class MaterialService extends Instance
-	AsphaltName: string
-	BarkName: string
-	BasicName: string
+	Aspalt: string
+	Bark: string
+	Basic: string
 	BeigeTerrazzoFloor: string
+	Brick: string
 	BrickCeramicTile: string
-	BrickName: string
-	BrokenConcreteName: string
+	BrokenConcrete: string
 	BrokenRoof: string
 	BrushMetal: string
-	CementWallName: string
-	CheckerTileFloorName: string
-	ConcreteName: string
-	ConcretePlateName: string
-	CopperName: string
-	CorrugatedSteelName: string
-	CrackedMiddleCeramicTileName: string
-	CrackedSmallCeramicTileName: string
-	DamagedRoofName: string
-	DistroyedBronzeName: string
+	CementWall: string
+	Chainmail: string
+	CheckerTileFloor: string
+	Concrete: string
+	ConcretePlate: string
+	Copper: string
+	CorrugatedSteel: string
+	CrackedMiddleCeramicTile: string
+	CrackedSmallCeramicTile: string
+	CrocEmbossedLeather: string
+	DamagedRoof: string
+	DistroyedBronze: string
 	EmeraldGridTile: string
+	FabricDenim: string
+	FabricWeave: string
+	Foil: string
 	GalvanizedMetal: string
-	GlassName: string
-	GrassName: string
+	Glass: string
+	GrainLeather: string
+	Grass: string
 	GreyWovenFabric: string
 	GridBorder: string
-	GridBoxName: string
-	GridMarbleName: string
-	GridPentagonName: string
-	GridQuadName: string
-	GridTileName: string
-	GroundName: string
-	HalfLeafyGroundName: string
-	HouseBricksName: string
+	GridBox: string
+	GridMarble: string
+	GridPentagon: string
+	GridQuad: string
+	GridTile: string
+	Ground: string
+	HalfLeafyGround: string
+	HouseBricks: string
 	IndustrialRibbedSteel: string
-	LeafyGroundName: string
-	MarbleName: string
-	MetalName: string
-	MetalPlateName: string
-	MixRoadName: string
-	MosaicCarpetName: string
-	MossyGroundName: string
-	MossyRockName: string
+	LeafyGround: string
+	Marble: string
+	MatteRubber: string
+	Metal: string
+	MetalPlate: string
+	MixRoad: string
+	MosaicCarpet: string
+	MossyGround: string
+	MossyRock: string
 	OceanPanelTile: string
-	OfficeCeilingWhiteName: string
+	OfficeCeilingLight: string
+	OfficeCeilingWhite: string
 	PaintedMetal: string
 	PaintedWood: string
-	PavingBlockName: string
-	PavingBrickName: string
-	PavingFloorName: string
-	PavingName: string
-	PavingStonesName: string
-	PavingWallName: string
+	PaintedWornWood: string
+	Paving: string
+	PavingBlock: string
+	PavingBrick: string
+	PavingFloor: string
+	PavingStones: string
+	PavingWall: string
 	PeelingPaintSteel: string
-	PlankName: string
-	PlasticName: string
-	RoadName: string
-	RockName: string
-	RoofName: string
-	RustBrassName: string
-	RustName: string
+	Plank: string
+	Plastic: string
+	Road: string
+	Rock: string
+	Roof: string
+	Rust: string
+	RustBrass: string
+	RustMetal: string
 	RustySteel: string
-	SandName: string
+	Sand: string
 	SandstoneBrick: string
-	SilverMetalName: string
-	SmallBrickName: string
-	SnowName: string
-	SoilRockGroundName: string
+	SilverMetal: string
+	SmallBrick: string
+	Snow: string
+	SoilRockGround: string
 	SquareCeramicTile: string
-	StoneBrickName: string
-	StoneFloorName: string
-	TakenOffCeramicTileName: string
-	TerrazzoFloorName: string
+	StoneBrick: string
+	StoneFloor: string
+	TakenOffCeramicTile: string
+	Tatami: string
+	TerrazzoFloor: string
 	ThickCarpet: string
-	UnlitName: string
+	Unlit: string
 	UrbanSlateFloor: string
 	WeatheredPlasterBrick: string
 	WhiteCementBrick: string
-	WhiteGrayBrickName: string
-	WoodName: string
+	WhiteGrayBrick: string
+	Wood: string
+	WoodLogSidingWall: string
+	WoodSidingWall: string
+	WoodTileFloor: string
 	function GetBaseMaterialOverride(self, InMaterial: Material): string
 	function GetMaterialVariant(self, InMaterial: Material, InName: string): MaterialVariant
 	function SetBaseMaterialOverride(self, InMaterial: Material, InName: string): ()
@@ -1825,7 +1779,6 @@ end
 
 declare class MaterialVariant extends Instance
 	BaseMaterial: Material
-	Color: Color3
 	ColorMap: Content
 	CustomPhysicalProperties: PhysicalProperties
 	Emissive: Color3
@@ -1846,13 +1799,11 @@ declare class MeshPart extends BasePart
 	MeshShadowDetailLevel: ShadowDetailLevel
 	MeshSize: Vector3
 	TextureId: string
-	function ApplyMesh(self, InMeshPart: Instance): ()
 end
 
 declare class Model extends PVInstance
 	PrimaryPart: BasePart
 	WorldPivot: CFrame
-	function BreakJoints(self): ()
 	function GetPivot(self): CFrame
 	function MoveTo(self, InPosition: Vector3): ()
 	function PivotTo(self, InTargetCFrame: CFrame): ()
@@ -1902,13 +1853,13 @@ declare class ParticleEmitter extends Instance
 	FlipbookLayout: ParticleFlipbookLayout
 	FlipbookMode: ParticleFlipbookMode
 	FlipbookStartRandom: boolean
-	LifeTime: NumberRange
+	Lifetime: NumberRange
 	LightEmission: number
 	LockedToPart: boolean
 	Orientation: ParticleOrientation
 	Rate: number
-	RotSpeed: number
 	Rotation: NumberRange
+	RotSpeed: number
 	Shape: ParticleEmitterShape
 	ShapeInOut: ParticleEmitterShapeInOut
 	ShapeStyle: ParticleEmitterShapeStyle
@@ -1923,8 +1874,8 @@ declare class ParticleEmitter extends Instance
 end
 
 declare class PhysicsService extends Instance
-	function CollisionGroupSetCollidable(self, Group1: string, Group2: string, bCollidable: boolean): ()
 	function CollisionGroupsAreCollidable(self, Group1: string, Group2: string): boolean
+	function CollisionGroupSetCollidable(self, Group1: string, Group2: string, bCollidable: boolean): ()
 	function GetMaxCollisionGroups(self): any
 	function GetRegisteredCollisionGroups(self): {any}
 	function IsCollisionGroupRegistered(self, Group: string): boolean
@@ -1938,7 +1889,6 @@ declare class Player extends Instance
 	CameraMinZoomDistance: number
 	Character: Model
 	RespawnLocation: SpawnLocation
-	Team: Team
 	TeamColor: BrickColor
 	UserId: string
 	function GetMouse(self): Mouse
@@ -1983,7 +1933,6 @@ declare class ReplicatedStorage extends Instance
 end
 
 declare class RunService extends Instance
-	ClientGitHash: string
 	function IsClient(self): boolean
 	function IsServer(self): boolean
 	function IsStudio(self): boolean
@@ -2029,17 +1978,19 @@ declare class SimulationBall extends PVInstance
 	Material: Material
 	MaterialVariant: string
 	PathMarkerScale: number
+	Position: Vector3
 	SlomoFactor: number
 	TextureId: string
+	function ClearPathMarkers(self): ()
 	function FindNextBallBounce(self): BallBounce
 	function GetAngularVelocityAtTime(self, Time: number): Vector3
 	function GetBallBounceByIndex(self, bounceIndex: number): BallBounce
-	function GetBallSnapshots(self): {any}
 	function GetBestDirectionToTargetAtTime(self, InPlaybackTime: number, InTargetPosition: Vector3, InSpeed: number, SpinAxis: Vector3, InSpinSpeed: number, InStepCount: number, InTargetRadius: number, InMaxSampleCount: number): Vector3
 	function GetCFrameAtTime(self, Time: number): CFrame
 	function GetCurrentPlaybackPosition(self): Vector3
 	function GetCurrentSnapshotIndex(self): number
 	function GetLinearVelocityAtTime(self, Time: number): Vector3
+	function GetPlaybackTime(self): number
 	function GetRemainedTimeForNextBounce(self): number
 	function GetSpeedAtTime(self, Time: number): number
 	function IsValidBounceIndex(self, bounceIndex: number): boolean
@@ -2055,8 +2006,8 @@ declare class SimulationBall extends PVInstance
 	Paused: ScriptSignal
 	Played: ScriptSignal
 	Stopped: ScriptSignal
-	TouchEnded: ScriptSignal
 	Touched: ScriptSignal
+	TouchEnded: ScriptSignal
 end
 
 declare class Skeleton extends PVInstance
@@ -2066,14 +2017,14 @@ declare class Sound extends Instance
 	IsLoaded: boolean
 	IsPaused: boolean
 	IsPlaying: boolean
-	LoopRegion: NumberRange
 	Looped: boolean
-	PlayOnRemove: boolean
+	LoopRegion: NumberRange
 	PlaybackLoudness: number
 	PlaybackRegion: NumberRange
 	PlaybackRegionsEnabled: boolean
 	PlaybackSpeed: number
 	Playing: boolean
+	PlayOnRemove: boolean
 	RollOffMaxDistance: number
 	RollOffMinDistance: number
 	RollOffMode: RollOffMode
@@ -2087,6 +2038,7 @@ declare class Sound extends Instance
 	function Play(self): ()
 	function Resume(self): ()
 	function Stop(self): ()
+	DidLoop: ScriptSignal
 	Ended: ScriptSignal
 	Loaded: ScriptSignal
 	Paused: ScriptSignal
@@ -2100,9 +2052,6 @@ declare class SoundGroup extends Instance
 end
 
 declare class SoundService extends Instance
-	DistanceFactor: number
-	DopplerScale: number
-	RespectFilteringEnabled: boolean
 	RolloffScale: number
 end
 
@@ -2131,7 +2080,6 @@ end
 
 declare class StarterPlayer extends Instance
 	AirControl: number
-	AllowCustomAnimations: number
 	CameraMaxZoomDistance: number
 	CameraMinZoomDistance: number
 	CapsuleHeight: number
@@ -2151,8 +2099,8 @@ declare class StarterPlayer extends Instance
 	RotationSpeed: number
 	StompJumpMultiplier: number
 	UseJumpPower: boolean
-	WalkSpeed: number
 	WalkingDeceleration: number
+	WalkSpeed: number
 end
 
 declare class StarterPlayerScripts extends Instance
@@ -2170,8 +2118,6 @@ end
 
 declare class Team extends Instance
 	TeamColor: BrickColor
-	PlayerAdded: ScriptSignal
-	PlayerRemoved: ScriptSignal
 end
 
 declare class Teams extends Instance
@@ -2183,9 +2129,7 @@ end
 declare class TextButton extends GuiButton
 	Bold: boolean
 	Text: string
-	TextBounds: Vector2
 	TextColor3: Color3
-	TextFits: boolean
 	TextScaled: boolean
 	TextSize: number
 	TextTransparency: number
@@ -2197,9 +2141,7 @@ end
 declare class TextLabel extends GuiObject
 	Bold: boolean
 	Text: string
-	TextBounds: Vector2
 	TextColor3: Color3
-	TextFits: boolean
 	TextScaled: boolean
 	TextSize: number
 	TextTransparency: number
@@ -2212,13 +2154,6 @@ declare class Tool extends BackpackItem
 	CanBeDropped: boolean
 	Enabled: boolean
 	Grip: CFrame
-	GripForward: Vector3
-	GripPos: Vector3
-	GripRight: Vector3
-	GripUp: Vector3
-	ManualActivationOnly: boolean
-	RequiresHandle: boolean
-	ToolTip: string
 	function Activate(self): ()
 	function Deactivate(self): ()
 	Activated: ScriptSignal
@@ -2242,9 +2177,6 @@ end
 
 declare class TweenBase extends Instance
 	PlaybackState: PlaybackState
-	function Cancel(self): ()
-	function Pause(self): ()
-	function Play(self): ()
 	Completed: ScriptSignal
 end
 
@@ -2275,8 +2207,6 @@ declare class UIGridStyleLayout extends Instance
 end
 
 declare class UIGridLayout extends UIGridStyleLayout
-	AbsoluteCellCount: Vector2
-	AbsoluteCellSize: Vector2
 	CellPadding: UDim2
 	CellSize: UDim2
 	FillDirectionMaxCells: number
@@ -2316,25 +2246,34 @@ declare class VFXPreset extends Instance
 	Enabled: boolean
 	InfiniteLoop: boolean
 	LoopCount: number
+	PresetName: string
 	Size: number
 	Transparency: number
 	function Clear(self): ()
+	function Emit(self, ParticleCount: number): ()
 end
 
 declare class WorldRoot extends Instance
 	function Blockcast(self, InCFrame: CFrame, InExtents: Vector3, InDirection: Vector3, InRaycastParams: RaycastParams?): RaycastResult
+	function BlockcastSingleByChannel(self, cFrame: CFrame, extents: Vector3, direction: Vector3, traceChannel: any, queryParams: any, responseParams: any): RaycastResult
 	function Capsulecast(self, InCFrame: CFrame, InRadius: number, InHeight: number, InDirection: Vector3, InRaycastParams: RaycastParams?): RaycastResult
+	function CapsulecastSingleByChannel(self, cFrame: CFrame, radius: number, height: number, direction: Vector3, traceChannel: any, queryParams: any, responseParams: any): RaycastResult
 	function DrawRay(self, InOrigin: Vector3, InDirection: Vector3, InColor: Color3, InThickness: number, InLifeTime: number): ()
 	function GetPartBoundsInBox(self, InCenter: CFrame, InSize: Vector3, InOverlapParams: OverlapParams?): {any}
+	function GetPartBoundsInBoxByChannel(self, center: CFrame, size: Vector3, traceChannel: any, queryParams: any, responseParams: any): {BasePart}
 	function GetPartBoundsInSphere(self, InCenter: CFrame, InRadius: number, InOverlapParams: OverlapParams?): {any}
+	function GetPartBoundsInSphereByChannel(self, center: CFrame, radius: number, traceChannel: any, queryParams: any, responseParams: any): {BasePart}
 	function GetPartsInPart(self, InBasePart: BasePart, InOverlapParams: OverlapParams?): {any}
+	function PredictProjectilePathByChannel(self, traceChannel: any, predictParams: any, responseParam: any): any
 	function PredictProjectilePathByObject(self, PredictParams: any, InObjectParams: any): any
 	function Raycast(self, InOrigin: Vector3, InDirection: Vector3, InRaycastParams: RaycastParams?): RaycastResult
-	function RaycastDeprecated(self, InOrigin: Vector3, InDirection: Vector3, InRaycastParams: RaycastParams?): RaycastResult
 	function RaycastMulti(self, InOrigin: Vector3, InDirection: Vector3, InRaycastParams: RaycastParams?): {any}
+	function RaycastMultiByChannel(self, origin: Vector3, direction: Vector3, traceChannel: any, queryParams: any, responseParams: any): {RaycastResult}
 	function RaycastMultiByObject(self, InOrigin: Vector3, InDirection: Vector3, InQueryParams: any): {any}
+	function RaycastSingleByChannel(self, origin: Vector3, direction: Vector3, traceChannel: any, queryParams: any, responseParams: any): RaycastResult
 	function RaycastSingleByObject(self, InOrigin: Vector3, InDirection: Vector3, InQueryParams: any): RaycastResult
 	function Spherecast(self, InOrigin: Vector3, InRadius: number, InDirection: Vector3, InRaycastParams: RaycastParams?): RaycastResult
+	function SpherecastSingleByChannel(self, cFrame: CFrame, radius: number, direction: Vector3, traceChannel: any, queryParams: any, responseParams: any): RaycastResult
 end
 
 declare class Workspace extends WorldRoot
@@ -2394,5 +2333,12 @@ declare Instance: {
 }
 
 declare task: {
-	wait: (duration: number?) -> number
+	wait: (duration: number?) -> number,
+	spawn: <A...>(fn: (A...) -> (), A...) -> thread,
+	delay: <A...>(duration: number, fn: (A...) -> (), A...) -> thread,
+	cancel: (thread: thread) -> (),
+	defer: <A...>(fn: (A...) -> (), A...) -> thread,
 }
+
+declare function isnil(value: any): boolean
+declare function wait(seconds: number?): number

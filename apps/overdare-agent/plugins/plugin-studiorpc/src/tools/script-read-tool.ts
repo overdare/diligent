@@ -69,7 +69,14 @@ async function executeScriptRead(args: Record<string, unknown>, cwd: string): Pr
 
   return {
     output,
-    render: buildScriptReadRender(targetGuid, scriptName, selectedLines.length),
+    render: buildScriptReadRender({
+      targetGuid,
+      scriptName,
+      lineCount: selectedLines.length,
+      content: output,
+      offset: startLine + 1,
+      limit: maxLines,
+    }),
     metadata: { method: "script.read", targetGuid, totalLines, linesReturned: selectedLines.length },
   };
 }

@@ -79,7 +79,7 @@ async function executeScriptAdd(
     const output = `Script added: ${parsed.name} (${addedGuid})`;
     return {
       output,
-      render: buildScriptAddRender(parsed as unknown as Record<string, unknown>, output),
+      render: buildScriptAddRender(parsed as unknown as Record<string, unknown>, output, addedGuid),
       metadata: { method: "script.add", guid: addedGuid, name: parsed.name, class: parsed.class },
     };
   } catch (err) {

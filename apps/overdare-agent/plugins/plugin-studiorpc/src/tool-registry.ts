@@ -14,7 +14,6 @@ import * as _scriptAdd from "./methods/script.add.ts";
 // biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
 import * as _scriptDelete from "./methods/script.delete.ts";
 import {
-  // biome-ignore lint/correctness/noUnusedImports: temporarily disabled — kept for easy re-enable
   buildAssetDrawerImportRender as _buildAssetDrawerImportRender,
   buildActionSequencerApplyJsonRender,
   buildAssetManagerImageImportRender,
@@ -66,7 +65,7 @@ export const mutatingMethods = new Set([
 ]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
-  // studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => _buildAssetDrawerImportRender(normalizedArgs, output), // temporarily disabled
+  studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => _buildAssetDrawerImportRender(normalizedArgs, output), // temporarily disabled
   studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
     buildAssetManagerImageImportRender(result, normalizedArgs, output),
   studiorpc_action_sequencer_service_apply_json: ({ normalizedArgs, output }) =>

@@ -1,13 +1,13 @@
-// @summary Deploy overdare plugins to ~/.overdare/plugins/ for local development
+// @summary Deploy overdare plugins to ~/.diligent/plugins/ for local development
 //
 // Usage:
 //   bun run deploy                  # deploy all plugins
 //   bun run deploy plugin-studiorpc # deploy a single plugin by directory name
 //
 // Each plugin is bundled with `bun build --target bun` and installed to:
-//   ~/.overdare/plugins/@overdare/<pluginName>/
+//   ~/.diligent/plugins/@overdare/<pluginName>/
 //
-// Packaged OVERDARE app instances auto-discover scoped plugins by scanning ~/.overdare/plugins/@<scope>/<name>.
+// Local runtime instances auto-discover scoped plugins by scanning ~/.diligent/plugins/@<scope>/<name>.
 
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -26,7 +26,7 @@ function run(cmd: string, cwd: string): void {
 
 function getDeployRoot(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, ".overdare", "plugins");
+  return join(home, ".diligent", "plugins");
 }
 
 interface PluginMeta {

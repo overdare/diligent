@@ -141,6 +141,13 @@ describe("script tools", () => {
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
     expect(levelSaveFileMock).toHaveBeenCalledTimes(1);
     expect(result.render).toMatchObject({ inputSummary: "LocalScript NewScript" });
+    const addDiffBlock = result.render?.blocks[0] as
+      | { type: string; files?: Array<{ filePath?: string; action?: string; hunks?: Array<{ newString?: string }> }> }
+      | undefined;
+    expect(addDiffBlock?.type).toBe("diff");
+    expect(addDiffBlock?.files?.[0]?.action).toBe("Add");
+    expect(addDiffBlock?.files?.[0]?.filePath).toContain("NewScript");
+    expect(addDiffBlock?.files?.[0]?.hunks?.[0]?.newString).toBe('print("new")');
   });
 
   test("script.add throws when parentGuid is missing", async () => {
@@ -222,6 +229,22 @@ describe("script tools", () => {
     expect(script.Source).toBe('print("hi there")\nprint("goodbye")');
     expect(result.output).toContain("replaced 1 occurrence(s)");
     expect(levelApplyMock).toHaveBeenCalledTimes(1);
+    expect(result.render).toMatchObject({ inputSummary: "HelloScript", outputSummary: "1 edit applied" });
+    const editDiffBlock = result.render?.blocks[0] as
+      | {
+          type: string;
+          files?: Array<{
+            filePath?: string;
+            action?: string;
+            hunks?: Array<{ oldString?: string; newString?: string }>;
+          }>;
+        }
+      | undefined;
+    expect(editDiffBlock?.type).toBe("diff");
+    expect(editDiffBlock?.files?.[0]?.action).toBe("Update");
+    expect(editDiffBlock?.files?.[0]?.filePath).toContain("HelloScript");
+    expect(editDiffBlock?.files?.[0]?.hunks?.[0]?.oldString).toBe("hello world");
+    expect(editDiffBlock?.files?.[0]?.hunks?.[0]?.newString).toBe("hi there");
   });
 
   test("script.edit with replace_all replaces all occurrences", async () => {
@@ -310,6 +333,14 @@ describe("script tools", () => {
     expect(result.metadata?.totalLines).toBe(2);
     expect(result.metadata?.linesReturned).toBe(2);
     expect(result.render).toMatchObject({ inputSummary: "HelloScript", outputSummary: "2 lines read" });
+    const readFileBlock = result.render?.blocks[0] as
+      | { type: string; filePath?: string; content?: string; offset?: number; limit?: number }
+      | undefined;
+    expect(readFileBlock?.type).toBe("file");
+    expect(readFileBlock?.filePath).toContain("HelloScript");
+    expect(readFileBlock?.content).toBe('1\tprint("hello world")\n2\tprint("goodbye")');
+    expect(readFileBlock?.offset).toBe(1);
+    expect(readFileBlock?.limit).toBe(2000);
   });
 
   test("script.read supports offset and limit", async () => {
@@ -318,6 +349,14 @@ describe("script tools", () => {
     const result = await tool.execute({ targetGuid: "HELLO_SCRIPT_GUID", offset: 2, limit: 1 }, createToolContext());
 
     expect(result.output).toContain('2\tprint("goodbye")');
+    const readSliceBlock = result.render?.blocks[0] as
+      | { type: string; filePath?: string; content?: string; offset?: number; limit?: number }
+      | undefined;
+    expect(readSliceBlock?.type).toBe("file");
+    expect(readSliceBlock?.filePath).toContain("HelloScript");
+    expect(readSliceBlock?.content).toBe('2\tprint("goodbye")');
+    expect(readSliceBlock?.offset).toBe(2);
+    expect(readSliceBlock?.limit).toBe(1);
     expect(result.output).not.toContain("hello world");
     expect(result.metadata?.linesReturned).toBe(1);
   });

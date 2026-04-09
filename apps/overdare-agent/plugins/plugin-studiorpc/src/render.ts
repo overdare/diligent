@@ -60,6 +60,11 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function buildScriptVirtualPath(targetGuid: string, scriptName?: string): string {
+  const trimmedName = scriptName?.trim();
+  return trimmedName ? `studio-scripts/${trimmedName} (${targetGuid}).lua` : `studio-scripts/${targetGuid}.lua`;
+}
+
 function toTreeNode(value: Record<string, unknown>): TreeNode | undefined {
   const name = readString(value.name) ?? "Instance";
   const className = readString(value.class);
@@ -113,23 +118,41 @@ export function buildLevelBrowseRender(result: unknown, args: Record<string, unk
   };
 }
 
-export function buildScriptAddRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
+export function buildScriptAddRender(
+  args: Record<string, unknown>,
+  output: string,
+  addedGuid?: string,
+): ToolRenderPayload {
   const className = readString(args.class) ?? "Script";
   const scriptName = readString(args.name) ?? "unnamed";
+  const parentGuid = readString(args.parentGuid) ?? "";
+  const source = readString(args.source) ?? "";
+  const targetGuid = addedGuid?.trim() || "new-script";
   return {
     inputSummary: clip(`${className} ${scriptName}`),
     outputSummary: summarizeText(output, "Script added."),
     blocks: [
       {
+        type: "diff",
+        files: [
+          {
+            filePath: buildScriptVirtualPath(targetGuid, scriptName),
+            action: "Add",
+            hunks: [{ newString: source || undefined }],
+          },
+        ],
+        output: firstLine(output, "Script added."),
+      },
+      {
         type: "key_value",
         title: "Studio script add",
         items: [
+          { key: "guid", value: targetGuid },
           { key: "class", value: className },
           { key: "name", value: scriptName },
-          { key: "parent", value: readString(args.parentGuid) ?? "" },
+          { key: "parentGuid", value: parentGuid },
         ].filter((item) => item.value.length > 0),
       },
-      { type: "summary", text: firstLine(output, "Script added."), tone: "success" },
     ],
   };
 }
@@ -357,18 +380,32 @@ export function buildScriptGrepRender(pattern: string, matchCount: number, scrip
   };
 }
 
-export function buildScriptReadRender(targetGuid: string, scriptName: string, lineCount: number): ToolRenderPayload {
+export function buildScriptReadRender(args: {
+  targetGuid: string;
+  scriptName: string;
+  lineCount: number;
+  content: string;
+  offset?: number;
+  limit?: number;
+}): ToolRenderPayload {
   return {
-    inputSummary: clip(scriptName || targetGuid),
-    outputSummary: `${lineCount} line${lineCount === 1 ? "" : "s"} read`,
+    inputSummary: clip(args.scriptName || args.targetGuid),
+    outputSummary: `${args.lineCount} line${args.lineCount === 1 ? "" : "s"} read`,
     blocks: [
+      {
+        type: "file",
+        filePath: buildScriptVirtualPath(args.targetGuid, args.scriptName),
+        content: args.content,
+        offset: args.offset,
+        limit: args.limit,
+      },
       {
         type: "key_value",
         title: "Studio script read",
         items: [
-          { key: "targetGuid", value: targetGuid },
-          { key: "name", value: scriptName },
-          { key: "lines", value: String(lineCount) },
+          { key: "guid", value: args.targetGuid },
+          { key: "name", value: args.scriptName },
+          { key: "lines", value: String(args.lineCount) },
         ],
       },
     ],
@@ -376,24 +413,35 @@ export function buildScriptReadRender(targetGuid: string, scriptName: string, li
 }
 
 export function buildScriptEditRender(
-  args: { targetGuid: string; old_string: string; new_string: string; replace_all: boolean },
+  args: { targetGuid: string; scriptName?: string; old_string: string; new_string: string; replace_all: boolean },
   output: string,
   count: number,
 ): ToolRenderPayload {
   return {
-    inputSummary: clip(`edit ${args.targetGuid}`),
+    inputSummary: clip(args.scriptName || args.targetGuid),
     outputSummary: `${count} edit${count === 1 ? "" : "s"} applied`,
     blocks: [
+      {
+        type: "diff",
+        files: [
+          {
+            filePath: buildScriptVirtualPath(args.targetGuid, args.scriptName),
+            action: "Update",
+            hunks: [{ oldString: args.old_string || undefined, newString: args.new_string }],
+          },
+        ],
+        output: firstLine(output, "Script edited."),
+      },
       {
         type: "key_value",
         title: "Studio script edit",
         items: [
-          { key: "targetGuid", value: args.targetGuid },
+          { key: "guid", value: args.targetGuid },
+          ...(args.scriptName ? [{ key: "name", value: args.scriptName }] : []),
           { key: "replacements", value: String(count) },
           ...(args.replace_all ? [{ key: "replace_all", value: "true" }] : []),
         ],
       },
-      { type: "summary", text: firstLine(output, "Script edited."), tone: "success" },
     ],
   };
 }
