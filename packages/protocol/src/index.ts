@@ -1,5 +1,6 @@
 export * from "./client-notifications";
 export * from "./client-requests";
+export * from "./conversation-state";
 export * from "./data-model";
 export * from "./jsonrpc";
 export * from "./methods";

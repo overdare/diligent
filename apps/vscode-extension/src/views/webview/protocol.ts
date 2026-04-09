@@ -1,21 +1,14 @@
 // @summary Typed host/webview bridge messages for the VS Code conversation view
-import type { AgentEvent, DiligentServerNotification, ThreadItem, ThreadReadResponse } from "@diligent/protocol";
+import type {
+  AgentEvent,
+  ConversationLiveState,
+  DiligentServerNotification,
+  ThreadReadResponse,
+} from "@diligent/protocol";
 import type { ExtensionConnectionState } from "../../state/thread-store";
 
-export interface ConversationViewState {
+export interface ConversationViewState extends ConversationLiveState {
   connection: ExtensionConnectionState;
-  threadId: string | null;
-  threadTitle: string | null;
-  threadStatus: string | null;
-  items: ThreadItem[];
-  liveText: string;
-  liveThinking: string;
-  liveToolName: string | null;
-  liveToolInput: string | null;
-  liveToolOutput: string;
-  overlayStatus: string | null;
-  isLoading: boolean;
-  lastError: string | null;
 }
 
 export type HostToWebviewMessage =
