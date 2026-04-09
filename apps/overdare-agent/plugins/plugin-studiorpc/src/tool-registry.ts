@@ -48,8 +48,6 @@ export const methodModules: MethodModule[] = [
   actionSequencerApplyJson,
   levelBrowse,
   levelSaveFile,
-  // scriptAdd — moved to tools/script-add-tool.ts
-  // scriptDelete — moved to tools/script-delete-tool.ts
   gamePlay,
   gameStop,
 ];
@@ -59,8 +57,6 @@ export const mutatingMethods = new Set([
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
-  // scriptAdd.method — moved to tools/script-add-tool.ts
-  // scriptDelete.method — moved to tools/script-delete-tool.ts
 ]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
@@ -71,8 +67,6 @@ export const renderBuilders: Record<string, RenderBuilder> = {
     buildActionSequencerApplyJsonRender(normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
-  // studiorpc_script_add — moved to tools/script-add-tool.ts
-  // studiorpc_script_delete — moved to tools/script-delete-tool.ts
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
   studiorpc_instance_upsert: ({ normalizedArgs, output }) => buildInstanceUpsertRender(normalizedArgs, output),
   studiorpc_instance_delete: ({ normalizedArgs, output }) => buildInstanceDeleteRender(normalizedArgs, output),
