@@ -146,7 +146,6 @@ describe("DesktopNotificationController", () => {
               question: "Why?",
               options: [{ label: "A", description: "Option A" }],
               allow_multiple: false,
-              is_other: true,
               is_secret: false,
             },
           ],

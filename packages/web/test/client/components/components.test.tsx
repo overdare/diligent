@@ -16,6 +16,7 @@ import { extractPastedImageFiles, InputDock } from "../../../src/client/componen
 import { KnowledgeManagerModal } from "../../../src/client/components/KnowledgeManagerModal";
 import { MarkdownContent } from "../../../src/client/components/MarkdownContent";
 import { Modal } from "../../../src/client/components/Modal";
+import { QuestionCard } from "../../../src/client/components/QuestionCard";
 import { SlashMenu } from "../../../src/client/components/SlashMenu";
 import { ToolBlock } from "../../../src/client/components/ToolBlock";
 import { ToolSettingsModal } from "../../../src/client/components/ToolSettingsModal";
@@ -55,6 +56,32 @@ test("input renders accessibility label", () => {
   const html = renderToStaticMarkup(<Input aria-label="Message input" placeholder="Type" />);
   expect(html).toContain("Message input");
   expect(html).toContain('placeholder="Type"');
+});
+
+test("question card always renders custom input row", () => {
+  const html = renderToStaticMarkup(
+    <QuestionCard
+      request={{
+        questions: [
+          {
+            id: "reason",
+            header: "Reason",
+            question: "Why?",
+            options: [{ label: "A", description: "Option A" }],
+            allow_multiple: false,
+            is_secret: false,
+          },
+        ],
+      }}
+      answers={{}}
+      onAnswerChange={() => {}}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+    />,
+  );
+
+  expect(html).toContain('placeholder="or type a custom answer…"');
+  expect(html).toContain('aria-label="Reason"');
 });
 
 test("modal renders dialog role", () => {

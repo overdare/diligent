@@ -1,4 +1,4 @@
-// @summary Inline chat card for agent user-input questions with text/password fields and optional multi-select checkboxes
+// @summary Inline chat card for agent user-input questions with text/password fields and always-on custom input
 
 import type { UserInputRequest } from "@diligent/protocol";
 import { Button } from "./Button";
@@ -29,7 +29,6 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
           const selected = toStringArray(rawSelected);
           const hasOptions = question.options.length > 0;
           const allowMultiple = Boolean(question.allow_multiple);
-          const allowOther = true;
           const selectedSet = new Set(selected);
           const customValue = selected.find((value) => !question.options.some((o) => o.label === value)) ?? "";
 
@@ -69,40 +68,38 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                   })
                 : null}
 
-              {allowOther ? (
-                <div className="flex items-center gap-3 px-2 py-1">
-                  {hasOptions ? (
-                    <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">
-                      {question.options.length + 1}
-                    </span>
-                  ) : null}
-                  <div className="flex flex-1 flex-col rounded-lg bg-transparent">
-                    <input
-                      id={question.id}
-                      aria-label={question.header}
-                      type={question.is_secret ? "password" : "text"}
-                      placeholder={hasOptions ? "or type a custom answer…" : "Type your answer…"}
-                      value={customValue}
-                      onChange={(e) => {
-                        const typed = e.target.value;
-                        const optionSelected = selected.filter((value) =>
-                          question.options.some((o) => o.label === value),
-                        );
-                        if (typed.length === 0) {
-                          onAnswerChange(question.id, allowMultiple ? optionSelected : (optionSelected[0] ?? ""));
-                          return;
-                        }
-                        onAnswerChange(question.id, allowMultiple ? [...optionSelected, typed] : typed);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") onSubmit();
-                      }}
-                      className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
-                    />
-                    <div className="border-b border-border/10 pt-1" />
-                  </div>
+              <div className="flex items-center gap-3 px-2 py-1">
+                {hasOptions ? (
+                  <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">
+                    {question.options.length + 1}
+                  </span>
+                ) : null}
+                <div className="flex flex-1 flex-col rounded-lg bg-transparent">
+                  <input
+                    id={question.id}
+                    aria-label={question.header}
+                    type={question.is_secret ? "password" : "text"}
+                    placeholder={hasOptions ? "or type a custom answer…" : "Type your answer…"}
+                    value={customValue}
+                    onChange={(e) => {
+                      const typed = e.target.value;
+                      const optionSelected = selected.filter((value) =>
+                        question.options.some((o) => o.label === value),
+                      );
+                      if (typed.length === 0) {
+                        onAnswerChange(question.id, allowMultiple ? optionSelected : (optionSelected[0] ?? ""));
+                        return;
+                      }
+                      onAnswerChange(question.id, allowMultiple ? [...optionSelected, typed] : typed);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onSubmit();
+                    }}
+                    className="bg-transparent text-sm text-text placeholder:text-muted/50 focus:outline-none"
+                  />
+                  <div className="border-b border-border/10 pt-1" />
                 </div>
-              ) : null}
+              </div>
             </div>
           );
         })}

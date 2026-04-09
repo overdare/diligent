@@ -1,4 +1,4 @@
-// @summary Combined question input — supports single select, multi-select checkboxes, and optional free-text
+// @summary Combined question input — supports single select, multi-select checkboxes, and always-on free-text
 import { isPrintable, matchesKey } from "../framework/keys";
 import type { Component } from "../framework/types";
 import { t } from "../theme";
@@ -13,7 +13,6 @@ export interface QuestionInputOptions {
   question: string;
   options?: QuestionInputOption[];
   allowMultiple?: boolean;
-  allowOther?: boolean;
   masked?: boolean;
   placeholder?: string;
 }
@@ -26,7 +25,6 @@ export class QuestionInput implements Component {
   private cursorPos = 0;
   private readonly opts: QuestionInputOption[];
   private readonly allowMultiple: boolean;
-  private readonly allowOther: boolean;
   private readonly selected = new Set<number>();
 
   constructor(
@@ -35,11 +33,10 @@ export class QuestionInput implements Component {
   ) {
     this.opts = options.options ?? [];
     this.allowMultiple = Boolean(options.allowMultiple);
-    this.allowOther = true;
   }
 
   private get hasInputRow(): boolean {
-    return this.allowOther || this.opts.length === 0;
+    return true;
   }
 
   private get inputRowIndex(): number {

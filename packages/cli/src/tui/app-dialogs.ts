@@ -109,7 +109,6 @@ export class AppDialogs {
           question: question.question,
           options: question.options,
           allowMultiple: question.allow_multiple,
-          allowOther: question.is_other,
           masked: question.is_secret,
           placeholder: question.is_secret ? "enter value…" : undefined,
         },

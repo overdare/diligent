@@ -623,7 +623,6 @@ export const UserInputQuestionSchema = z.object({
   question: z.string(),
   options: z.array(UserInputOptionSchema).min(1),
   allow_multiple: z.boolean().optional(),
-  is_other: z.boolean().optional(),
   is_secret: z.boolean().optional(),
 });
 export type UserInputQuestion = z.infer<typeof UserInputQuestionSchema>;

@@ -452,7 +452,6 @@ describe("protocol/flow", () => {
               question: "file path?",
               options: [{ label: "Current", description: "Use current directory" }],
               allow_multiple: true,
-              is_other: true,
             },
           ],
         },

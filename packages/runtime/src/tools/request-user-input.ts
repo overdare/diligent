@@ -21,10 +21,6 @@ const QuestionSchema = z.object({
     .describe(
       "If true, present checkboxes and allow selecting multiple options. If false or omitted, only one listed option should be selected.",
     ),
-  is_other: z
-    .boolean()
-    .optional()
-    .describe("Compatibility flag (currently ignored by clients; custom free-form input is always available)."),
   is_secret: z.boolean().optional().describe("If true, mask the input (e.g. passwords)."),
 });
 
