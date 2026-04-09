@@ -1,5 +1,6 @@
 // @summary Lightweight DOM renderer for the VS Code conversation webview surface
-import type { AgentEvent, ContentBlock, ThreadItem } from "@diligent/protocol";
+import { applyAgentEvents } from "@diligent/protocol";
+import type { ContentBlock, ThreadItem } from "@diligent/protocol";
 import { marked } from "marked";
 import type { ConversationViewState, HostToWebviewMessage, WebviewToHostMessage } from "./protocol";
 
@@ -443,98 +444,6 @@ export function createConversationApp(root: HTMLElement): void {
   });
 
   render();
-}
-
-function applyAgentEvents(state: ConversationViewState, events: AgentEvent[]): ConversationViewState {
-  let nextState = { ...state };
-
-  for (const event of events) {
-    switch (event.type) {
-      case "status_change":
-        nextState = {
-          ...nextState,
-          threadStatus: event.status,
-          overlayStatus: event.status === "busy" ? (nextState.overlayStatus ?? "Working…") : null,
-        };
-        break;
-      case "turn_start":
-        nextState = { ...nextState, overlayStatus: "Thinking…" };
-        break;
-      case "message_start":
-        nextState = { ...nextState, liveText: "", liveThinking: "", overlayStatus: "Thinking…" };
-        break;
-      case "message_delta":
-        if (event.delta.type === "text_delta") {
-          nextState = {
-            ...nextState,
-            liveText: `${nextState.liveText}${event.delta.delta}`,
-            overlayStatus: null,
-          };
-        } else if (event.delta.type === "thinking_delta") {
-          nextState = {
-            ...nextState,
-            liveThinking: `${nextState.liveThinking}${event.delta.delta}`,
-            overlayStatus: "Thinking…",
-          };
-        }
-        break;
-      case "message_end":
-        nextState = {
-          ...nextState,
-          liveText: "",
-          liveThinking: "",
-          overlayStatus: nextState.liveToolName ? nextState.overlayStatus : null,
-        };
-        break;
-      case "tool_start":
-        nextState = {
-          ...nextState,
-          liveToolName: event.toolName,
-          liveToolInput:
-            event.render?.inputSummary?.trim() ||
-            (typeof event.input === "string" ? event.input : JSON.stringify(event.input, null, 2)),
-          liveToolOutput: "",
-          overlayStatus: `${event.render?.inputSummary?.trim() || event.toolName}…`,
-        };
-        break;
-      case "tool_update":
-        nextState = {
-          ...nextState,
-          liveToolName: event.toolName,
-          liveToolOutput: `${nextState.liveToolOutput}${event.partialResult}`,
-          overlayStatus: `${nextState.liveToolInput || event.toolName}…`,
-        };
-        break;
-      case "tool_end":
-        nextState = {
-          ...nextState,
-          liveToolName: null,
-          liveToolInput: null,
-          liveToolOutput: "",
-          overlayStatus: null,
-        };
-        break;
-      case "compaction_start":
-        nextState = { ...nextState, overlayStatus: "Compacting…" };
-        break;
-      case "compaction_end":
-        nextState = { ...nextState, overlayStatus: null };
-        break;
-      case "error":
-        nextState = {
-          ...nextState,
-          overlayStatus: null,
-          liveText: "",
-          liveThinking: "",
-          liveToolName: null,
-          liveToolInput: null,
-          liveToolOutput: "",
-        };
-        break;
-    }
-  }
-
-  return nextState;
 }
 
 function escapeHtml(value: string): string {
