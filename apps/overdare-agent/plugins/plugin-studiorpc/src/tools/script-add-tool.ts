@@ -4,7 +4,13 @@ import * as scriptAdd from "../methods/script.add.ts";
 import { buildScriptAddRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
 import type { WriteLock } from "../write-lock.ts";
-import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
+import {
+  findNodeByActorGuid,
+  isRecord,
+  normalizeLeadingSpaces,
+  type OvdrjmNode,
+  readAndWriteOvdrjm,
+} from "./ovdrjm-utils.ts";
 
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
@@ -48,6 +54,7 @@ async function executeScriptAdd(
   const release = await writeLock.acquire();
   try {
     let addedGuid = "";
+    let tabCount = 0;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
       const root = rootDoc.Root;
@@ -64,19 +71,25 @@ async function executeScriptAdd(
       parent.LuaChildren = childList;
 
       const guid = makeActorGuid();
+      const normalized = normalizeLeadingSpaces(parsed.source);
+
       childList.push({
         InstanceType: parsed.class,
         ActorGuid: guid,
         ObjectKey: nextObjectKey(rootDoc),
         Name: parsed.name,
-        Source: parsed.source,
+        Source: normalized.result,
       });
       addedGuid = guid;
+      tabCount = normalized.converted;
     });
 
     await applyAndSave();
 
-    const output = `Script added: ${parsed.name} (${addedGuid})`;
+    let output = `Script added: ${parsed.name} (${addedGuid})`;
+    if (tabCount > 0) {
+      output += ` (${tabCount} leading 4-space group(s) were converted to tabs)`;
+    }
     return {
       output,
       render: buildScriptAddRender(parsed as unknown as Record<string, unknown>, output, addedGuid),

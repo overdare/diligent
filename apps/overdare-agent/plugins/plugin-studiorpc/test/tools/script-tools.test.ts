@@ -302,6 +302,148 @@ describe("script tools", () => {
     expect(levelApplyMock).not.toHaveBeenCalled();
   });
 
+  // -------------------------------------------------------------------------
+  // script.edit — leading 4-space → tab normalization
+  // -------------------------------------------------------------------------
+
+  test("script.edit converts leading 4-spaces to tabs in result", async () => {
+    // Seed a script whose Source uses 4-space indentation
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source =
+      'if true then\n    print("indented")\nend';
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    const result = await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: '    print("indented")',
+        new_string: '    print("changed")',
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const root = saved.Root as OvdrjmNode;
+    const script = findNode(root, "HELLO_SCRIPT_GUID")!;
+
+    // leading 4 spaces → 1 tab
+    expect(script.Source).toBe('if true then\n\tprint("changed")\nend');
+    expect(result.output).toContain("converted to tabs");
+  });
+
+  test("script.edit normalizes mixed tab+4spaces: \\t    \\tabcd → \\t\\t\\tabcd", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "\t    \tabcd";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    await tool.execute(
+      { targetGuid: "HELLO_SCRIPT_GUID", old_string: "\t    \tabcd", new_string: "\t    \tchanged" },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe("\t\t\tchanged");
+  });
+
+  test("script.edit normalizes \\t\\t    abcd → \\t\\t\\tabcd", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "\t\t    abcd";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    await tool.execute(
+      { targetGuid: "HELLO_SCRIPT_GUID", old_string: "\t\t    abcd", new_string: "\t\t    xyz" },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe("\t\t\txyz");
+  });
+
+  test("script.edit converts 8 leading spaces to 2 tabs", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "        deep";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    await tool.execute(
+      { targetGuid: "HELLO_SCRIPT_GUID", old_string: "        deep", new_string: "        changed" },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe("\t\tchanged");
+  });
+
+  test("script.edit preserves trailing <4 spaces in leading area", async () => {
+    const world = createWorldDocument();
+    // tab + 2 spaces (not a full 4-space group) → should stay as-is
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "\t  code";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    await tool.execute(
+      { targetGuid: "HELLO_SCRIPT_GUID", old_string: "\t  code", new_string: "\t  changed" },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe("\t  changed");
+  });
+
+  test("script.edit does not touch non-leading spaces", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = '\tprint("hello    world")';
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: '\tprint("hello    world")',
+        new_string: '\tprint("hello    earth")',
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    // 4 spaces inside string literal should NOT be converted
+    expect(script.Source).toBe('\tprint("hello    earth")');
+  });
+
+  // -------------------------------------------------------------------------
+  // script.add — leading 4-space → tab normalization
+  // -------------------------------------------------------------------------
+
+  test("script.add converts leading 4-spaces to tabs", async () => {
+    const tool = createScriptAddTool(tempDir, writeLock);
+
+    const result = await tool.execute(
+      {
+        class: "Script",
+        parentGuid: "SCRIPTS_GUID",
+        name: "IndentedScript",
+        source: 'if true then\n    print("hi")\n        print("deep")\nend',
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const root = saved.Root as OvdrjmNode;
+    const scripts = findNode(root, "SCRIPTS_GUID")!;
+    const added = scripts.LuaChildren!.find((n) => n.Name === "IndentedScript");
+
+    expect(added!.Source).toBe('if true then\n\tprint("hi")\n\t\tprint("deep")\nend');
+    expect(result.output).toContain("converted to tabs");
+  });
+
   test("script.edit rejects non-script instances", async () => {
     const tool = createScriptEditTool(tempDir, writeLock);
 

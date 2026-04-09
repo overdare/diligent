@@ -319,16 +319,31 @@ export async function execute(args: Params, ctx: ToolContext, cwd: string): Prom
 
     // ── Multi-script: group output lines per script ────────────────────────────
     const fileIssues = new Map<string, string[]>();
+    // Build a filename → full-path lookup so we can match regardless of path
+    // separators (luau-lsp may emit forward slashes even on Windows).
+    const fileNameToPath = new Map<string, string>();
     for (const file of luaFiles) {
       fileIssues.set(file, []);
+      fileNameToPath.set(path.basename(file), file);
     }
 
     for (const line of rawOutput.split("\n")) {
       if (!line.trim()) continue;
+      // Try exact full-path match first, then fall back to filename match
+      let matched = false;
       for (const file of luaFiles) {
         if (line.startsWith(`${file}(`) || line.startsWith(`${file}:`)) {
           fileIssues.get(file)!.push(line);
+          matched = true;
           break;
+        }
+      }
+      if (!matched) {
+        for (const [fileName, filePath] of fileNameToPath) {
+          if (line.includes(fileName)) {
+            fileIssues.get(filePath)!.push(line);
+            break;
+          }
         }
       }
     }
@@ -344,7 +359,8 @@ export async function execute(args: Params, ctx: ToolContext, cwd: string): Prom
         sections.push(`[OK] ${label}`);
       } else {
         totalIssues += issues.length;
-        const mappedIssues = issues.map((line) => line.replaceAll(file, label));
+        const fileName = path.basename(file);
+        const mappedIssues = issues.map((line) => line.replaceAll(file, label).replaceAll(fileName, label));
         sections.push(`[${issues.length} issue(s)] ${label}\n${mappedIssues.join("\n")}`);
       }
     }

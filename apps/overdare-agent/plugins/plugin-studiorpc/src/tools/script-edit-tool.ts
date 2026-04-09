@@ -4,7 +4,13 @@ import * as scriptEdit from "../methods/script.edit.ts";
 import { buildScriptEditRender } from "../render.ts";
 import { applyAndSave } from "../rpc.ts";
 import type { WriteLock } from "../write-lock.ts";
-import { findNodeByActorGuid, isRecord, type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils.ts";
+import {
+  findNodeByActorGuid,
+  isRecord,
+  normalizeLeadingSpaces,
+  type OvdrjmNode,
+  readAndWriteOvdrjm,
+} from "./ovdrjm-utils.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers — mirrored from packages/runtime/src/tools/edit.ts
@@ -102,6 +108,7 @@ async function executeScriptEdit(
   const release = await writeLock.acquire();
   try {
     let count = 0;
+    let tabCount = 0;
     let scriptName: string | undefined;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
@@ -127,13 +134,20 @@ async function executeScriptEdit(
       const source = typeof target.Source === "string" ? target.Source : "";
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
-      target.Source = result;
+
+      // Normalize leading 4-spaces → tabs in the final result
+      const normalized = normalizeLeadingSpaces(result);
+      target.Source = normalized.result;
+      tabCount = normalized.converted;
       count = editCount;
     });
 
     await applyAndSave();
 
-    const output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
+    let output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
+    if (tabCount > 0) {
+      output += ` (${tabCount} leading 4-space group(s) were converted to tabs)`;
+    }
     return {
       output,
       render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),

@@ -102,6 +102,39 @@ function encodeOvdrjm(text: string, originalBuf: Buffer): Buffer {
   return Buffer.from(text, "utf-8");
 }
 
+/**
+ * Normalize leading indentation: convert every 4 consecutive spaces in the
+ * leading whitespace region of each line into a tab character.
+ * Returns { result, converted } where `converted` is the number of 4-space
+ * groups that were replaced across all lines.
+ */
+export function normalizeLeadingSpaces(source: string): { result: string; converted: number } {
+  let converted = 0;
+  const result = source.replace(/^[\t ]*/gm, (leading) => {
+    let out = "";
+    let spaces = 0;
+    for (const ch of leading) {
+      if (ch === "\t") {
+        if (spaces > 0) {
+          out += " ".repeat(spaces);
+          spaces = 0;
+        }
+        out += "\t";
+      } else {
+        spaces++;
+        if (spaces === 4) {
+          out += "\t";
+          converted++;
+          spaces = 0;
+        }
+      }
+    }
+    if (spaces > 0) out += " ".repeat(spaces);
+    return out;
+  });
+  return { result, converted };
+}
+
 export function readAndWriteOvdrjm<T>(
   cwd: string,
   update: (rootDoc: Record<string, unknown>) => T,

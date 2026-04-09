@@ -4,6 +4,8 @@ export const method = "script.edit";
 
 export const description = `Edit a script's source via exact string replacement.
 
+IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-converted to tabs.
+
 The edit will FAIL if old_string is not unique in the script source.
 Provide more surrounding context to make it unique, or set replace_all to true.
 Use replace_all for renaming variables or replacing repeated patterns across the script.`;
