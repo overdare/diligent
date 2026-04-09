@@ -60,6 +60,7 @@ export type InitializeResponse = z.infer<typeof InitializeResponseSchema>;
 export const ThreadStartParamsSchema = z.object({
   cwd: z.string(),
   mode: ModeSchema.optional(),
+  effort: ThinkingEffortSchema.optional(),
   model: z.string().optional(),
 });
 export type ThreadStartParams = z.infer<typeof ThreadStartParamsSchema>;

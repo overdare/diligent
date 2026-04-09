@@ -23,7 +23,7 @@ describe("protocol/flow", () => {
     expect(
       DiligentClientRequestSchema.safeParse({
         method: DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START,
-        params: { cwd: "/tmp/work" },
+        params: { cwd: "/tmp/work", effort: "high" },
       }).success,
     ).toBe(true);
 

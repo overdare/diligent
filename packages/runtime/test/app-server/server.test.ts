@@ -627,6 +627,34 @@ describe("DiligentAppServer", () => {
     expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("high");
   });
 
+  it("uses explicit thread/start effort for new threads", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
+
+    const server = new DiligentAppServer(
+      createAppServerConfig({
+        cwd: projectRoot,
+        runtimeConfig: makeFactoryRuntimeConfig({ effort: "medium" }),
+      }),
+    );
+
+    connectTestPeer(server);
+
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1502,
+      method: "thread/start",
+      params: { cwd: projectRoot, effort: "high" },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    const read = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 1503,
+      method: "thread/read",
+      params: { threadId },
+    });
+
+    expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("high");
+  });
+
   it("rejects minimal effort for models without none support", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
 

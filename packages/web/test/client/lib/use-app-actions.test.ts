@@ -50,10 +50,8 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
 
   const request = mock(async (method: string, params: unknown) => {
     if (method === "thread/start") {
+      expect(params).toEqual({ cwd: "/repo", mode: "default", effort: "high", model: "gpt-5" });
       return { threadId: "thread-1" };
-    }
-    if (method === "effort/set") {
-      return { effort: "high" };
     }
     throw new Error(`unexpected method: ${method} ${JSON.stringify(params)}`);
   });
@@ -89,14 +87,13 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
     });
 
     expect(result).toEqual({ threadId: "thread-1", history });
-    expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start", "effort/set"]);
+    expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start"]);
     expect(activateServerThread).toHaveBeenCalledWith("thread-1");
     expect(dispatch.mock.calls).toEqual([
       [{ type: "hydrate", payload: { threadId: "thread-1", mode: "default", history } }],
       [{ type: "local_user", payload: { text: "hello", images } }],
     ]);
     expect(applySessionModel).toHaveBeenCalledWith("gpt-5");
-    expect(request).toHaveBeenNthCalledWith(2, "effort/set", { threadId: "thread-1", effort: "high" });
   } finally {
     if (originalWindowDescriptor) {
       Object.defineProperty(globalThis, "window", originalWindowDescriptor);
@@ -104,6 +101,44 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
       delete (globalThis as { window?: Window }).window;
     }
   }
+});
+
+test("prepareNewThreadForFirstMessage passes medium effort through thread start without extra effort request", async () => {
+  const request = mock(async (method: string, params: unknown) => {
+    if (method === "thread/start") {
+      expect(params).toEqual({ cwd: "/repo", mode: "default", effort: "medium", model: "gpt-5" });
+      return { threadId: "thread-2" };
+    }
+    throw new Error(`unexpected method: ${method} ${JSON.stringify(params)}`);
+  });
+  const rpc = { request } as never;
+  const history = {
+    cwd: "/repo",
+    items: [],
+    entryCount: 0,
+    isRunning: false,
+    currentEffort: "medium",
+    currentModel: "gpt-5",
+  };
+  const activateServerThread = mock(async () => history);
+  const applySessionModel = mock(async () => {});
+  const dispatch = mock(() => {});
+
+  const result = await prepareNewThreadForFirstMessage({
+    rpc,
+    mode: "default",
+    cwd: "/repo",
+    model: "gpt-5",
+    effort: "medium",
+    activateServerThread,
+    applySessionModel,
+    dispatch,
+    message: "hello",
+    images: [],
+  });
+
+  expect(result).toEqual({ threadId: "thread-2", history });
+  expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start"]);
 });
 
 test("runThreadCompaction waits without client RPC timeout and hydrates after success", async () => {

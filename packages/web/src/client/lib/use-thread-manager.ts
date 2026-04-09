@@ -137,11 +137,10 @@ export function useThreadManager({
     const mode = modeRef.current;
     dispatch({ type: "reset_draft", payload: { mode } });
     resetDraftModel();
-    setEffortState("medium");
     if (typeof window !== "undefined") {
       replaceDraftUrl();
     }
-  }, [deactivateServerThread, dispatch, modeRef, resetDraftModel, setEffortState, closeModals]);
+  }, [deactivateServerThread, dispatch, modeRef, resetDraftModel, closeModals]);
 
   const openThread = useCallback(
     async (threadId: string): Promise<void> => {
@@ -203,7 +202,6 @@ export function useThreadManager({
           await deactivateServerThread();
           dispatch({ type: "reset_draft", payload: { mode } });
           resetDraftModel();
-          setEffortState("medium");
           if (typeof window !== "undefined") {
             replaceDraftUrl();
           }

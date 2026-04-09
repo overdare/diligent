@@ -316,6 +316,7 @@ export class DiligentAppServer {
         ...params,
         cwd: (params.cwd as string | undefined)?.length ? params.cwd : conn.cwd,
         mode: (params.mode as string | undefined) ?? conn.mode,
+        effort: (params.effort as ThinkingEffort | undefined) ?? conn.effort,
       };
     }
 

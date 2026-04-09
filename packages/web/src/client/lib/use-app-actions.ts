@@ -57,6 +57,7 @@ export async function prepareNewThreadForFirstMessage({
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
     cwd: cwd || "/",
     mode,
+    effort,
     model,
   });
   const threadId = started.threadId;
@@ -67,12 +68,6 @@ export async function prepareNewThreadForFirstMessage({
   }
   dispatch({ type: "local_user", payload: { text: message, images } });
   await applySessionModel(history.currentModel);
-  if (effort !== "medium") {
-    await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET, {
-      threadId,
-      effort,
-    });
-  }
   return { threadId, history };
 }
 

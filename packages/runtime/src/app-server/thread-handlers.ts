@@ -131,11 +131,11 @@ export interface ThreadHandlersContext {
 
 export async function handleThreadStart(
   ctx: ThreadHandlersContext,
-  params: { cwd: string; mode?: Mode; model?: string },
+  params: { cwd: string; mode?: Mode; effort?: ThinkingEffort; model?: string },
 ): Promise<{ threadId: string }> {
   const mode = params.mode ?? "default";
   const tempId = generateSessionId();
-  const effort = await ctx.getLatestEffortForCwd(params.cwd);
+  const effort = params.effort ?? (await ctx.getLatestEffortForCwd(params.cwd));
   const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, params.model);
   const threadId = runtime.manager.sessionId;
   runtime.id = threadId;

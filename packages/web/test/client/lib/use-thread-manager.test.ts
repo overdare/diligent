@@ -65,3 +65,7 @@ test("switchThreadSubscription reuses active subscription when already on target
   expect(activateThreadPrompts).toHaveBeenCalledWith("thread-1");
   expect(next).toBe(activeSubscription);
 });
+
+test("new draft input key remains stable so draft-specific effort/input can persist across new thread resets", () => {
+  expect(DRAFT_INPUT_KEY).toBe("__draft__");
+});
