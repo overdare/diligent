@@ -363,9 +363,7 @@ export const instancePropertiesSchema = z
         Transparency: z.number().describe("(0~1)").optional(),
       })
       .strict()
-      .describe(
-        "Use when class=Part. Defines the 3D mesh shape, transform, size (in cm), color, material, physics, and collision properties.",
-      ),
+      .describe("Use when class=Part. A 3D primitive shape (Block, Ball, Cylinder) with physics and collision."),
     z
       .object({
         Color: rgb.optional(),
@@ -404,9 +402,7 @@ export const instancePropertiesSchema = z
         ...guiObjectProperties,
       })
       .strict()
-      .describe(
-        "Use when class=ImageButton. Extends GUI base with image source, tint, transparency, and press/hover state images.",
-      ),
+      .describe("Use when class=ImageButton. Clickable GUI element that displays an image with press/hover states."),
     z
       .object({
         Image: z.string().describe("Image asset ID").optional(),
@@ -415,15 +411,11 @@ export const instancePropertiesSchema = z
         ...guiObjectProperties,
       })
       .strict()
-      .describe(
-        "Use when class=ImageLabel. Extends GUI base with image source, tint, and transparency (no interaction).",
-      ),
+      .describe("Use when class=ImageLabel. Non-interactive GUI element that displays an image."),
     z
       .object({ ...textProperties, ...guiObjectProperties })
       .strict()
-      .describe(
-        "Use when class=TextButton. Extends GUI base with text content, size, color, transparency, and alignment.",
-      ),
+      .describe("Use when class=TextButton. Clickable GUI element that displays text."),
     z
       .object({ ...textProperties, ...guiObjectProperties })
       .strict()
@@ -441,9 +433,7 @@ export const instancePropertiesSchema = z
         StartTimePosition: z.number().optional(),
       })
       .strict()
-      .describe(
-        "Use when class=Sound. Configures the audio asset, volume, looping, playback speed, and 3D spatial roll-off.",
-      ),
+      .describe("Use when class=Sound. Audio source with 3D spatial roll-off."),
     z
       .object({})
       .strict()
@@ -457,7 +447,7 @@ export const instancePropertiesSchema = z
         ToolTip: z.string().optional(),
       })
       .strict()
-      .describe("Use when class=Tool. An equippable item; configure drop, activation, handle, and tooltip."),
+      .describe("Use when class=Tool. An equippable item a player can pick up and activate."),
     z
       .object({
         PresetName: z.string(),
@@ -469,9 +459,7 @@ export const instancePropertiesSchema = z
         Transparency: z.number().describe("(0~1)").optional(),
       })
       .strict()
-      .describe(
-        "Use when class=VFXPreset. Configures particle emission: color gradient, loop behavior, size multiplier, and transparency. PresetName is required.",
-      ),
+      .describe("Use when class=VFXPreset. A named visual effects preset for quick particle effect setup."),
     z
       .object({
         AngularVelocity: vec3.optional(),
@@ -482,9 +470,7 @@ export const instancePropertiesSchema = z
         Visible: z.boolean().optional(),
       })
       .strict()
-      .describe(
-        "Use when class=AngularVelocity. Applies a target rotational velocity to a physics body, with torque limit and reference frame.",
-      ),
+      .describe("Use when class=AngularVelocity. Applies a target rotational velocity to a physics body."),
     z
       .object({
         VelocityConstraintMode: z.string().describe('e.g. "Vector"').optional(),
@@ -504,7 +490,7 @@ export const instancePropertiesSchema = z
       })
       .strict()
       .describe(
-        "Use when class=LinearVelocity. Applies a target linear velocity to a physics body; supports Vector/Line/Plane constraint modes with optional force limits.",
+        "Use when class=LinearVelocity. Applies a target linear velocity to a physics body via Vector, Line, or Plane mode.",
       ),
     z
       .object({
@@ -572,9 +558,7 @@ export const instancePropertiesSchema = z
         SortOrder: z.string().describe('e.g. "LayoutOrder"').optional(),
       })
       .strict()
-      .describe(
-        "Use when class=UIGridLayout. Auto-arranges sibling UI elements in a uniform grid with configurable cell size and padding.",
-      ),
+      .describe("Use when class=UIGridLayout. Auto-arranges sibling UI elements in a uniform grid."),
     z
       .object({
         ...surfaceGuiBaseProperties,
@@ -588,9 +572,7 @@ export const instancePropertiesSchema = z
           .optional(),
       })
       .strict()
-      .describe(
-        "Use when class=BillboardGui. World-space GUI anchored to an Adornee; configure visibility distance, offsets, and base surface properties.",
-      ),
+      .describe("Use when class=BillboardGui. World-space GUI that always faces the camera, anchored to an Adornee."),
     z
       .object({
         ...surfaceGuiBaseProperties,
@@ -598,9 +580,7 @@ export const instancePropertiesSchema = z
         ZOffset: z.number().default(1),
       })
       .strict()
-      .describe(
-        "Use when class=SurfaceGui. GUI rendered on a Part surface; configure the target face and base surface properties.",
-      ),
+      .describe("Use when class=SurfaceGui. GUI rendered on a specific face of a Part."),
     z
       .object({})
       .strict()
@@ -630,9 +610,7 @@ export const instancePropertiesSchema = z
         Width1: z.number().default(1),
       })
       .strict()
-      .describe(
-        "Use when class=Beam. Visual beam between two Attachments; configure color, curve, texture, width, and transparency.",
-      ),
+      .describe("Use when class=Beam. Visual beam rendered between two Attachments."),
     z
       .object({
         Color: colorSequence.optional(),
@@ -647,9 +625,7 @@ export const instancePropertiesSchema = z
         WidthScale: numberSequence.optional(),
       })
       .strict()
-      .describe(
-        "Use when class=Trail. Motion trail between two Attachments; configure color, lifetime, texture, width, and transparency.",
-      ),
+      .describe("Use when class=Trail. Motion trail rendered between two Attachments."),
     z
       .object({
         Acceleration: vec3.optional(),
@@ -683,7 +659,7 @@ export const instancePropertiesSchema = z
       })
       .strict()
       .describe(
-        "Use when class=ParticleEmitter. Full particle system configuration: emission shape, color/size/transparency curves, flipbook animation, and physics.",
+        "Use when class=ParticleEmitter. Full particle system with emission shape, flipbook animation, and physics.",
       ),
     z
       .object({
@@ -694,9 +670,7 @@ export const instancePropertiesSchema = z
         Shadows: z.boolean().optional(),
       })
       .strict()
-      .describe(
-        "Use when class=PointLight. Omnidirectional light source; configure color, brightness, range, and shadows.",
-      ),
+      .describe("Use when class=PointLight. Omnidirectional point light source."),
     z
       .object({
         Angle: z.number().describe("Cone half-angle in degrees").default(45),
@@ -708,9 +682,7 @@ export const instancePropertiesSchema = z
         Shadows: z.boolean().optional(),
       })
       .strict()
-      .describe(
-        "Use when class=SpotLight. Cone-shaped directional light; configure angle, face, color, brightness, range, and shadows.",
-      ),
+      .describe("Use when class=SpotLight. Cone-shaped directional light source."),
     z
       .object({ Value: z.string().optional() })
       .strict()
@@ -753,7 +725,7 @@ export const instancePropertiesSchema = z
       })
       .strict()
       .describe(
-        "Use when class=MeshPart. BasePart with a custom mesh; all Part physics/collision properties apply plus MeshId and TextureId.",
+        "Use when class=MeshPart. BasePart with a custom mesh asset. Inherits all Part physics/collision properties.",
       ),
     z
       .object({ AnimationId: z.string().describe("Animation asset ID").optional() })
@@ -813,7 +785,7 @@ export const instancePropertiesSchema = z
       })
       .strict()
       .describe(
-        "Use when class=HumanoidDescription. Configures character appearance: body part meshes, textures, colors, animations, scale, and accessories.",
+        "Use when class=HumanoidDescription. Defines a character's full appearance including body parts, animations, and accessories.",
       ),
     z
       .object({
@@ -832,7 +804,7 @@ export const instancePropertiesSchema = z
         SmoothRotationSpeed: z.number().optional(),
       })
       .strict()
-      .describe("Use when class=Camera. Controls the world camera: type, FOV, follow/smooth settings, and CFrame."),
+      .describe("Use when class=Camera. Controls the world camera view and behavior."),
     z
       .object({
         BaseMaterial: materialEnum.optional(),
@@ -856,7 +828,7 @@ export const instancePropertiesSchema = z
         Enabled: z.boolean().default(true),
       })
       .strict()
-      .describe("Use when class=ScreenGui. Full-screen GUI container; controls display layer order and visibility."),
+      .describe("Use when class=ScreenGui. Full-screen GUI container for HUD and menu elements."),
     z
       .object({
         BallRadius: z.number().optional(),
@@ -872,9 +844,7 @@ export const instancePropertiesSchema = z
         TextureId: z.string().describe("Texture asset ID").optional(),
       })
       .strict()
-      .describe(
-        "Use when class=SimulationBall. Physics-simulated ball with trajectory, material, and path marker settings.",
-      ),
+      .describe("Use when class=SimulationBall. Physics-simulated ball with trajectory and path marker."),
     z
       .object({
         Volume: z.number().describe("multiplier (0~10)").default(1),
@@ -906,9 +876,7 @@ export const instancePropertiesSchema = z
         TeamColor: rgb.optional(),
       })
       .strict()
-      .describe(
-        "Use when class=SpawnLocation. Player spawn point with team color, neutral flag, and all Part physics properties.",
-      ),
+      .describe("Use when class=SpawnLocation. Player spawn point. Inherits all Part physics/collision properties."),
     z
       .object({
         AspectRatio: z.number().optional(),
@@ -931,9 +899,7 @@ export const instancePropertiesSchema = z
         RequiresLineOfSight: z.boolean().default(true),
       })
       .strict()
-      .describe(
-        "Use when class=ProximityPrompt. Configures nearby interaction prompt behavior including key binding, UI offset, exclusivity mode, distance, and line-of-sight requirements.",
-      ),
+      .describe("Use when class=ProximityPrompt. Nearby interaction prompt triggered when a player approaches."),
     workspaceServiceSchema,
     lightingServiceSchema,
     atmosphereServiceSchema,
