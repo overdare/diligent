@@ -4,13 +4,13 @@ import type { AgentEvent, ThreadReadResponse } from "@diligent/protocol";
 import * as vscode from "vscode";
 import { CONVERSATION_PANEL_VIEW_TYPE } from "../manifest";
 import type { ThreadStore } from "../state/thread-store";
-import type { ConversationViewState, WebviewToHostMessage } from "./webview/protocol";
+import type { ConversationPanelMeta, WebviewToHostMessage } from "./webview/bridge";
 
 export interface ConversationPanelActions {
   sendPrompt(threadId: string, text: string): Promise<void>;
   newThread(): Promise<void>;
   selectThread(threadId: string): Promise<void>;
-  focusThread(threadId: string): void;
+  focusThread(threadId: string | null): void;
   interrupt(threadId: string): Promise<void>;
   openLogs(): Promise<void>;
 }
@@ -18,6 +18,7 @@ export interface ConversationPanelActions {
 interface ConversationPanelEntry {
   panel: vscode.WebviewPanel;
   dispose: vscode.Disposable;
+  hydrationState: "pending" | "hydrated";
 }
 
 export class ConversationPanelManager implements vscode.Disposable {
@@ -33,9 +34,9 @@ export class ConversationPanelManager implements vscode.Disposable {
       for (const [threadId, entry] of this.panels) {
         entry.panel.title = this.getPanelTitle(threadId, state);
         void entry.panel.webview.postMessage({
-          type: "state/init",
-          state: this.toConversationState(threadId, state),
-        } satisfies { type: "state/init"; state: ConversationViewState });
+          type: "meta",
+          meta: this.toConversationMeta(threadId, state),
+        } satisfies { type: "meta"; meta: ConversationPanelMeta });
       }
     });
   }
@@ -79,12 +80,13 @@ export class ConversationPanelManager implements vscode.Disposable {
     this.panels.set(threadId, {
       panel,
       dispose: vscode.Disposable.from(...disposables),
+      hydrationState: "pending",
     });
 
     void panel.webview.postMessage({
-      type: "state/init",
-      state: this.toConversationState(threadId, state),
-    } satisfies { type: "state/init"; state: ConversationViewState });
+      type: "meta",
+      meta: this.toConversationMeta(threadId, state),
+    } satisfies { type: "meta"; meta: ConversationPanelMeta });
     this.actions.focusThread(threadId);
   }
 
@@ -98,16 +100,17 @@ export class ConversationPanelManager implements vscode.Disposable {
       return;
     }
 
-    void entry.panel.webview.postMessage({ type: "thread/read", payload });
+    entry.hydrationState = "hydrated";
+    void entry.panel.webview.postMessage({ type: "threadRead", payload });
   }
 
-  postAgentEvents(threadId: string, events: AgentEvent[]): void {
+  postAgentEvent(threadId: string, event: AgentEvent): void {
     const entry = this.panels.get(threadId);
-    if (!entry || events.length === 0) {
+    if (!entry) {
       return;
     }
 
-    void entry.panel.webview.postMessage({ type: "agent/events", events });
+    void entry.panel.webview.postMessage({ type: "agentEvent", event });
   }
 
   dispose(): void {
@@ -124,28 +127,21 @@ export class ConversationPanelManager implements vscode.Disposable {
     }
 
     this.panels.delete(threadId);
+    this.actions.focusThread(null);
     entry.dispose.dispose();
     if (closePanel) {
       entry.panel.dispose();
     }
   }
 
-  private toConversationState(threadId: string, state: ReturnType<ThreadStore["snapshot"]>): ConversationViewState {
+  private toConversationMeta(threadId: string, state: ReturnType<ThreadStore["snapshot"]>): ConversationPanelMeta {
     const thread = state.threads.find((summary) => summary.id === threadId) ?? null;
-    const read = state.threadReads[threadId];
+    const entry = this.panels.get(threadId);
     return {
       connection: state.connection,
       threadId,
       threadTitle: thread?.name ?? thread?.firstUserMessage ?? threadId,
-      threadStatus: state.threadStatuses[threadId] ?? null,
-      items: read?.items ?? [],
-      liveText: "",
-      liveThinking: "",
-      liveToolName: null,
-      liveToolInput: null,
-      liveToolOutput: "",
-      overlayStatus: state.threadStatuses[threadId] === "busy" ? "Working…" : null,
-      isLoading: false,
+      threadStatus: entry?.hydrationState === "hydrated" ? (state.threadStatuses[threadId] ?? null) : null,
       lastError: state.lastError,
     };
   }

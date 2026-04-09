@@ -41,7 +41,7 @@ export class ThreadTreeProvider implements vscode.TreeDataProvider<ThreadTreeIte
       return Promise.resolve([]);
     }
     return Promise.resolve(
-      state.threads.map((summary) => new ThreadTreeItem(summary, summary.id === state.activeThreadId)),
+      state.threads.map((summary) => new ThreadTreeItem(summary, summary.id === state.focusedThreadId)),
     );
   }
 }

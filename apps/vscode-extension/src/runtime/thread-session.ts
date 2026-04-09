@@ -83,41 +83,27 @@ export class ThreadSession {
       mode: "default",
     });
     await this.ensureSubscribed(response.threadId);
-    this.store.setActiveThread(response.threadId);
-    await this.readThread(response.threadId);
     await this.refreshThreads();
     return response.threadId;
   }
 
   async selectThread(threadId: string): Promise<ThreadReadResponse> {
     await this.ensureSubscribed(threadId);
-    this.store.setActiveThread(threadId);
-    return (await this.readThread(threadId)) as ThreadReadResponse;
+    return this.readThread(threadId);
   }
 
-  async readThread(threadId?: string): Promise<ThreadReadResponse | null> {
-    const selectedThreadId = threadId ?? this.store.snapshot().activeThreadId;
-    if (!selectedThreadId) {
-      return null;
-    }
-
-    const read = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: selectedThreadId });
-    this.store.setThreadRead(selectedThreadId, read);
-    return read;
+  async readThread(threadId: string): Promise<ThreadReadResponse> {
+    return this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
   }
 
-  async sendPrompt(text: string, threadId?: string): Promise<string> {
-    const state = this.store.snapshot();
-    const targetThreadId = threadId ?? state.activeThreadId ?? (await this.createThread());
-    await this.ensureSubscribed(targetThreadId);
-    this.store.setActiveThread(targetThreadId);
-    await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId: targetThreadId, message: text });
-    return targetThreadId;
+  async sendPrompt(threadId: string, text: string): Promise<void> {
+    await this.ensureSubscribed(threadId);
+    await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, { threadId, message: text });
   }
 
-  async interrupt(threadId?: string): Promise<boolean> {
+  async interrupt(threadId: string): Promise<boolean> {
     const result = await this.rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, {
-      threadId: threadId ?? this.store.snapshot().activeThreadId ?? undefined,
+      threadId,
     });
     return result.interrupted;
   }

@@ -88,12 +88,15 @@ Diligent uses **one backend protocol with multiple transports**.
 - **Web** runs a Bun server exposing `/rpc` as a WebSocket JSON-RPC endpoint.
 - **Desktop** packages the web frontend and sidecar server inside Tauri; it does not introduce a separate agent runtime.
 
+The same rule applies to any additional clients such as a VS Code extension/plugin: they may add a client-local transport bridge or UI reducer, but they must still consume the existing shared protocol rather than inventing a client-specific protocol surface.
+
 Practical consequences:
 
 1. **Server logic is shared.** Session lifecycle, provider auth wiring, tool execution, mode changes, effort changes, approvals, and steering belong in runtime, not in individual frontends.
 2. **Protocol is the contract.** Anything that crosses the frontend/backend boundary should be modeled in `@diligent/protocol`.
 3. **Desktop is not a fourth backend.** It reuses the web stack rather than forking agent behavior.
 4. **Transport adapters stay small.** Stdio and WebSocket layers only adapt messages; they should not own business logic.
+5. **New clients follow the same contract.** A VS Code plugin, desktop shell, or any future client must compose shared `@diligent/protocol` payloads and must not introduce a parallel client-specific Diligent protocol.
 
 Detailed guidance for the current structured tool-rendering flow lives in `docs/guide/tool-rendering.md`.
 
@@ -139,7 +142,7 @@ Runtime is where shared product behavior should be added when both Web and TUI m
 - notification schemas
 - shared UI-facing data models
 
-This package should remain schema/model oriented. Behavioral adapters and runtime-specific mapping logic should live outside protocol.
+This package should remain schema/model oriented. Behavioral adapters and runtime-specific mapping logic should live outside protocol. Client-local bridges are allowed only as transport/presentation layers over these shared payloads, not as alternate protocol definitions.
 
 ### `@diligent/plugin-sdk`
 

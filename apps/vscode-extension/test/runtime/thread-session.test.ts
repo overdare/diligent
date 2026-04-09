@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ThreadStore } from "../../src/state/thread-store";
 
 describe("ThreadStore", () => {
-  test("tracks initialize data, active thread, thread reads, and notifications", () => {
+  test("tracks initialize data, focused thread, and shared notification-derived status", () => {
     const store = new ThreadStore();
 
     store.setConnection("starting");
@@ -36,14 +36,14 @@ describe("ThreadStore", () => {
         firstUserMessage: "hello",
       },
     ]);
-    store.setActiveThread("thread-1");
-    store.setThreadRead("thread-1", {
-      cwd: "/tmp",
-      items: [],
-      hasFollowUp: false,
-      entryCount: 0,
-      isRunning: false,
-      currentEffort: "medium",
+    store.setFocusedThread("thread-1");
+    store.applyNotification({
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        threadStatus: "busy",
+      },
     });
 
     store.applyNotification({
@@ -57,9 +57,43 @@ describe("ThreadStore", () => {
     const snapshot = store.snapshot();
     expect(snapshot.connection).toBe("starting");
     expect(snapshot.availableModels?.[0]?.id).toBe("gpt-test");
-    expect(snapshot.activeThreadId).toBe("thread-1");
-    expect(snapshot.threadReads["thread-1"]?.cwd).toBe("/tmp");
-    expect(snapshot.activeThreadStatus).toBe("busy");
+    expect(snapshot.focusedThreadId).toBe("thread-1");
     expect(snapshot.threadStatuses["thread-1"]).toBe("busy");
+  });
+
+  test("updates running status from shared agent/event notification wrapper without needing thread/read refresh", () => {
+    const store = new ThreadStore();
+    store.setFocusedThread("thread-1");
+
+    store.applyNotification({
+      method: "agent/event",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        event: {
+          type: "status_change",
+          status: "busy",
+        },
+        threadStatus: "busy",
+      },
+    });
+
+    const snapshot = store.snapshot();
+    expect(snapshot.threadStatuses["thread-1"]).toBe("busy");
+    expect(snapshot.focusedThreadId).toBe("thread-1");
+  });
+
+  test("focused thread is explicit UI metadata and is not overwritten by thread started notification", () => {
+    const store = new ThreadStore();
+    store.setFocusedThread("thread-a");
+
+    store.applyNotification({
+      method: "thread/started",
+      params: {
+        threadId: "thread-b",
+      },
+    });
+
+    expect(store.snapshot().focusedThreadId).toBe("thread-a");
   });
 });

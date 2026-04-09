@@ -2,7 +2,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ProtocolNotificationAdapter } from "@diligent/protocol";
+import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import * as vscode from "vscode";
 import {
   ACTIVE_THREAD_CONTEXT_KEY,
@@ -12,6 +12,7 @@ import {
   THREADS_VIEW_ID,
 } from "./manifest";
 import { buildDiligentCommand, DiligentProcess } from "./runtime/diligent-process";
+import { routeNotification } from "./runtime/notification-router";
 import { ThreadSession } from "./runtime/thread-session";
 import { resolveApprovalRequest } from "./server-requests/approval";
 import { resolveUserInputRequest } from "./server-requests/user-input";
@@ -25,7 +26,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const threadTreeProvider = new ThreadTreeProvider();
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? globalThis.process.cwd();
   const diligentProcess = new DiligentProcess();
-  const notificationAdapters = new Map<string, ProtocolNotificationAdapter>();
 
   const config = vscode.workspace.getConfiguration();
   const binaryPath = config.get<string>(CONFIG_KEYS.binaryPath, "diligent");
@@ -47,22 +47,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       userInputRequest: resolveUserInputRequest,
     },
     (notification) => {
-      const threadId = getNotificationThreadId(notification);
-      if (threadId) {
-        const adapter = getNotificationAdapter(threadId);
-        const events = adapter.toAgentEvents(notification);
-        panelManager.postAgentEvents(threadId, events);
-        if (notification.method === "turn/completed" || notification.method === "turn/interrupted") {
-          adapter.reset();
-        }
+      const route = routeNotification(notification);
+      if (route.agentEvent && route.threadId) {
+        panelManager.postAgentEvent(route.threadId, route.agentEvent);
       }
 
-      if (notification.method === "thread/started") {
+      if (route.shouldRefreshThreads) {
         void session.refreshThreads();
         return;
       }
-      if (threadId && panelManager.hasPanel(threadId)) {
-        scheduleThreadRefresh(threadId);
+
+      if (
+        route.shouldReconcileThread &&
+        route.threadId &&
+        panelManager.hasPanel(route.threadId)
+      ) {
+        void reconcileThread(route.threadId);
       }
     },
     (line) => {
@@ -73,8 +73,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const panelManager = new ConversationPanelManager(context, store, {
     async sendPrompt(threadId, text) {
       await ensureStarted();
-      const targetThreadId = await session.sendPrompt(text, threadId);
-      panelManager.openThread(targetThreadId);
+      await session.sendPrompt(threadId, text);
+      panelManager.openThread(threadId);
     },
     async newThread() {
       await createAndOpenThread();
@@ -83,7 +83,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openConversation(threadId);
     },
     focusThread(threadId) {
-      store.setActiveThread(threadId);
+      store.setFocusedThread(threadId);
     },
     async interrupt(threadId) {
       await ensureStarted();
@@ -94,51 +94,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
-  const threadRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const threadRefreshInFlight = new Map<string, Promise<void>>();
   let startPromise: Promise<void> | null = null;
-
-  const scheduleThreadRefresh = (threadId: string) => {
-    const existingTimer = threadRefreshTimers.get(threadId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    const timer = setTimeout(() => {
-      threadRefreshTimers.delete(threadId);
-      if (threadRefreshInFlight.has(threadId)) {
-        return;
-      }
-
-      const refreshPromise = (async () => {
-        try {
-          const read = await session.readThread(threadId);
-          if (read) {
-            panelManager.postThreadRead(threadId, read);
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          store.setLastError(message);
-        } finally {
-          threadRefreshInFlight.delete(threadId);
-        }
-      })();
-      threadRefreshInFlight.set(threadId, refreshPromise);
-    }, 40);
-
-    threadRefreshTimers.set(threadId, timer);
-  };
-
-  const getNotificationAdapter = (threadId: string) => {
-    const existing = notificationAdapters.get(threadId);
-    if (existing) {
-      return existing;
-    }
-
-    const adapter = new ProtocolNotificationAdapter();
-    notificationAdapters.set(threadId, adapter);
-    return adapter;
-  };
 
   const ensureStarted = async () => {
     if (store.snapshot().connection === "ready") {
@@ -172,6 +128,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return read;
   };
 
+  const reconcileThread = async (threadId: string) => {
+    try {
+      const read = await session.readThread(threadId);
+      panelManager.postThreadRead(threadId, read);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      store.setLastError(message);
+    }
+  };
+
+  const getFocusedThreadId = () => store.snapshot().focusedThreadId;
+
+  const ensurePromptTargetThread = async (threadId?: string) => {
+    if (threadId) {
+      await openConversation(threadId);
+      return threadId;
+    }
+
+    const focusedThreadId = getFocusedThreadId();
+    if (focusedThreadId) {
+      return focusedThreadId;
+    }
+
+    return createAndOpenThread();
+  };
+
+  const getInterruptTargetThread = (threadId?: string) => {
+    return threadId ?? getFocusedThreadId();
+  };
+
   const openConversation = async (threadId: string) => {
     await ensureStarted();
     panelManager.openThread(threadId);
@@ -187,7 +173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   store.subscribe((state) => {
     threadTreeProvider.refresh(state);
-    void vscode.commands.executeCommand("setContext", ACTIVE_THREAD_CONTEXT_KEY, Boolean(state.activeThreadId));
+    void vscode.commands.executeCommand("setContext", ACTIVE_THREAD_CONTEXT_KEY, Boolean(state.focusedThreadId));
     void vscode.commands.executeCommand("setContext", CONNECTION_READY_CONTEXT_KEY, state.connection === "ready");
   });
 
@@ -218,7 +204,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand(COMMANDS.openConversation, async (threadId?: string) => {
       await ensureStarted();
-      const targetThreadId = threadId ?? store.snapshot().activeThreadId;
+      const targetThreadId = threadId ?? getFocusedThreadId();
       if (!targetThreadId) {
         await createAndOpenThread();
         return;
@@ -227,19 +213,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand(COMMANDS.sendPrompt, async (threadId?: string) => {
       await ensureStarted();
-      if (threadId) {
-        await openConversation(threadId);
-      }
       const text = await vscode.window.showInputBox({ prompt: "Send a prompt to Diligent" });
       if (!text?.trim()) {
         return;
       }
-      const targetThreadId = await session.sendPrompt(text.trim(), threadId);
+      const targetThreadId = await ensurePromptTargetThread(threadId);
+      await session.sendPrompt(targetThreadId, text.trim());
       panelManager.openThread(targetThreadId);
     }),
     vscode.commands.registerCommand(COMMANDS.interrupt, async (threadId?: string) => {
       await ensureStarted();
-      const interrupted = await session.interrupt(threadId);
+      const targetThreadId = getInterruptTargetThread(threadId);
+      if (!targetThreadId) {
+        return;
+      }
+      const interrupted = await session.interrupt(targetThreadId);
       if (interrupted) {
         vscode.window.showInformationMessage("Diligent turn interrupted.");
       }
@@ -252,10 +240,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openLogsDocument(logs);
     }),
     new vscode.Disposable(() => {
-      for (const timer of threadRefreshTimers.values()) {
-        clearTimeout(timer);
-      }
-      notificationAdapters.clear();
       void session.dispose();
     }),
   );
@@ -270,12 +254,3 @@ async function openLogsDocument(lines: string[]): Promise<void> {
   await vscode.window.showTextDocument(document, { preview: false });
 }
 
-function getNotificationThreadId(notification: { method: string; params?: unknown }): string | null {
-  const params = notification.params;
-  if (!params || typeof params !== "object") {
-    return null;
-  }
-
-  const threadId = (params as { threadId?: unknown }).threadId;
-  return typeof threadId === "string" && threadId.length > 0 ? threadId : null;
-}

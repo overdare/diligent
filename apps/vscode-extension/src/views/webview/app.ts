@@ -1,8 +1,14 @@
 // @summary Lightweight DOM renderer for the VS Code conversation webview surface
-import { applyAgentEvents } from "@diligent/protocol";
 import type { ContentBlock, ThreadItem } from "@diligent/protocol";
 import { marked } from "marked";
-import type { ConversationViewState, HostToWebviewMessage, WebviewToHostMessage } from "./protocol";
+import type { HostToWebviewMessage, WebviewToHostMessage } from "./bridge";
+import {
+  applyAgentEvent,
+  applyPanelMeta,
+  applyThreadRead,
+  initialConversationViewState,
+  type ConversationViewState,
+} from "./state";
 
 interface VsCodeApi {
   postMessage(message: WebviewToHostMessage): void;
@@ -227,21 +233,7 @@ export function createConversationApp(root: HTMLElement): void {
   let composerScrollTop = 0;
   let didHydrateThread = false;
   let pendingInitialScroll = false;
-  let state: ConversationViewState = {
-    connection: "stopped",
-    threadId: null,
-    threadTitle: null,
-    threadStatus: null,
-    items: [],
-    liveText: "",
-    liveThinking: "",
-    liveToolName: null,
-    liveToolInput: null,
-    liveToolOutput: "",
-    overlayStatus: null,
-    isLoading: false,
-    lastError: null,
-  };
+  let state: ConversationViewState = { ...initialConversationViewState };
 
   const renderLiveRegion = () => {
     const parts: string[] = [];
@@ -396,44 +388,23 @@ export function createConversationApp(root: HTMLElement): void {
   window.addEventListener("message", (event: MessageEvent<HostToWebviewMessage>) => {
     const message = event.data;
     switch (message.type) {
-      case "state/init":
-        if (message.state.threadId !== state.threadId) {
+      case "meta":
+        if (message.meta.threadId !== state.threadId) {
           didHydrateThread = false;
           pendingInitialScroll = false;
         }
-        state = message.state;
+        state = applyPanelMeta(state, message.meta);
         render();
         return;
-      case "agent/events":
-        state = applyAgentEvents(state, message.events);
+      case "agentEvent":
+        state = applyAgentEvent(state, message.event);
         render();
         return;
-      case "thread/read":
+      case "threadRead":
         if (!didHydrateThread && message.payload.items.length > 0) {
           pendingInitialScroll = true;
         }
-        state = {
-          ...state,
-          items: message.payload.items,
-          threadStatus: message.payload.isRunning ? "busy" : "idle",
-          overlayStatus: message.payload.isRunning ? (state.overlayStatus ?? "Working…") : null,
-          liveText: message.payload.isRunning ? state.liveText : "",
-          liveThinking: message.payload.isRunning ? state.liveThinking : "",
-          liveToolName: message.payload.isRunning ? state.liveToolName : null,
-          liveToolInput: message.payload.isRunning ? state.liveToolInput : null,
-          liveToolOutput: message.payload.isRunning ? state.liveToolOutput : "",
-          isLoading: false,
-        };
-        render();
-        return;
-      case "thread/event":
-        if (message.event.method === "error") {
-          state = { ...state, lastError: message.event.params.error.message };
-          render();
-        }
-        return;
-      case "connection/status":
-        state = { ...state, connection: message.status };
+        state = applyThreadRead(state, message.payload);
         render();
         return;
       case "error":
@@ -445,7 +416,6 @@ export function createConversationApp(root: HTMLElement): void {
 
   render();
 }
-
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
