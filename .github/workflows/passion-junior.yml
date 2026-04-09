@@ -61,21 +61,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Configure gh auth for child processes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_CONFIG_DIR: ${{ runner.temp }}/gh
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$GH_CONFIG_DIR"
-          gh auth login --hostname github.com --with-token <<< "$GH_TOKEN"
-          gh auth status
-
       - name: Run passion-junior skill
         shell: bash
         env:
-          GH_CONFIG_DIR: ${{ runner.temp }}/gh
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ./.bin/diligent --yolo --prompt "/passion-junior"
