@@ -52,6 +52,25 @@ describe("protocol/flow", () => {
         },
       }).success,
     ).toBe(true);
+
+    expect(
+      DiligentClientRequestSchema.safeParse({
+        method: DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
+        params: {
+          threadId: "th-1",
+          content: "use this image",
+          attachments: [
+            {
+              type: "local_image",
+              path: "/tmp/shot.png",
+              mediaType: "image/png",
+              fileName: "shot.png",
+            },
+          ],
+          followUp: false,
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("accepts initialize response bootstrap metadata for raw web transport", () => {

@@ -489,9 +489,22 @@ export async function handleTurnSteer(
   ctx: ThreadHandlersContext,
   threadId: string | undefined,
   content: string,
+  attachments?: Array<{ type: "local_image"; path: string; mediaType: string; fileName?: string }>,
 ): Promise<{ queued: true }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
-  runtime.manager.steer(content);
+  const message =
+    attachments && attachments.length > 0
+      ? {
+          role: "user" as const,
+          content: [...(content.trim().length > 0 ? ([{ type: "text", text: content }] as const) : []), ...attachments],
+          timestamp: Date.now(),
+        }
+      : {
+          role: "user" as const,
+          content,
+          timestamp: Date.now(),
+        };
+  runtime.manager.steer(message);
   return { queued: true };
 }
 

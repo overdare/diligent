@@ -237,6 +237,16 @@ test("consume_first_pending_steer removes head entry only", () => {
   expect(next.pendingSteers).toEqual(["b", "c"]);
 });
 
+test("local_steer queues steer text without creating a local user item", () => {
+  const next = appReducer(initialThreadState, {
+    type: "local_steer",
+    payload: "adjust plan",
+  });
+
+  expect(next.pendingSteers).toEqual(["adjust plan"]);
+  expect(next.items).toEqual([]);
+});
+
 test("compaction_error clears compacting state", () => {
   const next = appReducer(
     {

@@ -2,13 +2,14 @@
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef } from "react";
+import type { PendingImage } from "./app-state";
 import type { WebRpcClient } from "./rpc-client";
 import type { ThreadState } from "./thread-store";
 
 type SteeringAction =
   | { type: "local_steer"; payload: string }
   | { type: "consume_first_pending_steer" }
-  | { type: "local_user"; payload: { text: string; images: [] } }
+  | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } };
 
 export function useSteeringQueue({
@@ -18,8 +19,10 @@ export function useSteeringQueue({
   activeThreadId,
   currentModelRef,
   activeInput,
+  pendingImages,
   isBusy,
   clearThreadInput,
+  clearPendingImages,
 }: {
   rpcRef: RefObject<WebRpcClient | null>;
   stateRef: RefObject<ThreadState>;
@@ -27,8 +30,10 @@ export function useSteeringQueue({
   activeThreadId: string | null;
   currentModelRef: RefObject<string>;
   activeInput: string;
+  pendingImages: PendingImage[];
   isBusy: boolean;
   clearThreadInput: (threadId: string) => void;
+  clearPendingImages: () => void;
 }) {
   const pendingAbortRestartMessageRef = useRef<string | null>(null);
   const suppressNextSteeringInjectedRef = useRef(false);
@@ -69,18 +74,26 @@ export function useSteeringQueue({
     if (!rpc || !activeThreadId || !canSteer) return;
     const threadId = activeThreadId;
     const content = activeInput.trim();
+    const images = pendingImages;
     clearThreadInput(threadId);
+    clearPendingImages();
     dispatch({ type: "local_steer", payload: content });
     try {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
         threadId,
         content,
+        attachments: images.map((image) => ({
+          type: "local_image" as const,
+          path: image.path,
+          mediaType: image.mediaType,
+          fileName: image.fileName,
+        })),
         followUp: false,
       });
     } catch (error) {
       console.error(error);
     }
-  }, [rpcRef, activeThreadId, canSteer, activeInput, clearThreadInput, dispatch]);
+  }, [rpcRef, activeThreadId, canSteer, activeInput, pendingImages, clearThreadInput, clearPendingImages, dispatch]);
 
   const handleSteer = useCallback(() => {
     void steerMessage();

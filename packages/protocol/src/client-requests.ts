@@ -175,6 +175,7 @@ export type TurnInterruptResponse = z.infer<typeof TurnInterruptResponseSchema>;
 export const TurnSteerParamsSchema = z.object({
   threadId: z.string().optional(),
   content: z.string(),
+  attachments: z.array(TurnAttachmentSchema).max(4).optional(),
   followUp: z.boolean().default(false),
 });
 export type TurnSteerParams = z.infer<typeof TurnSteerParamsSchema>;

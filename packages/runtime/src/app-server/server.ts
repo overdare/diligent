@@ -402,7 +402,12 @@ export class DiligentAppServer {
         return this.handleTurnInterrupt(request.params.threadId);
 
       case DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER:
-        return this.handleTurnSteer(request.params.threadId, request.params.content, request.params.followUp);
+        return this.handleTurnSteer(
+          request.params.threadId,
+          request.params.content,
+          request.params.attachments,
+          request.params.followUp,
+        );
 
       case DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET:
         return this.handleModeSet(request.params.threadId, request.params.mode);
@@ -541,9 +546,10 @@ export class DiligentAppServer {
   private async handleTurnSteer(
     threadId: string | undefined,
     content: string,
+    attachments: Array<{ type: "local_image"; path: string; mediaType: string; fileName?: string }> | undefined,
     _followUp: boolean,
   ): Promise<{ queued: true }> {
-    return handleTurnSteer(this.buildThreadHandlersContext(), threadId, content);
+    return handleTurnSteer(this.buildThreadHandlersContext(), threadId, content, attachments);
   }
 
   private async handleModeSet(threadId: string | undefined, mode: Mode): Promise<{ mode: Mode }> {

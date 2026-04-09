@@ -413,14 +413,21 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       const drainedFromQueue = state.pendingSteers.slice(0, event.messageCount);
       const remaining = state.pendingSteers.slice(event.messageCount);
       const fallbackFromEvent = event.messages
-        .map((message) => (message.role === "user" && typeof message.content === "string" ? message.content : ""))
-        .filter((text) => text.length > 0);
-      const drained = drainedFromQueue.length > 0 ? drainedFromQueue : fallbackFromEvent.slice(0, event.messageCount);
-      const newItems: RenderItem[] = drained.map((text, i) => ({
+        .filter((message) => message.role === "user")
+        .map((message) => extractUserTextAndImages(message.content))
+        .filter(({ text, images }) => text.length > 0 || images.length > 0);
+      const drained =
+        drainedFromQueue.length > 0
+          ? drainedFromQueue.map((text, index) => ({
+              text,
+              images: fallbackFromEvent[index]?.images ?? [],
+            }))
+          : fallbackFromEvent.slice(0, event.messageCount);
+      const newItems: RenderItem[] = drained.map(({ text, images }, i) => ({
         id: `steer-injected-${Date.now()}-${i}`,
         kind: "user" as const,
         text,
-        images: [],
+        images,
         timestamp: Date.now(),
       }));
       return {

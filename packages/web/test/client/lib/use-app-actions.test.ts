@@ -141,6 +141,22 @@ test("prepareNewThreadForFirstMessage passes medium effort through thread start 
   expect(request.mock.calls.map((call) => call[0])).toEqual(["thread/start"]);
 });
 
+test("turn/steer request schema accepts image attachments", async () => {
+  const { DiligentClientRequestSchema } = await import("@diligent/protocol");
+
+  expect(
+    DiligentClientRequestSchema.safeParse({
+      method: "turn/steer",
+      params: {
+        threadId: "thread-1",
+        content: "check this image",
+        attachments: [{ type: "local_image", path: "/tmp/shot.png", mediaType: "image/png", fileName: "shot.png" }],
+        followUp: false,
+      },
+    }).success,
+  ).toBe(true);
+});
+
 test("runThreadCompaction waits without client RPC timeout and hydrates after success", async () => {
   const request = mock(async (method: string, params: unknown, timeoutMs?: number) => {
     if (method === "thread/compact/start") {

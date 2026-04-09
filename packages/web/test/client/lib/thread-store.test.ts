@@ -692,6 +692,54 @@ test("steering_injected clears pending steers by count even when event text diff
   expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe("change approach");
 });
 
+test("steering_injected keeps local queued text but preserves event images", () => {
+  resetAdapter();
+  const startState = {
+    ...initialThreadState,
+    pendingSteers: ["change approach"],
+  };
+
+  const notification: DiligentServerNotification = {
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+    params: {
+      threadId: "t1",
+      turnId: "turn1",
+      threadStatus: "busy",
+      event: {
+        type: "steering_injected",
+        messageCount: 1,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "change approach (normalized)" },
+              {
+                type: "local_image",
+                path: "/repo/.diligent/images/thread-1/shot.png",
+                mediaType: "image/png",
+                fileName: "shot.png",
+              },
+            ],
+            timestamp: 1,
+          },
+        ],
+      },
+    },
+  };
+
+  const next = reduceServerNotification(startState, notification, [notification.params.event]);
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe("change approach");
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].images : []).toEqual([
+    {
+      url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`,
+      fileName: "shot.png",
+      mediaType: "image/png",
+    },
+  ]);
+});
+
 test("steering_injected falls back to event text when local queue is empty", () => {
   resetAdapter();
   const notification: DiligentServerNotification = {
@@ -711,6 +759,70 @@ test("steering_injected falls back to event text when local queue is empty", () 
   expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].text : "").toBe(
     "server-injected steer",
   );
+});
+
+test("steering_injected falls back to event images when local queue is empty", () => {
+  const next = reduceServerNotification(
+    initialThreadState,
+    {
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+      params: {
+        threadId: "t1",
+        turnId: "turn1",
+        threadStatus: "busy",
+        event: {
+          type: "steering_injected",
+          messageCount: 1,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "server-injected steer" },
+                {
+                  type: "local_image",
+                  path: "/repo/.diligent/images/thread-1/shot.png",
+                  mediaType: "image/png",
+                  fileName: "shot.png",
+                },
+              ],
+              timestamp: 2,
+            },
+          ],
+        },
+      },
+    } as DiligentServerNotification,
+    [
+      {
+        type: "steering_injected",
+        messageCount: 1,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "server-injected steer" },
+              {
+                type: "local_image",
+                path: "/repo/.diligent/images/thread-1/shot.png",
+                mediaType: "image/png",
+                fileName: "shot.png",
+              },
+            ],
+            timestamp: 2,
+          },
+        ],
+      },
+    ],
+  );
+
+  const injectedUsers = next.items.filter((item) => item.kind === "user");
+  expect(injectedUsers).toHaveLength(1);
+  expect(injectedUsers[0] && injectedUsers[0].kind === "user" ? injectedUsers[0].images : []).toEqual([
+    {
+      url: `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot.png`,
+      fileName: "shot.png",
+      mediaType: "image/png",
+    },
+  ]);
 });
 
 test("hydrateFromThreadRead restores user images from local_image blocks", () => {

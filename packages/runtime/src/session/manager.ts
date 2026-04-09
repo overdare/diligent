@@ -456,12 +456,15 @@ export class SessionManager {
   }
 
   /** Queue a steering message. If agent is active, steers directly; otherwise queues locally. */
-  steer(content: string): void {
-    const msg: Message = {
-      role: "user",
-      content,
-      timestamp: Date.now(),
-    };
+  steer(message: Message | string): void {
+    const msg: Message =
+      typeof message === "string"
+        ? {
+            role: "user",
+            content: message,
+            timestamp: Date.now(),
+          }
+        : message;
     if (this._agent) {
       this._agent.steer(msg);
     } else {

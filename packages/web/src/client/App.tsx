@@ -201,6 +201,9 @@ export function App() {
   const clearDraftInput = useCallback(() => {
     threadMgr.setThreadInputs((prev) => clearDraftThreadInput(prev));
   }, [threadMgr.setThreadInputs]);
+  const clearPendingImages = useCallback(() => {
+    setPendingImages([]);
+  }, []);
   const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
   const steeringQueue = useSteeringQueue({
     rpcRef,
@@ -209,8 +212,10 @@ export function App() {
     activeThreadId: state.activeThreadId,
     currentModelRef: providerMgr.currentModelRef,
     activeInput,
+    pendingImages,
     isBusy,
     clearThreadInput,
+    clearPendingImages,
   });
 
   useAppRpcBindings({
