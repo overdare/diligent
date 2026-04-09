@@ -1,6 +1,6 @@
 ---
 name: tpa
-description: "Helps build PvP 3rd-person action games using the TPA (Third-Person Action) template. This template is designed for player-vs-player competitive games; for PvE-style games, recommend a different template. If the template isn't installed, guides installation. If already installed, leverages existing modules via architecture docs. Use this skill when the user requests anything related to 3rd-person action games, combat systems, character/skill/weapon creation, game UI, input handling, server-client communication, damage/HP logic, or plugin extensions. Do not invoke this skill if the user has declined to use the template or if the user wants a PvE-style game."
+description: "Helps build PvP 3rd-person action games using the TPA (Third-Person Action) template. Invoke this skill only when the user's request is explicitly about a PvP action game context (competitive player-vs-player gameplay). Do not invoke this skill for generic action-game requests, PvE/co-op/single-player contexts, or ambiguous contexts. If the request is not explicitly PvP action game, do not ask whether to use TPA; proceed without this skill. If TPA is clearly in scope and not installed, guide installation. If already installed, leverage existing modules via architecture docs."
 ---
 
 ## 1. Check TPA Info in Knowledge Tool
@@ -9,7 +9,9 @@ Read TPA project info from the Knowledge Tool.
 
 ### If TPA info does not exist
 
-Use request_user_input to ask the user whether they want to use the TPA template. Using the template makes it easy to build a third-person action game, but making it uniquely yours will take a bit more effort.
+Use request_user_input to ask whether the user wants to use the TPA template only when the current request is clearly in PvP action game scope.
+
+If the current request is not explicitly PvP action game scope, do not ask about TPA and do not invoke this skill.
 
 - **Yes** → Download the template, record in Knowledge Tool, then proceed.
 - **No** → Do not invoke this skill again.
