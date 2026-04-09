@@ -53,14 +53,7 @@ export function renderCommittedTranscriptItems(
     if (itemLines.length === 0) {
       continue;
     }
-    const shouldSeparate =
-      (!(item instanceof UserMessageView) && "kind" in item && item.kind === "plain" && item.separateBefore) ||
-      (!(item instanceof UserMessageView) &&
-        item.kind === "assistant_chunk" &&
-        !item.continued &&
-        previousItem !== null &&
-        !(previousItem instanceof UserMessageView) &&
-        previousItem.kind === "thinking");
+    const shouldSeparate = shouldSeparateTranscriptItem(item, previousItem);
     if (shouldSeparate && (lines.length > 0 || options?.includeLeadingSeparator === true)) {
       lines.push("");
     }
@@ -68,6 +61,38 @@ export function renderCommittedTranscriptItems(
     previousItem = item;
   }
   return lines;
+}
+
+function shouldSeparateTranscriptItem(item: ThreadItem, previousItem: ThreadItem | null): boolean {
+  if (item instanceof UserMessageView) {
+    return true;
+  }
+
+  if (item.kind === "assistant_chunk") {
+    if (item.continued) {
+      return false;
+    }
+
+    if (previousItem !== null && !(previousItem instanceof UserMessageView) && previousItem.kind === "thinking") {
+      return true;
+    }
+
+    return true;
+  }
+
+  if (item.kind === "thinking") {
+    return true;
+  }
+
+  if (item.kind === "tool_result") {
+    return true;
+  }
+
+  if (item.kind === "plain") {
+    return true;
+  }
+
+  return false;
 }
 
 function renderAssistantChunkLines(text: string, width: number, continued: boolean): string[] {
@@ -212,20 +237,12 @@ export function renderTranscriptSections(
 
   let previousItem: ThreadItem | null = null;
   for (const item of store.getItems()) {
-    const shouldSeparate = !(item instanceof UserMessageView) && item.kind === "plain" && item.separateBefore === true;
+    const shouldSeparate = shouldSeparateTranscriptItem(item, previousItem);
     if (shouldSeparate) {
-      pushSeparator(historyLines, "item:plain:separate-before");
-    }
-
-    if (
-      !(item instanceof UserMessageView) &&
-      item.kind === "assistant_chunk" &&
-      !item.continued &&
-      previousItem !== null &&
-      !(previousItem instanceof UserMessageView) &&
-      previousItem.kind === "thinking"
-    ) {
-      pushSeparator(historyLines, "item:assistant-after-thinking");
+      pushSeparator(
+        historyLines,
+        item instanceof UserMessageView ? "item:user" : "kind" in item ? `item:${item.kind}` : "item:unknown",
+      );
     }
 
     if (item instanceof UserMessageView) {

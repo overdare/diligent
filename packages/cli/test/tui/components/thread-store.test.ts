@@ -239,7 +239,7 @@ describe("ThreadStore", () => {
     expect(afterIdle.some((line) => line.includes("Working…"))).toBe(false);
   });
 
-  test("transcript only inserts blank separator for explicit loop-end style lines", () => {
+  test("transcript restores blank separators between committed sections while keeping explicit timing spacing", () => {
     const store = new ThreadStore({ requestRender: () => {} });
 
     store.addUserMessage("run this", { requestRender: false });
@@ -254,8 +254,8 @@ describe("ThreadStore", () => {
 
     expect(toolIndex).toBeGreaterThan(0);
     expect(assistantIndex).toBeGreaterThan(toolIndex);
-    expect(lines[toolIndex - 1]).not.toBe("");
-    expect(lines[assistantIndex - 1]).not.toBe("");
+    expect(lines[toolIndex - 1]).toBe("");
+    expect(lines[assistantIndex - 1]).toBe("");
     expect(timingIndex).toBeGreaterThan(assistantIndex);
     expect(lines[timingIndex - 1]).toBe("");
   });
