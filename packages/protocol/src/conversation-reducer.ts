@@ -1,6 +1,7 @@
 // @summary Shared AgentEvent state reducer for ConversationLiveState across all Diligent clients
-import type { AgentEvent } from "./data-model";
+
 import type { ConversationLiveState } from "./conversation-state";
+import type { AgentEvent } from "./data-model";
 
 /**
  * Applies a batch of AgentEvents to a ConversationLiveState (or any subtype of it),
