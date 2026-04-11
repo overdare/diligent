@@ -46,6 +46,7 @@ import {
   handleImageUpload,
 } from "./config-handlers";
 import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
+import { type ClientRequestDispatchContext, dispatchClientRequest } from "./request-dispatch";
 import {
   handleServerResponseMessage,
   type PendingServerRequest,
@@ -348,115 +349,71 @@ export class DiligentAppServer {
   // ─── Request dispatch ───────────────────────────────────────────────────────
 
   private async dispatchClientRequest(connectionId: string, request: DiligentClientRequest): Promise<unknown> {
-    switch (request.method) {
-      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
-        if (request.params.protocolVersion !== 1) {
-          throw Object.assign(
-            new Error(`Unsupported protocolVersion: ${request.params.protocolVersion}. Only version 1 is supported.`),
-            {
-              code: -32602,
-            },
-          );
-        }
-        const extra = (await this.config.getInitializeResult?.()) ?? {};
-        return {
-          serverName: this.serverName,
-          serverVersion: this.serverVersion,
-          protocolVersion: 1,
-          capabilities: {
-            supportsFollowUp: true,
-            supportsApprovals: true,
-            supportsUserInput: true,
-          },
-          ...extra,
-        };
-      }
+    return dispatchClientRequest(this.buildDispatchContext(), connectionId, request);
+  }
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START: {
-        const result = await this.handleThreadStart(request.params);
+  private buildDispatchContext(): ClientRequestDispatchContext {
+    return {
+      serverName: this.serverName,
+      serverVersion: this.serverVersion,
+
+      getInitializeExtra: async () => (await this.config.getInitializeResult?.()) ?? {},
+
+      startThread: async (params, connectionId) => {
+        const result = await this.handleThreadStart(params as Parameters<typeof this.handleThreadStart>[0]);
         const conn = this.connections.get(connectionId);
         if (conn) conn.currentThreadId = result.threadId;
         return result;
-      }
+      },
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME: {
-        const result = await this.handleThreadResume(request.params);
+      resumeThread: async (params, connectionId) => {
+        const result = await this.handleThreadResume(params as Parameters<typeof this.handleThreadResume>[0]);
         const conn = this.connections.get(connectionId);
         if (conn && result.found && result.threadId) conn.currentThreadId = result.threadId;
         return result;
-      }
+      },
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST:
-        return this.handleThreadList(request.params.limit, request.params.includeChildren);
+      listThreads: (limit, includeChildren) => this.handleThreadList(limit, includeChildren),
+      readThread: (threadId) => this.handleThreadRead(threadId),
+      compactThread: (threadId) => this.handleThreadCompactStart(threadId),
+      deleteThread: (threadId) => this.handleThreadDelete(threadId),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
-        return this.handleThreadRead(request.params.threadId);
+      startTurn: (params, connectionId) =>
+        this.handleTurnStart(params as Parameters<typeof this.handleTurnStart>[0], connectionId),
+      interruptTurn: (threadId) => this.handleTurnInterrupt(threadId),
+      steerTurn: (threadId, content, attachments, followUp) =>
+        this.handleTurnSteer(
+          threadId,
+          content,
+          attachments as Parameters<typeof this.handleTurnSteer>[2],
+          followUp,
+        ),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START:
-        return this.handleThreadCompactStart(request.params.threadId);
+      setMode: (threadId, mode) => this.handleModeSet(threadId, mode as Parameters<typeof this.handleModeSet>[1]),
+      setEffort: (threadId, effort) =>
+        this.handleEffortSet(threadId, effort as Parameters<typeof this.handleEffortSet>[1]),
+      listKnowledge: (threadId, limit) => this.handleKnowledgeList(threadId, limit),
+      updateKnowledge: (threadId, params) =>
+        this.handleKnowledgeUpdate(threadId, params as Parameters<typeof this.handleKnowledgeUpdate>[1]),
+      listTools: (threadId) => this.handleToolsList(threadId),
+      setTools: (threadId, params) =>
+        this.handleToolsSet(threadId, params as Parameters<typeof this.handleToolsSet>[1]),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_START:
-        return this.handleTurnStart(request.params, connectionId);
+      subscribeToThread: (connectionId, threadId) => this.subscribeToThread(connectionId, threadId),
+      unsubscribeFromThread: (subscriptionId) => this.unsubscribeFromThread(subscriptionId),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT:
-        return this.handleTurnInterrupt(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER:
-        return this.handleTurnSteer(
-          request.params.threadId,
-          request.params.content,
-          request.params.attachments,
-          request.params.followUp,
-        );
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET:
-        return this.handleModeSet(request.params.threadId, request.params.mode);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET:
-        return this.handleEffortSet(request.params.threadId, request.params.effort);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
-        return this.handleKnowledgeList(request.params.threadId, request.params.limit);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE:
-        return this.handleKnowledgeUpdate(request.params.threadId, request.params);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
-        return this.handleThreadDelete(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST:
-        return this.handleToolsList(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET:
-        return this.handleToolsSet(request.params.threadId, request.params);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE: {
-        const subscriptionId = this.subscribeToThread(connectionId, request.params.threadId);
-        return { subscriptionId };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE: {
-        const ok = this.unsubscribeFromThread(request.params.subscriptionId);
-        return { ok };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
+      setConfig: async (params, connectionId) => {
+        const p = params as { threadId?: string; model?: string };
         const connectionThreadId = this.connections.get(connectionId)?.currentThreadId ?? undefined;
-        const targetThreadId = request.params.threadId ?? connectionThreadId;
-        const result = await handleConfigSet(
-          this.config.modelConfig,
-          this.currentModelId,
-          request.params.model,
-          targetThreadId,
-        );
+        const targetThreadId = p.threadId ?? connectionThreadId;
+        const result = await handleConfigSet(this.config.modelConfig, this.currentModelId, p.model, targetThreadId);
         if (targetThreadId && result.model) {
           const runtime = await this.resolveThreadRuntime(targetThreadId);
           if (runtime.modelId !== result.model) {
             runtime.modelId = result.model;
             const model = resolveModel(result.model);
             const llmCompactionFn = this.config.createNativeCompaction?.(model.provider as ProviderName);
-            const llmMsgStreamFn = this.config.streamFunction;
-            runtime.agent?.setModel(result.model, llmMsgStreamFn, llmCompactionFn);
+            runtime.agent?.setModel(result.model, this.config.streamFunction, llmCompactionFn);
             if (runtime.effort === "none" && !supportsThinkingNone(model)) {
               runtime.effort = "medium";
               runtime.agent?.setEffort("medium");
@@ -468,46 +425,50 @@ export class DiligentAppServer {
           this.currentModelId = result.model;
         }
         return result;
-      }
+      },
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
+      listAuth: async () => {
         const pm = this.config.providerManager;
         const mc = this.config.modelConfig;
         if (!pm || !mc) throw Object.assign(new Error("Auth not available"), { code: -32601 });
         const providers = await buildProviderList();
         return { providers, availableModels: mc.getAvailableModels() };
-      }
+      },
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET:
-        return handleAuthSet(this.config.providerManager, request.params, (notification) => this.emit(notification));
+      setAuth: (params) =>
+        handleAuthSet(this.config.providerManager, params as Parameters<typeof handleAuthSet>[1], (n) => this.emit(n)),
+      removeAuth: (params) =>
+        handleAuthRemove(
+          this.config.providerManager,
+          params as Parameters<typeof handleAuthRemove>[1],
+          (n) => this.emit(n),
+        ),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE:
-        return handleAuthRemove(this.config.providerManager, request.params, (notification) => this.emit(notification));
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START:
-        return handleAuthOAuthStart({
-          params: request.params,
+      startAuthOAuth: (params) =>
+        handleAuthOAuthStart({
+          params: params as Parameters<typeof handleAuthOAuthStart>[0]["params"],
           providerManager: this.config.providerManager,
           oauthPending: this.oauthPending,
           setOAuthPending: (value) => {
             this.oauthPending = value;
           },
           openBrowser: this.config.openBrowser,
-          emit: (notification) => this.emit(notification),
-        });
+          emit: (n) => this.emit(n),
+        }),
 
-      case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
+      uploadImage: async (params, connectionId) => {
         const conn = this.connections.get(connectionId);
-        const effectiveThreadId = request.params.threadId ?? conn?.currentThreadId ?? undefined;
+        const p = params as Parameters<typeof handleImageUpload>[0]["params"];
+        const effectiveThreadId = p.threadId ?? conn?.currentThreadId ?? undefined;
         const attachment = await handleImageUpload({
-          params: request.params,
+          params: p,
           threadId: effectiveThreadId,
           cwd: conn?.cwd ?? this.config.cwd ?? process.cwd(),
           toImageUrl: this.config.toImageUrl,
         });
         return { attachment };
-      }
-    }
+      },
+    };
   }
 
   // ─── Thread management handlers ─────────────────────────────────────────────
