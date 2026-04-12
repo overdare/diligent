@@ -12,6 +12,17 @@ type SteeringAction =
   | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } };
 
+export function buildSteerAttachments(
+  images: PendingImage[],
+): Array<{ type: "local_image"; path: string; mediaType: string; fileName?: string }> {
+  return images.map(({ path, mediaType, fileName }) => ({
+    type: "local_image" as const,
+    path,
+    mediaType,
+    fileName,
+  }));
+}
+
 export function useSteeringQueue({
   rpcRef,
   stateRef,
@@ -82,12 +93,7 @@ export function useSteeringQueue({
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
         threadId,
         content,
-        attachments: images.map((image) => ({
-          type: "local_image" as const,
-          path: image.path,
-          mediaType: image.mediaType,
-          fileName: image.fileName,
-        })),
+        attachments: buildSteerAttachments(images),
         followUp: false,
       });
     } catch (error) {
