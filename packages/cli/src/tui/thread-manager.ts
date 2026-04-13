@@ -39,7 +39,6 @@ export function createThreadManager(deps: ThreadManagerDeps): ThreadManager {
       const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
         cwd: process.cwd(),
         mode: deps.getCurrentMode(),
-        model: deps.getModelId(),
       });
       setThread(response.threadId);
       deps.updateStatusBar({ sessionId: response.threadId });

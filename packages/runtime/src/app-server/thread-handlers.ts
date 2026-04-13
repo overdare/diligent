@@ -122,6 +122,7 @@ export interface ThreadHandlersContext {
   ) => Promise<ThreadRuntime>;
   resolveThreadRuntime: (threadId?: string) => Promise<ThreadRuntime>;
   getLatestEffortForCwd: (cwd: string) => Promise<ThinkingEffort>;
+  getLatestModelForCwd: (cwd: string) => Promise<string | undefined>;
   emit: (notification: DiligentServerNotification) => Promise<void>;
   consumeTurn: (runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string) => Promise<void>;
   resolveToolsContext: (threadId?: string) => Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }>;
@@ -136,7 +137,8 @@ export async function handleThreadStart(
   const mode = params.mode ?? "default";
   const tempId = generateSessionId();
   const effort = params.effort ?? (await ctx.getLatestEffortForCwd(params.cwd));
-  const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, params.model);
+  const modelId = params.model ?? (await ctx.getLatestModelForCwd(params.cwd));
+  const runtime = await ctx.createThreadRuntime(tempId, params.cwd, mode, true, effort, modelId);
   const threadId = runtime.manager.sessionId;
   runtime.id = threadId;
 
@@ -665,6 +667,46 @@ export async function getLatestEffortFromSessions(
       const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
       const effort = buildSessionContext(entries, leafId).currentEffort;
       if (effort) return effort;
+    } catch {
+      // Ignore unreadable session files and continue.
+    }
+  }
+
+  return fallback;
+}
+
+export async function getLatestModelFromSessions(
+  resolvePaths: (cwd: string) => Promise<{ sessions: string }>,
+  threads: Map<string, ThreadRuntime>,
+  cwd: string,
+  fallback?: string,
+): Promise<string | undefined> {
+  const paths = await resolvePaths(cwd);
+  const ordered = (await listSessions(paths.sessions))
+    .filter((session) => session.cwd === cwd)
+    .map<SessionSummary>((session) => ({
+      id: session.id,
+      path: session.path,
+      cwd: session.cwd,
+      name: session.name,
+      created: session.created.toISOString(),
+      modified: session.modified.toISOString(),
+      messageCount: session.messageCount,
+      firstUserMessage: session.firstUserMessage,
+      parentSession: session.parentSession,
+    }));
+
+  for (const summary of ordered) {
+    const runtime = threads.get(summary.id);
+    const runtimeModelId = runtime?.manager.getCurrentModel()?.modelId ?? runtime?.modelId;
+    if (runtimeModelId) return runtimeModelId;
+    if (!summary.path) continue;
+
+    try {
+      const { entries } = await readSessionFile(summary.path);
+      const leafId = entries.length > 0 ? entries[entries.length - 1].id : null;
+      const modelId = buildSessionContext(entries, leafId).currentModel?.modelId;
+      if (modelId) return modelId;
     } catch {
       // Ignore unreadable session files and continue.
     }

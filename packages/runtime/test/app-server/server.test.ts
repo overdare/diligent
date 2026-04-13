@@ -597,6 +597,20 @@ describe("DiligentAppServer", () => {
       params: { threadId: threadA },
     });
     expect((readResult(resumedRead) as { currentModel?: string }).currentModel).toBe("gpt-5.4");
+
+    const newThread = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
+      id: 607,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const newThreadId = (readResult(newThread) as { threadId: string }).threadId;
+
+    const newThreadRead = await resumedServer.handleRequest(TEST_CONNECTION_ID, {
+      id: 608,
+      method: "thread/read",
+      params: { threadId: newThreadId },
+    });
+    expect((readResult(newThreadRead) as { currentModel?: string }).currentModel).toBe("gpt-5.4");
   });
 
   it("uses runtime config default effort for new threads", async () => {

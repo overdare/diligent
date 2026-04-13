@@ -54,6 +54,7 @@ import {
 } from "./server-requests";
 import {
   getLatestEffortFromSessions,
+  getLatestModelFromSessions,
   handleEffortSet,
   handleModeSet,
   handleThreadCompactStart,
@@ -898,6 +899,10 @@ export class DiligentAppServer {
     return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
   }
 
+  private async getLatestModelForCwd(cwd: string): Promise<string | undefined> {
+    return getLatestModelFromSessions(this.config.resolvePaths, this.threads, cwd, this.currentModelId);
+  }
+
   private async resolveToolsContext(
     threadId?: string,
   ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }> {
@@ -975,6 +980,7 @@ export class DiligentAppServer {
       ) => this.createThreadRuntime(threadId, cwd, mode, createNew, effort, modelId),
       resolveThreadRuntime: (threadId?: string) => this.resolveThreadRuntime(threadId),
       getLatestEffortForCwd: (cwd: string) => this.getLatestEffortForCwd(cwd),
+      getLatestModelForCwd: (cwd: string) => this.getLatestModelForCwd(cwd),
       emit: (notification: DiligentServerNotification) => this.emit(notification),
       consumeTurn: (runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string) =>
         this.consumeTurn(runtime, runPromise, turnId),
