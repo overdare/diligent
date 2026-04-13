@@ -2,7 +2,8 @@
 
 import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { findModelInfo, getThinkingEffortOptions } from "../lib/model-thinking-helpers";
 import type { SlashCommand } from "../lib/slash-commands";
 import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix } from "../lib/slash-commands";
@@ -10,6 +11,7 @@ import type { UsageState } from "../lib/thread-store";
 import { Select, type SelectOption } from "./Select";
 import { SlashMenu } from "./SlashMenu";
 import { TextArea } from "./TextArea";
+import { useAnchoredPortal } from "./useAnchoredPortal";
 
 interface InputDockProps {
   input: string;
@@ -133,8 +135,10 @@ export function InputDock({
 }: InputDockProps) {
   const composingRef = useRef(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
+  const plusMenuPopupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
+  const slashMenuPopupRef = useRef<HTMLDivElement>(null);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<ComposerMenuKey | null>(null);
 
@@ -201,35 +205,22 @@ export function InputDock({
   }));
   const showEffortSelector = supportsThinking && effortMenuOptions.length > 0;
 
-  useEffect(() => {
-    if (!isPlusMenuOpen) return;
+  const plusMenuPosition = useAnchoredPortal({
+    open: isPlusMenuOpen,
+    anchorRef: plusMenuRef,
+    popupRef: plusMenuPopupRef,
+    onClose: () => {
+      setIsPlusMenuOpen(false);
+      setActiveSubmenu(null);
+    },
+  });
 
-    const handleMouseDown = (event: MouseEvent) => {
-      if (!plusMenuRef.current) return;
-      if (!plusMenuRef.current.contains(event.target as Node)) {
-        setIsPlusMenuOpen(false);
-        setActiveSubmenu(null);
-      }
-    };
-
-    window.addEventListener("mousedown", handleMouseDown);
-    return () => {
-      window.removeEventListener("mousedown", handleMouseDown);
-    };
-  }, [isPlusMenuOpen]);
-
-  // Close slash menu on outside click
-  useEffect(() => {
-    if (!slashMenuOpen) return;
-
-    const handleMouseDown = (event: MouseEvent) => {
-      if (slashMenuRef.current?.contains(event.target as Node)) return;
-      closeSlashMenu();
-    };
-
-    window.addEventListener("mousedown", handleMouseDown);
-    return () => window.removeEventListener("mousedown", handleMouseDown);
-  }, [slashMenuOpen, closeSlashMenu]);
+  const slashMenuPosition = useAnchoredPortal({
+    open: slashMenuOpen,
+    anchorRef: slashMenuRef,
+    popupRef: slashMenuPopupRef,
+    onClose: closeSlashMenu,
+  });
 
   const openPlusMenu = () => {
     setIsPlusMenuOpen(true);
@@ -307,9 +298,11 @@ export function InputDock({
   };
 
   const composerDisabled = !hasProvider;
+  const canRenderPlusMenuPortal = isPlusMenuOpen && plusMenuPosition && typeof document !== "undefined";
+  const canRenderSlashMenuPortal = slashMenuOpen && slashMenuPosition && typeof document !== "undefined";
 
   return (
-    <div className="bg-surface-dark px-6 pb-4 pt-2">
+    <div className="relative z-20 bg-surface-dark px-6 pb-4 pt-2">
       <div
         className={`relative rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
       >
@@ -344,13 +337,7 @@ export function InputDock({
           </div>
         ) : null}
 
-        <div className="relative flex items-start gap-2">
-          {slashMenuOpen ? (
-            <div ref={slashMenuRef}>
-              <SlashMenu commands={slashFiltered} selectedIndex={slashSelectedIndex} onSelect={handleSlashSelect} />
-            </div>
-          ) : null}
-
+        <div ref={slashMenuRef} className="relative flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <TextArea
               className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
@@ -406,112 +393,6 @@ export function InputDock({
               >
                 +
               </button>
-
-              {isPlusMenuOpen ? (
-                <div
-                  role="menu"
-                  className="absolute bottom-full left-0 z-30 mb-2 min-w-[150px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel"
-                >
-                  <div className="relative">
-                    <div className="relative">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          fileInputRef.current?.click();
-                          setIsPlusMenuOpen(false);
-                          setActiveSubmenu(null);
-                        }}
-                        disabled={!supportsVision || isUploadingImages}
-                        className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                          supportsVision && !isUploadingImages
-                            ? "text-muted hover:bg-fill-ghost-hover hover:text-text"
-                            : "cursor-not-allowed text-muted/40"
-                        }`}
-                      >
-                        {isUploadingImages ? "Uploading images…" : "Add images"}
-                      </button>
-
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-haspopup="menu"
-                        aria-expanded={activeSubmenu === "mode"}
-                        onMouseEnter={() => setActiveSubmenu("mode")}
-                        onFocus={() => setActiveSubmenu("mode")}
-                        onClick={() => setActiveSubmenu("mode")}
-                        className={topLevelMenuItemClass("mode")}
-                      >
-                        <span>Mode</span>
-                        <span className="text-[10px] opacity-60">›</span>
-                      </button>
-
-                      {activeSubmenu === "mode" ? (
-                        <div className="absolute left-full top-0 ml-1 min-w-[132px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
-                          {modeMenuOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={option.value === mode}
-                              onClick={() => {
-                                onModeChange(option.value as Mode);
-                                setIsPlusMenuOpen(false);
-                                setActiveSubmenu(null);
-                              }}
-                              className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                                option.value === mode
-                                  ? "bg-fill-active text-text"
-                                  : "text-muted hover:bg-fill-ghost-hover hover:text-text"
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="relative">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-haspopup="menu"
-                        aria-expanded={activeSubmenu === "compaction"}
-                        onMouseEnter={() => setActiveSubmenu("compaction")}
-                        onFocus={() => setActiveSubmenu("compaction")}
-                        onClick={() => setActiveSubmenu("compaction")}
-                        className={topLevelMenuItemClass("compaction")}
-                      >
-                        <span>Compaction</span>
-                        <span className="text-[10px] opacity-60">›</span>
-                      </button>
-
-                      {activeSubmenu === "compaction" ? (
-                        <div className="absolute left-full top-0 ml-1 min-w-[156px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              onCompactionClick();
-                              setIsPlusMenuOpen(false);
-                              setActiveSubmenu(null);
-                            }}
-                            disabled={isCompacting}
-                            className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                              isCompacting
-                                ? "cursor-not-allowed text-muted/40"
-                                : "text-muted hover:bg-fill-ghost-hover hover:text-text"
-                            }`}
-                          >
-                            Compact now
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             {availableModels.length > 0 ? (
@@ -584,6 +465,130 @@ export function InputDock({
           </div>
         </div>
       </div>
+      {canRenderPlusMenuPortal
+        ? createPortal(
+            <div
+              ref={plusMenuPopupRef}
+              role="menu"
+              className="fixed z-[100] min-w-[150px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel"
+              style={{ left: plusMenuPosition.left, bottom: plusMenuPosition.bottom }}
+            >
+              <div className="relative">
+                <div className="relative">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setIsPlusMenuOpen(false);
+                      setActiveSubmenu(null);
+                    }}
+                    disabled={!supportsVision || isUploadingImages}
+                    className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                      supportsVision && !isUploadingImages
+                        ? "text-muted hover:bg-fill-ghost-hover hover:text-text"
+                        : "cursor-not-allowed text-muted/40"
+                    }`}
+                  >
+                    {isUploadingImages ? "Uploading images…" : "Add images"}
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={activeSubmenu === "mode"}
+                    onMouseEnter={() => setActiveSubmenu("mode")}
+                    onFocus={() => setActiveSubmenu("mode")}
+                    onClick={() => setActiveSubmenu("mode")}
+                    className={topLevelMenuItemClass("mode")}
+                  >
+                    <span>Mode</span>
+                    <span className="text-[10px] opacity-60">›</span>
+                  </button>
+
+                  {activeSubmenu === "mode" ? (
+                    <div className="absolute left-full top-0 z-[110] ml-1 min-w-[132px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
+                      {modeMenuOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={option.value === mode}
+                          onClick={() => {
+                            onModeChange(option.value as Mode);
+                            setIsPlusMenuOpen(false);
+                            setActiveSubmenu(null);
+                          }}
+                          className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                            option.value === mode
+                              ? "bg-fill-active text-text"
+                              : "text-muted hover:bg-fill-ghost-hover hover:text-text"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={activeSubmenu === "compaction"}
+                    onMouseEnter={() => setActiveSubmenu("compaction")}
+                    onFocus={() => setActiveSubmenu("compaction")}
+                    onClick={() => setActiveSubmenu("compaction")}
+                    className={topLevelMenuItemClass("compaction")}
+                  >
+                    <span>Compaction</span>
+                    <span className="text-[10px] opacity-60">›</span>
+                  </button>
+
+                  {activeSubmenu === "compaction" ? (
+                    <div className="absolute left-full top-0 z-[110] ml-1 min-w-[156px] rounded-xl border border-border/100 bg-surface-dark p-1 shadow-panel">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          onCompactionClick();
+                          setIsPlusMenuOpen(false);
+                          setActiveSubmenu(null);
+                        }}
+                        disabled={isCompacting}
+                        className={`block w-full rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                          isCompacting
+                            ? "cursor-not-allowed text-muted/40"
+                            : "text-muted hover:bg-fill-ghost-hover hover:text-text"
+                        }`}
+                      >
+                        Compact now
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      {canRenderSlashMenuPortal
+        ? createPortal(
+            <div ref={slashMenuPopupRef}>
+              <SlashMenu
+                commands={slashFiltered}
+                selectedIndex={slashSelectedIndex}
+                onSelect={handleSlashSelect}
+                className="fixed z-[100] w-[280px] overflow-hidden rounded-xl border border-border/100 bg-surface-dark shadow-panel"
+                style={{ left: slashMenuPosition.left, bottom: slashMenuPosition.bottom }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

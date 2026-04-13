@@ -1,6 +1,6 @@
 // @summary Slash command autocomplete dropdown rendered above the chat input
 
-import { useEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
 import type { SlashCommand } from "../lib/slash-commands";
 
 interface SlashMenuProps {
@@ -10,9 +10,11 @@ interface SlashMenuProps {
   selectedIndex: number;
   /** Called when user clicks a command */
   onSelect: (command: SlashCommand) => void;
+  className?: string;
+  style?: CSSProperties;
 }
 
-export function SlashMenu({ commands, selectedIndex, onSelect }: SlashMenuProps) {
+export function SlashMenu({ commands, selectedIndex, onSelect, className, style }: SlashMenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
@@ -29,7 +31,11 @@ export function SlashMenu({ commands, selectedIndex, onSelect }: SlashMenuProps)
       ref={listRef}
       role="listbox"
       aria-label="Slash commands"
-      className="absolute bottom-full left-0 z-30 mb-2 w-[280px] overflow-hidden rounded-xl border border-border/100 bg-surface-dark shadow-panel"
+      className={
+        className ??
+        "absolute bottom-full left-0 z-30 mb-2 w-[280px] overflow-hidden rounded-xl border border-border/100 bg-surface-dark shadow-panel"
+      }
+      style={style}
     >
       <div className="max-h-[240px] overflow-y-auto py-1">
         {commands.map((cmd, i) => {
