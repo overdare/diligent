@@ -93,6 +93,34 @@ function renderWebFetchResult(block: Extract<ContentBlock, { type: "web_fetch_re
   )}</div>${excerpt ? `<div class="fetch-text markdown-body">${renderMarkdown(excerpt)}</div>` : ""}</details>`;
 }
 
+function renderRequestUserInputToolCall(item: Extract<ThreadItem, { type: "toolCall" }>): string {
+  const req = item.input as { questions?: Array<{ id: string; header: string; question: string; is_secret?: boolean }> } | null;
+  const questions = req?.questions;
+  if (!questions?.length) {
+    return renderExpandableRow(getToolSummary(item), item.output ?? JSON.stringify(item.input, null, 2), false);
+  }
+
+  let answers: Record<string, string | string[]> | null = null;
+  if (item.output) {
+    try {
+      const parsed = JSON.parse(item.output) as { answers?: Record<string, string | string[]> };
+      answers = parsed.answers ?? null;
+    } catch {
+      // ignore — fall back to no answers shown
+    }
+  }
+
+  const label = answers ? "User answered" : "Asking user…";
+  const rows = questions
+    .map((q) => {
+      const raw = answers?.[q.id];
+      const answerText = Array.isArray(raw) ? raw.join(", ") : (raw ?? "—");
+      return `<div class="qa-row"><div class="qa-question">${escapeHtml(q.question)}</div><div class="qa-answer">${q.is_secret && answers ? "•••" : escapeHtml(answerText)}</div></div>`;
+    })
+    .join("");
+  return `<details class="detail"${answers ? "" : " open"}><summary>${escapeHtml(label)}</summary><div class="qa-list">${rows}</div></details>`;
+}
+
 function renderAssistantMessageRows(blocks: ContentBlock[] | string): string[] {
   if (typeof blocks === "string") {
     return [renderBulletMessage(`<div class="markdown-body">${renderMarkdown(blocks)}</div>`, "message-assistant")];
@@ -205,7 +233,9 @@ function renderThreadItem(item: ThreadItem): string {
       return renderAssistantMessageRows(item.message.content).join("");
     case "toolCall":
       return renderBulletMessage(
-        renderExpandableRow(getToolSummary(item), item.output ?? JSON.stringify(item.input, null, 2), false),
+        item.toolName === "request_user_input"
+          ? renderRequestUserInputToolCall(item)
+          : renderExpandableRow(getToolSummary(item), item.output ?? JSON.stringify(item.input, null, 2), false),
         "message-tool",
       );
     case "knowledge":
