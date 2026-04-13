@@ -23,7 +23,10 @@ describe("executeSteer", () => {
 
     expect(dispatched).toEqual([{ type: "local_steer", payload: "hello world" }]);
     expect(rpc.request).toHaveBeenCalledTimes(1);
-    const [method, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [string, { content: string; followUp: boolean }];
+    const [method, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      { content: string; followUp: boolean },
+    ];
     expect(method).toBe("turn/steer");
     expect(params.content).toBe("hello world");
     expect(params.followUp).toBe(false);
@@ -111,7 +114,10 @@ describe("executeRestartFromAbort", () => {
       { type: "local_user", payload: { text: "retry this", images: [] } },
     ]);
     expect(rpc.request).toHaveBeenCalledTimes(1);
-    const [method, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [string, { message: string; model: string }];
+    const [method, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      { message: string; model: string },
+    ];
     expect(method).toBe("turn/start");
     expect(params.message).toBe("retry this");
     expect(params.model).toBe("claude-4");
