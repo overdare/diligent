@@ -161,6 +161,10 @@ export class DiligentAppServer {
   private currentModelId: string | undefined;
   private oauthPending: Promise<void> | null = null;
 
+  // Per-cwd cache to avoid scanning session files on every new thread creation
+  private readonly lastUsedModelByCwd = new Map<string, string>();
+  private readonly lastUsedEffortByCwd = new Map<string, ThinkingEffort>();
+
   constructor(private readonly config: DiligentAppServerConfig) {
     this.serverName = config.serverName ?? "diligent-app-server";
     this.serverVersion = config.serverVersion ?? DILIGENT_VERSION;
@@ -462,8 +466,10 @@ export class DiligentAppServer {
               runtime.effort = "medium";
               runtime.agent?.setEffort("medium");
               runtime.manager.appendEffortChange("medium", "config");
+              this.lastUsedEffortByCwd.set(runtime.cwd, "medium");
             }
             runtime.manager.appendModelChange(model.provider, model.id);
+            this.lastUsedModelByCwd.set(runtime.cwd, result.model);
           }
         } else {
           this.currentModelId = result.model;
@@ -896,11 +902,37 @@ export class DiligentAppServer {
 
   private async getLatestEffortForCwd(cwd: string): Promise<ThinkingEffort> {
     const fallback = this.config.defaultEffort ?? "medium";
-    return getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
+    for (const runtime of this.threads.values()) {
+      if (runtime.cwd === cwd) {
+        const effort = runtime.manager.getCurrentEffort() ?? runtime.effort;
+        if (effort) {
+          this.lastUsedEffortByCwd.set(cwd, effort);
+          return effort;
+        }
+      }
+    }
+    const cached = this.lastUsedEffortByCwd.get(cwd);
+    if (cached !== undefined) return cached;
+    const result = await getLatestEffortFromSessions(this.config.resolvePaths, this.threads, cwd, fallback);
+    this.lastUsedEffortByCwd.set(cwd, result);
+    return result;
   }
 
   private async getLatestModelForCwd(cwd: string): Promise<string | undefined> {
-    return getLatestModelFromSessions(this.config.resolvePaths, this.threads, cwd, this.currentModelId);
+    for (const runtime of this.threads.values()) {
+      if (runtime.cwd === cwd) {
+        const modelId = runtime.manager.getCurrentModel()?.modelId ?? runtime.modelId;
+        if (modelId) {
+          this.lastUsedModelByCwd.set(cwd, modelId);
+          return modelId;
+        }
+      }
+    }
+    const cached = this.lastUsedModelByCwd.get(cwd);
+    if (cached !== undefined) return cached;
+    const result = await getLatestModelFromSessions(this.config.resolvePaths, this.threads, cwd, this.currentModelId);
+    if (result !== undefined) this.lastUsedModelByCwd.set(cwd, result);
+    return result;
   }
 
   private async resolveToolsContext(
