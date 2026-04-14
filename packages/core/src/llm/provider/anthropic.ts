@@ -174,12 +174,15 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
 
 export async function convertMessages(
   messages: Message[],
-  cwd?: string,
+  cwdOrCompactionSummary?: string | Record<string, unknown>,
   compactionSummary?: Record<string, unknown>,
 ): Promise<Anthropic.MessageParam[]> {
+  const cwd = typeof cwdOrCompactionSummary === "string" ? cwdOrCompactionSummary : undefined;
+  const effectiveCompactionSummary =
+    typeof cwdOrCompactionSummary === "string" ? compactionSummary : (cwdOrCompactionSummary ?? compactionSummary);
   const result: Anthropic.MessageParam[] = [];
 
-  const compactedUserMessage = toAnthropicCompactionUserMessage(compactionSummary);
+  const compactedUserMessage = toAnthropicCompactionUserMessage(effectiveCompactionSummary);
   if (compactedUserMessage) {
     result.push(compactedUserMessage);
   }

@@ -1441,7 +1441,7 @@ describe("DiligentAppServer", () => {
     expect(result.data.find((item) => item.id === threadId)?.firstUserMessage).toBe("[image]");
   });
 
-  it("stores uploaded image paths relative to cwd", async () => {
+  it("returns uploaded image paths as absolute filesystem paths", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-image-upload-"));
     try {
       const result = await handleImageUpload({
@@ -1454,7 +1454,7 @@ describe("DiligentAppServer", () => {
         cwd: projectRoot,
       });
 
-      expect(result.path).toMatch(/^\.diligent\/images\/thread-1\//);
+      expect(result.path.replaceAll("\\", "/")).toContain("/.diligent/images/thread-1/");
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }

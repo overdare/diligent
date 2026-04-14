@@ -1,5 +1,6 @@
 // @summary App-server thread/turn/tool request handlers extracted from server.ts
 
+import { resolvePersistedLocalImagePath, toPersistedLocalImagePath } from "@diligent/core/llm/local-image-paths";
 import { resolveModel } from "@diligent/core/llm/models";
 import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
 import type { RuntimeAgent } from "../agent/runtime-agent";
@@ -390,16 +391,20 @@ export async function handleTurnStart(
       ].join("\n\n")
     : params.message;
 
+  const normalizedAttachments = params.attachments?.map((attachment) =>
+    normalizeLocalImageAttachment(attachment, runtime.cwd),
+  );
+
   const content =
     params.content && params.content.length > 0
       ? params.content
-      : params.attachments && params.attachments.length > 0
+      : normalizedAttachments && normalizedAttachments.length > 0
         ? [
             ...((messageForTurn.trim().length > 0 ? [{ type: "text", text: messageForTurn }] : []) as Array<{
               type: "text";
               text: string;
             }>),
-            ...params.attachments,
+            ...normalizedAttachments,
           ]
         : messageForTurn;
   const userMessage = { role: "user" as const, content, timestamp };
@@ -494,11 +499,17 @@ export async function handleTurnSteer(
   attachments?: Array<{ type: "local_image"; path: string; mediaType: string; fileName?: string }>,
 ): Promise<{ queued: true }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  const normalizedAttachments = attachments?.map((attachment) =>
+    normalizeLocalImageAttachment(attachment, runtime.cwd),
+  );
   const message =
-    attachments && attachments.length > 0
+    normalizedAttachments && normalizedAttachments.length > 0
       ? {
           role: "user" as const,
-          content: [...(content.trim().length > 0 ? ([{ type: "text", text: content }] as const) : []), ...attachments],
+          content: [
+            ...(content.trim().length > 0 ? ([{ type: "text", text: content }] as const) : []),
+            ...normalizedAttachments,
+          ],
           timestamp: Date.now(),
         }
       : {
@@ -508,6 +519,17 @@ export async function handleTurnSteer(
         };
   runtime.manager.steer(message);
   return { queued: true };
+}
+
+function normalizeLocalImageAttachment(
+  attachment: { type: "local_image"; path: string; mediaType: string; fileName?: string },
+  cwd: string,
+): { type: "local_image"; path: string; mediaType: string; fileName?: string } {
+  const absolutePath = resolvePersistedLocalImagePath(attachment.path, cwd);
+  return {
+    ...attachment,
+    path: toPersistedLocalImagePath(absolutePath, cwd),
+  };
 }
 
 export async function handleModeSet(

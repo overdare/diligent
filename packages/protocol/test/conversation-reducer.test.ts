@@ -292,9 +292,7 @@ describe("applyAgentEvents / error", () => {
       liveToolOutput: "output",
       overlayStatus: "Running…",
     };
-    const next = applyAgentEvents(state, [
-      { type: "error", error: { message: "Oops", name: "Error" }, fatal: false },
-    ]);
+    const next = applyAgentEvents(state, [{ type: "error", error: { message: "Oops", name: "Error" }, fatal: false }]);
     expect(next.liveText).toBe("");
     expect(next.liveThinking).toBe("");
     expect(next.liveToolName).toBeNull();
