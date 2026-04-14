@@ -79,6 +79,7 @@ async function createRuntimeAgent(args: {
     applyModeToPrompt(activeMode, guardedSystemPrompt),
     filterToolsByMode(activeMode, toolsResult.tools),
     {
+      cwd,
       effort,
       llmMsgStreamFn: runtimeConfig.streamFunction,
       llmCompactionFn,

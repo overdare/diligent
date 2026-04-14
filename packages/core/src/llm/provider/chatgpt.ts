@@ -78,6 +78,7 @@ export function createChatGPTStream(getTokens: () => OpenAIOAuthTokens): StreamF
           model: resolveChatGPTModelId(model.id),
           systemInstructions: flattenSections(context.systemPrompt),
           messages: context.messages,
+          cwd: context.cwd,
           compactionSummary: context.compactionSummary,
           tools: context.tools,
           sessionId: options.sessionId,
@@ -242,7 +243,11 @@ export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens
 
     const body: Record<string, unknown> = {
       model: resolveChatGPTModelId(input.model.id),
-      input: await toResponseInputItems({ messages: input.messages, compactionSummary: input.compactionSummary }),
+      input: await toResponseInputItems({
+        messages: input.messages,
+        cwd: input.cwd,
+        compactionSummary: input.compactionSummary,
+      }),
     };
     if (input.systemPrompt.length > 0) body.instructions = flattenSections(input.systemPrompt);
 

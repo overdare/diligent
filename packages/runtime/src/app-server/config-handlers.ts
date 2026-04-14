@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { toPersistedLocalImagePath } from "@diligent/core/llm/local-image-paths";
 import { PROVIDER_NAMES, type ProviderManager } from "@diligent/core/llm/provider-manager";
 import {
   createChatGPTOAuthBinding,
@@ -191,7 +192,7 @@ export async function handleImageUpload(args: {
   const webUrl = args.toImageUrl?.(absPath);
   return {
     type: "local_image",
-    path: absPath,
+    path: toPersistedLocalImagePath(absPath, args.cwd),
     mediaType: args.params.mediaType,
     fileName: args.params.fileName,
     webUrl,

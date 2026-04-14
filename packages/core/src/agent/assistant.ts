@@ -65,6 +65,7 @@ export async function streamAssistantMessage(
   messages: Message[],
   request: {
     config: {
+      cwd?: string;
       model: Model;
       effort: ThinkingEffort;
     };
@@ -81,6 +82,7 @@ export async function streamAssistantMessage(
   generateItemId: () => string,
 ): Promise<AssistantMessage> {
   const context: StreamContext = {
+    cwd: request.config.cwd,
     systemPrompt: runtime.systemPrompt,
     messages,
     tools: runtime.tools.map(toToolDefinition),

@@ -67,7 +67,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           model: model.id,
           max_tokens: options.maxTokens ?? model.maxOutputTokens,
           system: systemBlocks,
-          messages: await convertMessages(context.messages, context.compactionSummary),
+          messages: await convertMessages(context.messages, context.cwd, context.compactionSummary),
           ...(context.tools.length > 0 && { tools: convertTools(context.tools) }),
           ...thinkingConfig,
         } as Anthropic.MessageCreateParams;
@@ -174,6 +174,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
 
 export async function convertMessages(
   messages: Message[],
+  cwd?: string,
   compactionSummary?: Record<string, unknown>,
 ): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
@@ -188,7 +189,7 @@ export async function convertMessages(
       const blocks =
         typeof msg.content === "string"
           ? [{ type: "text" as const, text: msg.content }]
-          : (await materializeUserContentBlocks(msg.content)).map(convertContentBlock);
+          : (await materializeUserContentBlocks(msg.content, { cwd })).map(convertContentBlock);
       result.push({ role: "user", content: blocks });
     } else if (msg.role === "assistant") {
       result.push({
@@ -597,7 +598,7 @@ function toAnthropicBlocks(sections: SystemSection[]): AnthropicTextBlock[] {
 export function createAnthropicNativeCompaction(apiKey: string, baseUrl?: string): NativeCompactFn {
   const endpoint = `${resolveAnthropicBaseUrl(baseUrl)}/messages`;
   return async (input) => {
-    const rawMessages = await convertMessages(input.messages, input.compactionSummary);
+    const rawMessages = await convertMessages(input.messages, input.cwd, input.compactionSummary);
     const normalizedMessages = ensureAnthropicCompactionConversationEndsWithUser(rawMessages);
     const body: Record<string, unknown> = {
       model: input.model.id,

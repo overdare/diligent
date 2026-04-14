@@ -15,7 +15,7 @@ import { ProviderError } from "../types";
 
 export type ResponsesReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
-export async function convertMessages(messages: Message[]): Promise<ResponseInputItem[]> {
+export async function convertMessages(messages: Message[], cwd?: string): Promise<ResponseInputItem[]> {
   const result: ResponseInputItem[] = [];
   // Track function_calls that haven't been matched with an output yet (call_id -> index in result)
   const pendingCalls = new Map<string, number>();
@@ -25,7 +25,7 @@ export async function convertMessages(messages: Message[]): Promise<ResponseInpu
       if (typeof msg.content === "string") {
         result.push({ type: "message", role: "user", content: [{ type: "input_text", text: msg.content }] });
       } else {
-        const blocks = await materializeUserContentBlocks(msg.content);
+        const blocks = await materializeUserContentBlocks(msg.content, { cwd });
         const content: ResponseInputMessageContentList = [];
         for (const block of blocks) {
           if (block.type === "text") {
@@ -83,9 +83,10 @@ export async function convertMessages(messages: Message[]): Promise<ResponseInpu
 
 export async function toResponseInputItems(input: {
   messages: Message[];
+  cwd?: string;
   compactionSummary?: Record<string, unknown>;
 }): Promise<ResponseInputItem[]> {
-  const convertedMessages = await convertMessages(input.messages);
+  const convertedMessages = await convertMessages(input.messages, input.cwd);
   if (input.compactionSummary) {
     return [input.compactionSummary as unknown as ResponseInputItem, ...convertedMessages];
   }
@@ -194,6 +195,7 @@ export function buildTools(tools: ToolDefinition[], strict?: boolean): OpenAIRes
 export async function buildResponsesRequestBody(input: {
   model: string;
   messages: Message[];
+  cwd?: string;
   compactionSummary?: Record<string, unknown>;
   systemInstructions?: string;
   tools?: ToolDefinition[];
@@ -211,6 +213,7 @@ export async function buildResponsesRequestBody(input: {
     stream: true,
     input: await toResponseInputItems({
       messages: input.messages,
+      cwd: input.cwd,
       compactionSummary: input.compactionSummary,
     }),
   };

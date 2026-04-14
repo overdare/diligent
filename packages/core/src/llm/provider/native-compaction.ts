@@ -2,6 +2,7 @@
 import type { Model, SystemSection } from "../types";
 
 export interface NativeCompactionInput {
+  cwd?: string;
   model: Model;
   systemPrompt: SystemSection[];
   messages: import("../../types").Message[];

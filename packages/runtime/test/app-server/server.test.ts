@@ -28,6 +28,7 @@ import {
   RuntimeAgent,
 } from "@diligent/runtime";
 import { createAppServerConfig, DiligentAppServer } from "@diligent/runtime/app-server";
+import { handleImageUpload } from "@diligent/runtime/app-server/config-handlers";
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
@@ -1438,6 +1439,109 @@ describe("DiligentAppServer", () => {
     });
     const result = readResult(list) as { data: Array<{ id: string; firstUserMessage?: string }> };
     expect(result.data.find((item) => item.id === threadId)?.firstUserMessage).toBe("[image]");
+  });
+
+  it("stores uploaded image paths relative to cwd", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-image-upload-"));
+    try {
+      const result = await handleImageUpload({
+        params: {
+          fileName: "example.png",
+          mediaType: "image/png",
+          dataBase64: Buffer.from("png-bytes").toString("base64"),
+        },
+        threadId: "thread-1",
+        cwd: projectRoot,
+      });
+
+      expect(result.path).toMatch(/^\.diligent\/images\/thread-1\//);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("continues turn execution when restored image file is missing", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-missing-image-"));
+
+    const visionModel: Model = {
+      ...FAKE_MODEL,
+      supportsVision: true,
+    };
+
+    const server = new DiligentAppServer({
+      cwd: projectRoot,
+      resolvePaths: async (cwd) => ensureDiligentDir(cwd),
+      createAgent: () =>
+        new RuntimeAgent(visionModel, [{ label: "base", content: "test" }], [], {
+          cwd: projectRoot,
+          effort: "medium",
+          llmMsgStreamFn: (model) => {
+            const stream = new EventStream(
+              (event) => event.type === "done",
+              (event) => ({ message: (event as { message: unknown }).message }),
+            );
+            queueMicrotask(() => {
+              stream.push({ type: "start" });
+              stream.push({
+                type: "done",
+                stopReason: "end_turn",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "ok" }],
+                  model: model.id,
+                  usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                  stopReason: "end_turn",
+                  timestamp: Date.now(),
+                },
+              });
+            });
+            return stream as never;
+          },
+        }),
+    });
+
+    try {
+      const connection = connectTestPeer(server);
+      let resolveTurnCompleted: (() => void) | null = null;
+      const turnCompleted = new Promise<void>((resolve) => {
+        resolveTurnCompleted = resolve;
+      });
+      connection.setNotificationListener((notification) => {
+        if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) {
+          resolveTurnCompleted?.();
+        }
+      });
+
+      const start = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 211,
+        method: "thread/start",
+        params: { cwd: projectRoot },
+      });
+      const threadId = (readResult(start) as { threadId: string }).threadId;
+
+      const turnStart = await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 212,
+        method: "turn/start",
+        params: {
+          threadId,
+          message: "describe this",
+          attachments: [
+            {
+              type: "local_image",
+              path: ".diligent/images/missing.png",
+              mediaType: "image/png",
+              fileName: "missing.png",
+            },
+          ],
+        },
+      });
+
+      expect((readResult(turnStart) as { accepted: boolean }).accepted).toBe(true);
+      await turnCompleted;
+      connection.disconnect();
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 
   it("treats empty user-input response as aborted turn", async () => {

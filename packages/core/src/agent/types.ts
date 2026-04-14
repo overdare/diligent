@@ -131,6 +131,7 @@ export interface LLMRetryConfig {
 
 // D008: Loop control configuration — timing and compaction knobs only
 export interface AgentOptions {
+  cwd?: string;
   effort?: ThinkingEffort;
   retry?: LLMRetryConfig;
   compaction?: CompactionConfig;

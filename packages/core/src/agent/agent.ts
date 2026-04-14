@@ -15,6 +15,7 @@ import type { AgentOptions, CompactionConfig } from "./types";
 import { AgentStream, type LLMRetryConfig } from "./types";
 
 export class Agent {
+  cwd?: string;
   model: Model;
   systemPrompt: SystemSection[];
   tools: Tool[];
@@ -32,6 +33,7 @@ export class Agent {
 
   constructor(model: string | Model, systemPrompt: SystemSection[], tools: Tool[], opts?: AgentOptions) {
     this.model = typeof model === "string" ? resolveModel(model) : model;
+    this.cwd = opts?.cwd;
     this.systemPrompt = systemPrompt;
     this.tools = tools;
     this.effort = opts?.effort ?? "medium";
@@ -105,6 +107,7 @@ export class Agent {
   private createLoopRuntime(): LoopRuntime {
     return {
       config: {
+        cwd: this.cwd,
         model: this.model,
         systemPrompt: this.systemPrompt,
         tools: this.tools,

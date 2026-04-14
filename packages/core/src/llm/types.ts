@@ -66,6 +66,7 @@ export type StreamFunction = (
 ) => EventStream<ProviderEvent, ProviderResult>;
 
 export interface StreamContext {
+  cwd?: string;
   systemPrompt: SystemSection[];
   messages: Message[];
   tools: ToolDefinition[];
