@@ -102,6 +102,30 @@ export function applyAgentEvents<T extends ConversationLiveState>(state: T, even
           liveToolOutput: "",
         };
         break;
+      case "collab_spawn_begin":
+        nextState = { ...nextState, overlayStatus: "Spawning agent…" };
+        break;
+      case "collab_spawn_end":
+        nextState = { ...nextState, overlayStatus: null };
+        break;
+      case "collab_wait_begin":
+        nextState = { ...nextState, overlayStatus: "Waiting for agents…" };
+        break;
+      case "collab_wait_end":
+        nextState = { ...nextState, overlayStatus: null };
+        break;
+      case "collab_close_begin":
+        nextState = { ...nextState, overlayStatus: "Closing agent…" };
+        break;
+      case "collab_close_end":
+        nextState = { ...nextState, overlayStatus: null };
+        break;
+      case "collab_interaction_begin":
+        nextState = { ...nextState, overlayStatus: "Sending to agent…" };
+        break;
+      case "collab_interaction_end":
+        nextState = { ...nextState, overlayStatus: null };
+        break;
     }
   }
 
