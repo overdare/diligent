@@ -23,6 +23,14 @@ interface SingleEdit {
   replace_all: boolean;
 }
 
+type MatchMode = "exact" | "trimEnd" | "trim" | "unicode";
+
+interface MatchRange {
+  start: number;
+  end: number;
+  mode: MatchMode;
+}
+
 /** Count non-overlapping occurrences of `needle` in `haystack`. */
 function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) return 0;
@@ -33,6 +41,85 @@ function countOccurrences(haystack: string, needle: string): number {
     pos += needle.length;
   }
   return count;
+}
+
+function normalizeUnicode(value: string): string {
+  return value
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+}
+
+function splitPreservingNewlines(value: string): string[] {
+  const parts = value.match(/.*?(?:\r\n|\n|\r|$)/g) ?? [];
+  if (parts.length > 0 && parts[parts.length - 1] === "") {
+    parts.pop();
+  }
+  return parts;
+}
+
+function compareLines(mode: MatchMode, actual: string, expected: string): boolean {
+  switch (mode) {
+    case "exact":
+      return actual === expected;
+    case "trimEnd":
+      return actual.trimEnd() === expected.trimEnd();
+    case "trim":
+      return actual.trim() === expected.trim();
+    case "unicode":
+      return normalizeUnicode(actual.trim()) === normalizeUnicode(expected.trim());
+  }
+}
+
+function findMatchRanges(content: string, search: string): MatchRange[] {
+  if (search.length === 0) return [];
+
+  const exactCount = countOccurrences(content, search);
+  if (exactCount > 0) {
+    const matches: MatchRange[] = [];
+    let pos = 0;
+    while ((pos = content.indexOf(search, pos)) !== -1) {
+      matches.push({ start: pos, end: pos + search.length, mode: "exact" });
+      pos += search.length;
+    }
+    return matches;
+  }
+
+  const contentLines = splitPreservingNewlines(content);
+  const searchLines = splitPreservingNewlines(search);
+  if (contentLines.length === 0 || searchLines.length === 0 || searchLines.length > contentLines.length) {
+    return [];
+  }
+
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const line of contentLines) {
+    offsets.push(offset);
+    offset += line.length;
+  }
+
+  const modes: MatchMode[] = ["trimEnd", "trim", "unicode"];
+  for (const mode of modes) {
+    const matches: MatchRange[] = [];
+    for (let index = 0; index <= contentLines.length - searchLines.length; index++) {
+      let matched = true;
+      for (let lineIndex = 0; lineIndex < searchLines.length; lineIndex++) {
+        if (!compareLines(mode, contentLines[index + lineIndex], searchLines[lineIndex])) {
+          matched = false;
+          break;
+        }
+      }
+      if (!matched) continue;
+      const start = offsets[index];
+      const lastLineIndex = index + searchLines.length - 1;
+      const end = offsets[lastLineIndex] + contentLines[lastLineIndex].length;
+      matches.push({ start, end, mode });
+    }
+    if (matches.length > 0) return matches;
+  }
+
+  return [];
 }
 
 /**
@@ -46,13 +133,22 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
     throw new Error("old_string and new_string must differ");
   }
 
-  const occurrences = countOccurrences(content, old_string);
+  const matches = findMatchRanges(content, old_string);
+  const occurrences = matches.length;
 
   if (replace_all) {
     if (occurrences === 0) {
       throw new Error("old_string not found in file");
     }
-    return { result: content.replaceAll(old_string, new_string), count: occurrences };
+    let result = "";
+    let lastIndex = 0;
+    for (const match of matches) {
+      result += content.slice(lastIndex, match.start);
+      result += new_string;
+      lastIndex = match.end;
+    }
+    result += content.slice(lastIndex);
+    return { result, count: occurrences };
   }
 
   // Unique match mode
@@ -63,7 +159,11 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
     throw new Error("old_string is not unique, provide more context or use replace_all");
   }
 
-  return { result: content.replace(old_string, new_string), count: 1 };
+  const match = matches[0];
+  return {
+    result: `${content.slice(0, match.start)}${new_string}${content.slice(match.end)}`,
+    count: 1,
+  };
 }
 
 // ---------------------------------------------------------------------------

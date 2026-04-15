@@ -302,6 +302,91 @@ describe("script tools", () => {
     expect(levelApplyMock).not.toHaveBeenCalled();
   });
 
+  test("script.edit matches when only trailing whitespace differs", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "local value = 1   \nprint(value)\n";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    const result = await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: "local value = 1\nprint(value)\n",
+        new_string: "local value = 2\nprint(value)\n",
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe("local value = 2\nprint(value)\n");
+    expect(result.output).toContain("replaced 1 occurrence(s)");
+  });
+
+  test("script.edit matches when only leading whitespace differs", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source =
+      'if true then\n\tprint("hello world")\nend\n';
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    const result = await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: 'if true then\n    print("hello world")\nend\n',
+        new_string: 'if true then\n    print("hi there")\nend\n',
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe('if true then\n\tprint("hi there")\nend\n');
+    expect(result.output).toContain("replaced 1 occurrence(s)");
+  });
+
+  test("script.edit matches when unicode punctuation differs", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source = "print(“hello world” — test)\n";
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    const result = await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: 'print("hello world" - test)\n',
+        new_string: 'print("hi there" - test)\n',
+      },
+      createToolContext(),
+    );
+
+    const saved = await readWorld(tempDir);
+    const script = findNode(saved.Root as OvdrjmNode, "HELLO_SCRIPT_GUID")!;
+    expect(script.Source).toBe('print("hi there" - test)\n');
+    expect(result.output).toContain("replaced 1 occurrence(s)");
+  });
+
+  test("script.edit fallback still fails when normalized match is ambiguous", async () => {
+    const world = createWorldDocument();
+    (world.Root.LuaChildren[0].LuaChildren[0] as Record<string, unknown>).Source =
+      '\tprint("hello")\n    print("hello")\n';
+    await writeFile(join(tempDir, "world.ovdrjm"), `${JSON.stringify(world, null, 2)}\n`, "utf-8");
+
+    const tool = createScriptEditTool(tempDir, writeLock);
+    const result = await tool.execute(
+      {
+        targetGuid: "HELLO_SCRIPT_GUID",
+        old_string: 'print("hello")\n',
+        new_string: 'print("hi")\n',
+      },
+      createToolContext(),
+    );
+
+    expect(result.metadata?.error).toBe(true);
+    expect(result.output).toContain("not unique");
+    expect(levelApplyMock).not.toHaveBeenCalled();
+  });
+
   // -------------------------------------------------------------------------
   // script.edit — leading 4-space → tab normalization
   // -------------------------------------------------------------------------
@@ -329,7 +414,7 @@ describe("script tools", () => {
 
     // leading 4 spaces → 1 tab
     expect(script.Source).toBe('if true then\n\tprint("changed")\nend');
-    expect(result.output).toContain("converted to tabs");
+    expect(result.output).toContain("→ tabs");
   });
 
   test("script.edit normalizes mixed tab+4spaces: \\t    \\tabcd → \\t\\t\\tabcd", async () => {
@@ -441,7 +526,7 @@ describe("script tools", () => {
     const added = scripts.LuaChildren!.find((n) => n.Name === "IndentedScript");
 
     expect(added!.Source).toBe('if true then\n\tprint("hi")\n\t\tprint("deep")\nend');
-    expect(result.output).toContain("converted to tabs");
+    expect(result.output).toContain("→ tabs");
   });
 
   test("script.edit rejects non-script instances", async () => {

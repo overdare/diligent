@@ -2,9 +2,12 @@ import { z } from "zod";
 
 export const method = "script.edit";
 
-export const description = `Edit a script's source via exact string replacement.
+export const description = `Edit a script's source via string replacement.
 
 IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-converted to tabs.
+
+Matching first tries exact text, then falls back to line-based matching that tolerates trailing whitespace,
+leading/trailing whitespace, and common Unicode quote/dash/space variants.
 
 The edit will FAIL if old_string is not unique in the script source.
 Provide more surrounding context to make it unique, or set replace_all to true.
