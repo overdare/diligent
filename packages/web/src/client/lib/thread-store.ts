@@ -12,7 +12,8 @@ import type {
   ToolRenderPayload,
   UserInputRequest,
 } from "@diligent/protocol";
-import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { applyAgentEvents, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import type { ConversationLiveState } from "@diligent/protocol";
 import {
   appendChildAssistantTimelineDelta,
   appendChildAssistantTimelineStart,
@@ -157,7 +158,18 @@ export interface ThreadState {
   activeReasoningStartedAt: number | null;
   activeReasoningDurationMs: number;
   isCompacting: boolean;
+  liveText: string;
+  liveThinking: string;
+  liveToolName: string | null;
+  liveToolInput: string | null;
+  liveToolOutput: string;
+  overlayStatus: string | null;
 }
+
+// ─── Shared reducer live-field bridge ───────────────────────────────────────
+// ThreadState cannot directly extend ConversationLiveState because their `items`
+// fields differ (RenderItem[] vs ThreadItem[]). Instead, these live-streaming
+// fields are kept in sync by delegating to applyAgentEvents() via an adapter.
 
 export const initialThreadState: ThreadState = {
   activeThreadId: null,
@@ -180,9 +192,47 @@ export const initialThreadState: ThreadState = {
   activeReasoningStartedAt: null,
   activeReasoningDurationMs: 0,
   isCompacting: false,
+  liveText: "",
+  liveThinking: "",
+  liveToolName: null,
+  liveToolInput: null,
+  liveToolOutput: "",
+  overlayStatus: null,
 };
 
 let renderSeq = 0;
+
+/** Build a ConversationLiveState adapter from the live-streaming fields in ThreadState. */
+function extractLiveState(state: ThreadState): ConversationLiveState {
+  return {
+    threadId: state.activeThreadId,
+    threadTitle: null,
+    threadStatus: state.threadStatus,
+    items: [],
+    liveText: state.liveText,
+    liveThinking: state.liveThinking,
+    liveToolName: state.liveToolName,
+    liveToolInput: state.liveToolInput,
+    liveToolOutput: state.liveToolOutput,
+    overlayStatus: state.overlayStatus,
+    isLoading: false,
+    lastError: null,
+  };
+}
+
+/** Merge updated ConversationLiveState live fields back into ThreadState. */
+function mergeLiveFields(state: ThreadState, live: ConversationLiveState): ThreadState {
+  return {
+    ...state,
+    threadStatus: live.threadStatus as ThreadStatus,
+    liveText: live.liveText,
+    liveThinking: live.liveThinking,
+    liveToolName: live.liveToolName,
+    liveToolInput: live.liveToolInput,
+    liveToolOutput: live.liveToolOutput,
+    overlayStatus: live.overlayStatus,
+  };
+}
 
 function extractAssistantTextFromMessage(message: AssistantMessage): { text: string; thinking: string } {
   type AssistantContentBlock = AssistantMessage["content"][number];
@@ -204,26 +254,34 @@ function extractAssistantTextFromMessage(message: AssistantMessage): { text: str
 }
 
 function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
+  // Delegate base ConversationLiveState live fields to the shared reducer first.
+  // This keeps threadStatus, overlayStatus, liveText, liveThinking, and live tool
+  // fields converged with protocol's applyAgentEvents() contract.
+  const liveResult = applyAgentEvents(extractLiveState(state), [event]);
+  const merged = mergeLiveFields(state, liveResult);
+
+  // Tool events: apply live fields first, then handle Web-specific RenderItem logic.
   if (isToolEvent(event)) {
-    return reduceToolEvent(state, event);
+    return reduceToolEvent(merged, event);
   }
 
+  // Collab events: apply live fields first, then handle Web-specific collab item logic.
   if (isCollabEvent(event)) {
-    return reduceCollabEvent(state, event);
+    return reduceCollabEvent(merged, event);
   }
 
   switch (event.type) {
     case "message_start": {
       if ("childThreadId" in event && typeof event.childThreadId === "string") {
-        return appendChildAssistantTimelineStart(state, event.childThreadId);
+        return appendChildAssistantTimelineStart(merged, event.childThreadId);
       }
       const renderId = `item:${event.itemId}:${++renderSeq}`;
-      if (state.itemSlots[event.itemId]) return state;
+      if (merged.itemSlots[event.itemId]) return merged;
       return {
-        ...state,
-        itemSlots: { ...state.itemSlots, [event.itemId]: renderId },
+        ...merged,
+        itemSlots: { ...merged.itemSlots, [event.itemId]: renderId },
         items: [
-          ...state.items,
+          ...merged.items,
           {
             id: renderId,
             kind: "assistant",
@@ -244,24 +302,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     case "message_delta": {
       if ("childThreadId" in event && typeof event.childThreadId === "string") {
         if (event.delta.type === "text_delta") {
-          return appendChildAssistantTimelineDelta(state, event.childThreadId, event.delta.delta);
+          return appendChildAssistantTimelineDelta(merged, event.childThreadId, event.delta.delta);
         }
-        return state;
+        return merged;
       }
-      const renderId = state.itemSlots[event.itemId];
-      if (!renderId) return state;
+      const renderId = merged.itemSlots[event.itemId];
+      if (!renderId) return merged;
       const delta = event.delta;
 
       if (delta.type === "text_delta") {
         const nextState =
-          state.activeReasoningStartedAt !== null
+          merged.activeReasoningStartedAt !== null
             ? {
-                ...state,
+                ...merged,
                 activeReasoningDurationMs:
-                  state.activeReasoningDurationMs + (Date.now() - state.activeReasoningStartedAt),
+                  merged.activeReasoningDurationMs + (Date.now() - merged.activeReasoningStartedAt),
                 activeReasoningStartedAt: null,
               }
-            : state;
+            : merged;
         return updateItem(nextState, renderId, (item) =>
           item.kind === "assistant" ? { ...item, text: item.text + delta.delta, thinkingDone: true } : item,
         );
@@ -269,14 +327,14 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
       if (delta.type === "thinking_delta") {
         const nextState =
-          state.activeReasoningStartedAt === null ? { ...state, activeReasoningStartedAt: Date.now() } : state;
+          merged.activeReasoningStartedAt === null ? { ...merged, activeReasoningStartedAt: Date.now() } : merged;
         return updateItem(nextState, renderId, (item) =>
           item.kind === "assistant" ? { ...item, thinking: item.thinking + delta.delta } : item,
         );
       }
 
       if (delta.type === "content_block_delta") {
-        return updateItem(state, renderId, (item) =>
+        return updateItem(merged, renderId, (item) =>
           item.kind === "assistant"
             ? {
                 ...item,
@@ -286,26 +344,26 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         );
       }
 
-      return state;
+      return merged;
     }
 
     case "message_end": {
       if ("childThreadId" in event && typeof event.childThreadId === "string") {
-        return finalizeChildAssistantTimeline(state, event.childThreadId, event.message);
+        return finalizeChildAssistantTimeline(merged, event.childThreadId, event.message);
       }
-      const renderId = state.itemSlots[event.itemId];
-      if (!renderId) return state;
-      const { [event.itemId]: _, ...remainingSlots } = state.itemSlots;
+      const renderId = merged.itemSlots[event.itemId];
+      if (!renderId) return merged;
+      const { [event.itemId]: _, ...remainingSlots } = merged.itemSlots;
       const { text: finalText, thinking: finalThinking } = extractAssistantTextFromMessage(event.message);
       const nextState =
-        state.activeReasoningStartedAt !== null
+        merged.activeReasoningStartedAt !== null
           ? {
-              ...state,
+              ...merged,
               activeReasoningDurationMs:
-                state.activeReasoningDurationMs + (Date.now() - state.activeReasoningStartedAt),
+                merged.activeReasoningDurationMs + (Date.now() - merged.activeReasoningStartedAt),
               activeReasoningStartedAt: null,
             }
-          : state;
+          : merged;
       return {
         ...updateItem(nextState, renderId, (current) =>
           current.kind === "assistant"
@@ -335,7 +393,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
     case "user_message": {
       const { text, images } = extractUserTextAndImages(event.message.content);
-      let nextState = state;
+      let nextState = merged;
       if (nextState.pendingSteers.length > 0) {
         const joinedSteers = nextState.pendingSteers.join("\n");
         if (text === joinedSteers) {
@@ -352,24 +410,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "status_change":
-      return { ...state, threadStatus: event.status };
+      return merged;
 
     case "usage":
       return {
-        ...state,
+        ...merged,
         usage: {
-          inputTokens: state.usage.inputTokens + event.usage.inputTokens,
-          outputTokens: state.usage.outputTokens + event.usage.outputTokens,
-          cacheReadTokens: state.usage.cacheReadTokens + event.usage.cacheReadTokens,
-          cacheWriteTokens: state.usage.cacheWriteTokens + event.usage.cacheWriteTokens,
-          totalCost: state.usage.totalCost + event.cost,
+          inputTokens: merged.usage.inputTokens + event.usage.inputTokens,
+          outputTokens: merged.usage.outputTokens + event.usage.outputTokens,
+          cacheReadTokens: merged.usage.cacheReadTokens + event.usage.cacheReadTokens,
+          cacheWriteTokens: merged.usage.cacheWriteTokens + event.usage.cacheWriteTokens,
+          totalCost: merged.usage.totalCost + event.cost,
         },
         currentContextTokens: event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
       };
 
     case "error":
       return settleInFlightItems({
-        ...state,
+        ...merged,
         threadStatus: "idle",
         isCompacting: false,
         itemSlots: {},
@@ -387,7 +445,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
     case "knowledge_saved":
       return {
-        ...state,
+        ...merged,
         toast: {
           id: `info-${event.knowledgeId}`,
           kind: "info",
@@ -396,11 +454,11 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
       };
 
     case "compaction_start":
-      return { ...state, isCompacting: true };
+      return { ...merged, isCompacting: true };
 
     case "compaction_end": {
       const contextKey = `event:compaction:${Date.now()}`;
-      const nextState = { ...state, isCompacting: false };
+      const nextState = { ...merged, isCompacting: false };
       return withItem(nextState, contextKey, {
         id: contextKey,
         kind: "context",
@@ -410,8 +468,8 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     case "steering_injected": {
-      const drainedFromQueue = state.pendingSteers.slice(0, event.messageCount);
-      const remaining = state.pendingSteers.slice(event.messageCount);
+      const drainedFromQueue = merged.pendingSteers.slice(0, event.messageCount);
+      const remaining = merged.pendingSteers.slice(event.messageCount);
       const fallbackFromEvent = event.messages
         .filter((message) => message.role === "user")
         .map((message) => extractUserTextAndImages(message.content))
@@ -431,24 +489,24 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
         timestamp: Date.now(),
       }));
       return {
-        ...state,
+        ...merged,
         pendingSteers: remaining,
-        items: [...state.items, ...newItems],
+        items: [...merged.items, ...newItems],
       };
     }
 
     case "turn_start": {
       // Child agent turn — update spawn item
       if (event.childThreadId) {
-        const spawnItem = findCollabSpawnItem(state, event.childThreadId);
+        const spawnItem = findCollabSpawnItem(merged, event.childThreadId);
         if (spawnItem) {
-          return updateItem(state, spawnItem.id, (item) =>
+          return updateItem(merged, spawnItem.id, (item) =>
             item.kind === "collab" ? { ...item, turnNumber: event.turnNumber } : item,
           );
         }
       }
       return {
-        ...state,
+        ...merged,
         activeTurnId: event.turnId,
         activeTurnStartedAt: Date.now(),
         activeReasoningStartedAt: null,
@@ -457,7 +515,7 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
     }
 
     default:
-      return state;
+      return merged;
   }
 }
 
