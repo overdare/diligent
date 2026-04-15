@@ -8,7 +8,9 @@ IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-convert
 
 The edit will FAIL if old_string is not unique in the script source.
 Provide more surrounding context to make it unique, or set replace_all to true.
-Use replace_all for renaming variables or replacing repeated patterns across the script.`;
+Use replace_all for renaming variables or replacing repeated patterns across the script.
+
+If an edit fails, call script_read to check the current source before retrying.`;
 
 export const params = z.object({
   targetGuid: z.string().describe("GUID of the script to edit"),

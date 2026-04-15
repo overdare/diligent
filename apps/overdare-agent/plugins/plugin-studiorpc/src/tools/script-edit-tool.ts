@@ -8,6 +8,7 @@ import {
   findNodeByActorGuid,
   isRecord,
   normalizeLeadingSpaces,
+  normalizeLineEndings,
   type OvdrjmNode,
   readAndWriteOvdrjm,
 } from "./ovdrjm-utils.ts";
@@ -109,6 +110,7 @@ async function executeScriptEdit(
   try {
     let count = 0;
     let tabCount = 0;
+    let eolCount = 0;
     let scriptName: string | undefined;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
@@ -135,19 +137,22 @@ async function executeScriptEdit(
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
 
-      // Normalize leading 4-spaces → tabs in the final result
+      // Normalize leading 4-spaces → tabs, then line endings for the current OS
       const normalized = normalizeLeadingSpaces(result);
-      target.Source = normalized.result;
+      const eolNormalized = normalizeLineEndings(normalized.result);
+      target.Source = eolNormalized.result;
       tabCount = normalized.converted;
+      eolCount = eolNormalized.converted;
       count = editCount;
     });
 
     await applyAndSave();
 
     let output = `Edited script ${targetGuid}: replaced ${count} occurrence(s)`;
-    if (tabCount > 0) {
-      output += ` (${tabCount} leading 4-space group(s) were converted to tabs)`;
-    }
+    const normalizations: string[] = [];
+    if (tabCount > 0) normalizations.push(`${tabCount} leading 4-space group(s) → tabs`);
+    if (eolCount > 0) normalizations.push(`${eolCount} line ending(s) normalized`);
+    if (normalizations.length > 0) output += ` (${normalizations.join(", ")})`;
     return {
       output,
       render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),

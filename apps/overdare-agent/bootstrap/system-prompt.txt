@@ -159,6 +159,10 @@ Some Roblox features are not yet available in OVERDARE. Use the following workar
 </code-generation-workflow>
 
 <code-style>
+# Indentation & Line Endings
+- Use **tabs** for indentation, not spaces. Leading 4-space groups are auto-converted to tabs, but always prefer tabs directly.
+- On Windows, use `\r\n` line endings. On other platforms, use `\n`. Line endings are auto-normalized to match the current OS.
+
 # Type Annotations
 Use explicit Luau type annotations wherever possible.
 - **Maps:** `local scores: {[string]: number} = {}`

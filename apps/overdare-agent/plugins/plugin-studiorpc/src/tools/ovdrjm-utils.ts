@@ -1,5 +1,6 @@
 // @summary Shared utilities for reading and navigating .ovdrjm level files.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { platform } from "node:os";
 import { join } from "node:path";
 
 export type OvdrjmNode = Record<string, unknown> & {
@@ -100,6 +101,30 @@ function encodeOvdrjm(text: string, originalBuf: Buffer): Buffer {
     return Buffer.concat([bom, body]);
   }
   return Buffer.from(text, "utf-8");
+}
+
+/**
+ * Normalize line endings to match the current OS convention.
+ * Windows → \r\n, others → \n.
+ * Returns { result, converted } where `converted` is the number of line
+ * endings that were changed.
+ */
+export function normalizeLineEndings(source: string): { result: string; converted: number } {
+  const isWindows = platform() === "win32";
+  if (isWindows) {
+    // First normalize everything to \n, then convert to \r\n
+    const unified = source.replace(/\r\n/g, "\n");
+    const converted = unified.split("\n").length - 1 - (source.match(/\r\n/g)?.length ?? 0);
+    const result = unified.replace(/\n/g, "\r\n");
+    return { result, converted };
+  }
+  // Non-Windows: strip \r from \r\n
+  let converted = 0;
+  const result = source.replace(/\r\n/g, () => {
+    converted++;
+    return "\n";
+  });
+  return { result, converted };
 }
 
 /**

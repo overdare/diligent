@@ -8,6 +8,7 @@ import {
   findNodeByActorGuid,
   isRecord,
   normalizeLeadingSpaces,
+  normalizeLineEndings,
   type OvdrjmNode,
   readAndWriteOvdrjm,
 } from "./ovdrjm-utils.ts";
@@ -55,6 +56,7 @@ async function executeScriptAdd(
   try {
     let addedGuid = "";
     let tabCount = 0;
+    let eolCount = 0;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
       const root = rootDoc.Root;
@@ -72,24 +74,27 @@ async function executeScriptAdd(
 
       const guid = makeActorGuid();
       const normalized = normalizeLeadingSpaces(parsed.source);
+      const eolNormalized = normalizeLineEndings(normalized.result);
 
       childList.push({
         InstanceType: parsed.class,
         ActorGuid: guid,
         ObjectKey: nextObjectKey(rootDoc),
         Name: parsed.name,
-        Source: normalized.result,
+        Source: eolNormalized.result,
       });
       addedGuid = guid;
       tabCount = normalized.converted;
+      eolCount = eolNormalized.converted;
     });
 
     await applyAndSave();
 
     let output = `Script added: ${parsed.name} (${addedGuid})`;
-    if (tabCount > 0) {
-      output += ` (${tabCount} leading 4-space group(s) were converted to tabs)`;
-    }
+    const normalizations: string[] = [];
+    if (tabCount > 0) normalizations.push(`${tabCount} leading 4-space group(s) → tabs`);
+    if (eolCount > 0) normalizations.push(`${eolCount} line ending(s) normalized`);
+    if (normalizations.length > 0) output += ` (${normalizations.join(", ")})`;
     return {
       output,
       render: buildScriptAddRender(parsed as unknown as Record<string, unknown>, output, addedGuid),
