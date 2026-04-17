@@ -21,6 +21,7 @@
     "build:sidecar": "bun run scripts/build-sidecar.ts",
     "build:exe-only": "bun run scripts/build-exe-only.ts",
     "deploy": "bun run scripts/deploy.ts",
+    "tools": "bun run scripts/tool-cli.ts",
     "mock:studiorpc": "bun run scripts/mock-studiorpc.ts",
     "test:part": "bun run scripts/test-part.ts",
     "test:vfx": "bun run scripts/test-vfx.ts",
