@@ -1,18 +1,29 @@
 // @summary Client request dispatch context, session defaults injection, and request router for DiligentAppServer
 
+import { resolveModel } from "@diligent/core/llm/models";
 import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compaction";
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
+import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
 import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
+import type { DiligentConfig } from "../config/schema";
+import type { ModelInfo } from "../protocol/index";
 import {
   DILIGENT_CLIENT_REQUEST_METHODS,
   type DiligentClientRequest,
   type DiligentServerNotification,
   type Mode,
   type ThinkingEffort,
-  type ToolConflictPolicy,
-  type TurnStartParams,
 } from "../protocol/index";
 import type { RpcPeer } from "../rpc/channel";
+import {
+  buildProviderList,
+  handleAuthOAuthStart,
+  handleAuthRemove,
+  handleAuthSet,
+  handleConfigSet,
+  handleImageUpload,
+} from "./config-handlers";
+import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import {
   handleEffortSet,
   handleModeSet,
@@ -30,19 +41,6 @@ import {
   type ThreadHandlersContext,
   type ThreadRuntime,
 } from "./thread-handlers";
-import {
-  buildProviderList,
-  handleAuthOAuthStart,
-  handleAuthRemove,
-  handleAuthSet,
-  handleConfigSet,
-  handleImageUpload,
-} from "./config-handlers";
-import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
-import { resolveModel } from "@diligent/core/llm/models";
-import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
-import type { ModelInfo } from "../protocol/index";
-import type { DiligentConfig } from "../config/schema";
 
 // ─── Connected peer ──────────────────────────────────────────────────────────
 
@@ -80,7 +78,7 @@ export interface ClientRequestDispatchContext {
   // Server identity
   serverName: string;
   serverVersion: string;
-  getInitializeResult: (() => Promise<Record<string, unknown> | undefined>) | undefined;
+  getInitializeResult: (() => Record<string, unknown> | Promise<Record<string, unknown> | undefined>) | undefined;
 
   // Connection access
   getConnection(id: string): ConnectedPeer | undefined;
@@ -274,12 +272,7 @@ export async function dispatchClientRequest(
     case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
       const connectionThreadId = ctx.getConnection(connectionId)?.currentThreadId ?? undefined;
       const targetThreadId = request.params.threadId ?? connectionThreadId;
-      const result = await handleConfigSet(
-        ctx.modelConfig,
-        ctx.currentModelId,
-        request.params.model,
-        targetThreadId,
-      );
+      const result = await handleConfigSet(ctx.modelConfig, ctx.currentModelId, request.params.model, targetThreadId);
       if (targetThreadId && result.model) {
         const runtime = await ctx.resolveThreadRuntime(targetThreadId);
         if (runtime.modelId !== result.model) {

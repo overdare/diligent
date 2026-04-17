@@ -2,8 +2,9 @@
 
 import { userInfo } from "node:os";
 import { KNOWN_MODELS } from "@diligent/core/llm/models";
+import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compaction";
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
-import type { StreamFunction } from "@diligent/core/llm/types";
+import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
@@ -25,12 +26,19 @@ import {
   JSONRPCResponseSchema,
   type Mode,
   type ThinkingEffort,
-  type TurnStartParams,
 } from "../protocol/index";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { collectPluginHooks } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
+import {
+  applySessionDefaults,
+  type ClientRequestDispatchContext,
+  type ConnectedPeer,
+  dispatchClientRequest,
+  type ModelConfig,
+  type ToolConfigManager,
+} from "./request-dispatcher";
 import {
   handleServerResponseMessage,
   type PendingServerRequest,
@@ -43,14 +51,6 @@ import {
   resetTurnRuntimeState,
   type ThreadRuntime,
 } from "./thread-handlers";
-import {
-  applySessionDefaults,
-  dispatchClientRequest,
-  type ClientRequestDispatchContext,
-  type ConnectedPeer,
-  type ModelConfig,
-  type ToolConfigManager,
-} from "./request-dispatcher";
 
 export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
 
