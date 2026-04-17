@@ -49,6 +49,7 @@ export class ThreadStore {
   private thinkingText = "";
   private overlayStatus: OverlayStatus | null = null;
   private statusBeforeCompaction: string | null = null;
+  private threadStatus: string | null = null;
   private isThreadBusy = false;
   private busyStartedAt: number | null = null;
   private statusBlinkVisible = true;
@@ -195,6 +196,7 @@ export class ThreadStore {
       thinkingText: this.thinkingText,
       overlayStatus: this.overlayStatus,
       statusBeforeCompaction: this.statusBeforeCompaction,
+      threadStatus: this.threadStatus,
       isThreadBusy: this.isThreadBusy,
       busyStartedAt: this.busyStartedAt,
       lastUsage: this.lastUsage,
@@ -212,6 +214,7 @@ export class ThreadStore {
     this.thinkingText = state.thinkingText;
     this.overlayStatus = state.overlayStatus;
     this.statusBeforeCompaction = state.statusBeforeCompaction;
+    this.threadStatus = state.threadStatus;
     this.isThreadBusy = state.isThreadBusy;
     this.busyStartedAt = state.busyStartedAt;
     this.lastUsage = state.lastUsage;
