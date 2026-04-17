@@ -1,11 +1,9 @@
 // @summary JSON-RPC app server mapping SessionManager/AgentEvent to shared protocol requests and notifications
 
 import { userInfo } from "node:os";
-import { KNOWN_MODELS, resolveModel } from "@diligent/core/llm/models";
-import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compaction";
+import { KNOWN_MODELS } from "@diligent/core/llm/models";
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
-import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
-import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
+import type { StreamFunction } from "@diligent/core/llm/types";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
@@ -16,10 +14,8 @@ import type { DiligentPaths } from "../infrastructure";
 import {
   AgentEventSchema,
   DILIGENT_CLIENT_NOTIFICATION_METHODS,
-  DILIGENT_CLIENT_REQUEST_METHODS,
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
-  type DiligentClientRequest,
   DiligentClientRequestSchema,
   type DiligentServerNotification,
   type JSONRPCErrorResponse,
@@ -28,24 +24,13 @@ import {
   type JSONRPCResponse,
   JSONRPCResponseSchema,
   type Mode,
-  type ModelInfo,
   type ThinkingEffort,
-  type ToolConflictPolicy,
   type TurnStartParams,
 } from "../protocol/index";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
 import { collectPluginHooks } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
-import {
-  buildProviderList,
-  handleAuthOAuthStart,
-  handleAuthRemove,
-  handleAuthSet,
-  handleConfigSet,
-  handleImageUpload,
-} from "./config-handlers";
-import { handleKnowledgeList, handleKnowledgeUpdate } from "./knowledge-handlers";
 import {
   handleServerResponseMessage,
   type PendingServerRequest,
@@ -55,33 +40,19 @@ import {
 import {
   getLatestEffortFromSessions,
   getLatestModelFromSessions,
-  handleEffortSet,
-  handleModeSet,
-  handleThreadCompactStart,
-  handleThreadDelete,
-  handleThreadList,
-  handleThreadRead,
-  handleThreadResume,
-  handleThreadStart,
-  handleToolsList,
-  handleToolsSet,
-  handleTurnInterrupt,
-  handleTurnStart,
-  handleTurnSteer,
   resetTurnRuntimeState,
   type ThreadRuntime,
 } from "./thread-handlers";
+import {
+  applySessionDefaults,
+  dispatchClientRequest,
+  type ClientRequestDispatchContext,
+  type ConnectedPeer,
+  type ModelConfig,
+  type ToolConfigManager,
+} from "./request-dispatcher";
 
-export interface ModelConfig {
-  currentModelId: string | undefined;
-  getAvailableModels: () => ModelInfo[];
-  onModelChange: (modelId: string, threadId?: string) => void;
-}
-
-export interface ToolConfigManager {
-  getTools: () => DiligentConfig["tools"] | undefined;
-  setTools: (tools: DiligentConfig["tools"] | undefined) => void;
-}
+export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
 
 export interface CreateAgentArgs {
   cwd: string;
@@ -129,17 +100,6 @@ export interface DiligentAppServerConfig {
   /** Lifecycle hooks config (UserPromptSubmit, Stop). */
   hooks?: DiligentConfig["hooks"];
   /** User identifier included in hook inputs. Falls back to OS username if unset. */
-  userId?: string;
-}
-
-interface ConnectedPeer {
-  id: string;
-  peer: RpcPeer;
-  subscriptions: Set<string>;
-  currentThreadId: string | null;
-  cwd: string;
-  mode: Mode;
-  effort: ThinkingEffort;
   userId?: string;
 }
 
@@ -271,7 +231,7 @@ export class DiligentAppServer {
     }
 
     const rawParams = (request.data.params ?? {}) as Record<string, unknown>;
-    const params = this.applySessionDefaults(connectionId, request.data.method, rawParams);
+    const params = applySessionDefaults(connectionId, request.data.method, rawParams, (id) => this.connections.get(id));
 
     const parsed = DiligentClientRequestSchema.safeParse({
       method: request.data.method,
@@ -283,7 +243,7 @@ export class DiligentAppServer {
     }
 
     try {
-      const result = await this.dispatchClientRequest(connectionId, parsed.data);
+      const result = await dispatchClientRequest(this.buildRequestDispatchContext(), connectionId, parsed.data);
       return JSONRPCResponseSchema.parse({ id: request.data.id, result });
     } catch (error) {
       const code =
@@ -304,309 +264,6 @@ export class DiligentAppServer {
     if (notification.data.method === DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED) {
       return;
     }
-  }
-
-  // ─── Session defaults injection ─────────────────────────────────────────────
-
-  private applySessionDefaults(
-    connectionId: string,
-    method: string,
-    params: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const conn = this.connections.get(connectionId);
-    if (!conn) return params;
-
-    if (method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START) {
-      return {
-        ...params,
-        cwd: (params.cwd as string | undefined)?.length ? params.cwd : conn.cwd,
-        mode: (params.mode as string | undefined) ?? conn.mode,
-        effort: (params.effort as ThinkingEffort | undefined) ?? conn.effort,
-      };
-    }
-
-    const threadScoped: string[] = [
-      DILIGENT_CLIENT_REQUEST_METHODS.TURN_START,
-      DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT,
-      DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER,
-      DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START,
-      DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET,
-      DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET,
-      DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ,
-      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST,
-      DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE,
-      DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST,
-      DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET,
-    ];
-
-    if (threadScoped.includes(method)) {
-      const threadId = params.threadId as string | undefined;
-      return {
-        ...params,
-        threadId: threadId?.length ? threadId : (conn.currentThreadId ?? undefined),
-      };
-    }
-
-    return params;
-  }
-
-  // ─── Request dispatch ───────────────────────────────────────────────────────
-
-  private async dispatchClientRequest(connectionId: string, request: DiligentClientRequest): Promise<unknown> {
-    switch (request.method) {
-      case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
-        if (request.params.protocolVersion !== 1) {
-          throw Object.assign(
-            new Error(`Unsupported protocolVersion: ${request.params.protocolVersion}. Only version 1 is supported.`),
-            {
-              code: -32602,
-            },
-          );
-        }
-        const extra = (await this.config.getInitializeResult?.()) ?? {};
-        return {
-          serverName: this.serverName,
-          serverVersion: this.serverVersion,
-          protocolVersion: 1,
-          capabilities: {
-            supportsFollowUp: true,
-            supportsApprovals: true,
-            supportsUserInput: true,
-          },
-          ...extra,
-        };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START: {
-        const result = await this.handleThreadStart(request.params);
-        const conn = this.connections.get(connectionId);
-        if (conn) conn.currentThreadId = result.threadId;
-        return result;
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME: {
-        const result = await this.handleThreadResume(request.params);
-        const conn = this.connections.get(connectionId);
-        if (conn && result.found && result.threadId) conn.currentThreadId = result.threadId;
-        return result;
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_LIST:
-        return this.handleThreadList(request.params.limit, request.params.includeChildren);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
-        return this.handleThreadRead(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START:
-        return this.handleThreadCompactStart(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_START:
-        return this.handleTurnStart(request.params, connectionId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT:
-        return this.handleTurnInterrupt(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER:
-        return this.handleTurnSteer(
-          request.params.threadId,
-          request.params.content,
-          request.params.attachments,
-          request.params.followUp,
-        );
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.MODE_SET:
-        return this.handleModeSet(request.params.threadId, request.params.mode);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.EFFORT_SET:
-        return this.handleEffortSet(request.params.threadId, request.params.effort);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST:
-        return this.handleKnowledgeList(request.params.threadId, request.params.limit);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE:
-        return this.handleKnowledgeUpdate(request.params.threadId, request.params);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_DELETE:
-        return this.handleThreadDelete(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST:
-        return this.handleToolsList(request.params.threadId);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET:
-        return this.handleToolsSet(request.params.threadId, request.params);
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_SUBSCRIBE: {
-        const subscriptionId = this.subscribeToThread(connectionId, request.params.threadId);
-        return { subscriptionId };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_UNSUBSCRIBE: {
-        const ok = this.unsubscribeFromThread(request.params.subscriptionId);
-        return { ok };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
-        const connectionThreadId = this.connections.get(connectionId)?.currentThreadId ?? undefined;
-        const targetThreadId = request.params.threadId ?? connectionThreadId;
-        const result = await handleConfigSet(
-          this.config.modelConfig,
-          this.currentModelId,
-          request.params.model,
-          targetThreadId,
-        );
-        if (targetThreadId && result.model) {
-          const runtime = await this.resolveThreadRuntime(targetThreadId);
-          if (runtime.modelId !== result.model) {
-            runtime.modelId = result.model;
-            const model = resolveModel(result.model);
-            const llmCompactionFn = this.config.createNativeCompaction?.(model.provider as ProviderName);
-            const llmMsgStreamFn = this.config.streamFunction;
-            runtime.agent?.setModel(result.model, llmMsgStreamFn, llmCompactionFn);
-            if (runtime.effort === "none" && !supportsThinkingNone(model)) {
-              runtime.effort = "medium";
-              runtime.agent?.setEffort("medium");
-              runtime.manager.appendEffortChange("medium", "config");
-              this.lastUsedEffortByCwd.set(runtime.cwd, "medium");
-            }
-            runtime.manager.appendModelChange(model.provider, model.id);
-            this.lastUsedModelByCwd.set(runtime.cwd, result.model);
-          }
-        } else {
-          this.currentModelId = result.model;
-        }
-        return result;
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
-        const pm = this.config.providerManager;
-        const mc = this.config.modelConfig;
-        if (!pm || !mc) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-        const providers = await buildProviderList();
-        return { providers, availableModels: mc.getAvailableModels() };
-      }
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET:
-        return handleAuthSet(this.config.providerManager, request.params, (notification) => this.emit(notification));
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE:
-        return handleAuthRemove(this.config.providerManager, request.params, (notification) => this.emit(notification));
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START:
-        return handleAuthOAuthStart({
-          params: request.params,
-          providerManager: this.config.providerManager,
-          oauthPending: this.oauthPending,
-          setOAuthPending: (value) => {
-            this.oauthPending = value;
-          },
-          openBrowser: this.config.openBrowser,
-          emit: (notification) => this.emit(notification),
-        });
-
-      case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {
-        const conn = this.connections.get(connectionId);
-        const effectiveThreadId = request.params.threadId ?? conn?.currentThreadId ?? undefined;
-        const attachment = await handleImageUpload({
-          params: request.params,
-          threadId: effectiveThreadId,
-          cwd: conn?.cwd ?? this.config.cwd ?? process.cwd(),
-          toImageUrl: this.config.toImageUrl,
-        });
-        return { attachment };
-      }
-    }
-  }
-
-  // ─── Thread management handlers ─────────────────────────────────────────────
-
-  private async handleThreadStart(params: { cwd: string; mode?: Mode; model?: string }): Promise<{ threadId: string }> {
-    return handleThreadStart(this.buildThreadHandlersContext(), params);
-  }
-
-  private async handleThreadResume(params: {
-    threadId?: string;
-    mostRecent?: boolean;
-  }): Promise<{ found: boolean; threadId?: string; context?: unknown[] }> {
-    return handleThreadResume(this.buildThreadHandlersContext(), params);
-  }
-
-  private async handleThreadList(limit?: number, includeChildren?: boolean) {
-    return handleThreadList(this.buildThreadHandlersContext(), limit, includeChildren);
-  }
-
-  private async handleThreadRead(threadId?: string) {
-    return handleThreadRead(this.buildThreadHandlersContext(), threadId);
-  }
-
-  private async handleThreadCompactStart(threadId?: string) {
-    return handleThreadCompactStart(this.buildThreadHandlersContext(), threadId);
-  }
-
-  private async handleTurnStart(params: TurnStartParams, connectionId?: string): Promise<{ accepted: true }> {
-    return handleTurnStart(this.buildThreadHandlersContext(), params, connectionId, this.turnInitiators);
-  }
-
-  private async handleTurnInterrupt(threadId?: string): Promise<{ interrupted: boolean }> {
-    return handleTurnInterrupt(this.buildThreadHandlersContext(), threadId);
-  }
-
-  private async handleTurnSteer(
-    threadId: string | undefined,
-    content: string,
-    attachments: Array<{ type: "local_image"; path: string; mediaType: string; fileName?: string }> | undefined,
-    _followUp: boolean,
-  ): Promise<{ queued: true }> {
-    return handleTurnSteer(this.buildThreadHandlersContext(), threadId, content, attachments);
-  }
-
-  private async handleModeSet(threadId: string | undefined, mode: Mode): Promise<{ mode: Mode }> {
-    return handleModeSet(this.buildThreadHandlersContext(), threadId, mode);
-  }
-
-  private async handleEffortSet(
-    threadId: string | undefined,
-    effort: ThinkingEffort,
-  ): Promise<{ effort: ThinkingEffort }> {
-    return handleEffortSet(this.buildThreadHandlersContext(), threadId, effort);
-  }
-
-  private async handleKnowledgeList(threadId: string | undefined, limit?: number): Promise<{ data: unknown[] }> {
-    return handleKnowledgeList(this.buildThreadHandlersContext(), threadId, limit);
-  }
-
-  private async handleKnowledgeUpdate(
-    threadId: string | undefined,
-    params: {
-      action: "upsert" | "delete";
-      id?: string;
-      type?: "pattern" | "discovery" | "preference" | "correction" | "backlog";
-      content?: string;
-      tags?: string[];
-    },
-  ): Promise<{ entry?: unknown; deleted?: boolean }> {
-    return handleKnowledgeUpdate(this.buildThreadHandlersContext(), threadId, params);
-  }
-
-  private async handleThreadDelete(threadId: string): Promise<{ deleted: boolean }> {
-    return handleThreadDelete(this.buildThreadHandlersContext(), threadId);
-  }
-
-  private async handleToolsList(threadId?: string) {
-    return handleToolsList(this.buildThreadHandlersContext(), threadId);
-  }
-
-  private async handleToolsSet(
-    threadId: string | undefined,
-    params: {
-      web_action?: boolean;
-      builtin?: Record<string, boolean>;
-      plugins?: Array<{ package: string; enabled?: boolean; tools?: Record<string, boolean>; remove?: boolean }>;
-      conflictPolicy?: ToolConflictPolicy;
-    },
-  ) {
-    const manager = this.config.toolConfig;
-    if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
-    return handleToolsSet(this.buildThreadHandlersContext(), manager, threadId, params);
   }
 
   // ─── Turn consumption ────────────────────────────────────────────────────────
@@ -985,6 +642,43 @@ export class DiligentAppServer {
         continueWith: { role: "user" as const, content: stopResult.reason, timestamp: Date.now() },
       };
     }
+  }
+
+  private buildRequestDispatchContext(): ClientRequestDispatchContext {
+    return {
+      serverName: this.serverName,
+      serverVersion: this.serverVersion,
+      getInitializeResult: this.config.getInitializeResult,
+      getConnection: (id) => this.connections.get(id),
+      setConnectionCurrentThreadId: (connectionId, threadId) => {
+        const conn = this.connections.get(connectionId);
+        if (conn) conn.currentThreadId = threadId;
+      },
+      threadHandlersCtx: this.buildThreadHandlersContext(),
+      turnInitiators: this.turnInitiators,
+      toolConfig: this.config.toolConfig,
+      subscribeToThread: (connectionId, threadId) => this.subscribeToThread(connectionId, threadId),
+      unsubscribeFromThread: (subscriptionId) => this.unsubscribeFromThread(subscriptionId),
+      resolveThreadRuntime: (threadId) => this.resolveThreadRuntime(threadId),
+      modelConfig: this.config.modelConfig,
+      currentModelId: this.currentModelId,
+      setCurrentModelId: (id) => {
+        this.currentModelId = id;
+      },
+      streamFunction: this.config.streamFunction,
+      createNativeCompaction: this.config.createNativeCompaction,
+      lastUsedModelByCwd: this.lastUsedModelByCwd,
+      lastUsedEffortByCwd: this.lastUsedEffortByCwd,
+      providerManager: this.config.providerManager,
+      oauthPending: this.oauthPending,
+      setOAuthPending: (value) => {
+        this.oauthPending = value;
+      },
+      openBrowser: this.config.openBrowser,
+      emit: (notification) => this.emit(notification),
+      toImageUrl: this.config.toImageUrl,
+      cwd: this.config.cwd,
+    };
   }
 
   private buildThreadHandlersContext() {
