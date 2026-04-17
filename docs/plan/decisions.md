@@ -690,8 +690,9 @@ Decisions made during synthesis reviews, with rationale.
 - **References**: `packages/core/src/tool/types.ts:15-20`, `packages/plugin-sdk/src/index.ts:14-21`
 - **Date**: 2026-03-26
 
-### D097: CLI COLLAB_TOOL_NAMES — accept local duplication with canonical reference comment
-- **Decision**: Keep `COLLAB_TOOL_NAMES` in `packages/cli/src/tui/components/thread-store-utils.ts` as a CLI-local constant with a code comment referencing the canonical source in `packages/runtime/src/tools/tool-metadata.ts`.
-- **Rationale**: The CLI constant is a UI rendering concern; the runtime constant is a tool-filtering concern derived from `TOOL_CAPABILITIES`. Moving to `@diligent/protocol` would expose a runtime implementation detail as a client-visible protocol semantic. The duplication is 4 string literals that change infrequently.
-- **Alternatives considered**: (a) Export from `@diligent/protocol` — rejected: adds protocol coupling for a UI-only concern. (b) Import directly from `@diligent/runtime` — rejected: breaks the CLI's current independence from the runtime package.
-- **Date**: 2026-03-25
+### D097: COLLAB_TOOL_NAMES lives in @diligent/protocol as the canonical source
+- **Decision**: `COLLAB_TOOL_NAMES` is defined in `packages/protocol/src/tool-classification.ts` as the single source of truth. The CLI imports it from `@diligent/protocol`; the runtime re-exports it from `tool-metadata.ts` for backward compatibility.
+- **Rationale**: The original decision (2026-03-25) intended to keep this as a CLI-local constant to avoid adding a runtime implementation detail to the protocol package. In practice, the constant was moved to `@diligent/protocol/tool-classification` as part of the tool-classification centralization effort, which is the correct home: it is a protocol-level semantic (which tools are collaborative) that all clients need, not a runtime detail.
+- **Current state**: `packages/protocol/src/tool-classification.ts:10` — canonical definition. `packages/cli/src/tui/components/thread-store-utils.ts:10` — imports from `@diligent/protocol`. `packages/runtime/src/tools/tool-metadata.ts` — re-exports from protocol for backward compatibility.
+- **Supersedes**: Original D097 (2026-03-25) which described a CLI-local duplication pattern that no longer exists.
+- **Date**: 2026-04-15
