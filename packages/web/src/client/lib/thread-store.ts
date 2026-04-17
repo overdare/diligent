@@ -5,6 +5,7 @@ import type {
   ApprovalRequest,
   AssistantMessage,
   ContentBlock,
+  ConversationLiveState,
   DiligentServerNotification,
   Mode,
   SessionSummary,
@@ -13,7 +14,6 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { applyAgentEvents, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
-import type { ConversationLiveState } from "@diligent/protocol";
 import {
   appendChildAssistantTimelineDelta,
   appendChildAssistantTimelineStart,

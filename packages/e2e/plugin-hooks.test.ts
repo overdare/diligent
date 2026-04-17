@@ -55,18 +55,14 @@ describe("plugin-hooks", () => {
     const turnNotifs = await client.sendTurnAndWait(threadId, "BLOCK this prompt please");
 
     // The hook should have blocked the prompt: expect an error notification with HookBlocked
-    const errorNotif = turnNotifs.find(
-      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-    );
+    const errorNotif = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR);
     expect(errorNotif).toBeTruthy();
     const errorParams = errorNotif?.params as { error?: { name?: string; message?: string } } | undefined;
     expect(errorParams?.error?.name).toBe("HookBlocked");
     expect(errorParams?.error?.message).toContain("hook-test-plugin");
 
     // A TURN_COMPLETED should still arrive (the server completes the turn even when blocked)
-    const turnCompleted = turnNotifs.find(
-      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
-    );
+    const turnCompleted = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
     expect(turnCompleted).toBeTruthy();
   });
 
@@ -78,15 +74,11 @@ describe("plugin-hooks", () => {
     const turnNotifs = await client.sendTurnAndWait(threadId, "hello world");
 
     // Should not have a HookBlocked error
-    const errorNotif = turnNotifs.find(
-      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-    );
+    const errorNotif = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR);
     expect(errorNotif).toBeUndefined();
 
     // Turn should complete normally
-    const turnCompleted = turnNotifs.find(
-      (n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
-    );
+    const turnCompleted = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
     expect(turnCompleted).toBeTruthy();
   });
 
