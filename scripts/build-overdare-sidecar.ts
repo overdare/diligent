@@ -29,10 +29,13 @@ async function run(): Promise<void> {
   const outPath = resolve(OUT_DIR, process.platform === "win32" ? "diligent-web-server.exe" : "diligent-web-server");
   const serverEntry = resolve(WEB, "src/server/index.ts");
 
-  const result = Bun.spawnSync(["bun", "build", "--compile", `--target=${bunTarget}`, serverEntry, "--outfile", outPath], {
-    cwd: ROOT,
-    stdio: ["inherit", "inherit", "inherit"],
-  });
+  const result = Bun.spawnSync(
+    ["bun", "build", "--compile", `--target=${bunTarget}`, serverEntry, "--outfile", outPath],
+    {
+      cwd: ROOT,
+      stdio: ["inherit", "inherit", "inherit"],
+    },
+  );
   if (result.exitCode !== 0) {
     throw new Error(`Fresh sidecar build failed for ${platformKey}`);
   }

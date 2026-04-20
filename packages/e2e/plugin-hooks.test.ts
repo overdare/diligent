@@ -98,7 +98,7 @@ describe("plugin-hooks", () => {
 
     // The Stop hook should have written a marker file to tmpDir
     const markerPath = join(tmpDir, "hook-stop-fired");
-    await expect(access(markerPath)).resolves.toBeUndefined();
+    await expect(access(markerPath)).resolves.toBeNull();
 
     const markerContent = JSON.parse(await readFile(markerPath, "utf8")) as { hook_event_name?: string };
     expect(markerContent.hook_event_name).toBe("Stop");
