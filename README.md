@@ -44,6 +44,7 @@ make dev
 - `packages/cli` — CLI entrypoint and TUI client
 - `packages/web` — Bun web server and React web client
 - `apps/overdare-agent` — Tauri shell around the web frontend and Bun sidecar
+- `apps/overdare-cli` — terminal-only wrapper for runtime update and webserver launch
 - `packages/debug-viewer` — viewer for inspecting `.diligent/` project data
 - `packages/e2e` — end-to-end protocol/runtime tests
 
