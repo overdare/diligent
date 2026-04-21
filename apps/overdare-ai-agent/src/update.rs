@@ -94,7 +94,11 @@ fn strip_jsonc_line_comment(line: &str) -> &str {
             '\\' if in_string => escape_next = true,
             '"' => in_string = !in_string,
             '/' if !in_string && i + 1 < chars.len() && chars[i + 1] == '/' => {
-                let byte_offset = line.char_indices().nth(i).map(|(b, _)| b).unwrap_or(line.len());
+                let byte_offset = line
+                    .char_indices()
+                    .nth(i)
+                    .map(|(b, _)| b)
+                    .unwrap_or(line.len());
                 return &line[..byte_offset];
             }
             _ => {}
@@ -117,7 +121,11 @@ fn read_user_config_json() -> Option<serde_json::Value> {
 
 fn is_update_disabled() -> bool {
     read_user_config_json()
-        .and_then(|val| val.get("updateMode").and_then(|v| v.as_str()).map(|s| s == "disabled"))
+        .and_then(|val| {
+            val.get("updateMode")
+                .and_then(|v| v.as_str())
+                .map(|s| s == "disabled")
+        })
         .unwrap_or(false)
 }
 
@@ -149,14 +157,19 @@ fn runtime_bootstrap_required() -> bool {
     !(has_sidecar && has_dist)
 }
 
-fn should_download_update(manifest_version: &str, effective_version: &str, bootstrap_required: bool) -> bool {
+fn should_download_update(
+    manifest_version: &str,
+    effective_version: &str,
+    bootstrap_required: bool,
+) -> bool {
     bootstrap_required || manifest_version != effective_version
 }
 
 fn is_windows_lock_error(err: &std::io::Error) -> bool {
     #[cfg(windows)]
     {
-        err.kind() == std::io::ErrorKind::PermissionDenied || matches!(err.raw_os_error(), Some(5) | Some(32))
+        err.kind() == std::io::ErrorKind::PermissionDenied
+            || matches!(err.raw_os_error(), Some(5) | Some(32))
     }
     #[cfg(not(windows))]
     {
@@ -214,11 +227,20 @@ fn fetch_manifest(manifest_url: &str) -> Result<UpdateManifest, String> {
         .user_agent(format!("overdare-ai-agent/{BUNDLED_RUNTIME_VERSION}"))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
-    let response = client.get(manifest_url).send().map_err(|e| format!("fetch manifest: {e}"))?;
+    let response = client
+        .get(manifest_url)
+        .send()
+        .map_err(|e| format!("fetch manifest: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!("fetch manifest failed: HTTP {} ({})", response.status(), manifest_url));
+        return Err(format!(
+            "fetch manifest failed: HTTP {} ({})",
+            response.status(),
+            manifest_url
+        ));
     }
-    let body = response.text().map_err(|e| format!("read manifest body: {e}"))?;
+    let body = response
+        .text()
+        .map_err(|e| format!("read manifest body: {e}"))?;
     serde_json::from_str(&body).map_err(|e| format!("parse manifest: {e}"))
 }
 
@@ -260,11 +282,16 @@ fn fetch_update(
         .user_agent(format!("overdare-ai-agent/{BUNDLED_RUNTIME_VERSION}"))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
-    let response = client.get(&bundle.url).send().map_err(|e| format!("download bundle: {e}"))?;
+    let response = client
+        .get(&bundle.url)
+        .send()
+        .map_err(|e| format!("download bundle: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("download failed: HTTP {}", response.status()));
     }
-    let bytes = response.bytes().map_err(|e| format!("read bundle bytes: {e}"))?;
+    let bytes = response
+        .bytes()
+        .map_err(|e| format!("read bundle bytes: {e}"))?;
     Ok(Some(FetchedUpdate {
         version: manifest.version,
         sha256: bundle.sha256,
@@ -308,7 +335,12 @@ fn extract_zip(zip_path: &Path, out_dir: &Path) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let status = std::process::Command::new("unzip")
-            .args(["-oq", &zip_path.to_string_lossy(), "-d", &out_dir.to_string_lossy()])
+            .args([
+                "-oq",
+                &zip_path.to_string_lossy(),
+                "-d",
+                &out_dir.to_string_lossy(),
+            ])
             .status()
             .map_err(|e| format!("launch unzip: {e}"))?;
         if !status.success() {
@@ -325,11 +357,17 @@ mod tests {
     #[test]
     fn strip_jsonc_preserves_url_content() {
         let line = r#"{ "url": "https://example.com" } // comment"#;
-        assert_eq!(strip_jsonc_line_comment(line), r#"{ "url": "https://example.com" } "#);
+        assert_eq!(
+            strip_jsonc_line_comment(line),
+            r#"{ "url": "https://example.com" } "#
+        );
     }
 }
 
-pub fn run_with_progress(log: &mut String, mut progress: Option<&mut dyn FnMut(UpdateProgress)>) -> Result<bool, String> {
+pub fn run_with_progress(
+    log: &mut String,
+    mut progress: Option<&mut dyn FnMut(UpdateProgress)>,
+) -> Result<bool, String> {
     if is_update_disabled() {
         let _ = writeln!(log, "[update] auto-update disabled via config");
         report_progress(&mut progress, UpdateProgress::Disabled);
@@ -338,7 +376,10 @@ pub fn run_with_progress(log: &mut String, mut progress: Option<&mut dyn FnMut(U
 
     let bootstrap_required = runtime_bootstrap_required();
     if bootstrap_required {
-        let _ = writeln!(log, "[update] Runtime bootstrap required (missing updated runtime)");
+        let _ = writeln!(
+            log,
+            "[update] Runtime bootstrap required (missing updated runtime)"
+        );
         report_progress(&mut progress, UpdateProgress::BootstrapRequired);
     }
 
@@ -353,9 +394,17 @@ pub fn run_with_progress(log: &mut String, mut progress: Option<&mut dyn FnMut(U
             current_version: effective_version.clone(),
         },
     );
-    let _ = writeln!(log, "[update] Checking for updates (current: v{effective_version})...");
+    let _ = writeln!(
+        log,
+        "[update] Checking for updates (current: v{effective_version})..."
+    );
 
-    let fetched = match fetch_update(&manifest_url, effective_version.clone(), bootstrap_required, &mut progress)? {
+    let fetched = match fetch_update(
+        &manifest_url,
+        effective_version.clone(),
+        bootstrap_required,
+        &mut progress,
+    )? {
         Some(item) => item,
         None => {
             let _ = writeln!(log, "[update] Already up-to-date");
@@ -366,7 +415,11 @@ pub fn run_with_progress(log: &mut String, mut progress: Option<&mut dyn FnMut(U
 
     let updates = updates_dir().ok_or("cannot resolve updates dir")?;
     fs::create_dir_all(&updates).map_err(|e| format!("create updates dir: {e}"))?;
-    let zip_path = updates.join(format!("runtime-bundle-{}-{}.zip", fetched.version, current_platform()));
+    let zip_path = updates.join(format!(
+        "runtime-bundle-{}-{}.zip",
+        fetched.version,
+        current_platform()
+    ));
     fs::write(&zip_path, &fetched.bytes).map_err(|e| format!("write bundle: {e}"))?;
 
     report_progress(
