@@ -12,3 +12,4 @@
 *.ttf binary
 *.eot binary
 *.exe binary
+thirdparty/rg/* binary
