@@ -1,4 +1,5 @@
 use crate::init;
+use crate::storage::migrate_global_namespace_if_needed;
 use crate::update::{self, UpdateProgress};
 use crate::webserver;
 
@@ -21,11 +22,14 @@ pub fn run() -> Result<(), String> {
 }
 
 fn run_update() -> Result<(), String> {
+    migrate_global_namespace_if_needed().map(|_| ())?;
     let mut log = String::new();
     let mut progress = |event: UpdateProgress| match event {
         UpdateProgress::Disabled => println!("update disabled"),
         UpdateProgress::BootstrapRequired => println!("runtime bootstrap required"),
-        UpdateProgress::Checking { current_version } => println!("checking updates (current: v{current_version})"),
+        UpdateProgress::Checking { current_version } => {
+            println!("checking updates (current: v{current_version})")
+        }
         UpdateProgress::Downloading { target_version } => println!("downloading v{target_version}"),
         UpdateProgress::Verifying { target_version } => println!("verifying v{target_version}"),
         UpdateProgress::Extracting { target_version } => println!("extracting v{target_version}"),
@@ -43,11 +47,17 @@ fn run_update() -> Result<(), String> {
 }
 
 fn run_init(args: Vec<String>) -> Result<(), String> {
+    migrate_global_namespace_if_needed().map(|_| ())?;
     let skip_update = args.iter().any(|arg| arg == "--skip-update");
     let (current, latest) = update::init_status()?;
     let installed = update::runtime_installed();
 
-    println!("Current version: {}", current.clone().unwrap_or_else(|| "not installed".to_string()));
+    println!(
+        "Current version: {}",
+        current
+            .clone()
+            .unwrap_or_else(|| "not installed".to_string())
+    );
     println!("Latest version: {latest}");
 
     if skip_update {
@@ -64,9 +74,10 @@ fn run_init(args: Vec<String>) -> Result<(), String> {
 
 fn run_webserver(args: Vec<String>) -> Result<(), String> {
     let options = webserver::parse_args(&args)?;
-    let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("failed to create tokio runtime: {e}"))?;
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
     let running = runtime.block_on(webserver::start_foreground(options))?;
-    println!("DILIGENT_PORT={}", running.port);
+    println!("WEBSERVER_PORT={}", running.port);
     runtime.block_on(running.wait())?;
     Ok(())
 }
@@ -81,7 +92,8 @@ fn print_help() {
 mod tests {
     #[test]
     fn skip_update_requires_existing_runtime_message_is_stable() {
-        let message = "--skip-update cannot be used before the runtime has been downloaded at least once.";
+        let message =
+            "--skip-update cannot be used before the runtime has been downloaded at least once.";
         assert!(message.contains("--skip-update"));
         assert!(message.contains("downloaded at least once"));
     }

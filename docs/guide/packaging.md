@@ -42,6 +42,8 @@ At a high level, packaging does the following:
 
 The sidecar serves the React client and hosts `DiligentAppServer` over WebSocket JSON-RPC. Packaging therefore needs to bundle both UI assets and runtime assets coherently for the OVERDARE CLI launcher.
 
+For launcher/runtime coordination, the packaged sidecar announces its bound port on stdout as `WEBSERVER_PORT=<port>`. When the OVERDARE launcher is started with `--studio-rpc-port=<port>`, it forwards that value to the runtime subprocess as `STUDIO_PORT` so packaged plugins can reach OVERDARE Studio RPC.
+
 ## Platform model
 
 The current sidecar helper targets the current host platform via `scripts/build-overdare-sidecar.ts`.

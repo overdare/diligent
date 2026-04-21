@@ -4,13 +4,14 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::storage::{
-    global_legacy_storage_dir, global_storage_dir, local_legacy_storage_dir, local_storage_dir, migrate_namespace_if_needed,
+    global_storage_dir, migrate_global_namespace_if_needed, migrate_local_namespace_if_needed,
     storage_namespace,
 };
 
 pub struct WebServerOptions {
     pub cwd: String,
     pub userid: Option<String>,
+    pub studio_rpc_port: Option<u16>,
 }
 
 fn normalize_cwd(raw: &str) -> String {
@@ -45,6 +46,7 @@ fn normalize_cwd(raw: &str) -> String {
 pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
     let mut cwd: Option<String> = None;
     let mut userid: Option<String> = None;
+    let mut studio_rpc_port: Option<u16> = None;
 
     for arg in args {
         if let Some(value) = arg.strip_prefix("--cwd=") {
@@ -59,53 +61,81 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
             }
             continue;
         }
+        if let Some(value) = arg.strip_prefix("--studio-rpc-port=") {
+            if !value.is_empty() {
+                let parsed = value
+                    .parse::<u16>()
+                    .map_err(|_| format!("Invalid --studio-rpc-port value: {value}"))?;
+                studio_rpc_port = Some(parsed);
+            }
+            continue;
+        }
         if matches!(arg.as_str(), "--help" | "-h") {
-            return Err("Usage: overdare-ai-agent webserver --cwd=/path/to/project [--userid=abc]".to_string());
+            return Err(
+                "Usage: overdare-ai-agent webserver --cwd=/path/to/project [--userid=abc] [--studio-rpc-port=12345]"
+                    .to_string(),
+            );
         }
     }
 
-    let cwd = normalize_cwd(
-        &cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).to_string_lossy().to_string()),
-    );
-    Ok(WebServerOptions { cwd, userid })
+    let cwd = normalize_cwd(&cwd.unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string()
+    }));
+    Ok(WebServerOptions {
+        cwd,
+        userid,
+        studio_rpc_port,
+    })
 }
 
 fn default_web_log_path() -> Result<PathBuf, String> {
     let global = global_storage_dir().ok_or("Cannot determine home directory for web logs")?;
     let logs_dir = global.join("logs");
-    std::fs::create_dir_all(&logs_dir).map_err(|e| format!("Cannot create web log directory {}: {e}", logs_dir.display()))?;
+    std::fs::create_dir_all(&logs_dir).map_err(|e| {
+        format!(
+            "Cannot create web log directory {}: {e}",
+            logs_dir.display()
+        )
+    })?;
     let date = chrono::Local::now().format("%Y%m%d").to_string();
     let pid = std::process::id();
     Ok(logs_dir.join(format!("{}-{}.log", date, pid)))
 }
 
 fn resolve_updated_sidecar_path() -> Option<PathBuf> {
-    let bin_name = if cfg!(windows) { "diligent-web-server.exe" } else { "diligent-web-server" };
+    let bin_name = if cfg!(windows) {
+        "diligent-web-server.exe"
+    } else {
+        "diligent-web-server"
+    };
     let path = global_storage_dir()?.join("updates/runtime").join(bin_name);
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 fn resolve_updated_dist_dir() -> Option<PathBuf> {
     let candidate = global_storage_dir()?.join("updates/runtime/dist/client");
-    if candidate.exists() { Some(candidate) } else { None }
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn resolve_updated_rg_bin() -> Option<PathBuf> {
     let bin_name = if cfg!(windows) { "rg.exe" } else { "rg" };
     let path = global_storage_dir()?.join("updates/runtime").join(bin_name);
-    if path.exists() { Some(path) } else { None }
-}
-
-fn migrate_global_namespace_if_needed() -> Result<(), String> {
-    let legacy = global_legacy_storage_dir().ok_or("Cannot determine home directory for migration")?;
-    let target = global_storage_dir().ok_or("Cannot determine home directory for migration")?;
-    migrate_namespace_if_needed(&legacy, &target).map(|_| ())
-}
-
-fn migrate_local_namespace_if_needed(cwd: &str) -> Result<(), String> {
-    let legacy = local_legacy_storage_dir(cwd);
-    let target = local_storage_dir(cwd);
-    migrate_namespace_if_needed(&legacy, &target).map(|_| ())
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 async fn wait_for_health(port: u16) -> Result<(), String> {
@@ -118,7 +148,13 @@ async fn wait_for_health(port: u16) -> Result<(), String> {
     let deadline = Duration::from_secs(30);
     timeout(deadline, async {
         loop {
-            if client.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false) {
+            if client
+                .get(&url)
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+            {
                 return Ok::<(), String>(());
             }
             sleep(Duration::from_millis(200)).await;
@@ -157,14 +193,17 @@ impl RunningWebServer {
         if status.success() {
             Ok(())
         } else {
-            Err(format!("Webserver sidecar exited unexpectedly ({})", format_child_exit(status)))
+            Err(format!(
+                "Webserver sidecar exited unexpectedly ({})",
+                format_child_exit(status)
+            ))
         }
     }
 }
 
 pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebServer, String> {
-    migrate_global_namespace_if_needed()?;
-    migrate_local_namespace_if_needed(&options.cwd)?;
+    migrate_global_namespace_if_needed().map(|_| ())?;
+    migrate_local_namespace_if_needed(&options.cwd).map(|_| ())?;
 
     let binary = resolve_updated_sidecar_path().ok_or(
         format!(
@@ -192,7 +231,6 @@ pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebSer
     let mut cmd = tokio::process::Command::new(&binary);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
@@ -203,10 +241,18 @@ pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebSer
     if let Some(rg) = rg_path.as_deref() {
         cmd.env("DILIGENT_RG_PATH", rg.to_string_lossy().as_ref());
     }
+    if let Some(studio_rpc_port) = options.studio_rpc_port {
+        cmd.env("STUDIO_PORT", studio_rpc_port.to_string());
+    }
     cmd.env("DILIGENT_STORAGE_NAMESPACE", storage_namespace());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn updated sidecar: {e}"))?;
-    let stdout = child.stdout.take().ok_or("No stdout from updated sidecar")?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn updated sidecar: {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("No stdout from updated sidecar")?;
 
     let port = {
         let mut reader = BufReader::new(stdout);
@@ -222,20 +268,20 @@ pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebSer
                         .await
                         .map_err(|e| format!("wait sidecar exit: {e}"))?;
                     return Err::<u16, String>(format!(
-                        "Sidecar exited before emitting DILIGENT_PORT ({})\nBinary: {}\nLog file: {}",
+                        "Sidecar exited before emitting WEBSERVER_PORT ({})\nBinary: {}\nLog file: {}",
                         format_child_exit(status),
                         binary.display(),
                         log_path.display()
                     ));
                 }
-                if let Some(port_str) = line_buf.trim().strip_prefix("DILIGENT_PORT=") {
+                if let Some(port_str) = line_buf.trim().strip_prefix("WEBSERVER_PORT=") {
                     let port: u16 = port_str.trim().parse().map_err(|_| format!("Invalid port value: {}", port_str.trim()))?;
                     return Ok(port);
                 }
             }
         })
         .await
-        .map_err(|_| "Timed out waiting for DILIGENT_PORT from updated sidecar".to_string())?
+        .map_err(|_| "Timed out waiting for WEBSERVER_PORT from updated sidecar".to_string())?
     }?;
 
     wait_for_health(port).await?;
@@ -249,22 +295,33 @@ mod tests {
 
     #[test]
     fn parse_args_reads_cwd_and_userid() {
-        let args = vec!["--cwd=/tmp/project".to_string(), "--userid=user-1".to_string()];
+        let args = vec![
+            "--cwd=/tmp/project".to_string(),
+            "--userid=user-1".to_string(),
+            "--studio-rpc-port=8123".to_string(),
+        ];
         let parsed = parse_args(&args).expect("parse args");
         assert_eq!(parsed.cwd, "/tmp/project");
         assert_eq!(parsed.userid.as_deref(), Some("user-1"));
+        assert_eq!(parsed.studio_rpc_port, Some(8123));
     }
 
     #[cfg(windows)]
     #[test]
     fn normalize_cwd_converts_msys_drive_paths() {
-        assert_eq!(normalize_cwd("/c/Users/devbv/git/diligent"), r"C:\Users\devbv\git\diligent");
+        assert_eq!(
+            normalize_cwd("/c/Users/devbv/git/diligent"),
+            r"C:\Users\devbv\git\diligent"
+        );
     }
 
     #[cfg(windows)]
     #[test]
     fn normalize_cwd_converts_git_bash_users_paths() {
-        assert_eq!(normalize_cwd("/Users/devbv/git/diligent"), r"C:\Users\devbv\git\diligent");
+        assert_eq!(
+            normalize_cwd("/Users/devbv/git/diligent"),
+            r"C:\Users\devbv\git\diligent"
+        );
     }
 
     #[test]

@@ -25,6 +25,9 @@ cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init --skip-updat
 # Start the updated local web server runtime
 cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- webserver --cwd=/path/to/project
 
+# Start the web server and forward a Studio RPC port to plugins via STUDIO_PORT
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- webserver --cwd=/path/to/project --studio-rpc-port=13377
+
 # Run Rust tests
 bun run overdare-ai-agent:test
 
@@ -35,6 +38,8 @@ DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifes
 ## Notes
 
 - `webserver` does not execute repo TypeScript directly; it launches the updated runtime subprocess
+- `webserver` prints the selected runtime port as `WEBSERVER_PORT=<port>` on stdout
+- `webserver --studio-rpc-port=<port>` forwards that value to the runtime subprocess as `STUDIO_PORT`
 - `init` downloads the runtime bundle shape used by OVERDARE CLI: sidecar binary, `dist/client`, optional `rg`, and runtime defaults (`bootstrap/` preferred, legacy `defaults/` fallback)
 - on first run, `init --skip-update` is rejected until the runtime exists locally at least once
 - if `~/.overdare/config.jsonc` sets `"updateMode": "disabled"`, runtime update behavior follows that config
