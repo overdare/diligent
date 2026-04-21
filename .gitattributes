@@ -12,4 +12,3 @@
 *.ttf binary
 *.eot binary
 *.exe binary
-apps/overdare-agent/src-tauri/binaries/* binary

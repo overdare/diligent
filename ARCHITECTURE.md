@@ -31,7 +31,6 @@ The architecture is organized around four product goals:
 | `packages/plugin-sdk` | Public SDK types and contracts for external JavaScript tool plugins |
 | `packages/cli` | Bun CLI entrypoint, stdio app-server transport, TUI client |
 | `packages/web` | Bun web server + React web client over WebSocket JSON-RPC |
-| `apps/overdare-agent` | Tauri shell around the web frontend and Bun sidecar |
 | `packages/debug-viewer` | Viewer for inspecting `.diligent/` data |
 | `packages/e2e` | End-to-end tests spanning protocol and runtime behavior |
 
@@ -45,11 +44,11 @@ At a high level, Diligent is split into four layers:
 4. **Thin clients** — CLI/TUI, Web, Desktop
 
 ```text
-CLI/TUI                         Web UI                         Desktop UI
-   │                              │                                │
-   │ stdio JSON-RPC               │ WebSocket JSON-RPC             │ Tauri shell
-   │                              │                                │
-   ├───────────────┬──────────────┴───────────────┬────────────────┤
+CLI/TUI                         Web UI
+   │                              │
+   │ stdio JSON-RPC               │ WebSocket JSON-RPC
+   │                              │
+   ├───────────────┬──────────────┴───────────────┤
    │               │                              │                │
    │         DiligentAppServer (@diligent/runtime)                │
    │      thread/session orchestration, RPC dispatch,             │
@@ -86,7 +85,6 @@ Diligent uses **one backend protocol with multiple transports**.
 
 - **CLI/TUI** launches `diligent app-server --stdio` and speaks NDJSON-framed JSON-RPC over stdio.
 - **Web** runs a Bun server exposing `/rpc` as a WebSocket JSON-RPC endpoint.
-- **Desktop** packages the web frontend and sidecar server inside Tauri; it does not introduce a separate agent runtime.
 
 The same rule applies to any additional clients such as a VS Code extension/plugin: they may add a client-local transport bridge or UI reducer, but they must still consume the existing shared protocol rather than inventing a client-specific protocol surface.
 
@@ -94,9 +92,8 @@ Practical consequences:
 
 1. **Server logic is shared.** Session lifecycle, provider auth wiring, tool execution, mode changes, effort changes, approvals, and steering belong in runtime, not in individual frontends.
 2. **Protocol is the contract.** Anything that crosses the frontend/backend boundary should be modeled in `@diligent/protocol`.
-3. **Desktop is not a fourth backend.** It reuses the web stack rather than forking agent behavior.
-4. **Transport adapters stay small.** Stdio and WebSocket layers only adapt messages; they should not own business logic.
-5. **New clients follow the same contract.** A VS Code plugin, desktop shell, or any future client must compose shared `@diligent/protocol` payloads and must not introduce a parallel client-specific Diligent protocol.
+3. **Transport adapters stay small.** Stdio and WebSocket layers only adapt messages; they should not own business logic.
+4. **New clients follow the same contract.** A VS Code plugin or any future client must compose shared `@diligent/protocol` payloads and must not introduce a parallel client-specific Diligent protocol.
 
 Detailed guidance for the current structured tool-rendering flow lives in `docs/guide/tool-rendering.md`.
 
@@ -175,10 +172,6 @@ The CLI is both a client and a launcher, but not a separate source of agent trut
 - a React client that renders thread state and communicates over JSON-RPC
 
 The web server should stay thin: runtime behavior belongs in `@diligent/runtime`.
-
-### `@diligent/desktop`
-
-`apps/overdare-agent` wraps the web client in Tauri and builds a Bun sidecar. Desktop intentionally reuses the same server and frontend architecture rather than maintaining a native-only agent path.
 
 ## Current Runtime Flow
 

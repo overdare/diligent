@@ -50,16 +50,6 @@
     }
   },
   "files": {
-    "includes": [
-      "**",
-      "!**/node_modules",
-      "!**/dist",
-      "!**/*.d.ts",
-      "!research",
-      "!apps/overdare-agent/loading",
-      "!apps/overdare-agent/src-tauri/gen",
-      "!apps/overdare-agent/src-tauri/resources/bootstrap",
-      "!apps/overdare-agent/src-tauri/target"
-    ]
+    "includes": ["**", "!**/node_modules", "!**/dist", "!**/*.d.ts", "!research"]
   }
 }

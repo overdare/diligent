@@ -7,6 +7,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::storage::global_storage_dir;
+
 const BUNDLED_RUNTIME_VERSION: &str = match option_env!("DILIGENT_RUNTIME_VERSION") {
     Some(v) => v,
     None => "0.0.0-dev",
@@ -56,16 +58,8 @@ struct FetchedUpdate {
     bytes: Vec<u8>,
 }
 
-fn global_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
-    #[cfg(not(windows))]
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    home.map(|h| h.join(".diligent"))
-}
-
 fn updates_dir() -> Option<PathBuf> {
-    global_dir().map(|g| g.join("updates"))
+    global_storage_dir().map(|g| g.join("updates"))
 }
 
 fn runtime_dir() -> Option<PathBuf> {
@@ -111,7 +105,7 @@ fn strip_jsonc_line_comment(line: &str) -> &str {
 }
 
 fn read_user_config_json() -> Option<serde_json::Value> {
-    let path = global_dir()?.join("config.jsonc");
+    let path = global_storage_dir()?.join("config.jsonc");
     let content = fs::read_to_string(&path).ok()?;
     let stripped: String = content
         .lines()

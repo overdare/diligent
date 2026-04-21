@@ -10,14 +10,17 @@ const TEST_ROOT = join(tmpdir(), `diligent-config-test-${Date.now()}`);
 /** Separate HOME dir so global (~/.diligent/config.jsonc) != project (.diligent/config.jsonc) */
 const TEST_HOME = join(TEST_ROOT, "home");
 let origHome: string | undefined;
+let origStorageNamespace: string | undefined;
 
 /** Project config lives inside .diligent/ alongside sessions, knowledge, skills */
-const projectConfigPath = (root: string) => join(root, ".diligent", "config.jsonc");
+const projectConfigPath = (root: string, dirName = ".diligent") => join(root, dirName, "config.jsonc");
 
 beforeEach(() => {
   origHome = process.env.HOME ?? process.env.USERPROFILE;
+  origStorageNamespace = process.env.DILIGENT_STORAGE_NAMESPACE;
   process.env.HOME = TEST_HOME;
   process.env.USERPROFILE = TEST_HOME;
+  delete process.env.DILIGENT_STORAGE_NAMESPACE;
 });
 
 afterEach(async () => {
@@ -27,6 +30,11 @@ afterEach(async () => {
   } else {
     delete process.env.HOME;
     delete process.env.USERPROFILE;
+  }
+  if (origStorageNamespace !== undefined) {
+    process.env.DILIGENT_STORAGE_NAMESPACE = origStorageNamespace;
+  } else {
+    delete process.env.DILIGENT_STORAGE_NAMESPACE;
   }
   try {
     await rm(TEST_ROOT, { recursive: true, force: true });
@@ -88,6 +96,21 @@ describe("loadDiligentConfig", () => {
     expect(config.model).toBe("claude-opus-4-20250514");
     expect(config.tools).toBeUndefined();
     expect(sources).toHaveLength(1);
+  });
+
+  it("loads config from the selected storage namespace", async () => {
+    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
+    const globalConfigFile = join(TEST_HOME, ".overdare", "config.jsonc");
+    const projectConfigFile = projectConfigPath(TEST_ROOT, ".overdare");
+    await mkdir(join(TEST_HOME, ".overdare"), { recursive: true });
+    await mkdir(join(TEST_ROOT, ".overdare"), { recursive: true });
+    await Bun.write(globalConfigFile, JSON.stringify({ model: "claude-sonnet-4-6" }));
+    await Bun.write(projectConfigFile, JSON.stringify({ model: "claude-opus-4-20250514" }));
+
+    const { config, sources } = await loadDiligentConfig(TEST_ROOT);
+    expect(config.model).toBe("claude-opus-4-20250514");
+    expect(sources).toContain(globalConfigFile);
+    expect(sources).toContain(projectConfigFile);
   });
 
   it("uses tool settings from global config only", async () => {

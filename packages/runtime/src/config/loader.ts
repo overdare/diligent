@@ -2,20 +2,22 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { DEFAULT_CONFIG, type DiligentConfig, DiligentConfigSchema } from "./schema";
 
 /** Load and merge config from all sources (D033: global < project < env) */
 export async function loadDiligentConfig(cwd: string): Promise<{ config: DiligentConfig; sources: string[] }> {
   const sources: string[] = [];
+  const projectDirName = resolveProjectDirName();
 
   // Layer 1: Global config
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  const globalPath = join(home, ".diligent", "config.jsonc");
+  const globalPath = join(home, projectDirName, "config.jsonc");
   const globalConfig = await loadConfigFile(globalPath);
   if (globalConfig) sources.push(globalPath);
 
   // Layer 2: Project config (inside .diligent/ alongside sessions, knowledge, skills)
-  const projectPath = join(cwd, ".diligent", "config.jsonc");
+  const projectPath = join(cwd, projectDirName, "config.jsonc");
   const projectConfig = await loadConfigFile(projectPath);
   if (projectConfig) sources.push(projectPath);
 

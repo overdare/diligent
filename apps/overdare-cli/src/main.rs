@@ -1,5 +1,6 @@
 mod cli;
 mod init;
+mod storage;
 mod update;
 mod webserver;
 

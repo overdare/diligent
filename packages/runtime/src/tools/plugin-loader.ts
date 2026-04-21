@@ -15,10 +15,9 @@ import { ToolRenderPayloadSchema } from "@diligent/protocol";
 import type { ApprovalRequest } from "../approval/types";
 import type { DiligentConfig } from "../config/schema";
 import type { PluginHookFn } from "../hooks/runner";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import type { RuntimeToolHost } from "./capabilities";
 import type { UserInputRequest } from "./user-input-types";
-
-const GLOBAL_PLUGIN_DIR_SEGMENTS = [".diligent", "plugins"] as const;
 
 export interface PluginManifest {
   name: string;
@@ -111,7 +110,7 @@ type PluginToolHostContext = PluginToolContext;
  */
 export function getGlobalPluginRoot(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, ...GLOBAL_PLUGIN_DIR_SEGMENTS);
+  return join(home, resolveProjectDirName(), "plugins");
 }
 
 /** Resolve a plugin package directory inside the global plugin root. */

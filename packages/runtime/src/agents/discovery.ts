@@ -4,6 +4,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BUILTIN_AGENT_TYPE_NAMES } from "../agent/agent-types";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { parseAgentFrontmatter, validateAgentName } from "./frontmatter";
 import type { AgentLoadError, AgentLoadResult, AgentMetadata } from "./types";
 
@@ -27,12 +28,12 @@ export async function discoverAgents(options: AgentDiscoveryOptions): Promise<Ag
 }
 
 function resolveGlobalConfigDir(): string {
-  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), ".diligent");
+  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
 }
 
 function getDiscoveryRoots(options: AgentDiscoveryOptions): Array<{ dir: string; source: AgentMetadata["source"] }> {
   const roots: Array<{ dir: string; source: AgentMetadata["source"] }> = [];
-  roots.push({ dir: join(options.cwd, ".diligent", "agents"), source: "project" });
+  roots.push({ dir: join(options.cwd, resolveProjectDirName(), "agents"), source: "project" });
   for (const path of options.additionalPaths ?? []) {
     roots.push({ dir: path, source: "config" });
   }

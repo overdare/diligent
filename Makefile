@@ -1,10 +1,9 @@
 .PHONY: help test test-e2e lint lint-fix typecheck build build-all dev clean \
        release-local \
-       setup check-env config \
-       web-dev web-build web-start \
-       debug-dev debug-build \
-       desktop-dev desktop-build check-desktop \
-       check
+	       setup check-env config \
+	       web-dev web-build web-start \
+	       debug-dev debug-build \
+	       check
 
 help:
 	@echo "Usage: make <target>"
@@ -14,7 +13,6 @@ help:
 	@echo "  web-dev         Run web frontend dev server (Vite)"
 	@echo "  web-start       Run web backend server"
 	@echo "  debug-dev       Run debug-viewer dev server"
-	@echo "  desktop-dev     Run desktop app (Tauri dev mode)"
 	@echo ""
 	@echo "Test / Lint:"
 	@echo "  test            Run all tests"
@@ -30,13 +28,11 @@ help:
 	@echo "  release-local   Build and install diligent into a user bin directory"
 	@echo "  web-build       Build web frontend (Vite)"
 	@echo "  debug-build     Build debug-viewer (Vite)"
-	@echo "  desktop-build   Build desktop app (Tauri)"
 	@echo "  clean           Remove dist/"
 	@echo ""
 	@echo "Setup:"
 	@echo "  setup           Create .env from .env.example (won't overwrite)"
 	@echo "  check-env       Verify API keys are configured"
-	@echo "  check-desktop   Verify Rust/Cargo are installed (required for desktop)"
 	@echo "  config          Show current provider configuration"
 
 # --- Development ---
@@ -84,32 +80,6 @@ debug-dev: node_modules
 
 debug-build: node_modules
 	bun run --cwd packages/debug-viewer build
-
-# --- Desktop ---
-
-check-desktop:
-	@echo "Checking desktop build prerequisites..."
-	@if command -v rustc >/dev/null 2>&1; then \
-		echo "  rustc:  OK ($(shell rustc --version 2>/dev/null))"; \
-	else \
-		echo "  rustc:  NOT FOUND — install via: curl https://sh.rustup.rs -sSf | sh"; \
-		exit 1; \
-	fi
-	@if command -v cargo >/dev/null 2>&1; then \
-		echo "  cargo:  OK ($(shell cargo --version 2>/dev/null))"; \
-	else \
-		echo "  cargo:  NOT FOUND — install via: curl https://sh.rustup.rs -sSf | sh"; \
-		exit 1; \
-	fi
-	@echo "  @tauri-apps/cli: installed via bun install (node_modules)"
-	@echo ""
-	@echo "All desktop prerequisites met. Run: make desktop-dev"
-
-desktop-dev: node_modules
-	bun run --cwd apps/overdare-agent dev
-
-desktop-build: node_modules
-	bun run --cwd apps/overdare-agent build
 
 # --- Build ---
 

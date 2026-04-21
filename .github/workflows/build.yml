@@ -1,4 +1,5 @@
 name: Build
+
 on:
   push:
     tags: ["release-*"]
@@ -10,9 +11,9 @@ on:
         type: string
 
 jobs:
-  desktop-windows:
-    name: Desktop Windows release artifact
-    runs-on: windows-latest
+  overdare-cli-sidecar:
+    name: OVERDARE CLI sidecar artifact
+    runs-on: macos-latest
     env:
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
@@ -22,8 +23,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - run: bun install
 
@@ -38,14 +37,12 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Packaging version: $VERSION"
 
-      - name: Package desktop release
-        run: bun run package --version ${{ env.VERSION }} --platforms windows-x64
+      - name: Build OVERDARE sidecar
+        run: bun run overdare-cli:build-sidecar
 
-      - name: Upload Desktop artifact
+      - name: Upload sidecar artifact
         uses: actions/upload-artifact@v4
         with:
-          name: diligent-desktop-windows-x64-${{ env.VERSION }}
+          name: overdare-cli-sidecar-${{ env.VERSION }}
           path: |
-            dist/windows-x64/**
-            dist/checksums.sha256
-            dist/release-meta.json
+            apps/overdare-cli/.diligent/diagnostics/**

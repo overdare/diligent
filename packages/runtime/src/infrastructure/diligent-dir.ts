@@ -2,7 +2,20 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-const DILIGENT_DIR = ".diligent";
+export const DEFAULT_STORAGE_NAMESPACE = "diligent";
+
+export function resolveStorageNamespace(env: NodeJS.ProcessEnv = process.env): string {
+  const value = env.DILIGENT_STORAGE_NAMESPACE?.trim().toLowerCase();
+  if (!value) return DEFAULT_STORAGE_NAMESPACE;
+  if (!/^[a-z0-9-]+$/.test(value)) {
+    throw new Error(`Invalid DILIGENT_STORAGE_NAMESPACE: ${value}`);
+  }
+  return value;
+}
+
+export function resolveProjectDirName(env: NodeJS.ProcessEnv = process.env): string {
+  return `.${resolveStorageNamespace(env)}`;
+}
 
 export interface DiligentPaths {
   root: string;
@@ -12,8 +25,8 @@ export interface DiligentPaths {
   images: string;
 }
 
-export function resolvePaths(projectRoot: string): DiligentPaths {
-  const root = join(projectRoot, DILIGENT_DIR);
+export function resolvePaths(projectRoot: string, env: NodeJS.ProcessEnv = process.env): DiligentPaths {
+  const root = join(projectRoot, resolveProjectDirName(env));
   return {
     root,
     sessions: join(root, "sessions"),
@@ -31,12 +44,11 @@ images/
 logs/
 `;
 
-/**
- * Ensure .diligent/ directory structure exists.
- * Creates dirs and .gitignore if missing. Idempotent.
- */
-export async function ensureDiligentDir(projectRoot: string): Promise<DiligentPaths> {
-  const paths = resolvePaths(projectRoot);
+export async function ensureDiligentDir(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<DiligentPaths> {
+  const paths = resolvePaths(projectRoot, env);
   await mkdir(paths.sessions, { recursive: true });
   await mkdir(paths.knowledge, { recursive: true });
   await mkdir(paths.skills, { recursive: true });

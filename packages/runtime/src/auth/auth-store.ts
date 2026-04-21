@@ -6,6 +6,7 @@ import type { OpenAIOAuthTokens } from "@diligent/core/auth";
 import type { ProviderName } from "@diligent/core/llm/types";
 import { parse as parseJsonc } from "jsonc-parser";
 import { z } from "zod";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 
 export type AuthKeys = {
   anthropic?: string;
@@ -35,7 +36,7 @@ const AuthKeysSchema = z
 
 export function getAuthFilePath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, ".diligent", "auth.jsonc");
+  return join(home, resolveProjectDirName(), "auth.jsonc");
 }
 
 function substituteEnv(obj: Record<string, unknown>): Record<string, unknown> {

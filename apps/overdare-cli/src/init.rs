@@ -2,6 +2,8 @@ use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::storage::global_storage_dir;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DeployMode {
     MissingOnly,
@@ -15,22 +17,20 @@ fn should_copy_entry(dest_exists: bool, mode: DeployMode) -> bool {
     }
 }
 
-fn global_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
-    #[cfg(not(windows))]
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    home.map(|h| h.join(".diligent"))
-}
-
 fn resolve_updated_bootstrap_dir(log: &mut String) -> Option<PathBuf> {
-    let candidate = global_dir()?.join("updates/runtime/defaults");
-    if candidate.exists() {
-        let _ = writeln!(log, "[init] Using updated bootstrap from legacy defaults path: {}", candidate.display());
-        Some(candidate)
-    } else {
-        None
-    }
+	let bootstrap = global_storage_dir()?.join("updates/runtime/bootstrap");
+	if bootstrap.exists() {
+		let _ = writeln!(log, "[init] Using updated bootstrap path: {}", bootstrap.display());
+		return Some(bootstrap);
+	}
+
+	let defaults = global_storage_dir()?.join("updates/runtime/defaults");
+	if defaults.exists() {
+		let _ = writeln!(log, "[init] Falling back to legacy defaults path: {}", defaults.display());
+		return Some(defaults);
+	}
+
+	None
 }
 
 fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
@@ -96,7 +96,7 @@ fn deploy_plugins(src: &Path, dest: &Path, log: &mut String, mode: DeployMode) -
 pub fn run(update_applied: bool) -> Result<(), String> {
     let mut log = String::new();
     let mode = if update_applied { DeployMode::FullSync } else { DeployMode::MissingOnly };
-    let Some(global) = global_dir() else {
+    let Some(global) = global_storage_dir() else {
         return Ok(());
     };
     fs::create_dir_all(&global).map_err(|e| format!("Cannot create {}: {e}", global.display()))?;

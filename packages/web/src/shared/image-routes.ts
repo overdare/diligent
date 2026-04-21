@@ -2,7 +2,7 @@
 
 export const WEB_IMAGE_ROUTE_PREFIX = "/_diligent/image/";
 
-const DILIGENT_IMAGE_PATH_MARKERS = ["/.diligent/images/", "\\.diligent\\images\\"];
+const HIDDEN_STORAGE_IMAGES_PATTERN = /[\\/]\.[^\\/]+[\\/]images[\\/]/g;
 
 export function toWebImageUrl(localPath: string): string {
   const relativePath = extractDiligentImageRelativePath(localPath);
@@ -41,22 +41,17 @@ export function decodeWebImageRelativePath(pathname: string): string | null {
 }
 
 function extractDiligentImageRelativePath(localPath: string): string | null {
-  for (const marker of DILIGENT_IMAGE_PATH_MARKERS) {
-    const markerIndex = localPath.lastIndexOf(marker);
-    if (markerIndex < 0) {
-      continue;
-    }
-
-    const relativePath = localPath.slice(markerIndex + marker.length);
-    const normalizedPath = relativePath
-      .split(/[\\/]+/)
-      .filter((segment) => segment.length > 0)
-      .join("/");
-
-    if (normalizedPath.length > 0) {
-      return normalizedPath;
-    }
+  const matches = Array.from(localPath.matchAll(HIDDEN_STORAGE_IMAGES_PATTERN));
+  const match = matches.at(-1);
+  if (!match || typeof match.index !== "number") {
+    return null;
   }
 
-  return null;
+  const relativePath = localPath.slice(match.index + match[0].length);
+  const normalizedPath = relativePath
+    .split(/[\\/]+/)
+    .filter((segment) => segment.length > 0)
+    .join("/");
+
+  return normalizedPath.length > 0 ? normalizedPath : null;
 }

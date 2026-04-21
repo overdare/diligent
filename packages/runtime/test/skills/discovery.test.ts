@@ -13,6 +13,7 @@ async function createTmpDir(): Promise<string> {
 }
 
 afterEach(async () => {
+  delete process.env.DILIGENT_STORAGE_NAMESPACE;
   if (tmpDir) {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -181,5 +182,19 @@ describe("discoverSkills", () => {
     expect(byName["project-skill"].source).toBe("project");
     expect(byName["global-skill"].source).toBe("global");
     expect(byName["config-skill"].source).toBe("config");
+  });
+
+  it("uses the selected storage namespace for project and global roots", async () => {
+    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
+    const root = await createTmpDir();
+    const skillDir = join(root, ".overdare", "skills", "my-skill");
+    const globalDir = join(root, "global-config", ".overdare", "skills", "global-skill");
+    await mkdir(skillDir, { recursive: true });
+    await mkdir(globalDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), makeSkillMd("my-skill", "Project branded"));
+    await writeFile(join(globalDir, "SKILL.md"), makeSkillMd("global-skill", "Global branded"));
+
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "global-config", ".overdare") });
+    expect(result.skills.map((skill) => skill.name)).toEqual(["my-skill", "global-skill"]);
   });
 });

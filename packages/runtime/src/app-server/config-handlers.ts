@@ -15,6 +15,7 @@ import {
   saveAuthKey,
   saveOAuthTokens,
 } from "../auth/index";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   type DiligentServerNotification,
@@ -166,9 +167,10 @@ export async function handleImageUpload(args: {
   cwd: string;
   toImageUrl?: (absPath: string) => string | undefined;
 }): Promise<{ type: "local_image"; path: string; mediaType: string; fileName: string; webUrl?: string }> {
+  const projectDirName = resolveProjectDirName();
   const root = args.threadId
-    ? join(args.cwd, ".diligent", "images", args.threadId)
-    : join(args.cwd, ".diligent", "images", "drafts");
+    ? join(args.cwd, projectDirName, "images", args.threadId)
+    : join(args.cwd, projectDirName, "images", "drafts");
   await mkdir(root, { recursive: true });
 
   const ext = extname(args.params.fileName) || mediaTypeToExtension(args.params.mediaType);

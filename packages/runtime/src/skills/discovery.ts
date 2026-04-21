@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { parseFrontmatter, validateSkillName } from "./frontmatter";
 import type { SkillLoadError, SkillLoadResult, SkillMetadata } from "./types";
 
@@ -36,14 +37,14 @@ export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLo
 }
 
 function resolveGlobalConfigDir(): string {
-  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), ".diligent");
+  return join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), resolveProjectDirName());
 }
 
 function getDiscoveryRoots(options: DiscoveryOptions): Array<{ dir: string; source: SkillMetadata["source"] }> {
   const roots: Array<{ dir: string; source: SkillMetadata["source"] }> = [];
 
   // 1. Project local
-  roots.push({ dir: join(options.cwd, ".diligent", "skills"), source: "project" });
+  roots.push({ dir: join(options.cwd, resolveProjectDirName(), "skills"), source: "project" });
 
   // 2. Global
   const globalDir = options.globalConfigDir ?? resolveGlobalConfigDir();

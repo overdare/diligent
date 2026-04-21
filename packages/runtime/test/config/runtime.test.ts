@@ -8,6 +8,7 @@ import { loadRuntimeConfig } from "../../src/config/runtime";
 import type { DiligentPaths } from "../../src/infrastructure";
 
 let tmpRoot = "";
+let originalStorageNamespace: string | undefined;
 
 function makePaths(base: string): DiligentPaths {
   return {
@@ -20,6 +21,12 @@ function makePaths(base: string): DiligentPaths {
 }
 
 afterEach(async () => {
+  if (originalStorageNamespace !== undefined) {
+    process.env.DILIGENT_STORAGE_NAMESPACE = originalStorageNamespace;
+  } else {
+    delete process.env.DILIGENT_STORAGE_NAMESPACE;
+  }
+  originalStorageNamespace = undefined;
   if (tmpRoot) {
     await rm(tmpRoot, { recursive: true, force: true });
     tmpRoot = "";
@@ -125,6 +132,38 @@ describe("loadRuntimeConfig", () => {
 
       expect(config.diligent.userId).toBe("explicit-user");
       expect(await Bun.file(fallbackPath).exists()).toBe(false);
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
+
+  it("uses the selected namespace for user-id persistence and project config", async () => {
+    originalStorageNamespace = process.env.DILIGENT_STORAGE_NAMESPACE;
+    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
+    tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-branded-"));
+    const brandedPaths: DiligentPaths = {
+      root: join(tmpRoot, ".overdare"),
+      sessions: join(tmpRoot, ".overdare", "sessions"),
+      knowledge: join(tmpRoot, ".overdare", "knowledge"),
+      skills: join(tmpRoot, ".overdare", "skills"),
+      images: join(tmpRoot, ".overdare", "images"),
+    };
+    const isolatedHome = join(tmpRoot, ".isolated-home");
+    await mkdir(brandedPaths.sessions, { recursive: true });
+    await mkdir(brandedPaths.knowledge, { recursive: true });
+    await mkdir(brandedPaths.skills, { recursive: true });
+    await mkdir(brandedPaths.images, { recursive: true });
+    await mkdir(join(isolatedHome, ".overdare"), { recursive: true });
+    await writeFile(join(tmpRoot, ".overdare", "config.jsonc"), JSON.stringify({ userId: "overdare-user" }));
+
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    try {
+      const config = await loadRuntimeConfig(tmpRoot, brandedPaths);
+      expect(config.diligent.userId).toBe("overdare-user");
     } finally {
       process.env.HOME = originalHome;
       process.env.USERPROFILE = originalUserProfile;

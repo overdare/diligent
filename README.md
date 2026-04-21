@@ -30,7 +30,6 @@ make dev
 - `make release-local` — build and install `diligent` into your user bin directory
 - `make web-dev` — run the web client dev server
 - `make web-start` — run the web backend server
-- `make desktop-dev` — run the desktop app in Tauri dev mode
 - `make debug-dev` — run the debug viewer
 
 `make release-local` installs to a standard user bin location: it uses `BIN_DIR` when provided, otherwise `XDG_BIN_DIR`, then prefers `~/.local/bin` or `~/bin` if either is already on `PATH`, and finally falls back to `~/.local/bin`. You can override the destination with `BIN_DIR=/your/bin make release-local`.
@@ -43,10 +42,13 @@ make dev
 - `packages/plugin-sdk` — public SDK for external tool plugins
 - `packages/cli` — CLI entrypoint and TUI client
 - `packages/web` — Bun web server and React web client
-- `apps/overdare-agent` — Tauri shell around the web frontend and Bun sidecar
 - `apps/overdare-cli` — terminal-only wrapper for runtime update and webserver launch
 - `packages/debug-viewer` — viewer for inspecting `.diligent/` project data
 - `packages/e2e` — end-to-end protocol/runtime tests
+
+## Packaged OVERDARE storage namespace
+
+Packaged OVERDARE CLI flows use the `overdare` storage namespace at launcher runtime. That switches packaged state from `~/.diligent` / `./.diligent` to `~/.overdare` / `./.overdare`. The launcher performs a one-time migration from legacy `.diligent` only when the target namespace does not yet exist. Ordinary non-packaged source checkout workflows remain on `.diligent` unless the packaged namespace env is present.
 
 ## Commit and PR title convention
 

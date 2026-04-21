@@ -3,12 +3,13 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 
 const USER_ID_FILE_NAME = "user-id";
 
 function getGlobalDiligentDir(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, ".diligent");
+  return join(home, resolveProjectDirName());
 }
 
 export function getGlobalUserIdPath(): string {

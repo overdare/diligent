@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureDiligentDir, resolvePaths } from "@diligent/runtime/infrastructure";
+import {
+  DEFAULT_STORAGE_NAMESPACE,
+  ensureDiligentDir,
+  resolvePaths,
+  resolveProjectDirName,
+  resolveStorageNamespace,
+} from "@diligent/runtime/infrastructure";
 
 const TEST_ROOT = join(tmpdir(), `diligent-test-${Date.now()}`);
 
@@ -22,6 +28,20 @@ describe("resolvePaths", () => {
     expect(paths.knowledge).toBe(join(base, "knowledge"));
     expect(paths.skills).toBe(join(base, "skills"));
     expect(paths.images).toBe(join(base, "images"));
+  });
+
+  it("supports a branded namespace from env", () => {
+    const env = { DILIGENT_STORAGE_NAMESPACE: "overdare" } as NodeJS.ProcessEnv;
+    const base = join("/project", ".overdare");
+    const paths = resolvePaths("/project", env);
+    expect(resolveStorageNamespace(env)).toBe("overdare");
+    expect(resolveProjectDirName(env)).toBe(".overdare");
+    expect(paths.root).toBe(base);
+  });
+
+  it("defaults to diligent without env", () => {
+    expect(resolveStorageNamespace({} as NodeJS.ProcessEnv)).toBe(DEFAULT_STORAGE_NAMESPACE);
+    expect(resolveProjectDirName({} as NodeJS.ProcessEnv)).toBe(".diligent");
   });
 });
 
@@ -54,6 +74,13 @@ describe("ensureDiligentDir", () => {
     expect(content).toContain("knowledge/");
     expect(content).toContain("images/");
     expect(content).not.toContain("skills/");
+  });
+
+  it("creates branded namespace directories when env is set", async () => {
+    const env = { DILIGENT_STORAGE_NAMESPACE: "overdare" } as NodeJS.ProcessEnv;
+    const paths = await ensureDiligentDir(TEST_ROOT, env);
+    expect(paths.root).toBe(join(TEST_ROOT, ".overdare"));
+    expect(await Bun.file(join(paths.root, ".gitignore")).exists()).toBe(true);
   });
 
   it("is idempotent — second call does not overwrite .gitignore", async () => {

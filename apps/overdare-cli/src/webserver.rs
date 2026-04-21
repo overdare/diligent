@@ -3,6 +3,11 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::storage::{
+    global_legacy_storage_dir, global_storage_dir, local_legacy_storage_dir, local_storage_dir, migrate_namespace_if_needed,
+    storage_namespace,
+};
+
 pub struct WebServerOptions {
     pub cwd: String,
     pub userid: Option<String>,
@@ -34,16 +39,8 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
     Ok(WebServerOptions { cwd, userid })
 }
 
-fn global_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
-    #[cfg(not(windows))]
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    home.map(|h| h.join(".diligent"))
-}
-
 fn default_web_log_path() -> Result<PathBuf, String> {
-    let global = global_dir().ok_or("Cannot determine home directory for web logs")?;
+    let global = global_storage_dir().ok_or("Cannot determine home directory for web logs")?;
     let logs_dir = global.join("logs");
     std::fs::create_dir_all(&logs_dir).map_err(|e| format!("Cannot create web log directory {}: {e}", logs_dir.display()))?;
     let date = chrono::Local::now().format("%Y%m%d").to_string();
@@ -53,19 +50,31 @@ fn default_web_log_path() -> Result<PathBuf, String> {
 
 fn resolve_updated_sidecar_path() -> Option<PathBuf> {
     let bin_name = if cfg!(windows) { "diligent-web-server.exe" } else { "diligent-web-server" };
-    let path = global_dir()?.join("updates/runtime").join(bin_name);
+    let path = global_storage_dir()?.join("updates/runtime").join(bin_name);
     if path.exists() { Some(path) } else { None }
 }
 
 fn resolve_updated_dist_dir() -> Option<PathBuf> {
-    let candidate = global_dir()?.join("updates/runtime/dist/client");
+    let candidate = global_storage_dir()?.join("updates/runtime/dist/client");
     if candidate.exists() { Some(candidate) } else { None }
 }
 
 fn resolve_updated_rg_bin() -> Option<PathBuf> {
     let bin_name = if cfg!(windows) { "rg.exe" } else { "rg" };
-    let path = global_dir()?.join("updates/runtime").join(bin_name);
+    let path = global_storage_dir()?.join("updates/runtime").join(bin_name);
     if path.exists() { Some(path) } else { None }
+}
+
+fn migrate_global_namespace_if_needed() -> Result<(), String> {
+    let legacy = global_legacy_storage_dir().ok_or("Cannot determine home directory for migration")?;
+    let target = global_storage_dir().ok_or("Cannot determine home directory for migration")?;
+    migrate_namespace_if_needed(&legacy, &target).map(|_| ())
+}
+
+fn migrate_local_namespace_if_needed(cwd: &str) -> Result<(), String> {
+    let legacy = local_legacy_storage_dir(cwd);
+    let target = local_storage_dir(cwd);
+    migrate_namespace_if_needed(&legacy, &target).map(|_| ())
 }
 
 async fn wait_for_health(port: u16) -> Result<(), String> {
@@ -103,8 +112,14 @@ fn format_child_exit(status: std::process::ExitStatus) -> String {
 }
 
 pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
+    migrate_global_namespace_if_needed()?;
+    migrate_local_namespace_if_needed(&options.cwd)?;
+
     let binary = resolve_updated_sidecar_path().ok_or(
-        "Updated runtime binary not found. Run 'overdare-cli update' first so ~/.diligent/updates/runtime/diligent-web-server exists.".to_string(),
+        format!(
+            "Updated runtime binary not found. Run 'overdare-cli update' first so ~/.{}/updates/runtime/diligent-web-server exists.",
+            storage_namespace()
+        ),
     )?;
     let dist_dir = resolve_updated_dist_dir().ok_or(
         "Updated runtime dist/client not found. Run 'overdare-cli update' first.".to_string(),
@@ -137,6 +152,7 @@ pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
     if let Some(rg) = rg_path.as_deref() {
         cmd.env("DILIGENT_RG_PATH", rg.to_string_lossy().as_ref());
     }
+    cmd.env("DILIGENT_STORAGE_NAMESPACE", storage_namespace());
 
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn updated sidecar: {e}"))?;
     let stdout = child.stdout.take().ok_or("No stdout from updated sidecar")?;
@@ -181,6 +197,7 @@ pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::parse_args;
+    use crate::storage::storage_namespace;
 
     #[test]
     fn parse_args_reads_cwd_and_userid() {
@@ -188,5 +205,10 @@ mod tests {
         let parsed = parse_args(&args).expect("parse args");
         assert_eq!(parsed.cwd, "/tmp/project");
         assert_eq!(parsed.userid.as_deref(), Some("user-1"));
+    }
+
+    #[test]
+    fn packaged_webserver_uses_packaged_namespace() {
+        assert_eq!(storage_namespace(), "overdare");
     }
 }

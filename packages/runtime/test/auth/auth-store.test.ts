@@ -15,6 +15,9 @@ import {
 } from "../../src/auth/auth-store";
 
 const TEST_ROOT = join(tmpdir(), `diligent-auth-test-${Date.now()}`);
+let origHome: string | undefined;
+let origUserProfile: string | undefined;
+let origStorageNamespace: string | undefined;
 
 const TEST_OAUTH_TOKENS: OpenAIOAuthTokens = {
   access_token: "at-test",
@@ -26,9 +29,30 @@ const TEST_OAUTH_TOKENS: OpenAIOAuthTokens = {
 
 beforeEach(async () => {
   await mkdir(TEST_ROOT, { recursive: true });
+  origHome = process.env.HOME;
+  origUserProfile = process.env.USERPROFILE;
+  origStorageNamespace = process.env.DILIGENT_STORAGE_NAMESPACE;
+  process.env.HOME = TEST_ROOT;
+  process.env.USERPROFILE = TEST_ROOT;
+  delete process.env.DILIGENT_STORAGE_NAMESPACE;
 });
 
 afterEach(async () => {
+  if (origHome !== undefined) {
+    process.env.HOME = origHome;
+  } else {
+    delete process.env.HOME;
+  }
+  if (origUserProfile !== undefined) {
+    process.env.USERPROFILE = origUserProfile;
+  } else {
+    delete process.env.USERPROFILE;
+  }
+  if (origStorageNamespace !== undefined) {
+    process.env.DILIGENT_STORAGE_NAMESPACE = origStorageNamespace;
+  } else {
+    delete process.env.DILIGENT_STORAGE_NAMESPACE;
+  }
   try {
     await rm(TEST_ROOT, { recursive: true, force: true });
   } catch {}
@@ -39,6 +63,11 @@ describe("getAuthFilePath", () => {
     const path = getAuthFilePath();
     expect(path).toContain("diligent");
     expect(path).toEndWith("auth.jsonc");
+  });
+
+  test("uses the selected storage namespace", () => {
+    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
+    expect(getAuthFilePath()).toBe(join(TEST_ROOT, ".overdare", "auth.jsonc"));
   });
 });
 

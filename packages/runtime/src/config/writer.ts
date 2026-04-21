@@ -4,12 +4,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyEdits, format, modify, parse as parseJsonc } from "jsonc-parser";
 
+import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import type { DiligentConfig } from "./schema";
 import { DiligentConfigSchema } from "./schema";
 
-const PROJECT_CONFIG_DIR = ".diligent";
 const PROJECT_CONFIG_FILE = "config.jsonc";
-const GLOBAL_CONFIG_DIR = ".diligent";
 const GLOBAL_CONFIG_FILE = "config.jsonc";
 const JSONC_FORMAT_OPTIONS = {
   tabSize: 2,
@@ -56,12 +55,12 @@ export interface WriteToolsConfigResult {
 }
 
 export function getProjectConfigPath(cwd: string): string {
-  return join(cwd, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILE);
+  return join(cwd, resolveProjectDirName(), PROJECT_CONFIG_FILE);
 }
 
 export function getGlobalConfigPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
-  return join(home, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE);
+  return join(home, resolveProjectDirName(), GLOBAL_CONFIG_FILE);
 }
 
 /**
