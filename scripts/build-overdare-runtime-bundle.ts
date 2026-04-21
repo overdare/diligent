@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   stageBootstrap(stageDir);
   maybeStageRg(platform, stageDir);
 
-  const artifactName = `overdare-runtime-${version}-${platform.id}.zip`;
+  const artifactName = `overdare-ai-agent-runtime-${version}-${platform.id}.zip`;
   const artifactPath = join(DIST, artifactName);
   if (existsSync(artifactPath)) rmSync(artifactPath, { force: true });
   zipRuntimeBundle(stageDir, artifactPath);
