@@ -6,3 +6,5 @@ export {
   resolveProjectDirName,
   resolveStorageNamespace,
 } from "./diligent-dir";
+export type { MigrationOutcome } from "./diligent-dir";
+export { migrateNamespaceIfNeeded, migrateGlobalNamespaceIfNeeded } from "./diligent-dir";

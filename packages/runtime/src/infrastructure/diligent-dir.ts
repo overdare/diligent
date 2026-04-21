@@ -1,6 +1,8 @@
 // @summary Manages .diligent directory structure with paths and gitignore setup
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
+import { rename, stat } from "node:fs/promises";
 
 export const DEFAULT_STORAGE_NAMESPACE = "diligent";
 
@@ -15,6 +17,69 @@ export function resolveStorageNamespace(env: NodeJS.ProcessEnv = process.env): s
 
 export function resolveProjectDirName(env: NodeJS.ProcessEnv = process.env): string {
   return `.${resolveStorageNamespace(env)}`;
+}
+
+/** Outcome of a namespace migration attempt. */
+export type MigrationOutcome = "migrated" | "skipped_no_legacy" | "skipped_target_exists";
+
+async function dirExists(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Migrate the project-local storage directory from the legacy `.diligent/` namespace to the
+ * currently configured namespace, if the namespace differs and the legacy directory exists.
+ *
+ * Matches the logic of `migrate_local_namespace_if_needed()` in `apps/overdare-ai-agent/src/storage.rs`
+ * so that the TypeScript runtime can independently handle legacy directories when launched
+ * without the Rust wrapper (e.g. direct CLI invocation, web-only deployment).
+ */
+export async function migrateNamespaceIfNeeded(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MigrationOutcome> {
+  const namespace = resolveStorageNamespace(env);
+  if (namespace === DEFAULT_STORAGE_NAMESPACE) {
+    return "skipped_no_legacy";
+  }
+
+  const legacyDir = join(projectRoot, `.${DEFAULT_STORAGE_NAMESPACE}`);
+  const targetDir = join(projectRoot, `.${namespace}`);
+
+  if (!(await dirExists(legacyDir))) return "skipped_no_legacy";
+  if (await dirExists(targetDir)) return "skipped_target_exists";
+
+  await rename(legacyDir, targetDir);
+  return "migrated";
+}
+
+/**
+ * Migrate the global (home-directory) storage directory from the legacy `~/.diligent/` namespace
+ * to the currently configured namespace, if the namespace differs and the legacy directory exists.
+ *
+ * Matches the logic of `migrate_global_namespace_if_needed()` in `apps/overdare-ai-agent/src/storage.rs`.
+ */
+export async function migrateGlobalNamespaceIfNeeded(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MigrationOutcome> {
+  const namespace = resolveStorageNamespace(env);
+  if (namespace === DEFAULT_STORAGE_NAMESPACE) {
+    return "skipped_no_legacy";
+  }
+
+  const home = env.HOME ?? env.USERPROFILE ?? homedir();
+  const legacyDir = join(home, `.${DEFAULT_STORAGE_NAMESPACE}`);
+  const targetDir = join(home, `.${namespace}`);
+
+  if (!(await dirExists(legacyDir))) return "skipped_no_legacy";
+  if (await dirExists(targetDir)) return "skipped_target_exists";
+
+  await rename(legacyDir, targetDir);
+  return "migrated";
 }
 
 export interface DiligentPaths {
