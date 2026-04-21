@@ -33,6 +33,8 @@ The architecture is organized around four product goals:
 | `packages/web` | Bun web server + React web client over WebSocket JSON-RPC |
 | `packages/debug-viewer` | Viewer for inspecting `.diligent/` data |
 | `packages/e2e` | End-to-end tests spanning protocol and runtime behavior |
+| `apps/overdare-ai-agent` | Rust CLI launcher for the Overdare product: bootstraps the TypeScript runtime, manages self-update, and launches the Bun web server as a child process. Owns compile-time storage namespace defaults, migration from legacy `.diligent/` directories, and Overdare-specific bundled assets (plugins, bootstrap defaults, Supabase config). |
+| `apps/vscode-extension` | VS Code extension host: provides an activity bar entry, thread tree view, and conversation panel backed by a stdio JSON-RPC transport to the Diligent runtime. Shares the same protocol contract as the CLI and Web clients. |
 
 ## Architecture Overview
 
@@ -64,6 +66,32 @@ CLI/TUI                         Web UI
 ## Documentation Map
 
 Use this document for repository-wide architectural invariants, layer boundaries, and ownership rules.
+
+## Application Hosts (apps/)
+
+The `apps/` directory contains application hosts that wrap the TypeScript runtime for specific product delivery targets. They are not monorepo packages and do not export shared types.
+
+### overdare-ai-agent: Rust launcher → TypeScript runtime
+
+`apps/overdare-ai-agent` is a Rust CLI binary that acts as the process supervisor and bootstrapper for the Overdare product variant:
+
+1. `init` command — resolves storage namespace, performs `.diligent/` → `.overdare/` directory migration if needed, and initializes the local project directory.
+2. `webserver` command — extracts the bundled Bun runtime, normalizes the working directory path (including Windows `/c/path` → `C:\path` conversion), and launches `packages/web` as a child process over stdio.
+
+The Rust launcher owns **migration** and **process lifecycle**. The TypeScript runtime owns **directory creation** and **all agent/session logic**. Both sides resolve the storage namespace via the `DILIGENT_STORAGE_NAMESPACE` environment variable.
+
+### Dual-language storage namespace
+
+The configurable storage namespace is implemented independently in Rust and TypeScript:
+
+| Aspect | Rust (`apps/overdare-ai-agent/src/storage.rs`) | TypeScript (`packages/runtime/src/infrastructure/diligent-dir.ts`) |
+|--------|-----------------------------------------------|---------------------------------------------------------------------|
+| Default | `"overdare"` (compile-time, Overdare product) | `"diligent"` (runtime, generic Diligent) |
+| Source | `option_env!("DILIGENT_STORAGE_NAMESPACE")` | `process.env.DILIGENT_STORAGE_NAMESPACE` |
+| Migration | Yes — renames `.diligent/` → `.{namespace}/` | No — creates directories only |
+| Validation | None (compile-time constant) | Regex `/^[a-z0-9-]+$/` |
+
+The divergent defaults are intentional per-product. The Rust launcher always runs before the TypeScript runtime in the Overdare deployment, so migration always happens before directory creation. Any future change to directory layout or namespace rules must be coordinated across both implementations — there is no shared type contract between them (see D099 in `docs/plan/decisions.md`).
 
 Feature-specific behavior should be documented under `docs/guide/`. Those guides should hold detailed examples, edge cases, and step-by-step change procedures.
 
