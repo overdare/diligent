@@ -65,8 +65,9 @@ fn run_init(args: Vec<String>) -> Result<(), String> {
 fn run_webserver(args: Vec<String>) -> Result<(), String> {
     let options = webserver::parse_args(&args)?;
     let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("failed to create tokio runtime: {e}"))?;
-    let port = runtime.block_on(webserver::run_foreground(options))?;
-    println!("DILIGENT_PORT={port}");
+    let running = runtime.block_on(webserver::start_foreground(options))?;
+    println!("DILIGENT_PORT={}", running.port);
+    runtime.block_on(running.wait())?;
     Ok(())
 }
 

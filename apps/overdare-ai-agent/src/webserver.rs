@@ -13,6 +13,35 @@ pub struct WebServerOptions {
     pub userid: Option<String>,
 }
 
+fn normalize_cwd(raw: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Some(stripped) = raw.strip_prefix("/") {
+            let mut parts = stripped.split('/');
+            if let Some(first) = parts.next() {
+                if first.len() == 1 && first.chars().all(|ch| ch.is_ascii_alphabetic()) {
+                    let remainder = parts.collect::<Vec<_>>().join("\\");
+                    if remainder.is_empty() {
+                        return format!("{}:\\", first.to_ascii_uppercase());
+                    }
+                    return format!("{}:\\{}", first.to_ascii_uppercase(), remainder);
+                }
+            }
+
+            if raw.starts_with("/Users/") || raw == "/Users" {
+                let drive = std::env::var("SystemDrive")
+                    .or_else(|_| std::env::var("HOMEDRIVE"))
+                    .unwrap_or_else(|_| "C:".to_string());
+                let trimmed_drive = drive.trim_end_matches(['\\', '/']);
+                let remainder = stripped.replace('/', "\\");
+                return format!("{}\\{}", trimmed_drive, remainder);
+            }
+        }
+    }
+
+    raw.to_string()
+}
+
 pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
     let mut cwd: Option<String> = None;
     let mut userid: Option<String> = None;
@@ -35,7 +64,9 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
         }
     }
 
-    let cwd = cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).to_string_lossy().to_string());
+    let cwd = normalize_cwd(
+        &cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).to_string_lossy().to_string()),
+    );
     Ok(WebServerOptions { cwd, userid })
 }
 
@@ -111,7 +142,27 @@ fn format_child_exit(status: std::process::ExitStatus) -> String {
     }
 }
 
-pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
+pub struct RunningWebServer {
+    pub port: u16,
+    child: tokio::process::Child,
+}
+
+impl RunningWebServer {
+    pub async fn wait(mut self) -> Result<(), String> {
+        let status = self
+            .child
+            .wait()
+            .await
+            .map_err(|e| format!("wait sidecar exit: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("Webserver sidecar exited unexpectedly ({})", format_child_exit(status)))
+        }
+    }
+}
+
+pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebServer, String> {
     migrate_global_namespace_if_needed()?;
     migrate_local_namespace_if_needed(&options.cwd)?;
 
@@ -188,15 +239,12 @@ pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
     }?;
 
     wait_for_health(port).await?;
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
-    Ok(port)
+    Ok(RunningWebServer { port, child })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_args;
+    use super::{normalize_cwd, parse_args};
     use crate::storage::storage_namespace;
 
     #[test]
@@ -205,6 +253,18 @@ mod tests {
         let parsed = parse_args(&args).expect("parse args");
         assert_eq!(parsed.cwd, "/tmp/project");
         assert_eq!(parsed.userid.as_deref(), Some("user-1"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_cwd_converts_msys_drive_paths() {
+        assert_eq!(normalize_cwd("/c/Users/devbv/git/diligent"), r"C:\Users\devbv\git\diligent");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_cwd_converts_git_bash_users_paths() {
+        assert_eq!(normalize_cwd("/Users/devbv/git/diligent"), r"C:\Users\devbv\git\diligent");
     }
 
     #[test]
