@@ -696,3 +696,17 @@ Decisions made during synthesis reviews, with rationale.
 - **Current state**: `packages/protocol/src/tool-classification.ts:10` — canonical definition. `packages/cli/src/tui/components/thread-store-utils.ts:10` — imports from `@diligent/protocol`. `packages/runtime/src/tools/tool-metadata.ts` — re-exports from protocol for backward compatibility.
 - **Supersedes**: Original D097 (2026-03-25) which described a CLI-local duplication pattern that no longer exists.
 - **Date**: 2026-04-15
+
+### D099: Rust/TypeScript storage namespace boundary contract
+- **Decision**: The configurable storage namespace feature has two independent implementations: (a) the Rust launcher (`apps/overdare-ai-agent/src/storage.rs`) owns directory migration and uses `"overdare"` as its compile-time default; (b) the TypeScript runtime (`packages/runtime/src/infrastructure/diligent-dir.ts`) owns directory creation and uses `"diligent"` as its runtime default. The shared contract between them is the `DILIGENT_STORAGE_NAMESPACE` environment variable name.
+- **Rationale**: The Rust launcher runs first in the Overdare deployment. It performs the one-time migration from `.diligent/` to `.overdare/` (or whatever namespace is configured), then sets `DILIGENT_STORAGE_NAMESPACE` in the child process environment before launching the TypeScript runtime. The TypeScript runtime reads the env var and creates directories under the resolved namespace. The divergent code-level defaults are intentional: the Rust binary is the Overdare product (compiled with `PACKAGED_STORAGE_NAMESPACE = "overdare"`), while the TypeScript runtime is the generic Diligent engine (defaults to `"diligent"` when no env var is present).
+- **Ownership split**:
+  - **Rust launcher owns**: migration (`migrate_global_namespace_if_needed`, `migrate_local_namespace_if_needed`), platform-specific home directory resolution, process lifecycle
+  - **TypeScript runtime owns**: directory creation (`ensureDiligentDir`), gitignore setup, all agent/session/knowledge path resolution
+- **Invariants**:
+  - When the Rust launcher is used, it always sets `DILIGENT_STORAGE_NAMESPACE` before starting the TypeScript runtime, so both sides agree on the active namespace at runtime.
+  - When the TypeScript runtime is launched without the Rust launcher (e.g., `diligent` CLI, `bun run dev`, direct `bun packages/cli/src/index.ts`), migration never runs and the TypeScript runtime defaults to `"diligent"` — which is correct for the generic Diligent product.
+  - Any future change to directory layout, new subdirectories, or namespace naming rules must be coordinated across both implementations; there is no shared schema or integration test enforcing cross-language consistency.
+- **Consequence**: Contributors adding new subdirectories under the storage root must update both `diligent-dir.ts` (`DiligentPaths` interface + `ensureDiligentDir`) and any Rust-side path construction in `storage.rs` that references those subdirectories.
+- **References**: `apps/overdare-ai-agent/src/storage.rs`, `packages/runtime/src/infrastructure/diligent-dir.ts`, ARCHITECTURE.md "Dual-language storage namespace"
+- **Date**: 2026-04-21
