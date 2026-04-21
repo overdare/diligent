@@ -1,6 +1,7 @@
 // @summary Pure event-to-state reducer for CLI ThreadStore transitions and lifecycle effects
 
 import type { AgentEvent } from "@diligent/protocol";
+import { applyAgentEvents, type ConversationLiveState } from "@diligent/protocol";
 import type { CollabToolState, ToolCallState } from "./thread-store-utils";
 
 export type ReducerOverlayStatusKind = "default" | "tool";
@@ -92,6 +93,11 @@ export function reduceThreadEvent<TItem>(
   event: AgentEvent,
   deps: ThreadEventReducerDeps<TItem>,
 ): ThreadEventReducerResult<TItem> {
+  // Delegate base ConversationLiveState fields to the shared reducer first so that events
+  // handled only by applyAgentEvents() (e.g. collab_* events, future additions) automatically
+  // update threadStatus and overlayStatus without requiring per-case CLI handling.
+  const liveResult = applyAgentEvents(extractLiveState(state), [event]);
+
   switch (event.type) {
     case "agent_start":
       return {
@@ -275,7 +281,8 @@ export function reduceThreadEvent<TItem>(
       return { handled: true, requestRender: false, state, effects: [] };
 
     case "status_change": {
-      if (event.status === "busy") {
+      const isThreadBusy = liveResult.threadStatus === "busy";
+      if (isThreadBusy) {
         return {
           handled: true,
           requestRender: true,
@@ -393,6 +400,64 @@ export function reduceThreadEvent<TItem>(
     }
 
     default:
-      return { handled: false, requestRender: false, state, effects: [] };
+      return mergeSharedReducerResult(state, liveResult, deps.nowMs);
   }
+}
+
+/**
+ * Build a minimal ConversationLiveState bridge from the CLI-specific state so that
+ * applyAgentEvents() can be called for base-field delegation on every event.
+ */
+function extractLiveState(state: ThreadEventReducerState<unknown>): ConversationLiveState {
+  return {
+    threadId: null,
+    threadTitle: null,
+    threadStatus: state.isThreadBusy ? "busy" : "idle",
+    items: [],
+    liveText: "",
+    liveThinking: "",
+    liveToolName: null,
+    liveToolInput: null,
+    liveToolOutput: "",
+    overlayStatus: state.overlayStatus?.message ?? null,
+    isLoading: false,
+    lastError: null,
+  };
+}
+
+/**
+ * When the shared reducer handled an event that the CLI switch did not recognise,
+ * apply any resulting threadStatus or overlayStatus changes back into CLI state.
+ * Returns handled:false if the shared reducer made no changes either.
+ */
+function mergeSharedReducerResult<TItem>(
+  state: ThreadEventReducerState<TItem>,
+  live: ConversationLiveState,
+  nowMs: number,
+): ThreadEventReducerResult<TItem> {
+  const isThreadBusy = live.threadStatus === "busy";
+  const prevIsThreadBusy = state.isThreadBusy;
+  const prevOverlayMessage = state.overlayStatus?.message ?? null;
+  const hasStatusChange = isThreadBusy !== prevIsThreadBusy;
+  const hasOverlayChange = live.overlayStatus !== prevOverlayMessage;
+
+  if (!hasStatusChange && !hasOverlayChange) {
+    return { handled: false, requestRender: false, state, effects: [] };
+  }
+
+  const overlayStatus = live.overlayStatus
+    ? setOverlayStatus(state.overlayStatus, live.overlayStatus, "default", nowMs)
+    : null;
+
+  return {
+    handled: true,
+    requestRender: true,
+    effects: isThreadBusy ? [{ kind: "start_status_timers" }] : [{ kind: "cleanup_status_timers_if_idle" }],
+    state: {
+      ...state,
+      isThreadBusy,
+      busyStartedAt: isThreadBusy ? (state.busyStartedAt ?? nowMs) : null,
+      overlayStatus,
+    },
+  };
 }
