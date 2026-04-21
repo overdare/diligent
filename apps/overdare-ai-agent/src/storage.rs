@@ -74,7 +74,7 @@ mod tests {
 
 	fn unique_temp_dir(label: &str) -> PathBuf {
 		std::env::temp_dir().join(format!(
-			"overdare-cli-storage-test-{}-{}-{}",
+			"overdare-ai-agent-storage-test-{}-{}-{}",
 			label,
 			std::process::id(),
 			chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()

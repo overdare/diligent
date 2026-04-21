@@ -24,7 +24,7 @@ That flow owns:
 
 Current operator-facing entry points are:
 
-- repo root: `bun run overdare-cli:build-sidecar`
+- repo root: `bun run overdare-ai-agent:build-sidecar`
 - sidecar-only helper: `scripts/build-overdare-sidecar.ts`
 
 `scripts/build-overdare-sidecar.ts` is the current operator-facing build helper in this repo.
@@ -62,11 +62,11 @@ Each platform maps packaging-time concerns together:
 
 ## Defaults resource assembly
 
-OVERDARE-owned defaults now live under `apps/overdare-cli/`:
+OVERDARE-owned defaults now live under `apps/overdare-ai-agent/`:
 
-- `apps/overdare-cli/bootstrap/`
-- `apps/overdare-cli/plugins/`
-- `apps/overdare-cli/supabase/`
+- `apps/overdare-ai-agent/bootstrap/`
+- `apps/overdare-ai-agent/plugins/`
+- `apps/overdare-ai-agent/supabase/`
 
 At bundle assembly time these assets are staged under `defaults/` for compatibility with existing updater expectations. The launcher prefers an updated `bootstrap/` directory if present at runtime and otherwise falls back to the legacy `defaults/` path.
 
@@ -91,8 +91,8 @@ Common outputs include the compiled sidecar binary and runtime bundle contents u
 ## Key code paths
 
 - `scripts/build-overdare-sidecar.ts`
-- `apps/overdare-cli/README.md`
-- `apps/overdare-cli/bootstrap/`
-- `apps/overdare-cli/plugins/`
-- `apps/overdare-cli/supabase/`
+- `apps/overdare-ai-agent/README.md`
+- `apps/overdare-ai-agent/bootstrap/`
+- `apps/overdare-ai-agent/plugins/`
+- `apps/overdare-ai-agent/supabase/`
 - `package.json`

@@ -42,7 +42,7 @@ make dev
 - `packages/plugin-sdk` — public SDK for external tool plugins
 - `packages/cli` — CLI entrypoint and TUI client
 - `packages/web` — Bun web server and React web client
-- `apps/overdare-cli` — terminal-only wrapper for runtime update and webserver launch
+- `apps/overdare-ai-agent` — terminal-only wrapper for runtime update and webserver launch
 - `packages/debug-viewer` — viewer for inspecting `.diligent/` project data
 - `packages/e2e` — end-to-end protocol/runtime tests
 

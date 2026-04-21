@@ -50,11 +50,11 @@ jobs:
             echo "No release exists for $TAG. Continuing."
           fi
 
-  build-overdare-runtime-bundle:
-    name: Build OVERDARE runtime bundle
+  build-overdare-runtime-bundle-windows-x64:
+    name: Build OVERDARE runtime bundle (Windows x64)
     needs: prepare
     if: ${{ needs.prepare.outputs.release_exists != 'true' }}
-    runs-on: macos-latest
+    runs-on: windows-latest
     permissions:
       contents: read
     env:
@@ -72,14 +72,14 @@ jobs:
       - name: Build runtime bundle
         shell: bash
         run: |
-          bun run overdare-cli:build-runtime-bundle -- --version "$VERSION" --platform darwin-arm64
+          bun run overdare-ai-agent:build-runtime-bundle -- --version "$VERSION" --platform windows-x64
 
       - name: Upload runtime bundle artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overdare-runtime-darwin-arm64-${{ env.VERSION }}
+          name: overdare-runtime-windows-x64-${{ env.VERSION }}
           path: |
-            dist/overdare-ai-agent-runtime-${{ env.VERSION }}-darwin-arm64.zip
+            dist/overdare-ai-agent-runtime-${{ env.VERSION }}-windows-x64.zip
 
   build-linux-cli-x64:
     name: Diligent Linux x64 CLI
@@ -112,11 +112,11 @@ jobs:
           name: diligent-linux-x64-${{ env.VERSION }}
           path: dist/diligent-${{ env.VERSION }}-linux-x64
 
-  build-overdare-cli-linux-x64:
-    name: OVERDARE CLI Linux x64
+  build-overdare-ai-agent-windows-x64:
+    name: OVERDARE CLI Windows x64
     needs: prepare
     if: ${{ needs.prepare.outputs.release_exists != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: read
     env:
@@ -128,22 +128,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Linux x64 OVERDARE CLI binary
+      - name: Build Windows x64 OVERDARE CLI binary
         shell: bash
         run: |
-          cargo build --manifest-path apps/overdare-cli/Cargo.toml --release
+          cargo build --manifest-path apps/overdare-ai-agent/Cargo.toml --release
           mkdir -p dist
-          cp apps/overdare-cli/target/release/overdare-cli dist/overdare-cli-${VERSION}-linux-x64
+          cp apps/overdare-ai-agent/target/release/overdare-ai-agent.exe dist/overdare-ai-agent-${VERSION}-windows-x64.exe
 
       - name: Upload OVERDARE CLI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overdare-cli-linux-x64-${{ env.VERSION }}
-          path: dist/overdare-cli-${{ env.VERSION }}-linux-x64
+          name: overdare-ai-agent-windows-x64-${{ env.VERSION }}
+          path: dist/overdare-ai-agent-${{ env.VERSION }}-windows-x64.exe
 
   publish-release:
     name: Publish GitHub Release
-    needs: [prepare, build-overdare-runtime-bundle, build-linux-cli-x64, build-overdare-cli-linux-x64]
+    needs: [prepare, build-overdare-runtime-bundle-windows-x64, build-linux-cli-x64, build-overdare-ai-agent-windows-x64]
     if: ${{ needs.prepare.outputs.release_exists != 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -156,11 +156,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download runtime bundle artifact
+      - name: Download Windows runtime bundle artifact
         uses: actions/download-artifact@v4
         with:
-          name: overdare-runtime-darwin-arm64-${{ env.VERSION }}
-          path: release-artifacts/runtime-darwin-arm64
+          name: overdare-runtime-windows-x64-${{ env.VERSION }}
+          path: release-artifacts/runtime-windows-x64
 
       - name: Download Linux x64 CLI artifact
         uses: actions/download-artifact@v4
@@ -168,19 +168,19 @@ jobs:
           name: diligent-linux-x64-${{ env.VERSION }}
           path: release-artifacts/linux-x64
 
-      - name: Download OVERDARE CLI Linux x64 artifact
+      - name: Download OVERDARE CLI Windows x64 artifact
         uses: actions/download-artifact@v4
         with:
-          name: overdare-cli-linux-x64-${{ env.VERSION }}
-          path: release-artifacts/overdare-cli-linux-x64
+          name: overdare-ai-agent-windows-x64-${{ env.VERSION }}
+          path: release-artifacts/overdare-ai-agent-windows-x64
 
       - name: Assemble release files
         shell: bash
         run: |
           mkdir -p dist
-          cp -R release-artifacts/runtime-darwin-arm64/. dist/
+          cp -R release-artifacts/runtime-windows-x64/. dist/
           cp -R release-artifacts/linux-x64/. dist/
-          cp -R release-artifacts/overdare-cli-linux-x64/. dist/
+          cp -R release-artifacts/overdare-ai-agent-windows-x64/. dist/
 
       - name: Generate merged metadata
         shell: bash
@@ -195,9 +195,9 @@ jobs:
           version = os.environ["VERSION"]
           repository = os.environ["REPOSITORY"]
           dist = Path("dist")
-          runtime_bundle = dist / f"overdare-ai-agent-runtime-{version}-darwin-arm64.zip"
+          runtime_bundle_windows = dist / f"overdare-ai-agent-runtime-{version}-windows-x64.zip"
           linux_cli = dist / f"diligent-{version}-linux-x64"
-          overdare_cli = dist / f"overdare-cli-{version}-linux-x64"
+          overdare_cli_windows = dist / f"overdare-ai-agent-{version}-windows-x64.exe"
 
           def sha256(path: Path) -> str:
               h = hashlib.sha256()
@@ -207,20 +207,20 @@ jobs:
               return h.hexdigest()
 
           artifacts = {}
-          if runtime_bundle.exists():
-              artifacts["darwin-arm64-runtime"] = [runtime_bundle.name]
+          if runtime_bundle_windows.exists():
+              artifacts["windows-x64-runtime"] = [runtime_bundle_windows.name]
           if linux_cli.exists():
               artifacts["linux-x64"] = [linux_cli.name]
-          if overdare_cli.exists():
-              artifacts["overdare-cli-linux-x64"] = [overdare_cli.name]
+          if overdare_cli_windows.exists():
+              artifacts["overdare-ai-agent-windows-x64"] = [overdare_cli_windows.name]
 
           release_date = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
           platforms = {}
-          if runtime_bundle.exists():
-              platforms["darwin-arm64"] = {
-                  "url": f"https://github.com/{repository}/releases/download/v{version}/{runtime_bundle.name}",
-                  "sha256": sha256(runtime_bundle),
-                  "size": runtime_bundle.stat().st_size,
+          if runtime_bundle_windows.exists():
+              platforms["windows-x64"] = {
+                  "url": f"https://github.com/{repository}/releases/download/v{version}/{runtime_bundle_windows.name}",
+                  "sha256": sha256(runtime_bundle_windows),
+                  "size": runtime_bundle_windows.stat().st_size,
               }
 
           manifest = {
@@ -253,9 +253,9 @@ jobs:
         shell: bash
         run: |
           gh release create "$TAG" \
-            dist/overdare-ai-agent-runtime-"$VERSION"-darwin-arm64.zip \
+            dist/overdare-ai-agent-runtime-"$VERSION"-windows-x64.zip \
             dist/diligent-"$VERSION"-linux-x64 \
-            dist/overdare-cli-"$VERSION"-linux-x64 \
+            dist/overdare-ai-agent-"$VERSION"-windows-x64.exe \
             dist/update-manifest.json \
             dist/release-meta.json \
             dist/checksums.sha256 \

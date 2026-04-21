@@ -1,11 +1,11 @@
-// @summary Build a fresh standalone diligent-web-server binary for local overdare-cli diagnostics.
+// @summary Build a fresh standalone diligent-web-server binary for local overdare-ai-agent diagnostics.
 
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB = resolve(ROOT, "packages/web");
-const OUT_DIR = resolve(ROOT, "apps/overdare-cli/.diligent/diagnostics");
+const OUT_DIR = resolve(ROOT, "apps/overdare-ai-agent/.diligent/diagnostics");
 
 const TARGET_BY_PLATFORM = new Map<string, string>([
   ["darwin-arm64", "bun-darwin-arm64"],

@@ -1,4 +1,4 @@
-// @summary Build an OVERDARE runtime bundle zip for overdare-cli releases.
+// @summary Build an OVERDARE runtime bundle zip for overdare-ai-agent releases.
 
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB = resolve(ROOT, "packages/web");
-const OVERDARE_CLI = resolve(ROOT, "apps/overdare-cli");
+const OVERDARE_CLI = resolve(ROOT, "apps/overdare-ai-agent");
 const DIST = resolve(ROOT, "dist");
 const DIAGNOSTICS_DIR = resolve(OVERDARE_CLI, ".diligent/diagnostics");
 const BOOTSTRAP_DIR = resolve(OVERDARE_CLI, "bootstrap");

@@ -211,7 +211,7 @@ fn report_progress(progress: &mut Option<&mut dyn FnMut(UpdateProgress)>, event:
 fn fetch_manifest(manifest_url: &str) -> Result<UpdateManifest, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("overdare-cli/{BUNDLED_RUNTIME_VERSION}"))
+        .user_agent(format!("overdare-ai-agent/{BUNDLED_RUNTIME_VERSION}"))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let response = client.get(manifest_url).send().map_err(|e| format!("fetch manifest: {e}"))?;
@@ -257,7 +257,7 @@ fn fetch_update(
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("overdare-cli/{BUNDLED_RUNTIME_VERSION}"))
+        .user_agent(format!("overdare-ai-agent/{BUNDLED_RUNTIME_VERSION}"))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let response = client.get(&bundle.url).send().map_err(|e| format!("download bundle: {e}"))?;

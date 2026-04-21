@@ -11,7 +11,7 @@ on:
         type: string
 
 jobs:
-  overdare-cli-sidecar:
+  overdare-ai-agent-sidecar:
     name: OVERDARE CLI sidecar artifact
     runs-on: macos-latest
     env:
@@ -38,11 +38,11 @@ jobs:
           echo "Packaging version: $VERSION"
 
       - name: Build OVERDARE sidecar
-        run: bun run overdare-cli:build-sidecar
+        run: bun run overdare-ai-agent:build-sidecar
 
       - name: Upload sidecar artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overdare-cli-sidecar-${{ env.VERSION }}
+          name: overdare-ai-agent-sidecar-${{ env.VERSION }}
           path: |
-            apps/overdare-cli/.diligent/diagnostics/**
+            apps/overdare-ai-agent/.diligent/diagnostics/**

@@ -72,7 +72,7 @@ fn run_webserver(args: Vec<String>) -> Result<(), String> {
 
 fn print_help() {
     println!(
-        "overdare-cli\n\nCommands:\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  webserver [options]    Run updated runtime diligent-web-server as a subprocess"
+        "overdare-ai-agent\n\nCommands:\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  webserver [options]    Run updated runtime diligent-web-server as a subprocess"
     );
 }
 

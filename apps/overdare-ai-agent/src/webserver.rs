@@ -31,7 +31,7 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
             continue;
         }
         if matches!(arg.as_str(), "--help" | "-h") {
-            return Err("Usage: overdare-cli webserver --cwd=/path/to/project [--userid=abc]".to_string());
+            return Err("Usage: overdare-ai-agent webserver --cwd=/path/to/project [--userid=abc]".to_string());
         }
     }
 
@@ -117,12 +117,12 @@ pub async fn run_foreground(options: WebServerOptions) -> Result<u16, String> {
 
     let binary = resolve_updated_sidecar_path().ok_or(
         format!(
-            "Updated runtime binary not found. Run 'overdare-cli update' first so ~/.{}/updates/runtime/diligent-web-server exists.",
+            "Updated runtime binary not found. Run 'overdare-ai-agent update' first so ~/.{}/updates/runtime/diligent-web-server exists.",
             storage_namespace()
         ),
     )?;
     let dist_dir = resolve_updated_dist_dir().ok_or(
-        "Updated runtime dist/client not found. Run 'overdare-cli update' first.".to_string(),
+        "Updated runtime dist/client not found. Run 'overdare-ai-agent update' first.".to_string(),
     )?;
     let log_path = default_web_log_path()?;
     let rg_path = resolve_updated_rg_bin();

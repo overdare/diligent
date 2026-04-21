@@ -10,15 +10,15 @@ created: 2026-04-04
 
 Packaged builds can choose their own hidden storage namespace at package time so Diligent-based products do not collide on user machine state. A branded package such as an OVERDARE CLI distribution can use `.overdare` instead of `.diligent` consistently for both packaged global state and packaged runtime project-local state.
 
-The runtime changes in this plan should stay limited to reusable namespace-aware path abstractions, and P060 activates them only through the packaged OVERDARE CLI build flow. In other words, the abstraction may be reusable by future callers, while the required behavior change in this plan remains scoped to packaged launcher / packaged runtime execution led by `apps/overdare-cli`.
+The runtime changes in this plan should stay limited to reusable namespace-aware path abstractions, and P060 activates them only through the packaged OVERDARE CLI build flow. In other words, the abstraction may be reusable by future callers, while the required behavior change in this plan remains scoped to packaged launcher / packaged runtime execution led by `apps/overdare-ai-agent`.
 
-When a packaged product first switches to a non-default namespace, the packaged launcher layer in `apps/overdare-cli` should perform a one-time conditional migration only if the target namespace does not exist and the legacy `.diligent` namespace does exist. Runtime stays migration-free in this plan.
+When a packaged product first switches to a non-default namespace, the packaged launcher layer in `apps/overdare-ai-agent` should perform a one-time conditional migration only if the target namespace does not exist and the legacy `.diligent` namespace does exist. Runtime stays migration-free in this plan.
 
 ## Prerequisites
 
 - Packaging pipeline MVP (P044)
-- OVERDARE CLI runtime bootstrap/update/path ownership in `apps/overdare-cli/src/update.rs`, `init.rs`, and `webserver.rs`
-- Existing OVERDARE packaging/build entrypoints in `apps/overdare-cli/` and root packaging scripts
+- OVERDARE CLI runtime bootstrap/update/path ownership in `apps/overdare-ai-agent/src/update.rs`, `init.rs`, and `webserver.rs`
+- Existing OVERDARE packaging/build entrypoints in `apps/overdare-ai-agent/` and root packaging scripts
 
 ## Artifact
 
@@ -54,10 +54,10 @@ Launcher-owned conditional first-run migration rule:
 
 | Area | What Changes |
 |------|-------------|
-| `apps/overdare-cli/src/init.rs` | Replace hardcoded `~/.diligent` setup/deploy paths with a single namespace-aware global directory helper and launcher-owned migration ordering. |
-| `apps/overdare-cli/src/update.rs` | Replace hardcoded global config/update/runtime paths with the shared namespace-aware helper. |
-| `apps/overdare-cli/src/webserver.rs` | Perform local namespace migration before launching the runtime webserver and pass the selected namespace/cwd coherently. |
-| `apps/overdare-cli/src/cli.rs` | Coordinate startup ordering so migration and namespace selection settle before runtime launch. |
+| `apps/overdare-ai-agent/src/init.rs` | Replace hardcoded `~/.diligent` setup/deploy paths with a single namespace-aware global directory helper and launcher-owned migration ordering. |
+| `apps/overdare-ai-agent/src/update.rs` | Replace hardcoded global config/update/runtime paths with the shared namespace-aware helper. |
+| `apps/overdare-ai-agent/src/webserver.rs` | Perform local namespace migration before launching the runtime webserver and pass the selected namespace/cwd coherently. |
+| `apps/overdare-ai-agent/src/cli.rs` | Coordinate startup ordering so migration and namespace selection settle before runtime launch. |
 | `packages/runtime/src/infrastructure/diligent-dir.ts` | Introduce a reusable namespace-aware runtime path helper and use it for packaged runtime project-local resolution. |
 | `packages/runtime/src/config/loader.ts` | Make runtime config lookup namespace-aware so packaged runtime startup can activate the selected namespace. |
 | `packages/runtime/src/config/runtime.ts` | Thread the reusable namespace-aware config/auth/userId/skills loading through packaged runtime startup. |
@@ -65,7 +65,7 @@ Launcher-owned conditional first-run migration rule:
 | `packages/runtime/src/config/user-id.ts` | Make persisted userId path resolution namespace-aware for packaged runtime activation. |
 | `packages/runtime/src/skills/discovery.ts` | Make global/project skill root resolution namespace-aware for packaged runtime activation. |
 | `packages/web/src/shared/image-routes.ts` and `packages/web/src/server/index.ts` | Keep packaged runtime persisted image and route behavior aligned with the selected local namespace rooted at startup cwd, assuming the launcher already handled migration before launch. |
-| `apps/overdare-cli/test/**` | Add focused Rust tests for namespace resolution, migration behavior, and runtime launch env propagation. |
+| `apps/overdare-ai-agent/test/**` | Add focused Rust tests for namespace resolution, migration behavior, and runtime launch env propagation. |
 | `packages/runtime/test/**` | Add focused namespace tests for runtime path helpers used by packaged OVERDARE CLI. |
 | `README.md` / packaging docs | Document the package/build-time namespace selection and clarify that P060 activates the namespace abstraction only for packaged OVERDARE CLI state. |
 
@@ -82,7 +82,7 @@ Launcher-owned conditional first-run migration rule:
 
 ## File Manifest
 
-### apps/overdare-cli/src/
+### apps/overdare-ai-agent/src/
 
 | File | Action | Description |
 |------|--------|------------|
@@ -91,7 +91,7 @@ Launcher-owned conditional first-run migration rule:
 | `update.rs` | MODIFY | Route update manifest/config/runtime paths through a namespace-aware global dir. |
 | `webserver.rs` | MODIFY | Route runtime launch and startup-cwd-local migration through the shared namespace-aware helpers. |
 
-### apps/overdare-cli/test/
+### apps/overdare-ai-agent/test/
 
 | File | Action | Description |
 |------|--------|------------|
@@ -162,7 +162,7 @@ Launcher-owned conditional first-run migration rule:
 
 ### Task 1: Define packaged OVERDARE CLI namespace selection
 
-**Files:** `apps/overdare-cli/src/cli.rs`, `apps/overdare-cli/test/**`, packaging/build scripts as needed
+**Files:** `apps/overdare-ai-agent/src/cli.rs`, `apps/overdare-ai-agent/test/**`, packaging/build scripts as needed
 **Decisions:** D033, D042
 
 Define one packaged storage namespace for OVERDARE CLI builds and normalize how the launcher/runtime consume it without coupling it to visible product naming.
@@ -181,11 +181,11 @@ This keeps the packaged-build input stable and avoids leaking filesystem formatt
 
 Invalid configured values should fail the packaged build immediately. Do not silently fall back to `diligent` when branded input is present but invalid.
 
-**Verify:** `cargo test --manifest-path apps/overdare-cli/Cargo.toml`
+**Verify:** `cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml`
 
 ### Task 2: Thread namespace through OVERDARE CLI packaging/build scripts
 
-**Files:** `scripts/build-overdare-sidecar.ts`, CLI packaging/build scripts, `apps/overdare-cli` build flow helpers if added
+**Files:** `scripts/build-overdare-sidecar.ts`, CLI packaging/build scripts, `apps/overdare-ai-agent` build flow helpers if added
 **Decisions:** D042
 
 Teach the OVERDARE CLI packaging entrypoints to resolve one storage namespace per packaged build and pass it into every compiled runtime/launcher step.
@@ -214,7 +214,7 @@ This task should keep namespace handling package-selected. Do not change ordinar
 
 ### Task 3: Add launcher-owned conditional namespace migration
 
-**Files:** `apps/overdare-cli/src/cli.rs`, `apps/overdare-cli/src/init.rs`, `apps/overdare-cli/src/webserver.rs`, shared Rust helper module if added
+**Files:** `apps/overdare-ai-agent/src/cli.rs`, `apps/overdare-ai-agent/src/init.rs`, `apps/overdare-ai-agent/src/webserver.rs`, shared Rust helper module if added
 **Decisions:** D042
 
 Add one migration rule only:
@@ -298,7 +298,7 @@ Because the packaged runtime is compiled with `DILIGENT_STORAGE_NAMESPACE`, thes
 
 ### Task 5: Centralize packaged launcher global-dir resolution in Rust
 
-**Files:** `apps/overdare-cli/src/init.rs`, `apps/overdare-cli/src/update.rs`, `apps/overdare-cli/src/webserver.rs`, shared Rust helper module if added
+**Files:** `apps/overdare-ai-agent/src/init.rs`, `apps/overdare-ai-agent/src/update.rs`, `apps/overdare-ai-agent/src/webserver.rs`, shared Rust helper module if added
 **Decisions:** D042
 
 Replace repeated `home.join(".diligent")` helpers with one compile-time or runtime-selected namespace-aware helper used by every packaged launcher path consumer.
@@ -331,11 +331,11 @@ Then update all packaged launcher path usage sites to rely on the shared helper:
 
 Do not add dual-read behavior. After launcher-owned conditional migration, the packaged build should use exactly one namespace.
 
-**Verify:** `cargo test` or `cargo check` in `apps/overdare-cli/`, plus focused unit tests for helper output and migration ordering.
+**Verify:** `cargo test` or `cargo check` in `apps/overdare-ai-agent/`, plus focused unit tests for helper output and migration ordering.
 
 ### Task 6: Keep launcher/runtime behavior aligned with the selected namespace
 
-**Files:** `scripts/build-overdare-sidecar.ts`, `apps/overdare-cli/src/webserver.rs`, `apps/overdare-cli/src/update.rs`
+**Files:** `scripts/build-overdare-sidecar.ts`, `apps/overdare-ai-agent/src/webserver.rs`, `apps/overdare-ai-agent/src/update.rs`
 **Decisions:** D042
 
 Ensure the packaged runtime binary and the CLI launcher use the same namespace so update/runtime paths remain coherent.
@@ -413,7 +413,7 @@ If a dedicated branded packaging plan/doc is restored later, point it at this pl
 
 | Category | What to Test | How |
 |----------|-------------|-----|
-| Unit | Packaged namespace parsing, normalization, and invalid-value failure | focused packaging-script tests and/or `cargo test --manifest-path apps/overdare-cli/Cargo.toml` |
+| Unit | Packaged namespace parsing, normalization, and invalid-value failure | focused packaging-script tests and/or `cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml` |
 | Unit | Packaging env propagation | `bun test` for updated/new script tests around package/build-exe-only helpers |
 | Unit | Launcher-owned conditional migration helper | `cargo test` for focused CLI migration helper coverage |
 | Unit | Runtime helper namespace resolution | `bun test` for runtime path helpers under default and overridden namespace |

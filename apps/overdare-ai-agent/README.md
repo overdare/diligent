@@ -1,4 +1,4 @@
-# apps/overdare-cli
+# apps/overdare-ai-agent
 
 Rust CLI for OVERDARE runtime bootstrap, plugin/bootstrap ownership, and webserver launch.
 
@@ -11,25 +11,25 @@ It currently provides two commands:
 
 ```bash
 # Build the Rust CLI
-cargo build --manifest-path apps/overdare-cli/Cargo.toml --release
+cargo build --manifest-path apps/overdare-ai-agent/Cargo.toml --release
 
 # Or via repo root shortcut
-bun run overdare-cli:build
+bun run overdare-ai-agent:build
 
 # Initialize runtime, print current/latest version, and apply update if needed
-cargo run --manifest-path apps/overdare-cli/Cargo.toml -- init
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init
 
 # Skip update only if runtime was already downloaded before
-cargo run --manifest-path apps/overdare-cli/Cargo.toml -- init --skip-update
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init --skip-update
 
 # Start the updated local web server runtime
-cargo run --manifest-path apps/overdare-cli/Cargo.toml -- webserver --cwd=/path/to/project
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- webserver --cwd=/path/to/project
 
 # Run Rust tests
-bun run overdare-cli:test
+bun run overdare-ai-agent:test
 
 # Initialize from a custom manifest URL
-DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifest-path apps/overdare-cli/Cargo.toml -- init
+DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init
 ```
 
 ## Notes
@@ -40,15 +40,15 @@ DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifes
 - if `~/.overdare/config.jsonc` sets `"updateMode": "disabled"`, runtime update behavior follows that config
 - `init --skip-update` intentionally exits with code `1` when no runtime has been downloaded yet
 - repo root shortcuts:
-  - `bun run overdare-cli:build`
-  - `bun run overdare-cli:test`
-  - `bun run overdare-cli:init`
-  - `bun run overdare-cli:webserver -- --cwd=/path/to/project`
+  - `bun run overdare-ai-agent:build`
+  - `bun run overdare-ai-agent:test`
+  - `bun run overdare-ai-agent:init`
+  - `bun run overdare-ai-agent:webserver -- --cwd=/path/to/project`
 
 Additional OVERDARE-owned assets now live here as well:
 
-- `apps/overdare-cli/bootstrap/`
-- `apps/overdare-cli/plugins/`
-- `apps/overdare-cli/supabase/`
-- `apps/overdare-cli/scripts/deploy.ts`
-- `apps/overdare-cli/scripts/tool-cli.ts`
+- `apps/overdare-ai-agent/bootstrap/`
+- `apps/overdare-ai-agent/plugins/`
+- `apps/overdare-ai-agent/supabase/`
+- `apps/overdare-ai-agent/scripts/deploy.ts`
+- `apps/overdare-ai-agent/scripts/tool-cli.ts`
