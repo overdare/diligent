@@ -15,6 +15,9 @@ const TARGET_BY_PLATFORM = new Map<string, string>([
 ]);
 
 function currentPlatformKey(): string {
+  if (process.platform === "win32") {
+    return `windows-${process.arch}`;
+  }
   return `${process.platform}-${process.arch}`;
 }
 
