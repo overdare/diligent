@@ -70,6 +70,11 @@ export const SerializableErrorSchema = z.object({
   message: z.string(),
   name: z.string(),
   stack: z.string().optional(),
+  code: z.string().optional(),
+  providerErrorType: z.enum(["rate_limit", "overloaded", "context_overflow", "auth", "network", "unknown"]).optional(),
+  isRetryable: z.boolean().optional(),
+  retryAfterMs: z.number().int().nonnegative().optional(),
+  statusCode: z.number().int().optional(),
 });
 export type SerializableError = z.infer<typeof SerializableErrorSchema>;
 

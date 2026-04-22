@@ -117,6 +117,7 @@ export interface ErrorEntry {
 
 export type SessionEntry =
   | SessionMessageEntry
+  | ErrorEntry
   | ModelChangeEntry
   | SessionInfoEntry
   | CompactionEntry

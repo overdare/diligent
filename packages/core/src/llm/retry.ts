@@ -1,4 +1,6 @@
 // @summary Wraps stream functions with exponential backoff retry logic
+
+import { formatSerializableErrorForLog, toSerializableError } from "../agent/util/errors";
 import { EventStream } from "../event-stream";
 import type { ProviderEvent, ProviderResult, StreamFunction } from "./types";
 import { ProviderError } from "./types";
@@ -53,7 +55,7 @@ export function withRetry(
                 ? err
                 : new ProviderError(err instanceof Error ? err.message : String(err), "unknown", false);
             console.log(
-              `[llm:retry] stream error attempt=${attempt}/${config.maxAttempts} retryable=${errorEvent.isRetryable} type=${errorEvent.errorType} status=${errorEvent.statusCode ?? "n/a"} message=${errorEvent.message}`,
+              `[llm:retry] stream error attempt=${attempt}/${config.maxAttempts} ${formatSerializableErrorForLog(toSerializableError(errorEvent))}`,
             );
             break;
           }
@@ -97,7 +99,7 @@ export function withRetry(
               ? "not_retryable"
               : "max_attempts_reached";
           console.log(
-            `[llm:retry] giving up attempt=${attempt}/${config.maxAttempts} reason=${reason} type=${errorEvent.errorType} status=${errorEvent.statusCode ?? "n/a"}`,
+            `[llm:retry] giving up attempt=${attempt}/${config.maxAttempts} reason=${reason} ${formatSerializableErrorForLog(toSerializableError(errorEvent))}`,
           );
           stream.push({ type: "error", error: errorEvent });
           return;
@@ -129,9 +131,7 @@ export function withRetry(
         err instanceof ProviderError
           ? err
           : new ProviderError(err instanceof Error ? err.message : String(err), "unknown", false);
-      console.log(
-        `[llm:retry] wrapper exception retryable=${providerErr.isRetryable} type=${providerErr.errorType} status=${providerErr.statusCode ?? "n/a"} message=${providerErr.message}`,
-      );
+      console.log(`[llm:retry] wrapper exception ${formatSerializableErrorForLog(toSerializableError(providerErr))}`);
       stream.push({ type: "error", error: providerErr });
     });
 

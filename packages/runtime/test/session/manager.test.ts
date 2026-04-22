@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Agent } from "@diligent/core/agent";
 import { EventStream } from "@diligent/core/event-stream";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/llm/types";
+import { ProviderError } from "@diligent/core/llm/types";
 import type { Tool } from "@diligent/core/tool/types";
 import type { AssistantMessage, Message } from "@diligent/core/types";
 import { resolvePaths } from "@diligent/runtime/infrastructure";
@@ -196,6 +197,90 @@ describe("SessionManager", () => {
 
     const { entries } = await readSessionFile(mgr.sessionPath!);
     expect(entries).toHaveLength(0);
+  });
+
+  test("run() persists staged user message and non-fatal error when provider fails after streaming starts", async () => {
+    const dir = await setupDir();
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        llmMsgStreamFn: () => {
+          const stream = new EventStream<ProviderEvent, ProviderResult>(
+            (event) => event.type === "done" || event.type === "error",
+            (event) => {
+              if (event.type === "done") return { message: event.message };
+              throw (event as { type: "error"; error: Error }).error;
+            },
+          );
+
+          queueMicrotask(() => {
+            stream.push({ type: "start" });
+            stream.push({ type: "text_delta", delta: "partial" });
+            stream.push({ type: "error", error: new Error("stream exploded") });
+          });
+
+          return stream;
+        },
+      }),
+    });
+    await mgr.create();
+
+    const events = await runCollecting(mgr, { role: "user", content: "will partly fail", timestamp: Date.now() });
+    await mgr.waitForWrites();
+
+    const context = mgr.getContext();
+    expect(context).toHaveLength(1);
+    expect(context[0]?.role).toBe("user");
+    expect(context[0]?.content).toBe("will partly fail");
+    expect(mgr.getErrors()).toHaveLength(1);
+    expect(mgr.getErrors()[0]?.fatal).toBe(false);
+    expect(events.some((event) => event.type === "message_start")).toBe(true);
+    expect(events.some((event) => event.type === "message_end")).toBe(false);
+
+    const { entries } = await readSessionFile(mgr.sessionPath!);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.type === "message" ? entries[0].message.role : null).toBe("user");
+    expect(entries[1]?.type).toBe("error");
+    if (entries[1]?.type === "error") {
+      expect(entries[1].fatal).toBe(false);
+      expect(entries[1].error.message).toBe("stream exploded");
+    }
+  });
+
+  test("run() logs provider error code when available", async () => {
+    const dir = await setupDir();
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const mgr = new SessionManager({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      agent: new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+        effort: "medium",
+        llmMsgStreamFn: () => {
+          throw new ProviderError(
+            "provider failed",
+            "overloaded",
+            true,
+            undefined,
+            529,
+            Object.assign(new Error("provider failed"), { code: "overloaded_error" }),
+          );
+        },
+      }),
+    });
+    await mgr.create();
+
+    try {
+      await mgr.run({ role: "user", content: "show code", timestamp: Date.now() });
+
+      const joinedLogs = errorSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+      expect(joinedLogs).toContain("code=overloaded_error");
+      expect(joinedLogs).toContain("status=529");
+      expect(joinedLogs).toContain("type=overloaded");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   test("getContext() exposes staged turn messages while a turn is running", async () => {

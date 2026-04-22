@@ -1,7 +1,12 @@
 // @summary Session manager orchestrating agent loop, persistence, compaction, and steering
 
 import type { CoreAgentEvent } from "@diligent/core/agent";
-import { type Agent, selectForCompaction, toSerializableError } from "@diligent/core/agent";
+import {
+  type Agent,
+  formatSerializableErrorForLog,
+  selectForCompaction,
+  toSerializableError,
+} from "@diligent/core/agent";
 import type { Message } from "@diligent/core/types";
 import type { Mode } from "../agent/mode";
 import type { AgentEvent } from "../agent-event";
@@ -300,7 +305,7 @@ export class SessionManager {
     this.emitBusyStatus();
 
     const prepared = await this.prepareRun(userMessage);
-    const { unsubscribe, getCurrentTurnId } = this.subscribeRunEvents(prepared);
+    const { unsubscribe, getCurrentTurnId, shouldPersistFailedTurn } = this.subscribeRunEvents(prepared);
 
     let normalCompletion = false;
     try {
@@ -308,7 +313,7 @@ export class SessionManager {
       this.commitRun(prepared.turnStager);
       normalCompletion = true;
     } catch (err) {
-      this.handleRunError(err, getCurrentTurnId());
+      this.handleRunError(err, getCurrentTurnId(), shouldPersistFailedTurn());
     } finally {
       this.finishRun(unsubscribe);
     }
@@ -370,12 +375,24 @@ export class SessionManager {
   private subscribeRunEvents(prepared: { agent: Agent; turnStager: TurnStager }): {
     unsubscribe: () => void;
     getCurrentTurnId: () => string | undefined;
+    shouldPersistFailedTurn: () => boolean;
   } {
     const { agent, turnStager } = prepared;
     let currentTurnId: string | undefined;
+    let persistFailedTurn = false;
 
     const unsubscribe = agent.subscribe((event: CoreAgentEvent) => {
       if (event.type === "turn_start") currentTurnId = event.turnId;
+      if (
+        event.type === "message_start" ||
+        event.type === "message_delta" ||
+        event.type === "message_end" ||
+        event.type === "tool_start" ||
+        event.type === "tool_update" ||
+        event.type === "tool_end"
+      ) {
+        persistFailedTurn = true;
+      }
       if (event.type === "usage") {
         this.handleUsageEvent(event.usage);
       }
@@ -398,6 +415,7 @@ export class SessionManager {
     return {
       unsubscribe,
       getCurrentTurnId: () => currentTurnId,
+      shouldPersistFailedTurn: () => persistFailedTurn,
     };
   }
 
@@ -409,16 +427,19 @@ export class SessionManager {
     this.appendEntries(turnStager.flushPendingEntries());
   }
 
-  private handleRunError(err: unknown, turnId?: string): void {
+  private handleRunError(err: unknown, turnId?: string, persistTurnFailure: boolean = false): void {
+    if (persistTurnFailure) {
+      const pendingEntries = this.state.getVisibleState().entries.slice(this.state.getCommittedEntries().length);
+      this.appendEntries(pendingEntries);
+    }
     const serializable = toSerializableError(err);
     console.error(
-      "[SessionManager] Run error session=%s name=%s message=%s lastPersisted=%s",
+      "[SessionManager] Run error session=%s %s lastPersisted=%s",
       this.persistence.sessionId,
-      serializable.name,
-      serializable.message,
+      formatSerializableErrorForLog(serializable),
       summarizeLastPersistedMessage(this.state.getCommittedEntries()),
     );
-    this.appendError(serializable, { fatal: true, turnId });
+    this.appendError(serializable, { fatal: false, turnId, persist: persistTurnFailure });
   }
 
   private finishRun(unsubscribe: () => void): void {
@@ -519,7 +540,7 @@ export class SessionManager {
     this.appendAndPersist(entry);
   }
 
-  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string }): void {
+  appendError(error: ErrorEntry["error"], options?: { fatal?: boolean; turnId?: string; persist?: boolean }): void {
     const entry: ErrorEntry = {
       type: "error",
       id: generateEntryId(),
@@ -530,6 +551,9 @@ export class SessionManager {
       error,
     };
     this.memoryErrors.push(entry);
+    if (options?.persist) {
+      this.appendAndPersist(entry);
+    }
   }
 
   private appendMessageEntry(message: Message): SessionEntry {

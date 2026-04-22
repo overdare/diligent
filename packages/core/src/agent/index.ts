@@ -8,4 +8,4 @@ export type {
   MessageDelta,
   SerializableError,
 } from "./types";
-export { toSerializableError } from "./util/errors";
+export { formatSerializableErrorForLog, toSerializableError } from "./util/errors";

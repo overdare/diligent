@@ -7,6 +7,7 @@ export type {
 } from "./agent/index";
 export {
   Agent,
+  formatSerializableErrorForLog,
   toSerializableError,
 } from "./agent/index";
 export type {

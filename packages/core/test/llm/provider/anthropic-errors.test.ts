@@ -171,4 +171,13 @@ describe("classifyAnthropicError", () => {
 
     expect(result.cause).toBe(err);
   });
+
+  test("preserves string API error code from cause", () => {
+    const err = makeAPIError(529, "Overloaded") as Anthropic.APIError & { code?: string };
+    err.code = "overloaded_error";
+    const result = classifyAnthropicError(err);
+
+    expect(result.cause).toBe(err);
+    expect((result.cause as { code?: string } | undefined)?.code).toBe("overloaded_error");
+  });
 });

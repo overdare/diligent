@@ -21,6 +21,7 @@ export interface SerializableError {
   message: string;
   name: string;
   stack?: string;
+  code?: string;
   providerErrorType?: ProviderErrorType;
   isRetryable?: boolean;
   retryAfterMs?: number;
