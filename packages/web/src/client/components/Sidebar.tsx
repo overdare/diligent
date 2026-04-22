@@ -30,7 +30,7 @@ function SidebarImpl({
   return (
     <Panel className="flex h-full min-h-0 w-[280px] flex-col overflow-hidden border-border/100 bg-surface-default">
       {/* Header */}
-      <div className="border-b border-border/100 bg-surface-dark px-5 py-3">
+      <div className="border-b border-border/100 bg-surface-dark px-5 py-4">
         <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
           {APP_PROJECT_MARK}
         </span>

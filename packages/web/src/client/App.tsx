@@ -502,7 +502,7 @@ export function App() {
 
         <Panel className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border/100 bg-surface-dark">
           {/* Title bar */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-border/100 bg-surface-dark px-3 py-3">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/100 bg-surface-dark px-3 py-4">
             <button
               type="button"
               onClick={() => setSidebarOpen((v) => !v)}
