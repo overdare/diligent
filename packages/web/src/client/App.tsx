@@ -482,7 +482,7 @@ export function App() {
 
   return (
     <div className="h-screen bg-bg text-text">
-      <div className="mx-auto grid h-full max-w-[1480px] grid-cols-1 gap-3 px-3 py-3 lg:grid-cols-[300px_1fr] lg:px-4 lg:py-4">
+      <div className="mx-auto grid h-full max-w-[1480px] grid-cols-1 grid-rows-[22%_1fr] gap-3 px-3 py-3 lg:grid-cols-[300px_1fr] lg:grid-rows-1 lg:px-4 lg:py-4">
         <Sidebar
           cwd={cwd}
           threadList={state.threadList}
