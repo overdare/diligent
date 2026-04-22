@@ -72,7 +72,7 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
         }
         if matches!(arg.as_str(), "--help" | "-h") {
             return Err(
-                "Usage: overdare-ai-agent webserver --cwd=/path/to/project [--userid=abc] [--studio-rpc-port=12345]"
+                "Usage: overdare-ai-agent start --cwd=/path/to/project [--userid=abc] [--studio-rpc-port=12345]"
                     .to_string(),
             );
         }

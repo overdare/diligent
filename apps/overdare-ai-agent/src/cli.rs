@@ -12,7 +12,7 @@ pub fn run() -> Result<(), String> {
 
     match command.as_str() {
         "init" => run_init(args.collect()),
-        "webserver" => run_webserver(args.collect()),
+        "start" => run_webserver(args.collect()),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -84,7 +84,7 @@ fn run_webserver(args: Vec<String>) -> Result<(), String> {
 
 fn print_help() {
     println!(
-        "overdare-ai-agent\n\nCommands:\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  webserver [options]    Run updated runtime diligent-web-server as a subprocess"
+        "overdare-ai-agent\n\nCommands:\n  init [--skip-update]   Ensure runtime exists, print current/latest, and update unless skipped\n  start [options]        Run updated runtime diligent-web-server as a subprocess"
     );
 }
 
