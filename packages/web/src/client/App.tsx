@@ -68,6 +68,7 @@ export function App() {
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showToolModal, setShowToolModal] = useState(false);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
@@ -482,28 +483,46 @@ export function App() {
 
   return (
     <div className="h-screen bg-bg text-text">
-      <div className="mx-auto grid h-full max-w-[1480px] grid-cols-1 grid-rows-[22%_1fr] gap-3 px-3 py-3 lg:grid-cols-[300px_1fr] lg:grid-rows-1 lg:px-4 lg:py-4">
-        <Sidebar
-          cwd={cwd}
-          threadList={state.threadList}
-          activeThreadId={state.activeThreadId}
-          attentionThreadIds={attentionThreadIds}
-          onNewThread={() => void startNewThread()}
-          onOpenThread={(id) => void openThread(id)}
-          onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
-          onOpenTools={() => {
-            setShowKnowledgeModal(false);
-            setShowToolModal(true);
-          }}
-          onOpenKnowledge={() => {
-            setShowToolModal(false);
-            setShowKnowledgeModal(true);
-          }}
-        />
+      <div className="mx-auto flex h-full max-w-[1480px] gap-3 px-3 py-3 lg:px-4 lg:py-4">
+        {/* Sidebar — slides in/out */}
+        <div
+          className="shrink-0 overflow-hidden transition-[width] duration-200"
+          style={{ width: sidebarOpen ? 280 : 0 }}
+        >
+          <Sidebar
+            cwd={cwd}
+            threadList={state.threadList}
+            activeThreadId={state.activeThreadId}
+            attentionThreadIds={attentionThreadIds}
+            onNewThread={() => void startNewThread()}
+            onOpenThread={(id) => void openThread(id)}
+            onDeleteThread={(id) => threadMgr.setPendingDeleteThreadId(id)}
+          />
+        </div>
 
-        <Panel className="relative flex min-h-0 flex-col overflow-hidden border-border/100 bg-surface-dark">
-          {/* Thread title bar */}
-          <div className="flex shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5 py-3">
+        <Panel className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border/100 bg-surface-dark">
+          {/* Title bar */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/100 bg-surface-dark px-3 py-3">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-surface-light hover:text-text"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <rect x="1" y="3.5" width="14" height="1.2" rx="0.6" fill="currentColor" />
+                <rect x="1" y="7.4" width="14" height="1.2" rx="0.6" fill="currentColor" />
+                <rect x="1" y="11.3" width="14" height="1.2" rx="0.6" fill="currentColor" />
+              </svg>
+            </button>
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-icon-success)]" aria-hidden="true" />
             {(state.threadStatus !== "idle" || state.isCompacting) && (
               <span
@@ -519,6 +538,30 @@ export function App() {
             <span className="min-w-0 flex-1 truncate font-mono text-xs uppercase tracking-[0.12em] text-muted/90">
               {threadTitle || "new conversation"}
             </span>
+            <button
+              type="button"
+              onClick={() => {
+                setShowToolModal(false);
+                setShowKnowledgeModal(true);
+              }}
+              aria-label="Open knowledge"
+              title="Knowledge"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
+            >
+              <span className="block leading-none">✦</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowKnowledgeModal(false);
+                setShowToolModal(true);
+              }}
+              aria-label="Open config"
+              title="Config"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/100 bg-surface-light text-sm text-muted transition hover:border-border-strong/100 hover:bg-surface-strong hover:text-text"
+            >
+              <span className="block leading-none">⚙</span>
+            </button>
           </div>
 
           <MessageList

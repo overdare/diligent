@@ -1,4 +1,4 @@
-// @summary Sidebar with thread list, new thread button, and relative timestamps
+// @summary Collapsible sidebar with thread list, new thread button, and relative timestamps
 
 import type { SessionSummary } from "@diligent/protocol";
 import { memo } from "react";
@@ -14,8 +14,6 @@ interface SidebarProps {
   onNewThread: () => void;
   onOpenThread: (threadId: string) => void;
   onDeleteThread?: (threadId: string) => void;
-  onOpenTools?: () => void;
-  onOpenKnowledge?: () => void;
 }
 
 function SidebarImpl({
@@ -26,47 +24,19 @@ function SidebarImpl({
   onNewThread,
   onOpenThread,
   onDeleteThread,
-  onOpenTools,
-  onOpenKnowledge,
 }: SidebarProps) {
   const cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
 
   return (
-    <Panel className="flex min-h-0 flex-col overflow-hidden border-border/100 bg-surface-default">
+    <Panel className="flex h-full min-h-0 w-[280px] flex-col overflow-hidden border-border/100 bg-surface-default">
       {/* Header */}
-      <div className="relative border-b border-border/100 bg-surface-dark px-5 py-4">
-        <div className="pr-24">
-          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
-            {APP_PROJECT_MARK}
-          </span>
-          <p className="mt-1 truncate font-mono text-xs- text-muted/90" title={cwd}>
-            {cwdShort}
-          </p>
-        </div>
-        <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-1">
-          {onOpenKnowledge ? (
-            <button
-              type="button"
-              onClick={onOpenKnowledge}
-              aria-label="Open knowledge"
-              title="Knowledge"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
-            >
-              <span className="block leading-none">✦</span>
-            </button>
-          ) : null}
-          {onOpenTools ? (
-            <button
-              type="button"
-              onClick={onOpenTools}
-              aria-label="Open config"
-              title="Config"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/100 bg-surface-light text-sm text-muted transition hover:border-border-strong/100 hover:bg-surface-strong hover:text-text"
-            >
-              <span className="block leading-none">⚙</span>
-            </button>
-          ) : null}
-        </div>
+      <div className="border-b border-border/100 bg-surface-dark px-5 py-3">
+        <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
+          {APP_PROJECT_MARK}
+        </span>
+        <p className="mt-1 truncate font-mono text-xs- text-muted/90" title={cwd}>
+          {cwdShort}
+        </p>
       </div>
 
       {/* Thread list */}
