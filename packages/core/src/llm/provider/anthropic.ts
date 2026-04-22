@@ -329,6 +329,7 @@ function createAnthropicWebTool(tool: Extract<ToolDefinition, { kind: "provider_
   return {
     type: webToolType,
     name: hasFetchSettings ? "web_fetch" : "web_search",
+    allowed_callers: ["direct"],
     ...(options?.maxUses !== undefined ? { max_uses: options.maxUses } : {}),
     ...(options?.allowedDomains?.length ? { allowed_domains: options.allowedDomains } : {}),
     ...(options?.blockedDomains?.length ? { blocked_domains: options.blockedDomains } : {}),
