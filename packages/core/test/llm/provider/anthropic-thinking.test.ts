@@ -139,6 +139,7 @@ describe("createAnthropicStream", () => {
       {
         type: "web_search_20260209",
         name: "web_search",
+        allowed_callers: ["direct"],
         allowed_domains: ["example.com"],
         max_uses: 2,
         user_location: { type: "approximate", country: "US", region: "CA" },
@@ -171,6 +172,7 @@ describe("createAnthropicStream", () => {
       {
         type: "web_fetch_20260209",
         name: "web_fetch",
+        allowed_callers: ["direct"],
         allowed_domains: ["example.com"],
         max_content_tokens: 4000,
       },
