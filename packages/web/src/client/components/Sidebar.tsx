@@ -30,13 +30,15 @@ function SidebarImpl({
   return (
     <Panel className="flex h-full min-h-0 w-[280px] flex-col overflow-hidden border-border/100 bg-surface-default">
       {/* Header */}
-      <div className="border-b border-border/100 bg-surface-dark px-5 py-4">
-        <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
-          {APP_PROJECT_MARK}
-        </span>
-        <p className="mt-1 truncate font-mono text-xs- text-muted/90" title={cwd}>
-          {cwdShort}
-        </p>
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5">
+        <div className="min-w-0">
+          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
+            {APP_PROJECT_MARK}
+          </span>
+          <p className="truncate font-mono text-xs- text-muted/90" title={cwd}>
+            {cwdShort}
+          </p>
+        </div>
       </div>
 
       {/* Thread list */}
