@@ -76,6 +76,7 @@ Current guides:
 - Packaging: `docs/guide/packaging.md`
 - Tool settings: `docs/guide/tool-settings.md`
 - Tool rendering: `docs/guide/tool-rendering.md`
+- AgentNativeBridge: `docs/guide/agent-native-bridge.md`
 
 ## Frontend Protocol Philosophy
 

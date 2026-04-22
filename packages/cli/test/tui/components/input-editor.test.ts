@@ -133,6 +133,22 @@ describe("InputEditor", () => {
     expect(editor.getText()).toBe("hi\nthere");
   });
 
+  test("shift+enter inserts newline without submit for windows extended keys", () => {
+    const submitted: string[] = [];
+    const { editor } = create({ onSubmit: (t) => submitted.push(t) });
+    editor.handleInput("h");
+    editor.handleInput("i");
+    editor.handleInput("\x1b[27;2;13~");
+    editor.handleInput("t");
+    editor.handleInput("h");
+    editor.handleInput("e");
+    editor.handleInput("r");
+    editor.handleInput("e");
+
+    expect(submitted).toEqual([]);
+    expect(editor.getText()).toBe("hi\nthere");
+  });
+
   test("bracketed paste inserts placeholder token without submit", () => {
     const submitted: string[] = [];
     const { editor } = create({ onSubmit: (t) => submitted.push(t) });

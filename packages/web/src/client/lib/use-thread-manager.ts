@@ -4,6 +4,7 @@ import type { Mode, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
+import { type AgentContextItem, getAgentContextItemKey } from "./agent-native-bridge";
 import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 
@@ -14,6 +15,17 @@ export function clearDraftThreadInput(threadInputs: Record<string, string>): Rec
     return threadInputs;
   }
   const next = { ...threadInputs };
+  delete next[DRAFT_INPUT_KEY];
+  return next;
+}
+
+export function clearDraftThreadContextItems(
+  threadContextItems: Record<string, AgentContextItem[]>,
+): Record<string, AgentContextItem[]> {
+  if (!(DRAFT_INPUT_KEY in threadContextItems)) {
+    return threadContextItems;
+  }
+  const next = { ...threadContextItems };
   delete next[DRAFT_INPUT_KEY];
   return next;
 }
@@ -85,7 +97,49 @@ export function useThreadManager({
 }) {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
   const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
+  const [threadContextItems, setThreadContextItems] = useState<Record<string, AgentContextItem[]>>({});
   const activeSubscriptionRef = useRef<ActiveThreadSubscription | null>(null);
+
+  const updateThreadContextItems = useCallback((threadKey: string, items: AgentContextItem[]): void => {
+    setThreadContextItems((prev) => {
+      if (items.length === 0) {
+        if (!(threadKey in prev)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[threadKey];
+        return next;
+      }
+      return { ...prev, [threadKey]: items };
+    });
+  }, []);
+
+  const removeThreadContextItem = useCallback((threadKey: string, itemKey: string): void => {
+    setThreadContextItems((prev) => {
+      const current = prev[threadKey] ?? [];
+      const nextItems = current.filter((item) => getAgentContextItemKey(item) !== itemKey);
+      if (nextItems.length === current.length) {
+        return prev;
+      }
+      if (nextItems.length === 0) {
+        const next = { ...prev };
+        delete next[threadKey];
+        return next;
+      }
+      return { ...prev, [threadKey]: nextItems };
+    });
+  }, []);
+
+  const clearThreadContextItems = useCallback((threadKey: string): void => {
+    setThreadContextItems((prev) => {
+      if (!(threadKey in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[threadKey];
+      return next;
+    });
+  }, []);
 
   const deactivateServerThread = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
@@ -229,6 +283,11 @@ export function useThreadManager({
     setPendingDeleteThreadId,
     threadInputs,
     setThreadInputs,
+    threadContextItems,
+    setThreadContextItems,
+    updateThreadContextItems,
+    removeThreadContextItem,
+    clearThreadContextItems,
     refreshThreadList,
     startNewThread,
     openThread,

@@ -3,6 +3,7 @@
 import type { Mode, ModelInfo, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback } from "react";
+import { type AgentContextItem, prependContextToMessage } from "./agent-native-bridge";
 import type { AppAction, PendingImage } from "./app-state";
 import { fileToBase64, normalizeImageFileName, replaceThreadUrl } from "./app-utils";
 import { findModelInfo, getThinkingEffortUsage, supportsThinkingNone } from "./model-thinking-helpers";
@@ -14,11 +15,14 @@ export function clearComposerInputAfterSend({
   activeThreadId,
   clearThreadInput,
   clearDraftInput,
+  clearContextItems,
 }: {
   activeThreadId: string | null;
   clearThreadInput: (threadId: string) => void;
   clearDraftInput: () => void;
+  clearContextItems: () => void;
 }): void {
+  clearContextItems();
   if (activeThreadId) {
     clearThreadInput(activeThreadId);
     return;
@@ -40,7 +44,8 @@ export async function prepareNewThreadForFirstMessage({
   activateServerThread,
   applySessionModel,
   dispatch,
-  message,
+  localText,
+  contextItems,
   images,
 }: {
   rpc: WebRpcClient;
@@ -51,7 +56,8 @@ export async function prepareNewThreadForFirstMessage({
   activateServerThread: (threadId: string) => Promise<ThreadReadResponse>;
   applySessionModel: (sessionModel?: string) => Promise<void>;
   dispatch: Dispatch<AppAction>;
-  message: string;
+  localText: string;
+  contextItems: AgentContextItem[];
   images: PendingImage[];
 }): Promise<{ threadId: string; history: ThreadReadResponse }> {
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START, {
@@ -66,7 +72,7 @@ export async function prepareNewThreadForFirstMessage({
   if (typeof window !== "undefined") {
     replaceThreadUrl(threadId);
   }
-  dispatch({ type: "local_user", payload: { text: message, images } });
+  dispatch({ type: "local_user", payload: { text: localText, images, contextItems } });
   await applySessionModel(history.currentModel);
   return { threadId, history };
 }
@@ -103,6 +109,7 @@ export function useAppActions({
   stateRef,
   dispatch,
   activeInput,
+  activeContextItems,
   pendingImages,
   canSend,
   isUploadingImages,
@@ -114,6 +121,7 @@ export function useAppActions({
   currentModelRef,
   clearThreadInput,
   clearDraftInput,
+  clearActiveContextItems,
   setPendingImages,
   setIsUploadingImages,
   setEffortState,
@@ -132,6 +140,7 @@ export function useAppActions({
   stateRef: RefObject<ThreadState>;
   dispatch: Dispatch<AppAction>;
   activeInput: string;
+  activeContextItems: AgentContextItem[];
   pendingImages: PendingImage[];
   canSend: boolean;
   isUploadingImages: boolean;
@@ -143,6 +152,7 @@ export function useAppActions({
   currentModelRef: RefObject<string>;
   clearThreadInput: (threadId: string) => void;
   clearDraftInput: () => void;
+  clearActiveContextItems: () => void;
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
   setIsUploadingImages: Dispatch<SetStateAction<boolean>>;
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
@@ -159,13 +169,15 @@ export function useAppActions({
   const sendMessage = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
     if (!rpc || !canSend) return;
-    const message = activeInput.trim();
+    const typedMessage = activeInput.trim();
+    const message = prependContextToMessage(typedMessage, activeContextItems);
     const images = pendingImages;
     const existingThreadId = state.activeThreadId;
     clearComposerInputAfterSend({
       activeThreadId: existingThreadId,
       clearThreadInput,
       clearDraftInput,
+      clearContextItems: clearActiveContextItems,
     });
     setPendingImages([]);
 
@@ -181,18 +193,19 @@ export function useAppActions({
           activateServerThread,
           applySessionModel,
           dispatch,
-          message,
+          localText: typedMessage,
+          contextItems: activeContextItems,
           images,
         });
         threadId = prepared.threadId;
       } else {
-        dispatch({ type: "local_user", payload: { text: message, images } });
+        dispatch({ type: "local_user", payload: { text: typedMessage, images, contextItems: activeContextItems } });
       }
 
       if (state.items.length === 0 && threadId) {
         dispatch({
           type: "optimistic_thread",
-          payload: { threadId, message: message || "[image]" },
+          payload: { threadId, message: typedMessage || "[image]" },
         });
       }
 
@@ -226,9 +239,11 @@ export function useAppActions({
     state,
     canSend,
     activeInput,
+    activeContextItems,
     pendingImages,
     clearThreadInput,
     clearDraftInput,
+    clearActiveContextItems,
     setPendingImages,
     dispatch,
     currentModelRef,

@@ -80,7 +80,7 @@ function renderGroupedItems(
     } else if (item.kind === "tool") {
       result.push(<ToolBlock key={item.id} item={item} threadCwd={threadCwd} />);
     } else if (item.kind === "user") {
-      result.push(<UserMessage key={item.id} text={item.text} images={item.images} />);
+      result.push(<UserMessage key={item.id} text={item.text} images={item.images} contextItems={item.contextItems} />);
     } else if (item.kind === "assistant") {
       const assistantItem = item as Extract<RenderItem, { kind: "assistant" }>;
       const nextItem = items[idx + 1];

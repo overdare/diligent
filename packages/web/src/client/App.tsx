@@ -23,6 +23,11 @@ import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
+import {
+  type AgentContextItem,
+  createAgentNativeBridge,
+  installAgentNativeBridgeMock,
+} from "./lib/agent-native-bridge";
 import { APP_PROJECT_NAME } from "./lib/app-config";
 import { appReducer, type PendingImage } from "./lib/app-state";
 import { getThreadIdFromUrl } from "./lib/app-utils";
@@ -176,6 +181,7 @@ export function App() {
   const isBusy = state.threadStatus === "busy";
   const activeInputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
   const activeInput = threadMgr.threadInputs[activeInputKey] ?? "";
+  const activeContextItems = threadMgr.threadContextItems[activeInputKey] ?? [];
   const setActiveInput = useCallback(
     (value: string) => {
       const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
@@ -201,10 +207,31 @@ export function App() {
   const clearDraftInput = useCallback(() => {
     threadMgr.setThreadInputs((prev) => clearDraftThreadInput(prev));
   }, [threadMgr.setThreadInputs]);
+  const updateActiveContextItems = useCallback(
+    (items: AgentContextItem[]) => {
+      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
+      threadMgr.updateThreadContextItems(inputKey, items);
+    },
+    [state.activeThreadId, threadMgr.updateThreadContextItems],
+  );
+  const removeActiveContextItem = useCallback(
+    (itemKey: string) => {
+      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
+      threadMgr.removeThreadContextItem(inputKey, itemKey);
+    },
+    [state.activeThreadId, threadMgr.removeThreadContextItem],
+  );
+  const clearActiveContextItems = useCallback(() => {
+    const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
+    threadMgr.clearThreadContextItems(inputKey);
+  }, [state.activeThreadId, threadMgr.clearThreadContextItems]);
   const clearPendingImages = useCallback(() => {
     setPendingImages([]);
   }, []);
-  const canSend = (activeInput.trim().length > 0 || pendingImages.length > 0) && !isBusy && !isUploadingImages;
+  const canSend =
+    (activeInput.trim().length > 0 || pendingImages.length > 0 || activeContextItems.length > 0) &&
+    !isBusy &&
+    !isUploadingImages;
   const steeringQueue = useSteeringQueue({
     rpcRef,
     stateRef,
@@ -276,6 +303,7 @@ export function App() {
     stateRef,
     dispatch,
     activeInput,
+    activeContextItems,
     pendingImages,
     canSend,
     isUploadingImages,
@@ -287,6 +315,7 @@ export function App() {
     currentModelRef: providerMgr.currentModelRef,
     clearThreadInput,
     clearDraftInput,
+    clearActiveContextItems,
     setPendingImages,
     setIsUploadingImages,
     setEffortState,
@@ -303,6 +332,20 @@ export function App() {
     activateServerThread: threadMgr.activateServerThread,
     refreshThreadList: threadMgr.refreshThreadList,
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const previousBridge = window.AgentNativeBridge;
+    window.AgentNativeBridge = createAgentNativeBridge({
+      updateContextItems: updateActiveContextItems,
+    });
+    installAgentNativeBridgeMock(window);
+    return () => {
+      window.AgentNativeBridge = previousBridge;
+    };
+  }, [updateActiveContextItems]);
 
   useEffect(() => {
     if (effort !== "none") return;
@@ -521,9 +564,12 @@ export function App() {
             supportsVision={supportsVision}
             supportsThinking={supportsThinking}
             pendingImages={pendingImagePreviews}
+            contextItems={activeContextItems}
             isUploadingImages={isUploadingImages}
             onAddImages={handleAddImagesToDock}
             onRemoveImage={handleRemovePendingImage}
+            onRemoveContextItem={removeActiveContextItem}
+            onClearContextItems={clearActiveContextItems}
             onSlashCommand={handleSlashCommand}
             slashCommands={slashCommands}
           />

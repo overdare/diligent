@@ -50,6 +50,11 @@ describe("StdinBuffer", () => {
     expect(buf.split("\x1b[13;2u")).toEqual(["\x1b[13;2u"]);
   });
 
+  test("handles xterm/windows extended key sequences", () => {
+    const buf = createBuffer();
+    expect(buf.split("\x1b[27;2;13~")).toEqual(["\x1b[27;2;13~"]);
+  });
+
   test("handles Alt+key (ESC + char)", () => {
     const buf = createBuffer();
     expect(buf.split("\x1ba")).toEqual(["\x1ba"]);

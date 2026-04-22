@@ -56,7 +56,7 @@ const KEY_SEQUENCES: Record<string, string[]> = {
   "ctrl+u": ["\x15"],
   "ctrl+w": ["\x17"],
   "ctrl+backspace": ["\x08"],
-  "shift+enter": ["\x1b[13;2u"], // Kitty protocol
+  "shift+enter": ["\x1b[13;2u", "\x1b[27;2;13~"], // Kitty + xterm/Windows extended keys
   "shift+tab": ["\x1b[Z"],
 };
 

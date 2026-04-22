@@ -4,10 +4,12 @@ import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/pr
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { AgentContextItem } from "../lib/agent-native-bridge";
 import { findModelInfo, getThinkingEffortOptions } from "../lib/model-thinking-helpers";
 import type { SlashCommand } from "../lib/slash-commands";
 import { BUILTIN_COMMANDS, filterCommands, isSlashPrefix } from "../lib/slash-commands";
 import type { UsageState } from "../lib/thread-store";
+import { ComposerContextChips } from "./ComposerContextChips";
 import { Select, type SelectOption } from "./Select";
 import { SlashMenu } from "./SlashMenu";
 import { TextArea } from "./TextArea";
@@ -38,9 +40,12 @@ interface InputDockProps {
   supportsVision: boolean;
   supportsThinking: boolean;
   pendingImages: Array<{ path: string; url: string; fileName?: string }>;
+  contextItems: AgentContextItem[];
   isUploadingImages: boolean;
   onAddImages: (files: FileList | File[]) => void;
   onRemoveImage: (path: string) => void;
+  onRemoveContextItem: (key: string) => void;
+  onClearContextItems: () => void;
   /** Handler for slash command execution */
   onSlashCommand?: (name: string, arg?: string) => void;
   /** Full list of available slash commands (builtins + skills). Falls back to builtins only. */
@@ -127,9 +132,12 @@ export function InputDock({
   supportsVision,
   supportsThinking,
   pendingImages,
+  contextItems,
   isUploadingImages,
   onAddImages,
   onRemoveImage,
+  onRemoveContextItem,
+  onClearContextItems,
   onSlashCommand,
   slashCommands,
 }: InputDockProps) {
@@ -336,6 +344,8 @@ export function InputDock({
             Uploading images…
           </div>
         ) : null}
+
+        <ComposerContextChips items={contextItems} onRemove={onRemoveContextItem} onClear={onClearContextItems} />
 
         <div ref={slashMenuRef} className="relative flex items-start gap-2">
           <div className="min-w-0 flex-1">

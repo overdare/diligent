@@ -1,14 +1,30 @@
 // @summary Right-aligned user message bubble with optional image attachments
 
+import { type AgentContextItem, formatAgentContextItemLabel, getAgentContextItemKey } from "../lib/agent-native-bridge";
+
 interface UserMessageProps {
   text: string;
   images?: Array<{ url: string; fileName?: string; mediaType?: string }>;
+  contextItems?: AgentContextItem[];
 }
 
-export function UserMessage({ text, images = [] }: UserMessageProps) {
+export function UserMessage({ text, images = [], contextItems = [] }: UserMessageProps) {
   return (
     <div className="flex justify-end py-1 pb-8">
       <div className="max-w-message rounded-xl bg-surface-light px-4 py-3">
+        {contextItems.length > 0 ? (
+          <div className="mb-3 flex flex-wrap justify-end gap-2">
+            {contextItems.map((item) => (
+              <span
+                key={getAgentContextItemKey(item)}
+                className="inline-flex max-w-full items-center rounded-full border border-border/100 bg-surface-dark px-2.5 py-1 text-[11px] text-muted"
+                title={formatAgentContextItemLabel(item)}
+              >
+                <span className="truncate">{formatAgentContextItemLabel(item)}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {images.length > 0 ? (
           <div className="mb-3 flex flex-wrap justify-end gap-2">
             {images.map((image, index) => (

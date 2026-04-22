@@ -8,6 +8,7 @@ import type {
   SessionSummary,
   ThreadReadResponse,
 } from "@diligent/protocol";
+import type { AgentContextItem } from "./agent-native-bridge";
 import {
   hydrateFromThreadRead,
   initialThreadState,
@@ -24,7 +25,7 @@ export type AppAction =
   | { type: "reset_draft"; payload: { mode: Mode } }
   | { type: "set_threads"; payload: SessionSummary[] }
   | { type: "set_mode"; payload: Mode }
-  | { type: "local_user"; payload: { text: string; images: PendingImage[] } }
+  | { type: "local_user"; payload: { text: string; images: PendingImage[]; contextItems?: AgentContextItem[] } }
   | { type: "local_steer"; payload: string }
   | { type: "consume_first_pending_steer" }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
@@ -84,6 +85,7 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       id: `local-user-${Date.now()}`,
       kind: "user",
       text,
+      contextItems: action.payload.contextItems ?? [],
       images: action.payload.images.map((image) => ({
         url: image.webUrl,
         fileName: image.fileName,

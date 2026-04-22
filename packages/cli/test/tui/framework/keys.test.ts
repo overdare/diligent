@@ -98,6 +98,10 @@ describe("matchesKey", () => {
     expect(matchesKey("\x1b[13;2:1u", "shift+enter")).toBe(true);
   });
 
+  test("matches shift+enter (xterm/windows extended keys)", () => {
+    expect(matchesKey("\x1b[27;2;13~", "shift+enter")).toBe(true);
+  });
+
   test("matches bracketed paste payload", () => {
     expect(matchesKey("\x1b[200~line 1\nline 2\x1b[201~", "bracketed_paste")).toBe(true);
     expect(matchesKey("\x1b[200~\x1b[201~", "bracketed_paste")).toBe(true);

@@ -14,6 +14,7 @@ import type {
   UserInputRequest,
 } from "@diligent/protocol";
 import { applyAgentEvents, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import type { AgentContextItem } from "./agent-native-bridge";
 import {
   appendChildAssistantTimelineDelta,
   appendChildAssistantTimelineStart,
@@ -58,6 +59,7 @@ export type RenderItem =
       id: string;
       kind: "user";
       text: string;
+      contextItems?: AgentContextItem[];
       images: Array<{ url: string; fileName?: string; mediaType?: string }>;
       timestamp: number;
     }

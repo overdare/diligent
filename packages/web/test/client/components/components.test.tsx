@@ -269,6 +269,63 @@ test("user message renders attached images", () => {
   expect(html).toContain('alt="screen.png"');
 });
 
+test("input dock renders attached context chips", () => {
+  const html = renderToStaticMarkup(
+    <InputDock
+      input="hello"
+      onInputChange={() => {}}
+      onSend={() => {}}
+      onSteer={() => {}}
+      onInterrupt={() => {}}
+      onCompactionClick={() => {}}
+      isCompacting={false}
+      canSend={true}
+      canSteer={false}
+      threadStatus="idle"
+      mode="default"
+      onModeChange={() => {}}
+      effort="medium"
+      onEffortChange={() => {}}
+      currentModel="gpt-5"
+      availableModels={[]}
+      onModelChange={() => {}}
+      usage={{ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0 }}
+      currentContextTokens={0}
+      contextWindow={0}
+      hasProvider={true}
+      supportsVision={false}
+      supportsThinking={false}
+      pendingImages={[]}
+      contextItems={[
+        { kind: "instance", source: "studiorpc", GUID: "guid-1", ClassType: "Part", Name: "Spawn_A" },
+        { kind: "file", source: "vscode", uri: "file:///workspace/mock.ts", Name: "mock.ts", languageId: "typescript" },
+      ]}
+      isUploadingImages={false}
+      onAddImages={() => {}}
+      onRemoveImage={() => {}}
+      onRemoveContextItem={() => {}}
+      onClearContextItems={() => {}}
+      slashCommands={[]}
+    />,
+  );
+
+  expect(html).toContain("Spawn_A (Part)");
+  expect(html).toContain("mock.ts (typescript)");
+  expect(html).toContain("Clear all");
+});
+
+test("user message renders context chips above text", () => {
+  const html = renderToStaticMarkup(
+    <UserMessage
+      text="Move these"
+      contextItems={[{ kind: "instance", source: "studiorpc", GUID: "guid-1", ClassType: "Part", Name: "Spawn_A" }]}
+    />,
+  );
+
+  expect(html).toContain("Spawn_A (Part)");
+  expect(html).toContain("Move these");
+});
+
 test("context message renders checkpoint language and expandable summary area", () => {
   const html = renderToStaticMarkup(<ContextMessage summary={"## Goal\nShip transcript-aware compaction UI"} />);
 
@@ -479,9 +536,12 @@ test("input dock renders pending image preview and add-images action", () => {
       supportsVision={true}
       supportsThinking={true}
       pendingImages={[{ path: "/tmp/shot.png", url: "blob:shot", fileName: "shot.png" }]}
+      contextItems={[]}
       isUploadingImages={false}
       onAddImages={() => {}}
       onRemoveImage={() => {}}
+      onRemoveContextItem={() => {}}
+      onClearContextItems={() => {}}
     />,
   );
 
@@ -520,9 +580,12 @@ test("input dock compaction menu does not show compacting label swap", () => {
       supportsVision={false}
       supportsThinking={false}
       pendingImages={[]}
+      contextItems={[]}
       isUploadingImages={false}
       onAddImages={() => {}}
       onRemoveImage={() => {}}
+      onRemoveContextItem={() => {}}
+      onClearContextItems={() => {}}
     />,
   );
 
@@ -564,9 +627,12 @@ test("input dock shows uploading state and disables send affordance", () => {
       supportsVision={true}
       supportsThinking={true}
       pendingImages={[]}
+      contextItems={[]}
       isUploadingImages={true}
       onAddImages={() => {}}
       onRemoveImage={() => {}}
+      onRemoveContextItem={() => {}}
+      onClearContextItems={() => {}}
     />,
   );
 
@@ -609,9 +675,12 @@ test("input dock hides effort selector when model does not support thinking", ()
       supportsVision={false}
       supportsThinking={false}
       pendingImages={[]}
+      contextItems={[]}
       isUploadingImages={false}
       onAddImages={() => {}}
       onRemoveImage={() => {}}
+      onRemoveContextItem={() => {}}
+      onClearContextItems={() => {}}
     />,
   );
 

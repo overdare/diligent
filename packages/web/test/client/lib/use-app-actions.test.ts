@@ -2,6 +2,7 @@
 
 import { expect, mock, test } from "bun:test";
 import type { Mode } from "@diligent/protocol";
+import { prependContextToMessage } from "../../../src/client/lib/agent-native-bridge";
 import type { PendingImage } from "../../../src/client/lib/app-state";
 import {
   clearComposerInputAfterSend,
@@ -17,6 +18,7 @@ test("clearComposerInputAfterSend clears draft input when sending first message 
     activeThreadId: null,
     clearThreadInput,
     clearDraftInput,
+    clearContextItems: mock(() => {}),
   });
 
   expect(clearDraftInput).toHaveBeenCalledTimes(1);
@@ -26,15 +28,78 @@ test("clearComposerInputAfterSend clears draft input when sending first message 
 test("clearComposerInputAfterSend clears active thread input for existing conversations", () => {
   const clearThreadInput = mock(() => {});
   const clearDraftInput = mock(() => {});
+  const clearContextItems = mock(() => {});
 
   clearComposerInputAfterSend({
     activeThreadId: "thread-1",
     clearThreadInput,
     clearDraftInput,
+    clearContextItems,
   });
 
   expect(clearThreadInput).toHaveBeenCalledWith("thread-1");
   expect(clearDraftInput).not.toHaveBeenCalled();
+  expect(clearContextItems).toHaveBeenCalledTimes(1);
+});
+
+test("prependContextToMessage serializes mixed context items before typed text", () => {
+  const result = prependContextToMessage("adjust these", [
+    {
+      kind: "instance",
+      source: "studiorpc",
+      GUID: "guid-1",
+      ClassType: "Part",
+      Name: "Spawn_A",
+    },
+    {
+      kind: "file",
+      source: "vscode",
+      uri: "file:///workspace/spawn.ts",
+      Name: "spawn.ts",
+      languageId: "typescript",
+    },
+  ]);
+
+  expect(result).toContain("<AttachedContext>");
+  expect(result).toContain("</AttachedContext>");
+  expect(result).toContain("Instance: Name=Spawn_A; ClassType=Part; GUID=guid-1");
+  expect(result).toContain("File: Name=spawn.ts; URI=file:///workspace/spawn.ts; Language=typescript");
+  expect(result.endsWith("adjust these")).toBe(true);
+});
+
+test("mock bridge update semantics replace prior context with latest snapshot", async () => {
+  const { createAgentNativeBridge } = await import("../../../src/client/lib/agent-native-bridge");
+
+  let latestItems: unknown[] = [];
+  const bridge = createAgentNativeBridge({
+    updateContextItems(items) {
+      latestItems = items;
+    },
+  });
+
+  bridge.updateContextItems([
+    {
+      GUID: "guid-1",
+      ClassType: "Part",
+      Name: "Spawn_A",
+    },
+  ]);
+  expect(latestItems).toHaveLength(1);
+
+  bridge.updateContextItems([
+    {
+      uri: "file:///workspace/next.ts",
+      Name: "next.ts",
+    },
+  ]);
+  expect(latestItems).toEqual([
+    {
+      kind: "file",
+      source: "vscode",
+      uri: "file:///workspace/next.ts",
+      Name: "next.ts",
+    },
+  ]);
 });
 
 test("prepareNewThreadForFirstMessage subscribes and hydrates before starting optimistic first message flow", async () => {
@@ -82,6 +147,8 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
       activateServerThread,
       applySessionModel,
       dispatch,
+      localText: "hello",
+      contextItems: [],
       message: "hello",
       images,
     });
@@ -91,7 +158,7 @@ test("prepareNewThreadForFirstMessage subscribes and hydrates before starting op
     expect(activateServerThread).toHaveBeenCalledWith("thread-1");
     expect(dispatch.mock.calls).toEqual([
       [{ type: "hydrate", payload: { threadId: "thread-1", mode: "default", history } }],
-      [{ type: "local_user", payload: { text: "hello", images } }],
+      [{ type: "local_user", payload: { text: "hello", images, contextItems: [] } }],
     ]);
     expect(applySessionModel).toHaveBeenCalledWith("gpt-5");
   } finally {
@@ -134,6 +201,8 @@ test("prepareNewThreadForFirstMessage passes medium effort through thread start 
     applySessionModel,
     dispatch,
     message: "hello",
+    localText: "hello",
+    contextItems: [],
     images: [],
   });
 
