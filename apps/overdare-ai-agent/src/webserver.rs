@@ -274,6 +274,10 @@ pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebSer
                         log_path.display()
                     ));
                 }
+                if let Some(port_str) = line_buf.trim().strip_prefix("DILIGENT_PORT=") {
+                    let port: u16 = port_str.trim().parse().map_err(|_| format!("Invalid port value: {}", port_str.trim()))?;
+                    return Ok(port);
+                }
                 if let Some(port_str) = line_buf.trim().strip_prefix("WEBSERVER_PORT=") {
                     let port: u16 = port_str.trim().parse().map_err(|_| format!("Invalid port value: {}", port_str.trim()))?;
                     return Ok(port);
