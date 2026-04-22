@@ -30,6 +30,18 @@ export const DiligentConfigSchema = z
             baseUrl: z.string().url().optional(),
           })
           .optional(),
+        vertex: z
+          .object({
+            project: z.string().min(1),
+            location: z.string().min(1),
+            endpoint: z.string().min(1),
+            baseUrl: z.string().url().optional(),
+            authMode: z.enum(["access_token_command", "access_token", "adc"]).optional(),
+            accessToken: z.string().optional(),
+            accessTokenCommand: z.string().optional(),
+            modelMap: z.record(z.string(), z.string()).optional(),
+          })
+          .optional(),
       })
       .optional(),
 

@@ -10,3 +10,4 @@ export type {
   NativeCompactionUnsupported,
 } from "./native-compaction";
 export { classifyOpenAIError, createOpenAINativeCompaction, createOpenAIStream } from "./openai";
+export { classifyVertexError, createVertexStream } from "./vertex";

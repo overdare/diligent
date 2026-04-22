@@ -51,10 +51,13 @@ describe("mergeConfig", () => {
 
   it("deep merges objects", () => {
     const base: DiligentConfig = { provider: { anthropic: { apiKey: "old" } } };
-    const override: DiligentConfig = { provider: { openai: { apiKey: "new" } } };
+    const override: DiligentConfig = {
+      provider: { openai: { apiKey: "new" }, vertex: { project: "p", location: "l", endpoint: "openapi" } },
+    };
     const result = mergeConfig(base, override);
     expect(result.provider?.anthropic?.apiKey).toBe("old");
     expect(result.provider?.openai?.apiKey).toBe("new");
+    expect(result.provider?.vertex).toEqual({ project: "p", location: "l", endpoint: "openapi" });
   });
 
   it("concatenates instructions with deduplication (D034)", () => {

@@ -46,20 +46,25 @@ export async function handleConfigSet(
   return { model };
 }
 
-export async function buildProviderList(): Promise<ProviderAuthStatus[]> {
-  const keys = await loadAuthStore();
+export async function buildProviderList(providerManager?: ProviderManager): Promise<ProviderAuthStatus[]> {
+  const keys = providerManager ? undefined : await loadAuthStore();
   const oauthTokens = await loadOAuthTokens();
   return PROVIDER_NAMES.map((provider) => ({
     provider,
-    configured: provider === "chatgpt" ? Boolean(oauthTokens) : Boolean(keys[provider]),
+    configured: providerManager
+      ? providerManager.hasKeyFor(provider)
+      : provider === "chatgpt"
+        ? Boolean(oauthTokens)
+        : Boolean(keys?.[provider]),
     maskedKey:
-      provider === "chatgpt"
+      providerManager?.getMaskedKey(provider) ??
+      (provider === "chatgpt"
         ? oauthTokens
           ? "ChatGPT OAuth"
           : undefined
-        : keys[provider]
+        : keys?.[provider]
           ? maskKey(keys[provider] as string)
-          : undefined,
+          : undefined),
     oauthConnected: provider === "chatgpt" ? Boolean(oauthTokens) : undefined,
   }));
 }
@@ -76,7 +81,7 @@ export async function handleAuthSet(
 
   await saveAuthKey(params.provider, params.apiKey);
   providerManager.setApiKey(params.provider, params.apiKey);
-  const providers = await buildProviderList();
+  const providers = await buildProviderList(providerManager);
   await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
   return { ok: true };
 }
@@ -95,7 +100,7 @@ export async function handleAuthRemove(
     providerManager.removeExternalAuth("chatgpt");
   }
 
-  const providers = await buildProviderList();
+  const providers = await buildProviderList(providerManager);
   await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
   return { ok: true };
 }
@@ -141,7 +146,7 @@ export async function handleAuthOAuthStart(args: {
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
         params: { loginId, success: true, error: null },
       });
-      const providers = await buildProviderList();
+      const providers = await buildProviderList(pm);
       await args.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
         params: { providers },

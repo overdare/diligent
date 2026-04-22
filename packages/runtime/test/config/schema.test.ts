@@ -123,4 +123,23 @@ describe("DiligentConfigSchema — tools section", () => {
     });
     expect(result.agents).toEqual({ enabled: true, paths: ["/tmp/agents"] });
   });
+
+  it("accepts vertex provider config", () => {
+    const result = DiligentConfigSchema.parse({
+      provider: {
+        vertex: {
+          project: "demo-project",
+          location: "us-central1",
+          endpoint: "openapi",
+          authMode: "adc",
+        },
+      },
+    });
+    expect(result.provider?.vertex).toEqual({
+      project: "demo-project",
+      location: "us-central1",
+      endpoint: "openapi",
+      authMode: "adc",
+    });
+  });
 });

@@ -43,6 +43,12 @@ describe("resolveModel", () => {
     const model = resolveModel("chatgpt-5.3-codex");
     expect(model.provider).toBe("chatgpt");
   });
+
+  it("infers vertex from vertex- prefix", () => {
+    const model = resolveModel("vertex-gemma-4-26b-it");
+    expect(model.provider).toBe("vertex");
+    expect(model.supportsThinking).toBe(false);
+  });
 });
 
 describe("model class annotations", () => {
@@ -63,13 +69,20 @@ describe("model class annotations", () => {
     }
   });
 
-  it("each provider has at least one model per class", () => {
+  it("each non-vertex provider has at least one model per class", () => {
     for (const provider of ["anthropic", "openai", "chatgpt", "gemini"]) {
       for (const cls of ["pro", "general", "lite"] as const) {
         const match = KNOWN_MODELS.find((m) => m.provider === provider && m.modelClass === cls);
         expect(match).toBeDefined();
       }
     }
+  });
+
+  it("vertex is unified to a single general-class model", () => {
+    const vertexModels = KNOWN_MODELS.filter((m) => m.provider === "vertex");
+    expect(vertexModels).toHaveLength(1);
+    expect(vertexModels[0]?.id).toBe("vertex-gemma-4-26b-it");
+    expect(vertexModels[0]?.modelClass).toBe("general");
   });
 
   it("anthropic classes map correctly", () => {
@@ -94,6 +107,10 @@ describe("model class annotations", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.3-codex")?.modelClass).toBe("general");
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4-mini")?.modelClass).toBe("lite");
+  });
+
+  it("vertex classes map correctly", () => {
+    expect(KNOWN_MODELS.find((m) => m.id === "vertex-gemma-4-26b-it")?.modelClass).toBe("general");
   });
 });
 
@@ -167,6 +184,12 @@ describe("resolveModelForClass", () => {
     const lite = resolveModelForClass(codex, "lite");
     expect(lite.id).toBe("chatgpt-5.4-mini");
     expect(lite.provider).toBe("chatgpt");
+  });
+
+  it("keeps vertex on the unified model when other classes are requested", () => {
+    const gemma = resolveModel("vertex-gemma-4-26b-it");
+    expect(resolveModelForClass(gemma, "lite").id).toBe("vertex-gemma-4-26b-it");
+    expect(resolveModelForClass(gemma, "pro").id).toBe("vertex-gemma-4-26b-it");
   });
 
   it("falls back to current model for unknown provider", () => {

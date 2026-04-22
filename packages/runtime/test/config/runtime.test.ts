@@ -169,4 +169,44 @@ describe("loadRuntimeConfig", () => {
       process.env.USERPROFILE = originalUserProfile;
     }
   });
+
+  it("binds vertex config and selects the first available vertex model", async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-vertex-"));
+    const paths = makePaths(tmpRoot);
+    const isolatedHome = join(tmpRoot, ".isolated-home");
+    await mkdir(paths.sessions, { recursive: true });
+    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.skills, { recursive: true });
+    await mkdir(paths.images, { recursive: true });
+    await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
+    await writeFile(
+      join(tmpRoot, ".diligent", "config.jsonc"),
+      JSON.stringify({
+        provider: {
+          vertex: {
+            project: "demo-project",
+            location: "us-central1",
+            endpoint: "openapi",
+            authMode: "access_token",
+            accessToken: "ya29.test-token",
+          },
+        },
+      }),
+    );
+
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    try {
+      const config = await loadRuntimeConfig(tmpRoot, paths);
+      expect(config.providerManager.hasKeyFor("vertex")).toBe(true);
+      expect(config.providerManager.getMaskedKey("vertex")).toBe("Vertex access token");
+      expect(config.model?.provider).toBe("vertex");
+      expect(config.model?.id).toBe("vertex-gemma-4-26b-it");
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
 });

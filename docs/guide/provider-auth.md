@@ -17,6 +17,7 @@ Supported providers in the protocol/runtime are:
 - `openai`
 - `chatgpt`
 - `gemini`
+- `vertex`
 
 ## Auth storage
 
@@ -57,6 +58,45 @@ The auth store currently supports plain API keys for:
 - `anthropic`
 - `openai`
 - `gemini`
+
+Vertex uses runtime-managed access-token auth instead of a long-lived API key.
+
+## Vertex AI access-token flow
+
+Vertex support uses the `vertex` provider and targets the Vertex AI OpenAI-compatible Chat Completions endpoint.
+
+Runtime config shape:
+
+```jsonc
+{
+  "model": "vertex-gemma-4-26b-it",
+  "provider": {
+    "vertex": {
+      "project": "my-gcp-project",
+      "location": "global",
+      "endpoint": "openapi",
+      "authMode": "adc"
+    }
+  }
+}
+```
+
+Supported initial auth modes:
+
+- `access_token_command`
+- `access_token`
+- `adc`
+
+Current behavior:
+
+- `access_token_command` runs a local command and uses trimmed stdout as the bearer token
+- `adc` currently uses the same command-backed refresh path and defaults to `gcloud auth application-default print-access-token`
+- `access_token` uses a static token supplied in config
+- `project`, `location`, and `endpoint` are required when `provider.vertex` is present
+- if `baseUrl` is omitted, runtime derives it from `project`, `location`, and `endpoint`
+- for MAAS publisher models that are global-only, set `location` to `global`
+
+Vertex auth is bound into `ProviderManager` as external auth, similar to ChatGPT OAuth in lifecycle shape but without browser OAuth.
 
 These keys are loaded by runtime and then bound into provider access through shared provider-auth wiring.
 

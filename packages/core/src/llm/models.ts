@@ -111,6 +111,15 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     aliases: ["gemini-flash-lite"],
     modelClass: "lite",
   },
+  {
+    id: "vertex-gemma-4-26b-it",
+    provider: "vertex",
+    contextWindow: 256_000,
+    maxOutputTokens: 8_192,
+    supportsThinking: false,
+    aliases: ["vertex-gemma", "vertex-gemma-4", "vertex-gemma-4-26b", "gemma-4-26b-vertex", "gemma-vertex"],
+    modelClass: "general",
+  },
   // OpenAI — reasoning models: effort mapped to OpenAI's low/medium/high
   // Note: gpt-5.4 supports up to 1M context; capped at 600k to limit cost
   {
@@ -298,6 +307,15 @@ export function resolveModel(modelId: string): Model {
       contextWindow: 1_000_000,
       maxOutputTokens: 65_536,
       supportsThinking: true,
+    };
+  }
+  if (modelId.startsWith("vertex-")) {
+    return {
+      id: modelId,
+      provider: "vertex",
+      contextWindow: 256_000,
+      maxOutputTokens: 8_192,
+      supportsThinking: false,
     };
   }
   if (modelId.startsWith("claude-")) {

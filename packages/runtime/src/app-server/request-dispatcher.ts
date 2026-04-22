@@ -300,7 +300,7 @@ export async function dispatchClientRequest(
       const pm = ctx.providerManager;
       const mc = ctx.modelConfig;
       if (!pm || !mc) throw Object.assign(new Error("Auth not available"), { code: -32601 });
-      const providers = await buildProviderList();
+      const providers = await buildProviderList(pm);
       return { providers, availableModels: mc.getAvailableModels() };
     }
 

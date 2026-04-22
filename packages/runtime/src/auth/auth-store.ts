@@ -13,6 +13,7 @@ export type AuthKeys = {
   openai?: string;
   chatgpt?: string;
   gemini?: string;
+  vertex?: string;
   chatgpt_oauth?: OpenAIOAuthTokens;
 };
 
@@ -30,6 +31,7 @@ const AuthKeysSchema = z
     openai: z.string().optional(),
     chatgpt: z.string().optional(),
     gemini: z.string().optional(),
+    vertex: z.string().optional(),
     chatgpt_oauth: OpenAIOAuthSchema.optional(),
   })
   .strict();

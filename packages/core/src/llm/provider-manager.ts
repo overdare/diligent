@@ -3,6 +3,7 @@ import { createAnthropicNativeCompaction, createAnthropicStream } from "./provid
 import { createGeminiStream } from "./provider/gemini";
 import type { NativeCompactionLookup } from "./provider/native-compaction";
 import { createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
+import { createVertexStream } from "./provider/vertex";
 import type { ProviderName, StreamFunction } from "./types";
 
 export interface ExternalProviderAuth {
@@ -19,6 +20,7 @@ export interface ProviderManagerConfig {
     openai?: { baseUrl?: string };
     chatgpt?: { baseUrl?: string };
     gemini?: { baseUrl?: string };
+    vertex?: { baseUrl?: string };
   };
   auth?: Partial<Record<ProviderName, ExternalProviderAuth>>;
 }
@@ -27,13 +29,14 @@ export type { ProviderName };
 
 export const DEFAULT_PROVIDER: ProviderName = "anthropic";
 
-export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "chatgpt", "gemini"];
+export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "chatgpt", "gemini", "vertex"];
 
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-5.3-codex",
   chatgpt: "chatgpt-5.3-codex",
   gemini: "gemini-2.5-flash",
+  vertex: "vertex-gemma-4-26b-it",
 };
 
 export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPlaceholder: string }> = {
@@ -41,6 +44,10 @@ export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPla
   openai: { apiKeyUrl: "https://platform.openai.com/api-keys", apiKeyPlaceholder: "sk-..." },
   chatgpt: { apiKeyUrl: "https://chatgpt.com", apiKeyPlaceholder: "OAuth login required" },
   gemini: { apiKeyUrl: "https://aistudio.google.com/apikey", apiKeyPlaceholder: "AIza..." },
+  vertex: {
+    apiKeyUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs/migrate/openai/overview",
+    apiKeyPlaceholder: "Google Cloud access token",
+  },
 };
 
 const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) => StreamFunction> = {
@@ -50,6 +57,7 @@ const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) =
     throw new Error("ChatGPT stream requires external auth binding");
   },
   gemini: createGeminiStream,
+  vertex: (token: string, baseUrl?: string) => createVertexStream(() => token, { baseUrl }),
 };
 
 class StreamFactoryCache {
@@ -162,6 +170,7 @@ export class ProviderManager {
     this.baseUrls.openai = config.provider?.openai?.baseUrl;
     this.baseUrls.chatgpt = config.provider?.chatgpt?.baseUrl;
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
+    this.baseUrls.vertex = config.provider?.vertex?.baseUrl;
     this.authState = new AuthStateManager(config.auth);
   }
 

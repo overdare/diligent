@@ -85,6 +85,15 @@ describe("loadAuthStore", () => {
     expect(result.anthropic).toBe("sk-ant-123");
     expect(result.openai).toBe("sk-456");
     expect(result.gemini).toBeUndefined();
+    expect(result.vertex).toBeUndefined();
+  });
+
+  test("loads vertex token entries", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await Bun.write(path, JSON.stringify({ vertex: "ya29.vertex-token" }));
+
+    const result = await loadAuthStore(path);
+    expect(result.vertex).toBe("ya29.vertex-token");
   });
 
   test("parses JSONC comments", async () => {
@@ -167,6 +176,15 @@ describe("saveAuthKey", () => {
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant-existing");
     expect(content.openai).toBe("sk-openai-new");
+  });
+
+  test("persists vertex auth entries", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+
+    await saveAuthKey("vertex", "ya29.vertex-token", path);
+
+    const content = JSON.parse(await Bun.file(path).text());
+    expect(content.vertex).toBe("ya29.vertex-token");
   });
 
   test("preserves chatgpt_oauth when saving plain key", async () => {

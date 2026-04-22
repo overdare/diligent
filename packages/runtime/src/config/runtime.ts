@@ -13,7 +13,7 @@ import { discoverAgents, renderAgentsSection } from "../agents/index";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
 import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
-import { createChatGPTOAuthBinding } from "../auth/provider-auth";
+import { createChatGPTOAuthBinding, createVertexAccessTokenBinding } from "../auth/provider-auth";
 import type { DiligentPaths } from "../infrastructure/index";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
 import { buildBaseSystemPrompt } from "../prompt/index";
@@ -60,7 +60,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   const authKeys = await loadAuthStore();
   for (const [provider, key] of Object.entries(authKeys)) {
     if (typeof key === "string" && key) {
-      providerManager.setApiKey(provider as "anthropic" | "openai" | "gemini", key);
+      providerManager.setApiKey(provider as "anthropic" | "openai" | "gemini" | "vertex", key);
     }
   }
 
@@ -75,14 +75,24 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     providerManager.setExternalAuth("chatgpt", chatgptAuth.auth);
   }
 
+  if (config.provider?.vertex) {
+    const vertexAuth = createVertexAccessTokenBinding(config.provider.vertex);
+    providerManager.setExternalAuth("vertex", vertexAuth.auth);
+  }
+
   const streamFunction = providerManager.createProxyStream();
 
   // Resolve model: use config.model if set, otherwise pick first available from configured providers
   const configured = providerManager.getConfiguredProviders();
   const firstAvailable = KNOWN_MODELS.find((m) =>
-    configured.includes(m.provider as "anthropic" | "openai" | "chatgpt" | "gemini"),
+    configured.includes(m.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex"),
   );
-  const modelId = config.model ?? firstAvailable?.id;
+  const configuredModel = config.model ? resolveModel(config.model) : undefined;
+  const modelId =
+    configuredModel &&
+    configured.includes(configuredModel.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex")
+      ? configuredModel.id
+      : (firstAvailable?.id ?? config.model);
   const model = modelId ? resolveModel(modelId) : undefined;
 
   // Load knowledge for system prompt injection

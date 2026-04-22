@@ -53,6 +53,7 @@ export type {
 export {
   agentTypeToModelClass,
   classifyGeminiError,
+  classifyVertexError,
   createAnthropicNativeCompaction,
   createAnthropicStream,
   createChatGPTNativeCompaction,
@@ -61,6 +62,7 @@ export {
   createOpenAINativeCompaction,
   createOpenAIStream,
   createStreamForProvider,
+  createVertexStream,
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
   findModelInfo,

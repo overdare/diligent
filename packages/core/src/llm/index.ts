@@ -30,6 +30,7 @@ export type {
   NativeCompactionUnsupported,
 } from "./provider/native-compaction";
 export { classifyOpenAIError, createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
+export { classifyVertexError, createVertexStream } from "./provider/vertex";
 export type { ExternalProviderAuth, ProviderName } from "./provider-manager";
 export {
   createStreamForProvider,

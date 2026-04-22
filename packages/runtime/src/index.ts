@@ -44,9 +44,16 @@ export type { CreateAgentArgs, CreateAppServerConfigOptions, DiligentAppServerCo
 export { bindAppServer, createAppServerConfig, DiligentAppServer } from "./app-server";
 export type { ApprovalRequest, ApprovalResponse, PermissionAction, PermissionEngine, PermissionRule } from "./approval";
 export { createPermissionEngine, createYoloPermissionEngine } from "./approval";
-export type { AuthKeys, ChatGPTOAuthBinding, OAuthFlowOptions } from "./auth";
+export type {
+  AuthKeys,
+  ChatGPTOAuthBinding,
+  OAuthFlowOptions,
+  VertexAccessTokenBinding,
+  VertexProviderConfig,
+} from "./auth";
 export {
   createChatGPTOAuthBinding,
+  createVertexAccessTokenBinding,
   getAuthFilePath,
   loadAuthStore,
   loadOAuthTokens,
