@@ -163,14 +163,60 @@ export function serializeContextItemsForPrompt(items: AgentContextItem[]): strin
 
 export function prependContextToMessage(message: string, items: AgentContextItem[]): string {
   const serialized = serializeContextItemsForPrompt(items);
-  if (!serialized) {
-    return message;
-  }
+  if (!serialized) return message;
   const trimmed = message.trim();
-  if (!trimmed) {
-    return serialized.trimEnd();
-  }
+  if (!trimmed) return serialized.trimEnd();
   return `${serialized}${trimmed}`;
+}
+
+export interface ParsedContextText {
+  contextItems: AgentContextItem[];
+  remainingText: string;
+}
+
+function parseInstanceLine(line: string): AgentContextItem | null {
+  const match = line.match(/^- Instance: Name=(.+?); ClassType=(.+?); GUID=(.+)$/);
+  if (!match) return null;
+  return { kind: "instance", source: "studiorpc", Name: match[1], ClassType: match[2], GUID: match[3] };
+}
+
+function parseSelectionString(
+  raw: string,
+): { startLine: number; startCharacter: number; endLine: number; endCharacter: number } | undefined {
+  const m = raw.match(/^(\d+):(\d+)-(\d+):(\d+)$/);
+  if (!m) return undefined;
+  return {
+    startLine: parseInt(m[1], 10) - 1,
+    startCharacter: parseInt(m[2], 10) - 1,
+    endLine: parseInt(m[3], 10) - 1,
+    endCharacter: parseInt(m[4], 10) - 1,
+  };
+}
+
+function parseFileLine(line: string): AgentContextItem | null {
+  const match = line.match(/^- File: Name=(.+?); URI=(.+?)(?:; Language=([^;]+?))?(?:; Selection=([^;]+))?$/);
+  if (!match) return null;
+  return {
+    kind: "file",
+    source: "vscode",
+    Name: match[1],
+    uri: match[2],
+    languageId: match[3],
+    selection: match[4] ? parseSelectionString(match[4]) : undefined,
+  };
+}
+
+export function parseContextFromText(text: string): ParsedContextText {
+  const blockMatch = text.match(/^<AttachedContext>\n([\s\S]*?)\n<\/AttachedContext>\n?/);
+  if (!blockMatch) return { contextItems: [], remainingText: text };
+  const contextItems: AgentContextItem[] = [];
+  for (const line of blockMatch[1].split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const item = parseInstanceLine(trimmed) ?? parseFileLine(trimmed);
+    if (item) contextItems.push(item);
+  }
+  return { contextItems, remainingText: text.slice(blockMatch[0].length) };
 }
 
 export function createAgentNativeBridge(handlers: {

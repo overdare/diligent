@@ -15,6 +15,7 @@ import type {
 } from "@diligent/protocol";
 import { applyAgentEvents, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import type { AgentContextItem } from "./agent-native-bridge";
+import { parseContextFromText } from "./agent-native-bridge";
 import {
   appendChildAssistantTimelineDelta,
   appendChildAssistantTimelineStart,
@@ -395,17 +396,19 @@ function reduceAgentEvent(state: ThreadState, event: AgentEvent): ThreadState {
 
     case "user_message": {
       const { text, images } = extractUserTextAndImages(event.message.content);
+      const { contextItems, remainingText } = parseContextFromText(text);
       let nextState = merged;
       if (nextState.pendingSteers.length > 0) {
         const joinedSteers = nextState.pendingSteers.join("\n");
-        if (text === joinedSteers) {
+        if (remainingText === joinedSteers || text === joinedSteers) {
           nextState = { ...nextState, pendingSteers: [] };
         }
       }
       return withItem(nextState, `remote-user-${event.itemId}`, {
         id: `remote-user-${event.itemId}`,
         kind: "user",
-        text,
+        text: remainingText,
+        contextItems,
         images,
         timestamp: event.message.timestamp,
       });
