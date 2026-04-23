@@ -12,6 +12,7 @@ pub struct WebServerOptions {
     pub cwd: String,
     pub userid: Option<String>,
     pub studio_rpc_port: Option<u16>,
+    pub web_server_port: Option<u16>,
 }
 
 fn normalize_cwd(raw: &str) -> String {
@@ -47,6 +48,7 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
     let mut cwd: Option<String> = None;
     let mut userid: Option<String> = None;
     let mut studio_rpc_port: Option<u16> = None;
+    let mut web_server_port: Option<u16> = None;
 
     for arg in args {
         if let Some(value) = arg.strip_prefix("--cwd=") {
@@ -70,9 +72,18 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
             }
             continue;
         }
+        if let Some(value) = arg.strip_prefix("--web-server-port=") {
+            if !value.is_empty() {
+                let parsed = value
+                    .parse::<u16>()
+                    .map_err(|_| format!("Invalid --web-server-port value: {value}"))?;
+                web_server_port = Some(parsed);
+            }
+            continue;
+        }
         if matches!(arg.as_str(), "--help" | "-h") {
             return Err(
-                "Usage: overdare-ai-agent start --cwd=/path/to/project [--userid=abc] [--studio-rpc-port=12345]"
+                "Usage: overdare-ai-agent start --cwd=/path/to/project [--userid=abc] [--studio-rpc-port=12345] [--web-server-port=3000]"
                     .to_string(),
             );
         }
@@ -88,6 +99,7 @@ pub fn parse_args(args: &[String]) -> Result<WebServerOptions, String> {
         cwd,
         userid,
         studio_rpc_port,
+        web_server_port,
     })
 }
 
@@ -217,8 +229,10 @@ pub async fn start_foreground(options: WebServerOptions) -> Result<RunningWebSer
     let log_path = default_web_log_path()?;
     let rg_path = resolve_updated_rg_bin();
 
+    let desired_port = options.web_server_port.unwrap_or(0);
+
     let mut args = vec![
-        "--port=0".to_string(),
+        format!("--port={desired_port}"),
         format!("--dist-dir={}", dist_dir.to_string_lossy()),
         format!("--cwd={}", options.cwd),
         format!("--log-file={}", log_path.to_string_lossy()),
@@ -303,11 +317,13 @@ mod tests {
             "--cwd=/tmp/project".to_string(),
             "--userid=user-1".to_string(),
             "--studio-rpc-port=8123".to_string(),
+            "--web-server-port=4567".to_string(),
         ];
         let parsed = parse_args(&args).expect("parse args");
         assert_eq!(parsed.cwd, "/tmp/project");
         assert_eq!(parsed.userid.as_deref(), Some("user-1"));
         assert_eq!(parsed.studio_rpc_port, Some(8123));
+        assert_eq!(parsed.web_server_port, Some(4567));
     }
 
     #[cfg(windows)]

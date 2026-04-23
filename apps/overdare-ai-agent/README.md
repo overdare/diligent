@@ -5,7 +5,7 @@ Rust CLI for OVERDARE runtime bootstrap, plugin/bootstrap ownership, and webserv
 It currently provides two commands:
 
 - `init` — show current/latest version and ensure the runtime is downloaded; updates unless `--skip-update` is used
-- `webserver` — run the updated runtime binary `~/.overdare/updates/runtime/diligent-web-server` as a subprocess
+- `start` — run the updated runtime binary `~/.overdare/updates/runtime/diligent-web-server` as a subprocess
 
 ## Commands
 
@@ -23,10 +23,13 @@ cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init
 cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- init --skip-update
 
 # Start the updated local web server runtime
-cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- webserver --cwd=/path/to/project
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- start --cwd=/path/to/project
 
 # Start the web server and forward a Studio RPC port to plugins via STUDIO_PORT
-cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- webserver --cwd=/path/to/project --studio-rpc-port=13377
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- start --cwd=/path/to/project --studio-rpc-port=13377
+
+# Start the web server on a fixed port (instead of random)
+cargo run --manifest-path apps/overdare-ai-agent/Cargo.toml -- start --cwd=/path/to/project --web-server-port=3000
 
 # Run Rust tests
 bun run overdare-ai-agent:test
@@ -37,9 +40,10 @@ DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifes
 
 ## Notes
 
-- `webserver` does not execute repo TypeScript directly; it launches the updated runtime subprocess
-- `webserver` prints the selected runtime port as `WEBSERVER_PORT=<port>` on stdout
-- `webserver --studio-rpc-port=<port>` forwards that value to the runtime subprocess as `STUDIO_PORT`
+- `start` does not execute repo TypeScript directly; it launches the updated runtime subprocess
+- `start` prints the selected runtime port as `WEBSERVER_PORT=<port>` on stdout
+- `start --studio-rpc-port=<port>` forwards that value to the runtime subprocess as `STUDIO_PORT`
+- `start --web-server-port=<port>` requests a fixed runtime web server port (omit to use random port)
 - `init` downloads the runtime bundle shape used by OVERDARE CLI: sidecar binary, `dist/client`, optional `rg`, and runtime defaults (`bootstrap/` preferred, legacy `defaults/` fallback)
 - on first run, `init --skip-update` is rejected until the runtime exists locally at least once
 - if `~/.overdare/config.jsonc` sets `"updateMode": "disabled"`, runtime update behavior follows that config
