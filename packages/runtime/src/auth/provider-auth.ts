@@ -1,4 +1,6 @@
 // @summary ChatGPT OAuth provider auth binding for core ProviderManager injection
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { OpenAIOAuthTokens } from "@diligent/core/auth";
 import { refreshOAuthTokens, shouldRefresh } from "@diligent/core/auth/chatgpt-oauth";
 import { EventStream } from "@diligent/core/event-stream";
@@ -88,7 +90,7 @@ export function createVertexAccessTokenBinding(config: VertexProviderConfig): Ve
       refreshLock = (async () => {
         try {
           const command = resolveVertexTokenCommand(config);
-          const proc = Bun.spawn(["bash", "-lc", command], {
+          const proc = Bun.spawn(await resolveVertexTokenCommandArgs(command), {
             stdout: "pipe",
             stderr: "pipe",
             env: process.env as Record<string, string>,
@@ -160,6 +162,87 @@ function resolveVertexTokenCommand(config: VertexProviderConfig): string {
   if (config.accessTokenCommand?.trim()) return config.accessTokenCommand.trim();
   if (config.authMode === "adc") return "gcloud auth application-default print-access-token";
   throw new Error("Vertex accessTokenCommand is required for command-based auth");
+}
+
+async function resolveVertexTokenCommandArgs(command: string): Promise<string[]> {
+  if (process.platform === "win32") {
+    const trimmed = command.trim();
+    if (trimmed === "gcloud auth application-default print-access-token") {
+      const gcloudCommand = await resolveWindowsGcloudCommand();
+      if (gcloudCommand !== "gcloud.cmd") {
+        return [gcloudCommand, "auth", "application-default", "print-access-token"];
+      }
+
+      return ["cmd.exe", "/d", "/s", "/c", "gcloud.cmd auth application-default print-access-token"];
+    }
+
+    return ["powershell", "-NoProfile", "-Command", command];
+  }
+
+  return ["bash", "-lc", command];
+}
+
+async function resolveWindowsGcloudCommand(): Promise<string> {
+  const discovered = await findWindowsGcloudOnPath();
+  if (discovered) return discovered;
+
+  for (const candidate of getWindowsGcloudCandidates()) {
+    if (await Bun.file(candidate).exists()) {
+      return candidate;
+    }
+  }
+
+  return "gcloud.cmd";
+}
+
+async function findWindowsGcloudOnPath(): Promise<string | undefined> {
+  const pathEntries = (process.env.PATH ?? "")
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  for (const entry of pathEntries) {
+    const candidate = join(entry, "gcloud.cmd");
+    if (await Bun.file(candidate).exists()) {
+      return candidate;
+    }
+  }
+
+  try {
+    const proc = Bun.spawn(["where.exe", "gcloud.cmd"], {
+      stdout: "pipe",
+      stderr: "ignore",
+      env: process.env as Record<string, string>,
+    });
+    const [exitCode, stdoutText] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    if (exitCode === 0) {
+      const match = stdoutText
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .find((line) => line.toLowerCase().endsWith("gcloud.cmd"));
+      if (match) return match;
+    }
+  } catch {
+    // Ignore lookup failures and continue with known install locations.
+  }
+
+  return undefined;
+}
+
+function getWindowsGcloudCandidates(): string[] {
+  const localAppData = process.env.LOCALAPPDATA?.trim();
+  const userProfile = process.env.USERPROFILE?.trim() ?? homedir();
+  const programFiles = process.env.ProgramFiles?.trim();
+  const programFilesX86 = process.env["ProgramFiles(x86)"]?.trim();
+
+  const roots = [
+    localAppData,
+    userProfile ? join(userProfile, "AppData", "Local") : undefined,
+    programFiles,
+    programFilesX86,
+  ].filter((value): value is string => Boolean(value));
+
+  return roots.map((root) => join(root, "Google", "Cloud SDK", "google-cloud-sdk", "bin", "gcloud.cmd"));
 }
 
 function createDeferredVertexStream(

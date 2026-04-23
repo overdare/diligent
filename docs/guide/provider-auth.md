@@ -90,7 +90,10 @@ Supported initial auth modes:
 Current behavior:
 
 - `access_token_command` runs a local command and uses trimmed stdout as the bearer token
-- `adc` currently uses the same command-backed refresh path and defaults to `gcloud auth application-default print-access-token`
+- `adc` uses the command-backed refresh path and defaults to `gcloud auth application-default print-access-token`
+- runtime runs that command through `bash -lc` on Unix-like platforms
+- on Windows, the default ADC command is invoked via `cmd.exe /d /s /c "gcloud.cmd auth application-default print-access-token"` to avoid PowerShell execution-policy issues and `.cmd` spawn resolution differences
+- custom `access_token_command` values on Windows still run through `powershell -NoProfile -Command`
 - `access_token` uses a static token supplied in config
 - `project`, `location`, and `endpoint` are required when `provider.vertex` is present
 - if `baseUrl` is omitted, runtime derives it from `project`, `location`, and `endpoint`

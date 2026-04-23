@@ -88,6 +88,7 @@ const config: Config = {
         "provider-openai": "rgb(var(--color-provider-openai-rgb) / <alpha-value>)",
         "provider-chatgpt": "rgb(var(--color-provider-chatgpt-rgb) / <alpha-value>)",
         "provider-gemini": "rgb(var(--color-provider-gemini-rgb) / <alpha-value>)",
+        "provider-vertex": "rgb(var(--color-provider-vertex-rgb) / <alpha-value>)",
         "knowledge-pattern": "rgb(var(--color-knowledge-pattern-rgb) / <alpha-value>)",
         "knowledge-backlog": "rgb(var(--color-knowledge-backlog-rgb) / <alpha-value>)",
         "knowledge-discovery": "rgb(var(--color-knowledge-discovery-rgb) / <alpha-value>)",

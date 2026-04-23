@@ -16,6 +16,7 @@ import { extractPastedImageFiles, InputDock } from "../../../src/client/componen
 import { KnowledgeManagerModal } from "../../../src/client/components/KnowledgeManagerModal";
 import { MarkdownContent } from "../../../src/client/components/MarkdownContent";
 import { Modal } from "../../../src/client/components/Modal";
+import { ProviderSettingsModal } from "../../../src/client/components/ProviderSettingsModal";
 import { QuestionCard } from "../../../src/client/components/QuestionCard";
 import { SlashMenu } from "../../../src/client/components/SlashMenu";
 import { ToolBlock } from "../../../src/client/components/ToolBlock";
@@ -26,6 +27,34 @@ import { normalizeImageFileName } from "../../../src/client/lib/app-utils";
 function createClipboardFile(name: string, type: string): File {
   return new File([`${name}:${type}`], name, { type });
 }
+
+test("tool settings modal renders vertex provider badge label", () => {
+  const html = renderToStaticMarkup(
+    <ToolSettingsModal
+      threadId="thread-1"
+      initialState={{
+        configPath: "/repo/.diligent/config.jsonc",
+        appliesOnNextTurn: true,
+        trustMode: "full_trust",
+        conflictPolicy: "error",
+        tools: [],
+        plugins: [],
+      }}
+      providers={[{ provider: "vertex", configured: true, maskedKey: "Vertex ADC" }]}
+      onList={async () => {
+        throw new Error("unused");
+      }}
+      onSave={async () => {
+        throw new Error("unused");
+      }}
+      onOpenProviders={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Vertex AI");
+  expect(html).toContain("Open AI connection settings");
+});
 
 function createClipboardData(options: {
   items?: Array<{ kind: string; type: string; file?: File | null }>;
@@ -362,6 +391,24 @@ test("empty state renders connect CTA when provider is not configured", () => {
 
   expect(html).toContain("Connect your AI account to start building");
   expect(html).toContain("Connect ChatGPT");
+});
+
+test("provider settings modal renders vertex guidance", () => {
+  const html = renderToStaticMarkup(
+    <ProviderSettingsModal
+      providers={[{ provider: "vertex", configured: false }]}
+      oauthPending={false}
+      oauthError={null}
+      onSet={async () => {}}
+      onRemove={async () => {}}
+      onOAuthStart={async () => ({ authUrl: "https://example.com" })}
+      onClose={() => {}}
+    />,
+  );
+
+  expect(html).toContain("Vertex AI");
+  expect(html).toContain("Use a Google Cloud access token here, or configure ADC in runtime config.");
+  expect(html).toContain("Connect");
 });
 
 test("empty state is hidden when provider is configured", () => {

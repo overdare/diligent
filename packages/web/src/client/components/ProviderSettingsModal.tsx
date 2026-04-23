@@ -23,6 +23,15 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   chatgpt: "ChatGPT",
   gemini: "Gemini",
+  vertex: "Vertex AI",
+};
+
+const PROVIDER_INPUT_PLACEHOLDERS: Record<string, string> = {
+  anthropic: "API key",
+  openai: "API key",
+  chatgpt: "API key",
+  gemini: "API key",
+  vertex: "Google Cloud access token",
 };
 
 export function ProviderSettingsModal({
@@ -149,13 +158,18 @@ export function ProviderSettingsModal({
               {p.provider === "chatgpt" && !isConnected(p) ? (
                 <div className="mt-1.5 text-xs text-muted">Recommended first setup — no API key needed.</div>
               ) : null}
+              {p.provider === "vertex" ? (
+                <div className="mt-1.5 text-xs text-muted">
+                  Use a Google Cloud access token here, or configure ADC in runtime config.
+                </div>
+              ) : null}
 
               {editingProvider === p.provider ? (
                 <div className="mt-2 space-y-2">
                   <div className="flex items-center gap-2">
                     <Input
                       type="password"
-                      placeholder="API key"
+                      placeholder={PROVIDER_INPUT_PLACEHOLDERS[p.provider] ?? "API key"}
                       className="h-8"
                       value={keyInput}
                       onChange={(e) => setKeyInput(e.target.value)}

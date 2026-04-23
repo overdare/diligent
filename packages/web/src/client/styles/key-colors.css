@@ -95,6 +95,7 @@
   --color-provider-openai: #60a5fa;
   --color-provider-chatgpt: #93c5fd;
   --color-provider-gemini: #bfdbfe;
+  --color-provider-vertex: #c4b5fd;
 
   --color-knowledge-pattern: #93c5fd;
   --color-knowledge-backlog: #60a5fa;
@@ -201,6 +202,7 @@
   --color-provider-openai-rgb: 96 165 250;
   --color-provider-chatgpt-rgb: 147 197 253;
   --color-provider-gemini-rgb: 191 219 254;
+  --color-provider-vertex-rgb: 196 181 253;
 
   --color-knowledge-pattern-rgb: 147 197 253;
   --color-knowledge-backlog-rgb: 96 165 250;

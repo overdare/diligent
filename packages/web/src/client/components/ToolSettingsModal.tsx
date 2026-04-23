@@ -10,6 +10,7 @@ const PROVIDER_BADGE_STYLE: Record<string, string> = {
   openai: "border-provider-openai/30 bg-provider-openai/10 text-provider-openai",
   chatgpt: "border-provider-chatgpt/30 bg-provider-chatgpt/10 text-provider-chatgpt",
   gemini: "border-provider-gemini/30 bg-provider-gemini/10 text-provider-gemini",
+  vertex: "border-provider-vertex/30 bg-provider-vertex/10 text-provider-vertex",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -17,6 +18,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   chatgpt: "ChatGPT",
   gemini: "Gemini",
+  vertex: "Vertex AI",
 };
 
 interface ToolSettingsModalProps {
