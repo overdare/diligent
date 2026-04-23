@@ -28,7 +28,7 @@ function PlanPanelImpl({ planState }: { planState: PlanState }) {
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}
-          className="flex w-full items-center justify-between gap-2 border-b border-border/10 px-4 py-2 text-left transition hover:bg-fill-ghost-hover"
+          className="flex w-full items-center justify-between gap-2 border-b border-border/10 px-4 py-2 text-left transition hover:bg-white/5"
         >
           <div className="min-w-0 flex items-center gap-2 overflow-hidden pl-2">
             <span className="shrink-0 font-mono text-sm text-text-secondary">☷</span>

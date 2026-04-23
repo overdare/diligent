@@ -2,7 +2,6 @@
 
 import type { SessionSummary } from "@diligent/protocol";
 import { memo } from "react";
-import { APP_PROJECT_MARK } from "../lib/app-config";
 import { formatRelativeTime } from "../lib/format-time";
 import { Panel } from "./Panel";
 
@@ -25,12 +24,12 @@ function SidebarImpl({
   onOpenThread,
   onDeleteThread,
 }: SidebarProps) {
-  const cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
+  const _cwdShort = cwd ? cwd.replace(/\\/g, "/").split("/").slice(-2).join("/") : "-";
 
   return (
     <Panel className="flex h-full min-h-0 w-[280px] flex-col overflow-hidden border-border/100 bg-surface-default">
       {/* Header */}
-      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5">
+      {/* <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5">
         <div className="min-w-0">
           <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-accent">
             {APP_PROJECT_MARK}
@@ -39,7 +38,7 @@ function SidebarImpl({
             {cwdShort}
           </p>
         </div>
-      </div>
+      </div> */}
 
       {/* Thread list */}
       <div className="flex-1 space-y-2 overflow-y-auto bg-bg-sunken px-2 py-3">

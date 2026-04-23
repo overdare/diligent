@@ -312,7 +312,7 @@ export function InputDock({
   return (
     <div className="relative z-20 bg-surface-dark px-2 pb-2 pt-2">
       <div
-        className={`relative rounded-sm border px-4 py-3 ${hasProvider ? "border-white/10 bg-surface-composer" : "border-danger/30 bg-surface-composer"}${isBusy ? " input-dock-glow" : ""}`}
+        className={`relative rounded-sm border px-4 py-3 ${hasProvider ? "border-white/10 !bg-[#21262C]" : "border-danger/30 !bg-[#21262C]"}${isBusy ? " input-dock-glow" : ""}`}
       >
         {pendingImages.length > 0 ? (
           <div className="mb-3 flex flex-wrap gap-2">
@@ -413,7 +413,7 @@ export function InputDock({
                 onChange={onModelChange}
                 openDirection="up"
                 className="w-[180px]"
-                triggerClassName="border-0 bg-black rounded"
+                triggerClassName="border-0 !bg-black rounded"
                 disabled={isBusy || composerDisabled}
               />
             ) : null}
@@ -426,7 +426,7 @@ export function InputDock({
                 onChange={(value) => onEffortChange(value as ThinkingEffort)}
                 openDirection="up"
                 className="w-[90px]"
-                triggerClassName="border-0 bg-black rounded"
+                triggerClassName="border-0 !bg-black rounded"
                 disabled={isBusy || composerDisabled}
               />
             ) : null}
@@ -469,7 +469,7 @@ export function InputDock({
                   if (!composingRef.current) onSend();
                 }}
                 disabled={!canSend || composerDisabled}
-                className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-fill-active disabled:cursor-not-allowed disabled:opacity-30"
+                className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:!bg-[#BB002F] disabled:cursor-not-allowed disabled:opacity-30"
               >
                 Send
               </button>

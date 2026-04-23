@@ -52,7 +52,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                           onAnswerChange(question.id, opt.label);
                         }}
                         className={`flex w-full items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
-                          checked ? "bg-white/5 text-text" : "text-muted hover:bg-fill-ghost-hover hover:text-text"
+                          checked ? "bg-white/5 text-text" : "text-muted hover:bg-white/[.03] hover:text-text"
                         }`}
                       >
                         <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>

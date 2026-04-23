@@ -546,7 +546,7 @@ export function App() {
               }}
               aria-label="Open knowledge"
               title="Knowledge"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
             >
               <span className="block leading-none">✦</span>
             </button>
