@@ -165,9 +165,13 @@ describe("createVertexAccessTokenBinding", () => {
       expect(spawnMock).toHaveBeenCalledTimes(2);
       expect(spawnMock.mock.calls[0]?.[0]).toEqual(["where.exe", "gcloud.cmd"]);
       const commandArgs = spawnMock.mock.calls[1]?.[0];
-      expect(commandArgs?.length).toBe(4);
-      expect(commandArgs?.[0]).toContain("gcloud.cmd");
-      expect(commandArgs?.slice(1)).toEqual(["auth", "application-default", "print-access-token"]);
+      expect(commandArgs).toEqual([
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "gcloud.cmd auth application-default print-access-token",
+      ]);
       expect(binding.getToken()).toBe("ya29.windows-token");
     } finally {
       Object.defineProperty(process, "platform", {

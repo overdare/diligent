@@ -1711,7 +1711,7 @@ describe("DiligentAppServer", () => {
     };
     expect(result.errors?.length).toBe(1);
     expect(result.errors?.[0]?.error.message).toContain("invalid model for provider");
-    expect(result.errors?.[0]?.fatal).toBe(true);
+    expect(result.errors?.[0]?.fatal).toBe(false);
     expect(result.errors?.[0]?.turnId).toBeDefined();
   });
 
