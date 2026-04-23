@@ -114,6 +114,15 @@ describe("/provider command", () => {
     expect(prompts).toEqual([{ title: "openai API Key" }]);
   });
 
+  test("set zai opens inline prompt", async () => {
+    const pm = new ProviderManager({});
+    const { ctx, prompts } = createMockContext(pm);
+
+    await providerCommand.handler("set zai", ctx);
+
+    expect(prompts).toEqual([{ title: "zai API Key" }]);
+  });
+
   test("set without provider opens inline provider picker", async () => {
     const pm = new ProviderManager({});
     const { ctx, picks } = createMockContext(pm);

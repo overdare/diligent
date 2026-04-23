@@ -14,7 +14,7 @@ import {
 } from "./ovdrjm-utils.ts";
 
 // ---------------------------------------------------------------------------
-// Helpers — mirrored from packages/runtime/src/tools/edit.ts
+// Helpers — line-oriented matching in the style of apply_patch's deriveNewContent.
 // ---------------------------------------------------------------------------
 
 interface SingleEdit {
@@ -23,25 +23,7 @@ interface SingleEdit {
   replace_all: boolean;
 }
 
-type MatchMode = "exact" | "trimEnd" | "trim" | "unicode";
-
-interface MatchRange {
-  start: number;
-  end: number;
-  mode: MatchMode;
-}
-
-/** Count non-overlapping occurrences of `needle` in `haystack`. */
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  let count = 0;
-  let pos = 0;
-  while ((pos = haystack.indexOf(needle, pos)) !== -1) {
-    count++;
-    pos += needle.length;
-  }
-  return count;
-}
+type MatchMode = "trimEnd" | "trim" | "unicode";
 
 function normalizeUnicode(value: string): string {
   return value
@@ -51,18 +33,8 @@ function normalizeUnicode(value: string): string {
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
 }
 
-function splitPreservingNewlines(value: string): string[] {
-  const parts = value.match(/.*?(?:\r\n|\n|\r|$)/g) ?? [];
-  if (parts.length > 0 && parts[parts.length - 1] === "") {
-    parts.pop();
-  }
-  return parts;
-}
-
 function compareLines(mode: MatchMode, actual: string, expected: string): boolean {
   switch (mode) {
-    case "exact":
-      return actual === expected;
     case "trimEnd":
       return actual.trimEnd() === expected.trimEnd();
     case "trim":
@@ -72,36 +44,35 @@ function compareLines(mode: MatchMode, actual: string, expected: string): boolea
   }
 }
 
-function findMatchRanges(content: string, search: string): MatchRange[] {
+/**
+ * Split into lines WITHOUT embedded terminators, remembering whether the
+ * original ended with a newline so reassembly can reproduce it.
+ */
+function splitIntoLines(content: string): { lines: string[]; hasTrailingNewline: boolean } {
+  if (content === "") return { lines: [], hasTrailingNewline: false };
+  const parts = content.split(/\r\n|\r|\n/);
+  const hasTrailingNewline = parts[parts.length - 1] === "";
+  if (hasTrailingNewline) parts.pop();
+  return { lines: parts, hasTrailingNewline };
+}
+
+function findExactMatches(content: string, search: string): Array<{ start: number; end: number }> {
   if (search.length === 0) return [];
-
-  const exactCount = countOccurrences(content, search);
-  if (exactCount > 0) {
-    const matches: MatchRange[] = [];
-    let pos = 0;
-    while ((pos = content.indexOf(search, pos)) !== -1) {
-      matches.push({ start: pos, end: pos + search.length, mode: "exact" });
-      pos += search.length;
-    }
-    return matches;
+  const matches: Array<{ start: number; end: number }> = [];
+  let pos = 0;
+  while ((pos = content.indexOf(search, pos)) !== -1) {
+    matches.push({ start: pos, end: pos + search.length });
+    pos += search.length;
   }
+  return matches;
+}
 
-  const contentLines = splitPreservingNewlines(content);
-  const searchLines = splitPreservingNewlines(search);
-  if (contentLines.length === 0 || searchLines.length === 0 || searchLines.length > contentLines.length) {
-    return [];
-  }
-
-  const offsets: number[] = [];
-  let offset = 0;
-  for (const line of contentLines) {
-    offsets.push(offset);
-    offset += line.length;
-  }
+function findLineMatches(contentLines: string[], searchLines: string[]): Array<{ startLine: number; endLine: number }> {
+  if (searchLines.length === 0 || searchLines.length > contentLines.length) return [];
 
   const modes: MatchMode[] = ["trimEnd", "trim", "unicode"];
   for (const mode of modes) {
-    const matches: MatchRange[] = [];
+    const matches: Array<{ startLine: number; endLine: number }> = [];
     for (let index = 0; index <= contentLines.length - searchLines.length; index++) {
       let matched = true;
       for (let lineIndex = 0; lineIndex < searchLines.length; lineIndex++) {
@@ -110,21 +81,22 @@ function findMatchRanges(content: string, search: string): MatchRange[] {
           break;
         }
       }
-      if (!matched) continue;
-      const start = offsets[index];
-      const lastLineIndex = index + searchLines.length - 1;
-      const end = offsets[lastLineIndex] + contentLines[lastLineIndex].length;
-      matches.push({ start, end, mode });
+      if (matched) matches.push({ startLine: index, endLine: index + searchLines.length });
     }
     if (matches.length > 0) return matches;
   }
-
   return [];
 }
 
 /**
  * Validate and apply a single edit to `content`, returning the new content and
  * the number of replacements made. Throws on validation failure.
+ *
+ * Two matching strategies:
+ *   1. Character-level exact substring (handles within-line edits).
+ *   2. Line-level fuzzy match (whitespace / Unicode tolerant). Operates on
+ *      pure-line arrays so replacements can never accidentally eat a line
+ *      terminator.
  */
 function applyEdit(content: string, edit: SingleEdit): { result: string; count: number } {
   const { old_string, new_string, replace_all } = edit;
@@ -133,37 +105,45 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
     throw new Error("old_string and new_string must differ");
   }
 
-  const matches = findMatchRanges(content, old_string);
-  const occurrences = matches.length;
-
-  if (replace_all) {
-    if (occurrences === 0) {
-      throw new Error("old_string not found in file");
+  const exact = findExactMatches(content, old_string);
+  if (exact.length > 0) {
+    if (!replace_all && exact.length > 1) {
+      throw new Error("old_string is not unique, provide more context or use replace_all");
     }
-    let result = "";
-    let lastIndex = 0;
-    for (const match of matches) {
-      result += content.slice(lastIndex, match.start);
-      result += new_string;
-      lastIndex = match.end;
+    const targets = replace_all ? exact : [exact[0]];
+    let out = "";
+    let last = 0;
+    for (const match of targets) {
+      out += content.slice(last, match.start);
+      out += new_string;
+      last = match.end;
     }
-    result += content.slice(lastIndex);
-    return { result, count: occurrences };
+    out += content.slice(last);
+    return { result: out, count: targets.length };
   }
 
-  // Unique match mode
-  if (occurrences === 0) {
+  const { lines: contentLines, hasTrailingNewline } = splitIntoLines(content);
+  const { lines: searchLines } = splitIntoLines(old_string);
+  const { lines: replacementLines } = splitIntoLines(new_string);
+
+  const lineMatches = findLineMatches(contentLines, searchLines);
+  if (lineMatches.length === 0) {
     throw new Error("old_string not found in file");
   }
-  if (occurrences > 1) {
+  if (!replace_all && lineMatches.length > 1) {
     throw new Error("old_string is not unique, provide more context or use replace_all");
   }
 
-  const match = matches[0];
-  return {
-    result: `${content.slice(0, match.start)}${new_string}${content.slice(match.end)}`,
-    count: 1,
-  };
+  const targets = replace_all ? lineMatches : [lineMatches[0]];
+  const next = [...contentLines];
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const target = targets[i];
+    next.splice(target.startLine, target.endLine - target.startLine, ...replacementLines);
+  }
+
+  const joined = next.join("\n");
+  const result = hasTrailingNewline ? `${joined}\n` : joined;
+  return { result, count: targets.length };
 }
 
 // ---------------------------------------------------------------------------

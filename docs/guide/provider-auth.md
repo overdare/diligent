@@ -18,6 +18,7 @@ Supported providers in the protocol/runtime are:
 - `chatgpt`
 - `gemini`
 - `vertex`
+- `zai`
 
 ## Auth storage
 
@@ -35,6 +36,7 @@ Current persisted shape:
   "openai": "sk-...", // optional
   "chatgpt": "...", // optional, legacy/plain-key slot
   "gemini": "AIza...", // optional
+  "zai": "zai_...", // optional
   "chatgpt_oauth": {
     "access_token": "...",
     "refresh_token": "...",
@@ -58,8 +60,21 @@ The auth store currently supports plain API keys for:
 - `anthropic`
 - `openai`
 - `gemini`
+- `zai`
 
 Vertex uses runtime-managed access-token auth instead of a long-lived API key.
+
+## z.ai API-key flow
+
+z.ai support uses the `zai` provider and currently targets the z.ai OpenAI-compatible Chat Completions endpoint for `glm-*` models.
+
+Practical notes:
+
+- configure with `auth/set` or `~/.diligent/auth.jsonc`
+- runtime stores the plain API key in the same auth store as other API-key providers
+- the default built-in model for this provider is `glm-5.1`
+- the default base URL is `https://api.z.ai/api/coding/paas/v4`
+- environment fallback is supported through `ZAI_API_KEY`
 
 ## Vertex AI access-token flow
 

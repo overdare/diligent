@@ -209,4 +209,32 @@ describe("loadRuntimeConfig", () => {
       process.env.USERPROFILE = originalUserProfile;
     }
   });
+
+  it("loads zai auth from auth.jsonc and selects glm-5.1 when no model is configured", async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-zai-"));
+    const paths = makePaths(tmpRoot);
+    const isolatedHome = join(tmpRoot, ".isolated-home");
+    await mkdir(paths.sessions, { recursive: true });
+    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.skills, { recursive: true });
+    await mkdir(paths.images, { recursive: true });
+    await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
+    await writeFile(join(isolatedHome, ".diligent", "auth.jsonc"), JSON.stringify({ zai: "zai-test-key" }));
+    await writeFile(join(tmpRoot, ".diligent", "config.jsonc"), JSON.stringify({ provider: { zai: {} } }));
+
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    try {
+      const config = await loadRuntimeConfig(tmpRoot, paths);
+      expect(config.providerManager.hasKeyFor("zai")).toBe(true);
+      expect(config.providerManager.getMaskedKey("zai")).toBe("zai-tes...");
+      expect(config.model?.provider).toBe("zai");
+      expect(config.model?.id).toBe("glm-5.1");
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
 });

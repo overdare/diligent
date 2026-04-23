@@ -13,7 +13,9 @@ The edit will FAIL if old_string is not unique in the script source.
 Provide more surrounding context to make it unique, or set replace_all to true.
 Use replace_all for renaming variables or replacing repeated patterns across the script.
 
-If an edit fails, call script_read to check the current source before retrying.`;
+If an edit fails, call script_read to check the current source before retrying.
+
+When a single file needs multiple independent edits, issue all of them as parallel tool calls in one batch instead of one-at-a-time round trips.`;
 
 export const params = z.object({
   targetGuid: z.string().describe("GUID of the script to edit"),

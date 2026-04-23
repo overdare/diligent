@@ -79,11 +79,12 @@ describe("loadAuthStore", () => {
 
   test("loads valid auth keys", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai: "sk-456" }));
+    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai: "sk-456", zai: "zai-789" }));
 
     const result = await loadAuthStore(path);
     expect(result.anthropic).toBe("sk-ant-123");
     expect(result.openai).toBe("sk-456");
+    expect(result.zai).toBe("zai-789");
     expect(result.gemini).toBeUndefined();
     expect(result.vertex).toBeUndefined();
   });
@@ -176,6 +177,15 @@ describe("saveAuthKey", () => {
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant-existing");
     expect(content.openai).toBe("sk-openai-new");
+  });
+
+  test("persists zai auth entries", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+
+    await saveAuthKey("zai", "zai-test-key", path);
+
+    const content = JSON.parse(await Bun.file(path).text());
+    expect(content.zai).toBe("zai-test-key");
   });
 
   test("persists vertex auth entries", async () => {

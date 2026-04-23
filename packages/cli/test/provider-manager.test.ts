@@ -17,6 +17,7 @@ describe("ProviderManager", () => {
     expect(pm.hasKeyFor("anthropic")).toBe(false);
     expect(pm.hasKeyFor("openai")).toBe(false);
     expect(pm.hasKeyFor("chatgpt")).toBe(false);
+    expect(pm.hasKeyFor("zai")).toBe(false);
   });
 
   test("setApiKey updates the key and invalidates cache", () => {
@@ -70,7 +71,7 @@ describe("ProviderManager", () => {
   });
 
   test("PROVIDER_NAMES constant contains all providers", () => {
-    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai", "chatgpt", "gemini", "vertex"]);
+    expect(PROVIDER_NAMES).toEqual(["anthropic", "openai", "chatgpt", "gemini", "vertex", "zai"]);
   });
 
   test("DEFAULT_MODELS has entries for all providers", () => {
@@ -86,6 +87,17 @@ describe("ProviderManager", () => {
     pm.setApiKey("openai", "sk-openai-new");
     expect(pm.hasKeyFor("openai")).toBe(true);
     expect(pm.getApiKey("openai")).toBe("sk-openai-new");
+  });
+
+  test("zai provider can be configured like other api-key providers", () => {
+    const pm = new ProviderManager({});
+    expect(pm.hasKeyFor("zai")).toBe(false);
+
+    pm.setApiKey("zai", "zai-test-key");
+
+    expect(pm.hasKeyFor("zai")).toBe(true);
+    expect(pm.getApiKey("zai")).toBe("zai-test-key");
+    expect(pm.getConfiguredProviders()).toEqual(["zai"]);
   });
 
   test("empty string key is treated as no key", () => {

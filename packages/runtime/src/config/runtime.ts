@@ -60,7 +60,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   const authKeys = await loadAuthStore();
   for (const [provider, key] of Object.entries(authKeys)) {
     if (typeof key === "string" && key) {
-      providerManager.setApiKey(provider as "anthropic" | "openai" | "gemini" | "vertex", key);
+      providerManager.setApiKey(provider as "anthropic" | "openai" | "gemini" | "vertex" | "zai", key);
     }
   }
 
@@ -85,12 +85,12 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   // Resolve model: use config.model if set, otherwise pick first available from configured providers
   const configured = providerManager.getConfiguredProviders();
   const firstAvailable = KNOWN_MODELS.find((m) =>
-    configured.includes(m.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex"),
+    configured.includes(m.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex" | "zai"),
   );
   const configuredModel = config.model ? resolveModel(config.model) : undefined;
   const modelId =
     configuredModel &&
-    configured.includes(configuredModel.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex")
+    configured.includes(configuredModel.provider as "anthropic" | "openai" | "chatgpt" | "gemini" | "vertex" | "zai")
       ? configuredModel.id
       : (firstAvailable?.id ?? config.model);
   const model = modelId ? resolveModel(modelId) : undefined;

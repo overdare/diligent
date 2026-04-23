@@ -30,6 +30,12 @@ export const DiligentConfigSchema = z
             baseUrl: z.string().url().optional(),
           })
           .optional(),
+        zai: z
+          .object({
+            apiKey: z.string().optional(),
+            baseUrl: z.string().url().optional(),
+          })
+          .optional(),
         vertex: z
           .object({
             project: z.string().min(1),

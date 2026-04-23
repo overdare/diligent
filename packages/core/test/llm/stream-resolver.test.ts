@@ -6,6 +6,7 @@ const ORIGINAL_ENV = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  ZAI_API_KEY: process.env.ZAI_API_KEY,
 };
 
 function restoreEnv(): void {
@@ -17,6 +18,9 @@ function restoreEnv(): void {
 
   if (ORIGINAL_ENV.GEMINI_API_KEY === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = ORIGINAL_ENV.GEMINI_API_KEY;
+
+  if (ORIGINAL_ENV.ZAI_API_KEY === undefined) delete process.env.ZAI_API_KEY;
+  else process.env.ZAI_API_KEY = ORIGINAL_ENV.ZAI_API_KEY;
 }
 
 afterEach(() => {
@@ -41,5 +45,10 @@ describe("resolveStream", () => {
     expect(() => resolveStream("chatgpt")).toThrow(
       'No static stream resolver for provider "chatgpt". Pass llmMsgStreamFn via AgentOptions (e.g. ProviderManager.createProxyStream for OAuth providers).',
     );
+  });
+
+  test("returns a static zai stream factory", () => {
+    process.env.ZAI_API_KEY = "zai-test";
+    expect(typeof resolveStream("zai")).toBe("function");
   });
 });

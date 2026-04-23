@@ -120,6 +120,16 @@ export const KNOWN_MODELS: ModelDefinition[] = [
     aliases: ["vertex-gemma", "vertex-gemma-4", "vertex-gemma-4-26b", "gemma-4-26b-vertex", "gemma-vertex"],
     modelClass: "general",
   },
+  {
+    id: "glm-5.1",
+    provider: "zai",
+    contextWindow: 200_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: false,
+    supportsVision: false,
+    aliases: ["glm", "glm-5", "glm5.1"],
+    modelClass: "general",
+  },
   // OpenAI — reasoning models: effort mapped to OpenAI's low/medium/high
   // Note: gpt-5.4 supports up to 1M context; capped at 600k to limit cost
   {
@@ -315,6 +325,15 @@ export function resolveModel(modelId: string): Model {
       provider: "vertex",
       contextWindow: 256_000,
       maxOutputTokens: 8_192,
+      supportsThinking: false,
+    };
+  }
+  if (modelId.startsWith("glm-")) {
+    return {
+      id: modelId,
+      provider: "zai",
+      contextWindow: 200_000,
+      maxOutputTokens: 128_000,
       supportsThinking: false,
     };
   }

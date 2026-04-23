@@ -4,6 +4,7 @@ import { createGeminiStream } from "./provider/gemini";
 import type { NativeCompactionLookup } from "./provider/native-compaction";
 import { createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
 import { createVertexStream } from "./provider/vertex";
+import { createZaiStream } from "./provider/zai";
 import type { ProviderName, StreamFunction } from "./types";
 
 export interface ExternalProviderAuth {
@@ -21,6 +22,7 @@ export interface ProviderManagerConfig {
     chatgpt?: { baseUrl?: string };
     gemini?: { baseUrl?: string };
     vertex?: { baseUrl?: string };
+    zai?: { baseUrl?: string };
   };
   auth?: Partial<Record<ProviderName, ExternalProviderAuth>>;
 }
@@ -29,7 +31,7 @@ export type { ProviderName };
 
 export const DEFAULT_PROVIDER: ProviderName = "anthropic";
 
-export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "chatgpt", "gemini", "vertex"];
+export const PROVIDER_NAMES: ProviderName[] = ["anthropic", "openai", "chatgpt", "gemini", "vertex", "zai"];
 
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   anthropic: "claude-sonnet-4-6",
@@ -37,6 +39,7 @@ export const DEFAULT_MODELS: Record<ProviderName, string> = {
   chatgpt: "chatgpt-5.3-codex",
   gemini: "gemini-2.5-flash",
   vertex: "vertex-gemma-4-26b-it",
+  zai: "glm-5.1",
 };
 
 export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPlaceholder: string }> = {
@@ -48,6 +51,7 @@ export const PROVIDER_HINTS: Record<ProviderName, { apiKeyUrl: string; apiKeyPla
     apiKeyUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs/migrate/openai/overview",
     apiKeyPlaceholder: "Google Cloud access token",
   },
+  zai: { apiKeyUrl: "https://platform.z.ai/console/api-keys", apiKeyPlaceholder: "zai_..." },
 };
 
 const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) => StreamFunction> = {
@@ -58,6 +62,7 @@ const PROVIDER_FACTORIES: Record<ProviderName, (key: string, baseUrl?: string) =
   },
   gemini: createGeminiStream,
   vertex: (token: string, baseUrl?: string) => createVertexStream(() => token, { baseUrl }),
+  zai: createZaiStream,
 };
 
 class StreamFactoryCache {
@@ -171,6 +176,7 @@ export class ProviderManager {
     this.baseUrls.chatgpt = config.provider?.chatgpt?.baseUrl;
     this.baseUrls.gemini = config.provider?.gemini?.baseUrl;
     this.baseUrls.vertex = config.provider?.vertex?.baseUrl;
+    this.baseUrls.zai = config.provider?.zai?.baseUrl;
     this.authState = new AuthStateManager(config.auth);
   }
 
