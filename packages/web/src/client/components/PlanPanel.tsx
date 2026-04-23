@@ -23,8 +23,8 @@ function PlanPanelImpl({ planState }: { planState: PlanState }) {
   }
 
   return (
-    <div className="shrink-0 border-t border-border/10 bg-surface-dark px-6 pt-3 pb-1.5">
-      <div className="mx-auto w-full max-w-[900px] overflow-hidden rounded-[2rem] border border-border/100 bg-surface-default shadow-panel">
+    <div className="shrink-0 border-t border-border/10 bg-surface-dark px-6 pt-3 pb-0">
+      <div className="mx-auto w-full max-w-[900px] overflow-hidden rounded-xl border border-border/100 bg-surface-default">
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}
