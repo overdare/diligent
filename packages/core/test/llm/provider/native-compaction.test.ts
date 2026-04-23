@@ -3,13 +3,8 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createAnthropicNativeCompaction } from "../../../src/llm/provider/anthropic";
 import { createChatGPTNativeCompaction } from "../../../src/llm/provider/chatgpt";
 import { createOpenAINativeCompaction } from "../../../src/llm/provider/openai";
-import {
-  buildResponsesRequestBody,
-  describeCompactionPayload,
-  extractCompactionSummary,
-  extractCompactionSummaryItem,
-  toResponseInputItems,
-} from "../../../src/llm/provider/openai-shared";
+import { buildResponsesRequestBody, toResponseInputItems } from "../../../src/llm/provider/openai-responses";
+import { describeCompactionPayload, extractCompactionSummary, extractCompactionSummaryItem } from "../../../src/llm/provider/openai-shared";
 import type { Model } from "../../../src/llm/types";
 
 const originalFetch = globalThis.fetch;

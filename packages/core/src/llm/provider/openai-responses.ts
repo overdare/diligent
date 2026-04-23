@@ -1,0 +1,250 @@
+// @summary Responses API message conversion, tool building, and request body construction for OpenAI-format providers
+import type { ResponseInputItem, ResponseInputMessageContentList } from "openai/resources/responses/responses";
+import type { Message, StopReason, Usage } from "../../types";
+import { materializeUserContentBlocks } from "../image-io";
+import type { FunctionToolDefinition, ProviderBuiltinToolDefinition, ToolDefinition } from "../types";
+
+export type ResponsesReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+
+export async function convertMessages(messages: Message[], cwd?: string): Promise<ResponseInputItem[]> {
+  const result: ResponseInputItem[] = [];
+  const pendingCalls = new Map<string, number>();
+
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      if (typeof msg.content === "string") {
+        result.push({ type: "message", role: "user", content: [{ type: "input_text", text: msg.content }] });
+      } else {
+        const blocks = await materializeUserContentBlocks(msg.content, { cwd });
+        const content: ResponseInputMessageContentList = [];
+        for (const block of blocks) {
+          if (block.type === "text") {
+            content.push({ type: "input_text", text: block.text });
+          } else if (block.type === "image") {
+            content.push({
+              type: "input_image",
+              image_url: `data:${block.source.media_type};base64,${block.source.data}`,
+              detail: "auto",
+            });
+          }
+        }
+        result.push({ type: "message", role: "user", content });
+      }
+    } else if (msg.role === "assistant") {
+      for (const block of msg.content) {
+        if (block.type === "text") {
+          result.push({ role: "assistant", content: block.text });
+        } else if (block.type === "tool_call") {
+          pendingCalls.set(block.id, result.length);
+          result.push({
+            type: "function_call",
+            call_id: block.id,
+            name: block.name,
+            arguments: JSON.stringify(block.input),
+          });
+        }
+      }
+    } else if (msg.role === "tool_result") {
+      pendingCalls.delete(msg.toolCallId);
+      result.push({
+        type: "function_call_output",
+        call_id: msg.toolCallId,
+        output: msg.output,
+      });
+    }
+  }
+
+  if (pendingCalls.size > 0) {
+    const injections = Array.from(pendingCalls.entries())
+      .map(([callId, idx]) => ({
+        idx: idx + 1,
+        item: { type: "function_call_output" as const, call_id: callId, output: "(interrupted)" },
+      }))
+      .sort((a, b) => b.idx - a.idx);
+    for (const { idx, item } of injections) {
+      result.splice(idx, 0, item);
+    }
+  }
+
+  return result;
+}
+
+export async function toResponseInputItems(input: {
+  messages: Message[];
+  cwd?: string;
+  compactionSummary?: Record<string, unknown>;
+}): Promise<ResponseInputItem[]> {
+  const convertedMessages = await convertMessages(input.messages, input.cwd);
+  if (input.compactionSummary) {
+    return [input.compactionSummary as unknown as ResponseInputItem, ...convertedMessages];
+  }
+  return convertedMessages;
+}
+
+export function mapStopReason(status: string | undefined): StopReason {
+  switch (status) {
+    case "completed":
+      return "end_turn";
+    case "incomplete":
+      return "max_tokens";
+    case "failed":
+      return "error";
+    case "cancelled":
+      return "aborted";
+    default:
+      return "end_turn";
+  }
+}
+
+export function toResponsesReasoningEffort(
+  effort: "none" | "low" | "medium" | "high" | "max",
+): ResponsesReasoningEffort {
+  if (effort === "max") return "xhigh";
+  return effort;
+}
+
+type OpenAIFunctionTool = {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  strict?: boolean;
+};
+
+type OpenAIWebSearchTool = {
+  type: "web_search" | "web_search_preview";
+  filters?: { allowed_domains?: string[] };
+  search_context_size?: "low" | "medium" | "high";
+  user_location?: {
+    type: "approximate";
+    city?: string;
+    country?: string;
+    region?: string;
+    timezone?: string;
+  };
+};
+
+export type OpenAIResponsesTool = OpenAIFunctionTool | OpenAIWebSearchTool;
+
+function mapContextSize(maxContentTokens?: number): OpenAIWebSearchTool["search_context_size"] {
+  if (maxContentTokens === undefined) return undefined;
+  if (maxContentTokens <= 2_000) return "low";
+  if (maxContentTokens <= 8_000) return "medium";
+  return "high";
+}
+
+function mergeWebSearchTools(tools: ProviderBuiltinToolDefinition[]): OpenAIWebSearchTool | undefined {
+  if (tools.length === 0) return undefined;
+
+  const allowedDomains = Array.from(
+    new Set(tools.flatMap((tool) => tool.options?.allowedDomains ?? []).filter((value) => value.length > 0)),
+  );
+  const contextSizes = tools
+    .map((tool) => mapContextSize(tool.options?.maxContentTokens))
+    .filter((value): value is "low" | "medium" | "high" => value !== undefined);
+  const userLocation = tools.map((tool) => tool.options?.userLocation).find((value) => value !== undefined);
+
+  return {
+    type: "web_search",
+    ...(allowedDomains.length > 0 ? { filters: { allowed_domains: allowedDomains } } : {}),
+    ...(contextSizes.includes("high")
+      ? { search_context_size: "high" as const }
+      : contextSizes.includes("medium")
+        ? { search_context_size: "medium" as const }
+        : contextSizes.includes("low")
+          ? { search_context_size: "low" as const }
+          : {}),
+    ...(userLocation ? { user_location: userLocation } : {}),
+  };
+}
+
+export function buildTools(tools: ToolDefinition[], strict?: boolean): OpenAIResponsesTool[] {
+  const functionTools: OpenAIFunctionTool[] = tools.flatMap((tool) => {
+    if (tool.kind !== "function") return [];
+    const t: FunctionToolDefinition = tool;
+    return [
+      {
+        type: "function" as const,
+        name: t.name,
+        description: t.description,
+        parameters: { type: "object", ...t.inputSchema },
+        ...(strict !== undefined && { strict }),
+      },
+    ];
+  });
+
+  const webTool = mergeWebSearchTools(
+    tools.filter((tool): tool is ProviderBuiltinToolDefinition => tool.kind === "provider_builtin"),
+  );
+
+  return webTool ? [...functionTools, webTool] : functionTools;
+}
+
+export async function buildResponsesRequestBody(input: {
+  model: string;
+  messages: Message[];
+  cwd?: string;
+  compactionSummary?: Record<string, unknown>;
+  systemInstructions?: string;
+  tools?: ToolDefinition[];
+  sessionId?: string;
+  maxTokens?: number;
+  temperature?: number;
+  useReasoning?: boolean;
+  effort?: "none" | "low" | "medium" | "high" | "max";
+  store?: boolean;
+  promptCacheRetention?: string;
+  strictTools?: boolean;
+}): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = {
+    model: input.model,
+    stream: true,
+    input: await toResponseInputItems({
+      messages: input.messages,
+      cwd: input.cwd,
+      compactionSummary: input.compactionSummary,
+    }),
+  };
+  if (input.systemInstructions) body.instructions = input.systemInstructions;
+  if (input.sessionId) body.prompt_cache_key = input.sessionId;
+  if (input.promptCacheRetention) body.prompt_cache_retention = input.promptCacheRetention;
+  if (input.store !== undefined) body.store = input.store;
+  if (input.tools && input.tools.length > 0) {
+    body.tools = buildTools(input.tools, input.strictTools);
+  }
+  if (input.maxTokens !== undefined) body.max_output_tokens = input.maxTokens;
+  if (input.temperature !== undefined) body.temperature = input.temperature;
+  if (input.useReasoning && input.effort) {
+    body.reasoning = { effort: toResponsesReasoningEffort(input.effort), summary: "auto" };
+    body.include = ["reasoning.encrypted_content"];
+  }
+  if (input.tools?.some((tool) => tool.kind === "provider_builtin")) {
+    const existing = Array.isArray(body.include) ? body.include : [];
+    body.include = [...new Set([...existing, "web_search_call.action.sources"])];
+  }
+  return body;
+}
+
+export function isContextOverflow(message: string): boolean {
+  const patterns = [/maximum context length/i, /context_length_exceeded/i, /too many tokens/i, /exceeds the model/i];
+  return patterns.some((p) => p.test(message));
+}
+
+export function mapUsage(
+  usage:
+    | {
+        input_tokens: number;
+        output_tokens: number;
+        input_tokens_details?: { cached_tokens?: number };
+        output_tokens_details?: { reasoning_tokens?: number };
+      }
+    | undefined,
+): Usage {
+  const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
+  return {
+    inputTokens: (usage?.input_tokens ?? 0) - cachedTokens,
+    outputTokens: usage?.output_tokens ?? 0,
+    cacheReadTokens: cachedTokens,
+    cacheWriteTokens: 0,
+  };
+}

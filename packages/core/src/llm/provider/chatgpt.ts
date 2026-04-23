@@ -7,14 +7,9 @@ import { flattenSections } from "../system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
-import {
-  buildResponsesRequestBody,
-  describeCompactionPayload,
-  extractCompactionSummary,
-  extractCompactionSummaryItem,
-  handleResponsesAPIEvents,
-  toResponseInputItems,
-} from "./openai-shared";
+import { handleResponsesAPIEvents } from "./openai-sse";
+import { buildResponsesRequestBody, toResponseInputItems } from "./openai-responses";
+import { describeCompactionPayload, extractCompactionSummary, extractCompactionSummaryItem } from "./openai-shared";
 
 const CHATGPT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CHATGPT_COMPACT_URL = "https://chatgpt.com/backend-api/codex/responses/compact";

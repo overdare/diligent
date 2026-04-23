@@ -9,7 +9,7 @@ import {
   buildOpenAICompatibleTools,
   handleChatCompletionsEvents,
 } from "./openai-compatible";
-import { isContextOverflow } from "./openai-shared";
+import { isContextOverflow } from "./openai-responses";
 
 export interface VertexStreamConfig {
   baseUrl?: string;
