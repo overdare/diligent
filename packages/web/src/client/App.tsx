@@ -482,8 +482,8 @@ export function App() {
   );
 
   return (
-    <div className="h-screen bg-bg text-text">
-      <div className="mx-auto flex h-full max-w-[1480px] gap-3 px-3 py-3 lg:px-4 lg:py-4">
+    <div className="h-screen bg-black text-text">
+      <div className="mx-auto flex h-full max-w-[1480px] gap-1 bg-black px-3 py-3 lg:px-4 lg:py-4">
         {/* Sidebar — slides in/out */}
         <div
           className="shrink-0 overflow-hidden transition-[width] duration-200"
@@ -523,7 +523,7 @@ export function App() {
                 <rect x="1" y="11.3" width="14" height="1.2" rx="0.6" fill="currentColor" />
               </svg>
             </button>
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-icon-success)]" aria-hidden="true" />
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-icon-success)]" aria-hidden="true" />
             {(state.threadStatus !== "idle" || state.isCompacting) && (
               <span
                 className={`shrink-0 font-mono text-xs ${state.isCompacting || state.threadStatus === "busy" ? "text-text-success" : "text-danger"}`}
@@ -546,7 +546,7 @@ export function App() {
               }}
               aria-label="Open knowledge"
               title="Knowledge"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-knowledge-backlog/35 bg-knowledge-backlog/12 text-sm text-knowledge-backlog/90 transition hover:border-knowledge-backlog/55 hover:bg-knowledge-backlog/18 hover:text-knowledge-backlog"
             >
               <span className="block leading-none">✦</span>
             </button>
@@ -558,7 +558,7 @@ export function App() {
               }}
               aria-label="Open config"
               title="Config"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/100 bg-surface-light text-sm text-muted transition hover:border-border-strong/100 hover:bg-surface-strong hover:text-text"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border/100 bg-surface-light text-sm text-muted transition hover:border-border-strong/100 hover:bg-surface-strong hover:text-text"
             >
               <span className="block leading-none">⚙</span>
             </button>

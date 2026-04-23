@@ -33,7 +33,7 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
           const customValue = selected.find((value) => !question.options.some((o) => o.label === value)) ?? "";
 
           return (
-            <div key={question.id} className="rounded-xl border border-border/100 bg-surface-dark px-4 py-4">
+            <div key={question.id} className="rounded-lg border border-border/100 bg-[#11131a] px-4 py-4">
               <p className="mb-3 text-sm font-semibold leading-6 text-text">{question.question}</p>
 
               {hasOptions
@@ -51,8 +51,8 @@ export function QuestionCard({ request, answers, onAnswerChange, onSubmit, onCan
                           }
                           onAnswerChange(question.id, opt.label);
                         }}
-                        className={`flex w-full items-baseline gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
-                          checked ? "bg-fill-active text-text" : "text-muted hover:bg-fill-ghost-hover hover:text-text"
+                        className={`flex w-full items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
+                          checked ? "bg-white/5 text-text" : "text-muted hover:bg-white/[.03] hover:text-text"
                         }`}
                       >
                         <span className="w-4 shrink-0 text-right font-mono text-xs opacity-40">{i + 1}</span>

@@ -310,9 +310,9 @@ export function InputDock({
   const canRenderSlashMenuPortal = slashMenuOpen && slashMenuPosition && typeof document !== "undefined";
 
   return (
-    <div className="relative z-20 bg-surface-dark px-6 pb-4 pt-2">
+    <div className="relative z-20 bg-surface-dark px-2 pb-2 pt-2">
       <div
-        className={`relative rounded-xl border px-4 py-3 shadow-panel ${hasProvider ? "border-border/100 bg-surface-default" : "border-danger/30 bg-surface-default"}${isBusy ? " input-dock-glow" : ""}`}
+        className={`relative rounded-sm border px-4 py-3 ${hasProvider ? "border-white/10 !bg-[#21262C]" : "border-danger/30 !bg-[#21262C]"}${isBusy ? " input-dock-glow" : ""}`}
       >
         {pendingImages.length > 0 ? (
           <div className="mb-3 flex flex-wrap gap-2">
@@ -350,7 +350,7 @@ export function InputDock({
         <div ref={slashMenuRef} className="relative flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <TextArea
-              className="min-h-[52px] border-0 bg-transparent px-0 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
+              className="min-h-[52px] border-0 bg-transparent !px-1 py-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent"
               aria-label={isBusy ? "Steering input" : "Message input"}
               placeholder={
                 isBusy ? "Steer the agent…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"
@@ -395,10 +395,10 @@ export function InputDock({
                 aria-expanded={isPlusMenuOpen}
                 onClick={togglePlusMenu}
                 disabled={composerDisabled}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
+                className={`inline-flex h-7 w-7 items-center justify-center rounded border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text/10 ${
                   isPlusMenuOpen
                     ? "border-border/100 bg-fill-secondary text-text"
-                    : "border-transparent bg-transparent text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
+                    : "border-transparent bg-surface-light text-muted/80 hover:border-border/100 hover:bg-fill-ghost-hover hover:text-text"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 +
@@ -413,6 +413,7 @@ export function InputDock({
                 onChange={onModelChange}
                 openDirection="up"
                 className="w-[180px]"
+                triggerClassName="border-0 !bg-black rounded"
                 disabled={isBusy || composerDisabled}
               />
             ) : null}
@@ -425,6 +426,7 @@ export function InputDock({
                 onChange={(value) => onEffortChange(value as ThinkingEffort)}
                 openDirection="up"
                 className="w-[90px]"
+                triggerClassName="border-0 !bg-black rounded"
                 disabled={isBusy || composerDisabled}
               />
             ) : null}
@@ -467,7 +469,7 @@ export function InputDock({
                   if (!composingRef.current) onSend();
                 }}
                 disabled={!canSend || composerDisabled}
-                className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-fill-active disabled:cursor-not-allowed disabled:opacity-30"
+                className="rounded-full bg-fill-primary px-3 py-1.5 text-xs font-semibold text-text transition hover:!bg-[#BB002F] disabled:cursor-not-allowed disabled:opacity-30"
               >
                 Send
               </button>
