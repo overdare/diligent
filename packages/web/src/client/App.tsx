@@ -1,17 +1,6 @@
-// @summary Main application orchestrator: state management, RPC lifecycle, and inline prompt handling
+// @summary Main application component: RPC setup and JSX rendering (state managed by useAppState)
 
-import type {
-  KnowledgeEntry,
-  KnowledgeUpdateParams,
-  SkillInfo,
-  ThinkingEffort,
-  ThreadReadResponse,
-  ToolsListResponse,
-  ToolsSetParams,
-  ToolsSetResponse,
-} from "@diligent/protocol";
-import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_REQUEST_METHODS } from "@diligent/protocol";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Button } from "./components/Button";
 import { InputDock } from "./components/InputDock";
 import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
@@ -23,271 +12,72 @@ import { ProviderSettingsModal } from "./components/ProviderSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { SteeringQueuePanel } from "./components/SteeringQueuePanel";
 import { ToolSettingsModal } from "./components/ToolSettingsModal";
-import {
-  type AgentContextItem,
-  createAgentNativeBridge,
-  installAgentNativeBridgeMock,
-} from "./lib/agent-native-bridge";
-import { APP_PROJECT_NAME } from "./lib/app-config";
-import { appReducer, type PendingImage } from "./lib/app-state";
-import { getThreadIdFromUrl } from "./lib/app-utils";
-import { createDesktopNotificationController, readDesktopNotificationsEnabled } from "./lib/desktop-notification";
-import { supportsThinkingNone } from "./lib/model-thinking-helpers";
+import { createAgentNativeBridge, installAgentNativeBridgeMock } from "./lib/agent-native-bridge";
 import { getReconnectAttemptLimit } from "./lib/rpc-client";
-import type { SlashCommand } from "./lib/slash-commands";
-import { buildCommandList } from "./lib/slash-commands";
-import { initialThreadState } from "./lib/thread-store";
-import { useAppActions } from "./lib/use-app-actions";
-import { useAppBootstrap, useAppRpcBindings } from "./lib/use-app-lifecycle";
+import { useAppState } from "./lib/use-app-state";
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
-import { useServerRequests } from "./lib/use-server-requests";
-import { useSteeringQueue } from "./lib/use-steering-queue";
-import { clearDraftThreadInput, DRAFT_INPUT_KEY, useThreadManager } from "./lib/use-thread-manager";
 
 export function App() {
-  useEffect(() => {
-    document.title = APP_PROJECT_NAME;
-  }, []);
-
   const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/rpc`;
   const { rpcRef, connection, reconnectAttempts, retryConnection } = useRpcClient(wsUrl);
   const providerMgr = useProviderManager(rpcRef);
-  const activeThreadIdRef = useRef<string | null>(null);
-  const [state, dispatch] = useReducer(appReducer, initialThreadState);
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  const [cwd, setCwd] = useState<string>("");
-  const cwdRef = useRef<string>("");
-  cwdRef.current = cwd;
-  const modeRef = useRef(state.mode);
-  modeRef.current = state.mode;
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
-  const [isUploadingImages, setIsUploadingImages] = useState(false);
-  const [effort, setEffortState] = useState<ThinkingEffort>("medium");
-  const [showProviderModal, setShowProviderModal] = useState(false);
-  const [showToolModal, setShowToolModal] = useState(false);
-  const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [focusedProvider, setFocusedProvider] = useState<string | null>(null);
-  const [oauthPending, setOauthPending] = useState(false);
-  const [oauthError, setOauthError] = useState<string | null>(null);
-  // Threads needing attention (turn completed, approval/user-input buffered while user is elsewhere)
-  const [attentionThreadIds, setAttentionThreadIds] = useState<Set<string>>(new Set());
-  // Skills received from server at init
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [runtimeVersion, setRuntimeVersion] = useState<string>("");
-  const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
-  const desktopNotificationsRef = useRef(createDesktopNotificationController());
-  const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState(() =>
-    readDesktopNotificationsEnabled(),
-  );
-  // Build full slash command list (builtins + skills)
-  const slashCommands: SlashCommand[] = useMemo(() => buildCommandList(skills), [skills]);
 
-  const markAttention = useCallback((threadId: string) => {
-    setAttentionThreadIds((prev) => {
-      if (prev.has(threadId)) return prev;
-      const next = new Set(prev);
-      next.add(threadId);
-      return next;
-    });
-  }, []);
-
-  const serverRequests = useServerRequests(
-    rpcRef,
-    activeThreadIdRef,
-    markAttention,
-    (requestId, request) => void desktopNotificationsRef.current.notifyForServerRequest(requestId, request),
-  );
-
-  // Keep ref in sync so onConnected closure can read latest activeThreadId
-  activeThreadIdRef.current = state.activeThreadId;
-
-  const clearAttention = useCallback((threadId: string) => {
-    setAttentionThreadIds((prev) => {
-      if (!prev.has(threadId)) return prev;
-      const next = new Set(prev);
-      next.delete(threadId);
-      return next;
-    });
-  }, []);
-
-  const closeModals = useCallback(() => {
-    setShowKnowledgeModal(false);
-    setShowToolModal(false);
-  }, []);
-
-  const threadMgr = useThreadManager({
-    rpcRef,
+  const {
+    state,
     dispatch,
-    activeThreadIdRef,
-    modeRef,
-    applySessionModel: providerMgr.applySessionModel,
-    resetDraftModel: providerMgr.resetDraftModel,
-    setEffortState,
-    activateThreadPrompts: serverRequests.activateThread,
-    clearAttention,
-    closeModals,
-  });
-
-  const loadChildThread = useCallback(
-    async (childThreadId: string): Promise<ThreadReadResponse> => {
-      const cached = childThreadCacheRef.current.get(childThreadId);
-      if (cached) return cached;
-      const rpc = rpcRef.current;
-      if (!rpc) throw new Error("WebSocket is not connected");
-      const response = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId: childThreadId });
-      childThreadCacheRef.current.set(childThreadId, response);
-      return response;
-    },
-    [rpcRef],
-  );
-
-  const startNewThread = threadMgr.startNewThread;
-  const openThread = threadMgr.openThread;
-
-  useEffect(() => {
-    desktopNotificationsRef.current.setEnabled(desktopNotificationsEnabled);
-  }, [desktopNotificationsEnabled]);
-
-  useEffect(() => {
-    void desktopNotificationsRef.current.attachActionHandler((threadId) => {
-      void openThread(threadId);
-    });
-  }, [openThread]);
-
-  // Handle browser back/forward navigation between threads
-  useEffect(() => {
-    const handlePopState = () => {
-      const urlThreadId = getThreadIdFromUrl();
-      if (urlThreadId && urlThreadId !== activeThreadIdRef.current) {
-        void openThread(urlThreadId);
-      }
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [openThread]);
-
-  useEffect(() => {
-    if (!state.toast) return;
-    if (state.toast.kind === "error") {
-      console.error("[diligent]", state.toast.message);
-    }
-    if (state.toast.fatal) return;
-    const id = setTimeout(() => dispatch({ type: "clear_toast" }), 4000);
-    return () => clearTimeout(id);
-  }, [state.toast]);
-
-  const isBusy = state.threadStatus === "busy";
-  const activeInputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-  const activeInput = threadMgr.threadInputs[activeInputKey] ?? "";
-  const activeContextItems = threadMgr.threadContextItems[activeInputKey] ?? [];
-  const setActiveInput = useCallback(
-    (value: string) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.setThreadInputs((prev) => {
-        const next = value.length > 0 ? { ...prev, [inputKey]: value } : { ...prev };
-        if (value.length === 0) delete next[inputKey];
-        return next;
-      });
-    },
-    [state.activeThreadId, threadMgr.setThreadInputs],
-  );
-  const clearThreadInput = useCallback(
-    (threadId: string) => {
-      threadMgr.setThreadInputs((prev) => {
-        if (!(threadId in prev)) return prev;
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    },
-    [threadMgr.setThreadInputs],
-  );
-  const clearDraftInput = useCallback(() => {
-    threadMgr.setThreadInputs((prev) => clearDraftThreadInput(prev));
-  }, [threadMgr.setThreadInputs]);
-  const updateActiveContextItems = useCallback(
-    (items: AgentContextItem[]) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.updateThreadContextItems(inputKey, items);
-    },
-    [state.activeThreadId, threadMgr.updateThreadContextItems],
-  );
-  const removeActiveContextItem = useCallback(
-    (itemKey: string) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.removeThreadContextItem(inputKey, itemKey);
-    },
-    [state.activeThreadId, threadMgr.removeThreadContextItem],
-  );
-  const clearActiveContextItems = useCallback(() => {
-    const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-    threadMgr.clearThreadContextItems(inputKey);
-  }, [state.activeThreadId, threadMgr.clearThreadContextItems]);
-  const clearPendingImages = useCallback(() => {
-    setPendingImages([]);
-  }, []);
-  const canSend =
-    (activeInput.trim().length > 0 || pendingImages.length > 0 || activeContextItems.length > 0) &&
-    !isBusy &&
-    !isUploadingImages;
-  const steeringQueue = useSteeringQueue({
-    rpcRef,
-    stateRef,
-    dispatch,
-    activeThreadId: state.activeThreadId,
-    currentModelRef: providerMgr.currentModelRef,
-    activeInput,
-    pendingImages,
-    isBusy,
-    clearThreadInput,
-    clearPendingImages,
-  });
-
-  useAppRpcBindings({
-    rpcRef,
-    activeThreadIdRef,
-    stateRef,
-    dispatch,
-    refreshThreadList: threadMgr.refreshThreadList,
-    onAccountLoginCompleted: providerMgr.onAccountLoginCompleted,
-    onAccountUpdated: providerMgr.onAccountUpdated,
-    markAttention,
-    onBackgroundNotification: (notification) =>
-      void desktopNotificationsRef.current.notifyForNotification(notification),
-    handleServerRequest: serverRequests.handleServerRequest,
-    steering: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
-      restartFromPendingAbortSteer: steeringQueue.restartFromPendingAbortSteer,
-    },
+    cwd,
+    sidebarOpen,
+    setSidebarOpen,
+    showProviderModal,
+    setShowProviderModal,
+    showToolModal,
+    setShowToolModal,
+    showKnowledgeModal,
+    setShowKnowledgeModal,
+    focusedProvider,
+    setFocusedProvider,
+    oauthPending,
     setOauthPending,
+    oauthError,
     setOauthError,
-  });
+    attentionThreadIds,
+    runtimeVersion,
+    desktopNotificationsEnabled,
+    setDesktopNotificationsEnabled,
+    slashCommands,
+    isBusy,
+    activeInput,
+    activeContextItems,
+    setActiveInput,
+    removeActiveContextItem,
+    clearActiveContextItems,
+    updateActiveContextItems,
+    canSend,
+    supportsVision,
+    supportsThinking,
+    threadTitle,
+    pendingImagePreviews,
+    effort,
+    pendingImages,
+    isUploadingImages,
+    threadMgr,
+    serverRequests,
+    steeringQueue,
+    actions,
+    listTools,
+    saveTools,
+    listKnowledge,
+    updateKnowledge,
+    loadChildThread,
+    handleOpenProviders,
+    handleQuickConnectChatGPT,
+    approvalPrompt,
+    questionPrompt,
+  } = useAppState({ rpcRef, providerMgr, connection, reconnectAttempts });
 
-  useAppBootstrap({
-    connection,
-    rpcRef,
-    activeThreadIdRef,
-    dispatch,
-    setCwd,
-    setEffortState,
-    setSkills,
-    setRuntimeVersion,
-    setInitialModel: providerMgr.setInitialModel,
-    applySessionModel: providerMgr.applySessionModel,
-    refreshThreadList: threadMgr.refreshThreadList,
-    refreshProviders: providerMgr.refreshProviders,
-  });
-
-  const currentModelInfo = providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel);
-  const supportsVision = currentModelInfo?.supportsVision === true;
-  const supportsThinking = currentModelInfo?.supportsThinking === true;
-
-  const confirmDeleteThread = threadMgr.confirmDeleteThread;
-
+  const { startNewThread, openThread, confirmDeleteThread } = threadMgr;
+  const { handleSteer, canSteer } = steeringQueue;
   const {
     handleSend,
     handleInterrupt,
@@ -298,193 +88,31 @@ export function App() {
     handleAddImagesToDock,
     handleRemovePendingImage,
     handleSlashCommand,
-  } = useAppActions({
-    rpcRef,
-    state,
-    stateRef,
-    dispatch,
-    activeInput,
-    activeContextItems,
-    pendingImages,
-    canSend,
-    isUploadingImages,
-    supportsVision,
-    effort,
-    slashCommands,
-    currentModel: providerMgr.currentModel,
-    availableModels: providerMgr.availableModels,
-    currentModelRef: providerMgr.currentModelRef,
-    clearThreadInput,
-    clearDraftInput,
-    clearActiveContextItems,
-    setPendingImages,
-    setIsUploadingImages,
-    setEffortState,
-    changeModel: providerMgr.changeModel,
-    startNewThread,
-    openThread,
-    steeringControl: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
-    },
-    modeRef,
-    cwdRef,
-    applySessionModel: providerMgr.applySessionModel,
-    activateServerThread: threadMgr.activateServerThread,
-    refreshThreadList: threadMgr.refreshThreadList,
-  });
+  } = actions;
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+    if (typeof window === "undefined") return;
     const previousBridge = window.AgentNativeBridge;
-    window.AgentNativeBridge = createAgentNativeBridge({
-      updateContextItems: updateActiveContextItems,
-    });
+    window.AgentNativeBridge = createAgentNativeBridge({ updateContextItems: updateActiveContextItems });
     installAgentNativeBridgeMock(window);
     return () => {
       window.AgentNativeBridge = previousBridge;
     };
   }, [updateActiveContextItems]);
 
-  useEffect(() => {
-    if (effort !== "none") return;
-    if (!currentModelInfo) return;
-    if (supportsThinkingNone(currentModelInfo)) return;
-    setEffortState("medium");
-  }, [effort, currentModelInfo]);
-
-  const listTools = useCallback(async (): Promise<ToolsListResponse> => {
-    const rpc = rpcRef.current;
-    if (!rpc) {
-      throw new Error("WebSocket is not connected");
-    }
-    return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_LIST, {
-      threadId: state.activeThreadId ?? undefined,
-    });
-  }, [rpcRef, state.activeThreadId]);
-
-  const saveTools = useCallback(
-    async (params: ToolsSetParams): Promise<ToolsSetResponse> => {
-      const rpc = rpcRef.current;
-      if (!rpc) {
-        throw new Error("WebSocket is not connected");
-      }
-      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TOOLS_SET, params);
-    },
-    [rpcRef],
-  );
-
-  const listKnowledge = useCallback(
-    async (threadId?: string): Promise<{ data: KnowledgeEntry[] }> => {
-      const rpc = rpcRef.current;
-      if (!rpc) {
-        throw new Error("WebSocket is not connected");
-      }
-      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_LIST, {
-        threadId,
-        limit: 500,
-      });
-    },
-    [rpcRef],
-  );
-
-  const updateKnowledge = useCallback(
-    async (params: KnowledgeUpdateParams): Promise<{ entry?: KnowledgeEntry; deleted?: boolean }> => {
-      const rpc = rpcRef.current;
-      if (!rpc) {
-        throw new Error("WebSocket is not connected");
-      }
-      return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.KNOWLEDGE_UPDATE, params);
-    },
-    [rpcRef],
-  );
-
-  const threadTitle = useMemo(() => {
-    const active = state.threadList.find((t) => t.id === state.activeThreadId);
-    const raw = active?.firstUserMessage ?? state.items.find((i) => i.kind === "user")?.text ?? "";
-    return raw.length > 40 ? `${raw.slice(0, 40)}…` : raw;
-  }, [state.activeThreadId, state.threadList, state.items]);
-
-  const showPlan = state.planState?.steps.some((s) => s.status !== "done");
-
-  const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const retryLimit = getReconnectAttemptLimit();
+  const showConnectionModal = connection === "reconnecting" || (connection === "disconnected" && reconnectAttempts > 0);
   const contextWindow = useMemo(
     () => providerMgr.availableModels.find((m) => m.id === providerMgr.currentModel)?.contextWindow ?? 0,
     [providerMgr.availableModels, providerMgr.currentModel],
   );
   const hasProvider = useMemo(() => providerMgr.providers.some((p) => p.configured), [providerMgr.providers]);
-  const hasResolvedProviderStatus = providerMgr.providerStatusResolved;
-  const effectiveHasProvider = hasProvider || !hasResolvedProviderStatus;
-  const pendingImagePreviews = useMemo(
-    () =>
-      pendingImages.map((image) => ({
-        path: image.path,
-        url: image.webUrl,
-        fileName: image.fileName,
-      })),
-    [pendingImages],
-  );
-  const handleQuestionAnswerChange = useCallback(
-    (id: string, val: string | string[]) => serverRequests.setAnswers((prev) => ({ ...prev, [id]: val })),
-    [serverRequests.setAnswers],
-  );
-  const handleQuestionSubmit = useCallback(
-    () => serverRequests.resolveQuestion(serverRequests.answers),
-    [serverRequests],
-  );
-  const handleQuestionCancel = useCallback(() => serverRequests.resolveQuestion({}), [serverRequests]);
-  const handleOpenProviders = useCallback(() => {
-    setFocusedProvider(null);
-    setShowProviderModal(true);
-  }, []);
-  const handleQuickConnectChatGPT = useCallback(() => {
-    setOauthPending(true);
-    setOauthError(null);
-    void providerMgr.handleOAuthStart("chatgpt").catch((error) => {
-      setOauthPending(false);
-      setOauthError(error instanceof Error ? error.message : "Failed to start OAuth");
-      setFocusedProvider("chatgpt");
-      setShowProviderModal(true);
-    });
-  }, [providerMgr]);
-  const { handleSteer, canSteer } = steeringQueue;
-  const approvalPrompt = useMemo(
-    () =>
-      serverRequests.approvalPrompt?.request.method === DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST
-        ? {
-            request: serverRequests.approvalPrompt.request.params.request,
-            onDecide: serverRequests.resolveApproval,
-          }
-        : null,
-    [serverRequests.approvalPrompt, serverRequests.resolveApproval],
-  );
-  const questionPrompt = useMemo(
-    () =>
-      serverRequests.questionPrompt
-        ? {
-            request: serverRequests.questionPrompt.request,
-            answers: serverRequests.answers,
-            onAnswerChange: handleQuestionAnswerChange,
-            onSubmit: handleQuestionSubmit,
-            onCancel: handleQuestionCancel,
-          }
-        : null,
-    [
-      serverRequests.questionPrompt,
-      serverRequests.answers,
-      handleQuestionAnswerChange,
-      handleQuestionSubmit,
-      handleQuestionCancel,
-    ],
-  );
+  const effectiveHasProvider = hasProvider || !providerMgr.providerStatusResolved;
+  const showPlan = state.planState?.steps.some((s) => s.status !== "done");
 
   return (
     <div className="h-screen bg-black text-text">
       <div className="mx-auto flex h-full max-w-[1480px] gap-1 bg-black px-3 py-3 lg:px-4 lg:py-4">
-        {/* Sidebar — slides in/out */}
         <div
           className="shrink-0 overflow-hidden transition-[width] duration-200"
           style={{ width: sidebarOpen ? 280 : 0 }}
@@ -501,7 +129,6 @@ export function App() {
         </div>
 
         <Panel className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border/100 bg-surface-dark">
-          {/* Title bar */}
           <div className="flex h-16 shrink-0 items-center gap-2 border-b border-border/100 bg-surface-dark px-3">
             <button
               type="button"
@@ -673,7 +300,6 @@ export function App() {
             setOauthPending(true);
             setOauthError(null);
             const result = await providerMgr.handleOAuthStart("chatgpt");
-            // Server opens the browser server-side (works in both regular browser and Tauri)
             return result;
           }}
           onClose={() => {
