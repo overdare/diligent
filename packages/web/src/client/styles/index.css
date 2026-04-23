@@ -26,6 +26,7 @@
 }
 .prose-content p {
   margin: 0 0 0.6rem;
+  color: rgba(191, 199, 208, 1);
 }
 .prose-content p:last-child {
   margin-bottom: 0;

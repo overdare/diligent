@@ -92,12 +92,12 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((open) => !open)}
         className={cn(
-          "inline-flex h-7 w-full items-center justify-between gap-1 rounded-md border border-border/100 bg-surface-dark px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+          "inline-flex h-7 w-full items-center justify-between gap-1 rounded border border-border/100 bg-surface-dark px-2 text-xs text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
           disabled && "cursor-not-allowed opacity-40",
           triggerClassName,
         )}
       >
-        <span className="min-w-0 truncate">{selectedOption?.label ?? value}</span>
+        <span className="min-w-0 truncate text-text">{selectedOption?.label ?? value}</span>
         <span className={cn("text-[10px] leading-none opacity-70 transition-transform", isOpen && "rotate-180")}>
           ▼
         </span>

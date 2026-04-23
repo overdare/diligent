@@ -17,6 +17,7 @@ const config: Config = {
         surface: "rgb(var(--color-surface-rgb) / <alpha-value>)",
         "surface-dark": "rgb(var(--color-bg-surface-dark-rgb) / <alpha-value>)",
         "surface-default": "rgb(var(--color-bg-surface-default-rgb) / <alpha-value>)",
+        "surface-composer": "rgb(var(--color-bg-surface-composer-rgb) / <alpha-value>)",
         "surface-light": "rgb(var(--color-bg-surface-light-rgb) / <alpha-value>)",
         "fill-primary": "rgb(var(--color-bg-fill-primary-rgb) / <alpha-value>)",
         "fill-primary-hover": "rgb(var(--color-bg-fill-primary-hover-rgb) / <alpha-value>)",

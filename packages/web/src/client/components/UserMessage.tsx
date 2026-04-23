@@ -11,7 +11,7 @@ interface UserMessageProps {
 export function UserMessage({ text, images = [], contextItems = [] }: UserMessageProps) {
   return (
     <div className="flex justify-end py-1 pb-8">
-      <div className="max-w-message rounded-xl bg-surface-light px-4 py-3">
+      <div className="max-w-message rounded-md bg-surface-light px-3.5 py-2">
         {contextItems.length > 0 ? (
           <div className="mb-3 flex flex-wrap justify-end gap-2">
             {contextItems.map((item) => (
@@ -44,7 +44,7 @@ export function UserMessage({ text, images = [], contextItems = [] }: UserMessag
             ))}
           </div>
         ) : null}
-        {text ? <p className="whitespace-pre-wrap text-sm leading-7 text-text">{text}</p> : null}
+        {text ? <p className="whitespace-pre-wrap text-sm leading-7 text-white">{text}</p> : null}
       </div>
     </div>
   );

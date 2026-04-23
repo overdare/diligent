@@ -11,7 +11,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const intentClasses: Record<Intent, string> = {
-  primary: "border border-transparent bg-fill-primary text-text hover:bg-fill-active",
+  primary: "border border-transparent bg-fill-primary text-text hover:bg-[#BB002F]",
   danger: "border border-transparent bg-danger text-text hover:opacity-90",
   ghost:
     "border border-border/100 bg-fill-secondary text-text hover:border-border-strong/100 hover:bg-fill-ghost-hover",
@@ -27,7 +27,7 @@ export function Button({ className, intent = "primary", size = "md", ...props }:
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center rounded-md font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center rounded font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50",
         intentClasses[intent],
         sizeClasses[size],
         className,

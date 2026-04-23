@@ -1,17 +1,20 @@
 /* Semantic design tokens — single source of truth for web colors. */
 /* Tuned to match the reference agent UI capture (dark neutrals, red/pink CTA, green success, multi-hue code). */
+/* Main shell + thread list + chat feed use studio panel #181B1F when embedded. */
 
 :root {
-  --color-bg: #0a0a0a;
-  --color-bg-base: #0a0a0a;
-  --color-bg-elevated: #141415;
-  --color-bg-sunken: #080809;
-  --color-surface: #1a1a1d;
-  --color-surface-muted: #222226;
+  --color-bg: #181b1f;
+  --color-bg-base: #181b1f;
+  --color-bg-elevated: #1e2228;
+  --color-bg-sunken: #181b1f;
+  --color-surface: #1f2329;
+  --color-surface-muted: #252a32;
   --color-surface-strong: #2e2e34;
-  --color-bg-surface-dark: #0b0b0c;
-  --color-bg-surface-default: #121213;
-  --color-bg-surface-light: #1c1c1f;
+  --color-bg-surface-dark: #181b1f;
+  --color-bg-surface-default: #181b1f;
+  /* Input dock composer card — slightly above studio panel */
+  --color-bg-surface-composer: #21262c;
+  --color-bg-surface-light: #2a3038;
   --color-bg-surface-transparent: color-mix(in srgb, var(--color-text-secondary) 6%, transparent);
   --color-bg-surface-info: color-mix(in srgb, var(--color-text-info) 18%, var(--color-bg-sunken));
   --color-bg-surface-success: color-mix(in srgb, var(--color-text-success) 18%, var(--color-bg-sunken));
@@ -119,16 +122,17 @@
   --color-code-deleted: #f87171;
   --color-code-deleted-bg: color-mix(in srgb, var(--color-danger) 14%, transparent);
 
-  --color-bg-rgb: 10 10 10;
-  --color-bg-base-rgb: 10 10 10;
-  --color-bg-elevated-rgb: 20 20 21;
-  --color-bg-sunken-rgb: 8 8 9;
-  --color-surface-rgb: 26 26 29;
-  --color-surface-muted-rgb: 34 34 38;
+  --color-bg-rgb: 24 27 31;
+  --color-bg-base-rgb: 24 27 31;
+  --color-bg-elevated-rgb: 30 34 40;
+  --color-bg-sunken-rgb: 24 27 31;
+  --color-surface-rgb: 31 35 41;
+  --color-surface-muted-rgb: 37 42 50;
   --color-surface-strong-rgb: 46 46 52;
-  --color-bg-surface-dark-rgb: 11 11 12;
-  --color-bg-surface-default-rgb: 18 18 19;
-  --color-bg-surface-light-rgb: 28 28 31;
+  --color-bg-surface-dark-rgb: 24 27 31;
+  --color-bg-surface-default-rgb: 24 27 31;
+  --color-bg-surface-composer-rgb: 33 38 44;
+  --color-bg-surface-light-rgb: 42 48 56;
   --color-bg-surface-info-rgb: 24 36 48;
   --color-bg-surface-success-rgb: 16 32 24;
   --color-bg-surface-warning-rgb: 48 40 16;

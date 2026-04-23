@@ -42,11 +42,11 @@ function SidebarImpl({
       </div>
 
       {/* Thread list */}
-      <div className="flex-1 space-y-2 overflow-y-auto bg-bg-sunken px-3 py-3">
+      <div className="flex-1 space-y-2 overflow-y-auto bg-bg-sunken px-2 py-3">
         <button
           type="button"
           onClick={onNewThread}
-          className="flex w-full items-center gap-2 rounded-lg border border-border/100 bg-surface-light px-3.5 py-3 text-left text-sm font-medium text-text transition hover:border-selection/50 hover:text-selection"
+          className="flex w-full items-center gap-2 rounded border border-border/100 bg-surface-light px-3.5 py-3 text-left text-sm font-medium text-text transition hover:bg-[#424A54]"
         >
           <span className="text-lg leading-none">+</span>
           <span>New conversation</span>
@@ -63,9 +63,9 @@ function SidebarImpl({
               <button
                 type="button"
                 onClick={() => onOpenThread(thread.id)}
-                className={`w-full rounded-xl px-3.5 py-3 text-left transition ${
+                className={`w-full rounded px-3.5 py-3 text-left transition ${
                   isActive
-                    ? "bg-surface-light text-text"
+                    ? "bg-surface-composer text-text"
                     : needsAttention
                       ? "bg-bg-sunken hover:bg-surface-light"
                       : "bg-bg-sunken hover:bg-surface-light"
@@ -77,7 +77,7 @@ function SidebarImpl({
                   ) : null}
                   <span className="truncate text-sm leading-snug text-text">{title}</span>
                 </div>
-                <div className="mt-1 flex items-center gap-1.5 text-xs- text-muted/85">
+                <div className="mt-1 flex items-center gap-1.5 text-xs- text-muted">
                   <span>{time}</span>
                   <span className="opacity-40">·</span>
                   <span>{thread.messageCount} msg</span>
