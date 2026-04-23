@@ -32,7 +32,7 @@ function SidebarImpl({
       {/* Header */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/100 bg-surface-dark px-5">
         <div className="min-w-0">
-          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-[#FE0041]">
+          <span className="font-mono text-[13px] font-bold uppercase tracking-[0.12em] text-accent">
             {APP_PROJECT_MARK}
           </span>
           <p className="truncate font-mono text-xs- text-muted/90" title={cwd}>
