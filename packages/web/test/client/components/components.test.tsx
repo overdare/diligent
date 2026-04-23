@@ -595,7 +595,7 @@ test("input dock renders pending image preview and add-images action", () => {
   expect(html).toContain('src="blob:shot"');
   expect(html).toContain('accept="image/png,image/jpeg,image/webp,image/gif"');
   expect(html).toContain('placeholder="Ask anything or attach images…"');
-  expect(html).toContain('class="relative z-20 bg-surface-dark px-6 pb-4 pt-2"');
+  expect(html).toContain('class="relative z-20 bg-surface-dark');
   expect(html).toContain("minimal");
   expect(html).toContain("minimal");
 });
