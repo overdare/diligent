@@ -119,6 +119,11 @@ describe("createVertexAccessTokenBinding", () => {
     const originalSpawn = Bun.spawn;
     Bun.spawn = spawnMock as typeof Bun.spawn;
     const originalPlatform = process.platform;
+    const originalPath = process.env.PATH;
+    const originalLocalAppData = process.env.LOCALAPPDATA;
+    const originalUserProfile = process.env.USERPROFILE;
+    const originalProgramFiles = process.env.ProgramFiles;
+    const originalProgramFilesX86 = process.env["ProgramFiles(x86)"];
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = mock(() =>
@@ -137,6 +142,11 @@ describe("createVertexAccessTokenBinding", () => {
       configurable: true,
       value: "win32",
     });
+    process.env.PATH = "";
+    process.env.LOCALAPPDATA = "";
+    process.env.USERPROFILE = "";
+    process.env.ProgramFiles = "";
+    process.env["ProgramFiles(x86)"] = "";
 
     try {
       const binding = createVertexAccessTokenBinding({
@@ -178,6 +188,31 @@ describe("createVertexAccessTokenBinding", () => {
         configurable: true,
         value: originalPlatform,
       });
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalLocalAppData === undefined) {
+        delete process.env.LOCALAPPDATA;
+      } else {
+        process.env.LOCALAPPDATA = originalLocalAppData;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
+      if (originalProgramFiles === undefined) {
+        delete process.env.ProgramFiles;
+      } else {
+        process.env.ProgramFiles = originalProgramFiles;
+      }
+      if (originalProgramFilesX86 === undefined) {
+        delete process.env["ProgramFiles(x86)"];
+      } else {
+        process.env["ProgramFiles(x86)"] = originalProgramFilesX86;
+      }
       Bun.spawn = originalSpawn;
       globalThis.fetch = originalFetch;
     }
