@@ -6,6 +6,8 @@ import { join } from "node:path";
 import {
   DEFAULT_STORAGE_NAMESPACE,
   ensureDiligentDir,
+  migrateLocalNamespaceIfNeeded,
+  migrateNamespaceIfNeeded,
   resolvePaths,
   resolveProjectDirName,
   resolveStorageNamespace,
@@ -95,5 +97,105 @@ describe("ensureDiligentDir", () => {
 
     const content = await Bun.file(gitignorePath).text();
     expect(content).toBe("custom content\n");
+  });
+});
+
+describe("migrateNamespaceIfNeeded", () => {
+  it("migrates legacy directory to target when target does not exist", async () => {
+    const { mkdir: mkdirFn, writeFile } = await import("node:fs/promises");
+    const legacy = join(TEST_ROOT, ".diligent");
+    const target = join(TEST_ROOT, ".overdare");
+
+    await mkdirFn(legacy, { recursive: true });
+    await writeFile(join(legacy, "marker.txt"), "hello");
+
+    const outcome = await migrateNamespaceIfNeeded(legacy, target);
+    expect(outcome.kind).toBe("migrated");
+    if (outcome.kind === "migrated") {
+      expect(outcome.from).toBe(legacy);
+      expect(outcome.to).toBe(target);
+    }
+
+    expect(await Bun.file(join(target, "marker.txt")).text()).toBe("hello");
+    expect(await Bun.file(legacy).exists()).toBe(false);
+  });
+
+  it("skips migration when target already exists", async () => {
+    const { mkdir: mkdirFn } = await import("node:fs/promises");
+    const legacy = join(TEST_ROOT, ".diligent-skip");
+    const target = join(TEST_ROOT, ".overdare-skip");
+
+    await mkdirFn(legacy, { recursive: true });
+    await mkdirFn(target, { recursive: true });
+
+    const outcome = await migrateNamespaceIfNeeded(legacy, target);
+    expect(outcome.kind).toBe("skipped_target_exists");
+
+    expect(await Bun.file(legacy).exists()).toBe(false);
+  });
+
+  it("skips migration when legacy does not exist", async () => {
+    const { mkdir: mkdirFn } = await import("node:fs/promises");
+    const legacy = join(TEST_ROOT, ".nonexistent-diligent");
+    const target = join(TEST_ROOT, ".nonexistent-overdare");
+
+    await mkdirFn(TEST_ROOT, { recursive: true });
+
+    const outcome = await migrateNamespaceIfNeeded(legacy, target);
+    expect(outcome.kind).toBe("skipped_no_legacy");
+  });
+});
+
+describe("migrateLocalNamespaceIfNeeded", () => {
+  it("migrates .diligent to .{namespace} in project cwd", async () => {
+    const { mkdir: mkdirFn, writeFile } = await import("node:fs/promises");
+    const cwd = join(TEST_ROOT, "local-migration-test");
+    await mkdirFn(cwd, { recursive: true });
+
+    const legacy = join(cwd, ".diligent");
+    await mkdirFn(join(legacy, "sessions"), { recursive: true });
+    await writeFile(join(legacy, "sessions", "session1.json"), "{}");
+
+    const env = { DILIGENT_STORAGE_NAMESPACE: "overdare" } as NodeJS.ProcessEnv;
+    const outcome = await migrateLocalNamespaceIfNeeded(cwd, env);
+    expect(outcome.kind).toBe("migrated");
+
+    const target = join(cwd, ".overdare");
+    expect(await Bun.file(join(target, "sessions", "session1.json")).text()).toBe("{}");
+  });
+
+  it("is a no-op when namespace is already 'diligent'", async () => {
+    const { mkdir: mkdirFn } = await import("node:fs/promises");
+    const cwd = join(TEST_ROOT, "noop-test");
+    await mkdirFn(cwd, { recursive: true });
+
+    const env = { DILIGENT_STORAGE_NAMESPACE: "diligent" } as NodeJS.ProcessEnv;
+    const outcome = await migrateLocalNamespaceIfNeeded(cwd, env);
+    expect(outcome.kind).toBe("skipped_no_legacy");
+  });
+
+  it("ensureDiligentDir auto-migrates before creating directories", async () => {
+    const { mkdir: mkdirFn, writeFile } = await import("node:fs/promises");
+    const cwd = join(TEST_ROOT, "auto-migrate-test");
+    await mkdirFn(cwd, { recursive: true });
+
+    // Simulate existing .diligent data
+    const legacyDir = join(cwd, ".diligent");
+    await mkdirFn(join(legacyDir, "knowledge"), { recursive: true });
+    await writeFile(join(legacyDir, "knowledge", "knowledge.jsonl"), '{"id":"k1"}');
+
+    // Initialize with new namespace
+    const env = { DILIGENT_STORAGE_NAMESPACE: "overdare" } as NodeJS.ProcessEnv;
+    const paths = await ensureDiligentDir(cwd, env);
+
+    // Should land in .overdare, not .diligent
+    expect(paths.root).toBe(join(cwd, ".overdare"));
+
+    // Legacy knowledge data should be accessible under new path
+    const knowledge = await Bun.file(join(paths.knowledge, "knowledge.jsonl")).text();
+    expect(knowledge).toBe('{"id":"k1"}');
+
+    // Legacy dir must be gone
+    expect(await Bun.file(legacyDir).exists()).toBe(false);
   });
 });

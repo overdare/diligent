@@ -1,5 +1,6 @@
 // @summary Manages .diligent directory structure with paths and gitignore setup
 import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const DEFAULT_STORAGE_NAMESPACE = "diligent";
@@ -48,6 +49,10 @@ export async function ensureDiligentDir(
   projectRoot: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<DiligentPaths> {
+  if (resolveStorageNamespace(env) !== DEFAULT_STORAGE_NAMESPACE) {
+    await migrateLocalNamespaceIfNeeded(projectRoot, env);
+  }
+
   const paths = resolvePaths(projectRoot, env);
   await mkdir(paths.sessions, { recursive: true });
   await mkdir(paths.knowledge, { recursive: true });
@@ -61,4 +66,71 @@ export async function ensureDiligentDir(
   }
 
   return paths;
+}
+
+// ---------------------------------------------------------------------------
+// Namespace migration — mirrors the Rust launcher's storage.rs logic
+// ---------------------------------------------------------------------------
+
+export type MigrationOutcome =
+  | { kind: "migrated"; from: string; to: string }
+  | { kind: "skipped_no_legacy" }
+  | { kind: "skipped_target_exists" };
+
+/**
+ * Core migration primitive: renames `legacy` to `target` if:
+ * - `target` does not already exist (would silently split history if we skipped this)
+ * - `legacy` exists
+ *
+ * Mirrors `migrate_namespace_if_needed()` in `apps/overdare-ai-agent/src/storage.rs`.
+ */
+export async function migrateNamespaceIfNeeded(legacy: string, target: string): Promise<MigrationOutcome> {
+  const { rename, access: fsAccess } = await import("node:fs/promises");
+
+  const exists = async (path: string) => {
+    try {
+      await fsAccess(path);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await exists(target)) return { kind: "skipped_target_exists" };
+  if (!(await exists(legacy))) return { kind: "skipped_no_legacy" };
+
+  await rename(legacy, target);
+  return { kind: "migrated", from: legacy, to: target };
+}
+
+/**
+ * Migrate the project-local storage directory from `.diligent/` to `.{namespace}/`.
+ * No-op when the current namespace is already "diligent".
+ */
+export async function migrateLocalNamespaceIfNeeded(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MigrationOutcome> {
+  const namespace = resolveStorageNamespace(env);
+  if (namespace === DEFAULT_STORAGE_NAMESPACE) return { kind: "skipped_no_legacy" };
+
+  const legacy = join(cwd, `.${DEFAULT_STORAGE_NAMESPACE}`);
+  const target = join(cwd, `.${namespace}`);
+  return migrateNamespaceIfNeeded(legacy, target);
+}
+
+/**
+ * Migrate the global (home-directory) storage from `~/.diligent/` to `~/.{namespace}/`.
+ * No-op when the current namespace is already "diligent".
+ */
+export async function migrateGlobalNamespaceIfNeeded(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MigrationOutcome> {
+  const namespace = resolveStorageNamespace(env);
+  if (namespace === DEFAULT_STORAGE_NAMESPACE) return { kind: "skipped_no_legacy" };
+
+  const home = homedir();
+  const legacy = join(home, `.${DEFAULT_STORAGE_NAMESPACE}`);
+  const target = join(home, `.${namespace}`);
+  return migrateNamespaceIfNeeded(legacy, target);
 }
