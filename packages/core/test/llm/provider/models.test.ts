@@ -37,11 +37,24 @@ describe("resolveModel", () => {
   it("uses 300k context for known Sonnet and Opus models", () => {
     expect(resolveModel("claude-sonnet-4-6").contextWindow).toBe(300_000);
     expect(resolveModel("claude-opus-4-6").contextWindow).toBe(300_000);
+    expect(resolveModel("claude-opus-4-7").contextWindow).toBe(300_000);
+  });
+
+  it("resolves claude-opus-4-7 dated alias", () => {
+    const model = resolveModel("claude-opus-4-7-20260416");
+    expect(model.provider).toBe("anthropic");
+    expect(model.id).toBe("claude-opus-4-7");
   });
 
   it("infers chatgpt from chatgpt- prefix", () => {
     const model = resolveModel("chatgpt-5.3-codex");
     expect(model.provider).toBe("chatgpt");
+  });
+
+  it("resolves chatgpt-5.5-pro alias to chatgpt-5.5", () => {
+    const model = resolveModel("chatgpt-5.5-pro");
+    expect(model.provider).toBe("chatgpt");
+    expect(model.id).toBe("chatgpt-5.5");
   });
 
   it("infers vertex from vertex- prefix", () => {
@@ -87,6 +100,7 @@ describe("model class annotations", () => {
 
   it("anthropic classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "claude-opus-4-6")?.modelClass).toBe("pro");
+    expect(KNOWN_MODELS.find((m) => m.id === "claude-opus-4-7")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "claude-sonnet-4-6")?.modelClass).toBe("general");
     expect(KNOWN_MODELS.find((m) => m.id === "claude-haiku-4-5")?.modelClass).toBe("lite");
   });
@@ -105,6 +119,7 @@ describe("model class annotations", () => {
 
   it("chatgpt classes map correctly", () => {
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4")?.modelClass).toBe("pro");
+    expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.5")?.modelClass).toBe("pro");
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.3-codex")?.modelClass).toBe("general");
     expect(KNOWN_MODELS.find((m) => m.id === "chatgpt-5.4-mini")?.modelClass).toBe("lite");
   });
@@ -151,6 +166,15 @@ describe("resolveModelForClass", () => {
     expect(pro.provider).toBe("anthropic");
   });
 
+  it("keeps anthropic pro default pinned to opus 4.6", () => {
+    const opus47 = resolveModel("claude-opus-4-7");
+    const pro = resolveModelForClass(opus47, "pro");
+    expect(pro.id).toBe("claude-opus-4-7");
+
+    const sonnet = resolveModel("claude-sonnet-4-6");
+    expect(resolveModelForClass(sonnet, "pro").id).toBe("claude-opus-4-6");
+  });
+
   it("resolves anthropic lite → haiku", () => {
     const sonnet = resolveModel("claude-sonnet-4-6");
     const lite = resolveModelForClass(sonnet, "lite");
@@ -184,6 +208,13 @@ describe("resolveModelForClass", () => {
     const lite = resolveModelForClass(codex, "lite");
     expect(lite.id).toBe("chatgpt-5.4-mini");
     expect(lite.provider).toBe("chatgpt");
+  });
+
+  it("resolves chatgpt general → pro", () => {
+    const codex = resolveModel("chatgpt-5.3-codex");
+    const pro = resolveModelForClass(codex, "pro");
+    expect(pro.id).toBe("chatgpt-5.4");
+    expect(pro.provider).toBe("chatgpt");
   });
 
   it("keeps vertex on the unified model when other classes are requested", () => {
