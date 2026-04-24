@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 
 const DEFAULT_PROJECT_NAME = "Diligent";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     {
       name: "raw-md",
@@ -29,6 +29,7 @@ export default defineConfig({
   ],
   build: {
     outDir: "dist/client",
+    minify: mode === "development" ? false : "esbuild",
   },
   server: {
     port: 5174,
@@ -39,4 +40,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
