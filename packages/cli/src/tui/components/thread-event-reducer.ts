@@ -1,6 +1,7 @@
 // @summary Pure event-to-state reducer for CLI ThreadStore transitions and lifecycle effects
 
-import type { AgentEvent } from "@diligent/protocol";
+import type { AgentEvent, ConversationLiveState } from "@diligent/protocol";
+import { applyAgentEvents } from "@diligent/protocol";
 import type { CollabToolState, ToolCallState } from "./thread-store-utils";
 
 export type ReducerOverlayStatusKind = "default" | "tool";
@@ -17,6 +18,7 @@ export interface ThreadEventReducerState<TItem> {
   thinkingText: string;
   overlayStatus: ReducerOverlayStatus | null;
   statusBeforeCompaction: string | null;
+  threadStatus: string | null;
   isThreadBusy: boolean;
   busyStartedAt: number | null;
   lastUsage: { input: number; output: number; cost: number } | null;
@@ -87,11 +89,42 @@ function setOverlayStatus(
   return current;
 }
 
+function extractLiveFields<TItem>(state: ThreadEventReducerState<TItem>): ConversationLiveState {
+  return {
+    threadId: null,
+    threadTitle: null,
+    threadStatus: state.threadStatus,
+    items: [],
+    liveText: "",
+    liveThinking: "",
+    liveToolName: null,
+    liveToolInput: null,
+    liveToolOutput: "",
+    overlayStatus: null,
+    isLoading: false,
+    lastError: null,
+  };
+}
+
+function mergeLiveFields<TItem>(
+  state: ThreadEventReducerState<TItem>,
+  live: ConversationLiveState,
+): ThreadEventReducerState<TItem> {
+  return {
+    ...state,
+    threadStatus: live.threadStatus,
+    isThreadBusy: live.threadStatus === "busy",
+  };
+}
+
 export function reduceThreadEvent<TItem>(
   state: ThreadEventReducerState<TItem>,
   event: AgentEvent,
   deps: ThreadEventReducerDeps<TItem>,
 ): ThreadEventReducerResult<TItem> {
+  const liveResult = applyAgentEvents(extractLiveFields(state), [event]);
+  const base = mergeLiveFields(state, liveResult);
+
   switch (event.type) {
     case "agent_start":
       return {
@@ -99,7 +132,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "start_status_timers" }],
         state: {
-          ...state,
+          ...base,
           overlayStatus: setOverlayStatus(state.overlayStatus, "Thinking…", "default", deps.nowMs),
         },
       };
@@ -110,7 +143,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "markdown_open" }, { kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           overlayStatus: null,
           thinkingStartTime: null,
           thinkingText: "",
@@ -125,7 +158,7 @@ export function reduceThreadEvent<TItem>(
           requestRender: true,
           effects: [{ kind: "start_status_timers" }],
           state: {
-            ...state,
+            ...base,
             thinkingText: state.thinkingText + event.delta.delta,
             thinkingStartTime: state.thinkingStartTime ?? deps.nowMs,
             overlayStatus: setOverlayStatus(state.overlayStatus, "Thinking…", "default", deps.nowMs),
@@ -138,7 +171,7 @@ export function reduceThreadEvent<TItem>(
           handled: true,
           requestRender: true,
           effects: [{ kind: "cleanup_status_timers_if_idle" }],
-          state,
+          state: base,
         };
       }
 
@@ -160,7 +193,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "markdown_push", delta: event.delta.delta }, { kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           items,
           thinkingText,
           thinkingStartTime,
@@ -186,7 +219,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "markdown_finalize" }, { kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           items,
           thinkingText: "",
           thinkingStartTime: null,
@@ -206,7 +239,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "start_status_timers" }],
         state: {
-          ...state,
+          ...base,
           overlayStatus: setOverlayStatus(state.overlayStatus, overlayMessage, "tool", deps.nowMs),
           toolCalls: {
             ...state.toolCalls,
@@ -229,7 +262,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "start_status_timers" }],
         state: {
-          ...state,
+          ...base,
           overlayStatus: setOverlayStatus(
             state.overlayStatus,
             deps.deriveToolUpdateMessage(event, state.collabByToolCallId[event.toolCallId]),
@@ -259,7 +292,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: state.isThreadBusy ? [{ kind: "start_status_timers" }] : [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           overlayStatus: null,
           items: [...state.items, item],
           toolCalls,
@@ -272,7 +305,7 @@ export function reduceThreadEvent<TItem>(
 
     case "turn_start":
     case "user_message":
-      return { handled: true, requestRender: false, state, effects: [] };
+      return { handled: true, requestRender: false, state: base, effects: [] };
 
     case "status_change": {
       if (event.status === "busy") {
@@ -281,8 +314,7 @@ export function reduceThreadEvent<TItem>(
           requestRender: true,
           effects: [{ kind: "start_status_timers" }],
           state: {
-            ...state,
-            isThreadBusy: true,
+            ...base,
             busyStartedAt: state.busyStartedAt ?? deps.nowMs,
           },
         };
@@ -293,8 +325,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
-          isThreadBusy: false,
+          ...base,
           busyStartedAt: null,
           statusBeforeCompaction: null,
         },
@@ -307,7 +338,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: false,
         effects: [],
         state: {
-          ...state,
+          ...base,
           lastUsage: {
             input: event.usage.inputTokens,
             output: event.usage.outputTokens,
@@ -322,7 +353,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "start_status_timers" }],
         state: {
-          ...state,
+          ...base,
           statusBeforeCompaction: state.overlayStatus?.message ?? null,
           overlayStatus: setOverlayStatus(state.overlayStatus, "Compacting…", "default", deps.nowMs),
         },
@@ -335,7 +366,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [restoredStatus ? { kind: "start_status_timers" } : { kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           statusBeforeCompaction: null,
           overlayStatus: restoredStatus
             ? setOverlayStatus(state.overlayStatus, restoredStatus, "default", deps.nowMs)
@@ -351,7 +382,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [],
         state: {
-          ...state,
+          ...base,
           items: [...state.items, deps.buildKnowledgeSavedItem()],
         },
       };
@@ -362,7 +393,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           isThreadBusy: false,
           busyStartedAt: null,
           statusBeforeCompaction: null,
@@ -384,7 +415,7 @@ export function reduceThreadEvent<TItem>(
         requestRender: true,
         effects: [{ kind: "cleanup_status_timers_if_idle" }],
         state: {
-          ...state,
+          ...base,
           isThreadBusy: false,
           busyStartedAt: null,
           overlayStatus: shouldClearCompactionStatus ? null : state.overlayStatus,
