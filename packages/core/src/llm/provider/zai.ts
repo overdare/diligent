@@ -9,7 +9,7 @@ import {
   buildOpenAICompatibleTools,
   handleChatCompletionsEvents,
 } from "./openai-compatible";
-import { isContextOverflow } from "./openai-shared";
+import { isContextOverflow } from "./openai-responses";
 
 const DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 

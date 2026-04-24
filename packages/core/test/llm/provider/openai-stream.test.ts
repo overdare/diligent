@@ -1,7 +1,7 @@
 // @summary Tests for OpenAI Responses event handling edge cases like aborts
 import { describe, expect, test } from "bun:test";
 import type { EventStream } from "../../../src/event-stream";
-import { handleResponsesAPIEvents } from "../../../src/llm/provider/openai-shared";
+import { handleResponsesAPIEvents } from "../../../src/llm/provider/openai-sse";
 import type { Model, ProviderEvent, ProviderResult } from "../../../src/llm/types";
 
 const TEST_MODEL: Model = {
