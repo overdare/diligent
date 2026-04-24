@@ -1,4 +1,4 @@
-// @summary E2E tests for plugin lifecycle hooks: UserPromptSubmit blocking and Stop hook execution
+// @summary E2E tests for plugin lifecycle hooks: blocking, error tolerance, additionalContext, and stop_hook_active re-entrance
 import { afterEach, describe, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,31 +10,45 @@ import { createTestServer } from "./helpers/server-factory";
 
 const FIXTURE_PLUGIN_DIR = join(import.meta.dir, "fixtures", "hook-test-plugin");
 const PLUGIN_NAME = "hook-test-plugin";
+const ERROR_HOOK_PLUGIN_NAME = "error-hook-plugin";
+const RERUN_HOOK_PLUGIN_NAME = "rerun-hook-plugin";
 
 let tmpDir: string;
 let client: ProtocolTestClient;
 
-/**
- * Install the hook-test-plugin fixture into tmpDir/node_modules so the plugin
- * loader can discover it at runtime via the cwd-local resolution path.
- */
-async function installFixturePlugin(cwd: string): Promise<void> {
-  const pluginDir = join(cwd, "node_modules", PLUGIN_NAME);
+async function installPlugin(cwd: string, pluginName: string): Promise<void> {
+  const pluginDir = join(cwd, "node_modules", pluginName);
   await mkdir(pluginDir, { recursive: true });
   const { copyFile } = await import("node:fs/promises");
-  await copyFile(join(FIXTURE_PLUGIN_DIR, "package.json"), join(pluginDir, "package.json"));
-  await copyFile(join(FIXTURE_PLUGIN_DIR, "index.js"), join(pluginDir, "index.js"));
+  const fixtureDir = join(import.meta.dir, "fixtures", pluginName);
+  await copyFile(join(fixtureDir, "package.json"), join(pluginDir, "package.json"));
+  await copyFile(join(fixtureDir, "index.js"), join(pluginDir, "index.js"));
 }
 
 async function setup() {
   tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-hooks-"));
-  await installFixturePlugin(tmpDir);
+  await installPlugin(tmpDir, PLUGIN_NAME);
 
   const server = createTestServer({
     cwd: tmpDir,
     streamFunction: createSimpleStream("ok"),
     runtimeToolsConfig: {
       plugins: [{ package: PLUGIN_NAME, enabled: true }],
+    },
+  });
+  client = createProtocolClient(server);
+  return { server, client };
+}
+
+async function setupWithPlugin(pluginName: string) {
+  tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-hooks-"));
+  await installPlugin(tmpDir, pluginName);
+
+  const server = createTestServer({
+    cwd: tmpDir,
+    streamFunction: createSimpleStream("ok"),
+    runtimeToolsConfig: {
+      plugins: [{ package: pluginName, enabled: true }],
     },
   });
   client = createProtocolClient(server);
@@ -80,6 +94,76 @@ describe("plugin-hooks", () => {
     // Turn should complete normally
     const turnCompleted = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
     expect(turnCompleted).toBeTruthy();
+  });
+
+  test("additionalContext from hook is prepended to user message content in agent event", async () => {
+    await setup();
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    const turnNotifs = await client.sendTurnAndWait(threadId, "hello world");
+
+    // The hook injects "hook-test-plugin:UserPromptSubmit" as additionalContext.
+    // Verify that the AGENT_EVENT user_message carries the augmented content.
+    const agentEventNotif = turnNotifs.find(
+      (n) =>
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+        (n.params as { event?: { type?: string } }).event?.type === "user_message",
+    );
+    expect(agentEventNotif).toBeTruthy();
+
+    const msgContent = (
+      agentEventNotif?.params as { event?: { message?: { content?: string } } }
+    )?.event?.message?.content;
+    expect(typeof msgContent).toBe("string");
+    expect(msgContent).toContain("hook-test-plugin:UserPromptSubmit");
+    expect(msgContent).toContain("hello world");
+  });
+
+  test("UserPromptSubmit hook that throws is non-blocking — turn completes normally", async () => {
+    await setupWithPlugin(ERROR_HOOK_PLUGIN_NAME);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    // The error-hook-plugin always throws in onUserPromptSubmit.
+    // The error must be swallowed (non-blocking path) so the turn proceeds.
+    const turnNotifs = await client.sendTurnAndWait(threadId, "hello despite error");
+
+    const hookBlockedNotif = turnNotifs.find(
+      (n) =>
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR &&
+        (n.params as { error?: { name?: string } }).error?.name === "HookBlocked",
+    );
+    expect(hookBlockedNotif).toBeUndefined();
+
+    const turnCompleted = turnNotifs.find((n) => n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
+    expect(turnCompleted).toBeTruthy();
+  });
+
+  test("Stop hook blocking triggers re-run with stop_hook_active=true (re-entrance guard)", async () => {
+    await setupWithPlugin(RERUN_HOOK_PLUGIN_NAME);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    await client.sendTurnAndWait(threadId, "hello");
+
+    // Wait for thread to reach idle (both the original turn and the stop-hook re-run must finish)
+    await client.waitFor(
+      (n) =>
+        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+        (n.params as { status: string }).status === "idle",
+      8000,
+    );
+
+    // The rerun-hook-plugin writes a JSON array of all Stop hook invocations.
+    const markerPath = join(tmpDir, "rerun-hook-calls");
+    await expect(access(markerPath)).resolves.toBeNull();
+
+    const calls = JSON.parse(await readFile(markerPath, "utf8")) as Array<{ stop_hook_active: boolean }>;
+
+    // First call: stop_hook_active=false (initial Stop hook invocation)
+    expect(calls[0]?.stop_hook_active).toBe(false);
+    // Second call: stop_hook_active=true (re-run triggered by the block)
+    expect(calls[1]?.stop_hook_active).toBe(true);
+    // No further calls (guard prevents infinite loop)
+    expect(calls).toHaveLength(2);
   });
 
   test("Stop hook fires after turn completion and writes marker file", async () => {
