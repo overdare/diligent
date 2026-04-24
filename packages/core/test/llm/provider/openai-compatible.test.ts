@@ -48,9 +48,7 @@ async function* makeAsyncIter(payloads: Record<string, unknown>[]): AsyncIterabl
 
 describe("buildOpenAICompatibleMessages", () => {
   test("converts a simple string user message", async () => {
-    const messages = await buildOpenAICompatibleMessages([
-      { role: "user", content: "hello world" },
-    ]);
+    const messages = await buildOpenAICompatibleMessages([{ role: "user", content: "hello world" }]);
     expect(messages).toEqual([{ role: "user", content: "hello world" }]);
   });
 
@@ -238,7 +236,7 @@ describe("mapChatCompletionsStopReason", () => {
     ["unknown_value", "end_turn"],
     [null, "end_turn"],
     [undefined, "end_turn"],
-  ])('maps %s → %s', (input, expected) => {
+  ])("maps %s → %s", (input, expected) => {
     expect(mapChatCompletionsStopReason(input as string | null | undefined)).toBe(expected);
   });
 });
@@ -249,9 +247,7 @@ describe("mapChatCompletionsStopReason", () => {
 
 describe("mapChatCompletionsUsage", () => {
   test("maps normal usage without cached tokens", () => {
-    expect(
-      mapChatCompletionsUsage({ prompt_tokens: 100, completion_tokens: 50 }),
-    ).toEqual({
+    expect(mapChatCompletionsUsage({ prompt_tokens: 100, completion_tokens: 50 })).toEqual({
       inputTokens: 100,
       outputTokens: 50,
       cacheReadTokens: 0,
@@ -335,9 +331,7 @@ describe("handleChatCompletionsEvents", () => {
         choices: [
           {
             delta: {
-              tool_calls: [
-                { index: 0, id: "tc_abc", function: { name: "bash", arguments: '{"command"' } },
-              ],
+              tool_calls: [{ index: 0, id: "tc_abc", function: { name: "bash", arguments: '{"command"' } }],
             },
             finish_reason: null,
           },

@@ -17,7 +17,6 @@ import { appReducer, type PendingImage } from "./app-state";
 import { getThreadIdFromUrl } from "./app-utils";
 import { createDesktopNotificationController, readDesktopNotificationsEnabled } from "./desktop-notification";
 import { supportsThinkingNone } from "./model-thinking-helpers";
-import type { WebRpcClient } from "./rpc-client";
 import { buildCommandList } from "./slash-commands";
 import { initialThreadState } from "./thread-store";
 import { useAppActions } from "./use-app-actions";
@@ -42,6 +41,7 @@ export function useAppState({
   connection: RpcClientResult["connection"];
   reconnectAttempts: RpcClientResult["reconnectAttempts"];
 }) {
+  void reconnectAttempts;
   useEffect(() => {
     document.title = APP_PROJECT_NAME;
   }, []);

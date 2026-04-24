@@ -6,9 +6,9 @@ import { flattenSections } from "../system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../types";
 import { ProviderError } from "../types";
 import type { NativeCompactFn } from "./native-compaction";
-import { handleResponsesAPIEvents } from "./openai-sse";
 import { buildResponsesRequestBody, isContextOverflow, toResponseInputItems } from "./openai-responses";
 import { describeCompactionPayload, extractCompactionSummary, extractCompactionSummaryItem } from "./openai-shared";
+import { handleResponsesAPIEvents } from "./openai-sse";
 
 export function createOpenAIStream(apiKey?: string, baseUrl?: string): StreamFunction {
   const resolvedApiKey = resolveOpenAIApiKey(apiKey);

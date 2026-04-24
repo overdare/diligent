@@ -460,12 +460,13 @@ function prepareTurnMessage(
           ]
         : messageForTurn;
 
-  return { userMessage: { role: "user" as const, content: content as UserMessage["content"], timestamp }, content: content as UserMessage["content"] };
+  return {
+    userMessage: { role: "user" as const, content: content as UserMessage["content"], timestamp },
+    content: content as UserMessage["content"],
+  };
 }
 
-type HookOutcome =
-  | { blocked: true }
-  | { blocked: false; userMessage: UserMessage };
+type HookOutcome = { blocked: true } | { blocked: false; userMessage: UserMessage };
 
 /**
  * Collect and run UserPromptSubmit hooks (shell + plugin). If a hook blocks the prompt,

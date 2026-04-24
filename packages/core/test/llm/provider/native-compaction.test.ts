@@ -4,7 +4,11 @@ import { createAnthropicNativeCompaction } from "../../../src/llm/provider/anthr
 import { createChatGPTNativeCompaction } from "../../../src/llm/provider/chatgpt";
 import { createOpenAINativeCompaction } from "../../../src/llm/provider/openai";
 import { buildResponsesRequestBody, toResponseInputItems } from "../../../src/llm/provider/openai-responses";
-import { describeCompactionPayload, extractCompactionSummary, extractCompactionSummaryItem } from "../../../src/llm/provider/openai-shared";
+import {
+  describeCompactionPayload,
+  extractCompactionSummary,
+  extractCompactionSummaryItem,
+} from "../../../src/llm/provider/openai-shared";
 import type { Model } from "../../../src/llm/types";
 
 const originalFetch = globalThis.fetch;

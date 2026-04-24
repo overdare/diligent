@@ -8,7 +8,6 @@ import { createSimpleStream } from "./helpers/fake-stream";
 import { createProtocolClient, type ProtocolTestClient } from "./helpers/protocol-client";
 import { createTestServer } from "./helpers/server-factory";
 
-const FIXTURE_PLUGIN_DIR = join(import.meta.dir, "fixtures", "hook-test-plugin");
 const PLUGIN_NAME = "hook-test-plugin";
 const ERROR_HOOK_PLUGIN_NAME = "error-hook-plugin";
 const RERUN_HOOK_PLUGIN_NAME = "rerun-hook-plugin";
@@ -96,24 +95,24 @@ describe("plugin-hooks", () => {
     expect(turnCompleted).toBeTruthy();
   });
 
-  test("additionalContext from hook is prepended to user message content in agent event", async () => {
+  test("additionalContext from hook is prepended to persisted user message content", async () => {
     await setup();
     const threadId = await client.initAndStartThread(tmpDir);
 
-    const turnNotifs = await client.sendTurnAndWait(threadId, "hello world");
+    await client.sendTurnAndWait(threadId, "hello world");
 
     // The hook injects "hook-test-plugin:UserPromptSubmit" as additionalContext.
-    // Verify that the AGENT_EVENT user_message carries the augmented content.
-    const agentEventNotif = turnNotifs.find(
-      (n) =>
-        n.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
-        (n.params as { event?: { type?: string } }).event?.type === "user_message",
-    );
-    expect(agentEventNotif).toBeTruthy();
+    // Verify that thread/read persists the augmented user message content.
+    const result = (await client.request("thread/read", { threadId })) as {
+      items: Array<{
+        type: string;
+        message?: { content?: string };
+      }>;
+    };
+    const userMessage = result.items.find((item) => item.type === "userMessage");
+    expect(userMessage).toBeTruthy();
 
-    const msgContent = (
-      agentEventNotif?.params as { event?: { message?: { content?: string } } }
-    )?.event?.message?.content;
+    const msgContent = userMessage?.message?.content;
     expect(typeof msgContent).toBe("string");
     expect(msgContent).toContain("hook-test-plugin:UserPromptSubmit");
     expect(msgContent).toContain("hello world");
