@@ -20,6 +20,7 @@ import {
   type ToolConflictPolicy,
   type ToolDescriptor,
   type TurnStartParams,
+  type UserMessage,
 } from "../protocol/index";
 import { buildSessionContext } from "../session/context-builder";
 import type { SessionManager } from "../session/manager";
@@ -348,6 +349,55 @@ export async function handleTurnStart(
   connectionId: string | undefined,
   turnInitiators: Map<string, string>,
 ): Promise<{ accepted: true }> {
+  const { runtime, turnId } = await initializeTurnRuntime(ctx, params, connectionId, turnInitiators);
+
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+    params: { threadId: runtime.id, status: "busy" },
+  });
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+    params: { threadId: runtime.id, turnId },
+  });
+
+  const { userMessage, content } = prepareTurnMessage(ctx, params, runtime);
+
+  const hookOutcome = await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId);
+  if (hookOutcome.blocked) return { accepted: true };
+
+  const finalUserMessage = hookOutcome.userMessage;
+  const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+    params: {
+      threadId: runtime.id,
+      turnId,
+      event: {
+        type: "user_message",
+        itemId: userItemId,
+        message: finalUserMessage,
+      },
+      threadStatus: "busy",
+    },
+  });
+
+  const runPromise = runtime.manager.run(finalUserMessage, {
+    signal: runtime.abortController!.signal,
+  });
+  void ctx.consumeTurn(runtime, runPromise, turnId);
+  return { accepted: true };
+}
+
+/**
+ * Validate that no turn is already running, set up the turn's abort controller and metadata,
+ * sync the model if it has changed, and return the initialised runtime and a new turn ID.
+ */
+async function initializeTurnRuntime(
+  ctx: ThreadHandlersContext,
+  params: TurnStartParams,
+  connectionId: string | undefined,
+  turnInitiators: Map<string, string>,
+): Promise<{ runtime: ThreadRuntime; turnId: string }> {
   const runtime = await ctx.resolveThreadRuntime(params.threadId);
   if (runtime.isRunning) throw new Error("A turn is already running for this thread");
 
@@ -369,16 +419,18 @@ export async function handleTurnStart(
 
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
+  return { runtime, turnId };
+}
 
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-    params: { threadId: runtime.id, status: "busy" },
-  });
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
-    params: { threadId: runtime.id, turnId },
-  });
-
+/**
+ * Resolve the slash-skill invocation (if any), normalize attachments, and assemble the
+ * user message object that will be passed to the session manager.
+ */
+function prepareTurnMessage(
+  ctx: ThreadHandlersContext,
+  params: TurnStartParams,
+  runtime: ThreadRuntime,
+): { userMessage: UserMessage; content: UserMessage["content"] } {
   const timestamp = Date.now();
   const slashSkill = parseSlashSkillInvocation(params.message, new Set(ctx.getSkillNames()));
   const messageForTurn = slashSkill
@@ -407,79 +459,74 @@ export async function handleTurnStart(
             ...normalizedAttachments,
           ]
         : messageForTurn;
-  const userMessage = { role: "user" as const, content, timestamp };
 
-  // Run UserPromptSubmit hooks (shell commands + plugin handlers) before processing the prompt
+  return { userMessage: { role: "user" as const, content: content as UserMessage["content"], timestamp }, content: content as UserMessage["content"] };
+}
+
+type HookOutcome =
+  | { blocked: true }
+  | { blocked: false; userMessage: UserMessage };
+
+/**
+ * Collect and run UserPromptSubmit hooks (shell + plugin). If a hook blocks the prompt,
+ * emit error/turn-end notifications and return blocked. If a hook supplies additional
+ * context, prepend it to the user message and return the augmented message.
+ */
+async function applyUserPromptHooks(
+  ctx: ThreadHandlersContext,
+  params: TurnStartParams,
+  runtime: ThreadRuntime,
+  content: UserMessage["content"],
+  userMessage: UserMessage,
+  turnId: string,
+): Promise<HookOutcome> {
   const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
   const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
 
-  if (shellHandlers.length > 0 || pluginHandlers.length > 0) {
-    const hookInput = {
-      session_id: runtime.manager.sessionId,
-      transcript_path: runtime.manager.sessionPath ?? "",
-      cwd: runtime.cwd,
-      hook_event_name: "UserPromptSubmit",
-      permission_mode: runtime.mode,
-      user_id: runtime.currentTurnUserId,
-      prompt: typeof content === "string" ? content : params.message,
-    };
-
-    const hookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
-
-    if (hookResult.blocked) {
-      // Abort the turn without running the agent
-      resetTurnRuntimeState(runtime);
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-        params: {
-          threadId: runtime.id,
-          error: {
-            message: hookResult.reason ?? "Prompt blocked by hook",
-            name: "HookBlocked",
-          },
-          fatal: false,
-        },
-      });
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
-        params: { threadId: runtime.id, turnId },
-      });
-      await ctx.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-        params: { threadId: runtime.id, status: "idle" },
-      });
-      return { accepted: true };
-    }
-
-    // Prepend additional context from hooks to the user message if provided
-    if (hookResult.additionalContext) {
-      const contextPrefix = hookResult.additionalContext;
-      const originalText = typeof content === "string" ? content : params.message;
-      const augmentedContent = `${contextPrefix}\n\n${originalText}`;
-      Object.assign(userMessage, { content: augmentedContent });
-    }
+  if (shellHandlers.length === 0 && pluginHandlers.length === 0) {
+    return { blocked: false, userMessage };
   }
 
-  const userItemId = `msg-${crypto.randomUUID().slice(0, 8)}`;
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
-    params: {
-      threadId: runtime.id,
-      turnId,
-      event: {
-        type: "user_message",
-        itemId: userItemId,
-        message: userMessage,
-      },
-      threadStatus: "busy",
-    },
-  });
+  const hookInput = {
+    session_id: runtime.manager.sessionId,
+    transcript_path: runtime.manager.sessionPath ?? "",
+    cwd: runtime.cwd,
+    hook_event_name: "UserPromptSubmit",
+    permission_mode: runtime.mode,
+    user_id: runtime.currentTurnUserId,
+    prompt: typeof content === "string" ? content : params.message,
+  };
 
-  const runPromise = runtime.manager.run(userMessage, {
-    signal: runtime.abortController.signal,
-  });
-  void ctx.consumeTurn(runtime, runPromise, turnId);
-  return { accepted: true };
+  const hookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
+
+  if (hookResult.blocked) {
+    resetTurnRuntimeState(runtime);
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+      params: {
+        threadId: runtime.id,
+        error: { message: hookResult.reason ?? "Prompt blocked by hook", name: "HookBlocked" },
+        fatal: false,
+      },
+    });
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
+      params: { threadId: runtime.id, turnId },
+    });
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "idle" },
+    });
+    return { blocked: true };
+  }
+
+  if (hookResult.additionalContext) {
+    const originalText = typeof content === "string" ? content : params.message;
+    const augmentedContent = `${hookResult.additionalContext}\n\n${originalText}`;
+    return { blocked: false, userMessage: { ...userMessage, content: augmentedContent as UserMessage["content"] } };
+  }
+
+  return { blocked: false, userMessage };
 }
 
 export async function handleTurnInterrupt(
