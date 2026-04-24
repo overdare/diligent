@@ -1,86 +1,92 @@
 ---
 name: passion-junior
 description: >
-  Auto-progress independently executable tasks from the latest tech-lead review and open individual PRs for each.
-  Reads the most recent review in docs/review/, parses Priority Actions tasks across groups,
-  then executes every task that can be progressed independently on a separate branch and opens a PR.
+  Auto-progress independently executable tasks from existing GitHub Issues and open individual PRs for each.
+  Claims one open issue at a time, implements it on a dedicated branch, and opens a PR linked to that issue.
   Use this skill when: the user says "passion-junior", "auto-fix review items", "fix quick wins from review",
-  "run the junior fixes", or asks to automatically resolve simple tech-lead review findings.
+  "run the junior fixes", or asks to automatically resolve simple tech-lead follow-up issues.
   Prefer proceeding without waiting whenever the repo context is sufficient; the user will judge via PR.
 ---
 
 # Passion Junior
 
-Execute all review tasks that can be progressed independently from repo context, each as an individual PR.
+Execute GitHub Issues that can be progressed independently from repo context, one issue at a time, each as an individual PR.
 
 ## Workflow
 
-### 1. Find the latest review
+### 1. Find candidate GitHub Issues
 
-Find the most recently committed review file using git:
+List open GitHub Issues that are suitable for autonomous implementation work.
 
 ```bash
-git log --oneline --diff-filter=A -- 'docs/review/[0-9]*.md' | head -5
+gh issue list --state open --limit 100 --json number,title,labels,assignees
 ```
 
-This lists commits that added files in that directory, newest first. The first result's file is the latest review. Multiple files may share the same date prefix, so filename sorting is unreliable — always use git commit order.
+Prefer issues created from tech-lead output, especially issues labeled `tech-lead`.
 
-See [references/review-format.md](references/review-format.md) for format details.
+Exclude issues that:
+- already have an assignee other than yourself
+- are clearly blocked on product decisions or missing external context
+- are too large to complete responsibly in one focused PR
+- are meta-tracking items rather than executable implementation work
 
-### 2. Extract independently executable tasks
+If no suitable unassigned issue exists, stop and report that there is nothing actionable to claim.
 
-Parse the `## Priority Actions` section. Extract tasks from all groups and flat lists. Each task has:
-- **Title**: bold text after the number
-- **Files**: file paths with optional line numbers
-- **Instruction**: what to change
+### 2. Claim exactly one issue
 
-Execute a task whenever it can be reasonably progressed from the review plus repository context alone.
-Do not wait for user confirmation just because there are multiple plausible implementations; choose the best implementation that fits the review and repository context, then open a PR for the user to judge.
-Only skip tasks when the repository context is insufficient to make a responsible change.
+Select the best single issue that can be completed independently, then assign it to yourself before doing implementation work.
 
-### 3. Check for existing PRs
+Use `gh` to determine the current authenticated user and then self-assign the issue.
 
-Before executing any tasks, fetch the list of open passion-junior PRs:
-
-```
-gh pr list --label passion-junior --state open --json headRefName,title
+```bash
+gh api user --jq .login
+gh issue edit <number> --add-assignee <login>
 ```
 
-Build a set of existing branch names from the result. In step 4, skip any task whose branch already exists in this set.
+After claiming, read the full issue body and any linked context before making changes.
 
-Also check if the review file being processed is the same one that existing PRs reference (by date in the review filename). If all independently executable tasks from that review already have open PRs, stop early and report "Nothing to do — all independently executable tasks already have open PRs."
+### 3. Check for an existing PR for that issue
 
-### 4. Execute each task as a separate PR
+Before implementing, verify there is no open PR already handling the claimed issue.
 
-For each independently executable task, sequentially:
+```bash
+gh pr list --state open --search "in:title <issue number>"
+```
 
-1. Determine the branch name: `fix/passion-junior/<slug>` where slug is a kebab-case summary (e.g., `fix-pickfolder-rename`, `fix-p013-frontmatter`, `extract-oauth-token-url`)
-2. **Skip if branch already exists** in the set from step 3 — log "Skipped (PR already open)" and continue to next task
-3. Create branch from main
-4. Read the target file(s) and apply the fix
-5. Run `bun run typecheck` to verify no type errors introduced
-6. Commit with message: `fix: <task title>` and body referencing the review
-7. Push and open PR with:
-   - Title: `fix: <task title>`
-   - Body: reference to the review finding and what was changed
-   - Label: `passion-junior` (create if missing)
+Also inspect likely branch names if needed. If an open PR already covers the issue, unassign yourself if appropriate, skip the issue, and report it as already in progress.
+
+### 4. Execute the claimed issue as one PR
+
+For the claimed issue only, sequentially:
+
+1. Determine the branch name: `fix/passion-junior/issue-<number>-<slug>`
+2. Create the branch from `main`
+3. Read the target files and implement only what the issue asks for
+4. Run `bun run typecheck` to verify no type errors were introduced
+5. Commit with message: `fix: <issue title>`
+6. Push and open a PR with:
+   - Title: `fix: <issue title> (#<number>)`
+   - Body: `Closes #<number>` plus a concise implementation summary
+   - Label: `passion-junior` if that label exists or can be created safely
+
+Keep the scope tightly aligned to the issue. Do not silently expand into neighboring cleanup unless required for the fix to work.
 
 ### 5. Report results
 
-After all tasks, output a summary table:
+After finishing the claimed issue, output a one-row summary table:
 
 ```
-| # | Task | Branch | PR | Status |
-|---|------|--------|----|--------|
-| 1 | ... | fix/passion-junior/... | #N | created |
-| 2 | ... | fix/passion-junior/... | — | skipped (PR already open) |
+| Issue | Branch | PR | Status |
+|------:|--------|----|--------|
+| #123 | fix/passion-junior/issue-123-... | #456 | created |
 ```
 
 ## Constraints
 
-- Never modify code beyond what the review explicitly specifies
-- If `bun run typecheck` fails after a fix, skip that task and report it as failed
-- Do not combine multiple fixes into one PR
+- Never use the latest tech-lead review document as the task queue when an actionable GitHub Issue already exists
+- Never modify code beyond what the claimed issue explicitly requires
+- If `bun run typecheck` fails after a fix, stop and report the issue as failed
+- Do not combine multiple issues into one PR
 - Each branch must be based on the latest main
-- If a task's target file has changed since the review (line numbers shifted), read the file and find the correct location by content matching
-- Prefer the best implementation supported by the review and repository context, then let the user judge via PR
+- If the issue is ambiguous, use repository context and linked issue discussion to choose the best responsible implementation
+- Prefer the best implementation supported by the issue and repository context, then let the user judge via PR

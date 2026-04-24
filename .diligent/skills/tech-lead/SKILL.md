@@ -7,6 +7,8 @@ description: "Evaluate the sustainable developability of the Diligent project's 
 
 Your job is to answer one question: **Can this sustain high development velocity without structural degradation?**
 
+This skill is intended to run on a cadence of **once per 50 commits** since the last reviewed commit. When invoked from automation, treat the most recent review file in `docs/review/` as the previous checkpoint and assess the commit range from that reviewed commit to the current `HEAD`.
+
 This is not a generic code-quality review. You are assessing whether the repository's architecture, package boundaries, type flow, decision hygiene, and delivery shape can keep absorbing new work without accumulating drag.
 
 Sustainable developability breaks when:
@@ -23,6 +25,8 @@ Your review should catch compounding problems early, not just confirm the curren
 ## Before You Start
 
 Read the 3 most recent files in `docs/review/` first. Use them to understand trend, unresolved issues, and prior framing, but do not treat them as the truth. The repository moves quickly; make an independent assessment of the current state.
+
+Also identify the most recent review file in `docs/review/` and treat the short hash in its filename as the previous reviewed commit. Use that commit to compute the reviewed range and commit count to the current `HEAD`.
 
 Assume you are a new hire with no hidden context. Any friction you experience while navigating the repo is evidence. If a package's purpose is ambiguous, a decision is hard to find, or a boundary is only implicit, that is part of the review.
 
@@ -208,6 +212,43 @@ docs/review/{YYYY-MM-DD}-{short-hash}.md
 ```
 
 If a file with today's date already exists, overwrite it. Do not only print the assessment to stdout. The review must exist on disk.
+
+After writing the review, **register the actionable findings as GitHub Issues** using the `gh` CLI. GitHub Issues are the execution queue for follow-up work; the review document is the analysis artifact.
+
+## GitHub Issue Registration
+
+Create or update GitHub Issues for actionable items so follow-up work can be executed independently from the review document.
+
+### Source of truth for issues
+
+- Use `## Priority Actions` as the primary source for issue creation.
+- If a critical unresolved structural risk is not represented in `## Priority Actions`, add a corresponding action first and then create the issue from that action.
+- Do not create issues for resolved items, purely informational observations, or bookkeeping-only work.
+
+### De-duplication before creation
+
+Before creating an issue, search existing open issues with `gh issue list` and `gh issue view` as needed.
+
+- Reuse an existing open issue when it already covers the same structural problem and intended action.
+- Create a new issue only when no equivalent open issue exists.
+- If a previous issue exists but is closed and the problem is still current, open a new issue and reference the closed issue for context.
+
+### Issue shape
+
+Create one GitHub Issue per independently executable action. Prefer focused issues over umbrella issues.
+
+Each issue should include:
+- a concise action-oriented title
+- the review file path
+- the reviewed commit range
+- why this matters for sustainable development velocity
+- concrete target files, packages, or decisions when known
+
+Use labels when possible:
+- `tech-lead`
+- one priority/severity label if the repository already has a clear convention; otherwise create only `tech-lead`
+
+At the end of the review, include a short `## GitHub Issues` section listing each mapped action with its corresponding issue number or noting that an existing issue was reused.
 
 ### Format
 

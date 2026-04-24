@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   run:
@@ -16,16 +17,39 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Skip if last commit was a tech-lead review
+      - name: Skip unless 50 commits accumulated since last reviewed commit
         id: guard
         shell: bash
         run: |
-          LAST_MSG=$(git log -1 --format="%s" origin/main)
-          echo "Last commit: $LAST_MSG"
-          if echo "$LAST_MSG" | grep -q "^chore(repo): tech-lead review"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+
+          LAST_REVIEW_FILE=$(git log --diff-filter=A --name-only --pretty=format: -- 'docs/review/[0-9]*.md' | sed '/^$/d' | head -n 1)
+
+          if [ -z "$LAST_REVIEW_FILE" ]; then
+            echo "No previous review file found; running tech-lead."
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LAST_REVIEW_BASENAME=$(basename "$LAST_REVIEW_FILE")
+          LAST_REVIEW_HASH=${LAST_REVIEW_BASENAME%.md}
+          LAST_REVIEW_HASH=${LAST_REVIEW_HASH##*-}
+
+          if ! LAST_REVIEW_COMMIT=$(git rev-parse "${LAST_REVIEW_HASH}^{commit}" 2>/dev/null); then
+            echo "Could not resolve reviewed commit from $LAST_REVIEW_BASENAME; running tech-lead."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COMMITS_SINCE=$(git rev-list --count "${LAST_REVIEW_COMMIT}..origin/main")
+          echo "Last review file: $LAST_REVIEW_FILE"
+          echo "Reviewed commit: $LAST_REVIEW_HASH"
+          echo "Commits since last review: $COMMITS_SINCE"
+
+          if [ "$COMMITS_SINCE" -ge 50 ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download latest diligent Linux binary
@@ -71,6 +95,8 @@ jobs:
       - name: Run tech-lead skill
         if: steps.guard.outputs.skip == 'false'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ./.bin/diligent --yolo --prompt "/tech-lead"
