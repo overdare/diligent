@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { PROVIDER_NAMES, type ProviderManager } from "@diligent/core/llm/provider-manager";
 import {
+  type AuthStoreOptions,
   createChatGPTOAuthBinding,
   openBrowser as defaultOpenBrowser,
   loadAuthStore,
@@ -46,9 +47,12 @@ export async function handleConfigSet(
   return { model };
 }
 
-export async function buildProviderList(providerManager?: ProviderManager): Promise<ProviderAuthStatus[]> {
-  const keys = providerManager ? undefined : await loadAuthStore();
-  const oauthTokens = await loadOAuthTokens();
+export async function buildProviderList(
+  providerManager?: ProviderManager,
+  authStore?: AuthStoreOptions,
+): Promise<ProviderAuthStatus[]> {
+  const keys = providerManager ? undefined : await loadAuthStore(authStore);
+  const oauthTokens = await loadOAuthTokens(authStore);
   return PROVIDER_NAMES.map((provider) => ({
     provider,
     configured: providerManager
@@ -73,15 +77,16 @@ export async function handleAuthSet(
   providerManager: ProviderManager | undefined,
   params: { provider: ProviderName; apiKey: string },
   emit: EmitFn,
+  authStore?: AuthStoreOptions,
 ): Promise<{ ok: true }> {
   if (!providerManager) throw Object.assign(new Error("Auth not available"), { code: -32601 });
   if (params.provider === "chatgpt") {
     throw Object.assign(new Error("ChatGPT uses OAuth login, not API keys"), { code: -32602 });
   }
 
-  await saveAuthKey(params.provider, params.apiKey);
+  await saveAuthKey(params.provider, params.apiKey, authStore);
   providerManager.setApiKey(params.provider, params.apiKey);
-  const providers = await buildProviderList(providerManager);
+  const providers = await buildProviderList(providerManager, authStore);
   await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
   return { ok: true };
 }
@@ -90,17 +95,18 @@ export async function handleAuthRemove(
   providerManager: ProviderManager | undefined,
   params: { provider: ProviderName },
   emit: EmitFn,
+  authStore?: AuthStoreOptions,
 ): Promise<{ ok: true }> {
   if (!providerManager) throw Object.assign(new Error("Auth not available"), { code: -32601 });
 
-  await removeAuthKey(params.provider);
+  await removeAuthKey(params.provider, authStore);
   providerManager.removeApiKey(params.provider);
   if (params.provider === "chatgpt") {
-    await removeOAuthTokens();
+    await removeOAuthTokens(authStore);
     providerManager.removeExternalAuth("chatgpt");
   }
 
-  const providers = await buildProviderList(providerManager);
+  const providers = await buildProviderList(providerManager, authStore);
   await emit({ method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED, params: { providers } });
   return { ok: true };
 }
@@ -112,6 +118,7 @@ export async function handleAuthOAuthStart(args: {
   setOAuthPending: (value: Promise<void> | null) => void;
   openBrowser?: (url: string) => void;
   emit: EmitFn;
+  authStore?: AuthStoreOptions;
 }): Promise<{ authUrl: string }> {
   if (args.params.provider !== "chatgpt") {
     throw Object.assign(new Error("Unsupported OAuth provider"), { code: -32602 });
@@ -136,17 +143,17 @@ export async function handleAuthOAuthStart(args: {
         },
         openBrowser: opener,
       });
-      await saveOAuthTokens(tokens);
+      await saveOAuthTokens(tokens, args.authStore);
       const authBinding = createChatGPTOAuthBinding({
         initialTokens: tokens,
-        onTokensRefreshed: saveOAuthTokens,
+        onTokensRefreshed: (nextTokens) => saveOAuthTokens(nextTokens, args.authStore),
       });
       pm.setExternalAuth("chatgpt", authBinding.auth);
       await args.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_LOGIN_COMPLETED,
         params: { loginId, success: true, error: null },
       });
-      const providers = await buildProviderList(pm);
+      const providers = await buildProviderList(pm, args.authStore);
       await args.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.ACCOUNT_UPDATED,
         params: { providers },

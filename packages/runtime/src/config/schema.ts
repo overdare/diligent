@@ -12,6 +12,11 @@ export const DiligentConfigSchema = z
     model: ModelId.optional(),
     provider: z
       .object({
+        auth: z
+          .object({
+            credentialsStore: z.enum(["file", "keyring", "auto", "ephemeral"]).optional(),
+          })
+          .optional(),
         anthropic: z
           .object({
             apiKey: z.string().optional(),

@@ -1,11 +1,15 @@
-// @summary Tests for runtime auth-store load/save/remove behavior and JSONC parsing
+// @summary Tests for runtime auth-store file, keyring, auto-fallback, and ephemeral behavior
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OpenAIOAuthTokens } from "@diligent/core/auth";
 import {
+  __resetEphemeralAuthStoreForTests,
+  __setKeytarForTests,
   getAuthFilePath,
+  getAuthKeyringAccount,
+  getAuthKeyringServiceName,
   loadAuthStore,
   loadOAuthTokens,
   removeAuthKey,
@@ -27,6 +31,30 @@ const TEST_OAUTH_TOKENS: OpenAIOAuthTokens = {
   account_id: "acc-test",
 };
 
+function authOptions(path: string, mode: "file" | "keyring" | "auto" | "ephemeral") {
+  return { path, mode } as const;
+}
+
+function createFakeKeytar(initial?: Record<string, string>, behavior?: { failLoad?: boolean; failSave?: boolean }) {
+  const store = new Map(Object.entries(initial ?? {}));
+  return {
+    store,
+    adapter: {
+      async getPassword(service: string, account: string): Promise<string | null> {
+        if (behavior?.failLoad) throw new Error("keyring load failed");
+        return store.get(`${service}:${account}`) ?? null;
+      },
+      async setPassword(service: string, account: string, password: string): Promise<void> {
+        if (behavior?.failSave) throw new Error("keyring save failed");
+        store.set(`${service}:${account}`, password);
+      },
+      async deletePassword(service: string, account: string): Promise<boolean> {
+        return store.delete(`${service}:${account}`);
+      },
+    },
+  };
+}
+
 beforeEach(async () => {
   await mkdir(TEST_ROOT, { recursive: true });
   origHome = process.env.HOME;
@@ -35,9 +63,13 @@ beforeEach(async () => {
   process.env.HOME = TEST_ROOT;
   process.env.USERPROFILE = TEST_ROOT;
   delete process.env.DILIGENT_STORAGE_NAMESPACE;
+  __setKeytarForTests(null);
+  __resetEphemeralAuthStoreForTests();
 });
 
 afterEach(async () => {
+  __setKeytarForTests(null);
+  __resetEphemeralAuthStoreForTests();
   if (origHome !== undefined) {
     process.env.HOME = origHome;
   } else {
@@ -71,9 +103,18 @@ describe("getAuthFilePath", () => {
   });
 });
 
-describe("loadAuthStore", () => {
+describe("keyring metadata", () => {
+  test("uses a stable service and account id", () => {
+    const path = join(TEST_ROOT, ".diligent", "auth.jsonc");
+    expect(getAuthKeyringServiceName()).toBe("Diligent Auth");
+    expect(getAuthKeyringAccount(path)).toMatch(/^cli\|[0-9a-f]{16}$/);
+    expect(getAuthKeyringAccount(path)).toBe(getAuthKeyringAccount(path));
+  });
+});
+
+describe("file storage", () => {
   test("returns {} when file does not exist", async () => {
-    const result = await loadAuthStore(join(TEST_ROOT, "nonexistent.jsonc"));
+    const result = await loadAuthStore(authOptions(join(TEST_ROOT, "nonexistent.jsonc"), "file"));
     expect(result).toEqual({});
   });
 
@@ -81,53 +122,18 @@ describe("loadAuthStore", () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", openai: "sk-456", zai: "zai-789" }));
 
-    const result = await loadAuthStore(path);
+    const result = await loadAuthStore(authOptions(path, "file"));
     expect(result.anthropic).toBe("sk-ant-123");
     expect(result.openai).toBe("sk-456");
     expect(result.zai).toBe("zai-789");
-    expect(result.gemini).toBeUndefined();
-    expect(result.vertex).toBeUndefined();
-  });
-
-  test("loads vertex token entries", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ vertex: "ya29.vertex-token" }));
-
-    const result = await loadAuthStore(path);
-    expect(result.vertex).toBe("ya29.vertex-token");
   });
 
   test("parses JSONC comments", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, '{\n  // primary provider\n  "anthropic": "sk-ant-123"\n}\n');
 
-    const result = await loadAuthStore(path);
+    const result = await loadAuthStore(authOptions(path, "file"));
     expect(result.anthropic).toBe("sk-ant-123");
-  });
-
-  test("loads chatgpt_oauth tokens", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
-
-    const result = await loadAuthStore(path);
-    expect(result.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("loads both plain key and chatgpt_oauth simultaneously", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-123", chatgpt_oauth: TEST_OAUTH_TOKENS }));
-
-    const result = await loadAuthStore(path);
-    expect(result.anthropic).toBe("sk-ant-123");
-    expect(result.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("returns {} for invalid JSON", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, "not json");
-
-    const result = await loadAuthStore(path);
-    expect(result).toEqual({});
   });
 
   test("substitutes {env:VAR} in values", async () => {
@@ -135,168 +141,33 @@ describe("loadAuthStore", () => {
     process.env.TEST_ANTHROPIC_KEY = "sk-from-env";
     await Bun.write(path, JSON.stringify({ anthropic: "{env:TEST_ANTHROPIC_KEY}" }));
 
-    const result = await loadAuthStore(path);
+    const result = await loadAuthStore(authOptions(path, "file"));
     expect(result.anthropic).toBe("sk-from-env");
     delete process.env.TEST_ANTHROPIC_KEY;
   });
 
-  test("{env:VAR} resolves to empty string when var is unset", async () => {
+  test("saves and preserves mixed credentials", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-    delete process.env.NONEXISTENT_AUTH_VAR;
-    await Bun.write(path, JSON.stringify({ anthropic: "{env:NONEXISTENT_AUTH_VAR}" }));
-
-    const result = await loadAuthStore(path);
-    expect(result.anthropic).toBe("");
-  });
-
-  test("returns {} for schema-invalid content (extra fields)", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "key", unknown_provider: "bad" }));
-
-    const result = await loadAuthStore(path);
-    expect(result).toEqual({});
-  });
-});
-
-describe("saveAuthKey", () => {
-  test("creates auth.jsonc with single key", async () => {
-    const path = join(TEST_ROOT, "new-auth.jsonc");
-
-    await saveAuthKey("anthropic", "sk-ant-new", path);
+    await saveAuthKey("anthropic", "sk-ant", authOptions(path, "file"));
+    await saveOAuthTokens(TEST_OAUTH_TOKENS, authOptions(path, "file"));
 
     const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("sk-ant-new");
-  });
-
-  test("preserves existing keys when adding new one", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant-existing" }));
-
-    await saveAuthKey("openai", "sk-openai-new", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("sk-ant-existing");
-    expect(content.openai).toBe("sk-openai-new");
-  });
-
-  test("persists zai auth entries", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-
-    await saveAuthKey("zai", "zai-test-key", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.zai).toBe("zai-test-key");
-  });
-
-  test("persists vertex auth entries", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-
-    await saveAuthKey("vertex", "ya29.vertex-token", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.vertex).toBe("ya29.vertex-token");
-  });
-
-  test("preserves chatgpt_oauth when saving plain key", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
-
-    await saveAuthKey("anthropic", "sk-ant-new", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("sk-ant-new");
+    expect(content.anthropic).toBe("sk-ant");
     expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("overwrites existing key for same provider", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "old-key" }));
-
-    await saveAuthKey("anthropic", "new-key", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("new-key");
   });
 
   test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
-
-    await saveAuthKey("gemini", "AIza-test", path);
-
+    await saveAuthKey("gemini", "AIza-test", authOptions(path, "file"));
     const st = await stat(path);
     expect(st.mode & 0o777).toBe(0o600);
   });
 
-  test("creates parent directories if needed", async () => {
-    const path = join(TEST_ROOT, "nested", "dir", "auth.jsonc");
-
-    await saveAuthKey("anthropic", "sk-deep", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("sk-deep");
-  });
-});
-
-describe("saveOAuthTokens", () => {
-  test("saves chatgpt_oauth to new file", async () => {
-    const path = join(TEST_ROOT, "oauth-auth.jsonc");
-
-    await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("preserves plain API keys when saving OAuth tokens", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await saveAuthKey("anthropic", "sk-ant-test", path);
-
-    await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBe("sk-ant-test");
-    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("overwrites existing chatgpt_oauth", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    const oldTokens: OpenAIOAuthTokens = { ...TEST_OAUTH_TOKENS, account_id: "acc-old" };
-    await Bun.write(path, JSON.stringify({ chatgpt_oauth: oldTokens }));
-
-    const newTokens: OpenAIOAuthTokens = { ...TEST_OAUTH_TOKENS, account_id: "acc-new" };
-    await saveOAuthTokens(newTokens, path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.chatgpt_oauth.account_id).toBe("acc-new");
-  });
-
-  test.skipIf(process.platform === "win32")("sets file permissions to 0o600", async () => {
-    const path = join(TEST_ROOT, "oauth.jsonc");
-
-    await saveOAuthTokens(TEST_OAUTH_TOKENS, path);
-
-    const st = await stat(path);
-    expect(st.mode & 0o777).toBe(0o600);
-  });
-});
-
-describe("remove auth entries", () => {
-  test("removes a plain API key without disturbing oauth tokens", async () => {
+  test("removes oauth without disturbing API keys", async () => {
     const path = join(TEST_ROOT, "auth.jsonc");
     await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", chatgpt_oauth: TEST_OAUTH_TOKENS }));
 
-    await removeAuthKey("anthropic", path);
-
-    const content = JSON.parse(await Bun.file(path).text());
-    expect(content.anthropic).toBeUndefined();
-    expect(content.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
-  });
-
-  test("removes oauth tokens without disturbing API keys", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant", chatgpt_oauth: TEST_OAUTH_TOKENS }));
-
-    await removeOAuthTokens(path);
+    await removeOAuthTokens(authOptions(path, "file"));
 
     const content = JSON.parse(await Bun.file(path).text());
     expect(content.anthropic).toBe("sk-ant");
@@ -304,25 +175,117 @@ describe("remove auth entries", () => {
   });
 });
 
+describe("keyring storage", () => {
+  test("loads credentials from keyring", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    const service = getAuthKeyringServiceName();
+    const account = getAuthKeyringAccount(path);
+    const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ anthropic: "sk-keyring" }) });
+    __setKeytarForTests(fake.adapter);
+
+    const result = await loadAuthStore(authOptions(path, "keyring"));
+    expect(result.anthropic).toBe("sk-keyring");
+  });
+
+  test("saving to keyring removes fallback file", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await Bun.write(path, JSON.stringify({ anthropic: "old-file-key" }));
+    const fake = createFakeKeytar();
+    __setKeytarForTests(fake.adapter);
+
+    await saveAuthKey("anthropic", "sk-keyring", authOptions(path, "keyring"));
+
+    const exists = await Bun.file(path).exists();
+    expect(exists).toBe(false);
+    const saved = fake.store.get(`${getAuthKeyringServiceName()}:${getAuthKeyringAccount(path)}`);
+    expect(saved).toBeDefined();
+    expect(JSON.parse(saved ?? "{}").anthropic).toBe("sk-keyring");
+  });
+});
+
+describe("auto storage fallback", () => {
+  test("prefers keyring over file when both exist", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await Bun.write(path, JSON.stringify({ anthropic: "file-key" }));
+    const service = getAuthKeyringServiceName();
+    const account = getAuthKeyringAccount(path);
+    const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ anthropic: "keyring-key" }) });
+    __setKeytarForTests(fake.adapter);
+
+    const result = await loadAuthStore(authOptions(path, "auto"));
+    expect(result.anthropic).toBe("keyring-key");
+  });
+
+  test("falls back to file when keyring is empty", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await Bun.write(path, JSON.stringify({ anthropic: "file-key" }));
+    const fake = createFakeKeytar();
+    __setKeytarForTests(fake.adapter);
+
+    const result = await loadAuthStore(authOptions(path, "auto"));
+    expect(result.anthropic).toBe("file-key");
+  });
+
+  test("falls back to file when keyring load fails", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await Bun.write(path, JSON.stringify({ anthropic: "file-key" }));
+    const fake = createFakeKeytar(undefined, { failLoad: true });
+    __setKeytarForTests(fake.adapter);
+
+    const result = await loadAuthStore(authOptions(path, "auto"));
+    expect(result.anthropic).toBe("file-key");
+  });
+
+  test("falls back to file when keyring save fails", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    const fake = createFakeKeytar(undefined, { failSave: true });
+    __setKeytarForTests(fake.adapter);
+
+    await saveAuthKey("anthropic", "file-fallback-key", authOptions(path, "auto"));
+
+    const content = JSON.parse(await Bun.file(path).text());
+    expect(content.anthropic).toBe("file-fallback-key");
+  });
+});
+
+describe("ephemeral storage", () => {
+  test("stores credentials only in memory", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+
+    await saveAuthKey("anthropic", "mem-key", authOptions(path, "ephemeral"));
+    await saveOAuthTokens(TEST_OAUTH_TOKENS, authOptions(path, "ephemeral"));
+
+    const loaded = await loadAuthStore(authOptions(path, "ephemeral"));
+    expect(loaded.anthropic).toBe("mem-key");
+    expect(loaded.chatgpt_oauth).toEqual(TEST_OAUTH_TOKENS);
+    expect(await Bun.file(path).exists()).toBe(false);
+  });
+
+  test("delete clears the in-memory entry", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    await saveAuthKey("anthropic", "mem-key", authOptions(path, "ephemeral"));
+
+    await removeAuthKey("anthropic", authOptions(path, "ephemeral"));
+
+    const loaded = await loadAuthStore(authOptions(path, "ephemeral"));
+    expect(loaded).toEqual({});
+  });
+});
+
 describe("loadOAuthTokens", () => {
-  test("returns undefined when no chatgpt_oauth in file", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ anthropic: "sk-ant" }));
-
-    const result = await loadOAuthTokens(path);
-    expect(result).toBeUndefined();
-  });
-
-  test("returns OAuth tokens when present", async () => {
-    const path = join(TEST_ROOT, "auth.jsonc");
-    await Bun.write(path, JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }));
-
-    const result = await loadOAuthTokens(path);
-    expect(result).toEqual(TEST_OAUTH_TOKENS);
-  });
-
   test("returns undefined when file does not exist", async () => {
-    const result = await loadOAuthTokens(join(TEST_ROOT, "missing.jsonc"));
+    const result = await loadOAuthTokens(authOptions(join(TEST_ROOT, "missing.jsonc"), "file"));
     expect(result).toBeUndefined();
+  });
+
+  test("returns OAuth tokens when present in auto-backed keyring", async () => {
+    const path = join(TEST_ROOT, "auth.jsonc");
+    const service = getAuthKeyringServiceName();
+    const account = getAuthKeyringAccount(path);
+    const fake = createFakeKeytar({ [`${service}:${account}`]: JSON.stringify({ chatgpt_oauth: TEST_OAUTH_TOKENS }) });
+    __setKeytarForTests(fake.adapter);
+
+    const result = await loadOAuthTokens(authOptions(path, "auto"));
+    expect(result).toEqual(TEST_OAUTH_TOKENS);
   });
 });

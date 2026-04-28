@@ -12,7 +12,13 @@ import type { AgentMetadata } from "../agents/index";
 import { discoverAgents, renderAgentsSection } from "../agents/index";
 import type { PermissionEngine } from "../approval/index";
 import { createPermissionEngine, createYoloPermissionEngine } from "../approval/index";
-import { loadAuthStore, loadOAuthTokens, saveOAuthTokens } from "../auth/index";
+import {
+  type AuthCredentialsStoreMode,
+  type AuthStoreOptions,
+  loadAuthStore,
+  loadOAuthTokens,
+  saveOAuthTokens,
+} from "../auth/index";
 import { createChatGPTOAuthBinding, createVertexAccessTokenBinding } from "../auth/provider-auth";
 import type { DiligentPaths } from "../infrastructure/index";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge/index";
@@ -44,12 +50,16 @@ export interface RuntimeConfig {
   };
   permissionEngine: PermissionEngine;
   providerManager: ProviderManager;
+  authStore: AuthStoreOptions;
 }
 
 export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Promise<RuntimeConfig> {
   const { config, sources } = await loadDiligentConfig(cwd);
   const resolvedUserId = await resolveConfiguredUserId(config.userId);
   const instructions = await discoverInstructions(cwd);
+  const authStore: AuthStoreOptions = {
+    mode: (config.provider?.auth?.credentialsStore ?? "auto") as AuthCredentialsStoreMode,
+  };
 
   // Create ProviderManager — no throw on missing keys, deferred to call time
   const providerManager = new ProviderManager({
@@ -57,7 +67,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   });
 
   // Overlay auth.json keys
-  const authKeys = await loadAuthStore();
+  const authKeys = await loadAuthStore(authStore);
   for (const [provider, key] of Object.entries(authKeys)) {
     if (typeof key === "string" && key) {
       providerManager.setApiKey(provider as "anthropic" | "openai" | "gemini" | "vertex" | "zai", key);
@@ -65,11 +75,11 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
   }
 
   // Load ChatGPT OAuth tokens and bind them as external provider auth.
-  const oauthTokens = await loadOAuthTokens();
+  const oauthTokens = await loadOAuthTokens(authStore);
   if (oauthTokens) {
     const chatgptAuth = createChatGPTOAuthBinding({
       initialTokens: oauthTokens,
-      onTokensRefreshed: saveOAuthTokens,
+      onTokensRefreshed: (tokens) => saveOAuthTokens(tokens, authStore),
     });
     await chatgptAuth.auth.ensureFresh?.();
     providerManager.setExternalAuth("chatgpt", chatgptAuth.auth);
@@ -196,6 +206,7 @@ export async function loadRuntimeConfig(cwd: string, paths: DiligentPaths): Prom
     },
     permissionEngine: config.yolo ? createYoloPermissionEngine() : createPermissionEngine(config.permissions ?? []),
     providerManager,
+    authStore,
   };
 }
 

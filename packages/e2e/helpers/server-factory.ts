@@ -56,9 +56,11 @@ export function createTestServer(opts: {
       enabled: true,
       reservePercent: 16,
       keepRecentTokens: 20_000,
+      timeoutMs: 180_000,
     },
     permissionEngine: createYoloPermissionEngine(),
     providerManager,
+    authStore: { mode: "auto" },
     ...opts.runtimeConfigOverrides,
   };
 

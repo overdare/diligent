@@ -42,6 +42,9 @@ function makeRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     },
     permissionEngine,
     providerManager,
+    agents: [],
+    agentDefinitions: [],
+    authStore: { mode: "auto" },
     ...overrides,
   };
 }
@@ -62,6 +65,7 @@ describe("createAppServerConfig", () => {
     expect(config.createAgent).toBeTypeOf("function");
     expect(config.compaction).toEqual(runtimeConfig.compaction);
     expect(config.providerManager).toBe(runtimeConfig.providerManager);
+    expect(config.authStore).toEqual(runtimeConfig.authStore);
     expect(config.permissionEngine).toBe(runtimeConfig.permissionEngine);
     expect(config.modelConfig).toBeDefined();
     expect(config.modelConfig?.currentModelId).toBe("claude-sonnet-4-6");

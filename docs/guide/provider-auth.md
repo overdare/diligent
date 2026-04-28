@@ -22,11 +22,30 @@ Supported providers in the protocol/runtime are:
 
 ## Auth storage
 
-Auth state is persisted in `~/.diligent/auth.jsonc`.
+Auth state is persisted using `provider.auth.credentialsStore`, which defaults to `auto`:
+
+- `auto`: prefer OS keyring, fall back to `~/.diligent/auth.jsonc`
+- `keyring`: require OS keyring storage
+- `file`: always use `~/.diligent/auth.jsonc`
+- `ephemeral`: process-local in-memory storage only
+
+In keyring-backed modes, the full auth payload is serialized as JSON and stored in the OS credential store. Diligent does not add its own encryption layer; protection is delegated to the OS keychain / credential manager. Successful keyring writes remove any stale fallback auth file.
 
 The auth store uses JSONC parsing and supports `{env:VAR}` substitution when values are read. The stored schema is strict, and invalid content falls back to an empty auth state rather than partially loading unknown fields.
 
-Auth writes create parent directories as needed and tighten file permissions after write.
+File-backed auth writes create parent directories as needed and tighten file permissions after write.
+
+Example config:
+
+```jsonc
+{
+  "provider": {
+    "auth": {
+      "credentialsStore": "auto"
+    }
+  }
+}
+```
 
 Current persisted shape:
 
@@ -147,7 +166,7 @@ Concrete flow:
 2. Runtime creates PKCE request and opens browser to `https://auth.openai.com/oauth/authorize`
 3. Runtime waits on local callback: `http://localhost:1455/auth/callback`
 4. Runtime exchanges auth code at `https://auth.openai.com/oauth/token`
-5. Runtime stores `chatgpt_oauth` tokens in `~/.diligent/auth.jsonc`
+5. Runtime stores `chatgpt_oauth` tokens in the configured auth credential store
 6. Runtime binds ChatGPT external auth into `ProviderManager`
 7. Runtime emits:
    - `account/login/completed` (success/failure)

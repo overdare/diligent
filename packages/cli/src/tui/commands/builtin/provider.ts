@@ -315,7 +315,7 @@ export function promptSaveKey(provider: ProviderName, apiKey: string, ctx: Comma
       } else {
         await saveAuthKey(provider, apiKey);
       }
-      ctx.displayLines([`  ${t.success}Connected.${t.reset} Key saved to auth.json.`]);
+      ctx.displayLines([`  ${t.success}Connected.${t.reset} Credentials saved securely when available.`]);
     } catch (err) {
       ctx.displayError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
     }

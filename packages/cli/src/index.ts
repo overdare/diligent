@@ -90,7 +90,7 @@ async function main() {
       console.error(
         `Error: No AI provider is connected for ${provider}.\n` +
           `Run 'diligent' in interactive mode and follow the setup wizard (recommended: ChatGPT).\n` +
-          `Or manually save credentials in ~/.diligent/auth.jsonc.`,
+          `Or manually save credentials in ~/.diligent/auth.jsonc (or configure keyring-backed auth in config).`,
       );
       process.exit(1);
     }

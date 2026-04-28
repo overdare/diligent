@@ -8,6 +8,7 @@ import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { AgentEvent } from "../agent-event";
 import type { ApprovalRequest, ApprovalResponse, PermissionEngine } from "../approval/types";
+import type { AuthStoreOptions } from "../auth/auth-store";
 import type { ChildStopInfo } from "../collab/types";
 import type { DiligentConfig } from "../config/schema";
 import { getLastAssistantMessage, getTurnUsage, runCombinedHooks } from "../hooks/runner";
@@ -101,6 +102,8 @@ export interface DiligentAppServerConfig {
   hooks?: DiligentConfig["hooks"];
   /** User identifier included in hook inputs. Falls back to OS username if unset. */
   userId?: string;
+  /** Auth credential storage backend configuration. */
+  authStore?: AuthStoreOptions;
 }
 
 export class DiligentAppServer {
@@ -670,6 +673,7 @@ export class DiligentAppServer {
       lastUsedModelByCwd: this.lastUsedModelByCwd,
       lastUsedEffortByCwd: this.lastUsedEffortByCwd,
       providerManager: this.config.providerManager,
+      authStore: this.config.authStore,
       oauthPending: this.oauthPending,
       setOAuthPending: (value) => {
         this.oauthPending = value;

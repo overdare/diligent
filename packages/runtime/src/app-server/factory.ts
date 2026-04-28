@@ -158,6 +158,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       },
     },
     providerManager: runtimeConfig.providerManager,
+    authStore: runtimeConfig.authStore,
     permissionEngine: runtimeConfig.permissionEngine,
     skillNames: runtimeConfig.skills.map((skill) => skill.name),
     hooks: runtimeConfig.diligent.hooks,

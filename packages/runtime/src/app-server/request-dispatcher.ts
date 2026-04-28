@@ -5,6 +5,7 @@ import type { NativeCompactFn } from "@diligent/core/llm/provider/native-compact
 import type { ProviderManager } from "@diligent/core/llm/provider-manager";
 import { supportsThinkingNone } from "@diligent/core/llm/thinking-effort";
 import type { ProviderName, StreamFunction } from "@diligent/core/llm/types";
+import type { AuthStoreOptions } from "../auth/auth-store";
 import type { DiligentConfig } from "../config/schema";
 import type { ModelInfo } from "../protocol/index";
 import {
@@ -107,6 +108,7 @@ export interface ClientRequestDispatchContext {
 
   // Auth state
   providerManager: ProviderManager | undefined;
+  authStore: AuthStoreOptions | undefined;
   oauthPending: Promise<void> | null;
   setOAuthPending(value: Promise<void> | null): void;
   openBrowser: ((url: string) => void) | undefined;
@@ -305,10 +307,20 @@ export async function dispatchClientRequest(
     }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_SET:
-      return handleAuthSet(ctx.providerManager, request.params, (notification) => ctx.emit(notification));
+      return handleAuthSet(
+        ctx.providerManager,
+        request.params,
+        (notification) => ctx.emit(notification),
+        ctx.authStore,
+      );
 
     case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_REMOVE:
-      return handleAuthRemove(ctx.providerManager, request.params, (notification) => ctx.emit(notification));
+      return handleAuthRemove(
+        ctx.providerManager,
+        request.params,
+        (notification) => ctx.emit(notification),
+        ctx.authStore,
+      );
 
     case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_OAUTH_START:
       return handleAuthOAuthStart({
@@ -318,6 +330,7 @@ export async function dispatchClientRequest(
         setOAuthPending: (value) => ctx.setOAuthPending(value),
         openBrowser: ctx.openBrowser,
         emit: (notification) => ctx.emit(notification),
+        authStore: ctx.authStore,
       });
 
     case DILIGENT_CLIENT_REQUEST_METHODS.IMAGE_UPLOAD: {

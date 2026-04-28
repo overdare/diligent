@@ -1,6 +1,11 @@
-export type { AuthKeys } from "./auth-store";
+export type { AuthCredentialsStoreMode, AuthKeys, AuthStoreOptions } from "./auth-store";
 export {
+  __resetEphemeralAuthStoreForTests,
+  __setKeytarForTests,
   getAuthFilePath,
+  getAuthKeyringAccount,
+  getAuthKeyringServiceName,
+  getAuthStorageRootPath,
   loadAuthStore,
   loadOAuthTokens,
   removeAuthKey,

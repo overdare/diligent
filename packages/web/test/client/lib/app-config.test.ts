@@ -17,6 +17,7 @@ function makeTmpEnv(base: string) {
     sessions,
     knowledge,
     skills,
+    images: join(base, ".diligent", "images"),
   };
 }
 
@@ -33,6 +34,7 @@ test("loads model from config.jsonc and returns required fields", async () => {
     const config = await loadRuntimeConfig(base, paths);
 
     expect(config.model!.id).toBe("claude-sonnet-4-6");
+    expect(config.authStore.mode).toBe("auto");
     expect(typeof config.streamFunction).toBe("function");
     expect(Array.isArray(config.systemPrompt)).toBe(true);
     expect(config.systemPrompt.length).toBeGreaterThan(0);

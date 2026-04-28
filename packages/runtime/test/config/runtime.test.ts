@@ -164,6 +164,7 @@ describe("loadRuntimeConfig", () => {
     try {
       const config = await loadRuntimeConfig(tmpRoot, brandedPaths);
       expect(config.diligent.userId).toBe("overdare-user");
+      expect(config.authStore.mode).toBe("auto");
     } finally {
       process.env.HOME = originalHome;
       process.env.USERPROFILE = originalUserProfile;
@@ -232,6 +233,33 @@ describe("loadRuntimeConfig", () => {
       expect(config.providerManager.getMaskedKey("zai")).toBe("zai-tes...");
       expect(config.model?.provider).toBe("zai");
       expect(config.model?.id).toBe("glm-5.1");
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
+
+  it("reads auth credential store mode from config", async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "diligent-runtime-auth-store-"));
+    const paths = makePaths(tmpRoot);
+    const isolatedHome = join(tmpRoot, ".isolated-home");
+    await mkdir(paths.sessions, { recursive: true });
+    await mkdir(paths.knowledge, { recursive: true });
+    await mkdir(paths.skills, { recursive: true });
+    await mkdir(paths.images, { recursive: true });
+    await mkdir(join(isolatedHome, ".diligent"), { recursive: true });
+    await writeFile(
+      join(tmpRoot, ".diligent", "config.jsonc"),
+      JSON.stringify({ provider: { auth: { credentialsStore: "keyring" } } }),
+    );
+
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = isolatedHome;
+    process.env.USERPROFILE = isolatedHome;
+    try {
+      const config = await loadRuntimeConfig(tmpRoot, paths);
+      expect(config.authStore.mode).toBe("keyring");
     } finally {
       process.env.HOME = originalHome;
       process.env.USERPROFILE = originalUserProfile;
