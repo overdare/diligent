@@ -56,20 +56,24 @@ def on_generate(model, size, attributes):
 - `attributes` are the parameters `OVDR_PARAMETERS` declares, by name. Declared struct types arrive
   as friendly Python values (a `Color` for Color3, a `Vector3`, a `UDim2`, a `CFrame`, …).
 
-Run `studiorpc_geometry_validate` (`code` = the recipe) after writing or editing it: it checks the
-contract shape without a bake, so a slip is caught in milliseconds.
+Run `studiorpc_geometry_validate` (`code` = the recipe, or `sourcePath` = a recipe file) after writing
+or editing it: it checks the contract shape without a bake, so a slip is caught in milliseconds.
 
 ## The loop
 
 1. **`studiorpc_geometry_api`** once. Read `template`, copy it, change the `EDIT` blocks.
-2. **`studiorpc_geometry_validate`** with the recipe `code`. Fix any findings — cheaper than a bake.
-3. **`studiorpc_instance_upsert`** to create a `ProceduralModel` (once per prop); keep its `guid`.
-4. **`studiorpc_proceduralmodel_set`** with `{ guid, source, size, attributes?, rebuild: true }`.
-   The reply carries the whole run — `parts` (triangles, boundsCm, tint, tier), `modelBoundsCm`,
-   `warnings`, `stdout`, and on failure `error`. **Judge the numbers first.**
-5. **`studiorpc_game_screenshot`** with `{ instanceId: <guid>, yaws: [35, 215] }` once the numbers
+2. **`studiorpc_geometry_validate`** with the recipe `code` (or `sourcePath` = a recipe file). Fix any
+   findings — cheaper than a bake.
+3. **`studiorpc_proceduralmodel_set`** creates the model *and* bakes it in one call:
+   `{ name, parentGuid?, source | sourcePath, size, attributes?, rebuild: true }`. Omit `guid` and pass
+   `name` to create a new `ProceduralModel` (parent defaults to Workspace) — the reply returns its
+   `guid`; **keep it** to iterate. Pass the recipe inline as `source` or point at a file with
+   `sourcePath`. The reply carries the whole run — `parts` (triangles, boundsCm, tint, tier),
+   `modelBoundsCm`, `warnings`, `stdout`, and on failure `error`. **Judge the numbers first.**
+4. **`studiorpc_game_screenshot`** with `{ instanceId: <guid>, yaws: [35, 215] }` once the numbers
    are clean, to see it. See "Looking at the prop" below.
-6. Fix and repeat step 4 with the whole recipe. Ship when the numbers and the picture agree.
+5. Fix and re-bake the **same** model: `studiorpc_proceduralmodel_set` with
+   `{ guid, source | sourcePath, size, rebuild: true }`. Ship when the numbers and the picture agree.
 
 There is no separate draft or "execute": the ProceduralModel owns the recipe and renders it live;
 asset ids are issued at publish, not on each pass.
@@ -132,6 +136,8 @@ fixed-light isolation of the instance render for full control of direction and z
 ## Storing recipes
 
 Keep one semantic recipe per prop and reuse it. A recipe is the source of truth; the baked
-MeshParts are derived output. When re-baking, pass the whole recipe again through
-`studiorpc_proceduralmodel_set`; use `studiorpc_script_edit` only for a small in-place correction.
-Do not put recipe source in an OS temp directory.
+MeshParts are derived output. Save the recipe as a file in the project and re-bake it by passing
+`sourcePath` to `studiorpc_proceduralmodel_set` (and `studiorpc_geometry_validate`) — the file is read
+as-is, so you never re-paste a recipe you already wrote. Pass the whole recipe as `source` only for a
+one-off or the first draft; use `studiorpc_script_edit` for a small in-place correction. Do not put
+recipe source in an OS temp directory.

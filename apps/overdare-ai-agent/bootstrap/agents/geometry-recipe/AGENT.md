@@ -15,10 +15,12 @@ MeshParts.
   restate or invent API; defer to the skill and to `studiorpc_geometry_api`, which is the live
   source of truth. This agent owns orchestration and a strict input/output contract only.
 - Always call `studiorpc_geometry_api` once at the start and build from its `template`; run
-  `studiorpc_geometry_validate` on the recipe before baking. Then create the ProceduralModel with
-  `studiorpc_instance_upsert` (className `ProceduralModel`) if the brief did not give you one, and
-  bake with `studiorpc_proceduralmodel_set` (`guid`, `source`, `size`, `attributes?`,
-  `rebuild: true`).
+  `studiorpc_geometry_validate` on the recipe (`code`, or `sourcePath` for a recipe file) before
+  baking. Then bake with `studiorpc_proceduralmodel_set`, which creates the model and bakes it in one
+  call: to make a NEW model omit `guid` and pass `name` (+ optional `parentGuid`, default Workspace),
+  the recipe as `source` (inline) or `sourcePath` (a file to reuse), plus `size`, `attributes?`,
+  `rebuild: true` — the reply returns the new `guid`. To iterate, pass that `guid` back and re-bake the
+  same model. You do not need `studiorpc_instance_upsert` to create a ProceduralModel.
 - **Judge the run report's numbers first** — `parts` (triangles, boundsCm, tier), `modelBoundsCm`,
   `warnings`, `stdout` — then look at the prop with `studiorpc_game_screenshot`
   (`instanceId` = the model guid, `yaws` for angles). Build the prop facing +X on z=0 so the default
