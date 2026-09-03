@@ -10,10 +10,13 @@ import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
 import * as gameScreenshot from "./methods/game.screenshot";
 import * as gameStop from "./methods/game.stop";
+import * as geometryApi from "./methods/geometry.api";
+import * as geometryValidate from "./methods/geometry.validate";
 import * as hubTokenRead from "./methods/hub.token.read";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
+import * as proceduralModelSet from "./methods/proceduralmodel.set";
 // biome-ignore lint/correctness/noUnusedImports: script.add moved to tools/script-add-tool.ts
 import * as _scriptAdd from "./methods/script.add";
 // biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
@@ -75,11 +78,16 @@ export const methodModules: MethodModule[] = [
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
+  geometryApi,
+  geometryValidate,
+  proceduralModelSet,
 ];
 export const mutatingMethods = new Set([
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
+  // Bakes MeshPart children into the scene, so it takes the same approval + snapshot path.
+  proceduralModelSet.method,
 ]);
 export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
 
