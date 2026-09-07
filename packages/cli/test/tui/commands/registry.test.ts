@@ -247,7 +247,7 @@ describe("createCommandHandler", () => {
   });
 });
 
-it("removes rejected steering and reports its text without ending the active turn", async () => {
+it("removes rejected steering without adding UI or ending the active turn", async () => {
   const removePendingSteer = mock(() => {});
   const queuePendingSteer = mock(() => {});
   const addLines = mock(() => {});
@@ -269,7 +269,6 @@ it("removes rejected steering and reports its text without ending the active tur
   handler.handleSteering("change approach");
   await Promise.resolve();
   expect(removePendingSteer).toHaveBeenCalledWith((queuePendingSteer.mock.calls[0]?.[0] as { id: string }).id);
-  expect(addLines.mock.calls.flat(2).join(" ")).toContain("change approach");
-  expect(addLines.mock.calls.flat(2).join(" ")).toContain("offline");
+  expect(addLines).not.toHaveBeenCalled();
   expect(finishTurn).not.toHaveBeenCalled();
 });

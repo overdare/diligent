@@ -14,7 +14,6 @@ import { createUuidV4 } from "./uuid";
 const logger = createLogger({ scope: "web.client.steering" });
 
 type SteeringAction =
-  | { type: "show_info_toast"; payload: string }
   | { type: "local_steer"; payload: PendingSteer }
   | { type: "cancel_pending_steer"; payload: { steerId: string } }
   | { type: "update_pending_steer"; payload: { steerId: string; content: string } }
@@ -65,10 +64,6 @@ export async function executeSteer({
     });
   } catch (error) {
     dispatch({ type: "cancel_pending_steer", payload: { steerId } });
-    dispatch({
-      type: "show_info_toast",
-      payload: `Could not send steering: ${error instanceof Error ? error.message : String(error)}. Message: ${content}`,
-    });
     logger.error("steer.send_failed", {
       message: "Failed to send steer",
       error,
@@ -240,10 +235,6 @@ export function useSteeringQueue({
       const rpc = rpcRef.current;
       if (!rpc || !activeThreadId) return;
       void executeCancelSteer({ rpc, threadId: activeThreadId, steerId, dispatch }).catch((error) => {
-        dispatch({
-          type: "show_info_toast",
-          payload: `Could not cancel steering: ${error instanceof Error ? error.message : String(error)}`,
-        });
         logger.error("steer.cancel_failed", {
           message: "Failed to cancel steer",
           error,
@@ -260,10 +251,6 @@ export function useSteeringQueue({
       const rpc = rpcRef.current;
       if (!rpc || !activeThreadId) return;
       void executeUpdateSteer({ rpc, threadId: activeThreadId, steerId, content, dispatch }).catch((error) => {
-        dispatch({
-          type: "show_info_toast",
-          payload: `Could not update steering: ${error instanceof Error ? error.message : String(error)}`,
-        });
         logger.error("steer.update_failed", {
           message: "Failed to update steer",
           error,

@@ -160,7 +160,7 @@ describe("executeSteer", () => {
     expect(dispatched[0]).toMatchObject({ type: "local_steer", payload: { content: params.content } });
   });
 
-  test("reports failed steering and removes its pending entry without re-throwing", async () => {
+  test("removes only the failed pending entry without introducing UI notifications", async () => {
     const dispatched: unknown[] = [];
     const rpc = makeRpc(async () => {
       throw new Error("network failure");
@@ -179,14 +179,10 @@ describe("executeSteer", () => {
         clearContextItems: mock(() => {}),
       }),
     ).resolves.toBeUndefined();
-    expect(dispatched).toHaveLength(3);
+    expect(dispatched).toHaveLength(2);
     expect(dispatched[1]).toMatchObject({
       type: "cancel_pending_steer",
       payload: { steerId: (dispatched[0] as { payload: { id: string } }).payload.id },
-    });
-    expect(dispatched[2]).toEqual({
-      type: "show_info_toast",
-      payload: "Could not send steering: network failure. Message: hello",
     });
   });
 });

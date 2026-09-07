@@ -222,13 +222,9 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           content: text,
           followUp: false,
         })
-        .catch((error) => {
+        .catch(() => {
           if (deps.getCurrentThreadId() !== threadId) return;
           deps.removePendingSteer(steerId);
-          deps.addLines([
-            `  ${t.error}Could not send steering: ${error instanceof Error ? error.message : String(error)}${t.reset}`,
-            `  ${text}`,
-          ]);
           deps.requestRender();
         });
     },
