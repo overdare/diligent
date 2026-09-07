@@ -7,11 +7,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { buildRegistries, createMcpServer, resolveSystemPromptPath } from "../src/mcp-server";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
+
+mock.module("../src/tools/studiorpc/rpc.ts", () => ({
+  applyLevelChanges: async () => ({ ok: true }),
+  call: (method: string) => {
+    if (method === "level.browse") return levelBrowseMock();
+    throw new Error(`Unexpected RPC method in test: ${method}`);
+  },
+}));
+
+const { buildRegistries, createMcpServer, resolveSystemPromptPath } = await import("../src/mcp-server");
 
 function globalSystemPromptPath(bootstrapDir: string): string {
   return join(bootstrapDir, "__global__", "system-prompt.txt");
@@ -73,11 +82,6 @@ async function connectClient(bootstrapDir: string): Promise<Client> {
     bootstrapDir,
     systemPromptPath: globalSystemPromptPath(bootstrapDir),
   });
-  const browse = registries.tools.get("studiorpc_level_browse")!;
-  registries.tools.set(browse.name, {
-    ...browse,
-    execute: async () => ({ output: JSON.stringify(await levelBrowseMock()) }),
-  });
   const server = createMcpServer(registries);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -105,7 +109,7 @@ describe("OVERDARE MCP server", () => {
     ).toBe(join("C:\\Users\\tester", ".overdare-dev", "system-prompt.txt"));
   });
 
-  test("lists product tools with input schemas", async () => {
+  test("lists studio built-in tools with input schemas", async () => {
     const client = await connectClient(await makeBootstrapDir());
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
@@ -113,10 +117,6 @@ describe("OVERDARE MCP server", () => {
     expect(names).toContain("validatelua");
     expect(names).toContain("overdaresearch");
     expect(names).toContain("overdaresearch_deep");
-    expect(names).toContain("generate_image");
-    expect(names).toContain("studiorpc_asset_manager_image_import");
-    expect(names).not.toContain("studiorpc_generate_image_asset");
-    expect(names).not.toContain("codex_generate_image");
     const browse = tools.find((tool) => tool.name === "studiorpc_level_browse");
     expect(browse?.inputSchema).toBeDefined();
     expect(browse?.inputSchema).not.toHaveProperty("$schema");
