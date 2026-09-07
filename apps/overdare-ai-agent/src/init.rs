@@ -432,6 +432,46 @@ mod tests {
     }
 
     #[test]
+    fn full_sync_retires_known_entries_and_preserves_customized_ones() {
+        let base = std::env::temp_dir().join(format!(
+            "overdare-init-retired-managed-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let dest = base.join("global-agents");
+        let entries = [RetiredManagedEntry {
+            directory: "agents",
+            name: "procedural-builder",
+            definition_file: "AGENT.md",
+            known_sha256: &["22c517cbb0db174c21c89330e20ca054613497a7ab5a873c78c5167d6b0ea718"],
+        }];
+        write(
+            &dest.join("procedural-builder/AGENT.md"),
+            "bundled procedural agent",
+        );
+        write(&dest.join("my-agent/AGENT.md"), "user content");
+        let mut log = String::new();
+
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::MissingOnly, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        write(&dest.join("procedural-builder/notes.txt"), "user notes");
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        fs::remove_file(dest.join("procedural-builder/notes.txt")).unwrap();
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+
+        assert!(!dest.join("procedural-builder").exists());
+        assert_eq!(fs::read_to_string(dest.join("my-agent/AGENT.md")).unwrap(), "user content");
+
+        write(&dest.join("procedural-builder/AGENT.md"), "customized agent");
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        assert!(log.contains("Kept customized retired agents/procedural-builder"));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn config_jsonc_is_never_overwritten_on_full_sync() {
         // The whole point of the fix: an applied update (FullSync) must not
         // clobber the user's existing global config.jsonc.
