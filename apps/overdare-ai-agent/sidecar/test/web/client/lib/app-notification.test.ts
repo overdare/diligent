@@ -5,7 +5,6 @@ import type { DiligentServerNotification } from "@diligent/protocol";
 import { DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
 import {
   deriveAgentEvents,
-  filterSteeringInjectedEvents,
   hasInFlightRenderItems,
   shouldMarkAttentionThread,
   shouldRehydrateAfterIdleStatus,
@@ -34,20 +33,6 @@ test("deriveAgentEvents maps ERROR notifications to error event", () => {
   expect(deriveAgentEvents(notification)).toEqual([
     { type: "error", error: { message: "Compaction failed", name: "Error" }, fatal: false },
   ]);
-});
-
-test("filterSteeringInjectedEvents removes steering_injected and consumes suppression", () => {
-  const result = filterSteeringInjectedEvents(
-    [
-      { type: "message_delta", itemId: "a", delta: "hello" },
-      { type: "steering_injected", text: "retry" },
-    ],
-    true,
-  );
-
-  expect(result.consumedSuppression).toBe(true);
-  expect(result.events.some((event) => event.type === "steering_injected")).toBe(false);
-  expect(result.events).toHaveLength(1);
 });
 
 test("shouldMarkAttentionThread returns non-active thread on turn completed", () => {

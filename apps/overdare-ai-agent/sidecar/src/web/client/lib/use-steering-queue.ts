@@ -1,4 +1,4 @@
-// @summary React hook for steering queue state: pending steers, abort-restart, and suppress-injected logic
+// @summary React hook for steering queue state: pending steers and abort-restart
 
 import { createLogger } from "@diligent/logging";
 import type { ModelRef, PendingSteer } from "@diligent/protocol";
@@ -14,6 +14,7 @@ import { createUuidV4 } from "./uuid";
 const logger = createLogger({ scope: "web.client.steering" });
 
 type SteeringAction =
+  | { type: "show_info_toast"; payload: string }
   | { type: "local_steer"; payload: PendingSteer }
   | { type: "cancel_pending_steer"; payload: { steerId: string } }
   | { type: "update_pending_steer"; payload: { steerId: string; content: string } }
@@ -64,6 +65,10 @@ export async function executeSteer({
     });
   } catch (error) {
     dispatch({ type: "cancel_pending_steer", payload: { steerId } });
+    dispatch({
+      type: "show_info_toast",
+      payload: `Could not send steering: ${error instanceof Error ? error.message : String(error)}. Message: ${content}`,
+    });
     logger.error("steer.send_failed", {
       message: "Failed to send steer",
       error,
@@ -84,8 +89,8 @@ export async function executeCancelSteer({
   steerId: string;
   dispatch: (action: SteeringAction) => void;
 }): Promise<void> {
-  dispatch({ type: "cancel_pending_steer", payload: { steerId } });
-  await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL, { threadId, steerId });
+  const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL, { threadId, steerId });
+  if (result.cancelled) dispatch({ type: "cancel_pending_steer", payload: { steerId } });
 }
 
 export async function executeUpdateSteer({
@@ -101,15 +106,12 @@ export async function executeUpdateSteer({
   content: string;
   dispatch: (action: SteeringAction) => void;
 }): Promise<void> {
-  dispatch({
-    type: "update_pending_steer",
-    payload: { steerId, content },
-  });
-  await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE, {
+  const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE, {
     threadId,
     steerId,
     content,
   });
+  if (result.updated) dispatch({ type: "update_pending_steer", payload: { steerId, content } });
 }
 
 export async function executeRestartFromAbort({
@@ -175,7 +177,6 @@ export function useSteeringQueue({
   clearContextItems: () => void;
 }) {
   const pendingAbortRestartMessageRef = useRef<string | null>(null);
-  const suppressNextSteeringInjectedRef = useRef(false);
 
   const canSteer = (activeInput.trim().length > 0 || contextItems.length > 0) && isBusy;
 
@@ -239,6 +240,10 @@ export function useSteeringQueue({
       const rpc = rpcRef.current;
       if (!rpc || !activeThreadId) return;
       void executeCancelSteer({ rpc, threadId: activeThreadId, steerId, dispatch }).catch((error) => {
+        dispatch({
+          type: "show_info_toast",
+          payload: `Could not cancel steering: ${error instanceof Error ? error.message : String(error)}`,
+        });
         logger.error("steer.cancel_failed", {
           message: "Failed to cancel steer",
           error,
@@ -255,6 +260,10 @@ export function useSteeringQueue({
       const rpc = rpcRef.current;
       if (!rpc || !activeThreadId) return;
       void executeUpdateSteer({ rpc, threadId: activeThreadId, steerId, content, dispatch }).catch((error) => {
+        dispatch({
+          type: "show_info_toast",
+          payload: `Could not update steering: ${error instanceof Error ? error.message : String(error)}`,
+        });
         logger.error("steer.update_failed", {
           message: "Failed to update steer",
           error,
@@ -269,7 +278,6 @@ export function useSteeringQueue({
   return {
     canSteer,
     pendingAbortRestartMessageRef,
-    suppressNextSteeringInjectedRef,
     restartFromPendingAbortSteer,
     steerMessage,
     handleSteer,

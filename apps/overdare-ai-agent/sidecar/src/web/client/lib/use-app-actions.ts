@@ -53,7 +53,6 @@ export function clearComposerInputAfterSend({
 
 type SteeringControl = {
   pendingAbortRestartMessageRef: MutableRefObject<string | null>;
-  suppressNextSteeringInjectedRef: MutableRefObject<boolean>;
 };
 
 export async function prepareNewThreadForFirstMessage({
@@ -743,13 +742,10 @@ export function useAppActions({
       const threadId = state.activeThreadId;
       if (!rpc || !threadId) return;
       steeringControl.pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0]?.content ?? null;
-      steeringControl.suppressNextSteeringInjectedRef.current =
-        steeringControl.pendingAbortRestartMessageRef.current !== null;
       try {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
       } catch (error) {
         steeringControl.pendingAbortRestartMessageRef.current = null;
-        steeringControl.suppressNextSteeringInjectedRef.current = false;
         logger.error("turn.interrupt_failed", {
           message: "[App] turn/interrupt failed:",
           error,

@@ -57,6 +57,7 @@ export interface CommandHandlerDeps {
   waitForMcpLogin: (server: string) => Promise<{ success: boolean; toolCount?: number; error: string | null }>;
   syncActiveThreadState: () => Promise<void>;
   queuePendingSteer: (steer: PendingSteer) => void;
+  removePendingSteer: (steerId: string) => void;
   // Domain modules
   threadManager: ThreadManager;
   configManager: ConfigManager;
@@ -221,7 +222,15 @@ export function createCommandHandler(deps: CommandHandlerDeps): CommandHandler {
           content: text,
           followUp: false,
         })
-        .catch(() => {});
+        .catch((error) => {
+          if (deps.getCurrentThreadId() !== threadId) return;
+          deps.removePendingSteer(steerId);
+          deps.addLines([
+            `  ${t.error}Could not send steering: ${error instanceof Error ? error.message : String(error)}${t.reset}`,
+            `  ${text}`,
+          ]);
+          deps.requestRender();
+        });
     },
   };
 

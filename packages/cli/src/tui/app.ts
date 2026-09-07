@@ -86,7 +86,6 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
-  private suppressNextSteeringInjectedCommit = false;
   private pendingAbortRestartMessage: string | null = null;
   private appServerLogDirInitialized = false;
   private pendingAppServerLogLines: string[] = [];
@@ -191,7 +190,6 @@ export class App {
         this.renderer.requestRender();
       },
       onTurnErrored: (message) => {
-        this.suppressNextSteeringInjectedCommit = false;
         this.pendingAbortRestartMessage = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
@@ -335,6 +333,10 @@ export class App {
           this.runtime.pendingMcpLoginResolve.set(server, resolve);
         }),
       syncActiveThreadState: () => this.syncActiveThreadState(),
+      removePendingSteer: (steerId) => {
+        this.runtime.consumePendingSteersByIds([steerId]);
+        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
+      },
       queuePendingSteer: (steer) => {
         this.runtime.queuePendingSteer(steer);
         this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
@@ -467,12 +469,6 @@ export class App {
         })
         .filter((content): content is string => content !== null);
 
-      if (this.suppressNextSteeringInjectedCommit) {
-        this.suppressNextSteeringInjectedCommit = false;
-        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
-        return;
-      }
-
       const expectedCount = Math.max(0, event.messageCount);
       const consumed = event.steerIds?.length
         ? this.runtime.consumePendingSteersByIds(event.steerIds)
@@ -552,7 +548,6 @@ export class App {
       const drainedSteers = this.chatView.consumePendingSteers();
       const drainedRuntimeSteers = this.runtime.drainPendingSteers();
       this.pendingAbortRestartMessage = drainedRuntimeSteers[0] ?? drainedSteers[0] ?? null;
-      this.suppressNextSteeringInjectedCommit = this.pendingAbortRestartMessage !== null;
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -561,7 +556,6 @@ export class App {
         .catch(() => {
           this.runtime.cancelRequested = false;
           this.pendingAbortRestartMessage = null;
-          this.suppressNextSteeringInjectedCommit = false;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
