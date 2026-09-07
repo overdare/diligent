@@ -43,9 +43,12 @@ function bundledProviderSource(id: string): string {
     .replace(/-hooks$/, "");
 }
 
-export async function loadOverdareTools(cwd: string): Promise<Map<string, ToolEntry>> {
+export async function loadOverdareTools(
+  cwd: string,
+  providers: CliBundledToolProvider[] = bundledToolProviders,
+): Promise<Map<string, ToolEntry>> {
   const registry = new Map<string, ToolEntry>();
-  for (const provider of bundledToolProviders) {
+  for (const provider of providers) {
     const source = bundledProviderSource(provider.id);
     const tools = await provider.createTools({ cwd });
     for (const tool of tools) {
@@ -152,7 +155,11 @@ function summarizeSchema(tool: Tool): unknown {
   return "Schema inspection unavailable";
 }
 
-export async function runOverdareToolsCli(argv: string[], streams: CliStreams): Promise<number> {
+export async function runOverdareToolsCli(
+  argv: string[],
+  streams: CliStreams,
+  options: { toolProviders?: CliBundledToolProvider[] } = {},
+): Promise<number> {
   let parsed: ParsedCliArgs;
   try {
     parsed = parseCliArgs(argv);
@@ -167,7 +174,7 @@ export async function runOverdareToolsCli(argv: string[], streams: CliStreams): 
     return 0;
   }
 
-  const tools = await loadOverdareTools(parsed.cwd);
+  const tools = await loadOverdareTools(parsed.cwd, options.toolProviders);
 
   if (parsed.command === "list") {
     const items = Array.from(tools.entries())

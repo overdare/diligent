@@ -27,8 +27,9 @@ does not import an asset or save a Studio level.
 ## Credentials and local setup
 
 Gemini uses the same credential-store mode and saved API key as the product's provider
-settings. Key precedence is saved credentials, `provider.gemini.apiKey`, then
-`GEMINI_API_KEY`. An optional `provider.gemini.baseUrl` is also respected. The image model
+settings. Legacy keys in `config.jsonc` and ambient environment variables are not separate
+credential sources. Environment-backed credentials can use the auth store's
+`{env:GEMINI_API_KEY}` substitution. An optional `provider.gemini.baseUrl` is also respected. The image model
 is selected by the product's image-generation configuration, independently of the chat model.
 
 Codex requires a local CLI signed in with managed ChatGPT OAuth and an account exposing
@@ -50,6 +51,11 @@ file.
 
 The tool is registered in the OVERDARE bundled tools, MCP catalog, router catalog, and
 product tool CLI. It stays registered when `STUDIO_DISABLED=1`.
+
+The Codex adapter uses a typed client over one sequential message stream per generation.
+Process lifetime and line I/O live in `codex-imagegen/process.ts`; the client owns protocol
+validation and turn-event ordering. The image workflow consumes typed events and closes its
+client in `finally`, without a request map or notification-waiter registry.
 
 Codex uses one five-minute deadline covering initialization, authentication and capability
 checks, thread creation, and image generation. Gemini also has a five-minute request deadline.

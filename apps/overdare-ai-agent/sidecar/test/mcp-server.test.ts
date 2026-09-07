@@ -7,30 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { buildRegistries, createMcpServer, resolveSystemPromptPath } from "../src/mcp-server";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
-
-mock.module("../src/tools/studiorpc/rpc.ts", () => ({
-  RPC_INSTANCE_NOT_FOUND: -32004,
-  StudioRpcError: class StudioRpcError extends Error {
-    constructor(
-      message: string,
-      readonly code: number,
-      readonly data: unknown,
-    ) {
-      super(message);
-    }
-  },
-  applyLevelChanges: async () => ({ ok: true }),
-  call: (method: string) => {
-    if (method === "level.browse") return levelBrowseMock();
-    throw new Error(`Unexpected RPC method in test: ${method}`);
-  },
-}));
-
-const { buildRegistries, createMcpServer, resolveSystemPromptPath } = await import("../src/mcp-server");
 
 function globalSystemPromptPath(bootstrapDir: string): string {
   return join(bootstrapDir, "__global__", "system-prompt.txt");
@@ -91,6 +72,11 @@ async function connectClient(bootstrapDir: string): Promise<Client> {
     cwd: process.cwd(),
     bootstrapDir,
     systemPromptPath: globalSystemPromptPath(bootstrapDir),
+  });
+  const browse = registries.tools.get("studiorpc_level_browse")!;
+  registries.tools.set(browse.name, {
+    ...browse,
+    execute: async () => ({ output: JSON.stringify(await levelBrowseMock()) }),
   });
   const server = createMcpServer(registries);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
