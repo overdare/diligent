@@ -1,17 +1,14 @@
-// @summary Reads instance properties from the .ovdrjm level file, filtered to known schemas.
+// @summary Reads instance properties from the .ovdrjm level file, preserving Studio JSON properties without a class whitelist.
 
 import { resolveApiVersion } from "../config";
-import { instanceClassEnum, serviceClassEnum } from "../methods/instance.params";
 import * as instanceRead from "../methods/instance.read";
-import { pickKnownInstanceProperties } from "../methods/instance-properties";
+import { pickInstanceProperties } from "../methods/instance-properties";
 import { buildInstanceReadRender } from "../render";
 import { call } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
 import { missingGuidResult } from "./instance-status";
 import { findNodeByActorGuid, isRecord, type OvdrjmNode, readOvdrjmRoot } from "./ovdrjm-utils";
 import { readInstanceViaRpc } from "./v2/instance-read";
-
-const knownClasses = new Set<string>([...instanceClassEnum.options, ...serviceClassEnum.options]);
 
 type ReadableNode = {
   guid: string;
@@ -25,13 +22,11 @@ function toReadableNode(node: OvdrjmNode, recursive: boolean): ReadableNode | un
   const instanceType = typeof node.InstanceType === "string" ? node.InstanceType : undefined;
   if (!instanceType) return undefined;
 
-  const isKnown = knownClasses.has(instanceType as typeof instanceClassEnum._type);
-
   const result: ReadableNode = {
     guid: typeof node.ActorGuid === "string" ? node.ActorGuid : "",
     name: typeof node.Name === "string" ? node.Name : "",
     class: instanceType,
-    properties: isKnown ? pickKnownInstanceProperties(instanceType, node) : {},
+    properties: pickInstanceProperties(node),
   };
 
   if (recursive && Array.isArray(node.LuaChildren)) {

@@ -1,6 +1,6 @@
 // @summary Mutates instances inside one already-loaded .ovdrjm document.
 
-import { parseInstancePatchProperties } from "../methods/instance-properties";
+import { instancePropertiesSchema } from "../methods/instance-properties";
 import { invalidInstanceOperationError, missingGuidError } from "./instance-status";
 import {
   clearStaleWorldTransforms,
@@ -31,7 +31,6 @@ export interface AddedInstanceMetadata {
 }
 
 export interface InstanceDocumentWriteOptions {
-  mobilityPolicy?: "ignore-non-top-level" | "preserve-for-normalization";
   mobilityInfo?: string[];
 }
 
@@ -111,8 +110,7 @@ function syncDescendantMobility(node: OvdrjmNode, mobility: MobilityValue): void
 
 /**
  * Applies the Mobility policy for one property write. Regular upserts ignore a
- * Mobility value outside Workspace's direct children. Procedural JSON apply
- * preserves it until the completed hierarchy is normalized.
+ * Mobility value outside Workspace's direct children.
  */
 function applyMobilityWritePolicy(
   root: OvdrjmNode,
@@ -121,7 +119,7 @@ function applyMobilityWritePolicy(
   options: InstanceDocumentWriteOptions,
   isTopLevel = locateWorkspaceObject(root, guid)?.isTopLevel === true,
 ): Record<string, unknown> {
-  if (!("Mobility" in properties) || options.mobilityPolicy === "preserve-for-normalization") return properties;
+  if (!("Mobility" in properties)) return properties;
   if (isTopLevel) return properties;
   const filtered = { ...properties };
   delete filtered.Mobility;
@@ -206,8 +204,7 @@ export function updateInstancesInDocument(
   for (const item of items) {
     const target = findNodeByActorGuid(root, item.guid);
     if (!target) throw missingGuidError({ operation: "instance.upsert", guid: item.guid, role: "target" });
-    const targetClass = typeof target.InstanceType === "string" ? target.InstanceType : "Instance";
-    const parsedProperties = parseInstancePatchProperties(targetClass, item.properties);
+    const parsedProperties = instancePropertiesSchema.parse(item.properties);
     const properties = applyMobilityWritePolicy(root, item.guid, parsedProperties, options);
     Object.assign(target, properties);
     if (typeof item.name === "string") target.Name = item.name;

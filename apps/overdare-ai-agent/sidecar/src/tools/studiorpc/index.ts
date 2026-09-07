@@ -20,7 +20,6 @@ import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
-import { createProceduralRunTool } from "./tools/procedural-run-tool";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
 import { createScriptDeleteTool } from "./tools/script-delete-tool";
@@ -216,7 +215,6 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
-    wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),

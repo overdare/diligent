@@ -2,6 +2,8 @@ use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 use crate::env::Env;
 use crate::storage::global_storage_dir;
 
@@ -9,6 +11,42 @@ use crate::storage::global_storage_dir;
 enum DeployMode {
     MissingOnly,
     FullSync,
+}
+
+struct RetiredManagedEntry {
+    directory: &'static str,
+    name: &'static str,
+    definition_file: &'static str,
+    known_sha256: &'static [&'static str],
+}
+
+// These entries were bundled before procedural building was retired. Hashes cover
+// every shipped revision, so an update removes only an unmodified bundled copy.
+// A same-named user customization stays intact for manual migration.
+const RETIRED_MANAGED_ENTRIES: &[RetiredManagedEntry] = &[
+    RetiredManagedEntry {
+        directory: "agents",
+        name: "procedural-builder",
+        definition_file: "AGENT.md",
+        known_sha256: &[
+            "85230e38f9e8ee28eb9632b1d92d93bd711cfb72b2f15e6262153fb1fef08ed0",
+            "5619ac92aa9c1eb5dbb275300267778e178ed71e3926033c41b4427dff8cbc35",
+        ],
+    },
+    RetiredManagedEntry {
+        directory: "skills",
+        name: "procedural-builder",
+        definition_file: "SKILL.md",
+        known_sha256: &[
+            "bdba28a0eff8298f4b0177d6c2f4d6cd366212be178f189ea63bc0fd7e1d58dc",
+            "dc7bf0cc5d938c55138f57ff9193a0d2ade384e8f8861ad2908ecc3770c6ba11",
+            "624779c27786ecad8ab3b1c8bc53296f623cf26c482a4ca145de6001c9fe688e",
+        ],
+    },
+];
+
+fn sha256_hex(contents: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(contents))
 }
 
 fn should_copy_entry(dest_exists: bool, mode: DeployMode) -> bool {
@@ -177,9 +215,67 @@ fn deploy_plugins(
 /// entry that isn't shipped. Mirrors deploy_plugins' per-entry behavior instead
 /// of remove_dir_all-ing the whole destination (which wiped user content).
 ///
-/// ponytail: an entry dropped from a newer bootstrap lingers in dest (we can't
-/// tell "user removed a product skill" from "user's own skill"). Upgrade path:
-/// track a manifest of product-managed names and prune those absent from src.
+/// Known retired product entries are pruned only when their defining file matches
+/// a hash from a shipped version. This lets a product removal reach existing
+/// installs without deleting a same-named user customization.
+fn retire_managed_entries(
+    entries: &[RetiredManagedEntry],
+    dest: &Path,
+    dir_label: &str,
+    mode: DeployMode,
+    log: &mut String,
+) {
+    if mode != DeployMode::FullSync {
+        return;
+    }
+    for retired in entries.iter().filter(|entry| entry.directory == dir_label) {
+        let entry_path = dest.join(retired.name);
+        let definition_path = entry_path.join(retired.definition_file);
+        // A user-managed symlink is not a bundled entry; never follow it for removal.
+        if fs::symlink_metadata(&entry_path).map_or(true, |meta| meta.file_type().is_symlink())
+            || fs::symlink_metadata(&definition_path).map_or(true, |meta| !meta.is_file())
+        {
+            continue;
+        }
+        let Ok(contents) = fs::read(&definition_path) else {
+            continue;
+        };
+        if !retired
+            .known_sha256
+            .iter()
+            .any(|known| *known == sha256_hex(&contents))
+        {
+            let _ = writeln!(
+                log,
+                "[init] Kept customized retired {}/{}",
+                dir_label, retired.name
+            );
+            continue;
+        }
+        let Ok(mut entry_files) = fs::read_dir(&entry_path) else {
+            continue;
+        };
+        let contains_only_definition = entry_files.next().is_some_and(|entry| {
+            entry
+                .ok()
+                .is_some_and(|entry| entry.file_name() == retired.definition_file)
+        }) && entry_files.next().is_none();
+        if !contains_only_definition {
+            let _ = writeln!(
+                log,
+                "[init] Kept retired {}/{} with additional files",
+                dir_label, retired.name
+            );
+            continue;
+        }
+        if let Err(error) = fs::remove_file(&definition_path).and_then(|()| fs::remove_dir(&entry_path)) {
+            eprintln!("[init] Failed to retire {}/{}: {error}", dir_label, retired.name);
+            continue;
+        }
+        let _ = writeln!(log, "[init] Retired {}/{}", dir_label, retired.name);
+    }
+}
+
 fn deploy_managed_dir(
     src: &Path,
     dest: &Path,
@@ -215,6 +311,7 @@ fn deploy_managed_dir(
             );
         }
     }
+    retire_managed_entries(RETIRED_MANAGED_ENTRIES, dest, &dir_label, mode, log);
     Ok(())
 }
 
@@ -330,6 +427,46 @@ mod tests {
             "v1 product",
             "MissingOnly must not overwrite an existing entry"
         );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn full_sync_retires_known_entries_and_preserves_customized_ones() {
+        let base = std::env::temp_dir().join(format!(
+            "overdare-init-retired-managed-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let dest = base.join("global-agents");
+        let entries = [RetiredManagedEntry {
+            directory: "agents",
+            name: "procedural-builder",
+            definition_file: "AGENT.md",
+            known_sha256: &["22c517cbb0db174c21c89330e20ca054613497a7ab5a873c78c5167d6b0ea718"],
+        }];
+        write(
+            &dest.join("procedural-builder/AGENT.md"),
+            "bundled procedural agent",
+        );
+        write(&dest.join("my-agent/AGENT.md"), "user content");
+        let mut log = String::new();
+
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::MissingOnly, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        write(&dest.join("procedural-builder/notes.txt"), "user notes");
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        fs::remove_file(dest.join("procedural-builder/notes.txt")).unwrap();
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+
+        assert!(!dest.join("procedural-builder").exists());
+        assert_eq!(fs::read_to_string(dest.join("my-agent/AGENT.md")).unwrap(), "user content");
+
+        write(&dest.join("procedural-builder/AGENT.md"), "customized agent");
+        retire_managed_entries(&entries, &dest, "agents", DeployMode::FullSync, &mut log);
+        assert!(dest.join("procedural-builder/AGENT.md").exists());
+        assert!(log.contains("Kept customized retired agents/procedural-builder"));
 
         let _ = fs::remove_dir_all(&base);
     }

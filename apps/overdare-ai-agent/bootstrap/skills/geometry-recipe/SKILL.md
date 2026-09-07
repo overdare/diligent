@@ -1,6 +1,6 @@
 ---
 name: geometry-recipe
-description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. Not for laying out a scene from primitive blocks; that is procedural-builder (studiorpc_procedural_run).
+description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. For scene layout from primitive blocks, use studiorpc_execute_luau in the Editor.
 ---
 
 # OVERDARE geometry recipes
@@ -8,9 +8,8 @@ description: Author a solid, textured 3D prop for OVERDARE by writing a Python g
 Write a Python recipe that builds a mesh and bakes it into a **ProceduralModel** as real
 `MeshPart` children — solid geometry with material presets, tints, UV projection and a triangle
 budget. This is the system for **one prop made well**: a crate, a bench, a lantern, a barrel, a
-bookshelf. It is a different system from `procedural_builder` / `studiorpc_procedural_run`, which
-assembles a scene out of primitive `Part` blocks in Luau. Reach for this one when the deliverable
-is a single object whose surfaces and silhouette matter.
+bookshelf. Use `studiorpc_execute_luau` for Editor scene layout from primitive `Part` blocks.
+Use geometry recipes when the deliverable is a single object whose surfaces and silhouette matter.
 
 ## The one rule that saves you: read the live API first
 
