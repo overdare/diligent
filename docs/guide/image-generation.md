@@ -73,17 +73,18 @@ The Codex adapter uses one process per generation, with separate responsibilitie
 - `rpc-client.ts` continuously reads the wire, correlates responses by request ID, and buffers
   notifications with the existing core `EventStream`. Waiting for a response never stops
   notification delivery, and unread notifications never block a response.
-- `protocol.ts` validates the consumed fields against the official generated protocol types.
+- `protocol.ts` validates the consumed fields with Zod and infers TypeScript types from those
+  schemas, without vendored protocol declarations.
 - `app-server-client.ts` starts a turn and collects its images. Success requires both the start
   acknowledgement and successful completion; either request failure or turn failure rejects
   immediately, regardless of their arrival order.
 - `generate.ts` checks authentication/capability, selects the last usable saved image from the
   completed turn, and closes the client in `finally`. It does not handle wire ordering.
 
-The request/event separation follows the official `codex-rs/app-server-client` design without
-embedding the Rust runtime. See `codex-imagegen/generated/README.md` for schema provenance and
-regeneration. The adapter keeps narrow runtime validation for compatibility with older CLI
-payloads; generated types alone do not validate incoming JSON.
+The request/event separation follows the
+[official client design](https://github.com/openai/codex/blob/5ecb3afd1bf405149e2159bfda50093b0c1b5fab/codex-rs/app-server-client/src/remote.rs#L255)
+without embedding the Rust runtime or copying its generated types. The adapter validates only
+the fields it consumes; unrelated response fields do not require local type declarations.
 
 Codex uses one five-minute deadline covering initialization, authentication and capability
 checks, thread creation, and image generation. Gemini also has a five-minute request deadline.
