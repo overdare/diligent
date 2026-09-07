@@ -1,6 +1,6 @@
 // @summary Mutates instances inside one already-loaded .ovdrjm document.
 
-import { parseInstancePatchProperties } from "../methods/instance-properties";
+import { instancePropertiesSchema } from "../methods/instance-properties";
 import { invalidInstanceOperationError, missingGuidError } from "./instance-status";
 import {
   clearStaleWorldTransforms,
@@ -205,8 +205,7 @@ export function updateInstancesInDocument(
   for (const item of items) {
     const target = findNodeByActorGuid(root, item.guid);
     if (!target) throw missingGuidError({ operation: "instance.upsert", guid: item.guid, role: "target" });
-    const targetClass = typeof target.InstanceType === "string" ? target.InstanceType : "Instance";
-    const parsedProperties = parseInstancePatchProperties(targetClass, item.properties);
+    const parsedProperties = instancePropertiesSchema.parse(item.properties);
     const properties = applyMobilityWritePolicy(root, item.guid, parsedProperties, options);
     Object.assign(target, properties);
     if (typeof item.name === "string") target.Name = item.name;

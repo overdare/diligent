@@ -1,6 +1,6 @@
 // @summary Verifies schema-independent JSON upserts while preserving structural safety.
 import { describe, expect, test } from "bun:test";
-import { parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
+import { params, parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
 
 describe("instance.upsert live schema properties", () => {
   test("accepts future classes and properties without rewriting Studio JSON", () => {
@@ -44,6 +44,30 @@ describe("instance.upsert live schema properties", () => {
       const properties = JSON.parse(`{"${key}":"overwrite"}`);
       expect(() => parseArgs({ items: [{ guid: "p", properties }] })).toThrow();
     }
+  });
+  test("schema validation rejects reserved keys before record parsing can omit them", () => {
+    for (const key of ["__proto__", "ActorGuid", "Name", "constructor", "prototype"]) {
+      const properties = JSON.parse(`{"${key}":"overwrite"}`);
+      for (const item of [
+        { guid: "p", properties },
+        { class: "FutureClass", parentGuid: "p", name: "n", properties },
+      ]) {
+        const result = params.safeParse({ items: [item] });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues.some((issue) => issue.path.join(".") === `items.0.properties.${key}`)).toBe(true);
+        }
+      }
+    }
+  });
+  test("normalizes omitted properties through the same public schema", () => {
+    const input = { items: [{ class: "FutureClass", parentGuid: "p", name: "n" }, { guid: "p" }] };
+    const expected = { items: input.items.map((item) => ({ ...item, properties: {} })) };
+    expect(params.parse(input)).toEqual(expected);
+    expect(parseArgs(input)).toEqual(expected);
+  });
+  test("the public schema rejects singleton creation too", () => {
+    expect(params.safeParse({ items: [{ class: "Workspace", parentGuid: "p", name: "n" }] }).success).toBe(false);
   });
   test("preserves singleton creation protection", () => {
     expect(() => parseArgs({ items: [{ class: "Workspace", parentGuid: "p", name: "n" }] })).toThrow(/Service/);

@@ -1,11 +1,18 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
-import { instancePropertiesSchema, parseInstanceCreateProperties } from "./instance-properties";
+import { instancePropertiesSchema } from "./instance-properties";
 import { serviceClassEnum } from "./instance-safety";
+
+const serviceClasses = new Set<string>(serviceClassEnum.options);
 
 const addParams = z
   .object({
-    class: z.string().min(1),
+    class: z
+      .string()
+      .min(1)
+      .refine((className) => !serviceClasses.has(className), {
+        message: "A Service cannot be added; update it by guid instead.",
+      }),
     parentGuid: z.string().min(1),
     name: z.string(),
     properties: instancePropertiesSchema,
@@ -62,21 +69,8 @@ export function isUpdateItem(value: InstanceUpsertItemArgs): value is InstanceUp
 }
 
 /** Validates the envelope only; Studio owns class/property membership and value semantics. */
-export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
-  // Check raw property keys before Zod can omit JavaScript's special __proto__ key.
-  if (Array.isArray(value?.items)) {
-    for (const item of value.items) {
-      if (item && typeof item === "object") parseInstanceCreateProperties("", item.properties);
-    }
-  }
-  const parsed = params.parse(value);
-  const services = new Set<string>(serviceClassEnum.options);
-  for (const item of parsed.items) {
-    if (!isUpdateItem(item) && services.has(item.class)) {
-      throw new Error(`"${item.class}" is a Service — it cannot be added, only updated by guid.`);
-    }
-  }
-  return { items: parsed.items.map((item) => ({ ...item, properties: item.properties ?? {} })) };
+export function parseArgs(value: unknown): InstanceUpsertArgs {
+  return params.parse(value);
 }
 
 // ---------------------------------------------------------------------------

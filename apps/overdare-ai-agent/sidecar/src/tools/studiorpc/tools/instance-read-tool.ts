@@ -2,7 +2,7 @@
 
 import { resolveApiVersion } from "../config";
 import * as instanceRead from "../methods/instance.read";
-import { pickKnownInstanceProperties } from "../methods/instance-properties";
+import { pickInstanceProperties } from "../methods/instance-properties";
 import { buildInstanceReadRender } from "../render";
 import { call } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
@@ -26,7 +26,7 @@ function toReadableNode(node: OvdrjmNode, recursive: boolean): ReadableNode | un
     guid: typeof node.ActorGuid === "string" ? node.ActorGuid : "",
     name: typeof node.Name === "string" ? node.Name : "",
     class: instanceType,
-    properties: pickKnownInstanceProperties(instanceType, node),
+    properties: pickInstanceProperties(node),
   };
 
   if (recursive && Array.isArray(node.LuaChildren)) {

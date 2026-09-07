@@ -12,37 +12,14 @@ const reservedKeys = new Set([
   "constructor",
   "prototype",
 ]);
-export const instancePropertiesSchema = z
-  .record(z.string(), z.unknown())
-  .superRefine((value, ctx) => {
-    for (const key of Object.keys(value)) {
-      if (reservedKeys.has(key))
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: "Use the dedicated identity or hierarchy tool fields.",
-        });
-    }
-  })
-  .optional();
+// Validate each input key before Zod builds the output record and omits __proto__.
+const propertyNameSchema = z.string().refine((key) => !reservedKeys.has(key), {
+  message: "Use the dedicated identity or hierarchy tool fields.",
+});
 
-export function parseInstanceCreateProperties(_className: string, value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    for (const key of Object.keys(value)) {
-      if (reservedKeys.has(key)) throw new Error(`Property ${key} is controlled by the instance tool envelope.`);
-    }
-  }
-  return instancePropertiesSchema.parse(value) ?? {};
-}
-
-export function parseInstancePatchProperties(className: string, value: unknown): Record<string, unknown> {
-  return parseInstanceCreateProperties(className, value);
-}
+export const instancePropertiesSchema = z.record(propertyNameSchema, z.unknown()).default({});
 
 /** Keeps Studio's JSON value shapes, including tags and future class properties. */
-export function pickKnownInstanceProperties(
-  _className: string,
-  node: Record<string, unknown>,
-): Record<string, unknown> {
+export function pickInstanceProperties(node: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(node).filter(([key]) => !reservedKeys.has(key)));
 }

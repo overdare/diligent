@@ -147,7 +147,6 @@ export function createInstanceUpsertTool(
     name: toToolName(instanceUpsert.method),
     description: instanceUpsert.description,
     parameters: instanceUpsert.params,
-    parseArgs: (raw) => instanceUpsert.parseArgs(raw as Record<string, unknown>),
     async execute(args, ctx) {
       return executeInstanceUpsert(args, ctx, cwd, writeLock, applyLevelChanges);
     },
