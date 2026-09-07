@@ -16,6 +16,9 @@ import * as instanceSchemaSearch from "./methods/instance.schema.search";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
+import * as proceduralModelApi from "./methods/proceduralmodel.api";
+import * as proceduralModelSet from "./methods/proceduralmodel.set";
+import * as proceduralModelValidate from "./methods/proceduralmodel.validate";
 // biome-ignore lint/correctness/noUnusedImports: script.add moved to tools/script-add-tool.ts
 import * as _scriptAdd from "./methods/script.add";
 // biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
@@ -79,12 +82,17 @@ export const methodModules: MethodModule[] = [
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
+  proceduralModelApi,
+  proceduralModelValidate,
+  proceduralModelSet,
 ];
 export const mutatingMethods = new Set([
   executeLuau.method,
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
+  // Bakes MeshPart children into the scene, so it takes the same approval + snapshot path.
+  proceduralModelSet.method,
 ]);
 export const savingMethods = new Set([executeLuau.method, assetDrawerImport.method, assetManagerImageImport.method]);
 
