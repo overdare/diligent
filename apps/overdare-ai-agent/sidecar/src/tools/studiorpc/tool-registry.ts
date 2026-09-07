@@ -5,7 +5,6 @@ import type { z } from "zod";
 import * as actionSequencerApplyJson from "./methods/action-sequencer-service.apply-json";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import";
-import * as executeLuau from "./methods/execute.luau";
 import * as gameCharacterRead from "./methods/game.character.read";
 import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
@@ -66,7 +65,6 @@ type RenderBuilder = (ctx: {
 }) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
-  executeLuau,
   instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
@@ -87,14 +85,13 @@ export const methodModules: MethodModule[] = [
   proceduralModelSet,
 ];
 export const mutatingMethods = new Set([
-  executeLuau.method,
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
   // Bakes MeshPart children into the scene, so it takes the same approval + snapshot path.
   proceduralModelSet.method,
 ]);
-export const savingMethods = new Set([executeLuau.method, assetDrawerImport.method, assetManagerImageImport.method]);
+export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),

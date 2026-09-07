@@ -9,13 +9,14 @@ Required built-in agents cannot be managed this way.
 The generic Diligent host injects no definitions. In that case the Web Config panel has no Experiments section.
 OVERDARE injects its definitions from `apps/overdare-ai-agent/sidecar/src/experiments.ts`.
 
-Experiment overrides are stored in the active global namespace config:
+Experiment overrides are stored in the active global namespace config. The key below is a placeholder
+for an ID registered by the product; it does not register a feature. OVERDARE currently registers no experiments:
 
 ```jsonc
 {
   "experiments": {
     "overrides": {
-      "preview": true
+      "<registered-experiment-id>": true
     }
   }
 }

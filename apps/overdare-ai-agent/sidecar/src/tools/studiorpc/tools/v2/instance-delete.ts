@@ -1,14 +1,12 @@
 // @summary Deletes instances through the Studio instance.delete RPC.
 
 import type { InstanceDeleteArgs } from "../../methods/instance.delete";
-import { serviceClassEnum } from "../../methods/instance-safety";
+import { isProtectedInstanceClass } from "../../methods/instance-safety";
 import { buildInstanceDeleteRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { invalidInstanceOperationError, missingGuidError, resultFromInstanceToolStatusError } from "../instance-status";
 import { findNodeByActorGuid } from "../ovdrjm-utils";
 import { callInstanceRpc, readLevelTreeLite, rpcOutput, saveLevelFile } from "./client";
-
-const serviceClasses = new Set<string>(serviceClassEnum.options);
 
 export async function deleteInstancesViaRpc(parsedArgs: InstanceDeleteArgs): Promise<ToolResult> {
   try {
@@ -30,7 +28,7 @@ async function runDelete(parsedArgs: InstanceDeleteArgs): Promise<ToolResult> {
       throw missingGuidError({ operation: "instance.delete", guid: item.guid, role: "target" });
     }
     const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-    if (instanceType && serviceClasses.has(instanceType)) {
+    if (instanceType && isProtectedInstanceClass(instanceType)) {
       throw invalidInstanceOperationError({
         operation: "instance.delete",
         code: "protected_service_class",

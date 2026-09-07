@@ -66,17 +66,15 @@ export async function executeInstanceUpsertInner(
       return readAndWriteOvdrjm(cwd, (rootDoc) => {
         const root = requireDocumentRoot(rootDoc);
         const mobilityInfo: string[] = [];
-        const writeOptions = { mobilityPolicy: "ignore-non-top-level" as const, mobilityInfo };
+        const writeOptions = { mobilityInfo };
 
         const added: { guid: string; name: string; class: string }[] = [];
         for (const item of parsedArgs.items) {
           if (instanceUpsert.isUpdateItem(item)) {
-            updateInstancesInDocument(root, [{ ...item, properties: item.properties ?? {} }], writeOptions);
+            updateInstancesInDocument(root, [item], writeOptions);
             continue;
           }
-          added.push(
-            ...addInstancesInDocument(rootDoc, [{ ...item, properties: item.properties ?? {} }], writeOptions),
-          );
+          added.push(...addInstancesInDocument(rootDoc, [item], writeOptions));
         }
 
         // A top-level object's Mobility governs its whole assembly, so cascade it
@@ -125,7 +123,7 @@ export async function executeInstanceUpsertInner(
 
   return {
     output: lines.join("\n") || "OK",
-    render: buildInstanceUpsertRender(parsedArgs as unknown as Record<string, unknown>, lines.join("\n") || "OK"),
+    render: buildInstanceUpsertRender(parsedArgs, lines.join("\n") || "OK"),
     metadata: {
       method: "instance.upsert",
       targetGuids,

@@ -20,7 +20,7 @@ pub const GET_ACTIVE_OVERDARE_STUDIO: &str = "get_active_overdare_studio";
 /// Health probes must be fast: they gate `tools/list` and ambiguous-target resolution, both of which
 /// sit in front of a user-visible model turn.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(400);
-/// Studio tool calls can legitimately take a while (level edits, asset imports). This only bounds
+/// Studio tool calls can legitimately take a while (level edits, procedural runs). This only bounds
 /// a wedged sidecar, so it is generous.
 const CALL_TIMEOUT: Duration = Duration::from_secs(600);
 

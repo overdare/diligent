@@ -1,7 +1,6 @@
 // @summary Protects known Studio singleton roots independently of editable class schemas.
-import { z } from "zod";
 
-export const serviceClassEnum = z.enum([
+const protectedInstanceClasses = new Set<string>([
   "Workspace",
   "Lighting",
   "Atmosphere",
@@ -21,3 +20,7 @@ export const serviceClassEnum = z.enum([
   "StarterPlayerScripts",
   "ReplicatedStorage",
 ]);
+
+export function isProtectedInstanceClass(className: string): boolean {
+  return protectedInstanceClasses.has(className);
+}

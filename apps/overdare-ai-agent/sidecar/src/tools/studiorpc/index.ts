@@ -7,10 +7,11 @@ import {
   type PluginHookFn,
   type RuntimeToolHost,
 } from "@diligent/runtime";
-import { call, StudioRpcError } from "./rpc";
+import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
+import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
@@ -212,6 +213,7 @@ export async function createStudioRpcTools(ctx: {
 
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
+    wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
@@ -269,7 +271,6 @@ export async function createStudioRpcTools(ctx: {
 
         const isMutating = mutatingMethods.has(method);
         const release = isMutating ? await writeLock.acquire() : undefined;
-        let executionSucceeded = false;
         try {
           try {
             if (mod.preCall) await mod.preCall(args as Record<string, unknown>, toolCallRpc);
@@ -286,7 +287,6 @@ export async function createStudioRpcTools(ctx: {
             if (mod.postProcess) {
               result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
             }
-            executionSucceeded = true;
             // Persist editor-state changes to file immediately on success.
             if (savingMethods.has(method)) {
               await toolCallRpc("level.save.file", {});
@@ -308,20 +308,6 @@ export async function createStudioRpcTools(ctx: {
             // Same rationale as withSnapshot's catch: a warning generated but
             // lost to a thrown error must be regenerated on the next edit tool.
             if (warning && ctx.turnState) ctx.turnState.captureError = undefined;
-            if (rpcMethod === "execute.luau") {
-              const data = error instanceof StudioRpcError ? error.data : undefined;
-              const diagnostics = data === undefined ? "Mutation outcome is unknown." : JSON.stringify(data, null, 2);
-              return {
-                output: `${warning ? `${warning}\n` : ""}Error: ${error instanceof Error ? error.message : String(error)}\n${executionSucceeded ? "Editor execution succeeded, but saving the level failed." : "Editor execution failed; partial world changes may remain."}\n${diagnostics}\nDo not automatically retry. Inspect the current world and Undo status before deciding how to recover.`,
-                metadata: {
-                  error: true,
-                  method: rpcMethod,
-                  code: error instanceof StudioRpcError ? error.code : undefined,
-                  data,
-                  executionSucceeded,
-                },
-              };
-            }
             throw error;
           }
         } finally {

@@ -31,7 +31,6 @@ export interface AddedInstanceMetadata {
 }
 
 export interface InstanceDocumentWriteOptions {
-  mobilityPolicy?: "ignore-non-top-level" | "preserve-for-normalization";
   mobilityInfo?: string[];
 }
 
@@ -120,7 +119,7 @@ function applyMobilityWritePolicy(
   options: InstanceDocumentWriteOptions,
   isTopLevel = locateWorkspaceObject(root, guid)?.isTopLevel === true,
 ): Record<string, unknown> {
-  if (!("Mobility" in properties) || options.mobilityPolicy === "preserve-for-normalization") return properties;
+  if (!("Mobility" in properties)) return properties;
   if (isTopLevel) return properties;
   const filtered = { ...properties };
   delete filtered.Mobility;

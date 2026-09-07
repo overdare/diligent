@@ -118,6 +118,7 @@ describe("live Editor tools", () => {
       .execute({ target: "Editor", code: "return 'created'" }, context);
     expect(result.metadata).toMatchObject({ error: true, executionSucceeded: true });
     expect(result.output).toContain("Editor execution succeeded, but saving the level failed.");
+    expect(result.output).not.toContain("Mutation outcome is unknown.");
     expect(calls).toEqual(["execute.luau", "level.save.file"]);
   });
   test("approval rejection sends no Editor command", async () => {
@@ -132,5 +133,54 @@ describe("live Editor tools", () => {
       .execute({ target: "Editor", code: "" }, context);
     expect(result.metadata?.error).toBe(true);
     expect(calls).toBe(0);
+  });
+  test("serializes Editor execution and its save as one write operation", async () => {
+    const calls: string[] = [];
+    let releaseFirst!: () => void;
+    let started!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const holdFirst = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async (method, args) => {
+        if (method === "level.save.file") {
+          calls.push("save");
+          return "saved";
+        }
+        const code = String(args?.code);
+        calls.push(code);
+        if (code === "first") {
+          started();
+          await holdFirst;
+        }
+        return code;
+      },
+    }).createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
+    const tool = tools.find((tool) => tool.name === "studiorpc_execute_luau")!;
+    const first = tool.execute({ target: "Editor", code: "first" }, context);
+    await firstStarted;
+    const second = tool.execute({ target: "Editor", code: "second" }, context);
+    await Promise.resolve();
+    expect(calls).toEqual(["first"]);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["first", "save", "second", "save"]);
+  });
+  test("forwards cancellation and reports an unknown mutation outcome after a transport failure", async () => {
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async (_method, _args, options) => {
+        expect(options?.signal).toBe(context.signal);
+        throw new Error("connection lost");
+      },
+    }).createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
+    const result = await tools
+      .find((tool) => tool.name === "studiorpc_execute_luau")!
+      .execute({ target: "Editor", code: "" }, context);
+    expect(result.metadata).toMatchObject({ error: true, executionSucceeded: false });
+    expect(result.output).toContain("Mutation outcome is unknown.");
+    expect(result.output).toContain("Do not automatically retry");
   });
 });

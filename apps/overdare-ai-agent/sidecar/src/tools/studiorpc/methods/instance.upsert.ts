@@ -1,16 +1,14 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
 import { instancePropertiesSchema } from "./instance-properties";
-import { serviceClassEnum } from "./instance-safety";
-
-const serviceClasses = new Set<string>(serviceClassEnum.options);
+import { isProtectedInstanceClass } from "./instance-safety";
 
 const addParams = z
   .object({
     class: z
       .string()
       .min(1)
-      .refine((className) => !serviceClasses.has(className), {
+      .refine((className) => !isProtectedInstanceClass(className), {
         message: "A Service cannot be added; update it by guid instead.",
       }),
     parentGuid: z.string().min(1),
