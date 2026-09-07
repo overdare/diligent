@@ -33,7 +33,6 @@ import { OVERDARE_EXPERIMENTS } from "./experiments";
 import { configureSidecarLogging } from "./logging";
 import { flushSentry } from "./sentry";
 import type { StudioCatalogSnapshot, StudioPromptDescriptor, StudioToolDescriptor } from "./studio-registry";
-import { createImageGenerationToolProvider } from "./tools/image-generation";
 import { createRagToolProvider } from "./tools/rag";
 import { createStudioRpcToolProvider } from "./tools/studiorpc";
 import { createValidatorToolProvider } from "./tools/validator";
@@ -76,16 +75,11 @@ export interface McpRegistries {
 
 /**
  * Product tool providers exposed over MCP (no `host` -> auto-approve).
- * Includes provider-selectable image generation and RAG search (`overdaresearch`, `overdaresearch_deep`); the gateway/analytics
+ * Includes RAG search (`overdaresearch`, `overdaresearch_deep`); the gateway/analytics
  * providers expose no agent-callable tools (createTools -> []), so they are omitted.
  */
 function productToolProviders(): BundledToolProvider[] {
-  return [
-    createImageGenerationToolProvider(),
-    createStudioRpcToolProvider(),
-    createValidatorToolProvider(),
-    createRagToolProvider(),
-  ];
+  return [createStudioRpcToolProvider(), createValidatorToolProvider(), createRagToolProvider()];
 }
 
 async function buildToolRegistry(

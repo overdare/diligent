@@ -1,7 +1,7 @@
 // @summary In-process product-owned tool provider contract for bundled runtime tools
 
 import type { AgentLoopHook } from "@diligent/core/agent";
-import type { Model } from "@diligent/core/provider-contract";
+import type { Model, ProviderName } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
 import type { Logger } from "@diligent/logging";
 import type { PluginHookFn } from "../hooks/runner";
@@ -10,6 +10,8 @@ import type { RuntimeToolHost } from "./capabilities";
 export interface BundledToolProviderContext {
   cwd: string;
   host?: RuntimeToolHost;
+  /** Selected chat provider. Unset in integrations without an agent/model context. */
+  modelProvider?: ProviderName;
 }
 
 export interface AgentLoopHookFactoryContext {
