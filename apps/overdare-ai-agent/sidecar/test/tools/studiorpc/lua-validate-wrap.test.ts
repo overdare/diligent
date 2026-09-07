@@ -1,10 +1,14 @@
 // @summary Verifies that the tools which write Lua validate what they wrote, and only that.
 //
-// Studio is stood in for by a local JSON-RPC socket server (same approach as
-// v2-tools.test.ts) so the wrapper exercises the real transport. The tools run on
-// the v1 file path, which keeps the fake Studio small: the wrapper only ever reads
-// the tool's metadata, and v1 and v2 emit identical metadata for all three tools
-// (v2-tools.test.ts is what pins that equivalence).
+// The provider takes an injected `callRpc`, so assertions read that rather than a
+// socket or a module mock — `mock.module("studiorpc/rpc.ts")` in mcp-server.test.ts
+// and procedural-tools.test.ts is process-global and would otherwise swallow the
+// calls once those files have run. A local socket server still backs the tools'
+// own module-level `applyLevelChanges` for a standalone run.
+//
+// The tools run on the v1 file path, which keeps the fake Studio small: the wrapper
+// only ever reads the tool's metadata, and v1 and v2 emit identical metadata for
+// all three tools (v2-tools.test.ts is what pins that equivalence).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -12,7 +16,6 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import type { Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 
 interface RpcCall {
@@ -50,17 +53,8 @@ beforeAll(async () => {
   server = net.createServer((socket) => {
     const lines = readline.createInterface({ input: socket });
     lines.on("line", (line) => {
-      const request = JSON.parse(line) as { id: number; method: string; params?: Record<string, unknown> };
-      rpcCalls.push({ method: request.method, params: request.params });
-      const response =
-        request.method === "lua.validate" && validateFails
-          ? { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "method not found" } }
-          : {
-              jsonrpc: "2.0",
-              id: request.id,
-              result: request.method === "lua.validate" ? { output: REPORT } : { success: true },
-            };
-      socket.write(`${JSON.stringify(response)}\n`);
+      const request = JSON.parse(line) as { id: number };
+      socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { success: true } })}\n`);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -87,10 +81,18 @@ function makeStudioProject(): string {
   return cwd;
 }
 
-async function loadTools(cwd: string): Promise<Map<string, Tool>> {
-  const provider = createStudioRpcToolProvider();
-  const tools = await provider.createTools({ cwd, host: { approve: async () => "once" } });
-  return new Map(tools.map((tool) => [tool.name, tool]));
+/** Records what the provider asks Studio for, and answers lua.validate with a report. */
+const recordingCallRpc = async (method: string, params?: Record<string, unknown>): Promise<unknown> => {
+  rpcCalls.push({ method, params });
+  if (method !== "lua.validate") return { success: true };
+  if (validateFails) throw new Error("Studio RPC error [-32601]: method not found");
+  return { output: REPORT };
+};
+
+async function loadTools(cwd: string, approve: () => Promise<"once" | "reject"> = async () => "once") {
+  const provider = createStudioRpcToolProvider({ callRpc: recordingCallRpc as never });
+  const tools = await provider.createTools({ cwd, host: { approve } });
+  return new Map(tools.map((tool) => [tool.name, tool] as const));
 }
 
 function toolContext() {
@@ -171,11 +173,7 @@ describe("everything else is left alone", () => {
   });
 
   test("a rejected edit writes nothing, so it validates nothing", async () => {
-    const cwd = makeStudioProject();
-    const provider = createStudioRpcToolProvider();
-    const tools = new Map(
-      (await provider.createTools({ cwd, host: { approve: async () => "reject" } })).map((t) => [t.name, t]),
-    );
+    const tools = await loadTools(makeStudioProject(), async () => "reject");
 
     const result = await tools
       .get("studiorpc_script_edit")!
