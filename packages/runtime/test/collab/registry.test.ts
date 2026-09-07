@@ -1021,7 +1021,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "work", description: "", agentType: "general" });
     await registry.wait([threadId], 5000);
 
-    expect(observedModels).toEqual(["claude-opus-4-8"]);
+    expect(observedModels).toEqual(["claude-opus-5"]);
   });
 
   it("excludes collab tools and binds the image loader to the child cwd", async () => {
