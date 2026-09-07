@@ -7,10 +7,18 @@ import {
 } from "../../../src/tools/image-generation/gemini-config";
 
 describe("Gemini image configuration", () => {
+  test("does not reactivate a disconnected provider from a legacy config key", async () => {
+    const resolve = createResolveGeminiImageConfig({
+      loadConfig: async () => ({ provider: { gemini: { apiKey: "legacy-key" } } }),
+      loadAuth: async () => ({}),
+    });
+
+    await expect(resolve("/repo")).resolves.toBeUndefined();
+  });
+
   test("uses the saved Gemini key and configured credential-store mode", async () => {
     const authReads: unknown[] = [];
     const resolve = createResolveGeminiImageConfig({
-      env: { GEMINI_API_KEY: "environment-key" },
       loadConfig: async () => ({
         provider: {
           auth: { credentialsStore: "file" },
@@ -31,15 +39,15 @@ describe("Gemini image configuration", () => {
     expect(authReads).toEqual([{ mode: "file" }]);
   });
 
-  test("falls back to GEMINI_API_KEY and returns undefined when neither source is configured", async () => {
-    const base = {
+  test("observes removal of the saved key on the next call", async () => {
+    let keys: { gemini?: string } = { gemini: "saved-key" };
+    const resolve = createResolveGeminiImageConfig({
       loadConfig: async () => ({}),
-      loadAuth: async () => ({}),
-    };
+      loadAuth: async () => keys,
+    });
 
-    await expect(
-      createResolveGeminiImageConfig({ ...base, env: { GEMINI_API_KEY: "environment-key" } })("/repo"),
-    ).resolves.toMatchObject({ apiKey: "environment-key" });
-    await expect(createResolveGeminiImageConfig({ ...base, env: {} })("/repo")).resolves.toBeUndefined();
+    await expect(resolve("/repo")).resolves.toMatchObject({ apiKey: "saved-key" });
+    keys = {};
+    await expect(resolve("/repo")).resolves.toBeUndefined();
   });
 });

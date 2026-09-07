@@ -9,7 +9,7 @@ Build, adjust, and integrate **screen-space 2D UI** in OVERDARE Studio — the f
 
 **Scope:** this skill is 2D screen UI only. It does **not** decorate the 3D world — no `BillboardGui`/`SurfaceGui`, nameplates over characters, in-world signs, or images/decals on part surfaces. See [Do Not Use When](#do-not-use-when).
 
-Three creation approaches, one per reference file — see [Reference Files](#reference-files-read-on-demand):
+Three creation approaches — see [Reference Files](#reference-files-read-on-demand) for shared UI guidance:
 
 - **Direct GUI** — build instances (`ScreenGui`, `Frame`, `TextButton`, …) for custom layouts and predictable hierarchy.
 - **worldAsset import** — search and import `UI_ELEMENTS` packs when a visual style already exists.
