@@ -1,11 +1,12 @@
 // @summary Composition hook: assembles consent, notification, modal, and thread state sub-hooks
 import { createLogger } from "@diligent/logging";
 import type { SkillInfo, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type SetStateAction, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AgentContextItem } from "./agent-native-bridge";
 import { APP_PROJECT_NAME } from "./app-config";
 import { appReducer, type PendingImage } from "./app-state";
 import { getThreadIdFromUrl } from "./app-utils";
+import { DRAFT_INPUT_KEY, EMPTY_COMPOSER_DRAFT } from "./composer-state";
 import { findModelInfo, normalizeThinkingEffort } from "./model-thinking-helpers";
 import { buildCommandList } from "./slash-commands";
 import { initialThreadState } from "./thread-store";
@@ -20,7 +21,7 @@ import type { useRpcClient } from "./use-rpc";
 import { useServerRequests } from "./use-server-requests";
 import { useSteeringQueue } from "./use-steering-queue";
 import { useThreadData } from "./use-thread-data";
-import { clearDraftThreadInput, DRAFT_INPUT_KEY, useThreadManager } from "./use-thread-manager";
+import { useThreadManager } from "./use-thread-manager";
 
 type RpcClientResult = ReturnType<typeof useRpcClient>;
 type ProviderMgrResult = ReturnType<typeof useProviderManager>;
@@ -54,7 +55,15 @@ export function useAppState({
   const modeRef = useRef(state.mode);
   modeRef.current = state.mode;
 
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
+  const composer = state.composerDrafts[inputKey] ?? EMPTY_COMPOSER_DRAFT;
+  const pendingImages = composer.images;
+  const setPendingImages = useCallback(
+    (images: SetStateAction<PendingImage[]>) => {
+      dispatch({ type: "composer_images", payload: { threadId: inputKey, images } });
+    },
+    [inputKey],
+  );
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [showImageUploadIndicator, setShowImageUploadIndicator] = useState(false);
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
@@ -124,62 +133,40 @@ export function useAppState({
   }, [state.toast]);
 
   const isBusy = state.threadStatus === "busy";
-  const activeInputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-  const activeInput = threadMgr.threadInputs[activeInputKey] ?? "";
-  const activeContextItems = threadMgr.threadContextItems[activeInputKey] ?? [];
+  const activeInputKey = inputKey;
+  const activeInput = composer.text;
+  const activeContextItems = composer.contextItems;
 
   const setActiveInput = useCallback(
-    (value: string) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.setThreadInputs((prev) => {
-        const next = value.length > 0 ? { ...prev, [inputKey]: value } : { ...prev };
-        if (value.length === 0) delete next[inputKey];
-        return next;
-      });
+    (text: string) => {
+      dispatch({ type: "composer_text", payload: { threadId: inputKey, text } });
     },
-    [state.activeThreadId, threadMgr.setThreadInputs],
+    [inputKey],
   );
-
-  const clearThreadInput = useCallback(
-    (threadId: string) => {
-      threadMgr.setThreadInputs((prev) => {
-        if (!(threadId in prev)) return prev;
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    },
-    [threadMgr.setThreadInputs],
-  );
-
+  const clearThreadInput = useCallback((threadId: string) => {
+    dispatch({ type: "composer_text", payload: { threadId, text: "" } });
+  }, []);
   const clearDraftInput = useCallback(() => {
-    threadMgr.setThreadInputs((prev) => clearDraftThreadInput(prev));
-  }, [threadMgr.setThreadInputs]);
-
+    dispatch({ type: "composer_text", payload: { threadId: DRAFT_INPUT_KEY, text: "" } });
+  }, []);
   const updateActiveContextItems = useCallback(
     (items: AgentContextItem[]) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.updateThreadContextItems(inputKey, items);
+      dispatch({ type: "composer_context", payload: { threadId: inputKey, items } });
     },
-    [state.activeThreadId, threadMgr.updateThreadContextItems],
+    [inputKey],
   );
-
   const removeActiveContextItem = useCallback(
     (itemKey: string) => {
-      const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-      threadMgr.removeThreadContextItem(inputKey, itemKey);
+      dispatch({ type: "composer_remove_context", payload: { threadId: inputKey, itemKey } });
     },
-    [state.activeThreadId, threadMgr.removeThreadContextItem],
+    [inputKey],
   );
-
   const clearActiveContextItems = useCallback(() => {
-    const inputKey = state.activeThreadId ?? DRAFT_INPUT_KEY;
-    threadMgr.clearThreadContextItems(inputKey);
-  }, [state.activeThreadId, threadMgr.clearThreadContextItems]);
-
+    dispatch({ type: "composer_context", payload: { threadId: inputKey, items: [] } });
+  }, [inputKey]);
   const clearPendingImages = useCallback(() => {
-    setPendingImages([]);
-  }, []);
+    dispatch({ type: "composer_images", payload: { threadId: inputKey, images: [] } });
+  }, [inputKey]);
 
   const canSend =
     (activeInput.trim().length > 0 || pendingImages.length > 0 || activeContextItems.length > 0) &&
@@ -188,10 +175,8 @@ export function useAppState({
 
   const steeringQueue = useSteeringQueue({
     rpcRef,
-    stateRef,
     dispatch,
     activeThreadId: state.activeThreadId,
-    currentModelRef: providerMgr.currentModelRef,
     activeInput,
     pendingImages,
     contextItems: activeContextItems,
@@ -214,10 +199,6 @@ export function useAppState({
     onBackgroundNotification: (notification) =>
       void notificationState.desktopNotificationsRef.current.notifyForNotification(notification),
     handleServerRequest: serverRequests.handleServerRequest,
-    steering: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-      restartFromPendingAbortSteer: steeringQueue.restartFromPendingAbortSteer,
-    },
     setOauthPending: modalState.setOauthPending,
     setOauthError: modalState.setOauthError,
   });
@@ -271,9 +252,6 @@ export function useAppState({
     openMcpModal: modalState.openMcpModal,
     bumpMcpRefreshNonce: modalState.bumpMcpRefreshNonce,
     setSkills,
-    steeringControl: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-    },
     modeRef,
     cwdRef,
     applySessionModel: providerMgr.applySessionModel,

@@ -11,7 +11,7 @@ import type {
   ThreadReadResponse,
 } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback } from "react";
+import { type Dispatch, type RefObject, type SetStateAction, useCallback } from "react";
 import { toWebImageUrl } from "../../shared/image-routes";
 import { type AgentContextItem, prependContextToMessage } from "./agent-native-bridge";
 import type { AppAction, PendingImage } from "./app-state";
@@ -50,10 +50,6 @@ export function clearComposerInputAfterSend({
   }
   clearDraftInput();
 }
-
-type SteeringControl = {
-  pendingAbortRestartMessageRef: MutableRefObject<string | null>;
-};
 
 export async function prepareNewThreadForFirstMessage({
   rpc,
@@ -244,7 +240,6 @@ export function useAppActions({
   openMcpModal,
   bumpMcpRefreshNonce,
   setSkills,
-  steeringControl,
   modeRef,
   cwdRef,
   applySessionModel,
@@ -279,7 +274,6 @@ export function useAppActions({
   openMcpModal: () => void;
   bumpMcpRefreshNonce: () => void;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;
-  steeringControl: SteeringControl;
   modeRef: RefObject<Mode>;
   cwdRef: RefObject<string>;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
@@ -346,12 +340,6 @@ export function useAppActions({
       const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
         threadId,
         message,
-        attachments: images.map((image) => ({
-          type: "local_image" as const,
-          path: image.path,
-          mediaType: image.mediaType,
-          fileName: image.fileName,
-        })),
         content,
         model: currentModelRef.current,
       });
@@ -741,11 +729,9 @@ export function useAppActions({
       const rpc = rpcRef.current;
       const threadId = state.activeThreadId;
       if (!rpc || !threadId) return;
-      steeringControl.pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0]?.content ?? null;
       try {
         await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
       } catch (error) {
-        steeringControl.pendingAbortRestartMessageRef.current = null;
         logger.error("turn.interrupt_failed", {
           message: "[App] turn/interrupt failed:",
           error,
@@ -753,7 +739,7 @@ export function useAppActions({
         });
       }
     })();
-  }, [rpcRef, state.activeThreadId, stateRef, steeringControl]);
+  }, [rpcRef, state.activeThreadId]);
 
   const handleRetryLastTurn = useCallback(() => {
     void (async () => {

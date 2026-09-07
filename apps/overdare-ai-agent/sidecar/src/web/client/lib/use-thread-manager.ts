@@ -1,59 +1,14 @@
-// @summary React hook for thread CRUD, switching, and per-thread input state
+// @summary React hook for thread CRUD and subscription switching
 
 import { createLogger } from "@diligent/logging";
 import type { Mode, ModelRef, SessionSummary, ThinkingEffort, ThreadReadResponse } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
-import { type AgentContextItem, getAgentContextItemKey, mergeAgentContextItems } from "./agent-native-bridge";
 import { replaceDraftUrl, replaceThreadUrl } from "./app-utils";
 import type { WebRpcClient } from "./rpc-client";
 
 const logger = createLogger({ scope: "web.client.threads" });
-
-export const DRAFT_INPUT_KEY = "__draft__";
-
-export function clearDraftThreadInput(threadInputs: Record<string, string>): Record<string, string> {
-  if (!(DRAFT_INPUT_KEY in threadInputs)) {
-    return threadInputs;
-  }
-  const next = { ...threadInputs };
-  delete next[DRAFT_INPUT_KEY];
-  return next;
-}
-
-export function clearDraftThreadContextItems(
-  threadContextItems: Record<string, AgentContextItem[]>,
-): Record<string, AgentContextItem[]> {
-  if (!(DRAFT_INPUT_KEY in threadContextItems)) {
-    return threadContextItems;
-  }
-  const next = { ...threadContextItems };
-  delete next[DRAFT_INPUT_KEY];
-  return next;
-}
-
-export function mergeThreadContextItems(
-  threadContextItems: Record<string, AgentContextItem[]>,
-  threadKey: string,
-  items: AgentContextItem[],
-): Record<string, AgentContextItem[]> {
-  // An empty incoming list is an explicit clear signal (host/composer reset).
-  if (items.length === 0) {
-    if (!(threadKey in threadContextItems)) {
-      return threadContextItems;
-    }
-    const next = { ...threadContextItems };
-    delete next[threadKey];
-    return next;
-  }
-  // Accumulate incoming selections onto whatever is already attached, deduping by
-  // context-item key (e.g. instance GUID) so re-selecting an existing item is a no-op.
-  return {
-    ...threadContextItems,
-    [threadKey]: mergeAgentContextItems(threadContextItems[threadKey] ?? [], items),
-  };
-}
 
 type ThreadHydrateAction = {
   type: "hydrate";
@@ -124,40 +79,7 @@ export function useThreadManager({
   closeModals: () => void;
 }) {
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<string | null>(null);
-  const [threadInputs, setThreadInputs] = useState<Record<string, string>>({});
-  const [threadContextItems, setThreadContextItems] = useState<Record<string, AgentContextItem[]>>({});
   const activeSubscriptionRef = useRef<ActiveThreadSubscription | null>(null);
-
-  const updateThreadContextItems = useCallback((threadKey: string, items: AgentContextItem[]): void => {
-    setThreadContextItems((prev) => mergeThreadContextItems(prev, threadKey, items));
-  }, []);
-
-  const removeThreadContextItem = useCallback((threadKey: string, itemKey: string): void => {
-    setThreadContextItems((prev) => {
-      const current = prev[threadKey] ?? [];
-      const nextItems = current.filter((item) => getAgentContextItemKey(item) !== itemKey);
-      if (nextItems.length === current.length) {
-        return prev;
-      }
-      if (nextItems.length === 0) {
-        const next = { ...prev };
-        delete next[threadKey];
-        return next;
-      }
-      return { ...prev, [threadKey]: nextItems };
-    });
-  }, []);
-
-  const clearThreadContextItems = useCallback((threadKey: string): void => {
-    setThreadContextItems((prev) => {
-      if (!(threadKey in prev)) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[threadKey];
-      return next;
-    });
-  }, []);
 
   const deactivateServerThread = useCallback(async (): Promise<void> => {
     const rpc = rpcRef.current;
@@ -310,13 +232,6 @@ export function useThreadManager({
   return {
     pendingDeleteThreadId,
     setPendingDeleteThreadId,
-    threadInputs,
-    setThreadInputs,
-    threadContextItems,
-    setThreadContextItems,
-    updateThreadContextItems,
-    removeThreadContextItem,
-    clearThreadContextItems,
     refreshThreadList,
     startNewThread,
     openThread,

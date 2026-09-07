@@ -414,8 +414,9 @@ export class DiligentAppServer {
         params: { threadId: runtime.id, status: "idle" },
       });
 
-      // On turn end (including interruption), pending steering remains queued
-      // until an explicit subsequent turn is started by the client.
+      // Do not automatically start another turn. The active agent discards
+      // unconsumed steering at prompt shutdown; clients restore their local
+      // pending input into the composer after turn/interrupted.
     }
   }
 

@@ -134,6 +134,20 @@ Related operations:
 - `turn/interrupt`: aborts only when a turn is currently running
 - `turn/steer`: queues steering in session manager for a subsequent run boundary
 
+### Interrupted steering input
+
+Web Stop and TUI Ctrl+C stop the current turn without starting another turn. On `turn/interrupted`,
+the clients restore all still-unconsumed local steers before the current composer draft in order.
+Web also preserves its image attachments and attached context; TUI restores its text input.
+Only an explicit subsequent send starts a new turn.
+A failed interrupt leaves the pending input unchanged. Consumed steers are removed by their IDs
+before restoration, so they are not included again in the draft.
+
+The active agent discards its unconsumed queue when the prompt ends; restored input is a client
+composer draft, not a retained server queue. `PendingSteer.attachments` allows a hydrated pending
+item to retain local-image metadata. These drafts are held in client memory; this is not durable
+queue storage across process termination or browser reload.
+
 ## Lifecycle hook modes
 
 Diligent has two hook tiers. The shell/plugin hooks below are coarse external lifecycle hooks and

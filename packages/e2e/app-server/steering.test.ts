@@ -136,3 +136,44 @@ test("thread/read preserves pending steer image attachments through edits", asyn
     { id: "image-steer", content: "edited", attachments: [{ ...attachment, path: "reference.png" }] },
   ]);
 });
+
+test("interrupt ends the active turn without submitting unconsumed steering", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-steer-stop-"));
+  client = createProtocolClient(
+    createTestServer({ cwd: tmpDir, streamFunction: createSlowStream("still working on the initial turn", 10) }),
+  );
+  const threadId = await client.initAndStartThread(tmpDir);
+  await client.request("thread/subscribe", { threadId });
+  await client.request("turn/start", { threadId, message: "begin" });
+  await client.waitFor(
+    (notification) =>
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT &&
+      notification.params.event.type === "message_delta",
+  );
+  for (const content of ["first", "second"]) {
+    await client.request("turn/steer", { threadId, steerId: content, content });
+  }
+  const start = client.notifications.length;
+  await client.request("turn/interrupt", { threadId });
+  await client.waitFor(
+    (notification) =>
+      client.notifications.indexOf(notification) >= start &&
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED &&
+      notification.params.status === "idle",
+  );
+  const result = (await client.request("thread/read", { threadId })) as {
+    pendingSteers: unknown[];
+    isRunning: boolean;
+    items: Array<{ type: string; message?: { content?: unknown } }>;
+  };
+  expect(result.isRunning).toBe(false);
+  expect(result.pendingSteers).toEqual([]);
+  expect(
+    client.notifications.filter(
+      (notification) => notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+    ),
+  ).toHaveLength(1);
+  expect(result.items.filter((item) => item.type === "userMessage").map((item) => item.message?.content)).toEqual([
+    "begin",
+  ]);
+});
