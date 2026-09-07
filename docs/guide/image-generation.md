@@ -7,13 +7,16 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt` and an optional `provider`:
+`generate_image` accepts only a `prompt`. The runtime binds it to the selected chat provider:
 
-| Provider | Behavior |
+| Selected chat provider | Behavior |
 |---|---|
-| `auto` (default) | Use Gemini when a Gemini API key is configured; otherwise use Codex. |
-| `gemini` | Require a Gemini API key and use Gemini's native image model. |
-| `codex` | Use the local Codex CLI's managed ChatGPT OAuth account. |
+| `chatgpt` | Use the local Codex CLI's managed ChatGPT OAuth account. |
+| `gemini` | Require the saved Gemini API key and use Gemini's native image model. |
+| Other or unknown | Do not expose the image-generation tool. |
+
+The model cannot override this selection through a tool argument. Selecting ChatGPT never
+uses Gemini credentials, and selecting Gemini never falls back to Codex.
 
 The result includes an absolute `file` path, the selected `provider`, its authentication
 `source`, and an image preview. Gemini also returns `model`; Codex may return
@@ -49,8 +52,14 @@ Both providers use the same storage helper. Files are written under
 results retain their image format. The returned preview contains the same bytes as the saved
 file.
 
-The tool is registered in the OVERDARE bundled tools, MCP catalog, router catalog, and
-product tool CLI. It stays registered when `STUDIO_DISABLED=1`.
+OVERDARE's runtime passes the selected thread provider into bundled tool factories. Tool
+settings and model-facing tools follow that provider; switching models rebuilds the agent's
+tools on the next turn while preserving an in-flight turn's model snapshot. Generation remains
+available for ChatGPT/Gemini when `STUDIO_DISABLED=1`.
+
+Standalone MCP, the HTTP MCP router, and the product tool CLI do not receive the calling chat's
+model provider, so they do not expose `generate_image`. They do not infer it from credentials,
+client names, or a different chat's persisted configuration.
 
 The Codex adapter uses a typed client over one sequential message stream per generation.
 Process lifetime and line I/O live in `codex-imagegen/process.ts`; the client owns protocol

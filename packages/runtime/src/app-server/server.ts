@@ -2,7 +2,7 @@
 
 import { userInfo } from "node:os";
 import { toSerializableError } from "@diligent/core/agent";
-import { getDefaultModelRef } from "@diligent/core/model-registry";
+import { getDefaultModelRef, sameModelRef } from "@diligent/core/model-registry";
 import {
   DEFAULT_PROVIDER,
   type ModelRef,
@@ -608,12 +608,13 @@ export class DiligentAppServer {
       cwd,
       paths,
       agent: async () => {
-        if (!runtime.agent) {
+        const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
+        if (!runtime.agent || !sameModelRef(runtime.agent.model, selectedModel)) {
           const newAgent = await this.config.createAgent({
             cwd,
             mode: runtime.mode,
             effort: runtime.runningEffortSnapshot ?? runtime.effort,
-            model: runtime.runningModelSnapshot ?? runtime.model,
+            model: selectedModel,
             approve: (request) => this.requestApproval(runtime.id, request),
             ask: (request) => this.requestUserInput(runtime.id, request),
             getSessionId: () => runtime.manager.sessionId,
@@ -715,14 +716,14 @@ export class DiligentAppServer {
 
   private async resolveToolsContext(
     threadId?: string,
-  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }> {
+  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined; modelProvider?: ProviderName }> {
     const manager = this.config.toolConfig;
     if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
 
     if (threadId || this.activeThreadId) {
       try {
         const runtime = await this.resolveThreadRuntime(threadId);
-        return { cwd: runtime.cwd, tools: manager.getTools() };
+        return { cwd: runtime.cwd, tools: manager.getTools(), modelProvider: runtime.model.provider as ProviderName };
       } catch {
         // A stale thread pointer (e.g. a deleted thread still referenced by the
         // connection or the global active id) must not break the read-only tools
@@ -732,7 +733,7 @@ export class DiligentAppServer {
 
     const cwd = this.config.cwd ?? process.cwd();
     this.knownCwds.add(cwd);
-    return { cwd, tools: manager.getTools() };
+    return { cwd, tools: manager.getTools(), modelProvider: this.currentModel?.provider as ProviderName | undefined };
   }
 
   private async resolveSkillSettingsCwd(threadId?: string): Promise<string> {

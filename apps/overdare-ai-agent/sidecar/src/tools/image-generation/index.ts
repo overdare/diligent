@@ -1,4 +1,4 @@
-// @summary Exposes provider-selectable image generation with shared project-local persistence.
+// @summary Exposes image generation bound to the selected ChatGPT or Gemini chat provider.
 
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
@@ -13,18 +13,14 @@ const TOOL_NAME = "generate_image";
 const parameters = z
   .object({
     prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
-    provider: z
-      .enum(["auto", "gemini", "codex"])
-      .optional()
-      .describe('Image provider. "auto" (default) uses a configured Gemini API key, otherwise Codex managed OAuth.'),
   })
   .strict();
 
-type ImageGenerationArgs = z.infer<typeof parameters>;
+type ImageProvider = "chatgpt" | "gemini";
 
 interface GeneratedImage {
   image: GeneratedImageSource;
-  provider: "gemini" | "codex";
+  provider: ImageProvider;
   source: "gemini-api" | "codex-oauth";
   model?: string;
   revisedPrompt?: string;
@@ -42,20 +38,24 @@ export function createImageGenerationToolProvider(
   return {
     id: "@overdare/image-generation-tools",
     displayName: "Image Generation",
-    createTools: ({ cwd, host }) => [createGenerateImageTool(cwd, host, options)],
+    createTools: ({ cwd, host, modelProvider }) => {
+      if (modelProvider !== "chatgpt" && modelProvider !== "gemini") return [];
+      return [createGenerateImageTool(cwd, modelProvider, host, options)];
+    },
   };
 }
 
 function createGenerateImageTool(
   cwd: string,
+  provider: ImageProvider,
   host: RuntimeToolHost | undefined,
   options: ImageGenerationToolProviderOptions,
 ): Tool<typeof parameters> {
   return {
     name: TOOL_NAME,
     description:
-      "Generate one image and save it to a local file. By default, use a configured Gemini API key when available; " +
-      "otherwise use the signed-in Codex managed ChatGPT OAuth account. Returns the provider, absolute file path, " +
+      `Generate one image with ${provider === "chatgpt" ? "ChatGPT via local Codex OAuth" : "Gemini"} and save it to a local file. ` +
+      "Uses the current chat provider. Returns the provider, absolute file path, " +
       "and preview. To import it into OVERDARE Studio, pass file to studiorpc_asset_manager_image_import.",
     parameters,
     supportParallel: false,
@@ -65,14 +65,17 @@ function createGenerateImageTool(
         permission: "execute",
         toolName: TOOL_NAME,
         description: "Generate and save an image",
-        details: { provider: args.provider ?? "auto", prompt: args.prompt },
+        details: { provider, prompt: args.prompt },
       });
       if (approval === "reject") {
         return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
       }
 
       ctx.signal.throwIfAborted();
-      const generated = await generateImageForProvider(cwd, args, ctx.signal, options);
+      const generated = await generateImageForProvider(
+        { cwd, provider, prompt: args.prompt, signal: ctx.signal },
+        options,
+      );
       ctx.signal.throwIfAborted();
       const stored = await storeGeneratedImage(cwd, generated.image, { signal: ctx.signal });
       return buildImageToolResult(stored, generated);
@@ -81,21 +84,20 @@ function createGenerateImageTool(
 }
 
 async function generateImageForProvider(
-  cwd: string,
-  args: ImageGenerationArgs,
-  signal: AbortSignal,
+  input: { cwd: string; provider: ImageProvider; prompt: string; signal: AbortSignal },
   options: ImageGenerationToolProviderOptions,
 ): Promise<GeneratedImage> {
-  const resolveGemini = options.resolveGeminiImageConfig ?? resolveGeminiImageConfig;
-  const geminiConfig = args.provider === "codex" ? undefined : await resolveGemini(cwd);
-  signal.throwIfAborted();
+  const { cwd, provider, prompt, signal } = input;
 
-  if (args.provider === "gemini" || geminiConfig) {
+  if (provider === "gemini") {
+    const resolveGemini = options.resolveGeminiImageConfig ?? resolveGeminiImageConfig;
+    const geminiConfig = await resolveGemini(cwd);
+    signal.throwIfAborted();
     if (!geminiConfig) {
       throw new Error("Gemini API key is not configured.");
     }
     const generate = options.generateGeminiImage ?? generateGeminiImage;
-    const generated = await generate({ ...geminiConfig, prompt: args.prompt, signal });
+    const generated = await generate({ ...geminiConfig, prompt, signal });
     return {
       image: { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
       provider: "gemini",
@@ -105,10 +107,10 @@ async function generateImageForProvider(
   }
 
   const generate = options.generateCodexImage ?? generateCodexImage;
-  const generated = await generate({ cwd, prompt: args.prompt, signal });
+  const generated = await generate({ cwd, prompt, signal });
   return {
     image: { type: "file", file: generated.sourcePath },
-    provider: "codex",
+    provider: "chatgpt",
     source: "codex-oauth",
     revisedPrompt: generated.revisedPrompt,
   };

@@ -171,6 +171,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
 
         return buildToolCatalog(builtinTools, toolsConfig, cwd, host, {
           bundledProviders: providers,
+          modelProvider: provider,
           disabledToolNames,
           pluginDiscovery,
         });
