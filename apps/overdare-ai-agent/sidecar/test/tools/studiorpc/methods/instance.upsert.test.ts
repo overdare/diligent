@@ -1,6 +1,9 @@
 // @summary Tests class-bound validation for Studio RPC instance upserts.
 
 import { describe, expect, test } from "bun:test";
+import type { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { classPropertiesSchemas } from "../../../../src/tools/studiorpc/methods/instance.params";
 import { parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
 
 describe("instance.upsert class property validation", () => {
@@ -301,5 +304,53 @@ describe("instance.upsert class property validation", () => {
         ],
       }),
     ).toThrow(/class=ImageLabel/);
+  });
+});
+
+describe("UIListLayout alignment hints", () => {
+  test("the tool schema no longer offers Center as the example alignment", () => {
+    // A free-string `e.g. "Center"` description was the only concrete value the model saw, so it
+    // centered every generated list and cropped the children against the engine's Left default.
+    const schema = zodToJsonSchema(classPropertiesSchemas.get("UIListLayout") as z.ZodTypeAny) as {
+      properties: Record<string, { enum?: string[]; description?: string }>;
+    };
+    const horizontal = schema.properties.HorizontalAlignment;
+
+    expect(horizontal.enum).toEqual(["Left", "Center", "Right"]);
+    expect(horizontal.description).toContain('default is "Left"');
+    expect(JSON.stringify(horizontal)).not.toContain("e.g.");
+  });
+
+  test("rejects an alignment value outside the enum", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "UIListLayout",
+            parentGuid: "frame",
+            name: "List",
+            properties: { HorizontalAlignment: "Centre" },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  test("still accepts a deliberate Center alignment", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "UIListLayout",
+          parentGuid: "frame",
+          name: "List",
+          properties: { HorizontalAlignment: "Center", FillDirection: "Horizontal" },
+        },
+      ],
+    });
+
+    expect(parsed.items[0]?.properties).toMatchObject({
+      HorizontalAlignment: "Center",
+      FillDirection: "Horizontal",
+    });
   });
 });
