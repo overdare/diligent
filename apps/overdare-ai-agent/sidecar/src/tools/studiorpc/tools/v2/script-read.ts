@@ -4,7 +4,7 @@ import type * as scriptRead from "../../methods/script.read";
 import { buildScriptReadRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { DEPTH_SELF, readInstanceNode } from "./client";
-import { instanceTypeOf, SCRIPT_CLASSES } from "./scripts";
+import { instanceTypeOf, SOURCE_CLASSES } from "./scripts";
 
 type ScriptReadArgs = ReturnType<typeof scriptRead.params.parse>;
 
@@ -27,11 +27,11 @@ export async function readScriptViaRpc(parsed: ScriptReadArgs): Promise<ToolResu
     }
 
     const instanceType = instanceTypeOf(target);
-    if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+    if (!instanceType || !SOURCE_CLASSES.has(instanceType)) {
       return {
         output:
-          `Error: instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-          "Use studiorpc_instance_read to read non-script instances.",
+          `Error: instance ${targetGuid} is ${instanceType ?? "unknown"}, which has no Source to read. ` +
+          "Use studiorpc_instance_read to read other instances.",
         metadata: { error: true },
       };
     }

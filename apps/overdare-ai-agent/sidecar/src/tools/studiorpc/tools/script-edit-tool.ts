@@ -154,6 +154,9 @@ function applyEdit(content: string, edit: SingleEdit): { result: string; count: 
 // ---------------------------------------------------------------------------
 
 const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
+// A ProceduralModel's Source is a Python recipe rather than Lua, but it is edited the same way and
+// for the same reason -- see the note on SOURCE_CLASSES in v2/scripts.ts.
+const SOURCE_CLASSES = new Set([...SCRIPT_CLASSES, "ProceduralModel"]);
 
 // ---------------------------------------------------------------------------
 // script_edit tool
@@ -209,10 +212,10 @@ async function executeScriptEdit(
       }
 
       const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-      if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+      if (!instanceType || !SOURCE_CLASSES.has(instanceType)) {
         throw new Error(
-          `Instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-            "Use studiorpc_instance_upsert to edit non-script instances.",
+          `Instance ${targetGuid} is ${instanceType ?? "unknown"}, which has no Source to edit. ` +
+            "Use studiorpc_instance_upsert to edit other instances.",
         );
       }
 
@@ -221,8 +224,9 @@ async function executeScriptEdit(
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
 
-      // Normalize leading 4-spaces → tabs, then line endings for the current OS
-      const normalized = normalizeLeadingSpaces(result);
+      // Normalize leading 4-spaces → tabs, then line endings for the current OS. Not for a recipe:
+      // mixing tabs into space-indented Python is a TabError, not a style difference.
+      const normalized = instanceType === "ProceduralModel" ? { result, converted: 0 } : normalizeLeadingSpaces(result);
       const eolNormalized = normalizeLineEndings(normalized.result);
       target.Source = eolNormalized.result;
       tabCount = normalized.converted;

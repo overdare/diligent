@@ -449,7 +449,7 @@ describe("v2 validation", () => {
     expect(methodsCalled()).toEqual(["instance.read"]);
   });
 
-  test("refuses to edit a non-script instance through script_edit", async () => {
+  test("refuses to edit an instance with no Source through script_edit", async () => {
     const tools = await loadTools(makeStudioProject());
 
     const result = await tools
@@ -457,7 +457,9 @@ describe("v2 validation", () => {
       .execute({ guid: PART_GUID, old_string: "a", new_string: "b" }, toolContext());
 
     expect(result.metadata?.error).toBe(true);
-    expect(result.output).toContain("not a script");
+    // A Part has no Source at all. A ProceduralModel does, and script_edit takes it -- the gate is
+    // about the property, not about the instance being a script.
+    expect(result.output).toContain("has no Source to edit");
     expect(methodsCalled()).toEqual(["instance.read"]);
   });
 });
