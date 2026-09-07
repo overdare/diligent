@@ -55,7 +55,17 @@ Inspect the current world and Undo state before recovery. Success is flushed thr
 
 The procedural dummy-JSON runner, tool, builder skill/agent, experiment and interpreter
 bundle are retired. Editor Luau is the direct world-editing path. Existing user recipe
-files are not migrated or deleted automatically.
+files are not migrated or deleted automatically. Stock global builder skill/agent
+cleanup requires the updated Rust launcher and a FullSync update/install. An older
+launcher receiving only a new runtime ZIP does not perform this cleanup. Customized
+definitions, additional files, and symlinks are preserved for manual migration.
+
+`ProceduralModel` is the separate Studio Python mesh-recipe system from preview.
+Its `proceduralmodel.api`, `proceduralmodel.validate`, `proceduralmodel.set` and
+geometry-recipe skill/agent remain supported. The common runtime experiments API
+is independent of both generation systems: test fixtures named `procedural` do not
+register a product tool. The product experiment definition is removed, so a saved
+`experiments.overrides.procedural` value cannot restore the deleted tool.
 
 The feature branch starts at main, but the PR target is `preview/release-40`.
 Do not deploy this feature live early. Review and merge into preview through the

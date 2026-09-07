@@ -5,8 +5,10 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveExperimentStates } from "@diligent/runtime";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { OVERDARE_EXPERIMENTS } from "../src/experiments";
 import { StudioRpcError } from "../src/tools/studiorpc/rpc";
 
 const levelBrowseMock = mock(async () => [
@@ -109,28 +111,17 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("applies a disabled experiment gate to bootstrap skills and agents", async () => {
-    const bootstrapDir = await makeBootstrapDir();
+  test("a saved procedural override cannot restore retired bundled tools, skills or agents", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
-      bootstrapDir,
-      systemPromptPath: globalSystemPromptPath(bootstrapDir),
-      experiments: [
-        {
-          id: "preview",
-          title: "Preview feature",
-          description: "Preview capability",
-          defaultEnabled: false,
-          enabled: false,
-          toolNames: [],
-          skillNames: ["test-skill"],
-          agentNames: ["test-agent"],
-        },
-      ],
+      bootstrapDir: join(import.meta.dir, "../../bootstrap"),
+      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { procedural: true }),
     });
-    const loadSkill = registries.tools.get("load_skill");
-    expect(loadSkill?.description).not.toContain("test-skill");
-    expect(registries.prompts.has("agent-test-agent")).toBe(false);
+    expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
+    expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
+    expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
+    expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
+    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
   });
 
   test("calls a studio tool and returns its output", async () => {

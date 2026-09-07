@@ -22,4 +22,10 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("never automatically replay failed code");
     expect(prompt).toContain("without local defaults");
   });
+  test("VFX guidance requires caller-supplied tags and explicit playback settings", async () => {
+    const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");
+    expect(skill).not.toContain("are injected by the sidecar");
+    expect(skill).not.toContain("default true");
+    expect(skill).toContain("Include the required ObjectType tags");
+  });
 });

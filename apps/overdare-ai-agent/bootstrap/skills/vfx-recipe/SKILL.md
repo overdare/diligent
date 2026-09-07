@@ -70,6 +70,6 @@ Sources with `_R` in the name are **Rate emitters**: set `Duration` (seconds) an
 - Some short names exist in **multiple layers** as distinct assets — `LiquidScatter_R_A` and `LightRise_R_A` (Base and Extra), `SmokeBurst_A` (Base and Detail); the layer you place one in decides which asset plays.
 - `EmptySprite` / `EmptySprite_R` (Element: Empty) are blank templates for manual authoring in the editor — never pick them when composing an effect.
 - Check layer membership in the bundled references and current Studio schema hints; Studio validates the submitted JSON.
-- `ObjectType` tags (`Vector3` / `Color3` / `Content`) are injected by the sidecar — author plain `{X,Y,Z}`, `{R,G,B,Time}`, `{Content}` values; tagged values from template payloads also pass.
-- Playback: `AutoActivate` (default true), `InfiniteLoop` (default true), `LoopCount` (used when `InfiniteLoop=false`). One-shot effects: `InfiniteLoop: false, LoopCount: 1`.
+- Include the required ObjectType tags (`Vector3` / `Color3` / `Content`) in submitted JSON, following live schema hints or the tagged template payloads. The sidecar forwards values unchanged.
+- Set playback fields explicitly when they matter: `AutoActivate`, `InfiniteLoop`, and `LoopCount` (used when `InfiniteLoop=false`). The sidecar supplies no playback defaults. One-shot effects: `InfiniteLoop: false, LoopCount: 1`.
 - Total recipe length is derived (`LoopDuration` is read-only): to shorten an effect, adjust source `Duration`/`Delay` or swap the longest source — don't try to set `LoopDuration`.

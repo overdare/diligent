@@ -255,6 +255,43 @@ describe("v2 argument conversion", () => {
     expect(paramsOf("instance.delete")).toEqual({ ActorGuids: [PART_GUID, FOLDER_B_GUID] });
   });
 
+  test("forwards tagged VFX JSON unchanged without injecting tags or playback defaults", async () => {
+    const properties = {
+      BaseLayer: [
+        {
+          NiagaraSystem: "/CommonContent/VFX/Layer/0_Base/FireRise_A/VFX_UGC_Base_FireRise_A.VFX_UGC_Base_FireRise_A",
+          Position: { ObjectType: "Vector3", X: 1, Y: 2, Z: 3 },
+          Color: [{ ObjectType: "Color3", R: 1, G: 2, B: 3, Time: 0 }],
+        },
+      ],
+    };
+    const tools = await loadTools(makeStudioProject());
+    await tools
+      .get("studiorpc_instance_upsert")!
+      .execute({ items: [{ class: "VFXRecipe", parentGuid: FOLDER_A_GUID, name: "VFX", properties }] }, toolContext());
+    const payload = (paramsOf("instance.create")!.Instances as Record<string, unknown>[])[0];
+    expect(payload).toEqual({ InstanceType: "VFXRecipe", Name: "VFX", ...properties });
+    rpcCalls.length = 0;
+    await tools.get("studiorpc_instance_upsert")!.execute(
+      {
+        items: [
+          {
+            class: "VFXRecipe",
+            parentGuid: FOLDER_A_GUID,
+            name: "Bare",
+            properties: { BaseLayer: [{ Position: { X: 1, Y: 2, Z: 3 } }] },
+          },
+        ],
+      },
+      toolContext(),
+    );
+    expect((paramsOf("instance.create")!.Instances as Record<string, unknown>[])[0]).toEqual({
+      InstanceType: "VFXRecipe",
+      Name: "Bare",
+      BaseLayer: [{ Position: { X: 1, Y: 2, Z: 3 } }],
+    });
+  });
+
   test("searches, creates, and reads a future class without a local schema catalog", async () => {
     const properties = { FutureValue: { ObjectType: "FutureValue", Nested: [1, 2] } };
     respond = (method, params) =>
