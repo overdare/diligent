@@ -1,4 +1,4 @@
-// @summary OVERDARE MCP server runner: re-exposes studio built-in tools as MCP tools (plus
+// @summary OVERDARE MCP server runner: re-exposes product tools as MCP tools (plus
 // model-callable `ensure_system_prompt` / `load_skill` bootstrap tools), and bootstrap agents as
 // MCP prompts (user-facing slash commands to seed a session), over stdio.
 
@@ -33,6 +33,7 @@ import { OVERDARE_EXPERIMENTS } from "./experiments";
 import { configureSidecarLogging } from "./logging";
 import { flushSentry } from "./sentry";
 import type { StudioCatalogSnapshot, StudioPromptDescriptor, StudioToolDescriptor } from "./studio-registry";
+import { createImageGenerationToolProvider } from "./tools/image-generation";
 import { createRagToolProvider } from "./tools/rag";
 import { createStudioRpcToolProvider } from "./tools/studiorpc";
 import { createValidatorToolProvider } from "./tools/validator";
@@ -74,12 +75,17 @@ export interface McpRegistries {
 }
 
 /**
- * Studio built-in tool providers exposed over MCP (no `host` -> auto-approve).
- * Includes RAG search (`overdaresearch`, `overdaresearch_deep`); the gateway/analytics
+ * Product tool providers exposed over MCP (no `host` -> auto-approve).
+ * Includes provider-selectable image generation and RAG search (`overdaresearch`, `overdaresearch_deep`); the gateway/analytics
  * providers expose no agent-callable tools (createTools -> []), so they are omitted.
  */
-function studioToolProviders(): BundledToolProvider[] {
-  return [createStudioRpcToolProvider(), createValidatorToolProvider(), createRagToolProvider()];
+function productToolProviders(): BundledToolProvider[] {
+  return [
+    createImageGenerationToolProvider(),
+    createStudioRpcToolProvider(),
+    createValidatorToolProvider(),
+    createRagToolProvider(),
+  ];
 }
 
 async function buildToolRegistry(
@@ -88,7 +94,7 @@ async function buildToolRegistry(
 ): Promise<Map<string, Tool>> {
   const { disabledToolNames } = resolveExperimentGates(experiments);
   const tools = new Map<string, Tool>();
-  for (const provider of studioToolProviders()) {
+  for (const provider of productToolProviders()) {
     for (const tool of await provider.createTools({ cwd })) {
       if (disabledToolNames.has(tool.name)) continue;
       tools.set(tool.name, tool);
@@ -231,11 +237,11 @@ export async function buildRegistries(options: McpServerOptions): Promise<McpReg
   return { tools, prompts };
 }
 
-function createToolContext(): ToolContext {
+function createToolContext(signal?: AbortSignal): ToolContext {
   const controller = new AbortController();
   return {
     toolCallId: randomUUID(),
-    signal: controller.signal,
+    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
     abort: () => controller.abort(),
   };
 }
@@ -261,6 +267,7 @@ export async function callRegistryTool(
   registries: McpRegistries,
   name: string,
   rawArgs: unknown,
+  options: { signal?: AbortSignal } = {},
 ): Promise<McpToolCallResult> {
   const tool = registries.tools.get(name);
   if (!tool) {
@@ -273,7 +280,10 @@ export async function callRegistryTool(
     // with it, and that is how a script edit deletes a line.
     const cleaned = dropEmptyOptionals(tool.parameters, rawArgs ?? {});
     const args = tool.parseArgs ? tool.parseArgs(cleaned) : tool.parameters.parse(cleaned);
-    const result = await tool.execute(args, createToolContext());
+    const context = createToolContext(options.signal);
+    context.signal.throwIfAborted();
+    const result = await tool.execute(args, context);
+    context.signal.throwIfAborted();
     const content: Array<Record<string, unknown>> = [{ type: "text", text: result.output ?? "" }];
     for (const image of result.outputImages ?? []) {
       content.push({ type: "image", data: image.source.data, mimeType: image.source.media_type });
@@ -342,8 +352,8 @@ export function createMcpServer(registries: McpRegistries): Server {
     tools: listRegistryTools(registries),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) =>
-    callRegistryTool(registries, request.params.name, request.params.arguments),
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) =>
+    callRegistryTool(registries, request.params.name, request.params.arguments, { signal: extra.signal }),
   );
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({

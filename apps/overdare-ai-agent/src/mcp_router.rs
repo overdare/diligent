@@ -8,15 +8,16 @@
 //! What it does not own: tool behavior. Studio tools and prompts are re-advertised from the selected
 //! sidecar's catalog and executed inside that sidecar (see `studio_router`).
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 
 use crate::mcp_protocol::{
-    self, PromptDescriptor, Request, ToolCallResult, ToolDescriptor, INTERNAL_ERROR, INVALID_PARAMS,
-    METHOD_NOT_FOUND,
+    self, PromptDescriptor, Request, ToolCallResult, ToolDescriptor, INTERNAL_ERROR,
+    INVALID_PARAMS, METHOD_NOT_FOUND,
 };
 use crate::studio_registry::{self, CatalogSnapshot};
 use crate::studio_router::{
@@ -220,33 +221,49 @@ pub async fn run_mcp_router(options: McpRouterOptions) -> Result<(), String> {
     let watcher = tokio::spawn(watch_for_changes(Arc::clone(&state), outbox.clone()));
 
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            // Client closed stdin: it is done with us.
-            Ok(None) => break,
-            Err(err) => {
-                eprintln!("[mcp-router] stdin read failed: {err}");
-                break;
-            }
+    let mut queued: VecDeque<Request> = VecDeque::new();
+    'requests: loop {
+        let request = match queued.pop_front() {
+            Some(request) => request,
+            None => match read_request(&mut lines, &outbox).await {
+                Some(request) => request,
+                None => break,
+            },
         };
-        match mcp_protocol::parse_request(&line) {
-            Ok(None) => continue,
-            Ok(Some(request)) => {
-                // A notification (no id) gets no reply — answering one is a protocol violation.
-                if request.is_notification() {
-                    continue;
-                }
-                let id = request.id.clone().expect("a non-notification carries an id");
-                if outbox.send(handle(&state, &request, &id).await).is_err() {
+        if request.is_notification() {
+            continue;
+        }
+        let id = request
+            .id
+            .clone()
+            .expect("a non-notification carries an id");
+        let response = handle(&state, &request, &id);
+        tokio::pin!(response);
+        // Keep tool execution serial while continuing to read cancellation notifications.
+        // Dropping a cancelled handler also drops its in-flight HTTP request to the sidecar.
+        loop {
+            tokio::select! {
+                biased;
+                response = &mut response => {
+                    if outbox.send(response).is_err() {
+                        break 'requests;
+                    }
                     break;
                 }
-            }
-            Err((code, message)) => {
-                eprintln!("[mcp-router] {message}");
-                // No id is recoverable from an unparseable line, so JSON-RPC's null-id form is the
-                // only correct reply.
-                let _ = outbox.send(mcp_protocol::error(&Value::Null, code, message));
+                incoming = read_request(&mut lines, &outbox) => {
+                    let Some(incoming) = incoming else { break 'requests };
+                    if !incoming.is_notification() {
+                        queued.push_back(incoming);
+                    } else if incoming.method == "notifications/cancelled" {
+                        if let Some(cancelled_id) = incoming.params.get("requestId") {
+                            queued.retain(|request| request.id.as_ref() != Some(cancelled_id));
+                            // MCP initialization cannot be cancelled.
+                            if cancelled_id == &id && request.method != "initialize" {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -255,6 +272,31 @@ pub async fn run_mcp_router(options: McpRouterOptions) -> Result<(), String> {
     drop(outbox);
     let _ = writer.await;
     Ok(())
+}
+
+/// Parse the next message, reporting malformed input without ending the connection.
+async fn read_request<R: AsyncBufRead + Unpin>(
+    lines: &mut Lines<R>,
+    outbox: &tokio::sync::mpsc::UnboundedSender<Value>,
+) -> Option<Request> {
+    loop {
+        let line = match lines.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) => return None,
+            Err(err) => {
+                eprintln!("[mcp-router] stdin read failed: {err}");
+                return None;
+            }
+        };
+        match mcp_protocol::parse_request(&line) {
+            Ok(Some(request)) => return Some(request),
+            Ok(None) => continue,
+            Err((code, message)) => {
+                eprintln!("[mcp-router] {message}");
+                let _ = outbox.send(mcp_protocol::error(&Value::Null, code, message));
+            }
+        }
+    }
 }
 
 /// Tell the client to re-list whenever the set of live Studios (or their catalog) changes.

@@ -7,6 +7,16 @@ const levelBrowseMock = mock(async () => [
 ]);
 
 mock.module("../../sidecar/src/tools/studiorpc/rpc.ts", () => ({
+  RPC_INSTANCE_NOT_FOUND: -32004,
+  StudioRpcError: class StudioRpcError extends Error {
+    constructor(
+      message: string,
+      readonly code: number,
+      readonly data: unknown,
+    ) {
+      super(message);
+    }
+  },
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string) => {
     if (method === "level.browse") return levelBrowseMock();
@@ -70,6 +80,7 @@ describe("overdare tool cli", () => {
     expect(exitCode).toBe(0);
     expect(stdout.some((line) => line.includes("[studiorpc]"))).toBe(true);
     expect(stdout.some((line) => line.includes("[validator]"))).toBe(true);
+    expect(stdout.some((line) => line.includes("generate_image") && line.includes("[image-generation]"))).toBe(true);
   });
 
   test("inspect returns schema and source in json mode", async () => {

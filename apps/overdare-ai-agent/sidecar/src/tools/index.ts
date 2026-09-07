@@ -4,6 +4,7 @@ import type { BundledToolProvider } from "@diligent/runtime";
 import { createAnalyticsToolProvider } from "./analytics";
 import { createGatewayToolProvider } from "./gateway";
 import { createHelloWorldToolProvider, type StudioToolProviderOptions } from "./hello-world";
+import { createImageGenerationToolProvider } from "./image-generation";
 import { createRagToolProvider } from "./rag";
 import { createSleepToolProvider } from "./sleep";
 import { createStudioRpcToolProvider } from "./studiorpc";
@@ -21,6 +22,7 @@ export function createStudioBundledToolProviders(options: StudioBundledToolProvi
     createRagToolProvider(),
     createSleepToolProvider(),
     createValidatorToolProvider(),
+    createImageGenerationToolProvider(),
     // Studio RPC provider carries the level.save.file turn hooks, so skipping it
     // means zero connection attempts to Studio when running without one.
     ...(options.studioDisabled ? [] : [createStudioRpcToolProvider()]),
