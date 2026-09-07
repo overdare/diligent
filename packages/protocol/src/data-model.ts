@@ -1,6 +1,6 @@
 // @summary Zod schemas for Diligent protocol domain models and event payloads
 import { z } from "zod";
-import { ContentBlockSchema, ImageBlockSchema } from "./content-blocks";
+import { ContentBlockSchema, ImageBlockSchema, LocalImageBlockSchema } from "./content-blocks";
 import { ToolRenderPayloadSchema } from "./tool-render";
 
 // Re-export content block and tool render types from focused sub-files.
@@ -106,6 +106,7 @@ export type Message = z.infer<typeof MessageSchema>;
 export const PendingSteerSchema = z.object({
   id: z.string(),
   content: z.string(),
+  attachments: z.array(LocalImageBlockSchema).optional(),
 });
 export type PendingSteer = z.infer<typeof PendingSteerSchema>;
 
