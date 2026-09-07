@@ -12,7 +12,8 @@ Studio validates the sources it currently holds — there is no inline code para
 
 Returns a line-oriented report:
   LUA_VALIDATE v1 requested=<mode>
-  SCRIPT <guid> <name> effective=<mode>       the script the following diagnostics belong to
+  OK <guid> <name> effective=<mode>            the script had nothing to report
+  SCRIPT <guid> <name> effective=<mode>        the script the following diagnostics belong to
   E <category> <line>:<col>-<line>:<col> [code] <message>    error
   W <category> <line>:<col>-<line>:<col> [code] <message>    warning
   TRUNCATED diagnostics=<omitted> ...          output was capped (500 diagnostics / 131072 chars)
@@ -27,13 +28,27 @@ export const params = z.object({
     .enum(["strict", "nonstrict", "nocheck"])
     .optional()
     .describe(
-      "Luau type-checking mode to request. Defaults to strict. A script's own --!mode comment may override it.",
+      "Luau type-checking mode. Defaults to nonstrict, which reports real mistakes without the inference noise strict " +
+        "produces. Ask for strict only to deliberately audit a script's types. A script's own --!mode comment may override it.",
     ),
   targetGuids: z
     .array(z.string().min(1))
     .optional()
     .describe("GUIDs of the scripts to validate. Omit (or pass an empty array) to validate every script in the world."),
 });
+
+/**
+ * Default to nonstrict. Studio's definitions type `WaitForChild` and friends as bare
+ * `Instance`, so strict flags every `button.Text` in working code: on a sample world it
+ * reported 38 errors, 37 of them false ("Key 'Text' not found in class 'Instance'"), and
+ * nonstrict reported the one real error alone. The generic method path does not run args
+ * through `params`, so the default is applied here rather than via a zod `.default()`.
+ * ponytail: revisit once Studio's type inference improves (OVDR-14507) — strict becomes
+ * useful the moment its diagnostics stop being mostly noise.
+ */
+export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return { mode: "nonstrict", ...args };
+}
 
 /** Studio wraps the report in `{ output }`; surface the report itself as the tool output. */
 export function postProcess(result: unknown): unknown {
