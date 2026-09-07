@@ -1,7 +1,7 @@
 // @summary Tests that the geometry-recipe tools register, validate input, create-and-bake, and reuse recipe files.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
@@ -329,4 +329,23 @@ describe("proceduralmodel.set forwarding through the tool wrapper", () => {
     expect(bake?.params).not.toHaveProperty("parentGuid");
     expect(JSON.parse(executed.output)).toMatchObject({ success: true, guid: "MADEGUID", created: true });
   });
+});
+
+test("geometry recipes coexist with Editor Luau without advertising the retired builder", async () => {
+  const tools = await loadTools(() => ({ success: true }));
+  for (const name of [
+    "studiorpc_proceduralmodel_api",
+    "studiorpc_proceduralmodel_validate",
+    "studiorpc_proceduralmodel_set",
+    "studiorpc_execute_luau",
+    "studiorpc_instance_schema_search",
+  ])
+    expect(tools.has(name)).toBe(true);
+  expect(tools.has("studiorpc_procedural_run")).toBe(false);
+  const skill = readFileSync(join(import.meta.dir, "../../../../../bootstrap/skills/geometry-recipe/SKILL.md"), "utf8");
+  const agent = readFileSync(join(import.meta.dir, "../../../../../bootstrap/agents/geometry-recipe/AGENT.md"), "utf8");
+  for (const content of [skill, agent, proceduralModelApi.description]) {
+    expect(/procedural[-_]builder|studiorpc_procedural_run/.test(content)).toBe(false);
+    expect(content).toContain("studiorpc_execute_luau");
+  }
 });
