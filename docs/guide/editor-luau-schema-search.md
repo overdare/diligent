@@ -51,14 +51,15 @@ never retries execution. Transport failure means mutation outcome is unknown.
 Inspect the current world and Undo state before recovery. Success is flushed through
 `level.save.file`; a save failure explicitly reports that execution already succeeded.
 
-## Procedural migration and release
+## Procedural removal and release
 
 The procedural dummy-JSON runner, tool, builder skill/agent, experiment and interpreter
 bundle are retired. Editor Luau is the direct world-editing path. Existing user recipe
-files are not migrated or deleted automatically. Stock global builder skill/agent
-cleanup requires the updated Rust launcher and a FullSync update/install. An older
-launcher receiving only a new runtime ZIP does not perform this cleanup. Customized
-definitions, additional files, and symlinks are preserved for manual migration.
+files and installed global skill/agent definitions are not removed automatically.
+During release validation, check `~/.overdare/skills/procedural-builder/` and
+`~/.overdare/agents/procedural-builder/` (use `~/.overdare-dev/` for dev installs).
+Back up any customizations, then manually remove obsolete bundled definitions when
+present. Leftover definitions do not restore the removed execution tool.
 
 `ProceduralModel` is the separate Studio Python mesh-recipe system from preview.
 Its `proceduralmodel.api`, `proceduralmodel.validate`, `proceduralmodel.set` and
