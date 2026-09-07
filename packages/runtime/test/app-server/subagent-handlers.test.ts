@@ -48,9 +48,9 @@ describe("subagent handlers", () => {
   it("hides experiment-managed agents and rejects direct settings overrides", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "diligent-subagent-experiment-"));
     tempDirs.push(cwd);
-    const preview: ResolvedAgentDefinition = {
-      name: "preview-agent",
-      description: "Preview agent",
+    const procedural: ResolvedAgentDefinition = {
+      name: "procedural-builder",
+      description: "Procedural builder",
       source: "user",
     };
     const manager: SubagentConfigManager = {
@@ -58,16 +58,16 @@ describe("subagent handlers", () => {
         cwd,
         config: undefined,
         layers: {},
-        catalog: buildSubagentCatalog(getBuiltinAgentDefinitions(), [{ definition: preview, source: "global" }]),
-        experimentManagedAgentNames: new Set(["preview-agent"]),
+        catalog: buildSubagentCatalog(getBuiltinAgentDefinitions(), [{ definition: procedural, source: "global" }]),
+        experimentManagedAgentNames: new Set(["procedural-builder"]),
       }),
     };
 
     const listed = await handleSubagentsList(makeCtx(cwd), manager, undefined);
-    expect(listed.subagents.map((agent) => agent.name)).not.toContain("preview-agent");
+    expect(listed.subagents.map((agent) => agent.name)).not.toContain("procedural-builder");
     await expect(
       handleSubagentsSet(makeCtx(cwd), manager, async () => ({ skills: [] }), {
-        overrides: { "preview-agent": true },
+        overrides: { "procedural-builder": true },
       }),
     ).rejects.toThrow("experiment-managed");
   });

@@ -121,9 +121,9 @@ const experimentState: ExperimentsListResponse = {
   appliesOnNextTurn: true,
   experiments: [
     {
-      id: "preview",
-      title: "Preview feature",
-      description: "Expose a product-owned preview capability.",
+      id: "procedural",
+      title: "Procedural generation",
+      description: "Create scenes from reusable Luau recipes.",
       enabled: false,
       defaultEnabled: false,
     },
@@ -225,7 +225,7 @@ test("product experiment is hidden without server advertisement and saves one co
   const payloads: ExperimentsSetParams[] = [];
   const hidden = renderModal({});
   await hidden.render();
-  expect(document.body.textContent).not.toContain("Preview feature");
+  expect(document.body.textContent).not.toContain("Procedural generation");
   await act(async () => hidden.root.unmount());
   hidden.rootElement.remove();
 
@@ -237,9 +237,9 @@ test("product experiment is hidden without server advertisement and saves one co
     },
   });
   await shown.render();
-  await act(async () => checkboxFor("Preview feature").click());
+  await act(async () => checkboxFor("Procedural generation").click());
   await act(async () => saveButton().click());
-  expect(payloads).toEqual([{ threadId: "thread-1", overrides: { preview: true } }]);
+  expect(payloads).toEqual([{ threadId: "thread-1", overrides: { procedural: true } }]);
   await act(async () => shown.root.unmount());
   shown.rootElement.remove();
 });
