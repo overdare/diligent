@@ -7,6 +7,7 @@ import {
   type PluginHookFn,
   type RuntimeToolHost,
 } from "@diligent/runtime";
+import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
@@ -143,6 +144,52 @@ function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
 }
 
+const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** The script a `script.edit` call rewrote, from the metadata both the v1 and v2 paths return. */
+function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
+  const guid = result.metadata?.targetGuid;
+  return typeof guid === "string" && guid ? [guid] : [];
+}
+
+/** The script a `script.add` call created, from the metadata both the v1 and v2 paths return. */
+function scriptAddTargets(_args: unknown, result: ToolResult): string[] {
+  const guid = result.metadata?.guid;
+  return typeof guid === "string" && guid ? [guid] : [];
+}
+
+/**
+ * The scripts an `instance.upsert` batch wrote Lua into. Added instances carry their
+ * class in the result, but an update item does not — it is just a guid and a property
+ * bag — so an update counts only when it actually set `Source`, which is the same
+ * condition under which validating means anything.
+ */
+function instanceUpsertTargets(args: unknown, result: ToolResult): string[] {
+  const targets = new Set<string>();
+  const added = result.metadata?.added;
+  if (Array.isArray(added)) {
+    for (const entry of added) {
+      if (!isRecord(entry)) continue;
+      if (typeof entry.class === "string" && SCRIPT_CLASSES.has(entry.class) && typeof entry.guid === "string") {
+        targets.add(entry.guid);
+      }
+    }
+  }
+  const items = isRecord(args) ? args.items : undefined;
+  if (Array.isArray(items)) {
+    for (const item of items) {
+      if (!isRecord(item) || typeof item.guid !== "string") continue;
+      const properties = item.properties;
+      if (isRecord(properties) && typeof properties.Source === "string") targets.add(item.guid);
+    }
+  }
+  return [...targets];
+}
+
 function withApproval(ctx: CoreToolContext, host?: RuntimeToolHost): StudioRpcToolContext {
   return {
     ...ctx,
@@ -209,19 +256,51 @@ export async function createStudioRpcTools(ctx: {
       return warning ? { ...result, output: `${warning}\n${result.output}` } : result;
     },
   });
+  // Wrap a tool that writes Lua so the scripts it touched are validated as part
+  // of the same call. The system prompt already asks the agent to validate after
+  // editing, but a prompt is skippable — appending Studio's report to the tool's
+  // own result puts the diagnostics where the agent has to read them.
+  const withLuaValidate = (tool: Tool, targetsOf: (args: unknown, result: ToolResult) => string[]): Tool => ({
+    ...tool,
+    execute: async (args, toolCtx) => {
+      const result = await tool.execute(args, toolCtx);
+      if (result.metadata?.error === true) return result; // failed or rejected — nothing was written
+      const targetGuids = targetsOf(args, result);
+      if (targetGuids.length === 0) return result;
+      try {
+        const reply = await withSignal(callRpc, toolCtx.signal)(
+          luaValidate.method,
+          luaValidate.normalizeArgs({ targetGuids }),
+          { timeoutMs: luaValidate.timeoutMs },
+        );
+        const report = luaValidate.postProcess(reply);
+        return typeof report === "string" ? { ...result, output: `${result.output}\n\n${report}` } : result;
+      } catch (error) {
+        // The edit succeeded; a validation failure must not be reported as if it
+        // had not. Say the check was skipped and leave the result standing.
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ...result, output: `${result.output}\n\n[lua.validate skipped: ${reason}]` };
+      }
+    },
+  });
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
-    wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
+    wrapTool(
+      withSnapshot(
+        withLuaValidate(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges), instanceUpsertTargets),
+      ),
+      ctx.host,
+    ),
     wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
     wrapTool(createScriptGrepTool(ctx.cwd), ctx.host),
-    wrapTool(withSnapshot(createScriptAddTool(ctx.cwd, writeLock)), ctx.host),
+    wrapTool(withSnapshot(withLuaValidate(createScriptAddTool(ctx.cwd, writeLock), scriptAddTargets)), ctx.host),
     wrapTool(withSnapshot(createScriptDeleteTool(ctx.cwd, writeLock)), ctx.host),
-    wrapTool(withSnapshot(createScriptEditTool(ctx.cwd, writeLock)), ctx.host),
+    wrapTool(withSnapshot(withLuaValidate(createScriptEditTool(ctx.cwd, writeLock), scriptEditTargets)), ctx.host),
     wrapTool(withSnapshot(createAssetDrawerImportBulkTool(callRpc, writeLock)), ctx.host),
     ...createCollisionProfileTools(ctx.cwd, writeLock, applyLevelChanges).map((tool) =>
       wrapTool(isCollisionEdit(tool.name) ? withSnapshot(tool) : tool, ctx.host),
