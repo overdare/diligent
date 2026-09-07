@@ -5,8 +5,8 @@ export const method = "proceduralmodel.api";
 
 export const description =
   "Fetch the live authoring reference for OVERDARE geometry recipes — the Python `on_generate(model, " +
-  "size, attributes)` system that bakes real MeshParts with presets and tints, distinct from the Luau " +
-  "GeometryPrimitives runner (studiorpc_procedural_run). Call it ONCE at the start of a recipe task and " +
+  "size, attributes)` system that bakes real MeshParts with presets and tints. For Editor scene layout from primitive blocks, " +
+  "use studiorpc_execute_luau. Call it ONCE at the start of a recipe task and " +
   "work from what it returns; it is the source of truth, not this description. By default the reply is the " +
   "COMPACT authoring kit — `template` (a complete working recipe to copy), `lookup` (every G.*/parts.*/" +
   "layout.* signature on one line, keyed exactly as you write it), `presets` (the ~94 material preset names, " +
