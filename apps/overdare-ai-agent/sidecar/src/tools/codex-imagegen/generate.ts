@@ -2,7 +2,12 @@
 
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { type CodexNotification, type ConnectCodexAppServer, withCodexAppServer } from "./app-server-client";
+import {
+  type CodexAppServerSession,
+  type CodexNotification,
+  type ConnectCodexAppServer,
+  withCodexAppServer,
+} from "./app-server-client";
 
 const IMAGE_TIMEOUT_MS = 300_000;
 
@@ -89,48 +94,59 @@ export function createGenerateCodexImage(
       signal: input.signal,
       timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT_MS,
       run: async (session) => {
-        const account = parseResponse(
-          accountResponseSchema,
-          "account/read",
-          await session.request("account/read", { refreshToken: false }),
-        );
-        if (account.account?.type !== "chatgpt") {
-          throw new Error("Codex image generation requires a managed ChatGPT OAuth account, not an API key.");
-        }
-
-        const capabilities = parseResponse(
-          capabilityResponseSchema,
-          "modelProvider/capabilities/read",
-          await session.request("modelProvider/capabilities/read", {}),
-        );
-        if (!capabilities.imageGeneration) {
-          throw new Error("The connected Codex account does not support image generation.");
-        }
-
-        const thread = parseResponse(
-          threadResponseSchema,
-          "thread/start",
-          await session.request("thread/start", {
-            cwd: input.cwd,
-            ephemeral: true,
-            developerInstructions:
-              "Generate exactly one requested image with the built-in image generation skill. Do not edit project files or run unrelated tools.",
-          }),
-        );
-        const threadId = thread.thread.id;
-        const completion = session.waitForNotification(imageTurnMatcher(threadId));
-        // Observe both promises immediately: a terminal event may precede the turn/start response.
-        const [, generated] = await Promise.all([
-          session.request("turn/start", {
-            threadId,
-            cwd: input.cwd,
-            input: [{ type: "text", text: `$imagegen\n${input.prompt}` }],
-          }),
-          completion,
-        ]);
-        return generated;
+        await ensureImageGenerationAvailable(session);
+        const threadId = await startImageThread(session, input.cwd);
+        return runImageTurn(session, { threadId, cwd: input.cwd, prompt: input.prompt });
       },
     });
+}
+
+async function ensureImageGenerationAvailable(session: CodexAppServerSession): Promise<void> {
+  const account = parseResponse(
+    accountResponseSchema,
+    "account/read",
+    await session.request("account/read", { refreshToken: false }),
+  );
+  if (account.account?.type !== "chatgpt") {
+    throw new Error("Codex image generation requires a managed ChatGPT OAuth account, not an API key.");
+  }
+
+  const capabilities = parseResponse(
+    capabilityResponseSchema,
+    "modelProvider/capabilities/read",
+    await session.request("modelProvider/capabilities/read", {}),
+  );
+  if (!capabilities.imageGeneration) {
+    throw new Error("The connected Codex account does not support image generation.");
+  }
+}
+
+async function startImageThread(session: CodexAppServerSession, cwd: string): Promise<string> {
+  const response = await session.request("thread/start", {
+    cwd,
+    ephemeral: true,
+    developerInstructions:
+      "Generate exactly one requested image with the built-in image generation skill. Do not edit project files or run unrelated tools.",
+  });
+  const { thread } = parseResponse(threadResponseSchema, "thread/start", response);
+  return thread.id;
+}
+
+async function runImageTurn(
+  session: CodexAppServerSession,
+  input: { threadId: string; cwd: string; prompt: string },
+): Promise<GeneratedCodexImage> {
+  const completion = session.waitForNotification(imageTurnMatcher(input.threadId));
+  // Observe both promises immediately: a terminal event may precede the turn/start response.
+  const [, generated] = await Promise.all([
+    session.request("turn/start", {
+      threadId: input.threadId,
+      cwd: input.cwd,
+      input: [{ type: "text", text: `$imagegen\n${input.prompt}` }],
+    }),
+    completion,
+  ]);
+  return generated;
 }
 
 export const generateCodexImage = createGenerateCodexImage();

@@ -4,6 +4,46 @@ import { describe, expect, test } from "bun:test";
 import { createGenerateGeminiImage, type GeminiImageFetch } from "../../../src/tools/image-generation/gemini";
 
 describe("Gemini image generation", () => {
+  test("returns the last image from model output, ignoring images in other steps", async () => {
+    const firstImage = { type: "image", data: Buffer.from("first").toString("base64"), mime_type: "image/png" };
+    const lastImage = { type: "image", data: Buffer.from("last").toString("base64"), mime_type: "image/webp" };
+    const generate = createGenerateGeminiImage(async () =>
+      Response.json({
+        status: "completed",
+        steps: [
+          { type: "model_output", content: [firstImage, { type: "text", text: "description" }] },
+          { type: "model_output", content: [lastImage, { type: "image", data: "", mime_type: "image/png" }] },
+          { type: "tool_output", content: [firstImage] },
+        ],
+      }),
+    );
+
+    await expect(generate({ apiKey: "secret", model: "test-image-model", prompt: "A coin" })).resolves.toEqual({
+      bytes: Buffer.from("last"),
+      mediaType: "image/webp",
+      model: "test-image-model",
+    });
+  });
+
+  test("reports a failed interaction even when its steps contain an image", async () => {
+    const generate = createGenerateGeminiImage(async () =>
+      Response.json({
+        status: "failed",
+        error: { message: "generation failed" },
+        steps: [
+          {
+            type: "model_output",
+            content: [{ type: "image", data: Buffer.from("partial").toString("base64"), mime_type: "image/png" }],
+          },
+        ],
+      }),
+    );
+
+    await expect(generate({ apiKey: "secret", model: "test-image-model", prompt: "A coin" })).rejects.toThrow(
+      "generation failed",
+    );
+  });
+
   test("uses the configured key and image model and returns the generated image bytes", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImage: GeminiImageFetch = async (url, init) => {

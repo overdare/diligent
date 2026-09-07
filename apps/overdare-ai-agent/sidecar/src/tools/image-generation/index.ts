@@ -1,12 +1,12 @@
 // @summary Exposes provider-selectable image generation with shared project-local persistence.
 
-import type { Tool } from "@diligent/core/tool-contract";
+import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
 import { type GenerateCodexImage, generateCodexImage } from "../codex-imagegen/generate";
 import { type GenerateGeminiImage, generateGeminiImage } from "./gemini";
 import { type GeminiImageConfig, resolveGeminiImageConfig } from "./gemini-config";
-import { type GeneratedImageSource, storeGeneratedImage } from "./image-store";
+import { type GeneratedImageSource, type StoredImage, storeGeneratedImage } from "./image-store";
 
 const TOOL_NAME = "generate_image";
 
@@ -19,6 +19,16 @@ const parameters = z
       .describe('Image provider. "auto" (default) uses a configured Gemini API key, otherwise Codex managed OAuth.'),
   })
   .strict();
+
+type ImageGenerationArgs = z.infer<typeof parameters>;
+
+interface GeneratedImage {
+  image: GeneratedImageSource;
+  provider: "gemini" | "codex";
+  source: "gemini-api" | "codex-oauth";
+  model?: string;
+  revisedPrompt?: string;
+}
 
 export interface ImageGenerationToolProviderOptions {
   generateCodexImage?: GenerateCodexImage;
@@ -41,10 +51,6 @@ function createGenerateImageTool(
   host: RuntimeToolHost | undefined,
   options: ImageGenerationToolProviderOptions,
 ): Tool<typeof parameters> {
-  const generateWithCodex = options.generateCodexImage ?? generateCodexImage;
-  const generateWithGemini = options.generateGeminiImage ?? generateGeminiImage;
-  const resolveGemini = options.resolveGeminiImageConfig ?? resolveGeminiImageConfig;
-
   return {
     name: TOOL_NAME,
     description:
@@ -55,74 +61,71 @@ function createGenerateImageTool(
     supportParallel: false,
     async execute(args, ctx) {
       ctx.signal.throwIfAborted();
-      const requestedProvider = args.provider ?? "auto";
-      const approval = await (host?.approve ?? (async () => "once" as const))({
+      const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
         description: "Generate and save an image",
-        details: { provider: requestedProvider, prompt: args.prompt },
+        details: { provider: args.provider ?? "auto", prompt: args.prompt },
       });
       if (approval === "reject") {
         return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
       }
 
       ctx.signal.throwIfAborted();
-      const geminiConfig = requestedProvider === "codex" ? undefined : await resolveGemini(cwd);
+      const generated = await generateImageForProvider(cwd, args, ctx.signal, options);
       ctx.signal.throwIfAborted();
-      const provider = requestedProvider === "auto" ? (geminiConfig ? "gemini" : "codex") : requestedProvider;
-      let image: GeneratedImageSource;
-      let source: "gemini-api" | "codex-oauth";
-      let model: string | undefined;
-      let revisedPrompt: string | undefined;
-
-      if (provider === "gemini") {
-        if (!geminiConfig) throw new Error("Gemini API key is not configured.");
-        const generated = await generateWithGemini({
-          ...geminiConfig,
-          prompt: args.prompt,
-          signal: ctx.signal,
-        });
-        image = {
-          type: "bytes",
-          bytes: generated.bytes,
-          mediaType: generated.mediaType,
-        };
-        source = "gemini-api";
-        model = generated.model;
-      } else {
-        const generated = await generateWithCodex({ cwd, prompt: args.prompt, signal: ctx.signal });
-        image = { type: "file", file: generated.sourcePath };
-        source = "codex-oauth";
-        revisedPrompt = generated.revisedPrompt;
-      }
-
-      ctx.signal.throwIfAborted();
-      const stored = await storeGeneratedImage(cwd, image, { signal: ctx.signal });
-      return {
-        output: JSON.stringify(
-          {
-            file: stored.file,
-            provider,
-            source,
-            ...(model ? { model } : {}),
-            ...(revisedPrompt ? { revisedPrompt } : {}),
-          },
-          null,
-          2,
-        ),
-        outputImages: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: stored.mediaType,
-              data: stored.bytes.toString("base64"),
-            },
-          },
-        ],
-        metadata: { operation: "image_generation", provider, file: stored.file, source, ...(model ? { model } : {}) },
-      };
+      const stored = await storeGeneratedImage(cwd, generated.image, { signal: ctx.signal });
+      return buildImageToolResult(stored, generated);
     },
+  };
+}
+
+async function generateImageForProvider(
+  cwd: string,
+  args: ImageGenerationArgs,
+  signal: AbortSignal,
+  options: ImageGenerationToolProviderOptions,
+): Promise<GeneratedImage> {
+  const resolveGemini = options.resolveGeminiImageConfig ?? resolveGeminiImageConfig;
+  const geminiConfig = args.provider === "codex" ? undefined : await resolveGemini(cwd);
+  signal.throwIfAborted();
+
+  if (args.provider === "gemini" || geminiConfig) {
+    if (!geminiConfig) {
+      throw new Error("Gemini API key is not configured.");
+    }
+    const generate = options.generateGeminiImage ?? generateGeminiImage;
+    const generated = await generate({ ...geminiConfig, prompt: args.prompt, signal });
+    return {
+      image: { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
+      provider: "gemini",
+      source: "gemini-api",
+      model: generated.model,
+    };
+  }
+
+  const generate = options.generateCodexImage ?? generateCodexImage;
+  const generated = await generate({ cwd, prompt: args.prompt, signal });
+  return {
+    image: { type: "file", file: generated.sourcePath },
+    provider: "codex",
+    source: "codex-oauth",
+    revisedPrompt: generated.revisedPrompt,
+  };
+}
+
+function buildImageToolResult(stored: StoredImage, generated: GeneratedImage): ToolResult {
+  const { provider, source, model, revisedPrompt } = generated;
+  const details = { file: stored.file, provider, source, ...(model ? { model } : {}) };
+  return {
+    output: JSON.stringify({ ...details, ...(revisedPrompt ? { revisedPrompt } : {}) }, null, 2),
+    outputImages: [
+      {
+        type: "image",
+        source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
+      },
+    ],
+    metadata: { operation: "image_generation", ...details },
   };
 }
 
