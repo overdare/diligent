@@ -7,12 +7,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { StudioRpcError } from "../src/tools/studiorpc/rpc";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
+  StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string) => {
     if (method === "level.browse") return levelBrowseMock();
@@ -40,14 +42,6 @@ async function makeBootstrapDir(): Promise<string> {
     "utf-8",
   );
 
-  const proceduralSkillDir = join(dir, "skills", "procedural-builder");
-  await mkdir(proceduralSkillDir, { recursive: true });
-  await writeFile(
-    join(proceduralSkillDir, "SKILL.md"),
-    "---\nname: procedural-builder\ndescription: Procedural preview\n---\nPROCEDURAL SKILL BODY",
-    "utf-8",
-  );
-
   // A skill that is not usable over MCP — load_skill must exclude it (see MCP_EXCLUDED_SKILLS).
   const excludedSkillDir = join(dir, "skills", "record-project-memory");
   await mkdir(excludedSkillDir, { recursive: true });
@@ -62,14 +56,6 @@ async function makeBootstrapDir(): Promise<string> {
   await writeFile(
     join(agentDir, "AGENT.md"),
     "---\nname: test-agent\ndescription: A test agent\nmodel_class: lite\n---\nAGENT BODY CONTENT",
-    "utf-8",
-  );
-
-  const proceduralAgentDir = join(dir, "agents", "procedural-builder");
-  await mkdir(proceduralAgentDir, { recursive: true });
-  await writeFile(
-    join(proceduralAgentDir, "AGENT.md"),
-    "---\nname: procedural-builder\ndescription: Procedural builder\n---\nPROCEDURAL AGENT BODY",
     "utf-8",
   );
 
@@ -123,7 +109,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("applies the same disabled experiment gate to procedural tool, skill, and agent", async () => {
+  test("applies a disabled experiment gate to bootstrap skills and agents", async () => {
     const bootstrapDir = await makeBootstrapDir();
     const registries = await buildRegistries({
       cwd: process.cwd(),
@@ -131,21 +117,20 @@ describe("OVERDARE MCP server", () => {
       systemPromptPath: globalSystemPromptPath(bootstrapDir),
       experiments: [
         {
-          id: "procedural",
-          title: "Procedural generation",
-          description: "Procedural preview",
+          id: "preview",
+          title: "Preview feature",
+          description: "Preview capability",
           defaultEnabled: false,
           enabled: false,
-          toolNames: ["studiorpc_procedural_run"],
-          skillNames: ["procedural-builder"],
-          agentNames: ["procedural-builder"],
+          toolNames: [],
+          skillNames: ["test-skill"],
+          agentNames: ["test-agent"],
         },
       ],
     });
-    expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
     const loadSkill = registries.tools.get("load_skill");
-    expect(loadSkill?.description).not.toContain("procedural-builder");
-    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    expect(loadSkill?.description).not.toContain("test-skill");
+    expect(registries.prompts.has("agent-test-agent")).toBe(false);
   });
 
   test("calls a studio tool and returns its output", async () => {

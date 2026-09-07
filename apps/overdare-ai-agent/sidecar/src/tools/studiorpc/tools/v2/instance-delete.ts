@@ -1,7 +1,7 @@
 // @summary Deletes instances through the Studio instance.delete RPC.
 
 import type { InstanceDeleteArgs } from "../../methods/instance.delete";
-import { serviceClassEnum } from "../../methods/instance.params";
+import { serviceClassEnum } from "../../methods/instance-safety";
 import { buildInstanceDeleteRender } from "../../render";
 import type { ToolResult } from "../../types";
 import { invalidInstanceOperationError, missingGuidError, resultFromInstanceToolStatusError } from "../instance-status";

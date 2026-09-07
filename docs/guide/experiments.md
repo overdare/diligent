@@ -15,7 +15,7 @@ Experiment overrides are stored in the active global namespace config:
 {
   "experiments": {
     "overrides": {
-      "procedural": true
+      "preview": true
     }
   }
 }

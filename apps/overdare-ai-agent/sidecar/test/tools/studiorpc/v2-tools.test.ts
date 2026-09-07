@@ -255,6 +255,46 @@ describe("v2 argument conversion", () => {
     expect(paramsOf("instance.delete")).toEqual({ ActorGuids: [PART_GUID, FOLDER_B_GUID] });
   });
 
+  test("searches, creates, and reads a future class without a local schema catalog", async () => {
+    const properties = { FutureValue: { ObjectType: "FutureValue", Nested: [1, 2] } };
+    respond = (method, params) =>
+      method === "instance.schema.search"
+        ? {
+            schemaVersion: "future-build",
+            classes: [
+              {
+                class: "FutureWidget",
+                creatable: true,
+                service: false,
+                properties: [{ name: "FutureValue", declaredOn: "FutureWidget", valueSchema: { type: "object" } }],
+              },
+            ],
+          }
+        : studioResponder(method, params);
+    const tools = await loadTools(makeStudioProject());
+    const search = await tools
+      .get("studiorpc_instance_schema_search")!
+      .execute({ classes: ["FutureWidget"] }, toolContext());
+    expect(JSON.parse(search.output).classes[0].class).toBe("FutureWidget");
+    const result = await tools
+      .get("studiorpc_instance_upsert")!
+      .execute(
+        { items: [{ class: "FutureWidget", parentGuid: FOLDER_A_GUID, name: "Future", properties }] },
+        toolContext(),
+      );
+    expect(result.metadata?.error).not.toBe(true);
+    expect(paramsOf("instance.create")).toMatchObject({
+      Instances: [{ InstanceType: "FutureWidget", Name: "Future", ...properties }],
+    });
+    world.LuaChildren!.push({ ActorGuid: "FUTURE", InstanceType: "FutureWidget", Name: "Future", ...properties });
+    const read = await tools.get("studiorpc_instance_read")!.execute({ guid: "FUTURE" }, toolContext());
+    expect(JSON.parse(read.output).properties).toEqual(properties);
+    await tools
+      .get("studiorpc_instance_upsert")!
+      .execute({ items: [{ guid: "FUTURE", properties: { FutureValue: 9 } }] }, toolContext());
+    expect(paramsOf("instance.update")).toMatchObject({ Instances: [{ ActorGuid: "FUTURE", FutureValue: 9 }] });
+  });
+
   test("issues one instance.create per parent and reports the GUIDs Studio returned", async () => {
     const tools = await loadTools(makeStudioProject());
 

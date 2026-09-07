@@ -111,8 +111,7 @@ function syncDescendantMobility(node: OvdrjmNode, mobility: MobilityValue): void
 
 /**
  * Applies the Mobility policy for one property write. Regular upserts ignore a
- * Mobility value outside Workspace's direct children. Procedural JSON apply
- * preserves it until the completed hierarchy is normalized.
+ * Mobility value outside Workspace's direct children.
  */
 function applyMobilityWritePolicy(
   root: OvdrjmNode,

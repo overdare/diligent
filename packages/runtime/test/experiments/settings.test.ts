@@ -5,13 +5,13 @@ import { resolveExperimentGates, resolveExperimentStates } from "../../src/exper
 
 const definitions = [
   {
-    id: "procedural",
-    title: "Procedural generation",
-    description: "Generate scenes from reusable Luau recipes.",
+    id: "preview",
+    title: "Preview feature",
+    description: "Expose a product-owned preview capability.",
     defaultEnabled: false,
-    toolNames: ["studiorpc_procedural_run"],
-    skillNames: ["procedural-luau-json"],
-    agentNames: ["procedural-builder"],
+    toolNames: ["preview_tool"],
+    skillNames: ["preview-skill"],
+    agentNames: ["preview-agent"],
   },
 ];
 
@@ -19,16 +19,16 @@ describe("experiment settings", () => {
   it("uses product defaults and applies one override to both gates", () => {
     expect(resolveExperimentStates(definitions, undefined)[0]?.enabled).toBe(false);
 
-    const enabled = resolveExperimentGates(resolveExperimentStates(definitions, { procedural: true }));
+    const enabled = resolveExperimentGates(resolveExperimentStates(definitions, { preview: true }));
     expect(enabled).toEqual({
       disabledToolNames: new Set(),
       disabledSkillNames: new Set(),
       disabledAgentNames: new Set(),
     });
 
-    const disabled = resolveExperimentGates(resolveExperimentStates(definitions, { procedural: false }));
-    expect(disabled.disabledToolNames).toEqual(new Set(["studiorpc_procedural_run"]));
-    expect(disabled.disabledSkillNames).toEqual(new Set(["procedural-luau-json"]));
-    expect(disabled.disabledAgentNames).toEqual(new Set(["procedural-builder"]));
+    const disabled = resolveExperimentGates(resolveExperimentStates(definitions, { preview: false }));
+    expect(disabled.disabledToolNames).toEqual(new Set(["preview_tool"]));
+    expect(disabled.disabledSkillNames).toEqual(new Set(["preview-skill"]));
+    expect(disabled.disabledAgentNames).toEqual(new Set(["preview-agent"]));
   });
 });

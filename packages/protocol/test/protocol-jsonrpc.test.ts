@@ -71,7 +71,7 @@ describe("protocol/jsonrpc", () => {
     expect(
       DiligentClientRequestSchema.safeParse({
         method: "experiments/set",
-        params: { overrides: { procedural: true } },
+        params: { overrides: { preview: true } },
       }).success,
     ).toBe(true);
   });

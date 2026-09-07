@@ -129,15 +129,25 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - OVERDARE uses **Collision Profiles**, not Roblox Collision Groups. Objects share a channel, and each object's profile sets its collision per channel independently and one-directionally as **Block / Overlap / Ignore** — so two objects on the same channel can behave differently. Don't model this as one bidirectional group per behavior the way Roblox does.
 
 # Lua Script Management
-- All Luau script operations (create, read, edit, delete) MUST go through the dedicated `studiorpc_script_add`, `studiorpc_script_read`, `studiorpc_script_edit`, and `studiorpc_script_delete` tools.
+- Prefer the dedicated `studiorpc_script_add`, `studiorpc_script_read`, `studiorpc_script_edit`, and `studiorpc_script_delete` tools for script operations. Editor Luau may also edit Script.Source, but its file restoration does not share the ordinary world Undo guarantee.
 - NEVER use file-level tools (edit, write, bash, apply_patch, etc.) to directly manipulate `.lua` / `.luau` files. Script source lives inside the `.ovdrjm` level file, not as standalone files on disk.
 
 # Script Behavior Differences
 - **`Destroy()` invalidates references**: after `obj:Destroy()`, variables referencing it become `nil` and touching the destroyed object raises a runtime error that stops the script. `== nil` comparison is not supported for this check — use the global **`isnil(obj)`** instead.
 - **`PlayerAdded` / `CharacterAdded` scope in LocalScripts**: OVERDARE fires these for **every** player — including yourself and players who joined before you — even inside a LocalScript (Roblox fires only for players who join after you). Roblox self/late-join logic ported as-is will over-trigger; branch explicitly when you need "others only".
 
-# Static Placement via studiorpc_instance_upsert
-- For UI and static level design work: Use `studiorpc_instance_upsert` to statically place objects instead of creating them at runtime via scripts
+# Live Instance Schema Discovery
+- Before creating a class or writing unfamiliar JSON properties, call `studiorpc_instance_schema_search` with `classes` (1–20 exact names), a non-empty `query`, or both. Combined filters search within those classes; a class-name match returns all exposed properties. Do not send limit or cursor.
+- Use the live response's `schemaVersion`, `creatable`, property `name`, `declaredOn`, and any `writeCondition` / `valueSchema` to plan JSON edits. Do not assume a property is unconditionally writable. Empty classes means no match, not permission to invent fields.
+- This is an instance JSON editing schema, not the complete Luau member list. Use Luau API documentation for methods and runtime members. Do not require a local schema file to discover current Studio classes. Upsert accepts exact Studio JSON without local defaults, short-name expansion, or inferred ObjectType tags; copy complete value shapes from live hints or a current instance read. Studio validates class/property semantics.
+
+# Editor World Editing
+- Use `studiorpc_execute_luau` with `target: "Editor"` and `code` for direct world editing, including generated geometry. Each call uses an independent VM; reacquire instances on the next call. World changes persist, globals and references do not.
+- Return a concise verification value. The result is the first return value as a string, not print output. No return/nil produces "nil"; a supported table produces a JSON string that can be parsed once.
+- Keep calls within 256 KiB UTF-8 source, 64 KiB response, 1,024 explicit creations, and 5 seconds of Lua execution. A single native call cannot be preempted. Do not execute during PIE transitions/running PIE, other Editor transactions, or collaborative editing.
+- Do not delete/reparent the DataModel root or detach existing objects into temporary hierarchies. Attach newly created objects to the world before returning; unconnected temporary objects are cleaned up.
+- A failed call may already have changed the world. Preserve and inspect command_id, mutation_attempted, and undo_recorded; never automatically replay failed code. Inspect the world before recovery, including after transport timeout or cancellation. Ordinary edits have command-level Undo; Script.Source file recovery is outside that guarantee.
+- For UI and static level design work, use Editor Luau or `studiorpc_instance_upsert` to place objects in the Editor
 - Do NOT write code that creates UI elements or map objects dynamically at runtime (unless they genuinely need to be spawned during gameplay)
 
 # UX/UI Considerations

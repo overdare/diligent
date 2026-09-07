@@ -19,17 +19,17 @@ describe("runtime experiment gating", () => {
     tempDirs.push(home, cwd);
     const originalHome = process.env.HOME;
     process.env.HOME = home;
-    const skillDir = join(cwd, ".diligent", "skills", "procedural-skill");
+    const skillDir = join(cwd, ".diligent", "skills", "preview-skill");
     await mkdir(skillDir, { recursive: true });
     await writeFile(
       join(skillDir, "SKILL.md"),
-      "---\nname: procedural-skill\ndescription: Procedural test skill\n---\nUse procedural_tool.",
+      "---\nname: preview-skill\ndescription: Preview test skill\n---\nUse preview_tool.",
     );
-    const agentDir = join(cwd, ".diligent", "agents", "procedural-agent");
+    const agentDir = join(cwd, ".diligent", "agents", "preview-agent");
     await mkdir(agentDir, { recursive: true });
     await writeFile(
       join(agentDir, "AGENT.md"),
-      "---\nname: procedural-agent\ndescription: Procedural test agent\ntools: read\n---\nBuild procedural scenes.",
+      "---\nname: preview-agent\ndescription: Preview test agent\ntools: read\n---\nUse the preview capability.",
     );
     const paths = {
       root: join(cwd, ".diligent"),
@@ -40,35 +40,35 @@ describe("runtime experiment gating", () => {
     };
     const experimentDefinitions = [
       {
-        id: "procedural",
-        title: "Procedural",
-        description: "Procedural preview",
+        id: "preview",
+        title: "Preview feature",
+        description: "Preview capability",
         defaultEnabled: false,
-        toolNames: ["procedural_tool"],
-        skillNames: ["procedural-skill"],
-        agentNames: ["procedural-agent"],
+        toolNames: ["preview_tool"],
+        skillNames: ["preview-skill"],
+        agentNames: ["preview-agent"],
       },
     ];
 
     try {
       const disabled = await loadRuntimeConfig(cwd, paths, { experimentDefinitions });
-      expect(disabled.skills.map((skill) => skill.name)).not.toContain("procedural-skill");
-      expect(disabled.disabledToolNames).toEqual(new Set(["procedural_tool"]));
-      expect(disabled.agentCatalog.map((entry) => entry.definition.name)).toContain("procedural-agent");
-      expect(disabled.agentDefinitions.map((definition) => definition.name)).not.toContain("procedural-agent");
+      expect(disabled.skills.map((skill) => skill.name)).not.toContain("preview-skill");
+      expect(disabled.disabledToolNames).toEqual(new Set(["preview_tool"]));
+      expect(disabled.agentCatalog.map((entry) => entry.definition.name)).toContain("preview-agent");
+      expect(disabled.agentDefinitions.map((definition) => definition.name)).not.toContain("preview-agent");
 
       await mkdir(join(home, ".diligent"), { recursive: true });
       await writeFile(
         join(home, ".diligent", "config.jsonc"),
         JSON.stringify({
-          experiments: { overrides: { procedural: true } },
-          agents: { overrides: { "procedural-agent": false } },
+          experiments: { overrides: { preview: true } },
+          agents: { overrides: { "preview-agent": false } },
         }),
       );
       const enabled = await loadRuntimeConfig(cwd, paths, { experimentDefinitions });
-      expect(enabled.skills.map((skill) => skill.name)).toContain("procedural-skill");
+      expect(enabled.skills.map((skill) => skill.name)).toContain("preview-skill");
       expect(enabled.disabledToolNames.size).toBe(0);
-      expect(enabled.agentDefinitions.map((definition) => definition.name)).toContain("procedural-agent");
+      expect(enabled.agentDefinitions.map((definition) => definition.name)).toContain("preview-agent");
     } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;

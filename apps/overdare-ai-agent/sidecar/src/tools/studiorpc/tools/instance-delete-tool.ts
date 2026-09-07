@@ -2,7 +2,7 @@
 
 import { resolveApiVersion } from "../config";
 import * as instanceDelete from "../methods/instance.delete";
-import { serviceClassEnum } from "../methods/instance.params";
+import { serviceClassEnum } from "../methods/instance-safety";
 import { buildInstanceDeleteRender } from "../render";
 import { applyLevelChanges } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";

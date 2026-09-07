@@ -1,14 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/instance.params";
 
 const REF_DIR = join(import.meta.dir, "../../../bootstrap/skills/vfx-recipe/references");
-const LAYER_TO_NAMES: Record<string, readonly string[]> = {
-  "0_Base": vfxLayerSourceNames.Base,
-  "1_Detail": vfxLayerSourceNames.Detail,
-  "2_Extra": vfxLayerSourceNames.Extra,
-};
+// The bundled source catalog is documentation, not an editable-class whitelist.
+const sourcesText = readFileSync(join(REF_DIR, "sources.md"), "utf8");
+const sourcePaths = new Set([...sourcesText.matchAll(/^- \*\*NiagaraSystem\*\*:\s*`(.+)`/gm)].map((match) => match[1]));
 
 describe("vfx-recipe bundled references", () => {
   test("presets.md has the full catalog in grep format", () => {
@@ -24,7 +21,7 @@ describe("vfx-recipe bundled references", () => {
     }
   });
 
-  test("every template NiagaraSystem path uses a source the upsert schema accepts", () => {
+  test("every template NiagaraSystem path references the bundled source documentation", () => {
     const templateDir = join(REF_DIR, "templates");
     const files = readdirSync(templateDir).filter((f) => f.startsWith("combo_"));
     expect(files.length).toBe(7);
@@ -33,7 +30,7 @@ describe("vfx-recipe bundled references", () => {
       const refs = [...content.matchAll(/\/CommonContent\/VFX\/Layer\/(0_Base|1_Detail|2_Extra)\/([A-Za-z0-9_]+)\//g)];
       expect(refs.length).toBeGreaterThan(0);
       for (const [, layer, source] of refs) {
-        expect(LAYER_TO_NAMES[layer]).toContain(source);
+        expect([...sourcePaths].some((path) => path.includes(`/Layer/${layer}/${source}/`))).toBe(true);
       }
     }
   });
@@ -48,7 +45,7 @@ describe("vfx-recipe bundled references", () => {
     expect(listed).toEqual(files);
   });
 
-  test("every source.md entry is covered by vfxLayerSourceNames with a matching NiagaraSystem path", () => {
+  test("every sources.md entry has a matching layer and NiagaraSystem path", () => {
     const layerDir: Record<string, string> = { Base: "0_Base", Detail: "1_Detail", Extra: "2_Extra" };
 
     const src = readFileSync(join(REF_DIR, "sources.md"), "utf8");
@@ -73,7 +70,6 @@ describe("vfx-recipe bundled references", () => {
       expect(m).not.toBeNull();
       const [, layer, shortName] = m as RegExpMatchArray;
       expect(entry.layer).toBe(layer);
-      expect(LAYER_TO_NAMES[layerDir[layer]]).toContain(shortName);
       const expectedPath = `/CommonContent/VFX/Layer/${layerDir[layer]}/${shortName}/VFX_UGC_${layer}_${shortName}.VFX_UGC_${layer}_${shortName}`;
       expect(entry.niagaraSystem).toBe(expectedPath);
     }

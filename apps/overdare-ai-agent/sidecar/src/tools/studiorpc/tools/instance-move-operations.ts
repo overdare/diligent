@@ -1,6 +1,6 @@
 // @summary Validates and applies hierarchy-only instance moves inside an ovdrjm document.
 
-import { serviceClassEnum } from "../methods/instance.params";
+import { serviceClassEnum } from "../methods/instance-safety";
 import { invalidInstanceOperationError, missingGuidError } from "./instance-status";
 import {
   clearStaleWorldTransforms,

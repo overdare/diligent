@@ -9,12 +9,12 @@ import { resolveExperimentStates } from "../../src/experiments";
 
 const definitions = [
   {
-    id: "procedural",
-    title: "Procedural generation",
-    description: "Procedural preview.",
+    id: "preview",
+    title: "Preview feature",
+    description: "Preview capability.",
     defaultEnabled: false,
-    toolNames: ["procedural_tool"],
-    skillNames: ["procedural-skill"],
+    toolNames: ["preview_tool"],
+    skillNames: ["preview-skill"],
   },
 ];
 const tempDirs: string[] = [];
@@ -39,16 +39,16 @@ describe("experiment handlers", () => {
         manager,
         async () => {
           reloads += 1;
-          states = resolveExperimentStates(definitions, { procedural: true });
+          states = resolveExperimentStates(definitions, { preview: true });
           return { skills: [] };
         },
         new Map(),
-        { overrides: { procedural: true } },
+        { overrides: { preview: true } },
       );
       expect(reloads).toBe(1);
       expect(result.experiments[0]?.enabled).toBe(true);
       expect(await Bun.file(join(home, ".diligent", "config.jsonc")).json()).toMatchObject({
-        experiments: { overrides: { procedural: true } },
+        experiments: { overrides: { preview: true } },
       });
     } finally {
       if (originalHome === undefined) delete process.env.HOME;
