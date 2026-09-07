@@ -1,18 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { vfxLayerSourceNames } from "../../src/tools/studiorpc/methods/instance.params";
 
 const REF_DIR = join(import.meta.dir, "../../../bootstrap/skills/vfx-recipe/references");
-// The bundled source catalog is documentation, not an editable-class whitelist.
-const sourcesText = readFileSync(join(REF_DIR, "sources.md"), "utf8");
-const sourcePaths = new Set([...sourcesText.matchAll(/^- \*\*NiagaraSystem\*\*:\s*`(.+)`/gm)].map((match) => match[1]));
+const LAYER_TO_NAMES: Record<string, readonly string[]> = {
+  "0_Base": vfxLayerSourceNames.Base,
+  "1_Detail": vfxLayerSourceNames.Detail,
+  "2_Extra": vfxLayerSourceNames.Extra,
+};
 
 describe("vfx-recipe bundled references", () => {
   test("presets.md has the full catalog in grep format", () => {
     const rows = readFileSync(join(REF_DIR, "presets.md"), "utf8")
       .split("\n")
       .filter((line) => line.startsWith("| VFX_"));
-    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeGreaterThan(100);
     for (const row of rows) {
       // | Resource | DisplayName | Category | Subcategory | Genre | Keywords |
       const cells = row.split("|").map((c) => c.trim());
@@ -21,16 +24,16 @@ describe("vfx-recipe bundled references", () => {
     }
   });
 
-  test("every template NiagaraSystem path references the bundled source documentation", () => {
+  test("every template NiagaraSystem path uses a source the upsert schema accepts", () => {
     const templateDir = join(REF_DIR, "templates");
     const files = readdirSync(templateDir).filter((f) => f.startsWith("combo_"));
-    expect(files.length).toBeGreaterThan(0);
+    expect(files.length).toBe(7);
     for (const file of files) {
       const content = readFileSync(join(templateDir, file), "utf8");
       const refs = [...content.matchAll(/\/CommonContent\/VFX\/Layer\/(0_Base|1_Detail|2_Extra)\/([A-Za-z0-9_]+)\//g)];
       expect(refs.length).toBeGreaterThan(0);
       for (const [, layer, source] of refs) {
-        expect([...sourcePaths].some((path) => path.includes(`/Layer/${layer}/${source}/`))).toBe(true);
+        expect(LAYER_TO_NAMES[layer]).toContain(source);
       }
     }
   });
@@ -45,7 +48,7 @@ describe("vfx-recipe bundled references", () => {
     expect(listed).toEqual(files);
   });
 
-  test("every sources.md entry has a matching layer and NiagaraSystem path", () => {
+  test("every source.md entry is covered by vfxLayerSourceNames with a matching NiagaraSystem path", () => {
     const layerDir: Record<string, string> = { Base: "0_Base", Detail: "1_Detail", Extra: "2_Extra" };
 
     const src = readFileSync(join(REF_DIR, "sources.md"), "utf8");
@@ -70,6 +73,7 @@ describe("vfx-recipe bundled references", () => {
       expect(m).not.toBeNull();
       const [, layer, shortName] = m as RegExpMatchArray;
       expect(entry.layer).toBe(layer);
+      expect(LAYER_TO_NAMES[layerDir[layer]]).toContain(shortName);
       const expectedPath = `/CommonContent/VFX/Layer/${layerDir[layer]}/${shortName}/VFX_UGC_${layer}_${shortName}.VFX_UGC_${layer}_${shortName}`;
       expect(entry.niagaraSystem).toBe(expectedPath);
     }

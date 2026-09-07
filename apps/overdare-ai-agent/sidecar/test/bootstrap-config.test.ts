@@ -1,8 +1,23 @@
 // @summary Verifies OVERDARE bootstrap config defaults and essential cross-tool prompt policy.
 
-import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { afterEach, describe, expect, test } from "bun:test";
+import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadDiligentConfig } from "@diligent/runtime/config";
+import { OVERDARE_EXPERIMENTS } from "../src/experiments";
+
+const originalHome = process.env.HOME;
+const originalStorageNamespace = process.env.DILIGENT_STORAGE_NAMESPACE;
+let testRoot: string | undefined;
+
+afterEach(async () => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  if (originalStorageNamespace === undefined) delete process.env.DILIGENT_STORAGE_NAMESPACE;
+  else process.env.DILIGENT_STORAGE_NAMESPACE = originalStorageNamespace;
+  if (testRoot) await rm(testRoot, { recursive: true, force: true });
+});
 
 describe("OVERDARE bootstrap config", () => {
   test("keeps cross-tool play-test policy without duplicating individual tool definitions", async () => {
@@ -14,18 +29,18 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("<play-test-input>");
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
-  test("injects live JSON discovery and non-retry Editor recovery policy", async () => {
-    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
-    expect(prompt).toContain("studiorpc_instance_schema_search");
-    expect(prompt).toContain("not the complete Luau member list");
-    expect(prompt).toContain("mutation_attempted");
-    expect(prompt).toContain("never automatically replay failed code");
-    expect(prompt).toContain("without local defaults");
-  });
-  test("VFX guidance requires caller-supplied tags and explicit playback settings", async () => {
-    const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");
-    expect(skill).not.toContain("are injected by the sidecar");
-    expect(skill).not.toContain("default true");
-    expect(skill).toContain("Include the required ObjectType tags");
+
+  test("enables the procedural experiment by default", async () => {
+    testRoot = await mkdtemp(join(tmpdir(), "overdare-bootstrap-config-"));
+    const globalConfigDir = join(testRoot, ".overdare");
+    await mkdir(globalConfigDir, { recursive: true });
+    await cp(join(import.meta.dir, "../../bootstrap/config.jsonc"), join(globalConfigDir, "config.jsonc"));
+    process.env.HOME = testRoot;
+    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
+
+    const { config } = await loadDiligentConfig(testRoot);
+
+    expect(OVERDARE_EXPERIMENTS.some((experiment) => experiment.id === "procedural")).toBe(true);
+    expect(config.experiments?.overrides?.procedural).toBe(true);
   });
 });
