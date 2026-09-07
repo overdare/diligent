@@ -17,6 +17,15 @@ describe("instance.upsert live schema properties", () => {
       items: [{ guid: "widget", properties: { FutureValue: 0 } }],
     });
   });
+  test("preserves constructor and prototype as ordinary JSON property names", () => {
+    const properties = { constructor: "StudioValue", prototype: { Value: 3 } };
+    for (const item of [
+      { guid: "widget", properties },
+      { class: "FutureWidget", parentGuid: "workspace", name: "Future", properties },
+    ]) {
+      expect(params.parse({ items: [item] })).toEqual({ items: [item] });
+    }
+  });
   test("rejects malformed envelopes and non-object properties", () => {
     for (const item of [
       { class: "", parentGuid: "p", name: "n" },
@@ -30,23 +39,13 @@ describe("instance.upsert live schema properties", () => {
     }
   });
   test("rejects identity and hierarchy keys inside properties", () => {
-    for (const key of [
-      "ActorGuid",
-      "ObjectKey",
-      "InstanceType",
-      "LuaChildren",
-      "Name",
-      "Parent",
-      "__proto__",
-      "constructor",
-      "prototype",
-    ]) {
+    for (const key of ["ActorGuid", "ObjectKey", "InstanceType", "LuaChildren", "Name", "Parent", "__proto__"]) {
       const properties = JSON.parse(`{"${key}":"overwrite"}`);
       expect(() => parseArgs({ items: [{ guid: "p", properties }] })).toThrow();
     }
   });
   test("schema validation rejects reserved keys before record parsing can omit them", () => {
-    for (const key of ["__proto__", "ActorGuid", "Name", "constructor", "prototype"]) {
+    for (const key of ["__proto__", "ActorGuid", "Name"]) {
       const properties = JSON.parse(`{"${key}":"overwrite"}`);
       for (const item of [
         { guid: "p", properties },

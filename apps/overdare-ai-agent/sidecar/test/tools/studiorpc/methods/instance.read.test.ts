@@ -48,4 +48,24 @@ describe("instance.read arguments", () => {
       children: [{ guid: "C", name: "Child", class: "FutureClass", properties: { CFrame: cframe } }],
     });
   });
+  test("read filtering removes instance metadata without applying write restrictions", () => {
+    const properties = JSON.parse(
+      '{"constructor":"StudioValue","prototype":{"Value":3},"__proto__":{"fromStudio":true}}',
+    );
+    const result = toReadableNode(
+      {
+        InstanceType: "FutureWidget",
+        ActorGuid: "P",
+        ObjectKey: 123,
+        Name: "Future",
+        Parent: "workspace",
+        LuaChildren: [],
+        ...properties,
+      },
+      false,
+    );
+    expect(result).toEqual({ guid: "P", name: "Future", class: "FutureWidget", properties });
+    expect(Object.getPrototypeOf(result!.properties)).toBe(Object.prototype);
+    expect(Object.hasOwn(result!.properties, "__proto__")).toBe(true);
+  });
 });
