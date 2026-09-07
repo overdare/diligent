@@ -249,6 +249,25 @@ describe("snapshot capture on first edit", () => {
     expect(existsSync(join(snapshotsDir(cwd), "sess_0.ovdrjm"))).toBe(true); // captured
   });
 
+  test("captures the pre-edit world before the dedicated Editor Luau tool runs", async () => {
+    const cwd = projectDir();
+    const original = readFileSync(join(cwd, "world.ovdrjm"), "utf8");
+    const { tools } = await setup(cwd, "editor", {
+      callRpc: async (method) => {
+        if (method === "execute.luau") {
+          expect(readFileSync(join(snapshotsDir(cwd), "editor_0.ovdrjm"), "utf8")).toBe(original);
+          writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"edited":true}}');
+        }
+        return "saved";
+      },
+    });
+    await tools
+      .find((tool) => tool.name === "studiorpc_execute_luau")!
+      .execute({ target: "Editor", code: "return 'edited'" }, toolCtx());
+    expect(readFileSync(join(snapshotsDir(cwd), "editor_0.ovdrjm"), "utf8")).toBe(original);
+    expect(readFileSync(join(cwd, "world.ovdrjm"), "utf8")).toContain('"edited":true');
+  });
+
   test("captures only once per turn even across multiple edits", async () => {
     const cwd = projectDir();
     const { tools } = await setup(cwd, "sess");
