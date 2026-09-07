@@ -26,7 +26,7 @@ Use scripts only when the UI needs behavior, such as button activation, visibili
 | Read a UI behavior script | `studiorpc_script_read` |
 | Edit a UI behavior script | `studiorpc_script_edit` |
 | Delete a UI behavior script | `studiorpc_script_delete` |
-| Validate changed UI scripts | `validatelua` |
+| Validate changed UI scripts | `studiorpc_lua_validate` |
 
 ---
 
@@ -264,7 +264,7 @@ Important properties:
 2. Add or edit a `LocalScript`.
 3. Reference runtime UI from `PlayerGui` using `WaitForChild`.
 4. Connect `Activated`.
-5. Run `validatelua`.
+5. Run `studiorpc_lua_validate`.
 6. Play test and check logs if needed.
 
 ---

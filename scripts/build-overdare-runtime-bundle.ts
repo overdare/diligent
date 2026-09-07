@@ -12,7 +12,6 @@ const SIDECAR = resolve(OVERDARE_CLI, "sidecar");
 const DIST = resolve(ROOT, "dist");
 const DIAGNOSTICS_DIR = resolve(OVERDARE_CLI, ".diligent/diagnostics");
 const BOOTSTRAP_DIR = resolve(OVERDARE_CLI, "bootstrap");
-const SIDECAR_ASSETS = resolve(OVERDARE_CLI, "sidecar/assets");
 const VENDORED_LUAU_VERSION = "0.723";
 const VENDORED_LUAU_DIR = resolve(OVERDARE_CLI, "sidecar/vendor/luau", VENDORED_LUAU_VERSION);
 
@@ -127,14 +126,11 @@ export function stageSidecarAssets(platform: PlatformConfig, stageDir: string): 
   const luaDir = join(stageDir, "assets", "lua");
   mkdirSync(binDir, { recursive: true });
   mkdirSync(luaDir, { recursive: true });
-  const luauLspName = platform.id === "windows-x64" ? "luau-lsp.exe" : "luau-lsp";
-  cpSync(resolve(SIDECAR_ASSETS, "bin", luauLspName), join(binDir, luauLspName));
   const luauVendorSubdir = LUAU_VENDOR_SUBDIR_BY_PLATFORM.get(platform.id);
   if (luauVendorSubdir) {
     const luauName = platform.id === "windows-x64" ? "luau.exe" : "luau";
     cpSync(resolve(VENDORED_LUAU_DIR, luauVendorSubdir, luauName), join(binDir, luauName));
   }
-  cpSync(resolve(SIDECAR_ASSETS, "lua", "overdare-types.d.lua"), join(luaDir, "overdare-types.d.lua"));
   // Procedural runner + Luau dependencies must live on real disk for the external
   // luau subprocess (import.meta.url points into Bun's embedded FS in the compiled
   // binary). runtime.ts (resolveLuauRunnerDir) resolves this beside the executable.

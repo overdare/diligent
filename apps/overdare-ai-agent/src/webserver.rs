@@ -156,8 +156,9 @@ fn dist_dir_path(runtime_dir: &Path) -> PathBuf {
 
 fn rg_bin_path(runtime_dir: &Path) -> Option<PathBuf> {
     let bin_name = if cfg!(windows) { "rg.exe" } else { "rg" };
-    // Bundled next to the other runtime assets (matches luau-lsp at
-    // assets/bin/); the sidecar falls back to a PATH `rg` when this is absent.
+    // Bundled next to the other runtime assets (matches the procedural luau
+    // interpreter at assets/bin/); the sidecar falls back to a PATH `rg` when
+    // this is absent.
     let path = runtime_dir.join("assets").join("bin").join(bin_name);
     path.exists().then_some(path)
 }
