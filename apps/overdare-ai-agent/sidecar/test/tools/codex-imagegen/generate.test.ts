@@ -12,7 +12,9 @@ import { createGenerateCodexImage } from "../../../src/tools/codex-imagegen/gene
 
 const GENERATED_PATH = join(tmpdir(), "codex-image.png");
 
-function fakeCodex(options: { accountType?: string; imageGeneration?: boolean; events?: CodexImageEvent[] } = {}) {
+function fakeCodex(
+  options: { accountType?: string; imageGeneration?: boolean; events?: CodexImageEvent[]; streamError?: Error } = {},
+) {
   const calls: string[] = [];
   let closed = false;
   const client: CodexAppServerSession = {
@@ -39,6 +41,7 @@ function fakeCodex(options: { accountType?: string; imageGeneration?: boolean; e
         { type: "image", savedPath: GENERATED_PATH, revisedPrompt: "refined" },
         { type: "completed", status: "completed" },
       ];
+      if (options.streamError) throw options.streamError;
     },
     async close() {
       closed = true;
@@ -49,6 +52,22 @@ function fakeCodex(options: { accountType?: string; imageGeneration?: boolean; e
 }
 
 describe("Codex image generation workflow", () => {
+  test("does not accept an image without a completed turn", async () => {
+    const fake = fakeCodex({ events: [{ type: "image", savedPath: GENERATED_PATH }] });
+    const generate = createGenerateCodexImage(fake.createClient);
+
+    await expect(generate({ cwd: "/repo", prompt: "A blue coin" })).rejects.toThrow("without completing");
+    expect(fake.closed()).toBe(true);
+  });
+
+  test("waits for the event stream to finish even after receiving a completed image", async () => {
+    const fake = fakeCodex({ streamError: new Error("turn/start acknowledgement failed") });
+    const generate = createGenerateCodexImage(fake.createClient);
+
+    await expect(generate({ cwd: "/repo", prompt: "A blue coin" })).rejects.toThrow("acknowledgement failed");
+    expect(fake.closed()).toBe(true);
+  });
+
   test("checks authentication and capability before generating, then closes the client", async () => {
     const fake = fakeCodex();
     const generate = createGenerateCodexImage(fake.createClient);
