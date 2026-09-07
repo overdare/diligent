@@ -3,9 +3,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { stageSidecarAssets, stageWebClient } from "../../../../scripts/build-overdare-runtime-bundle";
 
+const ROOT = resolve(import.meta.dir, "../../../..");
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -29,7 +30,7 @@ describe("OVERDARE runtime bundle assets", () => {
     expect(existsSync(join(stageDir, "dist", "client", "assets", "app-hash.js"))).toBe(true);
   });
 
-  test("omits retired procedural runtime assets while retaining Luau validation assets", () => {
+  test("stages the vendored Luau interpreter for Windows x64", () => {
     const stageDir = mkdtempSync(join(tmpdir(), "overdare-runtime-assets-"));
     temporaryDirectories.push(stageDir);
 
@@ -42,9 +43,10 @@ describe("OVERDARE runtime bundle assets", () => {
       stageDir,
     );
 
-    expect(existsSync(join(stageDir, "assets", "bin", "luau.exe"))).toBe(false);
-    expect(existsSync(join(stageDir, "assets", "lua", "procedural"))).toBe(false);
-    expect(existsSync(join(stageDir, "assets", "bin", "luau-lsp.exe"))).toBe(true);
-    expect(existsSync(join(stageDir, "assets", "lua", "overdare-types.d.lua"))).toBe(true);
+    const stagedLuau = readFileSync(join(stageDir, "assets", "bin", "luau.exe"));
+    const vendoredLuau = readFileSync(
+      join(ROOT, "apps", "overdare-ai-agent", "sidecar", "vendor", "luau", "0.723", "win32", "luau.exe"),
+    );
+    expect(stagedLuau).toEqual(vendoredLuau);
   });
 });

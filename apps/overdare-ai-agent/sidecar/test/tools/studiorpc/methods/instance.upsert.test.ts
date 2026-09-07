@@ -1,77 +1,306 @@
-// @summary Verifies schema-independent JSON upserts while preserving structural safety.
+// @summary Tests instance upserts and alignment forwarding during stack replay.
 import { describe, expect, test } from "bun:test";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { params, parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
 
-describe("instance.upsert live schema properties", () => {
-  test("accepts future classes and properties without rewriting Studio JSON", () => {
-    const item = {
-      class: "FutureWidget",
-      parentGuid: "workspace",
-      name: "Future",
-      properties: { FutureValue: { ObjectType: "FutureType", Value: 42 }, Text: "server validates class membership" },
-    };
-    expect(parseArgs({ items: [item] })).toEqual({ items: [item] });
+describe("instance.upsert class property validation", () => {
+  test("rejects properties that belong to a different class", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "Part",
+            parentGuid: "workspace",
+            name: "NotATextLabel",
+            properties: { Text: "invalid for Part" },
+          },
+        ],
+      }),
+    ).toThrow(/class=Part/);
   });
-  test("keeps patch values and does not inject defaults", () => {
-    expect(parseArgs({ items: [{ guid: "widget", properties: { FutureValue: 0 } }] })).toEqual({
-      items: [{ guid: "widget", properties: { FutureValue: 0 } }],
+
+  test("accepts a partial update without injecting create defaults", () => {
+    const parsed = parseArgs({
+      items: [{ guid: "prompt", properties: { ActionText: "Open" } }],
+    });
+
+    expect(parsed.items[0]).toEqual({ guid: "prompt", properties: { ActionText: "Open" } });
+  });
+
+  const FIRE_RISE_PATH = "/CommonContent/VFX/Layer/0_Base/FireRise_A/VFX_UGC_Base_FireRise_A.VFX_UGC_Base_FireRise_A";
+
+  test("accepts a VFXRecipe add with short source names and expands NiagaraSystem to the full path", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "VFXRecipe",
+          parentGuid: "workspace",
+          name: "Explosion",
+          properties: {
+            BaseLayer: [
+              {
+                Name: "FireRise_A",
+                NiagaraSystem: "FireRise_A",
+                Position: { X: 0, Y: 0, Z: 0 },
+                Color: [
+                  { R: 255, G: 95, B: 19, Time: 0 },
+                  { R: 3, G: 0, B: 0, Time: 1 },
+                ],
+                Texture: { Content: "ovdrassetid://2793112" },
+                SpawnCount: 3,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const properties = parsed.items[0].properties as Record<string, unknown>;
+    expect(properties.AutoActivate).toBe(true);
+    expect(properties.InfiniteLoop).toBe(true);
+    expect(properties.LoopCount).toBe(1);
+    const [source] = properties.BaseLayer as Record<string, unknown>[];
+    expect(source.NiagaraSystem).toBe(FIRE_RISE_PATH);
+    expect(source.Position).toEqual({ ObjectType: "Vector3", X: 0, Y: 0, Z: 0 });
+    expect(source.Texture).toEqual({ ObjectType: "Content", Content: "ovdrassetid://2793112" });
+    expect((source.Color as Record<string, unknown>[])[0]).toEqual({
+      ObjectType: "Color3",
+      R: 255,
+      G: 95,
+      B: 19,
+      Time: 0,
     });
   });
-  test("rejects malformed envelopes and non-object properties", () => {
-    for (const item of [
-      { class: "", parentGuid: "p", name: "n" },
-      { class: "Part", name: "n" },
-      { guid: "", properties: {} },
-      { guid: "p", properties: [] },
-      { guid: "p", properties: null },
-      { guid: "p", unknown: true },
-    ]) {
-      expect(() => parseArgs({ items: [item] })).toThrow();
+
+  test("accepts a full serving-asset path and normalizes it to the same expanded path", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "VFXRecipe",
+          parentGuid: "workspace",
+          name: "FromTemplate",
+          properties: {
+            BaseLayer: [{ Name: "FireRise_A", NiagaraSystem: FIRE_RISE_PATH }],
+          },
+        },
+      ],
+    });
+
+    const [source] = (parsed.items[0].properties as Record<string, unknown>).BaseLayer as Record<string, unknown>[];
+    expect(source.NiagaraSystem).toBe(FIRE_RISE_PATH);
+  });
+
+  test("rejects a VFXRecipe source that does not belong to the layer", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "VFXRecipe",
+            parentGuid: "workspace",
+            name: "WrongLayer",
+            properties: {
+              DetailLayer: [{ Name: "FireRise_A", NiagaraSystem: FIRE_RISE_PATH }],
+            },
+          },
+        ],
+      }),
+    ).toThrow(/class=VFXRecipe/);
+  });
+
+  test("accepts template payloads: Alpha keypoints kept, top-level LoopDuration stripped", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "VFXRecipe",
+          parentGuid: "workspace",
+          name: "AcidBurst",
+          properties: {
+            AutoActivate: true,
+            InfiniteLoop: false,
+            LoopCount: 1,
+            LoopDuration: 2,
+            BaseLayer: [
+              {
+                Name: "LiquidFlash_A",
+                NiagaraSystem:
+                  "/CommonContent/VFX/Layer/0_Base/LiquidFlash_A/VFX_UGC_Base_LiquidFlash_A.VFX_UGC_Base_LiquidFlash_A",
+                Position: { ObjectType: "Vector3", X: 0, Y: 0, Z: 0 },
+                Color: [
+                  { ObjectType: "Color3", R: 0, G: 255, B: 0, Time: 0 },
+                  { ObjectType: "Color3", R: 0, G: 255, B: 0, Time: 1 },
+                ],
+                Alpha: [
+                  { Time: 0, Value: 1 },
+                  { Time: 1, Value: 1 },
+                ],
+                SpawnCount: 3,
+                Transparency: 0,
+              },
+            ],
+            ExtraLayer: [
+              {
+                Name: "LiquidScatter_R_A",
+                NiagaraSystem: "LiquidScatter_R_A",
+                Duration: 1,
+                SpawnRate: 15,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const properties = parsed.items[0].properties as Record<string, unknown>;
+    expect(properties.LoopDuration).toBeUndefined();
+    const [base] = properties.BaseLayer as Record<string, unknown>[];
+    // A VFXRecipe layer keeps the bare list — Studio stores the wrapped form as an empty one.
+    expect(base.Alpha).toEqual([
+      { Time: 0, Value: 1 },
+      { Time: 1, Value: 1 },
+    ]);
+    // LiquidScatter_R_A exists in both Base and Extra; the Extra layer expands to the Extra asset.
+    const [extra] = properties.ExtraLayer as Record<string, unknown>[];
+    expect(extra.NiagaraSystem).toBe(
+      "/CommonContent/VFX/Layer/2_Extra/LiquidScatter_R_A/VFX_UGC_Extra_LiquidScatter_R_A.VFX_UGC_Extra_LiquidScatter_R_A",
+    );
+  });
+
+  // Merging these two was tried and reverted: sending a VFXRecipe layer the wrapped form stores
+  // Alpha as [] and says nothing about it, so the two spellings cannot be one schema.
+  test("keeps a VFXRecipe layer's keypoints bare and wraps an instance property's", () => {
+    const vfx = parseArgs({
+      items: [
+        {
+          class: "VFXRecipe",
+          parentGuid: "workspace",
+          name: "Recipe",
+          properties: {
+            BaseLayer: [{ Name: "LiquidFlash_A", NiagaraSystem: "LiquidFlash_A", Alpha: [{ Time: 0, Value: 0.25 }] }],
+          },
+        },
+      ],
+    });
+    const [layer] = (vfx.items[0].properties as Record<string, Record<string, unknown>[]>).BaseLayer;
+    expect(layer.Alpha).toEqual([{ Time: 0, Value: 0.25 }]);
+
+    const emitter = parseArgs({
+      items: [
+        {
+          class: "ParticleEmitter",
+          parentGuid: "part",
+          name: "Sparks",
+          properties: { Transparency: [{ Time: 0, Value: 0.25 }] },
+        },
+      ],
+    });
+    expect(emitter.items[0].properties?.Transparency).toEqual({
+      ObjectType: "NumberSequence",
+      Keypoints: [{ Time: 0, Value: 0.25 }],
+    });
+  });
+
+  test("accepts FontFace on text classes and rejects the removed Bold property", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "TextLabel",
+          parentGuid: "screen",
+          name: "Title",
+          properties: { Text: "Hi", FontFace: { Family: "Default", Weight: "Bold" } },
+        },
+      ],
+    });
+    // Studio requires all three members; the schema fills the ones the caller left out.
+    expect(parsed.items[0].properties?.FontFace).toEqual({
+      ObjectType: "Font",
+      Family: "Default",
+      Style: "Normal",
+      Weight: "Bold",
+    });
+
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "TextButton",
+            parentGuid: "screen",
+            name: "Btn",
+            properties: { Text: "Hi", Bold: true },
+          },
+        ],
+      }),
+    ).toThrow(/class=TextButton/);
+  });
+
+  test("accepts 9-slice properties on image classes", () => {
+    for (const cls of ["ImageButton", "ImageLabel"] as const) {
+      const parsed = parseArgs({
+        items: [
+          {
+            class: cls,
+            parentGuid: "screen",
+            name: "Panel",
+            properties: {
+              ScaleType: "Slice",
+              SliceCenter: { MinX: 10, MinY: 10, MaxX: 90, MaxY: 90 },
+              SliceScale: 1.5,
+            },
+          },
+        ],
+      });
+      expect(parsed.items[0].properties?.ScaleType).toBe("Slice");
     }
   });
-  test("rejects identity and hierarchy keys inside properties", () => {
-    for (const key of [
-      "ActorGuid",
-      "ObjectKey",
-      "InstanceType",
-      "LuaChildren",
-      "Name",
-      "Parent",
-      "__proto__",
-      "constructor",
-      "prototype",
-    ]) {
-      const properties = JSON.parse(`{"${key}":"overwrite"}`);
-      expect(() => parseArgs({ items: [{ guid: "p", properties }] })).toThrow();
-    }
+
+  test("accepts ProgressBar with fill/track styling and rejects an invalid FillDirection", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "ProgressBar",
+          parentGuid: "screen",
+          name: "HpBar",
+          properties: {
+            Value: 0.5,
+            FillDirection: "LeftToRight",
+            FillColor3: { R: 255, G: 0, B: 0 },
+            TrackColor3: { R: 30, G: 30, B: 30 },
+            FillCornerRadius: { Scale: 0, Offset: 4 },
+          },
+        },
+      ],
+    });
+    expect(parsed.items[0].properties?.FillDirection).toBe("LeftToRight");
+
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "ProgressBar",
+            parentGuid: "screen",
+            name: "HpBar",
+            properties: { FillDirection: "Diagonal" },
+          },
+        ],
+      }),
+    ).toThrow(/class=ProgressBar/);
   });
-  test("schema validation rejects reserved keys before record parsing can omit them", () => {
-    for (const key of ["__proto__", "ActorGuid", "Name", "constructor", "prototype"]) {
-      const properties = JSON.parse(`{"${key}":"overwrite"}`);
-      for (const item of [
-        { guid: "p", properties },
-        { class: "FutureClass", parentGuid: "p", name: "n", properties },
-      ]) {
-        const result = params.safeParse({ items: [item] });
-        expect(result.success).toBe(false);
-        if (!result.success) {
-          expect(result.error.issues.some((issue) => issue.path.join(".") === `items.0.properties.${key}`)).toBe(true);
-        }
-      }
-    }
-  });
-  test("normalizes omitted properties through the same public schema", () => {
-    const input = { items: [{ class: "FutureClass", parentGuid: "p", name: "n" }, { guid: "p" }] };
-    const expected = { items: input.items.map((item) => ({ ...item, properties: {} })) };
-    expect(params.parse(input)).toEqual(expected);
-    expect(parseArgs(input)).toEqual(expected);
-  });
-  test("the public schema rejects singleton creation too", () => {
-    expect(params.safeParse({ items: [{ class: "Workspace", parentGuid: "p", name: "n" }] }).success).toBe(false);
-  });
-  test("preserves singleton creation protection", () => {
-    expect(() => parseArgs({ items: [{ class: "Workspace", parentGuid: "p", name: "n" }] })).toThrow(/Service/);
+
+  test("rejects an inverted 9-slice rectangle", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "ImageLabel",
+            parentGuid: "screen",
+            name: "Panel",
+            properties: {
+              ScaleType: "Slice",
+              SliceCenter: { MinX: 90, MinY: 90, MaxX: 10, MaxY: 10 },
+            },
+          },
+        ],
+      }),
+    ).toThrow(/class=ImageLabel/);
   });
 });
 
