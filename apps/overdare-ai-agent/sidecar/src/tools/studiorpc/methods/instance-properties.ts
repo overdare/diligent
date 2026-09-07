@@ -1,92 +1,25 @@
-// @summary Centralizes class-bound instance property validation and schema-derived projection.
-
+// @summary Preserves live Studio JSON properties while protecting tool-owned identity and hierarchy.
 import { z } from "zod";
-import { classPropertiesSchemas, classPropertyShapes, instanceClassEnum, type ShapeSpec } from "./instance.params";
 
-const creatableClasses = new Set<string>(instanceClassEnum.options);
+const reservedKeys = new Set([
+  "ActorGuid",
+  "ObjectKey",
+  "InstanceType",
+  "LuaChildren",
+  "Name",
+  "Parent",
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+// Validate each input key before Zod builds the output record and omits __proto__.
+const propertyNameSchema = z.string().refine((key) => !reservedKeys.has(key), {
+  message: "Use the dedicated identity or hierarchy tool fields.",
+});
 
-function classSchema(className: string): z.AnyZodObject {
-  const schema = classPropertiesSchemas.get(className);
-  if (!(schema instanceof z.ZodObject)) {
-    throw new Error(`Unsupported instance class: ${className}`);
-  }
-  return schema;
-}
+export const instancePropertiesSchema = z.record(propertyNameSchema, z.unknown()).default({});
 
-function propertyRecord(value: unknown): Record<string, unknown> {
-  if (value === undefined) return {};
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Instance properties must be an object.");
-  }
-  return value as Record<string, unknown>;
-}
-
-function formatIssues(className: string, error: z.ZodError): Error {
-  return new Error(
-    error.issues
-      .map((issue) => {
-        const path = issue.path.length > 0 ? `.${issue.path.join(".")}` : "";
-        return `  [properties${path}] (class=${className}) ${issue.message}`;
-      })
-      .join("\n"),
-  );
-}
-
-/** Validates a newly-created instance and returns schema defaults. */
-export function parseInstanceCreateProperties(className: string, value: unknown): Record<string, unknown> {
-  if (!creatableClasses.has(className)) {
-    throw new Error(`Unsupported creatable instance class: ${className}`);
-  }
-  const result = classSchema(className).safeParse(propertyRecord(value));
-  if (!result.success) throw formatIssues(className, result.error);
-  return result.data;
-}
-
-/** Validates only supplied update keys and never injects create defaults. */
-export function parseInstancePatchProperties(className: string, value: unknown): Record<string, unknown> {
-  const raw = propertyRecord(value);
-  const result = classSchema(className).partial().safeParse(raw);
-  if (!result.success) throw formatIssues(className, result.error);
-  return Object.fromEntries(Object.keys(raw).map((key) => [key, result.data[key]]));
-}
-
-/**
- * The .ovdrjm does not spell every struct field the way the schema does: a UDim2 is written
- * `{"X": ..., "y": ...}` — capital X, lowercase y — and a UDim2 whose Y is dropped reads as a
- * control sitting at the top of its parent, which is a plausible enough layout that nothing
- * downstream can tell it from the truth. Matched case-insensitively, but only when exactly one
- * field matches, so two genuinely distinct keys are never silently merged.
- */
-function sourceKeyFor(record: Record<string, unknown>, key: string): string | undefined {
-  if (key in record) return key;
-  const lowered = key.toLowerCase();
-  const matches = Object.keys(record).filter((candidate) => candidate.toLowerCase() === lowered);
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
-function stripByShape(value: unknown, shape: ShapeSpec): unknown {
-  if (shape === true) return value;
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.map((item) => stripByShape(item, shape));
-  if (typeof value !== "object") return value;
-
-  const record = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {};
-  for (const [key, childShape] of Object.entries(shape)) {
-    const sourceKey = sourceKeyFor(record, key);
-    if (sourceKey !== undefined) result[key] = stripByShape(record[sourceKey], childShape);
-  }
-  return result;
-}
-
-/** Projects an .ovdrjm node to exactly the properties declared by its class schema. */
-export function pickKnownInstanceProperties(className: string, node: Record<string, unknown>): Record<string, unknown> {
-  const shapes = classPropertyShapes[className];
-  if (!shapes) return {};
-
-  const result: Record<string, unknown> = {};
-  for (const [key, shape] of Object.entries(shapes)) {
-    if (key in node) result[key] = stripByShape(node[key], shape);
-  }
-  return result;
+/** Keeps Studio's JSON value shapes, including tags and future class properties. */
+export function pickInstanceProperties(node: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(node).filter(([key]) => !reservedKeys.has(key)));
 }
