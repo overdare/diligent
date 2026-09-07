@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
-import * as geometryApi from "../../../../src/tools/studiorpc/methods/geometry.api";
-import * as geometryValidate from "../../../../src/tools/studiorpc/methods/geometry.validate";
+import * as proceduralModelApi from "../../../../src/tools/studiorpc/methods/proceduralmodel.api";
 import * as proceduralModelSet from "../../../../src/tools/studiorpc/methods/proceduralmodel.set";
+import * as proceduralModelValidate from "../../../../src/tools/studiorpc/methods/proceduralmodel.validate";
 import { mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 type RpcCall = { method: string; params?: Record<string, unknown> };
@@ -53,53 +53,129 @@ function writeRecipeFile(body = RECIPE): string {
 describe("geometry-recipe tool surface", () => {
   test("exposes the three authoring tools under stable names", async () => {
     const tools = await loadTools(() => ({}));
-    expect(tools.has("studiorpc_geometry_api")).toBe(true);
-    expect(tools.has("studiorpc_geometry_validate")).toBe(true);
+    expect(tools.has("studiorpc_proceduralmodel_api")).toBe(true);
+    expect(tools.has("studiorpc_proceduralmodel_validate")).toBe(true);
     expect(tools.has("studiorpc_proceduralmodel_set")).toBe(true);
   });
 
   test("only the bake mutates: it takes the write lock, the reads do not", () => {
     expect(mutatingMethods.has(proceduralModelSet.method)).toBe(true);
-    expect(mutatingMethods.has(geometryApi.method)).toBe(false);
-    expect(mutatingMethods.has(geometryValidate.method)).toBe(false);
+    expect(mutatingMethods.has(proceduralModelApi.method)).toBe(false);
+    expect(mutatingMethods.has(proceduralModelValidate.method)).toBe(false);
     // None of them persist the level on their own; a bake is committed by its own run, not a file save.
     expect(savingMethods.has(proceduralModelSet.method)).toBe(false);
   });
 });
 
-describe("geometry.api arguments", () => {
+describe("proceduralmodel.api arguments", () => {
   test("takes no required argument and rejects unknown fields", () => {
-    expect(geometryApi.params.parse({}).maxNoteBytes).toBeUndefined();
-    expect(geometryApi.params.parse({ maxNoteBytes: 2000 }).maxNoteBytes).toBe(2000);
-    expect(() => geometryApi.params.parse({ maxNoteBytes: 0 })).toThrow();
-    expect(() => geometryApi.params.parse({ notes: true })).toThrow();
+    expect(proceduralModelApi.params.parse({})).toEqual({});
+    // The note cap was removed from the tool: the reference ships whole and the agent trims it itself.
+    expect(() => proceduralModelApi.params.parse({ maxNoteBytes: 2000 })).toThrow();
+    expect(() => proceduralModelApi.params.parse({ notes: true })).toThrow();
   });
 });
 
-describe("geometry.validate arguments and file reuse", () => {
-  test("accepts code, id, or sourcePath and rejects unknown fields", () => {
-    expect(geometryValidate.params.parse({ code: RECIPE }).code).toContain("on_generate");
-    expect(geometryValidate.params.parse({ id: "crate" }).id).toBe("crate");
-    expect(geometryValidate.params.parse({ sourcePath: "/x/recipe.py" }).sourcePath).toBe("/x/recipe.py");
-    expect(() => geometryValidate.params.parse({ code: "" })).toThrow();
-    expect(() => geometryValidate.params.parse({ source: "x" })).toThrow();
+describe("proceduralmodel.api discovery (compact by default, query to expand)", () => {
+  const API_RESULT = {
+    class: "OvdrGeometry",
+    success: true,
+    template: "def on_generate(model, size, attributes):\n    pass",
+    presets: ["Plank", "Glass", "ThickCarpet"],
+    enums: { OvdrOriginMode: ["BASE", "CENTER"] },
+    quickref: "G.new_mesh() ...",
+    lookup: {
+      "G.append_sphere": "append_sphere(mesh, ...)",
+      "G.get_bounds": "get_bounds(mesh) -> (min, max)",
+      "parts.rib": "rib(length, ...)",
+    },
+    signatures: { "G.append_sphere": "append_sphere(...)", "parts.rib": "rib(...)" },
+    functions: [
+      { name: "append_sphere", doc: "A UV sphere", params: [] },
+      { name: "get_bounds", doc: "Bounding box" },
+    ],
+    notes: "long prose reference",
+    caveats: "stuff",
+    pythonModules: ["math"],
+  };
+
+  test("normalizeArgs forwards nothing — query is applied host-side", () => {
+    expect(proceduralModelApi.normalizeArgs({ query: ["x"] })).toEqual({});
+    expect(proceduralModelApi.normalizeArgs({})).toEqual({});
+  });
+
+  test("default reply is the compact kit — no verbose functions or notes", () => {
+    const out = proceduralModelApi.postProcess(API_RESULT, {}) as Record<string, unknown>;
+    expect(out.template).toBe(API_RESULT.template);
+    expect(out.presets).toEqual(API_RESULT.presets);
+    expect(out.lookup).toBeDefined();
+    expect(out.functions).toBeUndefined();
+    expect(out.notes).toBeUndefined();
+    expect(String(out.hint)).toContain("query");
+  });
+
+  test("query expands only the requested calls, with verbose docs and notes", () => {
+    const out = proceduralModelApi.postProcess(API_RESULT, { query: ["sphere", "bounds"] }) as Record<string, unknown>;
+    expect(Object.keys(out.lookup as object)).toEqual(["G.append_sphere", "G.get_bounds"]);
+    expect((out.functions as { name: string }[]).map((fn) => fn.name)).toEqual(["append_sphere", "get_bounds"]);
+    expect(out.notes).toBe(API_RESULT.notes);
+  });
+
+  test("a placeholder query ('x') is ignored and falls back to the compact kit", () => {
+    const out = proceduralModelApi.postProcess(API_RESULT, { query: "x" }) as Record<string, unknown>;
+    expect(out.functions).toBeUndefined();
+    expect(out.hint).toBeDefined();
+  });
+
+  test("params accepts query and rejects unknown fields", () => {
+    expect(proceduralModelApi.params.parse({ query: ["append_box"] }).query).toEqual(["append_box"]);
+    expect(proceduralModelApi.params.parse({ query: "rib" }).query).toBe("rib");
+    expect(() => proceduralModelApi.params.parse({ notes: true })).toThrow();
+  });
+});
+
+describe("proceduralmodel.validate arguments and file reuse", () => {
+  test("accepts code or sourcePath and rejects unknown fields", () => {
+    expect(proceduralModelValidate.params.parse({ code: RECIPE }).code).toContain("on_generate");
+    expect(proceduralModelValidate.params.parse({ sourcePath: "/x/recipe.py" }).sourcePath).toBe("/x/recipe.py");
+    expect(() => proceduralModelValidate.params.parse({ code: "" })).toThrow();
+    expect(() => proceduralModelValidate.params.parse({ source: "x" })).toThrow();
+    expect(() => proceduralModelValidate.params.parse({ id: "crate" })).toThrow(); // id was removed from the tool
   });
 
   test("preCall reads sourcePath into code, and normalizeArgs drops sourcePath", async () => {
     const path = writeRecipeFile();
     const args: Record<string, unknown> = { sourcePath: path };
-    await geometryValidate.preCall(args);
+    await proceduralModelValidate.preCall(args);
     expect(args.code).toContain("on_generate");
-    expect(geometryValidate.normalizeArgs(args)).toEqual({ code: RECIPE });
+    expect(proceduralModelValidate.normalizeArgs(args)).toEqual({ code: RECIPE });
   });
 
-  test("preCall refuses sourcePath together with code or id", async () => {
-    await expect(geometryValidate.preCall({ sourcePath: "/x.py", code: RECIPE })).rejects.toThrow(/exactly one/i);
-    await expect(geometryValidate.preCall({ sourcePath: "/x.py", id: "crate" })).rejects.toThrow(/exactly one/i);
+  test("a strict provider fills both fields with placeholders; the one real input still wins", async () => {
+    // gpt-5.6-terra sends both code and sourcePath, padding the unused one. Resolve, do not reject.
+    const args: Record<string, unknown> = { code: RECIPE, sourcePath: "x" };
+    await proceduralModelValidate.preCall(args);
+    expect(args.code).toBe(RECIPE);
+    expect(args.sourcePath).toBeUndefined();
+    expect(proceduralModelValidate.normalizeArgs(args)).toEqual({ code: RECIPE });
+  });
+
+  test("a real sourcePath wins over inline code when both are supplied", async () => {
+    const path = writeRecipeFile("def on_generate(model, size, attributes):\n    model.part('from_file')");
+    const args: Record<string, unknown> = { sourcePath: path, code: RECIPE };
+    await proceduralModelValidate.preCall(args);
+    expect(args.code).toContain("from_file"); // read from the file, not the inline code
+  });
+
+  test("throws a clear error when every field is blank or a placeholder", async () => {
+    await expect(proceduralModelValidate.preCall({ code: "x", sourcePath: "x" })).rejects.toThrow(/no recipe/i);
+    await expect(proceduralModelValidate.preCall({ code: " ", sourcePath: " " })).rejects.toThrow(/no recipe/i);
   });
 
   test("preCall surfaces a missing recipe file", async () => {
-    await expect(geometryValidate.preCall({ sourcePath: "/no/such/recipe.py" })).rejects.toThrow(/Could not read/i);
+    await expect(proceduralModelValidate.preCall({ sourcePath: "/no/such/recipe.py" })).rejects.toThrow(
+      /Could not read/i,
+    );
   });
 });
 
@@ -130,11 +206,22 @@ describe("proceduralmodel.set preCall: create-and-bake and file reuse", () => {
     await expect(proceduralModelSet.preCall({}, callRpc)).rejects.toThrow(/guid.*or.*name/i);
   });
 
-  test("refuses source and sourcePath together", async () => {
+  test("ignores a placeholder sourcePath and keeps the inline source", async () => {
+    // A strict provider pads sourcePath with "x"; it must not shadow the real inline recipe.
+    const { calls, callRpc } = recordingRpc();
+    const args: Record<string, unknown> = { guid: "A", source: RECIPE, sourcePath: "x", rebuild: true };
+    await proceduralModelSet.preCall(args, callRpc);
+    expect(args.source).toBe(RECIPE);
+    expect(args.sourcePath).toBeUndefined();
+    expect(calls.find((c) => c.method === "instance.create")).toBeUndefined();
+  });
+
+  test("a real sourcePath wins over inline source when both are supplied", async () => {
+    const path = writeRecipeFile("def on_generate(model, size, attributes):\n    model.part('from_file')");
     const { callRpc } = recordingRpc();
-    await expect(
-      proceduralModelSet.preCall({ guid: "A", source: RECIPE, sourcePath: "/x.py" }, callRpc),
-    ).rejects.toThrow(/not both/i);
+    const args: Record<string, unknown> = { guid: "A", source: RECIPE, sourcePath: path, rebuild: true };
+    await proceduralModelSet.preCall(args, callRpc);
+    expect(String(args.source)).toContain("from_file"); // read from the file, not the inline source
   });
 
   test("reads sourcePath into source for an existing model", async () => {

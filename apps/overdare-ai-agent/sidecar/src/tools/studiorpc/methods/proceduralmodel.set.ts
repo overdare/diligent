@@ -9,7 +9,7 @@ export const method = "proceduralmodel.set";
 export const description =
   "Author and bake a ProceduralModel from a Python geometry recipe: write its recipe, Size and parameters, " +
   "then (with rebuild) run the recipe and place the resulting MeshParts as its children. This is the main " +
-  "authoring step for the geometry-recipe system — read studiorpc_geometry_api first for the contract and API. " +
+  "authoring step for the geometry-recipe system — read studiorpc_proceduralmodel_api first for the contract and API. " +
   "Target an existing model with `guid`, OR omit `guid` and pass `name` (and optional `parentGuid`, default " +
   "Workspace) to CREATE the ProceduralModel and bake it in one call — the reply then carries the new `guid`. " +
   "Supply the recipe either inline with `source` (the whole module defining `on_generate(model, size, " +
@@ -92,6 +92,23 @@ function stripBom(text: string): string {
   return text.replace(/^﻿/, "");
 }
 
+/** Trimmed string, or "" for non-strings — a bare "" or "   " never counts as a provided value. */
+function trimmedStr(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+/** A real recipe body: has the entry point, spans lines, or is simply too long to be a placeholder. */
+function looksLikeRecipe(v: unknown): boolean {
+  const s = trimmedStr(v);
+  return s.length > 0 && (/\bon_generate\b/.test(s) || /\bdef\s/.test(s) || s.includes("\n") || s.length >= 24);
+}
+
+/** A real filesystem path: has a separator or a .py suffix. Rules out "x", ".", " ". */
+function looksLikePath(v: unknown): boolean {
+  const s = trimmedStr(v);
+  return s.length > 0 && (/[\\/]/.test(s) || /\.py$/i.test(s));
+}
+
 async function resolveWorkspaceGuid(callRpc: CallRpc): Promise<string> {
   const browsed = await callRpc("level.browse", {});
   const list = Array.isArray(browsed)
@@ -118,18 +135,21 @@ async function resolveWorkspaceGuid(callRpc: CallRpc): Promise<string> {
  * when only a name was given — both before the bake RPC, under the write lock.
  */
 export async function preCall(args: Args, callRpc: CallRpc): Promise<void> {
-  if (args.sourcePath !== undefined) {
-    if (args.source !== undefined) {
-      throw new Error("Provide either `source` (inline recipe) or `sourcePath` (a recipe file), not both.");
-    }
-    const path = resolve(String(args.sourcePath));
-    let text: string;
+  // Resolve the recipe input by value, tolerating a provider that fills every declared field with blanks or
+  // placeholders. A real file path wins; else a real inline recipe; else neither (keep the model's current recipe).
+  const recipePath = looksLikePath(args.sourcePath) ? trimmedStr(args.sourcePath) : "";
+  const inlineSource = looksLikeRecipe(args.source) ? String(args.source) : "";
+  delete args.sourcePath;
+  args.source = undefined;
+  if (recipePath) {
+    const abs = resolve(recipePath);
     try {
-      text = readFileSync(path, "utf-8");
+      args.source = stripBom(readFileSync(abs, "utf-8"));
     } catch (error) {
-      throw new Error(`Could not read the recipe file at sourcePath: ${path} (${(error as Error).message})`);
+      throw new Error(`Could not read the recipe file at sourcePath: ${abs} (${(error as Error).message})`);
     }
-    args.source = stripBom(text);
+  } else if (inlineSource) {
+    args.source = inlineSource;
   }
 
   if (args.guid === undefined) {

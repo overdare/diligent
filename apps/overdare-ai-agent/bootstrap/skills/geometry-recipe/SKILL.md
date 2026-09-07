@@ -14,17 +14,19 @@ is a single object whose surfaces and silhouette matter.
 
 ## The one rule that saves you: read the live API first
 
-`studiorpc_geometry_api` returns the whole authoring reference, current and self-describing. Call
-it **once** at the start of a prop and work from what it returns — it is the source of truth, not
-this file:
+`studiorpc_proceduralmodel_api` returns the authoring reference, current and self-describing. Call it
+**once** at the start of a prop and work from what it returns — it is the source of truth, not this
+file. The default reply is the **compact kit** (small on purpose — you never read or grep a file):
 
 - `template` — a complete, working recipe. Copy it and change its marked `EDIT` blocks.
-- `lookup` — every `G.*` / `parts.*` / `layout.*` signature, keyed exactly as you write it in code
-  (`lookup["G.place"]`, `lookup["parts.orient"]`).
+- `lookup` — every `G.*` / `parts.*` / `layout.*` signature on one line, keyed exactly as you write it
+  in code (`lookup["G.place"]`, `lookup["parts.orient"]`).
 - `presets` — the ~94 material preset names, asked of the material service so they cannot drift.
   There is **no** `Iron`, `Steel`, `Stone`, `Leather` or `Rope`: iron is `Rust` / `RustySteel`,
   sawn timber is `Plank`. A wrong name is refused, not rendered grey.
-- `notes` — the full reference, for when a returned number looks wrong.
+- When a call's exact arguments or a returned number look wrong, call it **again with `query`**
+  (names/keywords, e.g. `query=["append_sphere","rib","bounds"]`) to get the verbose per-argument
+  docs and notes for just those calls. Do not dump the whole reference to hunt one signature.
 
 Nothing is pre-injected into a recipe; the imports it needs (`import unreal`, `G =
 unreal.OvdrGeometry`, `import ovdr_parts as parts`, `from ovdr_brickcolor import bc`) are all in
@@ -56,13 +58,13 @@ def on_generate(model, size, attributes):
 - `attributes` are the parameters `OVDR_PARAMETERS` declares, by name. Declared struct types arrive
   as friendly Python values (a `Color` for Color3, a `Vector3`, a `UDim2`, a `CFrame`, …).
 
-Run `studiorpc_geometry_validate` (`code` = the recipe, or `sourcePath` = a recipe file) after writing
+Run `studiorpc_proceduralmodel_validate` (`code` = the recipe, or `sourcePath` = a recipe file) after writing
 or editing it: it checks the contract shape without a bake, so a slip is caught in milliseconds.
 
 ## The loop
 
-1. **`studiorpc_geometry_api`** once. Read `template`, copy it, change the `EDIT` blocks.
-2. **`studiorpc_geometry_validate`** with the recipe `code` (or `sourcePath` = a recipe file). Fix any
+1. **`studiorpc_proceduralmodel_api`** once. Read `template`, copy it, change the `EDIT` blocks.
+2. **`studiorpc_proceduralmodel_validate`** with the recipe `code` (or `sourcePath` = a recipe file). Fix any
    findings — cheaper than a bake.
 3. **`studiorpc_proceduralmodel_set`** creates the model *and* bakes it in one call:
    `{ name, parentGuid?, source | sourcePath, size, attributes?, rebuild: true }`. Omit `guid` and pass
@@ -133,11 +135,20 @@ fixed-light isolation of the instance render for full control of direction and z
   `unreal.OvdrBooleanOp.SUBTRACT`. The report prints a default as a bare string like `"Base"`,
   which is not what you type.
 
-## Storing recipes
+## Storing recipes — the recipe is a file
 
-Keep one semantic recipe per prop and reuse it. A recipe is the source of truth; the baked
-MeshParts are derived output. Save the recipe as a file in the project and re-bake it by passing
-`sourcePath` to `studiorpc_proceduralmodel_set` (and `studiorpc_geometry_validate`) — the file is read
-as-is, so you never re-paste a recipe you already wrote. Pass the whole recipe as `source` only for a
-one-off or the first draft; use `studiorpc_script_edit` for a small in-place correction. Do not put
-recipe source in an OS temp directory.
+Keep one semantic recipe per prop, **in a file**, and iterate on that file. A recipe is the source of
+truth; the baked MeshParts are derived output. This is the default loop:
+
+1. Write the recipe to a file in the project (a plain path you choose, e.g.
+   `geometry-recipes/ammo-crate.py`). Not an OS temp directory.
+2. Validate and bake by passing **`sourcePath`** to `studiorpc_proceduralmodel_validate` and
+   `studiorpc_proceduralmodel_set` — the file is read host-side, so **you never re-send the recipe
+   you already wrote**. That is the point: it is far cheaper than pasting the whole source on every
+   pass.
+3. To change something, **edit the file** (`studiorpc_script_edit` for a small fix) and re-bake with
+   the same `sourcePath`.
+
+Pass the whole recipe inline — `source` to bake, `code` to validate — only for a throwaway or the
+very first draft. There is **no recipe `id` and no namespaced copy** of the source: the file path is
+the recipe's identity. Don't invent an id or a placeholder for one.
