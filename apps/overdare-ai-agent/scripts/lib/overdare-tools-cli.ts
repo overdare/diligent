@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider } from "@diligent/runtime";
+import { createImageGenerationToolProvider } from "../../sidecar/src/tools/image-generation";
 import { createStudioRpcToolProvider } from "../../sidecar/src/tools/studiorpc";
 import { createValidatorToolProvider } from "../../sidecar/src/tools/validator";
 
@@ -29,7 +30,11 @@ export interface ParsedCliArgs {
   yes: boolean;
 }
 
-const bundledToolProviders: CliBundledToolProvider[] = [createStudioRpcToolProvider(), createValidatorToolProvider()];
+const bundledToolProviders: CliBundledToolProvider[] = [
+  createImageGenerationToolProvider(),
+  createStudioRpcToolProvider(),
+  createValidatorToolProvider(),
+];
 
 function bundledProviderSource(id: string): string {
   return id

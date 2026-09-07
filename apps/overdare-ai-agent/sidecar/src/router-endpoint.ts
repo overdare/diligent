@@ -113,7 +113,7 @@ export function createRouterEndpoint(options: RouterEndpointOptions): ExtraRoute
       // A tool that throws is already mapped to an isError result by callRegistryTool, so this
       // stays HTTP 200: the router must forward tool failures to the model, not treat them as a
       // dead sidecar and clear the active Studio.
-      return Response.json(await callRegistryTool(registries, payload.tool, payload.args));
+      return Response.json(await callRegistryTool(registries, payload.tool, payload.args, { signal: req.signal }));
     }
 
     if (url.pathname === ROUTER_PROMPT_GET_ROUTE) {

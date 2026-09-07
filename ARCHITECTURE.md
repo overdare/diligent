@@ -105,6 +105,7 @@ Current guides:
 - Session lifecycle: `docs/guide/session-lifecycle.md`
 - Collaboration: `docs/guide/collaboration.md`
 - Provider auth: `docs/guide/provider-auth.md`
+- OVERDARE image generation: `docs/guide/image-generation.md`
 - Compaction: `docs/guide/compaction.md`
 - Packaging: `docs/guide/packaging.md`
 - Tool settings: `docs/guide/tool-settings.md`

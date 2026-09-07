@@ -11,7 +11,6 @@ import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
-import { createGenerateImageAssetTool, type GenerateCodexImage } from "./tools/generate-image-asset-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
@@ -39,7 +38,6 @@ type StudioRpcToolContext = CoreToolContext & {
 
 export interface StudioRpcToolProviderOptions {
   callRpc?: typeof call;
-  generateCodexImage?: GenerateCodexImage;
 }
 
 /** Per-turn rollback-snapshot state shared between the provider hooks and tools. */
@@ -134,9 +132,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     displayName: "OVERDARE Studio RPC Tools",
     supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
     createTools: async ({ cwd, host }) =>
-      createCoreTools(
-        await createStudioRpcTools({ cwd, host, callRpc, turnState, generateCodexImage: options.generateCodexImage }),
-      ),
+      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
     onUserPromptSubmit: beginTurn,
     onStop: saveLevel,
     createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createHumanEditsLoopHook(turnState)] : []),
@@ -163,7 +159,6 @@ export async function createStudioRpcTools(ctx: {
   host?: RuntimeToolHost;
   callRpc?: typeof call;
   turnState?: TurnSnapshotState;
-  generateCodexImage?: GenerateCodexImage;
 }): Promise<Tool[]> {
   const writeLock = createWriteLock();
   const callRpc = ctx.callRpc ?? call;
@@ -228,17 +223,6 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(withSnapshot(createScriptDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createScriptEditTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createAssetDrawerImportBulkTool(callRpc, writeLock)), ctx.host),
-    wrapTool(
-      withSnapshot(
-        createGenerateImageAssetTool({
-          cwd: ctx.cwd,
-          callRpc,
-          writeLock,
-          generateCodexImage: ctx.generateCodexImage,
-        }),
-      ),
-      ctx.host,
-    ),
     ...createCollisionProfileTools(ctx.cwd, writeLock, applyLevelChanges).map((tool) =>
       wrapTool(isCollisionEdit(tool.name) ? withSnapshot(tool) : tool, ctx.host),
     ),
