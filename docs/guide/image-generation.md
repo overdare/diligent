@@ -18,6 +18,12 @@ or new Studio RPC methods.
 The model cannot override this selection through a tool argument. Selecting ChatGPT never
 uses Gemini credentials, and selecting Gemini never falls back to Codex.
 
+Generation instructions live in the provider-bound tool description, so unsupported providers
+receive neither the tool nor its instructions. The common `ui-generator` skill only describes
+importing existing local image files and applying Studio asset IDs; it does not advertise
+generation or tell the model to switch providers. Previously loaded conversation history is
+not rewritten when switching providers, but the current tool catalog remains authoritative.
+
 The result includes an absolute `file` path, the selected `provider`, its authentication
 `source`, and an image preview. Gemini also returns `model`; Codex may return
 `revisedPrompt`. A provider failure is returned to the caller without automatically retrying
@@ -61,10 +67,23 @@ Standalone MCP, the HTTP MCP router, and the product tool CLI do not receive the
 model provider, so they do not expose `generate_image`. They do not infer it from credentials,
 client names, or a different chat's persisted configuration.
 
-The Codex adapter uses a typed client over one sequential message stream per generation.
-Process lifetime and line I/O live in `codex-imagegen/process.ts`; the client owns protocol
-validation and turn-event ordering. The image workflow consumes typed events and closes its
-client in `finally`, without a request map or notification-waiter registry.
+The Codex adapter uses one process per generation, with separate responsibilities:
+
+- `process.ts` owns process lifetime and line I/O.
+- `rpc-client.ts` continuously reads the wire, correlates responses by request ID, and buffers
+  notifications with the existing core `EventStream`. Waiting for a response never stops
+  notification delivery, and unread notifications never block a response.
+- `protocol.ts` validates the consumed fields against the official generated protocol types.
+- `app-server-client.ts` starts a turn and collects its images. Success requires both the start
+  acknowledgement and successful completion; either request failure or turn failure rejects
+  immediately, regardless of their arrival order.
+- `generate.ts` checks authentication/capability, selects the last usable saved image from the
+  completed turn, and closes the client in `finally`. It does not handle wire ordering.
+
+The request/event separation follows the official `codex-rs/app-server-client` design without
+embedding the Rust runtime. See `codex-imagegen/generated/README.md` for schema provenance and
+regeneration. The adapter keeps narrow runtime validation for compatibility with older CLI
+payloads; generated types alone do not validate incoming JSON.
 
 Codex uses one five-minute deadline covering initialization, authentication and capability
 checks, thread creation, and image generation. Gemini also has a five-minute request deadline.

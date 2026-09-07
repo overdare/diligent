@@ -13,7 +13,7 @@ Three creation approaches — see [Reference Files](#reference-files-read-on-dem
 
 - **Direct GUI** — build instances (`ScreenGui`, `Frame`, `TextButton`, …) for custom layouts and predictable hierarchy.
 - **worldAsset import** — search and import `UI_ELEMENTS` packs when a visual style already exists.
-- **Generated image asset** — generate a single custom icon, panel, or illustration, import it into Studio, then bind the returned asset ID to GUI image properties.
+- **Local image asset** — import an existing local image file into Studio, then bind the returned asset ID to GUI image properties.
 
 ## Gate: Check `overdare-ui-templates` First
 
@@ -118,9 +118,9 @@ Use this when the target UI already exists and the change is: fix alignment/size
 1. Resolve the [Gate](#gate-check-overdare-ui-templates-first).
 2. Browse the current hierarchy with `studiorpc_level_browse`; find `StarterGui` and any existing UI so you don't overwrite it.
 3. Find or create the UI parent — normally a `ScreenGui` under `StarterGui`.
-4. Pick the approach (direct / worldAsset import / generated image asset / hybrid) and read the matching reference file.
+4. Pick the approach (direct / worldAsset import / local image asset / hybrid) and read the matching reference file.
 5. **worldAsset:** search `assets` with `overdaresearch` (prefer `categoryId = UI_ELEMENTS`), import with `studiorpc_asset_drawer_import`, inspect the imported hierarchy, move to `StarterGui` if needed. See `patterns/worldasset-ui.md`.
-6. **Generated image:** when `generate_image` is available, use it with a `prompt` for one bespoke icon, panel, or illustration. The runtime binds it to the selected chat provider: ChatGPT uses local Codex managed OAuth; Gemini uses its configured key and native image model. Other providers do not expose this tool. If it is unavailable, ask the user to select ChatGPT or Gemini for generation, or use direct GUI/existing assets. Do not bypass its absence by calling another image API. It returns an absolute `file` path and preview. Pass that exact `file` to `studiorpc_asset_manager_image_import`, then bind the returned `asset.assetid` to the target `ImageLabel` or `ImageButton`.
+6. **Local image:** import an existing absolute image `file` with `studiorpc_asset_manager_image_import`, then bind the returned `asset.assetid` to the target `ImageLabel` or `ImageButton`.
 7. **Direct:** create the root container first, then children one level at a time; use clear names; do not mix adds and updates in one `studiorpc_instance_upsert`. See `patterns/direct-gui.md`.
 8. Apply layout per `patterns/layout-rules.md` (Position mostly Scale, Size mostly Offset, ≥24px important text, ZIndex bands, safe areas). For a specific UI type, follow its `templates/` file.
 9. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; validate with `validatelua`. See `patterns/script-integration.md`.
@@ -133,7 +133,7 @@ Before reporting done, scan the result for the defects users actually catch: tex
 
 When finishing, report:
 
-- Approach used (direct / worldAsset import / generated image asset / hybrid).
+- Approach used (direct / worldAsset import / local image asset / hybrid).
 - Created or modified hierarchy paths and important UI names.
 - Any imported asset name + assetId, and any script added/modified.
 - Any tool warnings or safe-area conflicts handled.

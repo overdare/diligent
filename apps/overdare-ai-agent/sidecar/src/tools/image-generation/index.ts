@@ -54,9 +54,11 @@ function createGenerateImageTool(
   return {
     name: TOOL_NAME,
     description:
-      `Generate one image with ${provider === "chatgpt" ? "ChatGPT via local Codex OAuth" : "Gemini"} and save it to a local file. ` +
-      "Uses the current chat provider. Returns the provider, absolute file path, " +
-      "and preview. To import it into OVERDARE Studio, pass file to studiorpc_asset_manager_image_import.",
+      `Generate and save one bespoke icon, panel, or illustration from a prompt with ${provider === "chatgpt" ? "ChatGPT via local Codex OAuth" : "Gemini"}. ` +
+      `This tool is bound to the selected ${provider === "chatgpt" ? "ChatGPT" : "Gemini"} provider and cannot switch providers. ` +
+      "Returns the exact absolute output file path and a preview. To use it in OVERDARE Studio, separately " +
+      "pass that file to studiorpc_asset_manager_image_import, then bind the returned asset.assetid to the target " +
+      "ImageLabel or ImageButton.",
     parameters,
     supportParallel: false,
     async execute(args, ctx) {
