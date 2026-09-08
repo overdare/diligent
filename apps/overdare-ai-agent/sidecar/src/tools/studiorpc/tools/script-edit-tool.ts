@@ -212,7 +212,7 @@ async function executeScriptEdit(
       if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
         throw new Error(
           `Instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
-            "Use studiorpc_instance_upsert to edit other instances.",
+            "Use studiorpc_execute_luau with target Editor to edit other instances.",
         );
       }
 

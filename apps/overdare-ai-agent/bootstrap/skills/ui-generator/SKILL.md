@@ -16,7 +16,7 @@ Two creation approaches, one per reference file — see [Reference Files](#refer
 
 ## Gate: Check `overdare-ui-templates` First
 
-**Run this gate when adding new UI.** If the request only edits already-built UI — changing text, icon, color, position, size, or show/hide of existing instances — skip the gate and proceed directly (read the instance, then `studiorpc_instance_upsert`). When you add UI that doesn't exist yet, run the gate first, because an official template may already cover it.
+**Run this gate when adding new UI.** If the request only edits already-built UI — changing text, icon, color, position, size, or show/hide of existing instances — skip the gate and proceed directly (read the instance, then edit it with `studiorpc_execute_luau`, target `Editor`). When you add UI that doesn't exist yet, run the gate first, because an official template may already cover it.
 
 Rebuild judgment for an existing screen: keep the current skeleton and adjust it → EDIT (skip the gate, handle directly); discard the skeleton and build it from scratch → NEW (run the gate).
 
@@ -108,7 +108,7 @@ Use this when the target UI already exists and the change is: fix alignment/size
 
 1. Resolve the [Gate](#gate-check-overdare-ui-templates-first).
 2. Locate the target: `studiorpc_level_browse` scoped to the relevant subtree, or go straight to `studiorpc_instance_read` if you already know the path/guid. Read **only** the target instance/subtree, not the whole UI.
-3. Apply the change: `studiorpc_instance_upsert` with the existing `guid` (or `_move` / `_delete`). To add a single element, create just that one child under the existing parent — no new root or panel scaffolding.
+3. Apply the change: Editor Luau on the verified existing object (or the focused move/delete tools). To add a single element, create just that one child under the existing parent — no new root or panel scaffolding.
 4. Only search worldAsset if the user explicitly asks for an asset you don't already have; otherwise reuse existing assets/instances.
 5. If you touched a script, validate with `validatelua`. Save, then report exactly what changed.
 
@@ -119,7 +119,7 @@ Use this when the target UI already exists and the change is: fix alignment/size
 3. Find or create the UI parent — normally a `ScreenGui` under `StarterGui`.
 4. Pick the approach (direct / worldAsset import / hybrid) and read the matching reference file.
 5. **worldAsset:** search `assets` with `overdaresearch` (prefer `categoryId = UI_ELEMENTS`), import with `studiorpc_asset_drawer_import`, inspect the imported hierarchy, move to `StarterGui` if needed. See `patterns/worldasset-ui.md`.
-6. **Direct:** create the root container first, then children one level at a time; use clear names; do not mix adds and updates in one `studiorpc_instance_upsert`. See `patterns/direct-gui.md`.
+6. **Direct:** query live class/property schemas, then create the root container before its children in an Editor Luau command; use clear names. See `patterns/direct-gui.md`.
 7. Apply layout per `patterns/layout-rules.md` (Position mostly Scale, Size mostly Offset, ≥24px important text, ZIndex bands, safe areas). For a specific UI type, follow its `templates/` file.
 8. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; validate with `validatelua`. See `patterns/script-integration.md`.
 9. Read back or browse the result and address any tool warnings.

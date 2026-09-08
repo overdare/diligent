@@ -18,7 +18,6 @@ import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-too
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
-import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
@@ -214,7 +213,6 @@ export async function createStudioRpcTools(ctx: {
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
-    wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
@@ -305,6 +303,7 @@ export async function createStudioRpcTools(ctx: {
               render,
               outputImages,
               metadata: { method: rpcMethod, result },
+              ...(mod.truncateDirection ? { truncateDirection: mod.truncateDirection } : {}),
             };
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but

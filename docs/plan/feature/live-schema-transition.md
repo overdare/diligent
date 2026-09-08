@@ -1,144 +1,99 @@
-# Live schema discovery transition
+# Live schema discovery implementation draft
 
-Status: design-only draft stacked on the compatibility implementation in PR #415.
-No speculative Studio wire contract or runtime change is introduced here.
+Status: implementation draft against preview/release-40, which already contains
+merged compatibility PR #415. This draft removes upsert and implements dynamic
+discovery on top of that merged baseline.
 
-## Current baseline
+## Implemented behavior
 
-The lower PR keeps the full compatibility upsert input schema, class-specific
-validation, creation defaults, ObjectType handling, and VFX normalization. Editor
-Luau and supplementary schema search are available together. Native Source guidance
-and deprecated skill/agent redirects preserve authoring and installed-user paths.
-The reference point before compatibility restoration was `ced206e9`; the static
-catalog was restored from preview `4dac65bc`.
+- Remove the upsert tool, its static instance.params catalog, class-bound write
+  validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
+  Keep instance read, hierarchy move/delete, Source helpers and their shared
+  Mobility/singleton safeguards. Existing deprecated skill/agent names remain as
+  migration guides, updated to point only to Editor authoring and live discovery.
+- The schema tool accepts an empty query and no-filter calls. Normalize the latter
+  to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
+  property searches retain their existing Studio request shapes.
+- Full search projects the Studio result to class metadata, retaining names,
+  descriptions, creatable/service and schemaVersion but omitting property payloads.
+  The tool adds `view: "classes"` and a hint to request classes for details. This is
+  a local output projection, not a new Studio RPC parameter.
+- Targeted lookup preserves the full returned property schemas and descriptions.
+  No wildcard probing, alternate endpoints, local replacement catalog, persistent
+  cache, or automatic property-schema injection is added.
+- Preserve Korean UTF-8 descriptions through JSON and chunked TCP responses. Measure
+  RPC diagnostics in UTF-8 bytes. Oversized model output uses head truncation and
+  the common full-output store; neither truncation nor empty results prove that
+  the complete catalog was observed.
+- Update the system prompt to discover available class names first, then query
+  selected classes/properties and author with Editor Luau. Retain the tested
+  native Python Source example and explicit Editor/gameplay lifetime distinction.
+  Update UI, VFX and asset-pack skills so they no longer call the removed upsert.
 
-A direct `zodToJsonSchema(params)` serialization of the compatibility input measures
-100,947 UTF-8 bytes, covering 58 instance classes and 18 service classes. This is
-not a token count or a provider-specific request size. Record the actual advertised
-schema and model request size again when evaluating a replacement.
+## Contract and current server evidence
 
-## Studio contract gate
+Studio-side guidance says an empty query performs full search and descriptions
+may contain Korean text. The draft implements that contract. The connected Studio
+at 10.40.32.110:13378 still answered the following during implementation:
 
-The Studio-side update reported on 2026-09-08 confirms that an empty query
-performs a full search, and that descriptions may contain Korean UTF-8 text.
-Use an explicit `{"query":""}` as the full-search request to validate and wire
-through Diligent. This report supersedes the earlier empty-query rejection as the
-intended contract; it is not a claim that the updated build was retested here.
-
-Before implementing the integration, record the supported Studio build and verify:
-
-- The explicit empty query returns the full catalog. Do not assume omitted query,
-  whitespace-only query, or an empty query combined with classes has identical
-  semantics; confirm those cases independently rather than inventing normalization.
-- Whether Studio can return names/summary metadata without all property definitions,
-  or whether Diligent must compact a full response after receiving it.
-- Class/property filtering and the meaning of schemaVersion, creatable, service,
-  description, writeCondition, and valueSchema, including optional/missing fields.
-- Observable differences between no matches, unavailable capability, malformed
-  requests, transport failures, and an incompatible build.
-
-Earlier-build observations at 10.40.32.110:13378 on 2026-09-08, before the
-reported contract update (retain as old-build compatibility cases):
-
-| Request to instance.schema.search | Response |
+| Request | Observed result |
 | --- | --- |
-| `{"classes":["ProceduralModel"]}` | One class returned |
-| `{}` | `-32602`: query or classes is required |
 | `{"query":""}` | `-32602`: query must be a non-empty string |
-| `{"query":"*"}` | Empty classes array |
+| `{"classes":["ProceduralModel"]}` | One detailed class returned |
+| `{"classes":["MeshPart"],"query":"Material"}` | Material enum and MaterialVariant returned |
 
-Do not preserve the old rejection as the expected behavior of the updated build.
-Do not add alphabetical probing, guessed endpoints, or a manually maintained
-catalog as a substitute for empty-query discovery.
+The full-search rejection is retained as an old-build compatibility case. It does
+not invalidate the reported new contract, and must not be reported as a successful
+full-list live test. Missing-query, whitespace, and class-filter interactions on
+the updated engine still need confirmation; the draft's local normalization is
+explicit above rather than inferred as an engine guarantee.
 
-## Empty-query and UTF-8 integration requirements
+## Compatibility impact
 
-- Update the adapter's non-empty query validation when implementing this layer.
-  The lower PR currently uses `query: z.string().min(1).optional()`.
-- Preserve the intentional empty string through both the agent tool executor and
-  MCP/router entry points. Their shared `dropEmptyOptionals` currently removes
-  empty optional strings, so changing only `.min(1)` is insufficient. Cover the
-  full model/MCP-to-RPC path; a direct raw RPC test alone misses this boundary.
-  Scope the fix to semantic empty-query support without changing every optional
-  parameter's behavior as an incidental migration.
-- Preserve Korean descriptions through TCP chunk decoding, JSON parsing, catalog
-  projection, model output, persisted full-output files, and UI rendering. Keep
-  exact class/property identifiers; descriptions need not be translated to English.
-- Measure wire/output limits in UTF-8 bytes (`Buffer.byteLength` or `TextEncoder`),
-  not JavaScript string length. The current RPC logs label `.length` as bytes;
-  correct that diagnostic measurement as part of the integration. Do not split
-  multibyte text when compacting or truncating results.
-- Test Korean descriptions split across TCP chunks and near the output cap. Assert
-  exact round-trip strings and correct byte accounting, without replacement
-  characters or unintended double escaping. Distinguish legitimate JSON escapes
-  from corrupted rendered text.
+The compatibility upsert input measured 100,947 UTF-8 bytes (58 instance classes
+and 18 service classes) before removal. This is serialized schema size, not tokens.
+The upper branch no longer advertises that tool or automatically validates/converts
+its old JSON payloads. Existing saved tool records can still be displayed, but an
+attempt to call the removed tool must fail as unavailable.
 
-## Intended data flow
+World changes now use Editor Luau. Correct class/property values, creation
+settings, exact VFX paths, and read-only distinctions must come from live hints,
+applicable documentation and actual Studio validation. The lower PR remains the
+usable compatibility option until this transition is verified sufficiently.
 
-1. Keep the system prompt concise: explain important or easily confused concepts,
-   execution lifetimes, and the distinction between JSON properties and Luau/native
-   methods. Do not embed all class/property definitions there.
-2. Obtain the complete available class-name catalog from the connected Studio, using
-   the explicit empty-query contract. Preserve supported summary metadata, including
-   Korean descriptions where provided, and expose an
-   explicit incomplete/unavailable state rather than presenting a partial catalog
-   as complete.
-3. Use schema search to retrieve only the selected class/property details. Preserve
-   exact names, enum values, write conditions, and read-only distinctions.
-4. Author through Editor Luau or the applicable focused instance/source tool, then
-   verify the actual affected state. JSON discovery does not replace native Python
-   geometry reference documentation or prove asynchronous generation completed.
+## Verification and remaining acceptance gates
 
-Do not insert fetched schemas back into the large upsert input definition. Whether
-and when the catalog is cached/injected must be specified after Studio version and
-connection semantics are confirmed; there is no provisional cache implementation.
+Current draft checks: lint/typecheck and 2,448 package tests passed. The related
+Studio tool, MCP and packaging suites passed 290 tests across 21 isolated files.
+The shared executor live check confirmed upsert is absent and a MeshPart Material
+lookup returns detailed hints; full search still reports the connected server's
+`-32602` error. No successful live full-catalog test is claimed.
 
-## Upsert compatibility gate
+Deterministic tests must cover:
 
-Information discovery and mutation validation are separate responsibilities. Keep
-the lower PR's schema and parser until the discovery/authoring checks below pass.
-Before reducing the large input schema, document the replacement for each of:
+- Upsert absence in bundled and MCP tool catalogs, with Editor and schema search
+  still present; preserve retained instance/source tool tests.
+- Explicit empty query and no-filter inputs surviving agent and MCP entry points
+  to reach Studio as a full-search request, without changing global empty-input
+  cleanup semantics for unrelated tools.
+- Complete class-name preservation while removing bulky property bodies from full
+  responses; targeted lookup retains writeCondition/valueSchema and Korean text.
+- UTF-8 character boundaries across TCP chunks and output caps, exact full-output
+  persistence and correct byte measurements.
+- An old server's full-search error surfacing without invented fallback requests.
 
-- Class/property/type validation and useful errors on unsupported writes.
-- Creation defaults versus partial updates, which must not receive creation values.
-- ObjectType/value normalization and VFX name/path handling.
-- Singleton/identity protection and read-only fields such as WorldTransform.
-- Installed deprecated guides and the native ProceduralModel Source reference.
+Before making this PR ready:
 
-A successful schema search is not evidence that these behaviors can be removed.
-Any intentionally changed compatibility behavior needs its own regression case
-and explanation in this PR before it becomes ready for review.
+1. Verify full discovery on the actual updated Studio and compare with an
+   authoritative engine class listing. Do not infer completeness from a synthetic
+   response or a successful class-specific query.
+2. Exercise real model tasks that require classes absent from prompt examples and
+   the current world. Confirm correct material/property choice from detail lookups.
+3. Compare the lower and upper branches on creation, edits, UI and VFX authoring,
+   parameter-triggered native regeneration, context/output size, and failures.
+4. Verify useful behavior on large catalogs and old/unavailable servers. A missing
+   catalog must not trigger invented APIs or gameplay substitution for Editor work.
 
-## Acceptance and evidence
-
-Use the same representative tasks against the lower PR and the proposed dynamic
-implementation. Record Studio build, request/response shapes, schemaVersion, exact
-branch heads, tool-definition bytes, lookup output bytes/truncation, and outcomes.
-
-- Verify that `{"query":""}` survives both agent and MCP input handling and
-  reaches Studio unchanged; compare the returned full catalog to the authoritative
-  engine listing. Verify Korean description round-trips and byte-limited output.
-- Discover a supported class whose name is not supplied in the user prompt, static
-  prompt guidance, or the current world. Compare the catalog with an authoritative
-  engine listing; do not validate completeness using the response itself.
-- Retrieve a previously unfamiliar property, material enum, or write condition and
-  perform the corresponding valid edit. Reject invalid writes with useful evidence.
-- Cover empty results, unavailable/outdated servers, transport failures, large
-  catalogs, long detail responses, and context after a lookup has been compacted.
-  None may silently authorize invented APIs or a gameplay substitute for Editor work.
-- Re-run compatibility creation, partial update, tagged values, VFX conversion,
-  singleton protection, and read-only WorldTransform read/write cases.
-- Verify a native ProceduralModel change after the initial command has ended,
-  without resubmitting Source; inspect generated state and clean up temporary data.
-- Separate deterministic transport/parser tests from real model and Studio trials.
-  Prompt string assertions and mocked responses do not establish model behavior.
-
-## Rollout
-
-Keep this PR draft while the Studio contract or any acceptance gate remains open.
-The lower compatibility PR is independently usable. The empty-query semantics are
-now reported by Studio, while deployment/build validation and the remaining
-interface decisions still need confirmation. Update this document with those
-verified details and implement against them; do not merge a schema-removal change merely to complete the stack.
-When #415 merges, retarget/rebase this branch onto its destination so only the
-long-term delta remains. No automatic merge or deployment is part of this plan.
+Keep #429 draft while these live acceptance gates remain open. Compatibility #415
+is already merged; do not reopen or modify it. No automatic merge or deployment
+is part of this change.

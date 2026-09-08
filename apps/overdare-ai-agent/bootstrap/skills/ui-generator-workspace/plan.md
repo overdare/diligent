@@ -22,7 +22,7 @@ These tests only mean something if the sub-agents can actually build UI. That re
 **OVERDARE AI agent environment with the `studiorpc_*` MCP connected and a running Studio
 instance**. A plain Claude Code session without those tools cannot execute the skill — the
 agents will only *describe* intentions, which does not test the hypotheses. Do not run this
-plan in an environment where `studiorpc_level_browse` / `studiorpc_instance_upsert` are
+plan in an environment where `studiorpc_level_browse` / `studiorpc_execute_luau` are
 unavailable.
 
 ## Baseline (old skill)

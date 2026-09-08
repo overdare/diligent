@@ -1,3 +1,10 @@
+# Long-term discovery draft
+
+This branch is the implemented long-term draft above compatibility PR #415.
+Upsert and its static catalog are removed here; the compatibility-stage results
+below describe the lower branch. Current behavior and remaining live-server gates
+are documented in `docs/plan/feature/live-schema-transition.md`.
+
 # Editor compatibility transition verification
 
 ## Current implementation

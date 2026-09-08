@@ -14,25 +14,25 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("<play-test-input>");
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
-  test("keeps compatibility upsert as a reference with supplementary live discovery", async () => {
+  test("instructs full class discovery before targeted Editor authoring", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
     expect(prompt).toContain("studiorpc_instance_schema_search");
     expect(prompt).toContain("not the complete Luau member list");
     expect(prompt).toContain("mutation_attempted");
     expect(prompt).toContain("never automatically replay failed code");
-    expect(prompt).toContain("retains class-specific validation");
-    expect(prompt).toContain("not a prerequisite for every edit");
+    expect(prompt).toContain('with `{"query":""}`');
+    expect(prompt).toContain("There is no bulk JSON upsert tool");
     expect(prompt).toContain("as the default for world creation and editing");
     expect(prompt).toContain("Successful Editor execution already saves the level");
     expect(prompt).toContain("Do not reject a class based on an old local catalog");
     expect(prompt).not.toContain("studiorpc_proceduralmodel_");
     expect(prompt).not.toContain("geometry-recipe");
   });
-  test("VFX guidance matches compatibility tags and playback defaults", async () => {
+  test("VFX guidance uses Editor authoring without retired JSON conversions", async () => {
     const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");
-    expect(skill).toContain("are injected by the sidecar");
-    expect(skill).toContain("default true");
-    expect(skill).toContain("short name");
+    expect(skill).not.toContain("are injected by the sidecar");
+    expect(skill).not.toContain("default true");
+    expect(skill).toContain("studiorpc_execute_luau");
   });
   test("explains execution lifetimes without routing request categories to a fixed class", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
@@ -49,7 +49,7 @@ describe("OVERDARE bootstrap config", () => {
   });
   test("includes native authoring reference without treating search misses as permission to change execution mode", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
-    expect(prompt).toContain("query is a single literal substring");
+    expect(prompt).toContain("literal property");
     expect(prompt).toContain("parts.chamfered_box");
     expect(prompt).toContain("G.append_mesh");
     expect(prompt).toContain("G.dispose_mesh");

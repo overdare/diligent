@@ -35,7 +35,7 @@ Avoid persistent gameplay UI in the exact center of the screen because the chara
    - Respect the default mobile menu, joystick, and jump button regions.
 7. Read or browse the result if needed and respond to tool warnings.
 8. Add behavior only when requested.
-9. Save and report the final hierarchy.
+9. Editor execution saves automatically; report the verified hierarchy.
 
 ## Common Classes
 
@@ -65,7 +65,7 @@ Creating the frames but leaving the provided assets unbound is one of the most c
 
 Always create parent containers first, then child objects one level at a time.
 
-Do not mix add operations and update operations in the same `studiorpc_instance_upsert` call. Create first, then update separately if needed.
+Use `studiorpc_execute_luau` with `target: "Editor"`. Query live class/property schemas first; create and parent containers before children within the same related command.
 
 Good:
 
@@ -73,7 +73,7 @@ Good:
 2. Create `ScoreboardPanel` inside it.
 3. Create `HomeScoreLabel`, `TimerLabel`, and `AwayScoreLabel` inside the panel.
 
-Avoid creating a deeply nested hierarchy in one batch.
+Verify the resulting hierarchy before the next independent change.
 
 ## Naming Pattern
 

@@ -15,10 +15,24 @@ const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
+const schemaSearchMock = mock(async (_params?: Record<string, unknown>) => ({
+  schemaVersion: "unicode-build",
+  classes: [
+    {
+      class: "FutureWidget",
+      description: "\uD55C\uAE00 \uC124\uBA85",
+      creatable: true,
+      service: false,
+      properties: [{ name: "Material", description: "\uC7AC\uC9C8" }],
+    },
+  ],
+}));
+
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
-  call: (method: string) => {
+  call: (method: string, params?: Record<string, unknown>) => {
+    if (method === "instance.schema.search") return schemaSearchMock(params);
     if (method === "level.browse") return levelBrowseMock();
     throw new Error(`Unexpected RPC method in test: ${method}`);
   },
@@ -140,6 +154,23 @@ describe("OVERDARE MCP server", () => {
       );
       expect(skill.output).toContain("Deprecated");
       expect(skill.output).toContain("studiorpc_execute_luau");
+    }
+  });
+
+  test("MCP full discovery preserves the empty query and Korean catalog descriptions", async () => {
+    schemaSearchMock.mockClear();
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: { query: "" } });
+      expect(schemaSearchMock).toHaveBeenCalledWith({ query: "" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      const catalog = JSON.parse(content[0].text);
+      expect(catalog.classes[0].description).toBe("\uD55C\uAE00 \uC124\uBA85");
+      expect(catalog.classes[0]).not.toHaveProperty("properties");
+      const tools = await client.listTools();
+      expect(tools.tools.map((t) => t.name)).not.toContain("studiorpc_instance_upsert");
+    } finally {
+      await client.close();
     }
   });
 

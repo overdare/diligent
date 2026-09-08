@@ -13,6 +13,7 @@ describe("live Editor tools", () => {
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_execute_luau");
     expect(names).toContain("studiorpc_instance_schema_search");
+    expect(names).not.toContain("studiorpc_instance_upsert");
     expect(names.filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
   });
   test("schema discovery does not request execute permission or save the world", async () => {
@@ -47,8 +48,6 @@ describe("live Editor tools", () => {
   });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [
-      {},
-      { query: "" },
       { classes: [] },
       { classes: [""] },
       { classes: Array(21).fill("Part") },
@@ -57,6 +56,8 @@ describe("live Editor tools", () => {
     ]) {
       expect(schema.params.safeParse(input).success).toBe(false);
     }
+    expect(schema.params.parse({ query: "" })).toEqual({ query: "" });
+    expect(schema.params.parse({})).toEqual({});
     expect(schema.params.parse({ classes: ["FutureClass"], query: "color" })).toEqual({
       classes: ["FutureClass"],
       query: "color",

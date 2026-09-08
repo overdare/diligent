@@ -1,15 +1,15 @@
-# Editor Luau with compatibility upsert schemas
+# Editor Luau with live class discovery
 
 The OVERDARE bundled Studio provider exposes `studiorpc_instance_schema_search`
 and `studiorpc_execute_luau`. These are product tools using the existing tool
 result/approval protocol, so Web and TUI receive the same output and error state.
 No client-specific RPC method or UI is required.
 
-Use the bundled upsert input schema for known JSON classes and properties,
-supplement it with live discovery when needed, edit with Editor Luau, and read back
-the affected objects. The upsert JSON schema does not define Luau method support.
-Existing instance and script tools remain available for focused reads and text
-edits. The agent does not select a separate authoring tool family for each class.
+Discover available classes with `studiorpc_instance_schema_search` and an empty
+query, request details for the selected classes/properties, then author with
+`studiorpc_execute_luau` targeting Editor. Instance reads, hierarchy moves/deletes,
+and focused Source reads/edits remain available. The bulk JSON upsert tool and
+its static class/property catalog are removed in this long-term draft.
 
 Select an implementation from its execution lifetime, not from a keyword or model
 category. An Editor command runs once and its VM is discarded. A persistent
@@ -26,54 +26,42 @@ can use when it satisfies the requested behavior.
 
 ## Discovering JSON properties
 
-The currently verified `instance.schema.search` contract accepts a non-empty `query`, `classes` containing 1–20
-non-empty exact class names, or both. Search is case-insensitive substring matching
-against class/property names; combined filters search within the selected classes.
-A class-name match includes every exposed property. `limit` and `cursor` are not
-supported by this adapter. Invalid filters produce Studio error `-32602`.
-The connected Studio rejected `{}` and an empty query, while `{"query":"*"}`
-returned no classes. These are observations of the tested requests/build, not a
-claim that the intended Studio specification excludes full class discovery. Full
-class enumeration remains pending a confirmed request contract and live validation.
+The tool accepts `query` (including an empty string), `classes` containing 1-20
+exact non-empty names, or both. No filters is also accepted and normalizes to
+`{"query":""}`. The common executor removes empty optional strings; the adapter
+restores this explicit full-search request without changing global cleanup rules.
+Class-only requests still reach Studio as class filters. A non-empty query remains
+a literal class/property substring; no wildcard, limit, or cursor is invented.
 
-Results preserve `schemaVersion`, `classes`, `class`, `creatable`, `service`, and
-property `name`, `declaredOn`, optional `writeCondition`, and optional `valueSchema`.
-No matches is an empty classes array. This schema describes instance JSON editing,
-not every Luau member. Check creation and write conditions before editing.
-The query is one literal substring. Use a classes-only query to discover a class;
-do not concatenate class/property names into an expression and interpret the empty
-result as a capability check. Schema discovery does not provide geometry-function
-documentation. The bootstrap prompt carries a minimal native Source reference
-adapted from the previous implementation so that basic authoring does not depend
-on an unrelated search result.
-Schema discovery is read-only and does not request execute permission or save the
-world. Do not treat an old local list of unsupported classes as authoritative.
+Full discovery returns schemaVersion and a compact class catalog: class names,
+descriptions (including Korean), creatable/service and other class metadata are
+preserved, while property payloads are omitted. The adapter labels this output
+`view: "classes"`. Request `classes` to retrieve the detailed properties, with an
+optional property query. Targeted results preserve all response fields unchanged.
+This separation keeps all property definitions out of the initial class list.
 
-The compatibility `instance.params.ts` catalog remains in the upsert tool input.
-Both v1 and v2 retain class-specific validation, creation defaults, ObjectType
-handling, and VFX short-name conversion. Updates validate against the existing
-class and do not inject unrelated creation defaults. Live search does not alter
-that accepted input contract, and search success is not required for edits already
-covered by the bundled reference. Classes outside the catalog, including native
-ProceduralModel, can still be authored with documented Editor APIs; this does not
-make them accepted by compatibility upsert.
+UTF-8 descriptions are preserved through TCP decoding and JSON serialization.
+RPC byte diagnostics use UTF-8 byte lengths. If a tool output exceeds the common
+limit, keep its beginning and provide the persisted full output when available;
+a truncated catalog must not be treated as complete. There is no persistent schema
+cache or automatic injection of an exhaustive property catalog into the prompt.
 
-Readback remains independent of the static write catalog: unknown class/property
-JSON is preserved without injecting defaults. Known singleton roots retain their
-creation/move/delete guards.
+The updated Studio contract is reported to support empty-query full search. The
+currently connected build still returned `-32602` for that request during draft
+verification. That error is surfaced; the agent must not invent a partial catalog
+using wildcard/alphabet probing. Full-list integration with an updated Studio
+remains a draft acceptance gate. Focused class/property queries work on the tested
+build and may support a documented operation even when full discovery is unavailable.
 
-`WorldTransform` is a read-only derived cache. Instance reads preserve it and
-`Size` when supplied by Studio or the saved level, so callers can inspect spatial
-data and place cameras. Readback does not imply writability: upsert rejects
-`WorldTransform` for both additions and updates. Discover the class's writable
-transform properties through live schema search instead. Missing values are not
-synthesized, and the legacy file backend can contain stale cached values.
+The previous upsert class validators, automatic defaults, ObjectType insertion,
+VFX short-name expansion and upsert-only diagnostics/file recovery are retired
+with that tool. Editor assignments must use supported Luau values and exact asset
+names/paths. Existing hierarchy move protections and Mobility normalization remain.
 
-If v1 upsert's apply call fails, it restores the original file bytes only when
-the file still matches the bytes written by that upsert. A later external save
-is preserved, and a failed restoration is reported with the original apply error.
-This is file recovery, not a Studio rollback: the live world may have partially
-applied the request, so inspect it before retrying. No apply is automatically retried.
+Readback is independent of writable schemas and preserves WorldTransform/Size
+when supplied by Studio or the saved file. These are useful spatial observations,
+not proof that a field is writable. The Editor's supported property contract
+controls assignments; saved file caches may be stale.
 
 ## Editor execution and failure recovery
 
@@ -92,7 +80,7 @@ For example, the following command uses the documented instance creation path:
 {"target":"Editor","code":"local p = Instance.new('Part'); p.Name = 'AgentPart'; p.Parent = workspace; return p.Name"}
 ```
 
-Use the bundled class/property hints or supplementary discovery. Create related containers before their children
+Use live class/property hints. Create related containers before their children
 within one command, and return a small verification summary rather than the whole
 world. A focused readback proves properties, not visual appearance or gameplay.
 
@@ -223,12 +211,10 @@ this PR does not authorize an automatic preview/main merge or deployment.
 
 ## Verification boundaries
 
-Tests use injected responses and a local TCP Studio stand-in to verify the
-compatibility upsert validators/conversions, supplementary future-class discovery,
-read-only spatial data, phase-specific Editor failures, cancellation, approval and
-save ordering. MCP tests verify that deprecated guides remain loadable without
-restoring retired tools. Existing installer tests cover applied-update replacement and preservation of user
-entries; deprecated content and exposure are checked at the MCP boundary.
-These checks do not establish model adherence or native geometry quality. Live
-Studio generation and parameter-change checks are recorded separately in
-`docs/review/editor-tool-unification.md`.
+Tests exercise empty-query full search through the shared tool executor and MCP,
+compact class catalogs, unchanged targeted schemas, Korean descriptions split
+across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
+also verify that upsert is absent while Editor error/save handling and retained
+instance/Source tools continue to work. Deprecated guides remain loadable and
+refer to Editor authoring rather than removed tools. Actual full-catalog discovery
+on the updated Studio and end-to-end model authoring remain draft gates.
