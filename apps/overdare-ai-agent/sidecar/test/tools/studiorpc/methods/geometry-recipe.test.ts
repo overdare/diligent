@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Tool } from "@diligent/core/tool-contract";
+import { executeTool, type Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
 import * as proceduralModelApi from "../../../../src/tools/studiorpc/methods/proceduralmodel.api";
 import * as proceduralModelSet from "../../../../src/tools/studiorpc/methods/proceduralmodel.set";
@@ -70,7 +70,7 @@ describe("geometry-recipe tool surface", () => {
 describe("proceduralmodel.api arguments", () => {
   test("takes no required argument and rejects unknown fields", () => {
     expect(proceduralModelApi.params.parse({})).toEqual({});
-    // The note cap was removed from the tool: the reference ships whole and the agent trims it itself.
+    // Query selects server-owned API content; it does not accept arbitrary output-limit flags.
     expect(() => proceduralModelApi.params.parse({ maxNoteBytes: 2000 })).toThrow();
     expect(() => proceduralModelApi.params.parse({ notes: true })).toThrow();
   });
@@ -108,17 +108,86 @@ describe("proceduralmodel.api discovery (compact by default, query to expand)", 
     const out = proceduralModelApi.postProcess(API_RESULT, {}) as Record<string, unknown>;
     expect(out.template).toBe(API_RESULT.template);
     expect(out.presets).toEqual(API_RESULT.presets);
-    expect(out.lookup).toBeDefined();
+    expect(out.availableFunctions).toEqual(Object.keys(API_RESULT.lookup));
+    expect(out.lookup).toBeUndefined();
+    expect(out.quickref).toBeUndefined();
     expect(out.functions).toBeUndefined();
     expect(out.notes).toBeUndefined();
     expect(String(out.hint)).toContain("query");
   });
 
-  test("query expands only the requested calls, with verbose docs and notes", () => {
+  test("query returns matching calls without unrelated document sections", () => {
     const out = proceduralModelApi.postProcess(API_RESULT, { query: ["sphere", "bounds"] }) as Record<string, unknown>;
     expect(Object.keys(out.lookup as object)).toEqual(["G.append_sphere", "G.get_bounds"]);
     expect((out.functions as { name: string }[]).map((fn) => fn.name)).toEqual(["append_sphere", "get_bounds"]);
-    expect(out.notes).toBe(API_RESULT.notes);
+    expect(out.notes).toBeUndefined();
+    expect(out.template).toBeUndefined();
+    expect(out.quickref).toBeUndefined();
+    expect(out.presets).toBeUndefined();
+  });
+
+  test("document names select only those sections and missing names are explicit", () => {
+    const out = proceduralModelApi.postProcess(API_RESULT, { query: ["template", "model.part", "rib"] }) as Record<
+      string,
+      unknown
+    >;
+    expect(out.template).toBe(API_RESULT.template);
+    expect(Object.keys(out.lookup as object)).toEqual(["parts.rib"]);
+    expect(out.unmatchedQueries).toEqual(["model.part"]);
+    expect(out.availableSections).toContain("quickref");
+    expect(out.quickref).toBeUndefined();
+    expect(out.notes).toBeUndefined();
+    const notes = proceduralModelApi.postProcess(API_RESULT, { query: "notes" }) as Record<string, unknown>;
+    expect(notes.notes).toBe(API_RESULT.notes);
+    expect(notes.template).toBeUndefined();
+    expect(notes.lookup).toBeUndefined();
+  });
+
+  test("large unrequested documentation cannot cause executor truncation or broken JSON", async () => {
+    const large = {
+      ...API_RESULT,
+      quickref: "unrelated quick reference\n".repeat(4000),
+      notes: "unrelated detailed notes\n".repeat(4000),
+      lookup: {
+        ...Object.fromEntries(
+          Array.from({ length: 150 }, (_, i) => [`G.other_${i}`, `other_${i}() -- ${"details ".repeat(100)}`]),
+        ),
+        ...API_RESULT.lookup,
+      },
+    };
+    const tools = await loadTools(() => large);
+    for (const input of [{}, { query: ["template", "sphere", "bounds"] }]) {
+      const result = await executeTool(
+        tools,
+        { type: "tool_call", id: "api", name: "studiorpc_proceduralmodel_api", input },
+        toolContext(),
+      );
+      expect(result.metadata?.truncated).toBeUndefined();
+      const output = JSON.parse(result.output);
+      expect(output.template).toBe(large.template);
+      expect(output.notes).toBeUndefined();
+      expect(output.quickref).toBeUndefined();
+      if ("query" in input) expect(Object.keys(output.lookup)).toEqual(["G.append_sphere", "G.get_bounds"]);
+      else expect(output.availableFunctions).toEqual(Object.keys(large.lookup));
+    }
+  });
+
+  test("an oversized UTF-8 selection returns a complete index instead of a JSON fragment", async () => {
+    const tools = await loadTools(() => ({
+      ...API_RESULT,
+      lookup: { "G.huge": `huge() -- ${"\u754c".repeat(20_000)}` },
+    }));
+    const result = await executeTool(
+      tools,
+      { type: "tool_call", id: "api", name: "studiorpc_proceduralmodel_api", input: { query: "huge" } },
+      toolContext(),
+    );
+    expect(result.metadata?.truncated).toBeUndefined();
+    const output = JSON.parse(result.output);
+    expect(output.needsNarrowerQuery).toBe(true);
+    expect(output.availableFunctions).toEqual(["G.huge"]);
+    expect(output.lookup).toBeUndefined();
+    expect(output.notes).toBeUndefined();
   });
 
   test("a placeholder query ('x') is ignored and falls back to the compact kit", () => {
