@@ -180,17 +180,38 @@ switch is one of:
 A local `make dev` run goes through no launcher, so `DILIGENT_ENV` is unset, which reads as
 prod and leaves the skill off. Use the override or export the variable.
 
-**3. `DILIGENT_ISSUE_WEBHOOK` must be set.** It is never shipped, so even an enabled
-experiment on a prod build has nowhere to post.
+**3. A webhook URL must be configured.** None is shipped, so even an enabled experiment on
+a prod build has nowhere to post. The script looks in two places, in this order:
+
+| Source | Good for |
+|---|---|
+| `DILIGENT_ISSUE_WEBHOOK` in the environment | local `bun run` / `make dev` — `.env.local` is auto-loaded and gitignored |
+| an `issue-report-webhook` file beside your session data, e.g. `~/.overdare/issue-report-webhook` | **an installed, built agent** |
+
+The file exists because the environment does not reach a real install. A built binary
+inherits whatever launched it, and Studio is a GUI app with no shell environment to
+inherit, so `export` and `.env.local` only cover local development. Baking the URL into the
+build is not an alternative: this repo is public and dev releases are prereleases on it, so
+a baked secret would ship to anyone who downloads one. A file the developer drops in their
+own namespace directory is the only spot that is per-machine, survives reinstalls, and is
+never distributed.
 
 ```bash
-export DILIGENT_ISSUE_WEBHOOK='https://hooks.slack.com/services/...'   # ask the team
-export DILIGENT_ENV=dev                                               # or use the override
+# local development
+echo 'DILIGENT_ISSUE_WEBHOOK=https://hooks.slack.com/services/...' >> .env.local
+
+# an installed agent (namespace is `overdare` under the launcher, `diligent` for the CLI)
+printf '%s\n' 'https://hooks.slack.com/services/...' > ~/.overdare/issue-report-webhook
+chmod 600 ~/.overdare/issue-report-webhook
 ```
 
-Keep the URL out of the repo, out of `config.jsonc`, and out of any committed env file. A
-Slack webhook is write-only to one channel, which is why holding it in a developer's
-environment is fine and baking it into a shipped binary would not be.
+Blank lines and `#` comments in that file are ignored, so it can carry a note about which
+channel it points at.
+
+Wherever it goes, keep it on the machine: never in a committed file, never in this skill,
+and never in a `config.jsonc` that lives inside a repo. A Slack webhook is write-only to a
+single channel, which is what makes a developer's own machine an acceptable home for it and
+a shipped artifact an unacceptable one.
 
 `.diligent/skills/session-issue-report` is a symlink to this directory, so a diligent CLI
 run in this repo picks up the same single copy — there is no second version to keep in sync.

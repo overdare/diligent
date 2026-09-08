@@ -26,6 +26,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 WEBHOOK_ENV = "DILIGENT_ISSUE_WEBHOOK"
+# Fallback for an installed agent. A built binary launched by Studio inherits the launcher's
+# environment, and a GUI launch has no shell environment to inherit — so `.env.local` and
+# `export` only cover local `bun run` development. Baking the URL into the build is not an
+# option either: the repo is public and dev releases are prereleases on it, so a baked
+# secret would ship to anyone. A file the developer drops next to their own session data is
+# the one place that is per-machine, survives reinstalls, and is never distributed.
+WEBHOOK_FILE = "issue-report-webhook"
 # Kept in parity with the sidecar's 1st-pass ruleset (masking.ts, version `secrets-2`).
 # This path never reaches the gateway, so there is no server-side second pass behind us:
 # whatever these patterns miss, leaves the machine.
@@ -79,6 +86,32 @@ def session_dirs() -> list[Path]:
     namespaces = {os.environ.get("DILIGENT_STORAGE_NAMESPACE", "").strip() or "diligent", "overdare", "diligent"}
     roots = [Path.cwd(), Path.home()]
     return [root / f".{ns}" / "sessions" for root in roots for ns in namespaces]
+
+
+def resolve_webhook() -> tuple[str, str] | tuple[None, None]:
+    """The webhook URL and where it came from, or (None, None).
+
+    Environment first so a shell or `.env.local` can override per run; then the per-machine
+    file, which is what an installed agent actually has.
+    """
+    from_env = os.environ.get(WEBHOOK_ENV, "").strip()
+    if from_env:
+        return from_env, f"${WEBHOOK_ENV}"
+    seen: set[Path] = set()
+    # session_dirs() is ordered project-local first; keep that precedence rather than
+    # letting a set's iteration order pick between a project and a home-level file.
+    for directory in (d.parent for d in session_dirs()):
+        if directory in seen:
+            continue
+        seen.add(directory)
+        candidate = directory / WEBHOOK_FILE
+        if not candidate.is_file():
+            continue
+        for line in candidate.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line, str(candidate)
+    return None, None
 
 
 def newest_session() -> Path | None:
@@ -229,12 +262,13 @@ def main() -> int:
         print("send_report: nothing on stdin — pipe the report body in. Not sent.")
         return 0
 
-    webhook = os.environ.get(WEBHOOK_ENV, "").strip()
+    webhook, webhook_source = resolve_webhook()
     if not webhook and not args.dry_run:
         print(
-            f"send_report: {WEBHOOK_ENV} is not set, so nothing was sent. "
-            "This skill is internal-only; ask the team for the channel webhook and export it. "
-            "Report the finding to the user in your reply instead."
+            f"send_report: no webhook configured, so nothing was sent. Set {WEBHOOK_ENV}, or "
+            f"put the URL in a `{WEBHOOK_FILE}` file beside your session data "
+            f"(e.g. ~/.overdare/{WEBHOOK_FILE}). This skill is internal-only; ask the team for "
+            "the channel webhook. Report the finding in your reply instead."
         )
         return 0
 
@@ -262,6 +296,12 @@ def main() -> int:
         print(text)
         return 0
 
+    if webhook is None:
+        # Unreachable: a missing webhook already returned above unless --dry-run, which
+        # returned too. Stated explicitly so the POST below has a plain `str`.
+        print("send_report: no webhook resolved; nothing sent.")
+        return 0
+
     request = urllib.request.Request(
         webhook, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
@@ -276,7 +316,10 @@ def main() -> int:
         return 0
 
     record(ledger, session_id, key, title)
-    print(f"send_report: sent ({status}), fingerprint {key}, session {session_id}, mask {MASK_VERSION}.")
+    print(
+        f"send_report: sent ({status}) via {webhook_source}, fingerprint {key}, "
+        f"session {session_id}, mask {MASK_VERSION}."
+    )
     return 0
 
 
