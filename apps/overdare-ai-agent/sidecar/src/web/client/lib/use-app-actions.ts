@@ -25,7 +25,7 @@ import {
   supportsThinkingEffort,
 } from "./model-thinking-helpers";
 import type { WebRpcClient } from "./rpc-client";
-import { parseSlashCommand, type SlashCommand } from "./slash-commands";
+import { modeForCommand, parseSlashCommand, type SlashCommand } from "./slash-commands";
 import type { ThreadState } from "./thread-store";
 import { createUuidV4 } from "./uuid";
 
@@ -543,6 +543,14 @@ export function useAppActions({
         clearThreadInput(activeThreadId);
       }
 
+      // Handled ahead of the switch so `case "default"` never sits beside its `default` clause.
+      const modeTarget = modeForCommand(name);
+      if (modeTarget) {
+        void setMode(modeTarget);
+        dispatch({ type: "show_info_toast", payload: `Mode: ${modeTarget}` });
+        return;
+      }
+
       switch (name) {
         case "help": {
           const names = slashCommands.map((command) => `/${command.name}`).join(", ");
@@ -707,6 +715,7 @@ export function useAppActions({
     [
       rpcRef,
       state.activeThreadId,
+      setMode,
       clearThreadInput,
       slashCommands,
       dispatch,

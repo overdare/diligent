@@ -1,13 +1,17 @@
 // @summary Unit tests for slash command parser, filter, prefix detection, and skill merging
 
 import { describe, expect, test } from "bun:test";
+import { MODE_COMMAND_NAMES, ModeSchema } from "@diligent/protocol";
 import {
   BUILTIN_COMMANDS,
   buildCommandList,
   filterCommands,
   isSlashPrefix,
+  modeForCommand,
   parseSlashCommand,
 } from "../../../../src/web/client/lib/slash-commands";
+
+const MODE_COMMAND_LIST = ModeSchema.options.map((mode) => MODE_COMMAND_NAMES[mode]);
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
@@ -120,7 +124,23 @@ describe("isSlashPrefix", () => {
 describe("BUILTIN_COMMANDS", () => {
   test("has expected core commands", () => {
     const names = BUILTIN_COMMANDS.map((c) => c.name);
-    expect(names).toEqual(["help", "new", "resume", "model", "effort", "mcp", "reload"]);
+    expect(names).toEqual(["help", "new", "resume", "model", "effort", ...MODE_COMMAND_LIST, "mcp", "reload"]);
+  });
+
+  test("modeForCommand round-trips every mode and rejects other names", () => {
+    for (const mode of ModeSchema.options) {
+      expect(modeForCommand(MODE_COMMAND_NAMES[mode])).toBe(mode);
+    }
+    expect(modeForCommand("help")).toBeNull();
+  });
+
+  test("every mode command is a direct switch that takes no args", () => {
+    for (const name of MODE_COMMAND_LIST) {
+      const command = BUILTIN_COMMANDS.find((c) => c.name === name);
+      expect(command).toBeDefined();
+      expect(command?.requiresArgs).toBeUndefined();
+      expect(command?.usage).toBeUndefined();
+    }
   });
 
   test("resume requires args and exposes usage", () => {
@@ -184,12 +204,10 @@ describe("buildCommandList", () => {
     expect(deploy?.requiresArgs).toBeUndefined();
   });
 
-  test("skills can use previously web-only names now that they are not builtins", () => {
-    const commands = buildCommandList([
-      { name: "mode", description: "Skill named mode" },
-      { name: "effort", description: "Skill named effort" },
-    ]);
-    expect(commands.find((c) => c.name === "mode")?.isSkill).toBe(true);
-    expect(commands.find((c) => c.name === "effort")?.isSkill).toBeUndefined();
+  test("builtin mode commands shadow skills of the same name", () => {
+    const commands = buildCommandList(MODE_COMMAND_LIST.map((name) => ({ name, description: `Skill named ${name}` })));
+    for (const name of MODE_COMMAND_LIST) {
+      expect(commands.find((c) => c.name === name)?.isSkill).toBeUndefined();
+    }
   });
 });
