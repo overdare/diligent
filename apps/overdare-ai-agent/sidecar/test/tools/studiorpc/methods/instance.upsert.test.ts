@@ -4,7 +4,8 @@ import { describe, expect, test } from "bun:test";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { classPropertiesSchemas } from "../../../../src/tools/studiorpc/methods/instance.params";
-import { parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
+import { params, parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
+import { parseInstancePatchProperties } from "../../../../src/tools/studiorpc/methods/instance-properties";
 
 describe("instance.upsert class property validation", () => {
   test("rejects properties that belong to a different class", () => {
@@ -352,5 +353,21 @@ describe("UIListLayout alignment hints", () => {
       HorizontalAlignment: "Center",
       FillDirection: "Horizontal",
     });
+  });
+});
+
+describe("compatibility write boundaries", () => {
+  test("the advertised input retains class and material guidance", () => {
+    const schema = JSON.stringify(zodToJsonSchema(params));
+    expect(schema).toContain('"MeshPart"');
+    expect(schema).toContain('"Material"');
+    expect(schema).toContain('"Plank"');
+  });
+  test("read-only and structural fields cannot be written through adds or patches", () => {
+    for (const key of ["WorldTransform", "ActorGuid", "ObjectKey", "LuaChildren", "Name", "Parent", "__proto__"]) {
+      const properties = JSON.parse(`{"${key}":{}}`);
+      expect(() => parseArgs({ items: [{ class: "Part", parentGuid: "W", name: "P", properties }] })).toThrow();
+      expect(() => parseInstancePatchProperties("Part", properties)).toThrow();
+    }
   });
 });

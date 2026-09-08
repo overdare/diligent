@@ -45,7 +45,7 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
   const root = await readLevelRoot();
   const document: Record<string, unknown> = { Root: root };
   const mobilityInfo: string[] = [];
-  const writeOptions = { mobilityPolicy: "ignore-non-top-level" as const, mobilityInfo };
+  const writeOptions = { mobilityInfo };
 
   const updateInstances: Record<string, unknown>[] = [];
   const addsByParent = new Map<string, PendingAdd[]>();
@@ -113,7 +113,7 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
 
   return {
     output: lines.join("\n") || "OK",
-    render: buildInstanceUpsertRender(parsedArgs as unknown as Record<string, unknown>, lines.join("\n") || "OK"),
+    render: buildInstanceUpsertRender(parsedArgs, lines.join("\n") || "OK"),
     metadata: {
       method: "instance.upsert",
       targetGuids,
