@@ -5,7 +5,7 @@ export const method = "instance.schema.search";
 export const readOnly = true;
 export const truncateDirection = "head" as const;
 export const description =
-  'Discover supported Studio classes before authoring. Use query:"" (or no filters) for a compact full class catalog; it includes class names, descriptions and availability metadata, omitting property payloads. Then pass classes (1-20 exact names) and optionally a property query for detailed schemas. A non-empty query is a case-insensitive literal class/property substring. Preserve Korean descriptions as UTF-8. Check creatable, writeCondition and valueSchema before editing through Editor Luau. This is not the complete Luau or native Python method API. No limit, cursor or wildcard options. A full-search error can indicate an older Studio; report it instead of inventing a partial catalog.';
+  'If the appropriate Studio class is unknown, use query:"" (or no filters) for a compact full class catalog; it includes class names, descriptions and availability metadata, omitting property payloads. For a known or discovered class, pass classes (1-20 exact names) and optionally a property query for detailed schemas. A non-empty query is a case-insensitive literal class/property substring. Preserve Korean descriptions as UTF-8. Check creatable, writeCondition and valueSchema before editing through Editor Luau. This is not the complete Luau or native Python method API. No limit, cursor or wildcard options. A full-search error can indicate an older Studio; report it instead of inventing a partial catalog.';
 export const params = z
   .object({
     query: z

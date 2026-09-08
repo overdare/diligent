@@ -14,13 +14,16 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("<play-test-input>");
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
-  test("instructs full class discovery before targeted Editor authoring", async () => {
+  test("uses full discovery for unknown classes without requiring it for known classes", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
     expect(prompt).toContain("studiorpc_instance_schema_search");
     expect(prompt).toContain("not the complete Luau member list");
     expect(prompt).toContain("mutation_attempted");
     expect(prompt).toContain("never automatically replay failed code");
     expect(prompt).toContain('with `{"query":""}`');
+    expect(prompt).toContain("If you do not know which class to use");
+    expect(prompt).toContain("If the class is already known, query it directly");
+    expect(prompt).not.toContain("At the start of Studio authoring, call");
     expect(prompt).toContain("There is no bulk JSON upsert tool");
     expect(prompt).toContain("as the default for world creation and editing");
     expect(prompt).toContain("Successful Editor execution already saves the level");

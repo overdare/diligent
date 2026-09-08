@@ -125,7 +125,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("a saved procedural override exposes deprecated guides without restoring retired tools", async () => {
+  test("a saved procedural override cannot restore removed guides or tools", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -133,27 +133,11 @@ describe("OVERDARE MCP server", () => {
     });
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
-    expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_"))).toEqual([]);
-    expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
-    expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
+    expect(registries.tools.has("studiorpc_instance_upsert")).toBe(false);
+    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
     for (const name of ["procedural-builder", "geometry-recipe"]) {
-      const prompt = registries.prompts.get(`agent-${name}`)!;
-      expect(prompt.description).toContain("Deprecated");
-      const body = await prompt.load();
-      expect(body).toContain("ProceduralModel");
-      expect(body).not.toContain("studiorpc_procedural_run");
-      expect(body).not.toContain("studiorpc_proceduralmodel_");
-      const skill = await registries.tools.get("load_skill")!.execute(
-        { name },
-        {
-          toolCallId: "deprecated-guide",
-          signal: new AbortController().signal,
-          abort() {},
-        },
-      );
-      expect(skill.output).toContain("Deprecated");
-      expect(skill.output).toContain("studiorpc_execute_luau");
+      expect(registries.tools.get("load_skill")?.description).not.toContain(name);
+      expect(registries.prompts.has(`agent-${name}`)).toBe(false);
     }
   });
 

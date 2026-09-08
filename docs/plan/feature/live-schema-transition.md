@@ -9,8 +9,9 @@ discovery on top of that merged baseline.
 - Remove the upsert tool, its static instance.params catalog, class-bound write
   validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
   Keep instance read, hierarchy move/delete, Source helpers and their shared
-  Mobility/singleton safeguards. Existing deprecated skill/agent names remain as
-  migration guides, updated to point only to Editor authoring and live discovery.
+  Mobility/singleton safeguards. Remove the procedural-builder and geometry-recipe skill/agent definitions from
+  this upper branch; their deprecated migration guides belong to the merged
+  compatibility implementation.
 - The schema tool accepts an empty query and no-filter calls. Normalize the latter
   to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
   property searches retain their existing Studio request shapes.
@@ -25,8 +26,9 @@ discovery on top of that merged baseline.
   RPC diagnostics in UTF-8 bytes. Oversized model output uses head truncation and
   the common full-output store; neither truncation nor empty results prove that
   the complete catalog was observed.
-- Update the system prompt to discover available class names first, then query
-  selected classes/properties and author with Editor Luau. Retain the tested
+- Update the system prompt to fetch the full catalog when the appropriate class
+  is unknown. A known class goes directly to targeted property lookup, then
+  Editor Luau. Retain the tested
   native Python Source example and explicit Editor/gameplay lifetime distinction.
   Update UI, VFX and asset-pack skills so they no longer call the removed upsert.
 

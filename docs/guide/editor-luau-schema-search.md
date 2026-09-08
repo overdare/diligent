@@ -5,8 +5,9 @@ and `studiorpc_execute_luau`. These are product tools using the existing tool
 result/approval protocol, so Web and TUI receive the same output and error state.
 No client-specific RPC method or UI is required.
 
-Discover available classes with `studiorpc_instance_schema_search` and an empty
-query, request details for the selected classes/properties, then author with
+If the appropriate class is unknown, discover available classes with
+`studiorpc_instance_schema_search` and an empty query. For a known class, request
+its details directly without fetching the full catalog first. Then author with
 `studiorpc_execute_luau` targeting Editor. Instance reads, hierarchy moves/deletes,
 and focused Source reads/edits remain available. The bulk JSON upsert tool and
 its static class/property catalog are removed in this long-term draft.
@@ -137,20 +138,12 @@ The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
 `proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
 and its Source format are retained in Studio.
 
-Both `procedural-builder` and `geometry-recipe` remain as short deprecated
-compatibility guides under bootstrap skills and agents (four entries total).
-Their names are stable so an applied update's existing `FullSync` replaces old
-installed instructions. Each points to Editor Luau and the shared native Source
-reference rather than restoring a separate runner or tool family. User-created
-entries with other names remain untouched; project world/source files are not
-migrated or removed.
-
-Ordinary startup uses `MissingOnly` and does not replace existing entries.
-`scripts/dev-cross-studio.sh` also only creates missing links; restarting it is not
-an upgrade of installed copies. Validate migration through the actual applied
-runtime update / local runtime bundle install path. For development, use explicitly
-configured bootstrap paths or refresh just the known product-owned copies after
-backing up customizations. Do not delete the global skills/agents directories.
+The `procedural-builder` and `geometry-recipe` skill and agent definitions are
+removed from this long-term branch. Their deprecated compatibility definitions
+were shipped by the merged lower PR; this branch does not retain or advertise
+those bundled entries. Existing installed copies are not automatically deleted
+by the name-based updater. This change adds no broad filesystem cleanup; the
+system prompt supplies the native authoring guidance directly.
 
 Procedural modeling represents a form as generation rules plus parameters. The
 rules encode relationships among generated parts; rerunning them with different
@@ -215,6 +208,6 @@ Tests exercise empty-query full search through the shared tool executor and MCP,
 compact class catalogs, unchanged targeted schemas, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
 also verify that upsert is absent while Editor error/save handling and retained
-instance/Source tools continue to work. Deprecated guides remain loadable and
-refer to Editor authoring rather than removed tools. Actual full-catalog discovery
+instance/Source tools continue to work. The removed procedural/geometry skill and agent definitions are not advertised
+by the bundled registry. Actual full-catalog discovery
 on the updated Studio and end-to-end model authoring remain draft gates.
