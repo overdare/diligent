@@ -135,6 +135,25 @@ describe("selector C — consecutive same-tool errors", () => {
     expect(s.onToolResult(call("b", { i: 2 }), result("b", { isError: true }))).toBeUndefined();
     expect(s.onToolResult(call("a", { i: 3 }), result("a", { isError: true }))?.kind).toBe("repeated_error");
   });
+
+  test("a success that arms repeated_call still resets the streak", () => {
+    const s = createFailureSelectors({ errorStreak: 3 });
+    expect(s.onToolResult(call("a", { i: 1 }), result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(call("a", { i: 2 }), result("a", { isError: true }))).toBeUndefined();
+    // Three identical successes: the third arms repeated_call and returns early, but every one
+    // of them must still reset the error streak.
+    expect(s.onToolResult(call("a", { same: true }), result("a"))).toBeUndefined();
+    expect(s.onToolResult(call("a", { same: true }), result("a"))).toBeUndefined();
+    expect(s.onToolResult(call("a", { same: true }), result("a"))?.kind).toBe("repeated_call");
+    expect(s.onToolResult(call("a", { i: 3 }), result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(call("a", { i: 4 }), result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(call("a", { i: 5 }), result("a", { isError: true }))).toEqual({
+      kind: "repeated_error",
+      tool: "a",
+      count: 3,
+      fingerprint: "repeated_error:a",
+    });
+  });
 });
 
 describe("dedup + reset", () => {

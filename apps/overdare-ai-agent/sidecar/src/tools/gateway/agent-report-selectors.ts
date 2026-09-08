@@ -56,6 +56,11 @@ export function createFailureSelectors(options: { errorStreak?: number } = {}): 
         });
       }
 
+      // Record the streak before the doom-loop check: that check can return early, and a success
+      // must still reset the streak on the very call that arms `repeated_call`.
+      const streak = result.isError ? (streaks.get(toolCall.name) ?? 0) + 1 : 0;
+      streaks.set(toolCall.name, streak);
+
       doom.record(toolCall.name, toolCall.input);
       const loop = doom.check();
       if (loop.detected && loop.toolName) {
@@ -68,8 +73,6 @@ export function createFailureSelectors(options: { errorStreak?: number } = {}): 
         if (signal) return signal;
       }
 
-      const streak = result.isError ? (streaks.get(toolCall.name) ?? 0) + 1 : 0;
-      streaks.set(toolCall.name, streak);
       if (streak >= errorStreak) {
         return arm({
           kind: "repeated_error",
