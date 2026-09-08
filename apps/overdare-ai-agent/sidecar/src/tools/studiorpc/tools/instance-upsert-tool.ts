@@ -74,10 +74,12 @@ export async function executeInstanceUpsertInner(
         const added: { guid: string; name: string; class: string }[] = [];
         for (const item of parsedArgs.items) {
           if (instanceUpsert.isUpdateItem(item)) {
-            updateInstancesInDocument(root, [item], writeOptions);
+            updateInstancesInDocument(root, [{ ...item, properties: item.properties ?? {} }], writeOptions);
             continue;
           }
-          added.push(...addInstancesInDocument(rootDoc, [item], writeOptions));
+          added.push(
+            ...addInstancesInDocument(rootDoc, [{ ...item, properties: item.properties ?? {} }], writeOptions),
+          );
         }
 
         // A top-level object's Mobility governs its whole assembly, so cascade it
@@ -170,6 +172,7 @@ export function createInstanceUpsertTool(
     name: toToolName(instanceUpsert.method),
     description: instanceUpsert.description,
     parameters: instanceUpsert.params,
+    parseArgs: instanceUpsert.parseInput,
     async execute(args, ctx) {
       return executeInstanceUpsert(args, ctx, cwd, writeLock, applyLevelChanges);
     },

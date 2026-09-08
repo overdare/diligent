@@ -334,6 +334,8 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    include!("../test/init_deprecated_guides.rs");
+
     #[test]
     fn config_jsonc_is_never_overwritten_on_full_sync() {
         // The whole point of the fix: an applied update (FullSync) must not

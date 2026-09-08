@@ -1,4 +1,51 @@
-# Editor tool unification verification
+# Editor compatibility transition verification
+
+## Current implementation
+
+The compatibility restoration starts from reviewed head `ced206e9`. The upsert
+catalog, class-bound validation, defaults, ObjectType handling, and VFX conversion
+are restored from preview `4dac65bc`. Editor Luau and supplementary schema search
+remain available. Read-only WorldTransform/Size and generic Source access remain
+independent of the restored write catalog. Deprecated skill and agent entries
+replace installed instructions through existing applied-update synchronization.
+
+The former procedural-builder was a local Luau runner; geometry-recipe authored
+native Python meshes. They were distinct workflows, now replaced by the shared
+Editor path rather than retained as duplicate authoring systems.
+
+A separate stacked draft holds the long-term schema discovery plan. Full class
+listing is pending a confirmed Studio request/build contract; the temporary PR
+does not depend on it and does not claim that the intended API excludes listing.
+
+## Compatibility-stage validation
+
+- The restored upsert tests reproduced nine failures before the class-bound
+  implementation was restored. The final compatibility suite passes.
+- `bun run lint` and `bun run typecheck` pass; package `bun test`: 2,448 passed.
+- Related sidecar, MCP, and packaging tests run in 21 isolated files: 307 passed.
+- `cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml --lib init::tests`:
+  seven passed, including actual deprecated bootstrap assets in fresh, MissingOnly,
+  and FullSync installations with user-added entries preserved.
+- The advertised cross-class union must not apply defaults before the target class
+  is known. A separate structural parse hook preserves raw inputs until the
+  class-bound parser runs. Tests through the shared tool executor verify that
+  Folder creation and partial updates do not receive Part creation defaults.
+- Live Windows Studio at 10.40.32.110:13378: the shared tool executor created a
+  disposable Part through compatibility upsert (including untagged vector/CFrame
+  inputs), read back Anchored=true, and patched CanCollide=false. A temporary
+  ProceduralModel used the retained minimal native example plus an optional Metal
+  accent. After the initial command ended, toggling only accent_enabled produced
+  Surface -> Surface+Accent -> Surface without changing or resubmitting Source.
+  Both temporary objects were deleted, absence was confirmed, and the level saved.
+  This checks the adapted example and automatic regeneration, not arbitrary model
+  quality, Undo, or reopening durability. v1 was covered by file/TCP tests, not
+  by replacing the user's live world file.
+
+## Earlier implementation evidence
+
+The following sections describe the earlier unified implementation through
+`ced206e9`, including contracts subsequently revised by the compatibility stage
+above. Their validation counts and live observations are historical evidence.
 
 Date: 2026-09-08. Target: `preview/release-40`.
 

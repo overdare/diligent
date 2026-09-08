@@ -10,7 +10,7 @@ import net from "node:net";
 import { EOL, tmpdir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import type { Tool } from "@diligent/core/tool-contract";
+import { executeTool, type Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { checkResult } from "../../../src/tools/studiorpc/tools/v2/result";
 
@@ -255,44 +255,94 @@ describe("v2 argument conversion", () => {
     expect(paramsOf("instance.delete")).toEqual({ ActorGuids: [PART_GUID, FOLDER_B_GUID] });
   });
 
-  test("forwards tagged VFX JSON unchanged without injecting tags or playback defaults", async () => {
-    const properties = {
-      BaseLayer: [
-        {
-          NiagaraSystem: "/CommonContent/VFX/Layer/0_Base/FireRise_A/VFX_UGC_Base_FireRise_A.VFX_UGC_Base_FireRise_A",
-          Position: { ObjectType: "Vector3", X: 1, Y: 2, Z: 3 },
-          Color: [{ ObjectType: "Color3", R: 1, G: 2, B: 3, Time: 0 }],
-        },
-      ],
-    };
-    const tools = await loadTools(makeStudioProject());
-    await tools
-      .get("studiorpc_instance_upsert")!
-      .execute({ items: [{ class: "VFXRecipe", parentGuid: FOLDER_A_GUID, name: "VFX", properties }] }, toolContext());
-    const payload = (paramsOf("instance.create")!.Instances as Record<string, unknown>[])[0];
-    expect(payload).toEqual({ InstanceType: "VFXRecipe", Name: "VFX", ...properties });
+  test.each(["v1", "v2"])("the tool executor does not inject another class's defaults on %s", async (version) => {
+    process.env.STUDIO_API_VERSION = version;
+    const cwd = makeStudioProject();
+    const tools = await loadTools(cwd);
+    const name = "studiorpc_instance_upsert";
+    const created = await executeTool(
+      tools,
+      {
+        type: "tool_call",
+        id: "folder",
+        name,
+        input: { items: [{ class: "Folder", parentGuid: WORKSPACE_GUID, name: "Bare", properties: {} }] },
+      },
+      toolContext(),
+    );
+    expect(created.metadata?.error).not.toBe(true);
     rpcCalls.length = 0;
+    const patched = await executeTool(
+      tools,
+      {
+        type: "tool_call",
+        id: "patch",
+        name,
+        input: { items: [{ guid: PART_GUID, properties: { CanCollide: false } }] },
+      },
+      toolContext(),
+    );
+    expect(patched.metadata?.error).not.toBe(true);
+    if (version === "v2") {
+      expect(paramsOf("instance.update")).toEqual({ Instances: [{ ActorGuid: PART_GUID, CanCollide: false }] });
+    } else {
+      const part = findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, PART_GUID)!;
+      expect(part.CanCollide).toBe(false);
+      expect(part).not.toHaveProperty("Anchored");
+      expect(part).not.toHaveProperty("CanTouch");
+    }
+  });
+
+  test.each(["v1", "v2"])("preserves VFX normalization and defaults on %s", async (version) => {
+    process.env.STUDIO_API_VERSION = version;
+    const cwd = makeStudioProject();
+    const tools = await loadTools(cwd);
     await tools.get("studiorpc_instance_upsert")!.execute(
       {
         items: [
           {
             class: "VFXRecipe",
             parentGuid: FOLDER_A_GUID,
-            name: "Bare",
-            properties: { BaseLayer: [{ Position: { X: 1, Y: 2, Z: 3 } }] },
+            name: "VFX",
+            properties: { BaseLayer: [{ Name: "Fire", NiagaraSystem: "FireRise_A", Position: { X: 1, Y: 2, Z: 3 } }] },
           },
         ],
       },
       toolContext(),
     );
-    expect((paramsOf("instance.create")!.Instances as Record<string, unknown>[])[0]).toEqual({
-      InstanceType: "VFXRecipe",
-      Name: "Bare",
-      BaseLayer: [{ Position: { X: 1, Y: 2, Z: 3 } }],
+    const payload =
+      version === "v2"
+        ? (paramsOf("instance.create")!.Instances as WorldNode[])[0]
+        : findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, FOLDER_A_GUID)!
+            .LuaChildren![0];
+    expect(payload).toMatchObject({
+      AutoActivate: true,
+      InfiniteLoop: true,
+      LoopCount: 1,
+      BaseLayer: [
+        {
+          NiagaraSystem: "/CommonContent/VFX/Layer/0_Base/FireRise_A/VFX_UGC_Base_FireRise_A.VFX_UGC_Base_FireRise_A",
+          Position: { ObjectType: "Vector3", X: 1, Y: 2, Z: 3 },
+        },
+      ],
     });
   });
 
-  test("searches, creates, and reads a future class without a local schema catalog", async () => {
+  test.each(["v1", "v2"])("validates existing class patches before writing on %s", async (version) => {
+    process.env.STUDIO_API_VERSION = version;
+    const cwd = makeStudioProject();
+    const original = readFileSync(join(cwd, "Test.ovdrjm"));
+    const tools = await loadTools(cwd);
+    for (const properties of [{ CanCollide: "invalid" }, { WorldTransform: {} }]) {
+      await expect(
+        tools.get("studiorpc_instance_upsert")!.execute({ items: [{ guid: PART_GUID, properties }] }, toolContext()),
+      ).rejects.toThrow();
+    }
+    expect(readFileSync(join(cwd, "Test.ovdrjm"))).toEqual(original);
+    expect(rpcCalls.some((c) => ["instance.update", "level.apply"].includes(c.method))).toBe(false);
+  });
+
+  test("discovers and reads future classes without changing the compatibility upsert contract", async () => {
     const properties = { FutureValue: { ObjectType: "FutureValue", Nested: [1, 2] } };
     respond = (method, params) =>
       method === "instance.schema.search"
@@ -313,23 +363,24 @@ describe("v2 argument conversion", () => {
       .get("studiorpc_instance_schema_search")!
       .execute({ classes: ["FutureWidget"] }, toolContext());
     expect(JSON.parse(search.output).classes[0].class).toBe("FutureWidget");
-    const result = await tools
-      .get("studiorpc_instance_upsert")!
-      .execute(
-        { items: [{ class: "FutureWidget", parentGuid: FOLDER_A_GUID, name: "Future", properties }] },
-        toolContext(),
-      );
-    expect(result.metadata?.error).not.toBe(true);
-    expect(paramsOf("instance.create")).toMatchObject({
-      Instances: [{ InstanceType: "FutureWidget", Name: "Future", ...properties }],
-    });
+    await expect(
+      tools
+        .get("studiorpc_instance_upsert")!
+        .execute(
+          { items: [{ class: "FutureWidget", parentGuid: FOLDER_A_GUID, name: "Future", properties }] },
+          toolContext(),
+        ),
+    ).rejects.toThrow();
+    expect(paramsOf("instance.create")).toBeUndefined();
     world.LuaChildren!.push({ ActorGuid: "FUTURE", InstanceType: "FutureWidget", Name: "Future", ...properties });
     const read = await tools.get("studiorpc_instance_read")!.execute({ guid: "FUTURE" }, toolContext());
     expect(JSON.parse(read.output).properties).toEqual(properties);
-    await tools
-      .get("studiorpc_instance_upsert")!
-      .execute({ items: [{ guid: "FUTURE", properties: { FutureValue: 9 } }] }, toolContext());
-    expect(paramsOf("instance.update")).toMatchObject({ Instances: [{ ActorGuid: "FUTURE", FutureValue: 9 }] });
+    await expect(
+      tools
+        .get("studiorpc_instance_upsert")!
+        .execute({ items: [{ guid: "FUTURE", properties: { FutureValue: 9 } }] }, toolContext()),
+    ).rejects.toThrow(/Unsupported instance class/);
+    expect(paramsOf("instance.update")).toBeUndefined();
   });
 
   test("issues one instance.create per parent and reports the GUIDs Studio returned", async () => {

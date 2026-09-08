@@ -55,12 +55,12 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
     if (isUpdateItem(item)) {
       const target = findNodeByActorGuid(root, item.guid);
       const before = target ? { ...target } : {};
-      updateInstancesInDocument(root, [item], writeOptions);
+      updateInstancesInDocument(root, [{ ...item, properties: item.properties ?? {} }], writeOptions);
       if (target) updateInstances.push({ ActorGuid: item.guid, ...changedProperties(before, target) });
       continue;
     }
 
-    const [metadata] = addInstancesInDocument(document, [item], writeOptions);
+    const [metadata] = addInstancesInDocument(document, [{ ...item, properties: item.properties ?? {} }], writeOptions);
     const node = findNodeByActorGuid(root, metadata.guid);
     if (!node) throw new Error(`Locally added instance disappeared: ${metadata.guid}`);
     added.push(metadata);

@@ -50,7 +50,7 @@ actually imported.
 
 ## 5. Placement pattern
 
-Query `studiorpc_instance_schema_search` for the relevant transform JSON shapes, then use the returned GUIDs as exact update targets for `studiorpc_instance_upsert`. Use `studiorpc_instance_move` only for reparenting; it does not translate objects. Place
+Use the bundled upsert parameters for known transform JSON shapes; supplement with `studiorpc_instance_schema_search` when needed. Use the returned GUIDs as exact update targets for `studiorpc_instance_upsert`, or edit through Editor Luau. Use `studiorpc_instance_move` only for reparenting; it does not translate objects. Place
 structure before fixtures and scatter props. Read back the target subtree after a
 batch so the next placement uses current positions rather than stale assumptions.
 

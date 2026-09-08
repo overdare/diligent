@@ -1,25 +1,7 @@
-// @summary Protects known Studio singleton roots independently of editable class schemas.
+// @summary Keeps singleton protection shared with the compatibility class catalog.
+import { serviceClassEnum } from "./instance.params";
 
-const protectedInstanceClasses = new Set<string>([
-  "Workspace",
-  "Lighting",
-  "Atmosphere",
-  "Players",
-  "StarterPlayer",
-  "MaterialService",
-  "HttpService",
-  "CollectionService",
-  "DataModel",
-  "DataStoreService",
-  "PhysicsService",
-  "RunService",
-  "ServerScriptService",
-  "ServerStorage",
-  "StarterCharacterScripts",
-  "StarterGui",
-  "StarterPlayerScripts",
-  "ReplicatedStorage",
-]);
+const protectedInstanceClasses = new Set<string>(serviceClassEnum.options);
 
 export function isProtectedInstanceClass(className: string): boolean {
   return protectedInstanceClasses.has(className);

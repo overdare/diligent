@@ -26,21 +26,21 @@ function fixture() {
   );
   writeFileSync(join(cwd, "Test.umap"), "");
   writeFileSync(path, original);
-  const args = parseArgs({ items: [{ guid: "P", properties: { CanCollide: "invalid" } }] });
+  const args = parseArgs({ items: [{ guid: "P", properties: { CanCollide: false } }] });
   return { cwd, path, original, args };
 }
 
 describe("v1 instance.upsert apply recovery", () => {
   test("restores exact pre-write bytes on rejection and preserves the original error", async () => {
     const { cwd, path, original, args } = fixture();
-    const failure = new Error("Studio rejected invalid CanCollide");
+    const failure = new Error("Studio rejected level apply");
     let attempts = 0;
     let caught: unknown;
     try {
       await executeInstanceUpsertInner(args, cwd, {
         applyLevelChanges: async () => {
           attempts++;
-          expect(JSON.parse(readFileSync(path, "utf8")).Root.LuaChildren[0].CanCollide).toBe("invalid");
+          expect(JSON.parse(readFileSync(path, "utf8")).Root.LuaChildren[0].CanCollide).toBe(false);
           throw failure;
         },
       });
@@ -49,7 +49,7 @@ describe("v1 instance.upsert apply recovery", () => {
     }
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).cause).toBe(failure);
-    expect((caught as Error).message).toContain("Studio rejected invalid CanCollide");
+    expect((caught as Error).message).toContain("Studio rejected level apply");
     expect((caught as Error).message).toContain("file restored");
     expect((caught as Error).message).toContain("Studio state is unconfirmed");
     expect(readFileSync(path)).toEqual(original);
@@ -107,6 +107,6 @@ describe("v1 instance.upsert apply recovery", () => {
       },
     });
     expect(attempts).toBe(0);
-    expect(JSON.parse(readFileSync(path, "utf8")).Root.LuaChildren[0].CanCollide).toBe("invalid");
+    expect(JSON.parse(readFileSync(path, "utf8")).Root.LuaChildren[0].CanCollide).toBe(false);
   });
 });

@@ -1,17 +1,15 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
-import { instancePropertiesSchema } from "./instance-properties";
-import { isProtectedInstanceClass } from "./instance-safety";
+import { instanceClassEnum, instancePropertiesSchema, serviceClassEnum } from "./instance.params";
+import {
+  parseInstanceCreateProperties,
+  instancePropertiesSchema as writePropertiesSchema,
+} from "./instance-properties";
 
 const addParams = z
   .object({
-    class: z
-      .string()
-      .min(1)
-      .refine((className) => !isProtectedInstanceClass(className), {
-        message: "A Service cannot be added; update it by guid instead.",
-      }),
-    parentGuid: z.string().min(1),
+    class: instanceClassEnum,
+    parentGuid: z.string(),
     name: z.string(),
     properties: instancePropertiesSchema,
   })
@@ -21,7 +19,6 @@ const updateParams = z
   .object({
     guid: z
       .string()
-      .min(1)
       .describe("Target instance GUID. Only for updating existing instances; do not include when creating new ones."),
     name: z.string().optional(),
     properties: instancePropertiesSchema,
@@ -49,7 +46,7 @@ export const params = z
 export const method = "instance.upsert";
 
 export const description =
-  "Upsert instances in batch. Discover classes and JSON property shapes with studiorpc_instance_schema_search first. Pass exact Studio JSON (including ObjectType tags and full asset paths); no local class whitelist, defaults, or value transformations are applied. Studio validates class/property semantics. " +
+  "Upsert instances in batch. The bundled input schema supplies the compatibility class/property reference, validation, defaults, and JSON conversions. Use its class and property hints when planning Editor Luau; JSON schemas do not define Luau methods. Live schema search is supplementary and does not replace this tool's validation. " +
   "Do not mix adds and updates in a single call — use one call for all adds, another for all updates. " +
   "Start with a small number of items first, then increase up to 100 if needed. " +
   "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. " +
@@ -66,9 +63,69 @@ export function isUpdateItem(value: InstanceUpsertItemArgs): value is InstanceUp
   return "guid" in value && typeof value.guid === "string";
 }
 
-/** Validates the envelope only; Studio owns class/property membership and value semantics. */
-export function parseArgs(value: unknown): InstanceUpsertArgs {
-  return params.parse(value);
+/**
+ * Validates properties of each item against the class-specific schema for precise error messages.
+ * Falls back to the raw ZodError if no class-specific issues are found.
+ */
+const inputEnvelope = z
+  .object({
+    items: z
+      .array(
+        z.union([
+          z
+            .object({
+              class: instanceClassEnum,
+              parentGuid: z.string(),
+              name: z.string(),
+              properties: writePropertiesSchema.optional(),
+            })
+            .strict(),
+          z
+            .object({ guid: z.string(), name: z.string().optional(), properties: writePropertiesSchema.optional() })
+            .strict(),
+        ]),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict();
+
+/** Do not run the advertised cross-class union's defaults before class-bound parsing. */
+export function parseInput(value: unknown) {
+  return inputEnvelope.parse(value);
+}
+
+export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
+  const result = inputEnvelope.safeParse(value);
+  if (result.success) {
+    return {
+      items: result.data.items.map((item) => {
+        if ("guid" in item) return { ...item, properties: item.properties ?? {} };
+        return { ...item, properties: parseInstanceCreateProperties(item.class, item.properties) };
+      }),
+    } as InstanceUpsertArgs;
+  }
+
+  const items = Array.isArray(value.items) ? (value.items as Record<string, unknown>[]) : [];
+  const details: string[] = [];
+  const serviceClasses = new Set<string>(serviceClassEnum.options);
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || typeof item !== "object") continue;
+    const cls = typeof item.class === "string" ? item.class : undefined;
+    if (cls && serviceClasses.has(cls)) {
+      details.push(`  [items[${i}]] "${cls}" is a Service — it cannot be added, only updated by guid.`);
+      continue;
+    }
+    validateItemProperties(item, `items[${i}]`, details);
+  }
+
+  if (details.length > 0) {
+    throw new Error(details.join("\n"));
+  }
+  // No class-specific issues found — throw the original zod error
+  throw result.error;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,3 +473,14 @@ function walkNodes(
 }
 
 // ---------------------------------------------------------------------------
+
+function validateItemProperties(item: Record<string, unknown>, path: string, details: string[]): void {
+  const className = typeof item.class === "string" ? item.class : undefined;
+  if (!className) return;
+  try {
+    parseInstanceCreateProperties(className, item.properties);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    details.push(...message.split("\n").map((line) => `  [${path}] ${line.trim()}`));
+  }
+}

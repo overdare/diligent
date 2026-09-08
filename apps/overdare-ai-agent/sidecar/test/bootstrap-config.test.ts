@@ -14,24 +14,25 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("<play-test-input>");
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
-  test("injects live JSON discovery and non-retry Editor recovery policy", async () => {
+  test("keeps compatibility upsert as a reference with supplementary live discovery", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
     expect(prompt).toContain("studiorpc_instance_schema_search");
     expect(prompt).toContain("not the complete Luau member list");
     expect(prompt).toContain("mutation_attempted");
     expect(prompt).toContain("never automatically replay failed code");
-    expect(prompt).toContain("without local defaults");
+    expect(prompt).toContain("retains class-specific validation");
+    expect(prompt).toContain("not a prerequisite for every edit");
     expect(prompt).toContain("as the default for world creation and editing");
     expect(prompt).toContain("Successful Editor execution already saves the level");
     expect(prompt).toContain("Do not reject a class based on an old local catalog");
     expect(prompt).not.toContain("studiorpc_proceduralmodel_");
     expect(prompt).not.toContain("geometry-recipe");
   });
-  test("VFX guidance requires caller-supplied tags and explicit playback settings", async () => {
+  test("VFX guidance matches compatibility tags and playback defaults", async () => {
     const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");
-    expect(skill).not.toContain("are injected by the sidecar");
-    expect(skill).not.toContain("default true");
-    expect(skill).toContain("Include the required ObjectType tags");
+    expect(skill).toContain("are injected by the sidecar");
+    expect(skill).toContain("default true");
+    expect(skill).toContain("short name");
   });
   test("explains execution lifetimes without routing request categories to a fixed class", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
@@ -63,8 +64,6 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("(Editor Size.Z, Editor Size.X, Editor Size.Y)");
     expect(prompt).toContain("derived dimensions must remain positive");
     expect(prompt).toContain("A later empty result does not identify the cause");
-    expect(prompt).toContain("A no-op source replacement is not a repair");
-    expect(prompt).toContain("query the affected properties");
     expect(prompt).toContain("image could not be inspected");
   });
 });

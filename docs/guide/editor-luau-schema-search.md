@@ -1,12 +1,13 @@
-# Editor Luau and live instance schemas
+# Editor Luau with compatibility upsert schemas
 
 The OVERDARE bundled Studio provider exposes `studiorpc_instance_schema_search`
 and `studiorpc_execute_luau`. These are product tools using the existing tool
 result/approval protocol, so Web and TUI receive the same output and error state.
 No client-specific RPC method or UI is required.
 
-Use one authoring workflow: discover the running Studio's classes and editable
-properties, edit the world with Editor Luau, and read back the affected objects.
+Use the bundled upsert input schema for known JSON classes and properties,
+supplement it with live discovery when needed, edit with Editor Luau, and read back
+the affected objects. The upsert JSON schema does not define Luau method support.
 Existing instance and script tools remain available for focused reads and text
 edits. The agent does not select a separate authoring tool family for each class.
 
@@ -25,11 +26,15 @@ can use when it satisfies the requested behavior.
 
 ## Discovering JSON properties
 
-`instance.schema.search` accepts a non-empty `query`, `classes` containing 1–20
+The currently verified `instance.schema.search` contract accepts a non-empty `query`, `classes` containing 1–20
 non-empty exact class names, or both. Search is case-insensitive substring matching
 against class/property names; combined filters search within the selected classes.
 A class-name match includes every exposed property. `limit` and `cursor` are not
-supported. Invalid filters produce Studio error `-32602`.
+supported by this adapter. Invalid filters produce Studio error `-32602`.
+The connected Studio rejected `{}` and an empty query, while `{"query":"*"}`
+returned no classes. These are observations of the tested requests/build, not a
+claim that the intended Studio specification excludes full class discovery. Full
+class enumeration remains pending a confirmed request contract and live validation.
 
 Results preserve `schemaVersion`, `classes`, `class`, `creatable`, `service`, and
 property `name`, `declaredOn`, optional `writeCondition`, and optional `valueSchema`.
@@ -44,15 +49,18 @@ on an unrelated search result.
 Schema discovery is read-only and does not request execute permission or save the
 world. Do not treat an old local list of unsupported classes as authoritative.
 
-The former `instance.params.ts` catalog is removed. Upsert validates the request
-structure and protects tool-owned identity/hierarchy keys; Studio validates class
-membership and value semantics. New classes and properties are forwarded without
-local allowlists. Known singleton roots retain their creation/move/delete guards.
-Read preserves JSON properties for unknown classes. Neither path injects class
-defaults, infers ObjectType tags, expands VFX short names, or strips unknown values.
-Use the complete JSON shapes from live hints/current instance reads, and full VFX
-asset paths. The legacy v1 file-edit path also preserves supplied JSON; it still
-requires Studio apply/save to validate and synchronize edits.
+The compatibility `instance.params.ts` catalog remains in the upsert tool input.
+Both v1 and v2 retain class-specific validation, creation defaults, ObjectType
+handling, and VFX short-name conversion. Updates validate against the existing
+class and do not inject unrelated creation defaults. Live search does not alter
+that accepted input contract, and search success is not required for edits already
+covered by the bundled reference. Classes outside the catalog, including native
+ProceduralModel, can still be authored with documented Editor APIs; this does not
+make them accepted by compatibility upsert.
+
+Readback remains independent of the static write catalog: unknown class/property
+JSON is preserved without injecting defaults. Known singleton roots retain their
+creation/move/delete guards.
 
 `WorldTransform` is a read-only derived cache. Instance reads preserve it and
 `Size` when supplied by Studio or the saved level, so callers can inspect spatial
@@ -84,7 +92,7 @@ For example, the following command uses the documented instance creation path:
 {"target":"Editor","code":"local p = Instance.new('Part'); p.Name = 'AgentPart'; p.Parent = workspace; return p.Name"}
 ```
 
-Discover the target class first. Create related containers before their children
+Use the bundled class/property hints or supplementary discovery. Create related containers before their children
 within one command, and return a small verification summary rather than the whole
 world. A focused readback proves properties, not visual appearance or gameplay.
 
@@ -137,17 +145,24 @@ Studio-side generator; those capabilities remain owned by Studio.
 
 ## Procedural removal and release
 
-The procedural dummy-JSON runner, tool, builder skill/agent, experiment and interpreter
-bundle are retired. The separate `proceduralmodel.api`, `proceduralmodel.validate`,
-and `proceduralmodel.set` tools and geometry-recipe skill/agent are also retired.
-Their API-output narrowing layer is no longer needed. Editor Luau is the default
-world-editing path. Existing user recipe files and installed global skill/agent
-definitions are not removed automatically.
-During release validation, check `~/.overdare/skills/procedural-builder/` and
-`~/.overdare/agents/procedural-builder/` (use `~/.overdare-dev/` for dev installs).
-Also check `skills/geometry-recipe/` and `agents/geometry-recipe/` under the same
-global storage directory. Back up any customizations, then manually remove obsolete
-bundled definitions when present. Leftover definitions do not restore removed tools.
+The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
+`proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
+and its Source format are retained in Studio.
+
+Both `procedural-builder` and `geometry-recipe` remain as short deprecated
+compatibility guides under bootstrap skills and agents (four entries total).
+Their names are stable so an applied update's existing `FullSync` replaces old
+installed instructions. Each points to Editor Luau and the shared native Source
+reference rather than restoring a separate runner or tool family. User-created
+entries with other names remain untouched; project world/source files are not
+migrated or removed.
+
+Ordinary startup uses `MissingOnly` and does not replace existing entries.
+`scripts/dev-cross-studio.sh` also only creates missing links; restarting it is not
+an upgrade of installed copies. Validate migration through the actual applied
+runtime update / local runtime bundle install path. For development, use explicitly
+configured bootstrap paths or refresh just the known product-owned copies after
+backing up customizations. Do not delete the global skills/agents directories.
 
 Procedural modeling represents a form as generation rules plus parameters. The
 rules encode relationships among generated parts; rerunning them with different
@@ -208,10 +223,12 @@ this PR does not authorize an automatic preview/main merge or deployment.
 
 ## Verification boundaries
 
-Tests use injected responses and a local TCP Studio stand-in to verify filter
-validation, future-class search/create/read/update, exact JSON forwarding, failure
-metadata, no retry, read-only schema discovery, approval rejection, removal of the
-procedural tool/skill/agent surface, and successful execution followed by save
-failure. They run after removing the old static catalog. They do not prove actual
-Editor VM behavior, world persistence, Undo, resource limits or Studio compatibility;
-those require a running compatible Editor before release.
+Tests use injected responses and a local TCP Studio stand-in to verify the
+compatibility upsert validators/conversions, supplementary future-class discovery,
+read-only spatial data, phase-specific Editor failures, cancellation, approval and
+save ordering. MCP tests verify that deprecated guides remain loadable without
+restoring retired tools. Installer tests use the actual bootstrap guides to verify
+fresh installation, applied-update replacement, and preservation of user entries.
+These checks do not establish model adherence or native geometry quality. Live
+Studio generation and parameter-change checks are recorded separately in
+`docs/review/editor-tool-unification.md`.
