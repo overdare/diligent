@@ -368,59 +368,51 @@ export class DiligentAppServer {
       void this.emitFromAgentEvent(runtime.id, turnId, event);
     });
 
+    const controller = runtime.abortController;
+    let terminal: "completed" | "interrupted" | undefined;
     try {
       await runPromise;
-      wireCollabHandler(); // wire any registry created during the run
-
-      // Stop hooks (shell + plugin) are fired via SessionManager.onStop,
-      // which covers both this parent turn and all child agent turns uniformly.
-
-      // Ensure all session entries are durably persisted before signaling completion.
       await runtime.manager.waitForWrites();
-      await this.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
-        params: { threadId: runtime.id, turnId },
-      });
+      if (runtime.currentTurnId === turnId) terminal = "completed";
     } catch (error) {
-      const isAbort =
-        (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
-        runtime.abortController?.signal.aborted === true;
-
-      if (isAbort) {
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
-          params: { threadId: runtime.id, turnId },
-        });
-      } else {
-        await this.emit({
-          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
-          params: {
-            threadId: runtime.id,
-            error: toSerializableError(error),
-            fatal: false,
-          },
-        });
+      if (runtime.currentTurnId === turnId) {
+        const isAbort =
+          (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
+          controller?.signal.aborted === true;
+        if (isAbort) terminal = "interrupted";
+        else
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+            params: { threadId: runtime.id, error: toSerializableError(error), fatal: false },
+          });
       }
     } finally {
       unsub();
-      // Disconnect collab event handlers from every registry instance wired during this turn.
-      for (const registry of wiredRegistries) {
-        registry.setCollabEventHandler(undefined);
+      for (const registry of wiredRegistries) registry.setCollabEventHandler(undefined);
+      if (runtime.currentTurnId === turnId) {
+        runtime.turnWork = undefined;
+        resetTurnRuntimeState(runtime);
+        if (terminal)
+          await this.emit({
+            method:
+              terminal === "completed"
+                ? DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED
+                : DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
+            params: { threadId: runtime.id, turnId },
+          });
+        // A client may already have started a replacement from the terminal notification.
+        if (runtime.currentTurnId === null)
+          await this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+            params: { threadId: runtime.id, status: "idle" },
+          });
       }
-
-      resetTurnRuntimeState(runtime);
-      await this.emit({
-        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-        params: { threadId: runtime.id, status: "idle" },
-      });
-
-      // On turn end (including interruption), pending steering remains queued
-      // until an explicit subsequent turn is started by the client.
     }
   }
 
   private async emitFromAgentEvent(threadId: string, turnId: string, event: AgentEvent): Promise<void> {
     const runtime = this.threads.get(threadId);
+    if (!runtime || runtime.currentTurnId !== turnId) return;
     const outboundEvent =
       event.type === "error"
         ? {
@@ -500,14 +492,23 @@ export class DiligentAppServer {
       return;
     }
 
+    const isTurnLifecycle =
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED ||
+      notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED;
+    const turnAtEmission = this.threads.get(threadId)?.currentTurnId;
+
     // Thread-scoped: route to subscribed connections; fallback to all if none subscribed
     const subscribers = [...this.connections.values()].filter((c) => c.subscriptions.has(threadId));
     const targets = subscribers.length > 0 ? subscribers : [...this.connections.values()];
 
     for (const conn of targets) {
+      if (isTurnLifecycle && this.threads.get(threadId)?.currentTurnId !== turnAtEmission) continue;
       // Skip the turn initiator's own user-message echo. Structured context
       // notices are separate events, so they still reach every subscriber.
       if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT) {
+        if (this.threads.get(threadId)?.currentTurnId !== notification.params.turnId) continue;
         const params = notification.params as {
           event?: { type?: string; message?: { content?: unknown } };
           threadId?: string;

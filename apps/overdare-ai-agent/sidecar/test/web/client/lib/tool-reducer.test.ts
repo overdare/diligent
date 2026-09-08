@@ -393,3 +393,20 @@ test("tool_end with childThreadId marks child tool as done", () => {
     expect(collab.childTimeline?.[0]).toMatchObject({ kind: "tool", status: "done", outputText: "result" });
   }
 });
+
+test("completed tool preserves protocol images for preview", () => {
+  const outputImages = [
+    { type: "image" as const, source: { type: "base64" as const, media_type: "image/png" as const, data: "aGVsbG8=" } },
+  ];
+  const state = reduceToolEvent(initialThreadState, toolStartEvent({ toolName: "read_image" }));
+  const next = reduceToolEvent(state, {
+    type: "tool_end",
+    itemId: "item-a",
+    toolCallId: "tc-a",
+    toolName: "read_image",
+    output: "Loaded image",
+    isError: false,
+    outputImages,
+  });
+  expect(next.items[0]).toMatchObject({ kind: "tool", outputImages });
+});

@@ -229,3 +229,117 @@ describe("turn-execution", () => {
     expect(visibleConversationItems.length).toBeGreaterThanOrEqual(4);
   });
 });
+
+test("interrupt retires the turn before tool cleanup and never revives cancelled queued turns", async () => {
+  let finishTool!: () => void;
+  let toolStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    toolStarted = resolve;
+  });
+  const cleanup = new Promise<void>((resolve) => {
+    finishTool = resolve;
+  });
+  let modelCalls = 0;
+  const scripted = createToolUseStream([{ id: "slow-tool", name: "slow_tool", input: {} }], "next response");
+  await setup({
+    streamFunction: (...args) => {
+      modelCalls++;
+      return scripted(...args);
+    },
+    tools: [
+      {
+        name: "slow_tool",
+        description: "Deferred tool cleanup",
+        parameters: z.object({}),
+        async execute() {
+          toolStarted();
+          await cleanup;
+          return { output: "late result" };
+        },
+      },
+    ],
+  });
+  const threadId = await client.initAndStartThread(tmpDir);
+  try {
+    await client.request("turn/start", { threadId, message: "first" });
+    await started;
+    const firstTurn = client.notifications.find((n) => n.method === "turn/started")!.params as { turnId: string };
+    const startIndex = client.notifications.length;
+    expect(await client.request("turn/interrupt", { threadId })).toEqual({ interrupted: true });
+    expect(client.notifications.slice(startIndex).some((n) => n.method === "turn/interrupted")).toBe(true);
+    expect(await client.request("thread/read", { threadId })).toMatchObject({ isRunning: false });
+
+    // A replacement can be accepted while cleanup is pending, and cancelled again without waiting for it.
+    const replacement = client.request("turn/start", { threadId, message: "cancel this replacement" });
+    await client.waitFor((n) => n.method === "turn/started" && n.params.turnId !== firstTurn.turnId);
+    expect(modelCalls).toBe(1);
+    expect(await client.request("turn/interrupt", { threadId })).toEqual({ interrupted: true });
+    expect(await client.request("thread/read", { threadId })).toMatchObject({ isRunning: false });
+    expect(client.notifications.filter((n) => n.method === "turn/interrupted")).toHaveLength(2);
+
+    finishTool();
+    await replacement;
+    await client.sendTurnAndWait(threadId, "final replacement");
+    expect(modelCalls).toBe(2);
+    const late = client.notifications
+      .slice(startIndex)
+      .filter((n) => "turnId" in n.params && n.params.turnId === firstTurn.turnId && n.method !== "turn/interrupted");
+    expect(late).toEqual([]);
+    expect(client.notifications.filter((n) => n.method === "turn/interrupted")).toHaveLength(2);
+    expect(await client.request("turn/interrupt", { threadId })).toEqual({ interrupted: false });
+  } finally {
+    finishTool();
+  }
+});
+
+for (const phase of ["prompt", "stop"] as const) {
+  test(`interrupt acknowledges before a deferred ${phase} hook completes`, async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-stop-hook-"));
+    let enterHook!: () => void;
+    let releaseHook!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enterHook = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseHook = resolve;
+    });
+    let hookCalls = 0;
+    const hook = async () => {
+      if (hookCalls++ > 0) return { blocked: false };
+      enterHook();
+      await gate;
+      return { blocked: phase === "prompt", reason: "late hook result" };
+    };
+    const server = createTestServer({
+      cwd: tmpDir,
+      bundledToolProviders: [
+        {
+          id: "deferred-hook",
+          createTools: () => [],
+          ...(phase === "prompt" ? { onUserPromptSubmit: hook } : { onStop: hook }),
+        },
+      ],
+    });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+    const start = client.request("turn/start", { threadId, message: "hook test" });
+    try {
+      await entered;
+      const boundary = client.notifications.length;
+      expect(await client.request("turn/interrupt", { threadId })).toEqual({ interrupted: true });
+      expect(client.notifications.slice(boundary).map((n) => n.method)).toEqual([
+        "turn/interrupted",
+        "thread/status/changed",
+      ]);
+      expect(await client.request("thread/read", { threadId })).toMatchObject({ isRunning: false });
+      releaseHook();
+      await start;
+      // Drains prior cleanup through the public execution boundary.
+      await client.sendTurnAndWait(threadId, "after hook");
+      expect(client.notifications.filter((n) => n.method === "turn/interrupted")).toHaveLength(1);
+      expect(client.notifications.filter((n) => n.method === "error")).toHaveLength(0);
+    } finally {
+      releaseHook();
+    }
+  });
+}

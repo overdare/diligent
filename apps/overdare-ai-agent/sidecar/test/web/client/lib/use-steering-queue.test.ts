@@ -112,6 +112,7 @@ describe("executeSteer", () => {
 
   test("includes image attachments in turn/steer request", async () => {
     const rpc = makeRpc(async () => ({ steerId: "s1" }));
+    const dispatched: unknown[] = [];
 
     await executeSteer({
       rpc,
@@ -122,7 +123,7 @@ describe("executeSteer", () => {
         { type: "local_image", path: "/tmp/b.jpg", mediaType: "image/jpeg", fileName: "b.jpg", webUrl: "blob:b" },
       ],
       contextItems: [],
-      dispatch: mock(() => {}),
+      dispatch: (action) => dispatched.push(action),
       clearThreadInput: mock(() => {}),
       clearPendingImages: mock(() => {}),
       clearContextItems: mock(() => {}),
@@ -133,6 +134,10 @@ describe("executeSteer", () => {
       { type: "local_image", path: "/tmp/a.png", mediaType: "image/png", fileName: "a.png" },
       { type: "local_image", path: "/tmp/b.jpg", mediaType: "image/jpeg", fileName: "b.jpg" },
     ]);
+    expect(dispatched[0]).toMatchObject({
+      type: "local_steer",
+      payload: { attachments: params.attachments },
+    });
   });
 
   test("prepends attached context items to steer content and clears them", async () => {
@@ -266,7 +271,7 @@ describe("executeRestartFromAbort", () => {
     await executeRestartFromAbort({
       rpc,
       threadId: "thread-1",
-      restartMessage: "retry this",
+      restartSteer: { id: "s1", content: "retry this" },
       hadItemsBeforeRestart: true,
       model: "claude-4",
       dispatch: (action) => dispatched.push(action),
@@ -300,7 +305,7 @@ describe("executeRestartFromAbort", () => {
     await executeRestartFromAbort({
       rpc,
       threadId: "thread-new",
-      restartMessage: "first message",
+      restartSteer: { id: "s1", content: "first message" },
       hadItemsBeforeRestart: false,
       model: undefined,
       dispatch: (action) => dispatched.push(action),
@@ -319,7 +324,7 @@ describe("executeRestartFromAbort", () => {
     await executeRestartFromAbort({
       rpc,
       threadId: "thread-existing",
-      restartMessage: "retry",
+      restartSteer: { id: "s1", content: "retry" },
       hadItemsBeforeRestart: true,
       model: undefined,
       dispatch: (action) => dispatched.push(action),
@@ -334,7 +339,7 @@ describe("executeRestartFromAbort", () => {
     await executeRestartFromAbort({
       rpc,
       threadId: "thread-1",
-      restartMessage: "restart message",
+      restartSteer: { id: "s1", content: "restart message" },
       hadItemsBeforeRestart: true,
       model: undefined,
       dispatch: mock(() => {}),

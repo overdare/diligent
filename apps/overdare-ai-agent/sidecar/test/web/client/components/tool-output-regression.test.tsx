@@ -87,3 +87,23 @@ test("empty render preserves the available input summary and raw output", () => 
   expect(html).toContain("Inspect template");
   expect(html).toContain("RPC diagnostic details");
 });
+
+for (const render of [undefined, { blocks: [{ type: "text" as const, text: "Loaded image pixel.png" }] }]) {
+  test(`tool image preview appears with ${render ? "structured" : "fallback"} output`, () => {
+    const html = renderToStaticMarkup(
+      <ToolBlock
+        item={{
+          ...tool,
+          toolName: "read_image",
+          isError: false,
+          outputText: "Loaded image pixel.png",
+          render,
+          outputImages: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "aGVsbG8=" } }],
+        }}
+      />,
+    );
+    expect(html).toContain("<img");
+    expect(html).toContain('src="data:image/png;base64,aGVsbG8="');
+    expect(html).toContain("Loaded image pixel.png");
+  });
+}

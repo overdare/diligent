@@ -5,6 +5,7 @@ import type { ModelRef, PendingSteer } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import type { RefObject } from "react";
 import { useCallback, useRef } from "react";
+import { toWebImageUrl } from "../../shared/image-routes";
 import { type AgentContextItem, prependContextToMessage } from "./agent-native-bridge";
 import type { PendingImage } from "./app-state";
 import type { WebRpcClient } from "./rpc-client";
@@ -45,21 +46,20 @@ export async function executeSteer({
 }): Promise<void> {
   const steerId = createClientSteerId();
   const message = prependContextToMessage(content, contextItems);
+  const attachments = images.map(({ type, path, mediaType, fileName }) => ({ type, path, mediaType, fileName }));
   clearThreadInput(threadId);
   clearPendingImages();
   clearContextItems();
-  dispatch({ type: "local_steer", payload: { id: steerId, content: message } });
+  dispatch({
+    type: "local_steer",
+    payload: { id: steerId, content: message, ...(attachments.length > 0 ? { attachments } : {}) },
+  });
   try {
     await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER, {
       threadId,
       steerId,
       content: message,
-      attachments: images.map((image) => ({
-        type: "local_image" as const,
-        path: image.path,
-        mediaType: image.mediaType,
-        fileName: image.fileName,
-      })),
+      attachments,
       followUp: false,
     });
   } catch (error) {
@@ -112,28 +112,31 @@ export async function executeUpdateSteer({
 export async function executeRestartFromAbort({
   rpc,
   threadId,
-  restartMessage,
+  restartSteer,
   hadItemsBeforeRestart,
   model,
   dispatch,
 }: {
   rpc: WebRpcClient;
   threadId: string;
-  restartMessage: string;
+  restartSteer: PendingSteer;
   hadItemsBeforeRestart: boolean;
   model: ModelRef | undefined;
   dispatch: (action: SteeringAction) => void;
 }): Promise<void> {
+  const restartMessage = restartSteer.content;
+  const attachments = restartSteer.attachments ?? [];
+  const images = attachments.map((image) => ({ ...image, webUrl: toWebImageUrl(image.path) }));
   const localItemId = `local-user-${createUuidV4()}`;
   dispatch({ type: "consume_first_pending_steer" });
-  dispatch({ type: "local_user", payload: { id: localItemId, text: restartMessage, images: [] } });
+  dispatch({ type: "local_user", payload: { id: localItemId, text: restartMessage, images } });
   if (!hadItemsBeforeRestart) {
     dispatch({ type: "optimistic_thread", payload: { threadId, message: restartMessage } });
   }
   const started = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
     threadId,
     message: restartMessage,
-    content: [{ type: "text" as const, text: restartMessage }],
+    content: [{ type: "text" as const, text: restartMessage }, ...attachments],
     model,
   });
   if (started.userMessageId) {
@@ -171,23 +174,23 @@ export function useSteeringQueue({
   clearPendingImages: () => void;
   clearContextItems: () => void;
 }) {
-  const pendingAbortRestartMessageRef = useRef<string | null>(null);
+  const pendingAbortRestartSteerRef = useRef<PendingSteer | null>(null);
 
   const canSteer = (activeInput.trim().length > 0 || contextItems.length > 0) && isBusy;
 
   const restartFromPendingAbortSteer = useCallback(
     async (threadId: string): Promise<void> => {
       const rpc = rpcRef.current;
-      const restartMessage = pendingAbortRestartMessageRef.current;
-      if (!rpc || !restartMessage) {
+      const restartSteer = pendingAbortRestartSteerRef.current;
+      if (!rpc || !restartSteer) {
         return;
       }
 
-      pendingAbortRestartMessageRef.current = null;
+      pendingAbortRestartSteerRef.current = null;
       await executeRestartFromAbort({
         rpc,
         threadId,
-        restartMessage,
+        restartSteer,
         hadItemsBeforeRestart: stateRef.current.items.length > 0,
         model: currentModelRef.current,
         dispatch,
@@ -264,7 +267,7 @@ export function useSteeringQueue({
 
   return {
     canSteer,
-    pendingAbortRestartMessageRef,
+    pendingAbortRestartSteerRef,
     restartFromPendingAbortSteer,
     steerMessage,
     handleSteer,

@@ -1,6 +1,6 @@
 // @summary Tests for skill discovery and filesystem scanning
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverSkills } from "../../src/skills/discovery";
@@ -29,6 +29,51 @@ function makeSkillMd(name: string, description: string, extra?: string): string 
 }
 
 describe("discoverSkills", () => {
+  // scripts/dev-cross-studio.sh symlinks every bundle skill into the global directory, and
+  // a symlinked entry reports neither isDirectory() nor isFile() — before this was handled,
+  // that setup discovered nothing at all.
+  it("discovers a skill directory reached through a symlink", async () => {
+    const root = await createTmpDir();
+    const real = join(root, "bundle", "linked-skill");
+    await mkdir(real, { recursive: true });
+    await writeFile(join(real, "SKILL.md"), makeSkillMd("linked-skill", "Reached via symlink"));
+    const skillsDir = join(root, ".diligent", "skills");
+    await mkdir(skillsDir, { recursive: true });
+    await symlink(real, join(skillsDir, "linked-skill"));
+
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.skills.map((s) => s.name)).toEqual(["linked-skill"]);
+  });
+
+  it("discovers a flat .md skill reached through a symlink", async () => {
+    const root = await createTmpDir();
+    const real = join(root, "bundle", "flat.md");
+    await mkdir(join(root, "bundle"), { recursive: true });
+    await writeFile(real, makeSkillMd("flat-skill", "Flat via symlink"));
+    const skillsDir = join(root, ".diligent", "skills");
+    await mkdir(skillsDir, { recursive: true });
+    await symlink(real, join(skillsDir, "flat.md"));
+
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.skills.map((s) => s.name)).toEqual(["flat-skill"]);
+  });
+
+  it("ignores a dangling symlink instead of erroring", async () => {
+    const root = await createTmpDir();
+    const skillsDir = join(root, ".diligent", "skills");
+    await mkdir(skillsDir, { recursive: true });
+    await symlink(join(root, "bundle", "gone"), join(skillsDir, "gone"));
+
+    const result = await discoverSkills({ cwd: root, globalConfigDir: join(root, "no-global") });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.skills).toHaveLength(0);
+  });
+
   it("discovers skill from .diligent/skills/my-skill/SKILL.md", async () => {
     const root = await createTmpDir();
     const skillDir = join(root, ".diligent", "skills", "my-skill");

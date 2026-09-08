@@ -185,6 +185,9 @@ describe("plugin-hooks", () => {
     await client.waitForNotification(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED);
 
     const markerPath = join(tmpDir, "hook-stop-fired");
+    // Interruption is acknowledged immediately; the external Stop hook finishes afterward.
+    const deadline = Date.now() + 3_000;
+    while (!(await Bun.file(markerPath).exists()) && Date.now() < deadline) await Bun.sleep(10);
     await expect(access(markerPath)).resolves.toBeNull();
     const markerContent = JSON.parse(await readFile(markerPath, "utf8")) as { hook_event_name?: string };
     expect(markerContent.hook_event_name).toBe("Stop");

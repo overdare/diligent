@@ -2946,3 +2946,25 @@ test("hydrateFromThreadRead restores structured context notices", () => {
     }),
   ]);
 });
+
+test("history restores tool images for preview", () => {
+  const outputImages = [
+    { type: "image" as const, source: { type: "base64" as const, media_type: "image/png" as const, data: "aGVsbG8=" } },
+  ];
+  const state = hydrateFromThreadRead(initialThreadState, {
+    threadId: "image-history",
+    items: [
+      {
+        type: "toolCall",
+        itemId: "image-item",
+        toolCallId: "image-call",
+        toolName: "read_image",
+        input: { file_path: "/tmp/pixel.png" },
+        output: "Loaded image",
+        isError: false,
+        outputImages,
+      },
+    ],
+  });
+  expect(state.items.find((item) => item.kind === "tool")).toMatchObject({ outputImages });
+});

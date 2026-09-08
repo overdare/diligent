@@ -124,3 +124,47 @@ describe("multi-connection", () => {
     expect(readResult.items.length).toBeGreaterThan(0);
   });
 });
+
+for (const delayedMethod of ["thread/status/changed", "turn/started"] as const) {
+  test(`interruption suppresses stale ${delayedMethod} fanout to other clients`, async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-stop-fanout-"));
+    const server = createTestServer({ cwd: tmpDir });
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const disconnect = server.connect("slow", {
+      onMessage() {},
+      async send(message) {
+        if (
+          "method" in message &&
+          message.method === delayedMethod &&
+          (delayedMethod !== "thread/status/changed" || (message.params as { status: string }).status === "busy")
+        ) {
+          entered();
+          await gate;
+        }
+      },
+    });
+    const peer = createProtocolClient(server);
+    clients.push(peer);
+    const threadId = await peer.initAndStartThread(tmpDir);
+    try {
+      const start = peer.request("turn/start", { threadId, message: "cancel before fanout finishes" });
+      await blocked;
+      expect(await peer.request("turn/interrupt", { threadId })).toEqual({ interrupted: true });
+      const boundary = peer.notifications.length;
+      release();
+      await start;
+      expect(peer.notifications.slice(boundary)).toEqual([]);
+      expect(await peer.request("thread/read", { threadId })).toMatchObject({ isRunning: false });
+    } finally {
+      release();
+      disconnect();
+    }
+  });
+}

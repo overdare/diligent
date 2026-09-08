@@ -8,6 +8,7 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
+  PendingSteer,
   RequestId,
 } from "@diligent/protocol";
 import {
@@ -89,7 +90,7 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
-  private pendingAbortRestartMessage: string | null = null;
+  private pendingAbortRestartSteer: PendingSteer | null = null;
   private appServerLogDirInitialized = false;
   private pendingAppServerLogLines: string[] = [];
   private currentAppServerLogSessionId: string | null = null;
@@ -177,7 +178,7 @@ export class App {
       onTurnFinished: () => {
         this.chatView.finishTurn();
         this.appendLocalTurnTimingLine();
-        const restartingAfterInterrupt = this.pendingAbortRestartMessage !== null;
+        const restartingAfterInterrupt = this.pendingAbortRestartSteer !== null;
         if (!restartingAfterInterrupt) {
           this.ringTerminalBell();
         }
@@ -193,7 +194,7 @@ export class App {
         this.renderer.requestRender();
       },
       onTurnErrored: (message) => {
-        this.pendingAbortRestartMessage = null;
+        this.pendingAbortRestartSteer = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
         const pendingTurn = this.runtime.pendingTurn;
@@ -547,7 +548,9 @@ export class App {
       this.runtime.cancelRequested = true;
       const drainedSteers = this.chatView.consumePendingSteers();
       const drainedRuntimeSteers = this.runtime.drainPendingSteers();
-      this.pendingAbortRestartMessage = drainedRuntimeSteers[0] ?? drainedSteers[0] ?? null;
+      this.pendingAbortRestartSteer =
+        drainedRuntimeSteers[0] ??
+        (drainedSteers[0] ? { id: `restart-${Date.now()}`, content: drainedSteers[0] } : null);
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -555,7 +558,7 @@ export class App {
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
         .catch(() => {
           this.runtime.cancelRequested = false;
-          this.pendingAbortRestartMessage = null;
+          this.pendingAbortRestartSteer = null;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
@@ -578,21 +581,22 @@ export class App {
 
   private async restartFromPendingAbortSteer(threadId: string): Promise<void> {
     const rpc = this.rpcClient;
-    const restartMessage = this.pendingAbortRestartMessage;
-    if (!rpc || !restartMessage) {
+    const restartSteer = this.pendingAbortRestartSteer;
+    if (!rpc || !restartSteer) {
       return;
     }
 
-    this.pendingAbortRestartMessage = null;
+    this.pendingAbortRestartSteer = null;
     this.runtime.isProcessing = true;
     this.inputEditor.setBusy(true);
     this.statusBar.update({ status: "busy" });
-    this.commitLocalUserMessage(restartMessage);
+    this.commitLocalUserMessage(restartSteer.content);
+    const content = [{ type: "text" as const, text: restartSteer.content }, ...(restartSteer.attachments ?? [])];
     try {
       await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
         threadId,
-        message: restartMessage,
-        content: [{ type: "text", text: restartMessage }],
+        message: restartSteer.content,
+        content,
         model: this.config.model,
       });
     } catch (error) {
@@ -675,7 +679,7 @@ export class App {
     if (
       notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
       notification.params.threadId === this.runtime.currentThreadId &&
-      this.pendingAbortRestartMessage
+      this.pendingAbortRestartSteer
     ) {
       const interruptedThreadId = notification.params.threadId;
       queueMicrotask(() => {
