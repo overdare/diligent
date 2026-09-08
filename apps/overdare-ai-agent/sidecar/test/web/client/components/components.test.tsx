@@ -887,11 +887,14 @@ test("context chip icon kind covers known Studio classes and VS Code variants", 
   ).toBe("file-selection");
 });
 
-test("input dock shows the designed toolbar tag for each non-default mode", () => {
+test("input dock shows the designed toolbar tag for every mode", () => {
   expect(getModeLabel("default")).toBe("Default");
-  expect(getModeBadgeLabel("default")).toBeNull();
+  expect(getModeBadgeLabel("default")).toBe("Default");
   expect(getModeBadgeLabel("plan")).toBe("Plan");
   expect(getModeBadgeLabel("execute")).toBe("Execute");
+  expect(getModeBadgeClasses("default")).toContain("w-[45px]");
+  expect(getModeBadgeClasses("default")).toContain("bg-[#2A3038]");
+  expect(getModeBadgeClasses("default")).toContain("text-[#88929C]");
   expect(getModeBadgeClasses("plan")).toContain("w-[29px]");
   expect(getModeBadgeClasses("plan")).toContain("bg-[#2A3038]");
   expect(getModeBadgeClasses("plan")).toContain("text-[#88929C]");
@@ -934,7 +937,7 @@ test("input dock shows the designed toolbar tag for each non-default mode", () =
     />,
   );
 
-  expect(defaultHtml).not.toContain('title="Current mode: default"');
+  expect(defaultHtml).toContain('title="Current mode: Default"');
 
   const planHtml = renderToStaticMarkup(
     <InputDock

@@ -1,6 +1,13 @@
 // @summary Input dock with auto-resize textarea, slash command autocomplete, model/effort controls, and usage tray
 
-import type { Mode, ModelInfo, ThinkingEffort, ThreadStatus } from "@diligent/protocol";
+import {
+  type Mode,
+  type ModelInfo,
+  ModeSchema,
+  nextCycledMode,
+  type ThinkingEffort,
+  type ThreadStatus,
+} from "@diligent/protocol";
 import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -102,12 +109,8 @@ const MODE_LABELS: Record<Mode, string> = {
   execute: "Execute",
 };
 
-const MODE_BADGE_LABELS: Record<Exclude<Mode, "default">, string> = {
-  plan: "Plan",
-  execute: "Execute",
-};
-
-const MODE_BADGE_CLASSES: Record<Exclude<Mode, "default">, string> = {
+const MODE_BADGE_CLASSES: Record<Mode, string> = {
+  default: "w-[45px] bg-[#2A3038] text-[#88929C]",
   plan: "w-[29px] bg-[#2A3038] text-[#88929C]",
   execute: "w-[45px] bg-[rgba(49,145,255,0.24)] text-[#64AFFF]",
 };
@@ -116,12 +119,12 @@ export function getModeLabel(mode: Mode): string {
   return MODE_LABELS[mode];
 }
 
-export function getModeBadgeLabel(mode: Mode): string | null {
-  return mode === "default" ? null : MODE_BADGE_LABELS[mode];
+export function getModeBadgeLabel(mode: Mode): string {
+  return MODE_LABELS[mode];
 }
 
-export function getModeBadgeClasses(mode: Mode): string | null {
-  return mode === "default" ? null : MODE_BADGE_CLASSES[mode];
+export function getModeBadgeClasses(mode: Mode): string {
+  return MODE_BADGE_CLASSES[mode];
 }
 
 function PendingImagePreview({
@@ -176,8 +179,14 @@ export function getComposerEnterAction(args: {
   return args.canSend && !args.isUploadingImages && args.hasProvider ? "send" : "none";
 }
 
+/** shift+tab cycles the mode, except while a blocking prompt owns the keyboard. */
+export function shouldCycleModeOnKey(args: { key: string; shiftKey: boolean; hasBlockingPrompt: boolean }): boolean {
+  return args.key === "Tab" && args.shiftKey && !args.hasBlockingPrompt;
+}
+
 function modeOptions(): Array<{ value: Mode; label: string }> {
-  return (Object.keys(MODE_LABELS) as Mode[]).map((m) => ({
+  // Same order as the shift+tab cycle, so the menu and the shortcut never disagree.
+  return ModeSchema.options.map((m) => ({
     value: m,
     label: getModeLabel(m),
   }));
@@ -322,6 +331,13 @@ export function InputDock({
   // Handle keyboard events — slash menu navigation takes priority when open
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (composingRef.current || e.nativeEvent.isComposing) return;
+
+    // Claimed before the slash menu, mirroring the TUI where shift+tab preempts the editor.
+    if (shouldCycleModeOnKey({ key: e.key, shiftKey: e.shiftKey, hasBlockingPrompt })) {
+      e.preventDefault();
+      onModeChange(nextCycledMode(mode));
+      return;
+    }
 
     if (slashMenuOpen) {
       if (e.key === "ArrowDown") {
@@ -469,14 +485,12 @@ export function InputDock({
               </button>
             </div>
 
-            {modeBadgeLabel && modeBadgeClasses ? (
-              <div
-                className={`pointer-events-none inline-flex h-5 shrink-0 items-center justify-center rounded px-1 text-[10px] font-normal leading-3 ${modeBadgeClasses}`}
-                title={`Current mode: ${modeBadgeLabel}`}
-              >
-                {modeBadgeLabel}
-              </div>
-            ) : null}
+            <div
+              className={`pointer-events-none inline-flex h-5 shrink-0 items-center justify-center rounded px-1 text-[10px] font-normal leading-3 ${modeBadgeClasses}`}
+              title={`Current mode: ${modeBadgeLabel}`}
+            >
+              {modeBadgeLabel}
+            </div>
 
             {availableModels.length > 0 ? (
               <ModelEffortSelect
