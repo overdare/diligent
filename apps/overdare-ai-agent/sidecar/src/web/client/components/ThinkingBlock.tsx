@@ -24,8 +24,8 @@ export function ThinkingBlock({ text, streaming = false, durationLabel = null }:
   const summaryHtml = summary ? renderInlineMarkdown(summary) : "";
 
   return (
-    <details className="rounded-lg bg-transparent py-1 opacity-70 transition hover:opacity-100">
-      <summary className="inline-flex list-none cursor-pointer select-none items-center gap-2 font-mono text-xs uppercase tracking-wider">
+    <details className="rounded-lg bg-transparent opacity-70 transition hover:opacity-100">
+      <summary className="flex min-h-5 list-none cursor-pointer select-none items-center gap-2 font-mono text-xs leading-5 uppercase tracking-wider">
         <span className="text-text-secondary">Thought</span>
         {durationLabel ? <span className="text-muted/70">{durationLabel}</span> : null}
         {summary ? (
