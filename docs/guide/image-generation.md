@@ -12,11 +12,10 @@ or new Studio RPC methods.
 | Selected chat provider | Behavior |
 |---|---|
 | `chatgpt` | Use the local Codex CLI's managed ChatGPT OAuth account. |
-| `gemini` | Require the saved Gemini API key and use Gemini's native image model. |
 | Other or unknown | Do not expose the image-generation tool. |
 
-The model cannot override this selection through a tool argument. Selecting ChatGPT never
-uses Gemini credentials, and selecting Gemini never falls back to Codex.
+The model cannot override this selection through a tool argument. Only ChatGPT exposes image
+generation; selecting another provider does not fall back to Codex.
 
 Generation instructions live in the provider-bound tool description, so unsupported providers
 receive neither the tool nor its instructions. The common `ui-generator` skill only describes
@@ -25,8 +24,8 @@ generation or tell the model to switch providers. Previously loaded conversation
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
 The result includes an absolute `file` path, the selected `provider`, its authentication
-`source`, and an image preview. Gemini also returns `model`; Codex may return
-`revisedPrompt`. A provider failure is returned to the caller without automatically retrying
+`source`, and an image preview. Codex may also return `revisedPrompt`.
+A provider failure is returned to the caller without automatically retrying
 with another provider.
 
 For Studio workflows, pass the returned `file` directly to
@@ -34,12 +33,6 @@ For Studio workflows, pass the returned `file` directly to
 does not import an asset or save a Studio level.
 
 ## Credentials and local setup
-
-Gemini uses the same credential-store mode and saved API key as the product's provider
-settings. Legacy keys in `config.jsonc` and ambient environment variables are not separate
-credential sources. Environment-backed credentials can use the auth store's
-`{env:GEMINI_API_KEY}` substitution. An optional `provider.gemini.baseUrl` is also respected. The image model
-is selected by the product's image-generation configuration, independently of the chat model.
 
 Codex requires a local CLI signed in with managed ChatGPT OAuth and an account exposing
 image generation. It does not use Diligent's ChatGPT token store or an OpenAI API key.
@@ -53,7 +46,7 @@ upgrade the CLI or change the user's model configuration.
 
 ## Storage and execution
 
-Both providers use the same storage helper. Files are written under
+The storage helper is independent of the image provider. Files are written under
 `<project>/.<storage-namespace>/images/generated/` with unique names. PNG, JPEG, and WebP
 results retain their image format. The returned preview contains the same bytes as the saved
 file.
@@ -61,7 +54,7 @@ file.
 OVERDARE's runtime passes the selected thread provider into bundled tool factories. Tool
 settings and model-facing tools follow that provider; switching models rebuilds the agent's
 tools on the next turn while preserving an in-flight turn's model snapshot. Generation remains
-available for ChatGPT/Gemini when `STUDIO_DISABLED=1`.
+available for ChatGPT when `STUDIO_DISABLED=1`.
 
 Standalone MCP, the HTTP MCP router, and the product tool CLI do not receive the calling chat's
 model provider, so they do not expose `generate_image`. They do not infer it from credentials,
@@ -87,7 +80,7 @@ without embedding the Rust runtime or copying its generated types. The adapter v
 the fields it consumes; unrelated response fields do not require local type declarations.
 
 Codex uses one five-minute deadline covering initialization, authentication and capability
-checks, thread creation, and image generation. Gemini also has a five-minute request deadline.
+checks, thread creation, and image generation.
 Cancellation propagates through direct MCP calls and the HTTP router endpoint to the provider.
 The Rust MCP router continues reading cancellation notifications while keeping tool calls
 serial; cancelling an active call drops its HTTP request, and cancelling a queued call removes
@@ -100,7 +93,6 @@ an interrupted file write removes its partial output.
 ## Ownership
 
 - `sidecar/src/tools/codex-imagegen/`: Codex transport, account checks, and image-turn events.
-- `sidecar/src/tools/image-generation/gemini.ts`: Gemini API request and response handling.
 - `sidecar/src/tools/image-generation/image-store.ts`: Provider-independent local storage.
 - `sidecar/src/tools/image-generation/index.ts`: Tool approval, provider selection, and result assembly.
 - `sidecar/src/tools/studiorpc/`: Existing Studio import and level persistence.

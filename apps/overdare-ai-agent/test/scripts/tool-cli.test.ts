@@ -1,21 +1,12 @@
 // @summary Tests OVERDARE tool CLI command parsing and bundled tool dispatch.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { parseCliArgs, runOverdareToolsCli } from "../../scripts/lib/overdare-tools-cli.ts";
+import { createStudioRpcToolProvider } from "../../sidecar/src/tools/studiorpc";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
-
-mock.module("../../sidecar/src/tools/studiorpc/rpc.ts", () => ({
-  applyLevelChanges: async () => ({ ok: true }),
-  call: (method: string) => {
-    if (method === "level.browse") return levelBrowseMock();
-    if (method === "level.save.file") return Promise.resolve("World file saved.");
-    throw new Error(`Unexpected RPC method in test: ${method}`);
-  },
-}));
-
-const { parseCliArgs, runOverdareToolsCli } = await import("../../scripts/lib/overdare-tools-cli.ts");
 
 function createStreams() {
   const stdout: string[] = [];
@@ -70,6 +61,7 @@ describe("overdare tool cli", () => {
     expect(exitCode).toBe(0);
     expect(stdout.some((line) => line.includes("[studiorpc]"))).toBe(true);
     expect(stdout.some((line) => line.includes("[validator]"))).toBe(true);
+    expect(stdout.some((line) => line.includes("generate_image"))).toBe(false);
   });
 
   test("inspect returns schema and source in json mode", async () => {
@@ -86,18 +78,27 @@ describe("overdare tool cli", () => {
   test("run executes a bundled tool and returns structured json", async () => {
     const { stdout, streams } = createStreams();
 
-    const exitCode = await runOverdareToolsCli(["run", "studiorpc_level_browse", "--args", "{}", "--json"], streams);
+    const exitCode = await runOverdareToolsCli(["run", "studiorpc_level_browse", "--args", "{}", "--json"], streams, {
+      toolProviders: [
+        createStudioRpcToolProvider({
+          callRpc: async <T>(method: string): Promise<T> => {
+            if (method === "level.browse") return (await levelBrowseMock()) as T;
+            throw new Error(`Unexpected RPC method: ${method}`);
+          },
+        }),
+      ],
+    });
 
     expect(exitCode).toBe(0);
     expect(levelBrowseMock).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(stdout.join("\n")) as {
       tool: string;
       source: string;
-      result: { output: string; metadata?: { method?: string } };
+      result: { output: string };
     };
     expect(payload.tool).toBe("studiorpc_level_browse");
     expect(payload.source).toBe("studiorpc");
-    expect(payload.result.metadata?.method).toBe("level.browse");
+    expect(payload.result.output).toContain("Workspace");
   });
 
   test("unknown tools return a failing exit code", async () => {
