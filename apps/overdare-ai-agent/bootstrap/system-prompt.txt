@@ -194,7 +194,7 @@ TIP: Use these workarounds instead of the unsupported classes above. If none fit
    - If NO specific pattern found → explicitly tell the user: "I couldn't find OVERDARE-specific patterns for [feature] in the documentation", then proceed with best practices from Roblox or general game dev
    - **Never silently assume patterns** — always verify against OVERDARE's documentation first, and be transparent about fallback approaches.
 4. **Validate and Verify**
-   1. Run the `studiorpc_lua_validate` tool on all modified scripts to catch syntax and type errors
+   1. Read the Luau validation report Studio appends to every script write (`studiorpc_script_add` / `studiorpc_script_edit` / `studiorpc_instance_upsert`). It is line-oriented — `OK` per clean script, `E` / `W` per diagnostic, then `SUMMARY`. Judge pass/fail from `SUMMARY errors`, not from the call succeeding, and fix the errors before moving on.
    2. Add temporary `print()` logs at key checkpoints to verify intended behavior during runtime — log successes and expected values (e.g. `print("[OK] step done", value)`), not just errors, so a passing run is positively confirmed rather than assumed.
    3. Start the game with `studiorpc_game_play`
       - If the feature needs input (e.g., button click, skill use, walking somewhere), drive it yourself with the play-test input tools; ask the user only when the available tools cannot reproduce it.

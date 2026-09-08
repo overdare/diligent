@@ -114,7 +114,8 @@ describe("OVERDARE MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_level_browse");
-    expect(names).toContain("studiorpc_lua_validate");
+    // Luau validation runs inside the script-writing tools, so it is not a tool of its own.
+    expect(names).not.toContain("studiorpc_lua_validate");
     expect(names).toContain("overdaresearch");
     expect(names).toContain("overdaresearch_deep");
     const browse = tools.find((tool) => tool.name === "studiorpc_level_browse");

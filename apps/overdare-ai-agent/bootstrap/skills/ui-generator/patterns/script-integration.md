@@ -110,7 +110,7 @@ not directly from `StarterGui`.
 
 After adding or editing scripts:
 
-1. Run `studiorpc_lua_validate` on changed scripts.
+1. Read the validation report Studio appends to each script write — pass/fail comes from `SUMMARY errors`.
 2. If temporary logs are added, explain how to test them.
 3. Remove or minimize temporary logs after the user confirms the behavior.
 
@@ -135,6 +135,6 @@ When adding or changing UI scripts:
 1. Confirm the target UI hierarchy with `studiorpc_level_browse` or `studiorpc_instance_read`.
 2. Use `studiorpc_script_add` for new `LocalScript` behavior or `studiorpc_script_edit` for existing behavior.
 3. Keep dependencies listed at the top of the script when requiring modules.
-4. Validate changed scripts with `studiorpc_lua_validate`.
+4. Check the validation report appended to each script write.
 5. If play testing is needed, use temporary `print()` logs sparingly and remove or minimize them after confirmation.
 

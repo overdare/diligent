@@ -100,7 +100,6 @@ Usage:
 Examples:
   overdare-tools list
   overdare-tools inspect studiorpc_level_browse
-  overdare-tools run studiorpc_lua_validate --args '{}'
   overdare-tools run studiorpc_level_browse --args '{}' --json
 `);
 }

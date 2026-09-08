@@ -1,7 +1,7 @@
-// @summary Tests that lua.validate surfaces Studio's report as text and rejects empty GUIDs.
+// @summary Tests that lua.validate surfaces Studio's report as text and asks for nonstrict.
 
 import { describe, expect, test } from "bun:test";
-import { normalizeArgs, params, postProcess } from "../../../../src/tools/studiorpc/methods/lua.validate";
+import { normalizeArgs, postProcess } from "../../../../src/tools/studiorpc/methods/lua.validate";
 
 const REPORT = [
   "LUA_VALIDATE v1 requested=strict",
@@ -20,18 +20,12 @@ describe("lua.validate", () => {
     expect(postProcess(reply)).toBe(reply);
   });
 
-  test("strict is not requested by default — its inference noise buries the real errors", () => {
+  test("strict is not requested by default — it flags working code our helpers leave untyped", () => {
     expect(normalizeArgs({}).mode).toBe("nonstrict");
     expect(normalizeArgs({ targetGuids: ["ABC"] }).mode).toBe("nonstrict");
   });
 
   test("an explicit mode still wins over the default", () => {
     expect(normalizeArgs({ mode: "strict" }).mode).toBe("strict");
-  });
-
-  test("an empty GUID is rejected instead of validating the whole world by accident", () => {
-    expect(() => params.parse({ targetGuids: [""] })).toThrow();
-    expect(params.parse({}).targetGuids).toBeUndefined();
-    expect(params.parse({ mode: "nocheck", targetGuids: ["ABC"] }).mode).toBe("nocheck");
   });
 });
