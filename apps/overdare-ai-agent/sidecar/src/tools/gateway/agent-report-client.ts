@@ -51,8 +51,12 @@ export function composeReportMarkdown(input: {
   ].join("\n");
 }
 
-/** The context injection that asks the agent to judge the armed stretch on its next round. */
-export function buildAssessmentMessage(signal: FailureSignal): string {
+/**
+ * The context injection that asks the agent to judge the armed stretch on its next round.
+ * `signalId` scopes the armed signal to this one injection: the tool only accepts it back verbatim,
+ * so a concurrent thread's agent cannot file a report against a signal it never saw.
+ */
+export function buildAssessmentMessage(signal: FailureSignal, signalId: string): string {
   const lead =
     signal.kind === "aborted"
       ? "Your previous turn did not complete (the user stopped it or it was interrupted)."
@@ -61,7 +65,7 @@ export function buildAssessmentMessage(signal: FailureSignal): string {
     "<system-reminder>",
     lead,
     "Before continuing, assess whether the preceding work was a genuine agent failure — you were going in circles, misusing a tool, or the user discarded your work because it was wrong.",
-    `If and only if it was, call ${AGENT_REPORT_TOOL_NAME} exactly once with an honest cause, a one-line title, and a summary of what you attempted, why it failed, and what would have helped. Describe your own behaviour; do not quote the user's messages.`,
+    `If and only if it was, call ${AGENT_REPORT_TOOL_NAME} exactly once with signal_id="${signalId}", an honest cause, a one-line title, and a summary of what you attempted, why it failed, and what would have helped. Describe your own behaviour; do not quote the user's messages.`,
     "If it was not a failure (the user changed their mind, the retries were reasonable), do not call the tool. Either way, then continue the task.",
     "</system-reminder>",
   ].join("\n");

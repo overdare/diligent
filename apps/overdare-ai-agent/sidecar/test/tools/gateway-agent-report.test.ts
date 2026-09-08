@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import net from "node:net";
+import type { AgentLoopHook } from "@diligent/core/agent";
 import type { ToolCallBlock } from "@diligent/core/message-contract";
 import type { Model } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
@@ -135,19 +136,22 @@ describe("composeReportMarkdown", () => {
 });
 
 describe("buildAssessmentMessage", () => {
-  test("is a system-reminder naming the signal and the tool", () => {
-    const text = buildAssessmentMessage(SIGNAL);
+  test("is a system-reminder naming the signal, the tool and the signal id", () => {
+    const text = buildAssessmentMessage(SIGNAL, "sig-1");
     expect(text.startsWith("<system-reminder>")).toBe(true);
     expect(text.endsWith("</system-reminder>")).toBe(true);
     expect(text).toContain("kind=repeated_error");
     expect(text).toContain("tool=instance_upsert");
     expect(text).toContain("count=4");
     expect(text).toContain(AGENT_REPORT_TOOL_NAME);
+    expect(text).toContain('signal_id="sig-1"');
     expect(text).toContain("do not quote the user");
   });
 
   test("aborted uses the interrupted-turn wording", () => {
-    expect(buildAssessmentMessage({ kind: "aborted", count: 1, fingerprint: "aborted" })).toContain("did not complete");
+    expect(buildAssessmentMessage({ kind: "aborted", count: 1, fingerprint: "aborted" }, "sig-1")).toContain(
+      "did not complete",
+    );
   });
 });
 
@@ -259,6 +263,15 @@ async function toolOf(provider: ReturnType<typeof createAgentReportToolProvider>
 
 const toolCtx = (toolCallId: string) => ({ toolCallId, signal: new AbortController().signal, abort: () => {} });
 
+/** Arm a rollback signal on one hook and return the signal id it injected. */
+function armAndInject(hook: AgentLoopHook): string {
+  hook.onToolResult?.({ turnId: "t1", toolCall: rollbackCall, result: rollbackResult });
+  const injections = hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false });
+  const id = /signal_id="([^"]+)"/.exec(String(injections?.[0]?.content))?.[1];
+  if (!id) throw new Error("the injection carried no signal id");
+  return id;
+}
+
 describe("createAgentReportToolProvider — hook gating", () => {
   test("no hook when the tool is experiment-disabled (absent from context.tools)", () => {
     const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
@@ -309,7 +322,25 @@ describe("createAgentReportToolProvider — tool", () => {
     const calls = installFetchSpy();
     const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
     const tool = await toolOf(provider);
-    const out = await tool.execute({ cause: "model_error", title: "t", summary: "s" }, toolCtx("tc-1"));
+    const out = await tool.execute(
+      { signal_id: "sig-x", cause: "model_error", title: "t", summary: "s" },
+      toolCtx("tc-1"),
+    );
+    expect(out.output).toContain("nothing reported");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("an unknown signal id reports nothing", async () => {
+    const calls = installFetchSpy();
+    const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
+    const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
+    armAndInject(hook);
+    await provider.onEntryAppended?.(entryInput("tc-report"));
+    const tool = await toolOf(provider);
+    const out = await tool.execute(
+      { signal_id: "not-a-signal", cause: "model_error", title: "t", summary: "s" },
+      toolCtx("tc-report"),
+    );
     expect(out.output).toContain("nothing reported");
     expect(calls).toHaveLength(0);
   });
@@ -318,10 +349,12 @@ describe("createAgentReportToolProvider — tool", () => {
     const calls = installFetchSpy();
     const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => false });
     const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
-    hook.onToolResult?.({ turnId: "t1", toolCall: rollbackCall, result: rollbackResult });
-    hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false });
+    const signalId = armAndInject(hook);
     const tool = await toolOf(provider);
-    const out = await tool.execute({ cause: "model_error", title: "t", summary: "s" }, toolCtx("tc-1"));
+    const out = await tool.execute(
+      { signal_id: signalId, cause: "model_error", title: "t", summary: "s" },
+      toolCtx("tc-1"),
+    );
     expect(out.output).toContain("disabled");
     expect(calls).toHaveLength(0);
   });
@@ -334,13 +367,17 @@ describe("createAgentReportToolProvider — tool", () => {
       canTransmitRecords: () => true,
     });
     const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
-    hook.onToolResult?.({ turnId: "t1", toolCall: rollbackCall, result: rollbackResult });
-    hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false });
+    const signalId = armAndInject(hook);
     await provider.onEntryAppended?.(entryInput("tc-report"));
 
     const tool = await toolOf(provider);
     const out = await tool.execute(
-      { cause: "user_error", title: "Rolled back a correct change", summary: "key sk-ant-0123456789012345678901" },
+      {
+        signal_id: signalId,
+        cause: "user_error",
+        title: "Rolled back a correct change",
+        summary: "key sk-ant-0123456789012345678901",
+      },
       toolCtx("tc-report"),
     );
     expect(out.output).toContain("filed");
@@ -358,35 +395,67 @@ describe("createAgentReportToolProvider — tool", () => {
     expect(String(body.summary_md)).toContain("[REDACTED:anthropic-key]");
     expect(typeof body.client_report_id).toBe("string");
 
-    // the signal is consumed: a second call reports nothing
-    const again = await tool.execute({ cause: "user_error", title: "t", summary: "s" }, toolCtx("tc-report"));
+    // the signal is consumed: a second call with the same id reports nothing
+    const again = await tool.execute(
+      { signal_id: signalId, cause: "user_error", title: "t", summary: "s" },
+      toolCtx("tc-report"),
+    );
     expect(again.output).toContain("nothing reported");
     expect(calls).toHaveLength(1);
   });
 
-  test("falls back to the latest appended session when the tool call id is unknown", async () => {
+  test("reports nothing when the tool call id has no session binding", async () => {
     const calls = installFetchSpy();
     const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
     const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
-    hook.onToolResult?.({ turnId: "t1", toolCall: rollbackCall, result: rollbackResult });
-    hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false });
+    const signalId = armAndInject(hook);
+    // Another thread's entry landed; it must not stand in for this tool call's session.
     await provider.onEntryAppended?.(entryInput("other", { session_id: "sess-9", seq: 3 }));
     const tool = await toolOf(provider);
-    await tool.execute({ cause: "model_error", title: "t", summary: "s" }, toolCtx("unknown"));
-    expect(calls[0].body.session_id).toBe("sess-9");
+    const out = await tool.execute(
+      { signal_id: signalId, cause: "model_error", title: "t", summary: "s" },
+      toolCtx("unknown"),
+    );
+    expect(out.output).toContain("nothing reported");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("two concurrent hooks arm independently and each report goes to its own session", async () => {
+    const calls = installFetchSpy();
+    const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
+    const [hookA] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
+    const [hookB] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
+    const idA = armAndInject(hookA);
+    const idB = armAndInject(hookB);
+    expect(idA).not.toBe(idB);
+    await provider.onEntryAppended?.(entryInput("tc-a"));
+    await provider.onEntryAppended?.(entryInput("tc-b", { session_id: "sess-2", seq: 7, user_id: "bob" }));
+
+    const tool = await toolOf(provider);
+    await tool.execute({ signal_id: idB, cause: "model_error", title: "t", summary: "s" }, toolCtx("tc-b"));
+    expect(calls[0].body.session_id).toBe("sess-2");
+    expect(calls[0].body.seq).toBe(7);
     // no explicit project id → synthetic `<user>_<cwd>` id, separators replaced
-    expect(calls[0].body.project_id).toBe("alice__tmp_project");
+    expect(calls[0].body.project_id).toBe("bob__tmp_project");
+
+    // filing B's report left A's signal intact
+    await tool.execute({ signal_id: idA, cause: "model_error", title: "t", summary: "s" }, toolCtx("tc-a"));
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.session_id).toBe("sess-1");
+    expect(calls[1].body.project_id).toBe("alice__tmp_project");
   });
 
   test("gateway failure is reported in the output, never thrown", async () => {
     installFetchSpy(503);
     const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
     const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
-    hook.onToolResult?.({ turnId: "t1", toolCall: rollbackCall, result: rollbackResult });
-    hook.beforeTurn?.({ messages: [], turnId: "t2", compactedThisTurn: false });
+    const signalId = armAndInject(hook);
     await provider.onEntryAppended?.(entryInput("tc-report"));
     const tool = await toolOf(provider);
-    const out = await tool.execute({ cause: "model_error", title: "t", summary: "s" }, toolCtx("tc-report"));
+    const out = await tool.execute(
+      { signal_id: signalId, cause: "model_error", title: "t", summary: "s" },
+      toolCtx("tc-report"),
+    );
     expect(out.output).toContain("could not be delivered");
   });
 });

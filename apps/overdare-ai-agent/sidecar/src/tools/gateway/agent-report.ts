@@ -4,6 +4,10 @@
 // made here — the loop hook injects a <system-reminder> and the agent's own next round decides
 // whether to file. The tool is hidden behind the `agent-report` experiment; the hook stays inert
 // whenever the tool is absent from the agent's tool list.
+//
+// One provider instance is shared by every thread the app-server hosts, so nothing here may assume a
+// single agent: armed signals are keyed by a per-injection id the agent must hand back, and reports
+// are bound to a session only through the tool_call id that carried them.
 
 import type { AgentLoopHook } from "@diligent/core/agent";
 import type { Tool } from "@diligent/core/tool-contract";
@@ -32,32 +36,35 @@ interface SessionBinding {
   userId: string;
 }
 
-/** Shared between the hook (which arms) and the tool (which files). */
+/** Shared between the hooks (which arm) and the tool (which files), across every thread. */
 interface ProviderState {
-  /** The signal the agent was asked to assess; consumed by the tool. */
-  current?: FailureSignal;
-  /** tool_call id → session, learned from the appended assistant entry (flushed before tools run). */
+  /** signal id → the signal the agent was asked to assess; deleted when the tool consumes it. */
+  signals: Map<string, FailureSignal>;
+  /** tool_call id → session, learned from the appended assistant entry. */
   bindings: Map<string, SessionBinding>;
-  latest?: SessionBinding;
 }
 
-const MAX_BINDINGS = 256;
+const MAX_ENTRIES = 256;
+
+/** Insert into a FIFO-bounded map. */
+function setBounded<V>(map: Map<string, V>, key: string, value: V): void {
+  map.set(key, value);
+  if (map.size <= MAX_ENTRIES) return;
+  const oldest = map.keys().next().value;
+  if (oldest !== undefined) map.delete(oldest);
+}
 
 export function createAgentReportToolProvider(options: AgentReportToolProviderOptions): BundledToolProvider {
-  const state: ProviderState = { bindings: new Map() };
+  const state: ProviderState = { signals: new Map(), bindings: new Map() };
   const explicitProjectId = options.projectId?.trim() ?? "";
   const cwd = options.cwd?.trim() ?? "";
 
-  // Sync (default mode): pure in-memory bookkeeping, so ordering against tool execution is deterministic.
+  // Dispatched fire-and-forget after a `setImmediate`, so the binding for the tool call being
+  // executed right now may not have landed yet. The tool files nothing when it is missing.
   const onEntryAppended: PluginHookFn = async (input) => {
     const binding = bindingFromInput(input);
-    state.latest = binding;
     for (const toolCallId of toolCallIdsInEntry(input)) {
-      state.bindings.set(toolCallId, binding);
-      if (state.bindings.size > MAX_BINDINGS) {
-        const oldest = state.bindings.keys().next().value;
-        if (oldest !== undefined) state.bindings.delete(oldest);
-      }
+      setBounded(state.bindings, toolCallId, binding);
     }
     return { blocked: false };
   };
@@ -79,13 +86,15 @@ function shouldArm(context: AgentLoopHookFactoryContext): boolean {
 function createAgentReportHook(state: ProviderState): AgentLoopHook {
   const selectors = createFailureSelectors();
   let armed: FailureSignal | undefined;
+  let injectedId: string | undefined;
 
   return {
     id: "agent-report",
     restore() {
       selectors.reset();
       armed = undefined;
-      state.current = undefined;
+      if (injectedId) state.signals.delete(injectedId);
+      injectedId = undefined;
     },
     onPromptStart({ messages }) {
       armed ??= selectors.onPromptStart(messages);
@@ -94,13 +103,14 @@ function createAgentReportHook(state: ProviderState): AgentLoopHook {
       if (!armed) return undefined;
       const signal = armed;
       armed = undefined;
-      // ponytail: one main agent per sidecar process, so a single "current" slot is enough.
-      state.current = signal;
+      const signalId = crypto.randomUUID();
+      injectedId = signalId;
+      setBounded(state.signals, signalId, signal);
       logger.info("agent_report.assessment_injected", {
         message: `[agent-report] injected kind=${signal.kind} tool=${signal.tool ?? "-"} count=${signal.count}`,
-        fields: { kind: signal.kind, tool: signal.tool, count: signal.count },
+        fields: { kind: signal.kind, tool: signal.tool, count: signal.count, signalId },
       });
-      return [{ source: "agent-report", content: buildAssessmentMessage(signal) }];
+      return [{ source: "agent-report", content: buildAssessmentMessage(signal, signalId) }];
     },
     onToolResult({ toolCall, result }) {
       armed ??= selectors.onToolResult(toolCall, result);
@@ -123,20 +133,22 @@ function createAgentReportTool(
       "File a failure report about your own work. Call this ONLY when a <system-reminder> asked you to assess a " +
       "failure signal AND you judged it a genuine agent failure. Describe your own behaviour; never quote the user.",
     parameters: z.object({
+      signal_id: z.string().describe("The signal_id from the <system-reminder> that asked for this assessment."),
       cause: z.enum(AGENT_REPORT_CAUSES).describe("Root cause category."),
       title: z.string().min(1).max(200).describe("One line: what went wrong."),
       summary: z.string().min(1).max(4000).describe("What you attempted, why it failed, what would have helped."),
     }),
     execute: async (args, ctx) => {
-      const signal = state.current;
+      const signal = state.signals.get(args.signal_id);
       if (!signal) return { output: "No failure signal is under assessment; nothing reported. Continue the task." };
       if (!options.canTransmitRecords?.()) {
-        state.current = undefined;
+        state.signals.delete(args.signal_id);
         return { output: "Reporting is disabled (AI-data consent not granted). Continue the task." };
       }
-      const binding = state.bindings.get(ctx.toolCallId) ?? state.latest;
+      // No fallback binding: guessing a session would file this thread's report against another's.
+      const binding = state.bindings.get(ctx.toolCallId);
       if (!binding) return { output: "No session context is available; nothing reported. Continue the task." };
-      state.current = undefined;
+      state.signals.delete(args.signal_id);
 
       const projectId = explicitProjectId || `${binding.userId}:${cwd}`.replace(/[:/\\]/g, "_");
       const release = process.env.DILIGENT_SERVER_VERSION?.trim() || undefined;
