@@ -7,6 +7,7 @@ import { formatDurationLabel } from "../lib/time-format";
 import { getToolActivityLabel, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { ContentText } from "./ContentText";
 import { ToolActivityRow } from "./ToolActivityRow";
+import { ToolOutputImages } from "./ToolOutputImages";
 
 interface ToolCallRowProps {
   item: Extract<RenderItem, { kind: "tool" }>;
@@ -44,6 +45,7 @@ export function ToolCallRow({ item }: ToolCallRowProps) {
 
         {open ? (
           <div className="mt-2 space-y-2">
+            <ToolOutputImages images={item.outputImages} />
             {item.inputText ? <ContentText text={item.inputText} label="Input" /> : null}
             {item.outputText ? <ContentText text={item.outputText} label="Output" isError={item.isError} /> : null}
           </div>
