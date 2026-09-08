@@ -20,4 +20,5 @@ export type {
   QueuedSteeringMessage,
   SerializableError,
 } from "./types";
+export { DoomLoopDetector } from "./util/doom-loop";
 export { formatSerializableErrorForLog, toSerializableError } from "./util/errors";
