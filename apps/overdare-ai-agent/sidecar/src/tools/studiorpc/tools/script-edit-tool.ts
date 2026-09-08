@@ -1,5 +1,6 @@
 // @summary Edits a script's Source property in .ovdrjm via exact string replacement.
 
+import { resolveApiVersion } from "../config";
 import * as scriptEdit from "../methods/script.edit";
 import { buildScriptEditRender } from "../render";
 import { applyLevelChanges } from "../rpc";
@@ -13,6 +14,7 @@ import {
   type OvdrjmNode,
   readAndWriteOvdrjm,
 } from "./ovdrjm-utils";
+import { editScriptViaRpc } from "./v2/script-edit";
 
 // ---------------------------------------------------------------------------
 // Helpers — line-oriented matching in the style of apply_patch's deriveNewContent.
@@ -189,10 +191,12 @@ async function executeScriptEdit(
   // --- Read .ovdrjm, apply edit, write back ---
   const release = await writeLock.acquire();
   try {
+    if (resolveApiVersion() === "v2") return await editScriptViaRpc(parsed);
     let count = 0;
     let tabCount = 0;
     let eolCount = 0;
     let scriptName: string | undefined;
+    let scriptClass: string | undefined;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
       const root = rootDoc.Root;
@@ -206,20 +210,22 @@ async function executeScriptEdit(
       }
 
       const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-      if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+      if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
         throw new Error(
-          `Instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-            "Use studiorpc_instance_upsert to edit non-script instances.",
+          `Instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
+            "Use studiorpc_instance_upsert to edit other instances.",
         );
       }
 
+      scriptClass = instanceType;
       scriptName = typeof target.Name === "string" ? target.Name : undefined;
       const source = typeof target.Source === "string" ? target.Source : "";
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
 
-      // Normalize leading 4-spaces → tabs, then line endings for the current OS
-      const normalized = normalizeLeadingSpaces(result);
+      // Only Lua source uses tab normalization; preserve other source languages.
+      const normalized =
+        instanceType && SCRIPT_CLASSES.has(instanceType) ? normalizeLeadingSpaces(result) : { result, converted: 0 };
       const eolNormalized = normalizeLineEndings(normalized.result);
       target.Source = eolNormalized.result;
       tabCount = normalized.converted;
@@ -237,7 +243,7 @@ async function executeScriptEdit(
     return {
       output,
       render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
-      metadata: { method: "script.edit", targetGuid, count },
+      metadata: { method: "script.edit", targetGuid, count, class: scriptClass },
     };
   } catch (err) {
     return {
@@ -259,3 +265,5 @@ export function createScriptEditTool(cwd: string, writeLock: WriteLock): Tool {
     },
   };
 }
+
+export { applyEdit };

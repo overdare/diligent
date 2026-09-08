@@ -1,9 +1,11 @@
 // @summary Reads a script's Source property from .ovdrjm with line numbers.
 
+import { resolveApiVersion } from "../config";
 import * as scriptRead from "../methods/script.read";
 import { buildScriptReadRender } from "../render";
 import type { Tool, ToolResult } from "../types";
 import { findNodeByActorGuid, readOvdrjmRoot } from "./ovdrjm-utils";
+import { readScriptViaRpc } from "./v2/script-read";
 
 const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
 const DEFAULT_LIMIT = 2000;
@@ -19,6 +21,7 @@ function formatLineNumber(lineNum: number, maxLineNum: number): string {
 
 async function executeScriptRead(args: Record<string, unknown>, cwd: string): Promise<ToolResult> {
   const parsed = scriptRead.params.parse(args);
+  if (resolveApiVersion() === "v2") return await readScriptViaRpc(parsed);
   const { guid: targetGuid, offset, limit } = parsed;
 
   // --- Read .ovdrjm ---
@@ -33,11 +36,11 @@ async function executeScriptRead(args: Record<string, unknown>, cwd: string): Pr
     }
 
     const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-    if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+    if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
       return {
         output:
-          `Error: instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-          "Use studiorpc_instance_read to read non-script instances.",
+          `Error: instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
+          "Use studiorpc_instance_read to read other instances.",
         metadata: { error: true },
       };
     }

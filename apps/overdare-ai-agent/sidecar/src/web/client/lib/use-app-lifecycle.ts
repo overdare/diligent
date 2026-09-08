@@ -21,7 +21,6 @@ import { type Dispatch, type MutableRefObject, type RefObject, type SetStateActi
 import type { ConsentState } from "../../shared/consent-protocol";
 import {
   deriveAgentEvents,
-  filterSteeringInjectedEvents,
   hasInFlightRenderItems,
   shouldMarkAttentionThread,
   shouldRehydrateAfterIdleStatus,
@@ -64,7 +63,6 @@ export function shouldDispatchNotificationToActiveThread(
 
 type SteeringRefs = {
   pendingAbortRestartMessageRef: MutableRefObject<string | null>;
-  suppressNextSteeringInjectedRef: MutableRefObject<boolean>;
   restartFromPendingAbortSteer: (threadId: string) => Promise<void>;
 };
 
@@ -174,12 +172,8 @@ export function useAppRpcBindings({
       }
 
       const events = deriveAgentEvents(notification);
-      const filtered = filterSteeringInjectedEvents(events, steering.suppressNextSteeringInjectedRef.current);
-      if (filtered.consumedSuppression) {
-        steering.suppressNextSteeringInjectedRef.current = false;
-      }
       if (shouldDispatchNotificationToActiveThread(notification, activeThreadIdRef.current)) {
-        dispatch({ type: "notification", payload: { notification, events: filtered.events } });
+        dispatch({ type: "notification", payload: { notification, events } });
       }
 
       if (

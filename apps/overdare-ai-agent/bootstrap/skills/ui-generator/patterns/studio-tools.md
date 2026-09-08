@@ -26,7 +26,6 @@ Use scripts only when the UI needs behavior, such as button activation, visibili
 | Read a UI behavior script | `studiorpc_script_read` |
 | Edit a UI behavior script | `studiorpc_script_edit` |
 | Delete a UI behavior script | `studiorpc_script_delete` |
-| Validate changed UI scripts | `validatelua` |
 
 ---
 
@@ -126,6 +125,7 @@ Screen-space UI (this skill is screen-space 2D UI only):
 - `UIGridLayout`
 - `UIAspectRatioConstraint`
 - `UIStroke`
+- `ProgressBar`
 
 ---
 
@@ -168,7 +168,7 @@ Important properties:
 - `TextWrapped`
 - `TextXAlignment`
 - `TextYAlignment`
-- `Bold`
+- `FontFace` — `{Family, Style (Normal|Italic), Weight (Thin~Black)}`; use `Weight: "Bold"` for bold text (the boolean `Bold` property no longer exists)
 - All common frame layout properties
 
 ### ImageButton / ImageLabel
@@ -183,9 +183,9 @@ Important properties:
 - `ImageColor3`
 - `ImageTransparency`
 - `BackgroundTransparency`
-- `ScaleType`
-- `SliceCenter`
-- `SliceScale`
+- `ScaleType` — `"Stretch"` (default) or `"Slice"` for 9-slice scaling
+- `SliceCenter` — `{MinX, MinY, MaxX, MaxY}` in image pixels from the top-left; Slice mode only
+- `SliceScale` — scale multiplier for the slice borders; Slice mode only
 - All common frame layout properties
 
 Asset paths must use `ovdrassetid://[number]`.
@@ -221,6 +221,20 @@ Important properties:
 - `BorderStrokePosition` (`"Inner"`, `"Center"`, `"Outer"`)
 - `LineJoinMode` (`"Round"`, `"Bevel"`, `"Miter"`)
 
+### ProgressBar
+
+Built-in progress bar GuiObject — use for HP/MP bars, loading bars, cooldown indicators, and circular gauges instead of hand-building a Frame-inside-Frame bar.
+
+Important properties:
+
+- `Value` — current progress
+- `FillDirection` — `"LeftToRight"`, `"RightToLeft"`, `"TopToBottom"`, `"BottomToTop"`, `"CenterHorizontal"`, `"CenterVertical"`, `"Clockwise"`, `"CounterClockwise"`
+- `FillColor3` / `FillTransparency` / `FillImage` / `FillCornerRadius` — fill styling
+- `TrackColor3` / `TrackTransparency` / `TrackImage` / `TrackCornerRadius` — track (background) styling
+- `StartAngle` / `ArcSize` — radial gauges (`Clockwise`/`CounterClockwise`) only
+- `CornerClipEnabled`
+- All common frame layout properties
+
 ---
 
 ## Recommended Workflows
@@ -249,7 +263,7 @@ Important properties:
 2. Add or edit a `LocalScript`.
 3. Reference runtime UI from `PlayerGui` using `WaitForChild`.
 4. Connect `Activated`.
-5. Run `validatelua`.
+5. Read the validation report appended to the script write.
 6. Play test and check logs if needed.
 
 ---

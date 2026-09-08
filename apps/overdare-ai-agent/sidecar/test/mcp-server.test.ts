@@ -5,14 +5,18 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveExperimentStates } from "@diligent/runtime";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { OVERDARE_EXPERIMENTS } from "../src/experiments";
+import { StudioRpcError } from "../src/tools/studiorpc/rpc";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
+  StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string) => {
     if (method === "level.browse") return levelBrowseMock();
@@ -40,14 +44,6 @@ async function makeBootstrapDir(): Promise<string> {
     "utf-8",
   );
 
-  const proceduralSkillDir = join(dir, "skills", "procedural-builder");
-  await mkdir(proceduralSkillDir, { recursive: true });
-  await writeFile(
-    join(proceduralSkillDir, "SKILL.md"),
-    "---\nname: procedural-builder\ndescription: Procedural preview\n---\nPROCEDURAL SKILL BODY",
-    "utf-8",
-  );
-
   // A skill that is not usable over MCP — load_skill must exclude it (see MCP_EXCLUDED_SKILLS).
   const excludedSkillDir = join(dir, "skills", "record-project-memory");
   await mkdir(excludedSkillDir, { recursive: true });
@@ -62,14 +58,6 @@ async function makeBootstrapDir(): Promise<string> {
   await writeFile(
     join(agentDir, "AGENT.md"),
     "---\nname: test-agent\ndescription: A test agent\nmodel_class: lite\n---\nAGENT BODY CONTENT",
-    "utf-8",
-  );
-
-  const proceduralAgentDir = join(dir, "agents", "procedural-builder");
-  await mkdir(proceduralAgentDir, { recursive: true });
-  await writeFile(
-    join(proceduralAgentDir, "AGENT.md"),
-    "---\nname: procedural-builder\ndescription: Procedural builder\n---\nPROCEDURAL AGENT BODY",
     "utf-8",
   );
 
@@ -114,7 +102,8 @@ describe("OVERDARE MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_level_browse");
-    expect(names).toContain("validatelua");
+    // Luau validation runs inside the script-writing tools, so it is not a tool of its own.
+    expect(names).not.toContain("studiorpc_lua_validate");
     expect(names).toContain("overdaresearch");
     expect(names).toContain("overdaresearch_deep");
     const browse = tools.find((tool) => tool.name === "studiorpc_level_browse");
@@ -123,29 +112,36 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("applies the same disabled experiment gate to procedural tool, skill, and agent", async () => {
-    const bootstrapDir = await makeBootstrapDir();
+  test("a saved procedural override exposes deprecated guides without restoring retired tools", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
-      bootstrapDir,
-      systemPromptPath: globalSystemPromptPath(bootstrapDir),
-      experiments: [
-        {
-          id: "procedural",
-          title: "Procedural generation",
-          description: "Procedural preview",
-          defaultEnabled: false,
-          enabled: false,
-          toolNames: ["studiorpc_procedural_run"],
-          skillNames: ["procedural-builder"],
-          agentNames: ["procedural-builder"],
-        },
-      ],
+      bootstrapDir: join(import.meta.dir, "../../bootstrap"),
+      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { procedural: true }),
     });
+    expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
+    expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    const loadSkill = registries.tools.get("load_skill");
-    expect(loadSkill?.description).not.toContain("procedural-builder");
-    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_"))).toEqual([]);
+    expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
+    expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
+    for (const name of ["procedural-builder", "geometry-recipe"]) {
+      const prompt = registries.prompts.get(`agent-${name}`)!;
+      expect(prompt.description).toContain("Deprecated");
+      const body = await prompt.load();
+      expect(body).toContain("ProceduralModel");
+      expect(body).not.toContain("studiorpc_procedural_run");
+      expect(body).not.toContain("studiorpc_proceduralmodel_");
+      const skill = await registries.tools.get("load_skill")!.execute(
+        { name },
+        {
+          toolCallId: "deprecated-guide",
+          signal: new AbortController().signal,
+          abort() {},
+        },
+      );
+      expect(skill.output).toContain("Deprecated");
+      expect(skill.output).toContain("studiorpc_execute_luau");
+    }
   });
 
   test("calls a studio tool and returns its output", async () => {

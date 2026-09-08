@@ -1,7 +1,8 @@
 // @summary Applies batched instance deletions to the level file.
 
+import { resolveApiVersion } from "../config";
 import * as instanceDelete from "../methods/instance.delete";
-import { serviceClassEnum } from "../methods/instance.params";
+import { isProtectedInstanceClass } from "../methods/instance-safety";
 import { buildInstanceDeleteRender } from "../render";
 import { applyLevelChanges } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
@@ -14,8 +15,7 @@ import {
   readAndWriteOvdrjm,
   removeNodeByActorGuid,
 } from "./ovdrjm-utils";
-
-const serviceClasses = new Set<string>(serviceClassEnum.options);
+import { deleteInstancesViaRpc } from "./v2/instance-delete";
 
 async function executeInstanceDelete(
   args: Record<string, unknown>,
@@ -41,6 +41,7 @@ async function executeInstanceDelete(
 
   const release = await writeLock.acquire();
   try {
+    if (resolveApiVersion() === "v2") return await deleteInstancesViaRpc(parsedArgs);
     return await executeInstanceDeleteInner(parsedArgs, cwd);
   } finally {
     release();
@@ -66,7 +67,7 @@ async function executeInstanceDeleteInner(
             throw missingGuidError({ operation: "instance.delete", guid: item.guid, role: "target" });
           }
           const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-          if (instanceType && serviceClasses.has(instanceType)) {
+          if (instanceType && isProtectedInstanceClass(instanceType)) {
             throw invalidInstanceOperationError({
               operation: "instance.delete",
               code: "protected_service_class",

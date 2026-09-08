@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalImageLoader } from "@diligent/core/image-contract";
-import { getDefaultEffortForClass, resolveModel, resolveModelForClass } from "@diligent/core/model-registry";
+import { resolveModel, resolveModelForClass } from "@diligent/core/model-registry";
 import type { StreamFunction } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import type { RuntimeAgent } from "@diligent/runtime/agent/runtime-agent";
@@ -1021,7 +1021,7 @@ describe("AgentRegistry", () => {
     const { threadId } = registry.spawn({ prompt: "work", description: "", agentType: "general" });
     await registry.wait([threadId], 5000);
 
-    expect(observedModels).toEqual(["claude-opus-4-8"]);
+    expect(observedModels).toEqual(["claude-opus-5"]);
   });
 
   it("excludes collab tools and binds the image loader to the child cwd", async () => {
@@ -1135,9 +1135,8 @@ describe("AgentRegistry", () => {
     expect(policy?.content).toContain("Do not call spawn_agent, wait, send_input, or close_agent");
   });
 
-  it("uses the model-class policy effort for an explicit child class", async () => {
+  it("ignores an explicitly passed child model class; the child inherits the parent's effort", async () => {
     const observedEfforts: string[] = [];
-    const modelClass = "lite" as const;
     const registry = new AgentRegistry(
       makeCollabDeps({
         effort: "max",
@@ -1147,10 +1146,12 @@ describe("AgentRegistry", () => {
       }),
     );
 
-    const child = registry.spawn({ prompt: "task", description: "", agentType: "general", modelClass });
+    // The parent may not choose a child's model class. A passed modelClass is ignored; the child inherits
+    // the parent's model and effort (an agent overrides this only by declaring model_class in its AGENT.md).
+    const child = registry.spawn({ prompt: "task", description: "", agentType: "general", modelClass: "lite" });
     await registry.wait([child.threadId], 5000);
 
-    expect(observedEfforts).toEqual([getDefaultEffortForClass(modelClass)]);
+    expect(observedEfforts).toEqual(["max"]);
   });
 
   it("updates reused registry deps so later child spawns see the latest parent model", async () => {

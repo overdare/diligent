@@ -10,6 +10,28 @@ export const GEMINI_MODEL_CLASSES = defineProviderModelClasses({
 
 export const GEMINI_MODELS = defineProviderModels("gemini", [
   {
+    modelId: "gemini-3.8-flash",
+    display: "Gemini 3.8 Flash",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    inputCostPer1M: 1.5,
+    outputCostPer1M: 7.5,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high"],
+    supportsVision: true,
+  },
+  {
+    modelId: "gemini-3.7-flash",
+    display: "Gemini 3.7 Flash",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    inputCostPer1M: 1.5,
+    outputCostPer1M: 7.5,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high"],
+    supportsVision: true,
+  },
+  {
     modelId: "gemini-3.6-flash",
     display: "Gemini 3.6 Flash",
     contextWindow: 1_048_576,

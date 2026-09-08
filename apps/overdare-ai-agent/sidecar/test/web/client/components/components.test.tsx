@@ -887,11 +887,14 @@ test("context chip icon kind covers known Studio classes and VS Code variants", 
   ).toBe("file-selection");
 });
 
-test("input dock shows the designed toolbar tag for each non-default mode", () => {
+test("input dock shows the designed toolbar tag for every mode", () => {
   expect(getModeLabel("default")).toBe("Default");
-  expect(getModeBadgeLabel("default")).toBeNull();
+  expect(getModeBadgeLabel("default")).toBe("Default");
   expect(getModeBadgeLabel("plan")).toBe("Plan");
   expect(getModeBadgeLabel("execute")).toBe("Execute");
+  expect(getModeBadgeClasses("default")).toContain("w-[45px]");
+  expect(getModeBadgeClasses("default")).toContain("bg-[#2A3038]");
+  expect(getModeBadgeClasses("default")).toContain("text-[#88929C]");
   expect(getModeBadgeClasses("plan")).toContain("w-[29px]");
   expect(getModeBadgeClasses("plan")).toContain("bg-[#2A3038]");
   expect(getModeBadgeClasses("plan")).toContain("text-[#88929C]");
@@ -934,7 +937,7 @@ test("input dock shows the designed toolbar tag for each non-default mode", () =
     />,
   );
 
-  expect(defaultHtml).not.toContain('title="Current mode: default"');
+  expect(defaultHtml).toContain('title="Current mode: Default"');
 
   const planHtml = renderToStaticMarkup(
     <InputDock
@@ -1506,7 +1509,7 @@ test("assistant message exposes copy and report actions for a completed response
   expect(html).toContain('data-icon="flag"');
   expect(html).toContain("justify-start");
   expect(html).toContain("group/message relative py-2");
-  expect(html).toContain("absolute top-full left-0");
+  expect(html).toContain("relative mr-auto");
   expect(html).toContain("w-max whitespace-nowrap");
   expect(html).toContain("1m ago");
   expect(html).toContain('role="tooltip"');
@@ -1580,7 +1583,7 @@ test("request actions use the reserved row gap and appear on hover or keyboard f
   expect(html).toContain("justify-end");
   expect(html).toContain("group/message flex justify-end py-2");
   expect(html).toContain("relative max-w-message");
-  expect(html).toContain("absolute top-full right-0");
+  expect(html).toContain("relative ml-auto");
   expect(html).toContain("w-max whitespace-nowrap");
   expect(html).toContain("group-hover/message:visible");
   expect(html).toContain("group-focus-within/message:visible");

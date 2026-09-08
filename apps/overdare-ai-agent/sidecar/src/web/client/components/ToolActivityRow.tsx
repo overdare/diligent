@@ -100,15 +100,15 @@ export function ToolActivityRow({
   const hasMeta = (expanded || showMeta) && Boolean(detailText || outputText);
 
   return (
-    <div className={cn("w-full max-w-tool-row", compact ? "py-0.5" : "py-1")}>
+    <div className={cn("w-full max-w-tool-row", compact ? "py-0.5" : "py-2")}>
       <button
         type="button"
         aria-expanded={expandable ? expanded : undefined}
         disabled={!expandable}
         onClick={onToggle}
         className={cn(
-          "group inline-flex max-w-full min-w-0 items-center rounded-md pr-1 text-left text-muted transition-colors",
-          compact ? "gap-2 py-0.5" : "gap-2 py-1",
+          "group max-w-full min-w-0 items-center rounded-md pr-1 text-left text-muted transition-colors",
+          compact ? "inline-flex gap-2 py-0.5" : "flex gap-2",
           expandable ? `hover:text-text ${focusRingClasses}` : "cursor-default",
           isBusy && "tool-activity-running text-info/85",
           isError && "text-muted/85",

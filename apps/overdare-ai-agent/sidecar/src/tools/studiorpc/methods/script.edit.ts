@@ -2,9 +2,9 @@ import { z } from "zod";
 
 export const method = "script.edit";
 
-export const description = `Edit a script's source via string replacement.
+export const description = `Edit an instance's string Source via focused replacement.
 
-IMPORTANT: Use tabs for indentation. Leading 4-space groups will be auto-converted to tabs.
+For Lua script classes, use tabs: leading 4-space groups are auto-converted to tabs. Other Source languages retain their indentation.
 
 Matching first tries exact text, then falls back to line-based matching that tolerates trailing whitespace,
 leading/trailing whitespace, and common Unicode quote/dash/space variants.

@@ -197,10 +197,13 @@ export class TurnOrchestrator {
 
   getPendingSteers(): PendingSteer[] {
     const agentMessages = this._agent?.getPendingSteeringMessages() ?? [];
-    return [...agentMessages, ...this.pendingMessages].map(({ id, message }) => ({
-      id,
-      content: getUserMessageText(message) ?? "",
-    }));
+    return [...agentMessages, ...this.pendingMessages].map(({ id, message }) => {
+      const attachments =
+        message.role === "user" && Array.isArray(message.content)
+          ? message.content.filter((block) => block.type === "local_image")
+          : [];
+      return { id, content: getUserMessageText(message) ?? "", ...(attachments.length > 0 ? { attachments } : {}) };
+    });
   }
 
   /** Check if pending messages exist (steering or follow-up). */

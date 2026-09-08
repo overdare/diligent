@@ -21,7 +21,10 @@ export const description =
   "quality; use game.observe for live property values such as colors and contrast. `locate` projects world " +
   "positions or instance names/paths into the same normalized 0..1 coordinates used by input injection. " +
   "`screen` is the unclamped projected bounds and `onScreen` means inside the camera frustum, not visible " +
-  "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits.";
+  "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits. " +
+  "`instanceId` switches to a different picture entirely: that one instance and its children rendered on " +
+  "their own, off the viewport, under fixed light — the way to look at a prop you are iterating on, since " +
+  "two such shots are comparable and nothing around the prop can crowd or light the frame.";
 
 const worldPoint = z.object({
   x: z.number(),
@@ -42,6 +45,28 @@ export const params = z
         "One-shot editor camera position and look-at point in OVERDARE world coordinates. The original view " +
           "is restored after capture. Rejected while PIE is running because the player camera owns the view.",
       ),
+    instanceId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Photograph one instance and everything under it, rendered on its own instead of through the " +
+          "viewport: nothing else of the level in frame, fixed lighting and exposure, and the creator's camera " +
+          "left where it is. Use it to judge a prop you just built or edited — a ProceduralModel, a Model, a " +
+          "single part. `camera`, `locate` and `includeGui` do not apply to this render.",
+      ),
+    yaws: z
+      .array(z.number())
+      .max(8)
+      .optional()
+      .describe(
+        "With instanceId, the compass angles to orbit through, one PNG each. Defaults to a single " +
+          "three-quarter view. Only the first image comes back inline; the rest are on disk under `paths`.",
+      ),
+    pitch: z
+      .number()
+      .optional()
+      .describe("With instanceId, degrees above the horizon to look down from. Defaults to 20."),
     locate: z
       .array(
         z.union([

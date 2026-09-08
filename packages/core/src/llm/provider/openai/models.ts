@@ -12,7 +12,7 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
   {
     modelId: "gpt-5.5",
     display: "GPT-5.5",
-    contextWindow: 1_000_000,
+    contextWindow: 1_050_000,
     maxOutputTokens: 128_000,
     inputCostPer1M: 5,
     outputCostPer1M: 30,
@@ -59,5 +59,18 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     cacheWriteCostPer1M: 1.25,
     supportsThinking: true,
     supportsVision: true,
+  },
+  {
+    modelId: "gpt-6-astra",
+    display: "GPT-6 Astra",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 10,
+    outputCostPer1M: 50,
+    cacheReadCostPer1M: 1,
+    cacheWriteCostPer1M: 0,
+    supportsThinking: true,
+    supportsVision: true,
+    aliases: ["gpt-6", "astra"],
   },
 ]);
