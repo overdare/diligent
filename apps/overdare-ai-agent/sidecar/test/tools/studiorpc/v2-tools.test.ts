@@ -7,7 +7,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
-import { tmpdir } from "node:os";
+import { EOL, tmpdir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
 import type { Tool } from "@diligent/core/tool-contract";
@@ -557,14 +557,15 @@ describe("v2 validation", () => {
       .execute({ guid: "RECIPE", old_string: "pass", new_string: "return" }, toolContext());
     expect(read.output).toContain("    pass");
     expect(edit.metadata).toMatchObject({ method: "script.edit", count: 1 });
+    const expectedSource = ["def on_generate():", "    return"].join(EOL);
     if (version === "v2") {
       expect(paramsOf("instance.update")).toEqual({
-        Instances: [{ ActorGuid: "RECIPE", Source: "def on_generate():\n    return" }],
+        Instances: [{ ActorGuid: "RECIPE", Source: expectedSource }],
       });
       expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update", "level.save.file"]);
     } else {
       const saved = JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8"));
-      expect(findWorldNode(saved.Root, "RECIPE")?.Source).toBe("def on_generate():\n    return");
+      expect(findWorldNode(saved.Root, "RECIPE")?.Source).toBe(expectedSource);
       expect(methodsCalled()).toEqual(["level.apply"]);
     }
   });
