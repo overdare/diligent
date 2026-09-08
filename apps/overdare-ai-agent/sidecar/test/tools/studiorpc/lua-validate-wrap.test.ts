@@ -124,7 +124,7 @@ describe("scripts are validated by the tool that wrote them", () => {
       .execute({ guid: SCRIPT_GUID, old_string: "print(1)", new_string: "print(2)" }, toolContext());
 
     expect(validateCalls()).toHaveLength(1);
-    expect(validateCalls()[0].params).toMatchObject({ mode: "nonstrict", targetGuids: [SCRIPT_GUID] });
+    expect(validateCalls()[0].params).toMatchObject({ mode: "strict", targetGuids: [SCRIPT_GUID] });
     expect(result.output).toContain("SUMMARY scripts=1 errors=0");
   });
 

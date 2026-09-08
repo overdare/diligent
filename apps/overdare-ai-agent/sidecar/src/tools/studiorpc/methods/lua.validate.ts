@@ -6,26 +6,25 @@ export const method = "lua.validate";
 export const timeoutMs = 120_000;
 
 /**
- * Default to nonstrict.
+ * Ask for strict.
  *
- * Measured against a live Studio world (4 scripts): strict reported 38 errors, 1 of them
- * real. The other 37 are places where the analyzer has no type to work with — 28 from a
- * generated UI helper that calls `Instance.new(className)` with a string variable, so its
- * return is bare `Instance` and every later `.Text` / `.Active` fails; 9 from
- * `WaitForChild` on a character model handed in at runtime, which no world tree can
- * resolve. Nonstrict reported the one real error alone.
+ * Strict is the mode that catches a real typo: on a resolved value it reports
+ * `Key 'Enabledd' not found in class 'LocalScript'`, naming the class it checked against.
+ * Nonstrict reports neither that nor the noise, so it cannot catch the mistake the agent is
+ * most likely to make in a script it just wrote.
  *
- * Studio itself is not the problem: a literal `WaitForChild("Name")` whose child exists in
- * the world does resolve to the real class (verified — `.Enabled` clean and `.Enabledd`
- * flagged on a LocalScript). Strict only goes quiet where our own scripts erase their types.
+ * The cost is measured: on a live world of 4 scripts strict reported 38 errors, 1 real. The
+ * other 37 sit on values whose class the analyzer could not determine, and every one of them
+ * says `class 'Instance'` — 28 from a generated UI helper that calls `Instance.new(className)`
+ * with a string variable, 9 from `WaitForChild` on a character model handed in at runtime.
+ * A diagnostic naming a concrete class is a real defect; one naming `Instance` means the
+ * analyzer had no type to check against.
  *
- * The trade is legibility, not correctness: nonstrict also silences a genuine typo of that
- * same shape (`btn.Txet` on an unresolved `Instance` goes unreported).
- * ponytail: revisit strict once generated scripts keep their types — typing the ui-generator
- * helper is what makes strict useful, not a Studio change.
+ * ponytail: the noise is ours to remove — teaching the ui-generator helper to take the
+ * instance rather than the class name keeps the type, and those 28 stop existing.
  */
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return { mode: "nonstrict", ...args };
+  return { mode: "strict", ...args };
 }
 
 /** Studio wraps the report in `{ output }`; surface the report itself as the tool output. */

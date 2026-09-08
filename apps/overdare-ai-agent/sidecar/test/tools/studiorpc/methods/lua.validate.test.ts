@@ -1,4 +1,4 @@
-// @summary Tests that lua.validate surfaces Studio's report as text and asks for nonstrict.
+// @summary Tests that lua.validate surfaces Studio's report as text and asks for strict.
 
 import { describe, expect, test } from "bun:test";
 import { normalizeArgs, postProcess } from "../../../../src/tools/studiorpc/methods/lua.validate";
@@ -20,12 +20,12 @@ describe("lua.validate", () => {
     expect(postProcess(reply)).toBe(reply);
   });
 
-  test("strict is not requested by default — it flags working code our helpers leave untyped", () => {
-    expect(normalizeArgs({}).mode).toBe("nonstrict");
-    expect(normalizeArgs({ targetGuids: ["ABC"] }).mode).toBe("nonstrict");
+  test("strict is requested by default — nonstrict cannot report a typo at all", () => {
+    expect(normalizeArgs({}).mode).toBe("strict");
+    expect(normalizeArgs({ targetGuids: ["ABC"] }).mode).toBe("strict");
   });
 
   test("an explicit mode still wins over the default", () => {
-    expect(normalizeArgs({ mode: "strict" }).mode).toBe("strict");
+    expect(normalizeArgs({ mode: "nonstrict" }).mode).toBe("nonstrict");
   });
 });
