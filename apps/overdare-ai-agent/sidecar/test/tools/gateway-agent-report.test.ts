@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import net from "node:net";
+import { resetHubTokenCache } from "../../src/tools/analytics";
 import {
   AGENT_REPORT_TOOL_NAME,
   buildAssessmentMessage,
@@ -16,8 +17,10 @@ const realStudioEnv = { host: process.env.STUDIO_HOST, port: process.env.STUDIO_
 
 interface FetchCall {
   url: string;
+  method?: string;
   body: Record<string, unknown>;
   authorization?: string;
+  contentType?: string;
 }
 
 function installFetchSpy(status = 200): FetchCall[] {
@@ -26,8 +29,10 @@ function installFetchSpy(status = 200): FetchCall[] {
     const headers = new Headers(init?.headers);
     calls.push({
       url: String(input),
+      method: init?.method,
       body: JSON.parse(String(init?.body ?? "{}")),
       authorization: headers.get("authorization") ?? undefined,
+      contentType: headers.get("content-type") ?? undefined,
     });
     return new Response(
       JSON.stringify({ report_id: 1, reported_at: "2026-09-08T00:00:00Z", stored: true, notified: true }),
@@ -65,6 +70,8 @@ function startTokenlessRpcServer(): Promise<{ stop: () => Promise<void> }> {
 beforeEach(() => {
   process.env.DILIGENT_GATEWAY_URL = "http://127.0.0.1:8000";
   process.env.DILIGENT_GATEWAY_TOKEN = "test-token";
+  // The hub-token cache is process-wide; analytics.test.ts runs first and fills it.
+  resetHubTokenCache();
 });
 
 afterEach(() => {
@@ -159,8 +166,18 @@ describe("postAgentReport", () => {
     await postAgentReport(wire);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("http://127.0.0.1:8000/v1/agent-reports");
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].contentType).toBe("application/json");
     expect(calls[0].authorization).toBe("Bearer test-token");
     expect(calls[0].body).toEqual(wire);
+  });
+
+  test("masks secrets in the title and the summary before transmit", async () => {
+    const secret = "sk-ant-api03-0123456789abcdefghijklmnopqrstuvwxyz";
+    const calls = installFetchSpy();
+    await postAgentReport({ ...wire, title: `leaked ${secret}`, summary_md: `also ${secret} here` });
+    expect(calls[0].body.title).toBe("leaked [REDACTED:anthropic-key]");
+    expect(calls[0].body.summary_md).toBe("also [REDACTED:anthropic-key] here");
   });
 
   test("throws on a non-2xx response", async () => {
