@@ -2,4 +2,26 @@
 
 import type { ExperimentDefinition } from "@diligent/runtime";
 
-export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [];
+/**
+ * True only on a dev-channel build, mirroring `plugin-sdk`'s `currentEnv()`: `DILIGENT_ENV`
+ * must be exactly "dev" (case-insensitive), so unset — including a legacy launcher that
+ * forwards nothing — reads as prod. Inlined rather than importing `@diligent/plugin-sdk`,
+ * which the sidecar does not otherwise depend on.
+ */
+function isDevChannel(): boolean {
+  return process.env.DILIGENT_ENV?.trim().toLowerCase() === "dev";
+}
+
+export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
+  {
+    // Internal diagnostics: the skill ships in the bundle but a prod-channel build filters
+    // it out of the model's skill list, so creators never see it. Sending additionally
+    // requires WEBHOOK_URL in the report script, which is blank by default.
+    // Both gates are off by default in prod.
+    id: "issue-report",
+    title: "Internal issue reporting",
+    description: "Let the agent report Studio/agent defects and its own wasted effort to an internal Slack channel.",
+    defaultEnabled: isDevChannel(),
+    skillNames: ["session-issue-report"],
+  },
+];
