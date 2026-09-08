@@ -61,12 +61,11 @@ describe("StatusBar mode hint (right side)", () => {
     expect(stripAnsi(second.join(""))).toContain("plan mode  (shift+tab to cycle)");
   });
 
-  test("mode 'default' shows no mode hint", () => {
+  test("mode 'default' shows 'default mode  (shift+tab to cycle)' on right", () => {
     const bar = new StatusBar();
     bar.update({ model: "test-model", mode: "default", status: "idle" });
     const text = stripAnsi(bar.render(120).join(""));
-    expect(text).not.toContain("mode  (shift+tab");
-    expect(text).not.toContain("[default]");
+    expect(text).toContain("default mode  (shift+tab to cycle)");
   });
 
   test("mode undefined shows no mode hint", () => {

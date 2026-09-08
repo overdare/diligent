@@ -113,3 +113,26 @@ describe("steering", () => {
     expect(afterCancel.pendingSteers).toEqual([]);
   });
 });
+
+test("thread/read preserves pending steer image attachments through edits", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-steer-images-"));
+  client = createProtocolClient(createTestServer({ cwd: tmpDir }));
+  const threadId = await client.initAndStartThread(tmpDir);
+  const attachment = {
+    type: "local_image",
+    path: join(tmpDir, "reference.png"),
+    mediaType: "image/png",
+    fileName: "reference.png",
+  };
+  await client.request("turn/steer", {
+    threadId,
+    steerId: "image-steer",
+    content: "original",
+    attachments: [attachment],
+  });
+  await client.request("turn/steer/update", { threadId, steerId: "image-steer", content: "edited" });
+  const history = (await client.request("thread/read", { threadId })) as { pendingSteers: unknown[] };
+  expect(history.pendingSteers).toEqual([
+    { id: "image-steer", content: "edited", attachments: [{ ...attachment, path: "reference.png" }] },
+  ]);
+});

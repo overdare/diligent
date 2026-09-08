@@ -1,6 +1,6 @@
 // @summary Zod schemas for Diligent protocol domain models and event payloads
 import { z } from "zod";
-import { ContentBlockSchema, ImageBlockSchema } from "./content-blocks";
+import { ContentBlockSchema, ImageBlockSchema, LocalImageBlockSchema } from "./content-blocks";
 import { ToolRenderPayloadSchema } from "./tool-render";
 
 // Re-export content block and tool render types from focused sub-files.
@@ -13,6 +13,19 @@ export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
 
 export const ModeSchema = z.enum(["default", "plan", "execute"]);
 export type Mode = z.infer<typeof ModeSchema>;
+
+/** Slash command that switches to each mode. `execute` is typed `/exec`. */
+export const MODE_COMMAND_NAMES: Record<Mode, string> = {
+  default: "default",
+  plan: "plan",
+  execute: "exec",
+};
+
+/** Next mode in the shift+tab cycle. An unrecognized mode lands on the first one. */
+export function nextCycledMode(mode: Mode): Mode {
+  const options = ModeSchema.options;
+  return options[(options.indexOf(mode) + 1) % options.length];
+}
 
 export const ThinkingEffortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 export type ThinkingEffort = z.infer<typeof ThinkingEffortSchema>;
@@ -106,6 +119,7 @@ export type Message = z.infer<typeof MessageSchema>;
 export const PendingSteerSchema = z.object({
   id: z.string(),
   content: z.string(),
+  attachments: z.array(LocalImageBlockSchema).optional(),
 });
 export type PendingSteer = z.infer<typeof PendingSteerSchema>;
 

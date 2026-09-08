@@ -1,4 +1,4 @@
-// @summary React hook for steering queue state: pending steers, abort-restart, and suppress-injected logic
+// @summary React hook for steering queue state: pending steers and abort-restart
 
 import { createLogger } from "@diligent/logging";
 import type { ModelRef, PendingSteer } from "@diligent/protocol";
@@ -84,8 +84,8 @@ export async function executeCancelSteer({
   steerId: string;
   dispatch: (action: SteeringAction) => void;
 }): Promise<void> {
-  dispatch({ type: "cancel_pending_steer", payload: { steerId } });
-  await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL, { threadId, steerId });
+  const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_CANCEL, { threadId, steerId });
+  if (result.cancelled) dispatch({ type: "cancel_pending_steer", payload: { steerId } });
 }
 
 export async function executeUpdateSteer({
@@ -101,15 +101,12 @@ export async function executeUpdateSteer({
   content: string;
   dispatch: (action: SteeringAction) => void;
 }): Promise<void> {
-  dispatch({
-    type: "update_pending_steer",
-    payload: { steerId, content },
-  });
-  await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE, {
+  const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_STEER_UPDATE, {
     threadId,
     steerId,
     content,
   });
+  if (result.updated) dispatch({ type: "update_pending_steer", payload: { steerId, content } });
 }
 
 export async function executeRestartFromAbort({
@@ -175,7 +172,6 @@ export function useSteeringQueue({
   clearContextItems: () => void;
 }) {
   const pendingAbortRestartMessageRef = useRef<string | null>(null);
-  const suppressNextSteeringInjectedRef = useRef(false);
 
   const canSteer = (activeInput.trim().length > 0 || contextItems.length > 0) && isBusy;
 
@@ -269,7 +265,6 @@ export function useSteeringQueue({
   return {
     canSteer,
     pendingAbortRestartMessageRef,
-    suppressNextSteeringInjectedRef,
     restartFromPendingAbortSteer,
     steerMessage,
     handleSteer,
