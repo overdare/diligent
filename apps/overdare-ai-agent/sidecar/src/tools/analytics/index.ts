@@ -243,6 +243,11 @@ async function callStudioRpc(
   });
 }
 
+/** Drop the cached hub token. Test support: the cache is process-wide and leaks across suites. */
+export function resetHubTokenCache(): void {
+  cachedHubToken = undefined;
+}
+
 /** Read the Creator Hub bearer token via Studio RPC (shared with the gateway transmitter). Cached. */
 export async function readHubToken(config: OverdareConfig): Promise<string> {
   if (cachedHubToken) return cachedHubToken;
