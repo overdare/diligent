@@ -1,6 +1,6 @@
 ---
 name: session-issue-report
-description: Report a defect in Studio, the OVERDARE agent, or a diligent tool — or the agent's own wasted effort — to the internal Slack channel, with redacted session context attached. Fire it on your own judgment mid-task, without being asked, as soon as you conclude that (a) a tool, RPC, or documented contract is broken, missing a capability the work genuinely needed, or behaving against its own schema or description, or (b) you yourself looped, misused a tool, redid work that already existed, or spent many turns on an approach that turned out to be wasted. Also fire it whenever whoever is driving the session asks — in any language or wording — for an issue to be reported, filed, logged, escalated, or written up, or observes that this agent keeps failing the same way. That caller is usually another model orchestrating this agent rather than a person, so do not wait for conversational cues: the conditions above are the trigger, and they hold whether you are the agent doing the work or the agent supervising it. Internal only — requires DILIGENT_ISSUE_WEBHOOK, and is gated off outside the dev release channel.
+description: Report a defect in Studio, the OVERDARE agent, or a diligent tool — or the agent's own wasted effort — to the internal Slack channel, with redacted session context attached. Fire it on your own judgment mid-task as soon as you conclude that (1) a tool, RPC, or documented contract is broken, missing a capability the work genuinely needed, or behaving against its own schema or description, or (2) the work itself went wrong — a tool was misused, something already built was rebuilt, or many turns went into an approach that turned out to be wasted. Those two conditions are the entire trigger, and they hold from either seat: the model doing the work inside the agent, and the model driving that agent through MCP or a subagent call. Nobody is going to ask you to do this — the driver is usually another model rather than a person, and no harness prompts for reports — so do not wait for a request or a conversational cue; notice the condition and fire. Internal only — requires DILIGENT_ISSUE_WEBHOOK, and is gated off outside the dev release channel.
 ---
 
 # Session Issue Report
@@ -154,24 +154,38 @@ still matters more than the telemetry.
 
 ## Availability and gating (internal)
 
-This skill ships inside the agent bundle (`apps/overdare-ai-agent/bootstrap/skills/`) but is
-**inert outside the dev release channel**: the `issue-report` experiment in
-`sidecar/src/experiments.ts` lists it under `skillNames`, and its `defaultEnabled` follows
-the release channel — `dev` only when `DILIGENT_ENV` is exactly `dev`, matching
-`plugin-sdk`'s `currentEnv()`. A prod-channel build filters the skill out of the model's
-skill list entirely, so creators never see it.
+This skill ships inside the agent bundle (`apps/overdare-ai-agent/bootstrap/skills/`) so the
+in-agent model can reach it at all. Three things have to line up before a report can
+leave, and in a normal creator install none of them do.
 
-Two independent gates therefore have to line up before anything is sent, which is what
-makes shipping it acceptable at all:
+**1. The experiment must be on.** `issue-report` in `sidecar/src/experiments.ts` lists this
+skill under `skillNames`, and a disabled experiment drops it from the model's skill list
+outright (`runtime.ts` filters on `disabledSkillNames`), so a creator never learns it
+exists. Its `defaultEnabled` follows the release channel — on only when the sidecar's
+`DILIGENT_ENV` is exactly `dev`, matching `plugin-sdk`'s `currentEnv()`.
 
-1. the experiment must be on (dev channel, or an explicit override in `config.jsonc`), and
-2. `DILIGENT_ISSUE_WEBHOOK` must be set in the environment.
+**2. Something has to put the sidecar on the dev channel**, which is less automatic than
+"it is a dev build". The launcher resolves its own channel from `--agent-env`, then a
+`DILIGENT_ENV` variable, then a compile-time value, and falls back to **prod**
+(`apps/overdare-ai-agent/src/env.rs`) — and release CI bakes nothing in. Whatever it
+resolves is forwarded verbatim to the sidecar (`webserver.rs`:
+`cmd.env("DILIGENT_ENV", env.as_str())`, which is exactly `"dev"` or `"prod"`). So the
+switch is one of:
 
-To use it locally:
+- Studio launches the agent with `--agent-env dev`
+- `DILIGENT_ENV=dev` is exported in the environment
+- `experiments.overrides["issue-report"] = true` in `config.jsonc`, which skips the channel
+  question entirely
+
+A local `make dev` run goes through no launcher, so `DILIGENT_ENV` is unset, which reads as
+prod and leaves the skill off. Use the override or export the variable.
+
+**3. `DILIGENT_ISSUE_WEBHOOK` must be set.** It is never shipped, so even an enabled
+experiment on a prod build has nowhere to post.
 
 ```bash
 export DILIGENT_ISSUE_WEBHOOK='https://hooks.slack.com/services/...'   # ask the team
-DILIGENT_ENV=dev  # or set experiments.overrides["issue-report"] = true in config.jsonc
+export DILIGENT_ENV=dev                                               # or use the override
 ```
 
 Keep the URL out of the repo, out of `config.jsonc`, and out of any committed env file. A
