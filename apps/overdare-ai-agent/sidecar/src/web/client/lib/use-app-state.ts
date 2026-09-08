@@ -216,7 +216,7 @@ export function useAppState({
       void notificationState.desktopNotificationsRef.current.notifyForNotification(notification),
     handleServerRequest: serverRequests.handleServerRequest,
     steering: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
+      pendingAbortRestartSteerRef: steeringQueue.pendingAbortRestartSteerRef,
       restartFromPendingAbortSteer: steeringQueue.restartFromPendingAbortSteer,
     },
     setOauthPending: modalState.setOauthPending,
@@ -273,7 +273,7 @@ export function useAppState({
     bumpMcpRefreshNonce: modalState.bumpMcpRefreshNonce,
     setSkills,
     steeringControl: {
-      pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
+      pendingAbortRestartSteerRef: steeringQueue.pendingAbortRestartSteerRef,
     },
     modeRef,
     cwdRef,

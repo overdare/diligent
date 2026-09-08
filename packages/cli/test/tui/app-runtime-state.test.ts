@@ -33,10 +33,21 @@ describe("AppRuntimeState", () => {
 
   test("drains pending steers", () => {
     const state = new AppRuntimeState("default", "medium");
-    state.queuePendingSteer({ id: "s1", content: "first" });
+    state.queuePendingSteer({
+      id: "s1",
+      content: "first",
+      attachments: [{ type: "local_image", path: "reference.png", mediaType: "image/png" }],
+    });
     state.queuePendingSteer({ id: "s2", content: "second" });
 
-    expect(state.drainPendingSteers()).toEqual(["first", "second"]);
+    expect(state.drainPendingSteers()).toEqual([
+      {
+        id: "s1",
+        content: "first",
+        attachments: [{ type: "local_image", path: "reference.png", mediaType: "image/png" }],
+      },
+      { id: "s2", content: "second" },
+    ]);
     expect(state.pendingSteers).toHaveLength(0);
   });
 

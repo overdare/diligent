@@ -567,6 +567,57 @@ describe("App", () => {
     expect(resumedCall).toBeDefined();
   });
 
+  test("Ctrl+C restart forwards attachments from the first pending steer", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
+    const { app, terminal } = createAppHarness(makeConfig(streamFn), workspace);
+    const runtime = (
+      app as unknown as {
+        runtime: {
+          pendingSteers: Array<{
+            id: string;
+            content: string;
+            attachments?: Array<{ type: "local_image"; path: string; mediaType: "image/png"; fileName?: string }>;
+          }>;
+        };
+      }
+    ).runtime;
+    const attachment = {
+      type: "local_image" as const,
+      path: "reference.png",
+      mediaType: "image/png" as const,
+      fileName: "reference.png",
+    };
+
+    try {
+      await app.start();
+      await wait(30);
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await waitFor(() => calls.length === 1);
+      runtime.pendingSteers.push({ id: "image-steer", content: "use this reference", attachments: [attachment] });
+
+      terminal.emitCtrlC();
+      await waitFor(() => calls.length === 2);
+
+      const restartedUserMessage = calls[1]?.messages.find(
+        (message) =>
+          message.role === "user" &&
+          Array.isArray(message.content) &&
+          message.content.some((block) => block.type === "text" && block.text === "use this reference"),
+      );
+      expect(restartedUserMessage?.content).toEqual([{ type: "text", text: "use this reference" }, attachment]);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+  });
+
   test("interrupted turn restart keeps processing alive until restarted turn completes", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const calls: StreamContext[] = [];
