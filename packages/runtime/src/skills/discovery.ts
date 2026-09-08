@@ -1,6 +1,6 @@
 // @summary Discovers skills from project, global, and config-specified directories
 import type { Dirent } from "node:fs";
-import { readdir, realpath } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveProjectDirName } from "../infrastructure/diligent-dir";
@@ -77,11 +77,27 @@ async function scanSkillDirectory(
     // Skip hidden directories and node_modules
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
 
-    if (entry.isDirectory()) {
+    // A symlink reports neither isDirectory() nor isFile(), so resolve it before deciding.
+    // Dev setups symlink bundle skills into the global directory (scripts/dev-cross-studio.sh
+    // does exactly that), and without this those entries fall through both branches and the
+    // whole directory silently discovers nothing.
+    let isDir = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
+        const target = await stat(join(dir, entry.name));
+        isDir = target.isDirectory();
+        isFile = target.isFile();
+      } catch {
+        continue; // dangling symlink — nothing to load
+      }
+    }
+
+    if (isDir) {
       // Look for SKILL.md in subdirectory
       const skillPath = join(dir, entry.name, "SKILL.md");
       await loadSkill(skillPath, source, skills, errors, seen);
-    } else if (entry.isFile() && entry.name.endsWith(".md") && entry.name !== "README.md") {
+    } else if (isFile && entry.name.endsWith(".md") && entry.name !== "README.md") {
       // Flat skill: foo.md directly in root
       const skillPath = join(dir, entry.name);
       await loadSkill(skillPath, source, skills, errors, seen);
