@@ -1,6 +1,6 @@
 // @summary App-server e2e factory with deterministic provider streams and optional tools
 
-import type { RuntimeConfig, StreamFunction, Tool } from "@diligent/runtime";
+import type { BundledToolProvider, RuntimeConfig, StreamFunction, Tool } from "@diligent/runtime";
 import {
   createAppServerConfig,
   createYoloPermissionEngine,
@@ -17,6 +17,7 @@ export function createTestServer(opts: {
   cwd: string;
   streamFunction?: StreamFunction;
   tools?: Tool[];
+  bundledToolProviders?: BundledToolProvider[];
   runtimeToolsConfig?: RuntimeConfig["diligent"]["tools"];
   runtimeConfigOverrides?: Partial<RuntimeConfig>;
 }): DiligentAppServer {
@@ -25,6 +26,7 @@ export function createTestServer(opts: {
   if (!opts.runtimeToolsConfig) {
     return new DiligentAppServer({
       cwd: opts.cwd,
+      bundledToolProviders: opts.bundledToolProviders,
       resolvePaths: async (cwd) => ensureDiligentDir(cwd),
       createAgent: () =>
         new RuntimeAgent(

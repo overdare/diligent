@@ -3,19 +3,13 @@
 import type {
   AgentEvent,
   DiligentServerNotification,
+  LocalImageBlock,
   Mode,
   PendingSteer,
   SessionSummary,
   ThreadReadResponse,
 } from "@diligent/protocol";
 import type { AgentContextItem } from "./agent-native-bridge";
-import {
-  type ComposerAction,
-  EMPTY_COMPOSER_DRAFT,
-  type PendingImage,
-  reduceComposerDraft,
-  restoreInterruptedSteers,
-} from "./composer-state";
 import {
   hydrateFromThreadRead,
   initialThreadState,
@@ -24,10 +18,9 @@ import {
   type ThreadState,
 } from "./thread-store";
 
-export type { PendingImage } from "./composer-state";
+export type PendingImage = LocalImageBlock & { webUrl: string };
 
 export type AppAction =
-  | ComposerAction
   | { type: "notification"; payload: { notification: DiligentServerNotification; events: AgentEvent[] } }
   | { type: "hydrate"; payload: { threadId: string; mode: Mode; history: ThreadReadResponse } }
   | { type: "reset_draft"; payload: { mode: Mode } }
@@ -41,6 +34,7 @@ export type AppAction =
   | { type: "local_steer"; payload: PendingSteer }
   | { type: "cancel_pending_steer"; payload: { steerId: string } }
   | { type: "update_pending_steer"; payload: { steerId: string; content: string } }
+  | { type: "consume_first_pending_steer" }
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
   | { type: "clear_toast" }
@@ -55,42 +49,8 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
     return false;
   };
 
-  if (action.type === "notification") {
-    const { notification, events } = action.payload;
-    const next = reduceServerNotification(state, notification, events);
-    if (
-      notification.method === "turn/interrupted" &&
-      notification.params.threadId === state.activeThreadId &&
-      state.pendingSteers.length > 0
-    ) {
-      const threadId = notification.params.threadId;
-      return {
-        ...next,
-        pendingSteers: [],
-        composerDrafts: {
-          ...state.composerDrafts,
-          [threadId]: restoreInterruptedSteers(
-            state.composerDrafts[threadId] ?? EMPTY_COMPOSER_DRAFT,
-            state.pendingSteers,
-          ),
-        },
-      };
-    }
-    return next;
-  }
-  if (
-    action.type === "composer_text" ||
-    action.type === "composer_context" ||
-    action.type === "composer_remove_context" ||
-    action.type === "composer_images"
-  ) {
-    const threadId = action.payload.threadId;
-    const draft = state.composerDrafts[threadId] ?? EMPTY_COMPOSER_DRAFT;
-    const nextDraft = reduceComposerDraft(draft, action);
-    return nextDraft === draft
-      ? state
-      : { ...state, composerDrafts: { ...state.composerDrafts, [threadId]: nextDraft } };
-  }
+  if (action.type === "notification")
+    return reduceServerNotification(state, action.payload.notification, action.payload.events);
   if (action.type === "hydrate") {
     const mode = action.payload.history.currentMode ?? action.payload.mode;
     return hydrateFromThreadRead(
@@ -109,7 +69,6 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       mode: action.payload.mode,
       threadList: state.threadList,
       pendingSteers: state.pendingSteers,
-      composerDrafts: state.composerDrafts,
     };
   }
   if (action.type === "set_mode") return { ...state, mode: action.payload };
@@ -171,7 +130,9 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       ),
     };
   }
-
+  if (action.type === "consume_first_pending_steer") {
+    return state.pendingSteers.length === 0 ? state : { ...state, pendingSteers: state.pendingSteers.slice(1) };
+  }
   if (action.type === "optimistic_thread") {
     const { threadId, message } = action.payload;
     const now = new Date().toISOString();

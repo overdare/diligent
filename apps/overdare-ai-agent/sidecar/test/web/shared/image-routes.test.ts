@@ -20,6 +20,13 @@ test("toWebImageUrl leaves non-diligent paths unchanged", () => {
   expect(toWebImageUrl("/repo/images/shot.png")).toBe("/repo/images/shot.png");
 });
 
+test("toWebImageUrl maps project-relative attachments returned by thread/read", () => {
+  expect(toWebImageUrl(".overdare/images/thread-1/shot 1.png")).toBe(`${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot%201.png`);
+  expect(toWebImageUrl(".diligent\\images\\thread-1\\shot 2.png")).toBe(
+    `${WEB_IMAGE_ROUTE_PREFIX}thread-1/shot%202.png`,
+  );
+});
+
 test("decodeWebImageRelativePath decodes encoded route segments", () => {
   expect(decodeWebImageRelativePath(`${WEB_IMAGE_ROUTE_PREFIX}drafts/folder%20a/%23hash.png`)).toBe(
     "drafts/folder a/#hash.png",

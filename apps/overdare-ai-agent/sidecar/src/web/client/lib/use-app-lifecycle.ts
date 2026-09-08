@@ -7,6 +7,7 @@ import type {
   InitializeResponse,
   Mode,
   ModelRef,
+  PendingSteer,
   ProviderAuthStatus,
   SkillInfo,
   ThinkingEffort,
@@ -17,7 +18,7 @@ import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
   DILIGENT_VERSION,
 } from "@diligent/protocol";
-import { type Dispatch, type RefObject, type SetStateAction, useEffect } from "react";
+import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useEffect } from "react";
 import type { ConsentState } from "../../shared/consent-protocol";
 import {
   deriveAgentEvents,
@@ -61,6 +62,11 @@ export function shouldDispatchNotificationToActiveThread(
   return notification.params.threadId === activeThreadId;
 }
 
+type SteeringRefs = {
+  pendingAbortRestartSteerRef: MutableRefObject<PendingSteer | null>;
+  restartFromPendingAbortSteer: (threadId: string) => Promise<void>;
+};
+
 export function useAppRpcBindings({
   rpcRef,
   activeThreadIdRef,
@@ -73,6 +79,7 @@ export function useAppRpcBindings({
   markAttention,
   onBackgroundNotification,
   handleServerRequest,
+  steering,
   setOauthPending,
   setOauthError,
 }: {
@@ -87,6 +94,7 @@ export function useAppRpcBindings({
   markAttention: (threadId: string) => void;
   onBackgroundNotification: (notification: DiligentServerNotification) => void;
   handleServerRequest: (requestId: number, request: DiligentServerRequest) => void;
+  steering: SteeringRefs;
   setOauthPending: Dispatch<SetStateAction<boolean>>;
   setOauthError: Dispatch<SetStateAction<string | null>>;
 }) {
@@ -168,6 +176,19 @@ export function useAppRpcBindings({
       if (shouldDispatchNotificationToActiveThread(notification, activeThreadIdRef.current)) {
         dispatch({ type: "notification", payload: { notification, events } });
       }
+
+      if (
+        notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
+        notificationParams &&
+        typeof notificationParams.threadId === "string" &&
+        notificationParams.threadId === activeThreadIdRef.current &&
+        steering.pendingAbortRestartSteerRef.current
+      ) {
+        const interruptedThreadId = notificationParams.threadId;
+        queueMicrotask(() => {
+          void steering.restartFromPendingAbortSteer(interruptedThreadId);
+        });
+      }
     });
 
     rpc.onServerRequest((requestId, request) => handleServerRequest(requestId, request));
@@ -183,6 +204,7 @@ export function useAppRpcBindings({
     markAttention,
     onBackgroundNotification,
     handleServerRequest,
+    steering,
     setOauthPending,
     setOauthError,
   ]);

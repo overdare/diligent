@@ -474,80 +474,195 @@ describe("App", () => {
     expect(terminal.stdout.writes.join("")).toContain("Cancelled");
   });
 
-  test("failed interruption preserves pending steering and the current draft", async () => {
-    const workspace = await setupWorkspace("diligent-app-test-");
-    const { app } = createAppHarness(makeConfig(createScriptedStreamFunction([])), workspace);
-    const ui = app as unknown as {
-      runtime: {
-        currentThreadId: string | null;
-        isProcessing: boolean;
-        cancelRequested: boolean;
-        pendingSteers: Array<{ id: string; content: string }>;
-      };
-      rpcClient: unknown;
-      inputEditor: { setText(text: string): void; getText(): string };
-      handleCancel(): void;
-    };
-    ui.runtime.currentThreadId = "thread-1";
-    ui.runtime.isProcessing = true;
-    ui.runtime.pendingSteers = [{ id: "s1", content: "waiting" }];
-    ui.rpcClient = {
-      request: async () => {
-        throw new Error("offline");
-      },
-    };
-    ui.inputEditor.setText("draft");
-    try {
-      ui.handleCancel();
-      await Promise.resolve();
-      expect(ui.runtime.pendingSteers).toEqual([{ id: "s1", content: "waiting" }]);
-      expect(ui.inputEditor.getText()).toBe("draft");
-      expect(ui.runtime.cancelRequested).toBe(false);
-      expect(ui.runtime.isProcessing).toBe(true);
-    } finally {
-      ui.rpcClient = null;
-      app.stop();
-      workspace.cleanup();
-    }
-  });
-
-  test("Ctrl+C restores all pending steers and draft without restarting until explicit submit", async () => {
+  test("steering after an interrupted restart clears its pending UI when consumed", async () => {
     const workspace = await setupWorkspace("diligent-app-test-");
     const calls: StreamContext[] = [];
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const streamFn = createScriptedStreamFunction(
-      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "done" }) }],
+      [
+        { awaitAbort: true, abortMessage: "interrupted" },
+        { ready, message: createAssistantMessage({ text: "working" }) },
+        { message: createAssistantMessage({ text: "done" }) },
+      ],
       calls,
     );
-    const { app, terminal } = createAppHarness(makeConfig(streamFn), workspace);
-    const ui = app as unknown as {
-      runtime: { pendingSteers: unknown[]; isProcessing: boolean };
-      inputEditor: { getText(): string };
-    };
+    const { app, terminal } = createAppHarness(makeConfig(streamFn, { diligent: { yolo: true } }), workspace);
+    const runtime = (
+      app as unknown as { runtime: { pendingSteers: Array<{ content: string }>; isProcessing: boolean } }
+    ).runtime;
     try {
       await app.start();
       await wait(30);
       terminal.emitText("begin");
       terminal.emitEnter();
       await waitFor(() => calls.length === 1);
-      await wait(40);
-      terminal.emitText("first guidance");
+      await wait(80);
+      terminal.emitText("restart guidance");
       terminal.emitEnter();
       await wait(30);
-      terminal.emitText("second guidance");
-      terminal.emitEnter();
-      await waitFor(() => ui.runtime.pendingSteers.length === 2);
-      terminal.emitText("unfinished draft");
       terminal.emitCtrlC();
-      await waitFor(() => !ui.runtime.isProcessing);
-      await wait(80);
-      expect(calls).toHaveLength(1);
-      expect(ui.runtime.pendingSteers).toEqual([]);
-      expect(ui.inputEditor.getText()).toBe("first guidance\n\nsecond guidance\n\nunfinished draft");
-      terminal.emitEnter();
       await waitFor(() => calls.length === 2);
-      const text = calls[1].messages.filter((message) => message.role === "user").map((message) => message.content);
-      expect(text).toContain("first guidance\n\nsecond guidance\n\nunfinished draft");
-      expect(text).not.toContain("first guidance");
+      terminal.emitText("later guidance");
+      terminal.emitEnter();
+      await waitFor(() => runtime.pendingSteers.length === 1);
+      await wait(30);
+      release();
+      await waitFor(() => calls.length >= 3 && !runtime.isProcessing);
+      expect(
+        calls.at(-1)?.messages.some((message) => message.role === "user" && message.content === "later guidance"),
+      ).toBe(true);
+      expect(runtime.pendingSteers).toEqual([]);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+  });
+
+  test("Ctrl+C cancel restarts turn with first pending steering message", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
+
+    const cfg = makeConfig(streamFn);
+    const { app, terminal } = createAppHarness(cfg, workspace);
+    try {
+      await app.start();
+      await wait(30);
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await wait(80);
+
+      terminal.emitText("change approach now");
+      terminal.emitEnter();
+      await wait(40);
+
+      terminal.emitCtrlC();
+      await wait(240);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+
+    const output = stripAnsi(terminal.stdout.writes.join(""));
+    expect(output).toContain("Cancelled");
+
+    const resumedCall = calls.find((call) =>
+      call.messages.some((message) => {
+        if (message.role !== "user") return false;
+        if (typeof message.content === "string") return message.content === "change approach now";
+        const text = message.content
+          .filter((block): block is { type: "text"; text: string } => block.type === "text")
+          .map((block) => block.text)
+          .join("\n");
+        return text === "change approach now";
+      }),
+    );
+    expect(resumedCall).toBeDefined();
+  });
+
+  test("Ctrl+C restart forwards attachments from the first pending steer", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
+    const { app, terminal } = createAppHarness(makeConfig(streamFn), workspace);
+    const runtime = (
+      app as unknown as {
+        runtime: {
+          pendingSteers: Array<{
+            id: string;
+            content: string;
+            attachments?: Array<{ type: "local_image"; path: string; mediaType: "image/png"; fileName?: string }>;
+          }>;
+        };
+      }
+    ).runtime;
+    const attachment = {
+      type: "local_image" as const,
+      path: "reference.png",
+      mediaType: "image/png" as const,
+      fileName: "reference.png",
+    };
+
+    try {
+      await app.start();
+      await wait(30);
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await waitFor(() => calls.length === 1);
+      runtime.pendingSteers.push({ id: "image-steer", content: "use this reference", attachments: [attachment] });
+
+      terminal.emitCtrlC();
+      await waitFor(() => calls.length === 2);
+
+      const restartedUserMessage = calls[1]?.messages.find(
+        (message) =>
+          message.role === "user" &&
+          Array.isArray(message.content) &&
+          message.content.some((block) => block.type === "text" && block.text === "use this reference"),
+      );
+      expect(restartedUserMessage?.content).toEqual([{ type: "text", text: "use this reference" }, attachment]);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
+  });
+
+  test("interrupted turn restart keeps processing alive until restarted turn completes", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    const streamFn = createScriptedStreamFunction(
+      [{ awaitAbort: true, abortMessage: "interrupted" }, { message: createAssistantMessage({ text: "resumed" }) }],
+      calls,
+    );
+
+    const cfg = makeConfig(streamFn);
+    const { app, terminal } = createAppHarness(cfg, workspace);
+    try {
+      await app.start();
+      await wait(30);
+      const runtime = (app as unknown as { runtime: { isProcessing: boolean } }).runtime;
+
+      terminal.emitText("slow");
+      terminal.emitEnter();
+      await wait(80);
+
+      terminal.emitText("retry with changes");
+      terminal.emitEnter();
+      await wait(40);
+
+      terminal.emitCtrlC();
+
+      await waitFor(() => calls.length >= 2 && runtime.isProcessing === false, { timeoutMs: 4000, intervalMs: 20 });
+
+      terminal.emitText("final check");
+      terminal.emitEnter();
+
+      await waitFor(() => calls.length >= 3, { timeoutMs: 4000, intervalMs: 20 });
+
+      const finalCall = calls.at(-1);
+      expect(finalCall).toBeDefined();
+      expect(
+        finalCall?.messages.some((message) => {
+          if (message.role !== "user") return false;
+          if (typeof message.content === "string") return message.content === "final check";
+          const text = message.content
+            .filter((block): block is { type: "text"; text: string } => block.type === "text")
+            .map((block) => block.text)
+            .join("\n");
+          return text === "final check";
+        }),
+      ).toBe(true);
     } finally {
       app.stop();
       workspace.cleanup();

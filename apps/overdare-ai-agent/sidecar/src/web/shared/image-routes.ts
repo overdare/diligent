@@ -2,7 +2,7 @@
 
 export const WEB_IMAGE_ROUTE_PREFIX = "/_diligent/image/";
 
-const HIDDEN_STORAGE_IMAGES_PATTERN = /[\\/]\.[^\\/]+[\\/]images[\\/]/g;
+const HIDDEN_STORAGE_IMAGES_PATTERN = /(?:^|[\\/])\.[^\\/]+[\\/]images[\\/]/g;
 
 export function toWebImageUrl(localPath: string): string {
   const relativePath = extractDiligentImageRelativePath(localPath);

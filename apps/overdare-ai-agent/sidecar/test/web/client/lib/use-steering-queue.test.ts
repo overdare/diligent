@@ -2,6 +2,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   executeCancelSteer,
+  executeRestartFromAbort,
   executeSteer,
   executeUpdateSteer,
 } from "../../../../src/web/client/lib/use-steering-queue";
@@ -111,6 +112,7 @@ describe("executeSteer", () => {
 
   test("includes image attachments in turn/steer request", async () => {
     const rpc = makeRpc(async () => ({ steerId: "s1" }));
+    const dispatched: unknown[] = [];
 
     await executeSteer({
       rpc,
@@ -121,7 +123,7 @@ describe("executeSteer", () => {
         { type: "local_image", path: "/tmp/b.jpg", mediaType: "image/jpeg", fileName: "b.jpg", webUrl: "blob:b" },
       ],
       contextItems: [],
-      dispatch: mock(() => {}),
+      dispatch: (action) => dispatched.push(action),
       clearThreadInput: mock(() => {}),
       clearPendingImages: mock(() => {}),
       clearContextItems: mock(() => {}),
@@ -132,6 +134,10 @@ describe("executeSteer", () => {
       { type: "local_image", path: "/tmp/a.png", mediaType: "image/png", fileName: "a.png" },
       { type: "local_image", path: "/tmp/b.jpg", mediaType: "image/jpeg", fileName: "b.jpg" },
     ]);
+    expect(dispatched[0]).toMatchObject({
+      type: "local_steer",
+      payload: { attachments: params.attachments },
+    });
   });
 
   test("prepends attached context items to steer content and clears them", async () => {
@@ -254,6 +260,96 @@ describe("executeUpdateSteer", () => {
     });
 
     expect(dispatched).toEqual([]);
+  });
+});
+
+describe("executeRestartFromAbort", () => {
+  test("dispatches consume_first_pending_steer and local_user then sends turn/start", async () => {
+    const dispatched: unknown[] = [];
+    const rpc = makeRpc(async () => ({ userMessageId: "persistent-restart" }));
+
+    await executeRestartFromAbort({
+      rpc,
+      threadId: "thread-1",
+      restartSteer: { id: "s1", content: "retry this" },
+      hadItemsBeforeRestart: true,
+      model: "claude-4",
+      dispatch: (action) => dispatched.push(action),
+    });
+
+    expect(dispatched).toHaveLength(3);
+    expect(dispatched[0]).toEqual({ type: "consume_first_pending_steer" });
+    expect(dispatched[1]).toMatchObject({
+      type: "local_user",
+      payload: { text: "retry this", images: [] },
+    });
+    const localItemId = (dispatched[1] as { payload: { id: string } }).payload.id;
+    expect(dispatched[2]).toEqual({
+      type: "bind_user_message_id",
+      payload: { renderItemId: localItemId, messageId: "persistent-restart" },
+    });
+    expect(rpc.request).toHaveBeenCalledTimes(1);
+    const [method, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      { message: string; model: string },
+    ];
+    expect(method).toBe("turn/start");
+    expect(params.message).toBe("retry this");
+    expect(params.model).toBe("claude-4");
+  });
+
+  test("adds optimistic_thread dispatch when thread had no prior items", async () => {
+    const dispatched: unknown[] = [];
+    const rpc = makeRpc(async () => ({}));
+
+    await executeRestartFromAbort({
+      rpc,
+      threadId: "thread-new",
+      restartSteer: { id: "s1", content: "first message" },
+      hadItemsBeforeRestart: false,
+      model: undefined,
+      dispatch: (action) => dispatched.push(action),
+    });
+
+    expect(dispatched).toContainEqual({
+      type: "optimistic_thread",
+      payload: { threadId: "thread-new", message: "first message" },
+    });
+  });
+
+  test("skips optimistic_thread dispatch when thread already had items", async () => {
+    const dispatched: unknown[] = [];
+    const rpc = makeRpc(async () => ({}));
+
+    await executeRestartFromAbort({
+      rpc,
+      threadId: "thread-existing",
+      restartSteer: { id: "s1", content: "retry" },
+      hadItemsBeforeRestart: true,
+      model: undefined,
+      dispatch: (action) => dispatched.push(action),
+    });
+
+    expect(dispatched.some((a) => (a as { type: string }).type === "optimistic_thread")).toBe(false);
+  });
+
+  test("sends content array with text block in turn/start request", async () => {
+    const rpc = makeRpc(async () => ({}));
+
+    await executeRestartFromAbort({
+      rpc,
+      threadId: "thread-1",
+      restartSteer: { id: "s1", content: "restart message" },
+      hadItemsBeforeRestart: true,
+      model: undefined,
+      dispatch: mock(() => {}),
+    });
+
+    const [, params] = (rpc.request as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      { content: { type: string; text: string }[] },
+    ];
+    expect(params.content).toEqual([{ type: "text", text: "restart message" }]);
   });
 });
 

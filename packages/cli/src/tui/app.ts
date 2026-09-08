@@ -8,6 +8,7 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
+  PendingSteer,
   Mode as ProtocolMode,
   RequestId,
 } from "@diligent/protocol";
@@ -86,6 +87,7 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
+  private pendingAbortRestartSteer: PendingSteer | null = null;
   private appServerLogDirInitialized = false;
   private pendingAppServerLogLines: string[] = [];
   private currentAppServerLogSessionId: string | null = null;
@@ -173,17 +175,23 @@ export class App {
       onTurnFinished: () => {
         this.chatView.finishTurn();
         this.appendLocalTurnTimingLine();
-        this.ringTerminalBell();
+        const restartingAfterInterrupt = this.pendingAbortRestartSteer !== null;
+        if (!restartingAfterInterrupt) {
+          this.ringTerminalBell();
+        }
         const pendingTurn = this.runtime.pendingTurn;
         this.runtime.pendingTurn = null;
-        this.runtime.isProcessing = false;
-        this.inputEditor.setBusy(false);
-        this.statusBar.update({ status: "idle" });
+        if (!restartingAfterInterrupt) {
+          this.runtime.isProcessing = false;
+          this.inputEditor.setBusy(false);
+          this.statusBar.update({ status: "idle" });
+        }
         this.runtime.cancelRequested = false;
         pendingTurn?.resolve();
         this.renderer.requestRender();
       },
       onTurnErrored: (message) => {
+        this.pendingAbortRestartSteer = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
         const pendingTurn = this.runtime.pendingTurn;
@@ -528,16 +536,38 @@ export class App {
 
   private handleCancel(): void {
     if (this.runtime.isProcessing && this.rpcClient && this.runtime.currentThreadId) {
-      if (this.runtime.cancelRequested) return;
+      if (this.runtime.cancelRequested) {
+        this.runtime.cancelRequested = false;
+        this.runtime.isProcessing = false;
+        this.runtime.pendingTurn = null;
+        this.inputEditor.setBusy(false);
+        this.statusBar.update({ status: "idle" });
+        this.renderer.requestRender();
+        return;
+      }
       this.runtime.cancelRequested = true;
+      const drainedSteers = this.chatView.consumePendingSteers();
+      const drainedRuntimeSteers = this.runtime.drainPendingSteers();
+      this.pendingAbortRestartSteer =
+        drainedRuntimeSteers[0] ??
+        (drainedSteers[0] ? { id: `restart-${Date.now()}`, content: drainedSteers[0] } : null);
+      this.viewModel.prompt.setPendingSteers([]);
+      this.chatView.clearActiveWithCommit();
+      this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
       void this.rpcClient
         .request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId: this.runtime.currentThreadId })
         .catch(() => {
           this.runtime.cancelRequested = false;
+          this.pendingAbortRestartSteer = null;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();
     }
+  }
+
+  private commitLocalUserMessage(text: string): void {
+    this.chatView.addUserMessage(text);
+    this.pendingUserMessageAcks.push(text);
   }
 
   private handleRemoteUserMessage(text: string): void {
@@ -547,6 +577,43 @@ export class App {
       return;
     }
     this.chatView.addUserMessage(text);
+  }
+
+  private async restartFromPendingAbortSteer(threadId: string): Promise<void> {
+    const rpc = this.rpcClient;
+    const restartSteer = this.pendingAbortRestartSteer;
+    if (!rpc || !restartSteer) {
+      return;
+    }
+
+    this.pendingAbortRestartSteer = null;
+    this.runtime.isProcessing = true;
+    this.inputEditor.setBusy(true);
+    this.statusBar.update({ status: "busy" });
+    this.commitLocalUserMessage(restartSteer.content);
+    const content = [{ type: "text" as const, text: restartSteer.content }, ...(restartSteer.attachments ?? [])];
+    try {
+      await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_START, {
+        threadId,
+        message: restartSteer.content,
+        content,
+        model: this.config.model,
+      });
+    } catch (error) {
+      this.runtime.isProcessing = false;
+      this.runtime.cancelRequested = false;
+      this.inputEditor.setBusy(false);
+      this.statusBar.update({ status: "idle" });
+      this.chatView.handleEvent({
+        type: "error",
+        error: {
+          name: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+        fatal: false,
+      });
+      this.renderer.requestRender();
+    }
   }
 
   private handleAppServerStderr(line: string): void {
@@ -611,18 +678,13 @@ export class App {
 
     if (
       notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED &&
-      notification.params.threadId === this.runtime.currentThreadId
+      notification.params.threadId === this.runtime.currentThreadId &&
+      this.pendingAbortRestartSteer
     ) {
-      const pending = this.runtime.pendingSteers.splice(0);
-      if (pending.length > 0) {
-        const text = [...pending.map((steer) => steer.content), this.inputEditor.getText()]
-          .filter(Boolean)
-          .join("\n\n");
-        this.inputEditor.setText(text);
-      }
-      this.viewModel.prompt.setPendingSteers([]);
-      this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
-      this.renderer.requestRender();
+      const interruptedThreadId = notification.params.threadId;
+      queueMicrotask(() => {
+        void this.restartFromPendingAbortSteer(interruptedThreadId);
+      });
     }
   }
 

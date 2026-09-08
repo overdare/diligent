@@ -38,6 +38,8 @@ export interface ThreadRuntime {
   abortController: AbortController | null;
   currentTurnId: string | null;
   isRunning: boolean;
+  /** Serializes session execution/cleanup after a logically interrupted turn. */
+  turnWork?: Promise<void>;
   /** Cached agent — cleared when mode/effort/model changes to force a rebuild on the next turn. */
   agent?: RuntimeAgent;
 }
@@ -130,7 +132,7 @@ export async function handleThreadRead(
 
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
   // Do this only when idle to avoid mutating active turn state mid-stream.
-  if (!runtime.isRunning) {
+  if (!runtime.isRunning && !runtime.turnWork) {
     await runtime.manager.reconcileFromDisk();
   }
 
@@ -177,7 +179,7 @@ export async function handleThreadCompactStart(
   threadId?: string,
 ): Promise<{ compacted: boolean; entryCount: number; tokensBefore: number; tokensAfter: number; summary: string }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
-  if (runtime.isRunning) throw new Error("Cannot compact while a turn is running");
+  if (runtime.isRunning || runtime.turnWork) throw new Error("Cannot compact while a turn is running");
 
   runtime.isRunning = true;
   await ctx.emit({

@@ -26,7 +26,6 @@ import {
   isCollabEvent,
   reduceCollabEvent,
 } from "./collab-reducer";
-import type { ComposerDraft } from "./composer-state";
 import { extractUserTextAndImages, updateItem, withItem, zeroUsage } from "./thread-utils";
 import { isToolEvent, reduceToolEvent } from "./tool-reducer";
 import { getUserFacingErrorMessage } from "./user-facing-errors";
@@ -173,7 +172,6 @@ export interface ThreadState {
   currentContextTokens: number; // latest turn's total input tokens including cache (not cumulative)
   planState: PlanState | null;
   pendingSteers: PendingSteer[];
-  composerDrafts: Record<string, ComposerDraft>;
   activeTurnHadError: boolean;
   activeTurnId: string | null;
   activeTurnStartedAt: number | null;
@@ -210,7 +208,6 @@ export const initialThreadState: ThreadState = {
   currentContextTokens: 0,
   planState: null,
   pendingSteers: [],
-  composerDrafts: {},
   activeTurnHadError: false,
   activeTurnId: null,
   activeTurnStartedAt: null,

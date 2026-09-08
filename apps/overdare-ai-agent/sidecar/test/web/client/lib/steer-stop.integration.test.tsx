@@ -1,4 +1,4 @@
-// @summary Web stop-to-send integration over production notification, restoration, and action hooks
+// @summary Stop auto-restart preserves pending steer attachments through production Web hooks
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
@@ -6,29 +6,45 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 import { afterAll, expect, test } from "bun:test";
 import type { DiligentServerNotification } from "@diligent/protocol";
-import { act, StrictMode, useReducer, useRef } from "react";
+import { act, StrictMode, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { StreamingIndicator } from "../../../../src/web/client/components/StreamingIndicator";
 import { appReducer } from "../../../../src/web/client/lib/app-state";
-import { EMPTY_COMPOSER_DRAFT } from "../../../../src/web/client/lib/composer-state";
 import type { WebRpcClient } from "../../../../src/web/client/lib/rpc-client";
 import { initialThreadState } from "../../../../src/web/client/lib/thread-store";
 import { useAppActions } from "../../../../src/web/client/lib/use-app-actions";
 import { useAppRpcBindings } from "../../../../src/web/client/lib/use-app-lifecycle";
+import { useSteeringQueue } from "../../../../src/web/client/lib/use-steering-queue";
+import { toWebImageUrl } from "../../../../src/web/shared/image-routes";
 
 afterAll(() => {
   void GlobalRegistrator.unregister();
 });
 
-for (const interruptFails of [false, true]) {
+for (const scenario of ["local", "hydrated", "failed", "empty", "already-idle"] as const) {
+  const interruptFails = scenario === "failed";
   test(
     interruptFails
       ? "failed Stop keeps the queue and draft without adding UI"
-      : "Stop restores unconsumed input; only explicit Send submits text, context, and every image once",
+      : scenario === "empty" || scenario === "already-idle"
+        ? "Stop with no pending steer does not restart"
+        : `Stop automatically resubmits the first ${scenario} steer with its images and preserves the draft`,
     async () => {
-      const image = { type: "local_image" as const, path: "reference.png", mediaType: "image/png" as const };
+      const image = {
+        type: "local_image" as const,
+        path: scenario === "hydrated" ? ".overdare/images/reference.png" : "/project/.overdare/images/reference.png",
+        mediaType: "image/png" as const,
+      };
       const attachments = Array.from({ length: 5 }, (_, index) => ({ ...image, fileName: `${index}.png` }));
+      const firstText =
+        "<AttachedContext>\n- Instance: Name=Part; ClassType=Part; GUID=guid-1\n</AttachedContext>\nfirst";
       const calls: Array<{ method: string; params: unknown }> = [];
+      let releaseInterrupt!: () => void;
+      const interruptGate = new Promise<void>((resolve) => {
+        releaseInterrupt = resolve;
+      });
       let notify: (notification: DiligentServerNotification) => void = () => {};
+      let interruptCount = 0;
       const rpc = {
         onNotification(listener: typeof notify) {
           notify = listener;
@@ -37,25 +53,38 @@ for (const interruptFails of [false, true]) {
         async request(method: string, params: unknown) {
           calls.push({ method, params });
           if (method === "turn/interrupt") {
-            if (interruptFails) throw new Error("offline");
-            // The preceding consumption and interruption arrive in the same React batch.
-            notify({
-              method: "agent/event",
-              params: {
-                threadId: "t1",
-                turnId: "turn1",
-                event: {
-                  type: "steering_injected",
-                  steerIds: ["used"],
-                  messageCount: 1,
-                  messages: [{ role: "user", content: "already consumed", timestamp: 1 }],
-                },
-              },
-            });
-            notify({ method: "turn/interrupted", params: { threadId: "t1", turnId: "turn1" } });
+            interruptCount += 1;
+            if (interruptCount === 1) {
+              await interruptGate;
+              if (interruptFails) throw new Error("offline");
+              if (scenario !== "already-idle") {
+                notify({ method: "turn/interrupted", params: { threadId: "t1", turnId: "turn1" } });
+                notify({ method: "turn/interrupted", params: { threadId: "t1", turnId: "turn1" } });
+              }
+              return { interrupted: scenario !== "already-idle" };
+            }
+            notify({ method: "turn/interrupted", params: { threadId: "t1", turnId: "turn2" } });
             return { interrupted: true };
           }
-          if (method === "turn/start") return { accepted: true, userMessageId: "next-user" };
+          if (method === "thread/read")
+            return {
+              cwd: "/project",
+              items: [],
+              errors: [],
+              hasFollowUp: false,
+              pendingSteers: [],
+              entryCount: 0,
+              isRunning: false,
+            };
+          if (method === "turn/steer") return { queued: true, steerId: "local" };
+          if (method === "turn/steer/update") return { updated: true };
+          if (method === "turn/start") {
+            notify({
+              method: "turn/started",
+              params: { threadId: "t1", turnId: "turn2", threadStatus: "busy" },
+            });
+            return { accepted: true, userMessageId: "next-user" };
+          }
           throw new Error(`Unexpected RPC: ${method}`);
         },
       } as unknown as WebRpcClient;
@@ -66,23 +95,35 @@ for (const interruptFails of [false, true]) {
           ...initialThreadState,
           activeThreadId: "t1",
           threadStatus: "busy",
-          composerDrafts: { t1: { ...EMPTY_COMPOSER_DRAFT, text: "draft" } },
-          pendingSteers: [
-            { id: "used", content: "already consumed" },
-            {
-              id: "a",
-              content:
-                "<AttachedContext>\n- Instance: Name=Part; ClassType=Part; GUID=guid-1\n</AttachedContext>\nfirst",
-              attachments: attachments.slice(0, 3),
-            },
-            { id: "b", content: "second", attachments: attachments.slice(3) },
-          ],
+          pendingSteers:
+            scenario === "hydrated"
+              ? [
+                  { id: "a", content: firstText, attachments },
+                  { id: "b", content: "second", attachments: [image] },
+                ]
+              : [],
         });
-        const draft = state.composerDrafts.t1 ?? EMPTY_COMPOSER_DRAFT;
+        const [input, setInput] = useState("first");
+        const [images, setImages] = useState(attachments.map((a) => ({ ...a, webUrl: toWebImageUrl(a.path) })));
         const rpcRef = useRef(rpc);
         const stateRef = useRef(state);
         stateRef.current = state;
         const activeThreadIdRef = useRef("t1");
+        const modelRef = useRef(undefined);
+        const steering = useSteeringQueue({
+          rpcRef,
+          stateRef,
+          dispatch,
+          activeThreadId: "t1",
+          currentModelRef: modelRef,
+          activeInput: input,
+          pendingImages: images,
+          contextItems: [],
+          isBusy: true,
+          clearThreadInput: () => setInput(""),
+          clearPendingImages: () => setImages([]),
+          clearContextItems: noop,
+        });
         useAppRpcBindings({
           rpcRef,
           stateRef,
@@ -95,6 +136,7 @@ for (const interruptFails of [false, true]) {
           markAttention: noop,
           onBackgroundNotification: noop,
           handleServerRequest: noop,
+          steering,
           setOauthPending: noop,
           setOauthError: noop,
         });
@@ -103,9 +145,9 @@ for (const interruptFails of [false, true]) {
           state,
           stateRef,
           dispatch,
-          activeInput: draft.text,
-          activeContextItems: draft.contextItems,
-          pendingImages: draft.images,
+          activeInput: input,
+          activeContextItems: [],
+          pendingImages: images,
           canSend: state.threadStatus === "idle",
           isUploadingImages: false,
           supportsVision: true,
@@ -113,11 +155,12 @@ for (const interruptFails of [false, true]) {
           slashCommands: [],
           currentModel: undefined,
           availableModels: [],
-          currentModelRef: useRef(undefined),
-          clearThreadInput: () => dispatch({ type: "composer_text", payload: { threadId: "t1", text: "" } }),
+          currentModelRef: modelRef,
+          clearThreadInput: () => setInput(""),
           clearDraftInput: noop,
-          clearActiveContextItems: () => dispatch({ type: "composer_context", payload: { threadId: "t1", items: [] } }),
-          setPendingImages: (images) => dispatch({ type: "composer_images", payload: { threadId: "t1", images } }),
+          clearActiveContextItems: noop,
+          setPendingImages: setImages,
+          steeringControl: steering,
           setIsUploadingImages: noop,
           setShowImageUploadIndicator: noop,
           setEffortState: noop,
@@ -140,11 +183,24 @@ for (const interruptFails of [false, true]) {
             <button type="button" onClick={actions.handleInterrupt}>
               Stop
             </button>
-            <button type="button" onClick={actions.handleSend}>
-              Send
+            <button type="button" onClick={steering.handleSteer}>
+              Steer
             </button>
-            <textarea value={draft.text} readOnly />
-            <output>{state.pendingSteers.length}</output>
+            <button
+              type="button"
+              onClick={() => {
+                steering.updateSteer(state.pendingSteers[0].id, firstText);
+                setInput("draft");
+                setImages([{ ...image, fileName: "draft.png", webUrl: toWebImageUrl(image.path) }]);
+              }}
+            >
+              Edit and draft
+            </button>
+            <StreamingIndicator />
+            <textarea value={input} readOnly />
+            <output data-testid="pending-steers">{JSON.stringify(state.pendingSteers)}</output>
+            <pre>{JSON.stringify(state.items.filter((item) => item.kind === "user"))}</pre>
+            <footer>{images.map((image) => image.fileName).join(",")}</footer>
             <aside>{state.toast?.message ?? ""}</aside>
           </>
         );
@@ -160,26 +216,67 @@ for (const interruptFails of [false, true]) {
             </StrictMode>,
           );
         });
-        await act(async () => {
-          element.querySelectorAll("button")[0].click();
-        });
-        expect(calls.map((call) => call.method)).toEqual(["turn/interrupt"]);
-        expect(element.querySelector("aside")?.textContent).toBe("");
-        if (interruptFails) {
-          expect(element.querySelector("textarea")?.value).toBe("draft");
-          expect(element.querySelector("output")?.textContent).toBe("3");
-        } else {
-          expect(element.querySelector("textarea")?.value).toBe("first\n\nsecond\n\ndraft");
-          expect(element.querySelector("output")?.textContent).toBe("0");
+        if (scenario === "local" || interruptFails) {
           await act(async () => {
             element.querySelectorAll("button")[1].click();
           });
-          expect(calls.map((call) => call.method)).toEqual(["turn/interrupt", "turn/start"]);
-          const sent = calls[1].params as { message: string; content: unknown[] };
-          expect(sent.message).toContain("GUID=guid-1");
-          expect(sent.message.endsWith("first\n\nsecond\n\ndraft")).toBe(true);
-          expect(sent.message).not.toContain("already consumed");
-          expect(sent.content).toEqual([{ type: "text", text: sent.message }, ...attachments]);
+        }
+        if (scenario !== "empty" && scenario !== "already-idle") {
+          await act(async () => {
+            element.querySelectorAll("button")[2].click();
+          });
+        }
+        await act(async () => {
+          element.querySelectorAll("button")[0].click();
+          element.querySelectorAll("button")[0].click();
+        });
+        expect(element.querySelectorAll("button")[0].disabled).toBe(false);
+        expect(element.textContent).not.toContain("Stopping…");
+        expect(element.textContent).toContain("Thinking…");
+        expect(calls.filter((call) => call.method === "turn/interrupt")).toHaveLength(1);
+        expect(calls.filter((call) => call.method === "turn/start")).toHaveLength(0);
+        await act(async () => {
+          releaseInterrupt();
+          await Promise.resolve();
+        });
+        expect(element.querySelectorAll("button")[0].disabled).toBe(false);
+        expect(element.textContent).not.toContain("Stopping…");
+        expect(element.querySelector("aside")?.textContent).toBe("");
+        const starts = calls.filter((call) => call.method === "turn/start");
+        if (scenario === "empty" || scenario === "already-idle") {
+          expect(starts).toHaveLength(0);
+          return;
+        }
+        expect(element.querySelector("textarea")?.value).toBe("draft");
+        expect(element.querySelector("footer")?.textContent).toBe("draft.png");
+        const remaining = JSON.parse(element.querySelector('[data-testid="pending-steers"]')!.textContent!);
+        if (interruptFails) {
+          expect(starts).toHaveLength(0);
+          expect(remaining).toHaveLength(1);
+          expect(remaining[0].attachments).toEqual(attachments);
+        } else {
+          expect(starts).toHaveLength(1);
+          expect(starts[0].params).toMatchObject({
+            message: firstText,
+            content: [{ type: "text", text: firstText }, ...attachments],
+          });
+          expect(remaining.map((steer: { content: string }) => steer.content)).toEqual(
+            scenario === "hydrated" ? ["second"] : [],
+          );
+          const users = JSON.parse(element.querySelector("pre")!.textContent!);
+          expect(users).toHaveLength(1);
+          expect(users[0].images).toEqual(
+            attachments.map((a) => ({ mediaType: a.mediaType, fileName: a.fileName, url: toWebImageUrl(a.path) })),
+          );
+          if (scenario === "local") {
+            await act(async () => {
+              element.querySelectorAll("button")[0].click();
+              await Promise.resolve();
+            });
+            expect(calls.filter((call) => call.method === "turn/interrupt")).toHaveLength(2);
+            expect(calls.filter((call) => call.method === "turn/start")).toHaveLength(1);
+            expect(element.textContent).not.toContain("Stopping…");
+          }
         }
       } finally {
         await act(async () => {

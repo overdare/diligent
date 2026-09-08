@@ -306,6 +306,21 @@ test("hydrate resets mode when switching from a plan thread to a default thread"
   expect(next.mode).toBe("default");
 });
 
+test("consume_first_pending_steer removes head entry only", () => {
+  const seeded = {
+    ...initialThreadState,
+    pendingSteers: [
+      { id: "s1", content: "a" },
+      { id: "s2", content: "b" },
+      { id: "s3", content: "c" },
+    ],
+  };
+
+  const next = appReducer(seeded, { type: "consume_first_pending_steer" });
+
+  expect(next.pendingSteers.map((steer) => steer.content)).toEqual(["b", "c"]);
+});
+
 test("cancel_pending_steer removes the selected queued steer", () => {
   const seeded = {
     ...initialThreadState,
