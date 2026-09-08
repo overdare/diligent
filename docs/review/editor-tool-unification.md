@@ -130,3 +130,24 @@ static schema.
 Validation after the main refresh: lint/typecheck, 2,396 package tests, 52 E2E
 tests, 505 Web tests, and 31 focused Editor/schema/prompt tests passed. These are
 contract and regression checks; no live world was modified in this follow-up.
+
+## Premerge property and file recovery follow-up
+
+The dynamic property boundary now excludes the derived WorldTransform cache from
+instance.read properties and rejects it in both add and update upserts. Tagged
+values and unknown future properties remain intact; the static class catalog is
+not restored. Both v1 and v2 use this shared property boundary.
+
+The v1 upsert path now retains pre-write bytes and attempts to restore them when
+level.apply rejects. It checks that the file still matches the upsert's output
+before restoring; a later observed external write is preserved. Recovery failures
+retain the original apply error, and every failure explicitly leaves Studio state
+unconfirmed. This does not roll back a partially applied live world or retry apply.
+Other users of the shared file-writing helper are unchanged.
+
+Validation: the focused pre-fix run reproduced five failing cases; after the fix,
+32 property/recovery/Mobility tests and 34 v1/v2 compatibility tests passed.
+`bun run lint`, `bun run typecheck`, and `bun test` passed (2,448 tests). The initial
+sandboxed full and v2 runs hit filesystem/socket restrictions and passed after
+rerunning with those permissions. No live Studio world was modified in this
+follow-up.

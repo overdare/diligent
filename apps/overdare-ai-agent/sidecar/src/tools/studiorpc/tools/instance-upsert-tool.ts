@@ -1,5 +1,6 @@
 // @summary Applies batched add or update instance changes to the level file.
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolveApiVersion } from "../config";
 import * as instanceUpsert from "../methods/instance.upsert";
 import { collectUiDiagnostics } from "../methods/instance.upsert";
@@ -14,7 +15,7 @@ import {
   updateInstancesInDocument,
 } from "./instance-document-operations";
 import { resultFromInstanceToolStatusError } from "./instance-status";
-import { type OvdrjmNode, readAndWriteOvdrjm } from "./ovdrjm-utils";
+import { type OvdrjmNode, readAndWriteOvdrjm, resolveOvdrjmPathFromUmap } from "./ovdrjm-utils";
 import { upsertInstancesViaRpc } from "./v2/instance-upsert";
 
 function toToolName(method: string): string {
@@ -63,7 +64,9 @@ export async function executeInstanceUpsertInner(
 
   const fileResult = (() => {
     try {
-      return readAndWriteOvdrjm(cwd, (rootDoc) => {
+      const { ovdrjmPath } = resolveOvdrjmPathFromUmap(cwd);
+      const originalBytes = readFileSync(ovdrjmPath);
+      const result = readAndWriteOvdrjm(cwd, (rootDoc) => {
         const root = requireDocumentRoot(rootDoc);
         const mobilityInfo: string[] = [];
         const writeOptions = { mobilityInfo };
@@ -84,6 +87,7 @@ export async function executeInstanceUpsertInner(
         ovdrjmRoot = root;
         return { added, mobilityInfo };
       });
+      return { ...result, originalBytes, writtenBytes: readFileSync(ovdrjmPath) };
     } catch (error) {
       const result = resultFromInstanceToolStatusError(error);
       if (result) return result;
@@ -96,7 +100,28 @@ export async function executeInstanceUpsertInner(
   }
 
   if (applyAndSaveChanges) {
-    await (options.applyLevelChanges ?? applyLevelChangesDefault)();
+    try {
+      await (options.applyLevelChanges ?? applyLevelChangesDefault)();
+    } catch (error) {
+      let recovery: string;
+      try {
+        // The write lock covers agent tools, but Studio or the user may save
+        // during apply. Preserve those later bytes instead of overwriting them.
+        if (readFileSync(fileResult.ovdrjmPath).equals(fileResult.writtenBytes)) {
+          writeFileSync(fileResult.ovdrjmPath, fileResult.originalBytes);
+          recovery = "file restored to its pre-upsert bytes";
+        } else {
+          recovery = "file changed after upsert; not restored";
+        }
+      } catch (restoreError) {
+        recovery = `file restoration failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `instance.upsert apply failed: ${message}; ${recovery}. Studio state is unconfirmed; inspect it before retrying.`,
+        { cause: error },
+      );
+    }
   }
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
   diag.info.push(...fileResult.mobilityInfo);

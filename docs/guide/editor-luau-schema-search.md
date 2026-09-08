@@ -54,6 +54,16 @@ Use the complete JSON shapes from live hints/current instance reads, and full VF
 asset paths. The legacy v1 file-edit path also preserves supplied JSON; it still
 requires Studio apply/save to validate and synchronize edits.
 
+`WorldTransform` is a derived cache: instance reads omit it from
+`properties`, and upsert rejects it for both additions and updates. Discover the
+class's writable transform properties through live schema search instead.
+
+If v1 upsert's apply call fails, it restores the original file bytes only when
+the file still matches the bytes written by that upsert. A later external save
+is preserved, and a failed restoration is reported with the original apply error.
+This is file recovery, not a Studio rollback: the live world may have partially
+applied the request, so inspect it before retrying. No apply is automatically retried.
+
 ## Editor execution and failure recovery
 
 `execute.luau` accepts exactly `target: "Editor"` and `code: string`. Every call

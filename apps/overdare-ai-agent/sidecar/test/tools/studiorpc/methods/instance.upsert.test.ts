@@ -46,7 +46,7 @@ describe("instance.upsert live schema properties", () => {
     }
   });
   test("schema validation rejects reserved keys before record parsing can omit them", () => {
-    for (const key of ["__proto__", "ActorGuid", "Name"]) {
+    for (const key of ["__proto__", "ActorGuid", "Name", "WorldTransform"]) {
       const properties = JSON.parse(`{"${key}":"overwrite"}`);
       for (const item of [
         { guid: "p", properties },

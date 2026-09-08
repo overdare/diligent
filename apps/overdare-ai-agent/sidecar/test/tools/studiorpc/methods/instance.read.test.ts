@@ -35,8 +35,17 @@ describe("instance.read arguments", () => {
           ObjectKey: 123,
           Name: "Part",
           Color: color,
+          WorldTransform: { cached: true },
           Future: { Opaque: true },
-          LuaChildren: [{ InstanceType: "FutureClass", ActorGuid: "C", Name: "Child", CFrame: cframe }],
+          LuaChildren: [
+            {
+              InstanceType: "FutureClass",
+              ActorGuid: "C",
+              Name: "Child",
+              CFrame: cframe,
+              WorldTransform: { cached: true },
+            },
+          ],
         },
         true,
       ),
