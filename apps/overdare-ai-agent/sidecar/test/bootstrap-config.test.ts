@@ -21,6 +21,11 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("mutation_attempted");
     expect(prompt).toContain("never automatically replay failed code");
     expect(prompt).toContain("without local defaults");
+    expect(prompt).toContain("as the default for world creation and editing");
+    expect(prompt).toContain("Successful Editor execution already saves the level");
+    expect(prompt).toContain("Do not reject a class based on an old local catalog");
+    expect(prompt).not.toContain("studiorpc_proceduralmodel_");
+    expect(prompt).not.toContain("geometry-recipe");
   });
   test("VFX guidance requires caller-supplied tags and explicit playback settings", async () => {
     const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");

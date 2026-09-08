@@ -526,7 +526,7 @@ describe("v2 validation", () => {
     expect(methodsCalled()).toEqual(["instance.read"]);
   });
 
-  test("refuses to edit an instance with no Source through script_edit", async () => {
+  test("refuses instances without Source through script_edit", async () => {
     const tools = await loadTools(makeStudioProject());
 
     const result = await tools
@@ -534,10 +534,39 @@ describe("v2 validation", () => {
       .execute({ guid: PART_GUID, old_string: "a", new_string: "b" }, toolContext());
 
     expect(result.metadata?.error).toBe(true);
-    // A Part has no Source at all. A ProceduralModel does, and script_edit takes it -- the gate is
-    // about the property, not about the instance being a script.
-    expect(result.output).toContain("has no Source to edit");
+    expect(result.output).toContain("no Source");
     expect(methodsCalled()).toEqual(["instance.read"]);
+  });
+  test.each([
+    "v1",
+    "v2",
+  ])("focused Source edits preserve non-Lua indentation for future classes on %s", async (version) => {
+    process.env.STUDIO_API_VERSION = version;
+    const recipe = {
+      InstanceType: "FutureSourceContainer",
+      ActorGuid: "RECIPE",
+      Source: "def on_generate():\n    pass",
+    };
+    world.LuaChildren!.push(recipe);
+    const cwd = makeStudioProject();
+    writeFileSync(join(cwd, "Test.ovdrjm"), JSON.stringify({ Root: world }));
+    const tools = await loadTools(cwd);
+    const read = await tools.get("studiorpc_script_read")!.execute({ guid: "RECIPE" }, toolContext());
+    const edit = await tools
+      .get("studiorpc_script_edit")!
+      .execute({ guid: "RECIPE", old_string: "pass", new_string: "return" }, toolContext());
+    expect(read.output).toContain("    pass");
+    expect(edit.metadata).toMatchObject({ method: "script.edit", count: 1 });
+    if (version === "v2") {
+      expect(paramsOf("instance.update")).toEqual({
+        Instances: [{ ActorGuid: "RECIPE", Source: "def on_generate():\n    return" }],
+      });
+      expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update", "level.save.file"]);
+    } else {
+      const saved = JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8"));
+      expect(findWorldNode(saved.Root, "RECIPE")?.Source).toBe("def on_generate():\n    return");
+      expect(methodsCalled()).toEqual(["level.apply"]);
+    }
   });
 });
 

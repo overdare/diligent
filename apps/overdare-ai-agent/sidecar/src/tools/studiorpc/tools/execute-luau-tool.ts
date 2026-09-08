@@ -6,20 +6,34 @@ import type { WriteLock } from "../write-lock";
 
 const TOOL_NAME = "studiorpc_execute_luau";
 
-function failureResult(error: unknown, phase: "execute" | "save"): ToolResult {
+function failureResult(error: unknown, phase: "execute" | "save", result?: unknown): ToolResult {
   const data = error instanceof StudioRpcError ? error.data : undefined;
+  const mutationAttempted =
+    data && typeof data === "object" && "mutation_attempted" in data ? data.mutation_attempted : undefined;
   const lines = [
     `Error: ${error instanceof Error ? error.message : String(error)}`,
     phase === "save"
       ? "Editor execution succeeded, but saving the level failed."
-      : "Editor execution failed; partial world changes may remain.",
+      : mutationAttempted === false
+        ? "Editor execution failed. Studio reports no mutation was attempted."
+        : "Editor execution failed; partial world changes may remain.",
   ];
   if (data !== undefined) {
     lines.push(JSON.stringify(data, null, 2));
-  } else if (phase === "execute") {
+  }
+  if (phase === "execute" && typeof mutationAttempted !== "boolean") {
     lines.push("Mutation outcome is unknown.");
   }
-  lines.push("Do not automatically retry. Inspect the current world and Undo status before deciding how to recover.");
+  if (phase === "save") {
+    lines.push(`Execution result: ${typeof result === "string" ? result : JSON.stringify(result)}`);
+    lines.push("Retry saving if needed; do not execute the code again.");
+  } else if (mutationAttempted === false) {
+    lines.push(
+      "Correct the reported error before submitting a new command. Do not automatically retry unchanged code.",
+    );
+  } else {
+    lines.push("Do not automatically retry. Inspect the current world and Undo status before deciding how to recover.");
+  }
   return {
     output: lines.join("\n"),
     metadata: {
@@ -28,6 +42,7 @@ function failureResult(error: unknown, phase: "execute" | "save"): ToolResult {
       code: error instanceof StudioRpcError ? error.code : undefined,
       data,
       executionSucceeded: phase === "save",
+      ...(phase === "save" ? { result } : {}),
     },
   };
 }
@@ -60,7 +75,7 @@ export function createExecuteLuauTool(callRpc: typeof call, writeLock: WriteLock
         try {
           await callRpc("level.save.file", {}, { signal: ctx.signal });
         } catch (error) {
-          return failureResult(error, "save");
+          return failureResult(error, "save", result);
         }
         return {
           output: typeof result === "string" ? result : JSON.stringify(result, null, 2),

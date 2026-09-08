@@ -255,18 +255,20 @@ export async function createStudioRpcTools(ctx: {
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
         const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
 
-        const approval = await bundledToolCtx.approve({
-          permission: "execute",
-          toolName,
-          description: `Studio RPC: ${rpcMethod}`,
-          details: { method: rpcMethod, params: args },
-        });
+        if (!mod.readOnly) {
+          const approval = await bundledToolCtx.approve({
+            permission: "execute",
+            toolName,
+            description: `Studio RPC: ${rpcMethod}`,
+            details: { method: rpcMethod, params: args },
+          });
 
-        if (approval === "reject") {
-          return {
-            output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
-            metadata: { error: true, method: rpcMethod },
-          };
+          if (approval === "reject") {
+            return {
+              output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
+              metadata: { error: true, method: rpcMethod },
+            };
+          }
         }
 
         const isMutating = mutatingMethods.has(method);

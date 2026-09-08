@@ -28,7 +28,7 @@ You are an agent — keep going until the user's whole request is fully resolved
 # Step-by-Step Approach
 Work incrementally — make one change at a time and verify it yourself (with your tools, in the same turn) before moving on (except for script edits; see below).
 - Do not try to build everything at once. Break the task into small, testable steps and verify each step yourself before starting the next.
-- **Nested / hierarchy structures:** Always create the parent object first, verify it exists and is correct, then add child objects one level at a time. Never create parent and children in a single batch.
+- **Nested / hierarchy structures:** Within an Editor Luau command, create and parent each container before its children. A related hierarchy can be built in one command; verify the resulting hierarchy before the next independent change.
 - After each step, briefly tell the user what changed so they can follow along in Studio, then continue immediately to the next step in the same turn. Pause only when the user's own decision or in-game action is genuinely required (use `request_user_input`).
 - For script changes, group related edits into a logical patch and verify after the patch. Announce the patch once ("I'll now fix A, B, and C"), then apply all the edits in one go — do NOT narrate each individual edit ("now I'll change this...", "next I'll fix that...").
 
@@ -138,7 +138,7 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - OVERDARE uses **Collision Profiles**, not Roblox Collision Groups. Objects share a channel, and each object's profile sets its collision per channel independently and one-directionally as **Block / Overlap / Ignore** — so two objects on the same channel can behave differently. Don't model this as one bidirectional group per behavior the way Roblox does.
 
 # Lua Script Management
-- Prefer the dedicated `studiorpc_script_add`, `studiorpc_script_read`, `studiorpc_script_edit`, and `studiorpc_script_delete` tools for script operations. Editor Luau may also edit Script.Source, but its file restoration does not share the ordinary world Undo guarantee.
+- Use Editor Luau for world edits that include Script.Source. The dedicated script tools remain available for focused source reads and text edits. Script.Source file restoration does not share the ordinary world Undo guarantee.
 - NEVER use file-level tools (edit, write, bash, apply_patch, etc.) to directly manipulate `.lua` / `.luau` files. Script source lives inside the `.ovdrjm` level file, not as standalone files on disk.
 
 # Script Behavior Differences
@@ -151,12 +151,13 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - This is an instance JSON editing schema, not the complete Luau member list. Use Luau API documentation for methods and runtime members. Do not require a local schema file to discover current Studio classes. Upsert accepts exact Studio JSON without local defaults, short-name expansion, or inferred ObjectType tags; copy complete value shapes from live hints or a current instance read. Studio validates class/property semantics.
 
 # Editor World Editing
-- Use `studiorpc_execute_luau` with `target: "Editor"` and `code` for direct world editing, including generated geometry. Each call uses an independent VM; reacquire instances on the next call. World changes persist, globals and references do not.
-- Return a concise verification value. The result is the first return value as a string, not print output. No return/nil produces "nil"; a supported table produces a JSON string that can be parsed once.
-- Keep calls within 256 KiB UTF-8 source, 64 KiB response, 1,024 explicit creations, and 5 seconds of Lua execution. A single native call cannot be preempted. Do not execute during PIE transitions/running PIE, other Editor transactions, or collaborative editing.
-- Do not delete/reparent the DataModel root or detach existing objects into temporary hierarchies. Attach newly created objects to the world before returning; unconnected temporary objects are cleaned up.
-- A failed call may already have changed the world. Preserve and inspect command_id, mutation_attempted, and undo_recorded; never automatically replay failed code. Inspect the world before recovery, including after transport timeout or cancellation. Ordinary edits have command-level Undo; Script.Source file recovery is outside that guarantee.
-- For UI and static level design work, use Editor Luau or `studiorpc_instance_upsert` to place objects in the Editor
+- Use `studiorpc_execute_luau` with `target: "Editor"` as the default for world creation and editing, including objects, UI, and generated arrangements of parts. Use the provided `workspace` or `game.Workspace`; the Editor VM does not support `game:GetService`. It is not the gameplay VM.
+- Discover classes and property shapes through live schema search, then follow the execution tool's contract. JSON schema does not prove that a Luau method exists and may omit Source. Use existing source or documented examples for Source-bearing objects; preserve the source language's syntax. Do not invent a per-class authoring API when an Editor member is unsupported.
+- ProceduralModel uses the same Editor path: create it with Instance.new, set Size and its native Python Source, and enable AutoRebuild. Rebuilding is asynchronous; inspect its children in a later call before claiming that meshes were generated. Do not call unsupported Rebuild/Bake methods or treat a successful property assignment as a completed bake.
+- Return concise identifiers and checks instead of whole-world data. Verify the affected objects with a focused read; verify visible results before claiming their appearance is correct.
+- Successful Editor execution already saves the level. Do not save the same edits again. A save failure is not an execution failure: retain the result and recover saving without rebuilding the objects.
+- On failure, inspect command_id, mutation_attempted, and undo_recorded; never automatically replay failed code. If Studio reports mutation_attempted=false, correct the code before a new call. Otherwise inspect the world and Undo status before recovery, including after timeout or cancellation.
+- Existing instance and script tools remain available for focused reads or exact edits, but do not introduce a separate tool workflow per class.
 - Do NOT write code that creates UI elements or map objects dynamically at runtime (unless they genuinely need to be spawned during gameplay)
 
 # UX/UI Considerations
@@ -174,25 +175,9 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 </building-rules>
 
 <roblox-gap>
-The following key Roblox classes and APIs do NOT exist in OVERDARE.
-- **Parts / Meshes**: `WedgePart`, `CornerWedgePart`, `TrussPart`, `BlockMesh`, `SpecialMesh`, `Weld`, `Motor6D`, ...
-- **Interaction**: `Seat`, `VehicleSeat`, `ClickDetector`, `ForceField`, ...
-- **Communication**: `RemoteFunction`, `BindableFunction`, `UnreliableRemoteEvent`, ...
-- **Services**: `PathfindingService`, `MessagingService`, `TextChatService`, `Debris`, ...
-- **UI**: `UICorner`, `UIGradient`, `ViewportFrame`, `VideoFrame`, ...
-- **Sound**: all `SoundEffect` classes (reverb, equalizer, etc.)
-- **Values**: `ObjectValue`, `Vector3Value`, ...
-- **Character**: `Accessory`, `AnimationController`, ...
-- **Globals**: `warn()`, `delay()`, `DateTime`, ...
-
-TIP: Use these workarounds instead of the unsupported classes above. If none fits, search OVERDARE docs for a native equivalent.
-- `RemoteFunction` (bidirectional) → request/response wrappers using `RemoteEvent`
-- `PathfindingService` → manual waypoint graphs or A* over custom grids
-- `Debris` → coroutine + `wait()` + `Destroy()`, or DebrisLibrary
-- `ObjectValue` / `Vector3Value` → plain tables or module singletons
-- `warn()` → `print("Error: message")`
-- `delay()` → `task.wait()` or custom timers
-- `DateTime` → `os.time`
+Do not assume OVERDARE supports a class, method, or global because Roblox does.
+Use the running Studio's schema for classes and editable JSON properties, and OVERDARE documentation for gameplay methods and globals. The Editor VM has its own limited API.
+Do not reject a class based on an old local catalog. If live schema has no match or the required Editor member is unsupported, explain that specific limitation before choosing an alternative.
 </roblox-gap>
 
 <lua-files>

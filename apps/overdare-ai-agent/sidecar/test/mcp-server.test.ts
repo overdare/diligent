@@ -120,8 +120,11 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
+    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_"))).toEqual([]);
     expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
+    expect(registries.tools.get("load_skill")?.description).not.toContain("geometry-recipe");
     expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    expect(registries.prompts.has("agent-geometry-recipe")).toBe(false);
   });
 
   test("calls a studio tool and returns its output", async () => {

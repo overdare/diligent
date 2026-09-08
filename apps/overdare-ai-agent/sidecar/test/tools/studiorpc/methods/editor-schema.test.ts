@@ -8,6 +8,42 @@ import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 const context = { toolCallId: "test", signal: new AbortController().signal, abort() {} };
 
 describe("live Editor tools", () => {
+  test("world editing has no separate procedural authoring tool surface", async () => {
+    const tools = await createStudioRpcToolProvider().createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain("studiorpc_execute_luau");
+    expect(names).toContain("studiorpc_instance_schema_search");
+    expect(names.filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
+  });
+  test("schema discovery does not request execute permission or save the world", async () => {
+    const calls: string[] = [];
+    let approvals = 0;
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async (method) => {
+        calls.push(method);
+        return { schemaVersion: "live", classes: [] };
+      },
+    }).createTools({
+      cwd: "/tmp/nonexistent-schema-free-project",
+      host: {
+        approve: async () => {
+          approvals++;
+          return "reject";
+        },
+      },
+    });
+    const result = await tools
+      .find((tool) => tool.name === "studiorpc_instance_schema_search")!
+      .execute({ classes: ["FutureClass"] }, context);
+    expect(JSON.parse(result.output)).toEqual({ schemaVersion: "live", classes: [] });
+    expect(approvals).toBe(0);
+    expect(calls).toEqual(["instance.schema.search"]);
+  });
+  test("Editor description exposes its entry point and automatic save contract", () => {
+    expect(luau.description).toContain("workspace");
+    expect(luau.description).toContain("game:GetService");
+    expect(luau.description).toContain("automatically saves");
+  });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [
       {},
@@ -116,10 +152,28 @@ describe("live Editor tools", () => {
     const result = await tools
       .find((t) => t.name === "studiorpc_execute_luau")!
       .execute({ target: "Editor", code: "return 'created'" }, context);
-    expect(result.metadata).toMatchObject({ error: true, executionSucceeded: true });
+    expect(result.metadata).toMatchObject({ error: true, executionSucceeded: true, result: "created" });
     expect(result.output).toContain("Editor execution succeeded, but saving the level failed.");
     expect(result.output).not.toContain("Mutation outcome is unknown.");
     expect(calls).toEqual(["execute.luau", "level.save.file"]);
+  });
+  test("an explicit no-mutation failure does not claim partial edits or require world inspection", async () => {
+    const data = { command_id: "command-2", mutation_attempted: false, undo_recorded: false };
+    const calls: string[] = [];
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async (method) => {
+        calls.push(method);
+        throw new StudioRpcError("Unsupported Editor member: GetService", -32000, data);
+      },
+    }).createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
+    const result = await tools
+      .find((tool) => tool.name === "studiorpc_execute_luau")!
+      .execute({ target: "Editor", code: 'return game:GetService("Workspace")' }, context);
+    expect(result.metadata).toMatchObject({ error: true, data, executionSucceeded: false });
+    expect(result.output).toContain("Studio reports no mutation was attempted.");
+    expect(result.output).not.toContain("partial world changes may remain");
+    expect(result.output).not.toContain("Inspect the current world");
+    expect(calls).toEqual(["execute.luau"]);
   });
   test("approval rejection sends no Editor command", async () => {
     let calls = 0;
