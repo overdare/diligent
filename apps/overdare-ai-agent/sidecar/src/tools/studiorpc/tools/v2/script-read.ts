@@ -27,11 +27,11 @@ export async function readScriptViaRpc(parsed: ScriptReadArgs): Promise<ToolResu
     }
 
     const instanceType = instanceTypeOf(target);
-    if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+    if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
       return {
         output:
-          `Error: instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-          "Use studiorpc_instance_read to read non-script instances.",
+          `Error: instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
+          "Use studiorpc_instance_read to read other instances.",
         metadata: { error: true },
       };
     }

@@ -6,7 +6,7 @@ export interface ProviderModelPolicy {
 }
 
 export const PROVIDER_MODEL_POLICIES: Readonly<Record<ProviderName, ProviderModelPolicy>> = {
-  anthropic: { defaultModel: "claude-opus-4-8" },
+  anthropic: { defaultModel: "claude-opus-5" },
   openai: { defaultModel: "gpt-5.6-sol" },
   chatgpt: { defaultModel: "gpt-5.6-sol" },
   gemini: { defaultModel: "gemini-3.6-flash" },

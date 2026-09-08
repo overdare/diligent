@@ -64,6 +64,7 @@ function makeHandlerDeps(overrides: Partial<CommandHandlerDeps> = {}): CommandHa
     waitForMcpLogin: async () => ({ success: true, toolCount: 0, error: null }),
     syncActiveThreadState: async () => {},
     queuePendingSteer: () => {},
+    removePendingSteer: () => {},
     threadManager,
     configManager,
     ...overrides,
@@ -244,4 +245,30 @@ describe("createCommandHandler", () => {
       content: "change approach",
     });
   });
+});
+
+it("removes rejected steering without adding UI or ending the active turn", async () => {
+  const removePendingSteer = mock(() => {});
+  const queuePendingSteer = mock(() => {});
+  const addLines = mock(() => {});
+  const finishTurn = mock(() => {});
+  const handler = createCommandHandler(
+    makeHandlerDeps({
+      getRpcClient: () =>
+        ({
+          request: async () => {
+            throw new Error("offline");
+          },
+        }) as unknown as AppServerRpcClient,
+      removePendingSteer,
+      queuePendingSteer,
+      addLines,
+      finishTurn,
+    }),
+  );
+  handler.handleSteering("change approach");
+  await Promise.resolve();
+  expect(removePendingSteer).toHaveBeenCalledWith((queuePendingSteer.mock.calls[0]?.[0] as { id: string }).id);
+  expect(addLines).not.toHaveBeenCalled();
+  expect(finishTurn).not.toHaveBeenCalled();
 });

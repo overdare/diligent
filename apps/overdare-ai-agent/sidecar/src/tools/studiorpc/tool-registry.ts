@@ -11,6 +11,7 @@ import * as gamePlay from "./methods/game.play";
 import * as gameScreenshot from "./methods/game.screenshot";
 import * as gameStop from "./methods/game.stop";
 import * as hubTokenRead from "./methods/hub.token.read";
+import * as instanceSchemaSearch from "./methods/instance.schema.search";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
@@ -44,6 +45,7 @@ type MethodModule = {
   method: string;
   description: string;
   params: z.ZodType;
+  readOnly?: boolean;
   timeoutMs?: number;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
@@ -61,6 +63,7 @@ type RenderBuilder = (ctx: {
 }) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
+  instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
   actionSequencerApplyJson,

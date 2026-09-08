@@ -210,10 +210,10 @@ async function executeScriptEdit(
       }
 
       const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-      if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+      if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
         throw new Error(
-          `Instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-            "Use studiorpc_instance_upsert to edit non-script instances.",
+          `Instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
+            "Use studiorpc_instance_upsert to edit other instances.",
         );
       }
 
@@ -223,8 +223,9 @@ async function executeScriptEdit(
 
       const { result, count: editCount } = applyEdit(source, { old_string, new_string, replace_all });
 
-      // Normalize leading 4-spaces → tabs, then line endings for the current OS
-      const normalized = normalizeLeadingSpaces(result);
+      // Only Lua source uses tab normalization; preserve other source languages.
+      const normalized =
+        instanceType && SCRIPT_CLASSES.has(instanceType) ? normalizeLeadingSpaces(result) : { result, converted: 0 };
       const eolNormalized = normalizeLineEndings(normalized.result);
       target.Source = eolNormalized.result;
       tabCount = normalized.converted;

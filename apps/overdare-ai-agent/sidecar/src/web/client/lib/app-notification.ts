@@ -70,20 +70,3 @@ export function deriveAgentEvents(notification: DiligentServerNotification): Age
   }
   return [];
 }
-
-export function filterSteeringInjectedEvents(
-  events: AgentEvent[],
-  shouldSuppressNextSteeringInjected: boolean,
-): { events: AgentEvent[]; consumedSuppression: boolean } {
-  if (!shouldSuppressNextSteeringInjected) {
-    return { events, consumedSuppression: false };
-  }
-  const hasSteeringInjected = events.some((event) => event.type === "steering_injected");
-  if (!hasSteeringInjected) {
-    return { events, consumedSuppression: false };
-  }
-  return {
-    events: events.filter((event) => event.type !== "steering_injected"),
-    consumedSuppression: true,
-  };
-}

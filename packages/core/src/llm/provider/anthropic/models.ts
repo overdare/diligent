@@ -3,7 +3,7 @@ import { defineProviderModels } from "../../model-card";
 import { defineProviderModelClasses } from "../../model-class";
 
 export const ANTHROPIC_MODEL_CLASSES = defineProviderModelClasses({
-  pro: { defaultModelId: "claude-opus-4-8" },
+  pro: { defaultModelId: "claude-opus-5", additionalModelIds: ["claude-opus-4-8"] },
   general: { defaultModelId: "claude-sonnet-5" },
   lite: { defaultModelId: "claude-haiku-4-5-20251001" },
 });
@@ -38,6 +38,21 @@ export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
     supportsAdaptiveThinking: true,
     supportsXhighEffort: true,
     aliases: ["claude-opus", "opus", "opus-4-8"],
+  },
+  {
+    modelId: "claude-fable-5-1",
+    display: "Claude Fable 5.1",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 10,
+    outputCostPer1M: 50,
+    cacheReadCostPer1M: 0.25,
+    cacheWriteCostPer1M: 12.5,
+    supportsThinking: true,
+    supportsVision: true,
+    supportsAdaptiveThinking: true,
+    supportsXhighEffort: true,
+    aliases: ["fable-5-1"],
   },
   {
     modelId: "claude-fable-5",

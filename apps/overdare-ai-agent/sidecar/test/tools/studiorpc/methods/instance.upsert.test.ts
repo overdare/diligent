@@ -1,7 +1,11 @@
 // @summary Tests class-bound validation for Studio RPC instance upserts.
 
 import { describe, expect, test } from "bun:test";
-import { parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
+import type { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { classPropertiesSchemas } from "../../../../src/tools/studiorpc/methods/instance.params";
+import { params, parseArgs } from "../../../../src/tools/studiorpc/methods/instance.upsert";
+import { parseInstancePatchProperties } from "../../../../src/tools/studiorpc/methods/instance-properties";
 
 describe("instance.upsert class property validation", () => {
   test("rejects properties that belong to a different class", () => {
@@ -301,5 +305,69 @@ describe("instance.upsert class property validation", () => {
         ],
       }),
     ).toThrow(/class=ImageLabel/);
+  });
+});
+
+describe("UIListLayout alignment hints", () => {
+  test("the tool schema no longer offers Center as the example alignment", () => {
+    // A free-string `e.g. "Center"` description was the only concrete value the model saw, so it
+    // centered every generated list and cropped the children against the engine's Left default.
+    const schema = zodToJsonSchema(classPropertiesSchemas.get("UIListLayout") as z.ZodTypeAny) as {
+      properties: Record<string, { enum?: string[]; description?: string }>;
+    };
+    const horizontal = schema.properties.HorizontalAlignment;
+
+    expect(horizontal.enum).toEqual(["Left", "Center", "Right"]);
+    expect(horizontal.description).toContain('default is "Left"');
+    expect(JSON.stringify(horizontal)).not.toContain("e.g.");
+  });
+
+  test("rejects an alignment value outside the enum", () => {
+    expect(() =>
+      parseArgs({
+        items: [
+          {
+            class: "UIListLayout",
+            parentGuid: "frame",
+            name: "List",
+            properties: { HorizontalAlignment: "Centre" },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  test("still accepts a deliberate Center alignment", () => {
+    const parsed = parseArgs({
+      items: [
+        {
+          class: "UIListLayout",
+          parentGuid: "frame",
+          name: "List",
+          properties: { HorizontalAlignment: "Center", FillDirection: "Horizontal" },
+        },
+      ],
+    });
+
+    expect(parsed.items[0]?.properties).toMatchObject({
+      HorizontalAlignment: "Center",
+      FillDirection: "Horizontal",
+    });
+  });
+});
+
+describe("compatibility write boundaries", () => {
+  test("the advertised input retains class and material guidance", () => {
+    const schema = JSON.stringify(zodToJsonSchema(params));
+    expect(schema).toContain('"MeshPart"');
+    expect(schema).toContain('"Material"');
+    expect(schema).toContain('"Plank"');
+  });
+  test("read-only and structural fields cannot be written through adds or patches", () => {
+    for (const key of ["WorldTransform", "ActorGuid", "ObjectKey", "LuaChildren", "Name", "Parent", "__proto__"]) {
+      const properties = JSON.parse(`{"${key}":{}}`);
+      expect(() => parseArgs({ items: [{ class: "Part", parentGuid: "W", name: "P", properties }] })).toThrow();
+      expect(() => parseInstancePatchProperties("Part", properties)).toThrow();
+    }
   });
 });

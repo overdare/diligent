@@ -2,7 +2,7 @@
 
 import { resolveApiVersion } from "../config";
 import * as instanceDelete from "../methods/instance.delete";
-import { serviceClassEnum } from "../methods/instance.params";
+import { isProtectedInstanceClass } from "../methods/instance-safety";
 import { buildInstanceDeleteRender } from "../render";
 import { applyLevelChanges } from "../rpc";
 import type { Tool, ToolContext, ToolResult } from "../types";
@@ -16,8 +16,6 @@ import {
   removeNodeByActorGuid,
 } from "./ovdrjm-utils";
 import { deleteInstancesViaRpc } from "./v2/instance-delete";
-
-const serviceClasses = new Set<string>(serviceClassEnum.options);
 
 async function executeInstanceDelete(
   args: Record<string, unknown>,
@@ -69,7 +67,7 @@ async function executeInstanceDeleteInner(
             throw missingGuidError({ operation: "instance.delete", guid: item.guid, role: "target" });
           }
           const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-          if (instanceType && serviceClasses.has(instanceType)) {
+          if (instanceType && isProtectedInstanceClass(instanceType)) {
             throw invalidInstanceOperationError({
               operation: "instance.delete",
               code: "protected_service_class",

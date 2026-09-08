@@ -30,6 +30,7 @@ interface ScriptStep {
   message?: AssistantMessage;
   error?: Error;
   awaitAbort?: boolean;
+  ready?: Promise<void>;
   abortMessage?: string;
 }
 
@@ -94,7 +95,8 @@ function createScriptedStreamFunction(steps: ScriptStep[], calls: StreamContext[
       return stream;
     }
 
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
+      await step.ready;
       for (const event of step.events ?? []) {
         stream.push(event);
       }
@@ -470,6 +472,53 @@ describe("App", () => {
     }
 
     expect(terminal.stdout.writes.join("")).toContain("Cancelled");
+  });
+
+  test("steering after an interrupted restart clears its pending UI when consumed", async () => {
+    const workspace = await setupWorkspace("diligent-app-test-");
+    const calls: StreamContext[] = [];
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const streamFn = createScriptedStreamFunction(
+      [
+        { awaitAbort: true, abortMessage: "interrupted" },
+        { ready, message: createAssistantMessage({ text: "working" }) },
+        { message: createAssistantMessage({ text: "done" }) },
+      ],
+      calls,
+    );
+    const { app, terminal } = createAppHarness(makeConfig(streamFn, { diligent: { yolo: true } }), workspace);
+    const runtime = (
+      app as unknown as { runtime: { pendingSteers: Array<{ content: string }>; isProcessing: boolean } }
+    ).runtime;
+    try {
+      await app.start();
+      await wait(30);
+      terminal.emitText("begin");
+      terminal.emitEnter();
+      await waitFor(() => calls.length === 1);
+      await wait(80);
+      terminal.emitText("restart guidance");
+      terminal.emitEnter();
+      await wait(30);
+      terminal.emitCtrlC();
+      await waitFor(() => calls.length === 2);
+      terminal.emitText("later guidance");
+      terminal.emitEnter();
+      await waitFor(() => runtime.pendingSteers.length === 1);
+      await wait(30);
+      release();
+      await waitFor(() => calls.length >= 3 && !runtime.isProcessing);
+      expect(
+        calls.at(-1)?.messages.some((message) => message.role === "user" && message.content === "later guidance"),
+      ).toBe(true);
+      expect(runtime.pendingSteers).toEqual([]);
+    } finally {
+      app.stop();
+      workspace.cleanup();
+    }
   });
 
   test("Ctrl+C cancel restarts turn with first pending steering message", async () => {

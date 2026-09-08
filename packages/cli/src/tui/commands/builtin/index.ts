@@ -5,6 +5,7 @@ import { effortCommand } from "./effort";
 import { helpCommand } from "./help";
 import { mcpCommand } from "./mcp";
 import { bugCommand, clearCommand, configCommand, costCommand, exitCommand, versionCommand } from "./misc";
+import { modeCommands } from "./mode";
 import { modelCommand } from "./model";
 import { providerCommand } from "./provider";
 import { reloadCommand } from "./reload";
@@ -15,6 +16,7 @@ import { toolsCommand } from "./tools";
 export function registerBuiltinCommands(registry: CommandRegistry, skills: SkillMetadata[]): void {
   registry.register(helpCommand);
   registry.register(effortCommand);
+  for (const command of modeCommands) registry.register(command);
   registry.register(modelCommand);
   registry.register(providerCommand);
   registry.register(toolsCommand);
