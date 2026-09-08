@@ -24,8 +24,8 @@ does not depend on it and does not claim that the intended API excludes listing.
 - `bun run lint` and `bun run typecheck` pass; package `bun test`: 2,448 passed.
 - Related sidecar, MCP, and packaging tests run in 21 isolated files: 307 passed.
 - `cargo test --manifest-path apps/overdare-ai-agent/Cargo.toml --lib init::tests`:
-  seven passed, including actual deprecated bootstrap assets in fresh, MissingOnly,
-  and FullSync installations with user-added entries preserved.
+  six existing installer tests passed. Deprecated guide content and exposure are
+  covered by the MCP tests; no dedicated installed-guide migration test is retained.
 - The advertised cross-class union must not apply defaults before the target class
   is known. A separate structural parse hook preserves raw inputs until the
   class-bound parser runs. Tests through the shared tool executor verify that

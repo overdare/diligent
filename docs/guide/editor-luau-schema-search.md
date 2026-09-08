@@ -227,8 +227,8 @@ Tests use injected responses and a local TCP Studio stand-in to verify the
 compatibility upsert validators/conversions, supplementary future-class discovery,
 read-only spatial data, phase-specific Editor failures, cancellation, approval and
 save ordering. MCP tests verify that deprecated guides remain loadable without
-restoring retired tools. Installer tests use the actual bootstrap guides to verify
-fresh installation, applied-update replacement, and preservation of user entries.
+restoring retired tools. Existing installer tests cover applied-update replacement and preservation of user
+entries; deprecated content and exposure are checked at the MCP boundary.
 These checks do not establish model adherence or native geometry quality. Live
 Studio generation and parameter-change checks are recorded separately in
 `docs/review/editor-tool-unification.md`.
