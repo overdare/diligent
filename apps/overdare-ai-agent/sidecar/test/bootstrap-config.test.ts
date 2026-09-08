@@ -55,4 +55,16 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("This workflow applies to gameplay Lua scripts");
     expect(prompt).not.toContain("then proceed with best practices from Roblox or general game dev");
   });
+  test("separates coordinate and execution contracts from generation evidence", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("# Gameplay Script Behavior");
+    expect(prompt).toContain("ordinary nil checks");
+    expect(prompt).toContain("Editor Size.Y is the vertical extent");
+    expect(prompt).toContain("(Editor Size.Z, Editor Size.X, Editor Size.Y)");
+    expect(prompt).toContain("derived dimensions must remain positive");
+    expect(prompt).toContain("A later empty result does not identify the cause");
+    expect(prompt).toContain("A no-op source replacement is not a repair");
+    expect(prompt).toContain("query the affected properties");
+    expect(prompt).toContain("image could not be inspected");
+  });
 });

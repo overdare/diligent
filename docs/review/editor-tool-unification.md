@@ -98,3 +98,35 @@ A fresh, read-only model-planning check selected ProceduralModel, native Unreal
 Python, and AutoRebuild for the user's adjustable-model request. That check proves
 the selected plan under the refreshed prompt, not complete generation of an
 arbitrary asset. No request-specific class-routing rule was added.
+
+## Contract review and main refresh
+
+The next session used the correct ProceduralModel class but still mixed gameplay
+helpers into Editor code, confused Editor height with native geometry axes, guessed
+a material name, and reported success without the necessary evidence. The prompt
+and Editor tool description now separate those contracts explicitly:
+
+- Gameplay-only reference helpers do not apply in the Editor VM.
+- Editor height is Size.Y; the tested native Source tuple maps Editor Z, X, Y.
+  Derived dimensions must remain positive across parameter combinations.
+- Relevant property and enum hints must inform the values actually used. JSON
+  schemas do not describe arbitrary native geometry function arguments.
+- An authored Editor return and successful save do not report asynchronous
+  generation completion or the cause of an empty result.
+- No-op edits, identical measurements, unread screenshot paths, and onScreen
+  projections cannot establish a repaired generator or correct appearance.
+
+This follow-up changes guidance and its regression coverage, not the Studio
+generator or existing world objects. It does not add a bake-status endpoint or
+claim that missing native diagnostics can be recovered from an empty result.
+
+The branch was rebased onto main `13fea6ec`, then aligned with the updated
+`preview/release-40` merge `4dac65bc`, which includes that main and #406. The PR
+target remains preview. Main's Windows portproxy guide is preserved. UIListLayout
+coverage now verifies no alignment suggestion/default injection, deliberate value
+forwarding, and Studio-owned value validation instead of importing the retired
+static schema.
+
+Validation after the main refresh: lint/typecheck, 2,396 package tests, 52 E2E
+tests, 505 Web tests, and 31 focused Editor/schema/prompt tests passed. These are
+contract and regression checks; no live world was modified in this follow-up.

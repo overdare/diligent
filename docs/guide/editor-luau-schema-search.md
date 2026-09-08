@@ -63,6 +63,8 @@ print logs: no return/nil gives `"nil"`, supported tables give a JSON string.
 
 Use the provided `workspace` or `game.Workspace`. The tested Editor build rejects
 `game:GetService`; gameplay API familiarity is not evidence of Editor support.
+The gameplay `isnil` helper is also unavailable in the Editor VM. Use ordinary
+nil checks on lookup results and discard references after destroying instances.
 For example, the following command uses the documented instance creation path:
 
 ```json
@@ -72,6 +74,15 @@ For example, the following command uses the documented instance creation path:
 Discover the target class first. Create related containers before their children
 within one command, and return a small verification summary rather than the whole
 world. A focused readback proves properties, not visual appearance or gameplay.
+
+Editor Size is `(X, Y, Z)` with Y vertical. In the tested Studio mapping, native
+Source receives `(Editor Z, Editor X, Editor Y)`, expressed as native
+`(width, depth, height)` with Z up. For native width=160, depth=45, height=240,
+the unrotated Editor Size is `(45,240,160)`. Keep the coordinate space explicit
+at the boundary; a matching outer box in a smoke test does not prove the intended
+width/depth orientation. Rotation cannot fix invalid dimensions already used by
+the generator. Check positive derived dimensions and clearances across parameter
+combinations before emitting geometry.
 
 Studio supports instance/attribute edits and Script.Source within its editable API.
 It forbids deleting/reparenting the DataModel root and detaching existing instances
@@ -95,6 +106,21 @@ the same edits. A save failure retains the execution result and reports that the
 code succeeded; recover saving without executing the code again. A successful
 response proves the save RPC returned, not that reopening the world or Undo was
 tested.
+
+The first return value is authored by the submitted code. It is not a native
+generation report and contains no automatic confirmation that asynchronous
+generation completed. An empty later result does not reveal whether generation
+is pending or failed, much less its cause. Use actual diagnostics if available;
+otherwise report the cause as unknown. Do not label an unchanged string replacement
+as a repair or identical measurements as evidence of a change. Child identity and
+outer bounds can remain stable while internal geometry changes, so verification
+must use an observable that is relevant to the requested effect.
+
+Likewise, a screenshot path or onScreen projection only establishes capture or
+framing. If a cross-host path cannot be read, use an available project mount or
+report that the image was not inspected. Do not claim visual correctness from
+those status fields. This guidance does not add a bake-status API or change the
+Studio-side generator; those capabilities remain owned by Studio.
 
 ## Procedural removal and release
 

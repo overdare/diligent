@@ -43,6 +43,7 @@ describe("live Editor tools", () => {
     expect(luau.description).toContain("workspace");
     expect(luau.description).toContain("game:GetService");
     expect(luau.description).toContain("automatically saves");
+    expect(luau.description).toContain("not an asynchronous generation report");
   });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [

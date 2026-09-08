@@ -77,16 +77,29 @@ describe("instance.upsert live schema properties", () => {
 describe("UIListLayout alignment forwarding", () => {
   test("does not suggest or inject a Center alignment", () => {
     const schema = JSON.stringify(zodToJsonSchema(params));
-    expect(schema).not.toContain('e.g. \"Center\"');
+    expect(schema).not.toContain(JSON.stringify('e.g. "Center"').slice(1, -1));
     const result = parseArgs({ items: [{ class: "UIListLayout", parentGuid: "frame", name: "List" }] });
     expect(result.items[0]?.properties).toEqual({});
   });
   test("defers alignment value semantics to Studio", () => {
-    const input = { items: [{ class: "UIListLayout", parentGuid: "frame", name: "List", properties: { HorizontalAlignment: "Centre" } }] };
+    const input = {
+      items: [
+        { class: "UIListLayout", parentGuid: "frame", name: "List", properties: { HorizontalAlignment: "Centre" } },
+      ],
+    };
     expect(parseArgs(input)).toEqual(input);
   });
   test("still forwards a deliberate Center alignment", () => {
-    const input = { items: [{ class: "UIListLayout", parentGuid: "frame", name: "List", properties: { HorizontalAlignment: "Center", FillDirection: "Horizontal" } }] };
+    const input = {
+      items: [
+        {
+          class: "UIListLayout",
+          parentGuid: "frame",
+          name: "List",
+          properties: { HorizontalAlignment: "Center", FillDirection: "Horizontal" },
+        },
+      ],
+    };
     expect(parseArgs(input)).toEqual(input);
   });
 });
