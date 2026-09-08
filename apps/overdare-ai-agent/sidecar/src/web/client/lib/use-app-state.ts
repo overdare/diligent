@@ -216,7 +216,6 @@ export function useAppState({
     handleServerRequest: serverRequests.handleServerRequest,
     steering: {
       pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
       restartFromPendingAbortSteer: steeringQueue.restartFromPendingAbortSteer,
     },
     setOauthPending: modalState.setOauthPending,
@@ -274,7 +273,6 @@ export function useAppState({
     setSkills,
     steeringControl: {
       pendingAbortRestartMessageRef: steeringQueue.pendingAbortRestartMessageRef,
-      suppressNextSteeringInjectedRef: steeringQueue.suppressNextSteeringInjectedRef,
     },
     modeRef,
     cwdRef,
