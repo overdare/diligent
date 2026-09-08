@@ -186,7 +186,7 @@ export function AssistantMessage({
   return (
     <div className={reportAction ? "group/message relative py-2" : "py-2"} tabIndex={reportAction ? 0 : undefined}>
       {hasThinking && !suppressThinking && (
-        <div className="pb-3">
+        <div className={skillNotice || hasStructuredBlocks || hasVisibleText ? "pb-5" : undefined}>
           <ThinkingBlock text={item.thinking} streaming={!item.thinkingDone} durationLabel={thinkingDurationLabel} />
         </div>
       )}

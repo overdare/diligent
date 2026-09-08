@@ -107,7 +107,7 @@ export function renderStatusBar(store: StatusBarStore, width: number): string[] 
   }
 
   const statusHint = info.status === "busy" ? "ctrl+c to cancel" : info.status === "retry" ? "retrying..." : "";
-  const modeHint = !statusHint && info.mode && info.mode !== "default" ? formatModeHint(info.mode) : "";
+  const modeHint = !statusHint && info.mode ? formatModeHint(info.mode) : "";
   const rightHint = statusHint || modeHint;
 
   if (leftParts.length === 0 && !rightHint) return [];

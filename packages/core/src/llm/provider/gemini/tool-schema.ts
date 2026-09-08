@@ -1,6 +1,7 @@
 // @summary Normalizes union and oversized function schemas for Gemini tool compatibility.
 
 const DEFAULT_MAX_SCHEMA_BYTES = 32_000;
+const PROPERTY_CAPS = [128, 64, 32, 16, 8] as const;
 
 type JsonSchema = Record<string, unknown>;
 
@@ -12,7 +13,39 @@ interface SchemaVariant {
 export function normalizeGeminiToolSchema(schema: JsonSchema, maxSchemaBytes = DEFAULT_MAX_SCHEMA_BYTES): JsonSchema {
   if (JSON.stringify(schema).length <= maxSchemaBytes) return schema;
   const normalized = simplifySchema(dereferenceSchema(schema, schema, new Set()));
-  return isRecord(normalized) ? normalized : schema;
+  return trimToSchemaBudget(isRecord(normalized) ? normalized : schema, maxSchemaBytes);
+}
+
+function trimToSchemaBudget(schema: JsonSchema, maxSchemaBytes: number): JsonSchema {
+  for (const maxProperties of PROPERTY_CAPS) {
+    const trimmed = pruneDanglingRequired(capObjectProperties(schema, maxProperties));
+    if (isRecord(trimmed) && JSON.stringify(trimmed).length <= maxSchemaBytes) return trimmed;
+  }
+  return schema;
+}
+
+function capObjectProperties(value: unknown, maxProperties: number): unknown {
+  if (Array.isArray(value)) return value.map((entry) => capObjectProperties(entry, maxProperties));
+  if (!isRecord(value)) return value;
+  const entries = Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, capObjectProperties(entry, maxProperties)]),
+  );
+  if (!isRecord(entries.properties)) return entries;
+  const kept = Object.entries(entries.properties).slice(0, maxProperties);
+  if (kept.length === Object.keys(entries.properties).length) return entries;
+  return { ...entries, properties: Object.fromEntries(kept) };
+}
+
+function pruneDanglingRequired(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(pruneDanglingRequired);
+  if (!isRecord(value)) return value;
+  const entries = Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, pruneDanglingRequired(entry)]));
+  if (!Array.isArray(entries.required)) return entries;
+  const properties = isRecord(entries.properties) ? entries.properties : {};
+  const required = entries.required.filter((name) => typeof name === "string" && Object.hasOwn(properties, name));
+  if (required.length > 0) return { ...entries, required };
+  const { required: _dropped, ...rest } = entries;
+  return rest;
 }
 
 /**

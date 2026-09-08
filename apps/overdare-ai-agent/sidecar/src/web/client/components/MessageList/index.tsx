@@ -258,7 +258,7 @@ function MessageListImpl({
         />
       ) : (
         <div className="h-full overflow-y-auto bg-bg-sunken px-7 py-6">
-          <div className="space-y-5">
+          <div className="space-y-1">
             {rows.map((row) => (
               <div key={row.key} data-message-list-row={row.key}>
                 <MessageListRowContent

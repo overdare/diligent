@@ -136,10 +136,10 @@ export function mapStopReason(status: string | undefined): StopReason {
   }
 }
 
-const GPT_56_MODEL_IDS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
+const RESPONSES_LITE_MODEL_IDS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]);
 
-export function isGpt56Model(modelId: string): boolean {
-  return GPT_56_MODEL_IDS.has(modelId);
+export function usesResponsesLite(modelId: string): boolean {
+  return RESPONSES_LITE_MODEL_IDS.has(modelId);
 }
 
 /**
@@ -284,7 +284,7 @@ export async function buildResponsesRequestBody(input: {
   if (input.systemInstructions) body.instructions = input.systemInstructions;
   if (input.sessionId) body.prompt_cache_key = input.sessionId;
   if (input.enablePromptCaching) {
-    if (isGpt56Model(input.model)) {
+    if (usesResponsesLite(input.model)) {
       body.prompt_cache_options = { ttl: "30m" };
     } else {
       body.prompt_cache_retention = "24h";

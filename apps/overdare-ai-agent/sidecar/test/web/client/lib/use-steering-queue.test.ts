@@ -160,7 +160,8 @@ describe("executeSteer", () => {
     expect(dispatched[0]).toMatchObject({ type: "local_steer", payload: { content: params.content } });
   });
 
-  test("swallows RPC errors without re-throwing", async () => {
+  test("removes only the failed pending entry without introducing UI notifications", async () => {
+    const dispatched: unknown[] = [];
     const rpc = makeRpc(async () => {
       throw new Error("network failure");
     });
@@ -172,12 +173,17 @@ describe("executeSteer", () => {
         content: "hello",
         images: [],
         contextItems: [],
-        dispatch: mock(() => {}),
+        dispatch: (action) => dispatched.push(action),
         clearThreadInput: mock(() => {}),
         clearPendingImages: mock(() => {}),
         clearContextItems: mock(() => {}),
       }),
     ).resolves.toBeUndefined();
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[1]).toMatchObject({
+      type: "cancel_pending_steer",
+      payload: { steerId: (dispatched[0] as { payload: { id: string } }).payload.id },
+    });
   });
 });
 
@@ -200,7 +206,7 @@ describe("executeCancelSteer", () => {
     expect(dispatched).toEqual([{ type: "cancel_pending_steer", payload: { steerId: "s1" } }]);
   });
 
-  test("removes local pending steer optimistically even when server rejects cancel", async () => {
+  test("keeps local pending steer when server rejects cancel", async () => {
     const dispatched: unknown[] = [];
     const rpc = makeRpc(async () => ({ cancelled: false }));
 
@@ -211,7 +217,7 @@ describe("executeCancelSteer", () => {
       dispatch: (action) => dispatched.push(action),
     });
 
-    expect(dispatched).toEqual([{ type: "cancel_pending_steer", payload: { steerId: "s1" } }]);
+    expect(dispatched).toEqual([]);
   });
 });
 
@@ -236,7 +242,7 @@ describe("executeUpdateSteer", () => {
     expect(dispatched).toEqual([{ type: "update_pending_steer", payload: { steerId: "s1", content: "new steer" } }]);
   });
 
-  test("updates local pending steer optimistically even when server rejects update", async () => {
+  test("keeps original content when server rejects update", async () => {
     const dispatched: unknown[] = [];
     const rpc = makeRpc(async () => ({ updated: false }));
 
@@ -248,7 +254,7 @@ describe("executeUpdateSteer", () => {
       dispatch: (action) => dispatched.push(action),
     });
 
-    expect(dispatched).toEqual([{ type: "update_pending_steer", payload: { steerId: "s1", content: "new steer" } }]);
+    expect(dispatched).toEqual([]);
   });
 });
 
@@ -341,3 +347,23 @@ describe("executeRestartFromAbort", () => {
     expect(params.content).toEqual([{ type: "text", text: "restart message" }]);
   });
 });
+
+for (const operation of ["cancel", "update"] as const) {
+  test(`${operation} failure leaves the pending queue unchanged`, async () => {
+    const dispatched: unknown[] = [];
+    const rpc = makeRpc(async () => {
+      throw new Error("offline");
+    });
+    const args = {
+      rpc,
+      threadId: "thread-1",
+      steerId: "s1",
+      content: "edited",
+      dispatch: (action: unknown) => dispatched.push(action),
+    };
+    await expect(operation === "cancel" ? executeCancelSteer(args) : executeUpdateSteer(args)).rejects.toThrow(
+      "offline",
+    );
+    expect(dispatched).toEqual([]);
+  });
+}

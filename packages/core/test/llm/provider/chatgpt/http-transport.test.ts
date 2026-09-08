@@ -68,7 +68,7 @@ describe("ChatGPT HTTP transport", () => {
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
     expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
-    expect(request.headers.get("version")).toBe("0.144.1");
+    expect(request.headers.get("version")).toBe("0.153.4");
     expect(request.headers.get("ChatGPT-Account-ID")).toBe("acct_1");
     expect(request.headers.get("session-id")).toBe("session_1");
     expect(request.headers.get("session_id")).toBeNull();
@@ -86,6 +86,36 @@ describe("ChatGPT HTTP transport", () => {
       role: "developer",
       tools: [],
     });
+  });
+
+  test("sends the Lite header and Lite body for gpt-6-astra", async () => {
+    const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        headers: new Headers(init?.headers),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return chatGPTSuccessResponse();
+    }) as unknown as typeof fetch;
+
+    await collectEvents(
+      createChatGPTStream(() => testTokens())(
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-astra" }),
+        TEST_CONTEXT,
+        { effort: "xhigh", sessionId: "session_astra" },
+      ),
+    );
+
+    const request = requests[0];
+    if (!request) throw new Error("Expected one ChatGPT HTTP request");
+    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
+
+    const body = request.body;
+    expect(body.model).toBe("gpt-6-astra");
+    expect(body.parallel_tool_calls).toBe(false);
+    expect((body.reasoning as { context: string }).context).toBe("all_turns");
+    expect((body.reasoning as { effort: string }).effort).toBe("xhigh");
+    expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
   test("preserves raw HTTP/SSE incomplete terminal classification", async () => {
