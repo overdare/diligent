@@ -294,6 +294,8 @@ interface TargetSummary {
   props: Map<string, { before?: string; after?: string; count: number }>;
   /** list-typed property -> rendered delta lines. */
   lists: Map<string, { added: string[]; removed: string[]; modified: string[] }>;
+  /** Semantic group edits, not readable instance properties. */
+  gizmoChanges: Map<"Position/orientation" | "Size", number>;
   sourceEdits: number;
 }
 
@@ -339,6 +341,14 @@ function isSubject(object: EditLogObject, envelope: EditLogEnvelope): boolean {
 }
 
 function applyChange(target: TargetSummary, change: EditLogChange): void {
+  if (change.property === "GroupCFrame" || change.property === "GroupSize") {
+    // Studio emits synthetic properties for Model/Folder gizmo edits. Report
+    // only the change: instance.read cannot read these properties, and size
+    // values are per-edit scale factors (Before is always 1), not dimensions.
+    const kind = change.property === "GroupCFrame" ? "Position/orientation" : "Size";
+    target.gizmoChanges.set(kind, (target.gizmoChanges.get(kind) ?? 0) + 1);
+    return;
+  }
   if (change.property === "Source") {
     // 2026-08-10 decision: script edits log only "changed", never content.
     target.sourceEdits++;
@@ -383,6 +393,7 @@ function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
           removed: false,
           props: new Map(),
           lists: new Map(),
+          gizmoChanges: new Map(),
           sourceEdits: 0,
         };
         targets.set(object.guid, target);
@@ -408,6 +419,10 @@ function label(target: TargetSummary): string {
 
 function detailLines(target: TargetSummary): string[] {
   const lines: string[] = [];
+  for (const [kind, count] of target.gizmoChanges) {
+    const times = count > 1 ? ` (${count} edits)` : "";
+    lines.push(`  ${kind} changed via gizmo${times}`);
+  }
   for (const [property, entry] of target.props) {
     const times = entry.count > 1 ? ` (${entry.count} edits)` : "";
     lines.push(`  ${property}: ${entry.before} -> ${entry.after}${times}`);

@@ -95,6 +95,25 @@ describe("summary section titles", () => {
 });
 
 describe("summarizeEditLog", () => {
+  test.each(["Model", "Folder"])("describes %s gizmo edits without exposing synthetic properties or values", (type) => {
+    const envelopes = [2, 3].map((scale) =>
+      envelope("SetProperty", [
+        subject(type, "group-guid", "Group", [
+          { Property: "GroupCFrame", Before: "synthetic-before", After: "synthetic-after" },
+          { Property: "GroupSize", Before: 1, After: scale },
+          { Property: "Name", Before: "Old", After: "Group" },
+        ]),
+      ]),
+    );
+    const { output, editCount } = summarizeEditLog(envelopes.map(parse));
+    expect(editCount).toBe(1);
+    expect(output).toContain(`Modified (1):\n~ ${type} "Group" (group-guid)`);
+    expect(output).toContain("Position/orientation changed via gizmo (2 edits)");
+    expect(output).toContain("Size changed via gizmo (2 edits)");
+    expect(output).toContain("Name: Old -> Group (2 edits)");
+    expect(output).not.toMatch(/GroupCFrame|GroupSize|synthetic-before|synthetic-after|1 ->/);
+  });
+
   test("reports created, removed, moved, and modified instances by section", () => {
     const envelopes = [
       envelope("Create", [subject("Part", "p2", "Ramp")]),
@@ -454,6 +473,32 @@ describe("human-edits unified loop-hook context injection", () => {
     expect(injections?.[0]?.content).toContain('+ Part "Ramp" (p2)');
     // Injection delivered -> consumed log files are gone.
     expect(logFiles(cwd)).toEqual([]);
+  });
+
+  test("delivers semantic gizmo changes through context injection, the cached tool, and mid-turn peeks", async () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [
+      envelope("SetProperty", [subject("Model", "m1", "Tree", [{ Property: "GroupCFrame", Before: "A", After: "B" }])]),
+    ]);
+    const p = promptProvider();
+    await p.onUserPromptSubmit(promptInput(cwd));
+    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    hook?.onPromptStart?.({ messages: [] });
+    const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
+    expect(injections?.[0]?.content).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
+    expect(injections?.[0]?.content).not.toContain("GroupCFrame");
+
+    writeEditLog(cwd, [
+      envelope("SetProperty", [subject("Folder", "f1", "Props", [{ Property: "GroupSize", Before: 1, After: 2 }])]),
+    ]);
+    const tools = await p.createTools({ cwd, host: { approve: async () => "once" } });
+    const tool = tools.find((tool) => tool.name === "studiorpc_human_edits");
+    expect(tool).toBeDefined();
+    const result = await tool!.execute({} as never, toolCtx());
+    expect(result.output).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
+    expect(result.output).toContain('~ Folder "Props" (f1)\n  Size changed via gizmo');
+    expect(result.output).not.toMatch(/GroupCFrame|GroupSize|1 -> 2/);
+    expect(logFiles(cwd)).toContain("Edit.Log");
   });
 
   test("injects nothing when the log is empty", async () => {
