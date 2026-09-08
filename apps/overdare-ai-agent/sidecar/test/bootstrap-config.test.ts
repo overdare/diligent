@@ -46,4 +46,13 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("derived output");
     expect(prompt).not.toContain("Default to ProceduralModel");
   });
+  test("includes native authoring reference without treating search misses as permission to change execution mode", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("query is a single literal substring");
+    expect(prompt).toContain("parts.chamfered_box");
+    expect(prompt).toContain("G.append_mesh");
+    expect(prompt).toContain("G.dispose_mesh");
+    expect(prompt).toContain("This workflow applies to gameplay Lua scripts");
+    expect(prompt).not.toContain("then proceed with best practices from Roblox or general game dev");
+  });
 });

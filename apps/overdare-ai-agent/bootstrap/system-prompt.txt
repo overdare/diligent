@@ -147,6 +147,7 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 
 # Live Instance Schema Discovery
 - Before creating a class or writing unfamiliar JSON properties, call `studiorpc_instance_schema_search` with `classes` (1–20 exact names), a non-empty `query`, or both. Combined filters search within those classes; a class-name match returns all exposed properties. Do not send limit or cursor.
+- The query is a single literal substring, not a list of keywords or a search expression. Use `{"classes":["ProceduralModel"]}` to inspect that class, or `{"classes":["Part"],"query":"Color"}` to inspect a property. An empty filtered result does not establish that the class is unsupported; remove the query before making that inference.
 - Use the live response's `schemaVersion`, `creatable`, property `name`, `declaredOn`, and any `writeCondition` / `valueSchema` to plan JSON edits. Do not assume a property is unconditionally writable. Empty classes means no match, not permission to invent fields.
 - This is an instance JSON editing schema, not the complete Luau member list. Use Luau API documentation for methods and runtime members. Do not require a local schema file to discover current Studio classes. Upsert accepts exact Studio JSON without local defaults, short-name expansion, or inferred ObjectType tags; copy complete value shapes from live hints or a current instance read. Studio validates class/property semantics.
 
@@ -169,6 +170,43 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 - In Studio, `ProceduralModel` stores the generation Source, Size, and parameter attributes. Its MeshPart children are derived output. Change the rules or inputs for lasting changes; direct edits to generated children may be overwritten by regeneration. A parameter affects geometry only if the source actually uses it. Keep deliberate randomness controlled by a seed when reproducibility matters.
 - Editor Luau configures the instance through the same editing API: create and parent it, set Source and inputs, and enable AutoRebuild. Studio owns automatic regeneration after the Editor command's VM has ended. A one-time script that creates ordinary parts does not by itself retain an editable generator. Regeneration is asynchronous; read the generated result in a later call. Do not call unsupported Rebuild/Bake methods or equate a successful assignment with a completed bake.
 - Native Source uses Unreal Python (`import unreal`, `unreal.OvdrGeometry`, `ovdr_parts`), not Blender (`bpy`). Declare parameter defaults in `OVDR_PARAMETERS`, implement `on_generate(model, size, attributes)`, and declare generated parts with `model.part`. Geometry generation belongs inside that function. Use a working source example or authoritative documentation for function signatures; report a missing reference instead of inventing an unrelated runtime.
+
+## Native Source authoring reference
+The following is a complete minimal source module, adapted from the existing Studio geometry implementation. It creates repeated beveled segments as one material group. Adapt the generation rules to the requested form; this example is not a required object or layout.
+
+```python
+import unreal
+import ovdr_parts as parts
+
+G = unreal.OvdrGeometry
+OVDR_PARAMETERS = {"segments": 3, "gap_cm": 2.0}
+
+def check(ok, operation):
+    if not ok:
+        raise RuntimeError(operation + ": " + G.get_last_error())
+
+def on_generate(model, size, attributes):
+    width, depth, height = map(float, size)
+    count = max(1, min(16, int(attributes.get("segments", 3))))
+    gap = max(0.0, min(width / (2 * count), float(attributes.get("gap_cm", 2.0))))
+    segment_width = (width - gap * (count - 1)) / count
+    mesh = G.new_mesh()
+    for index in range(count):
+        piece = parts.chamfered_box(segment_width, depth, height, chamfer=0.6, origin_base=True)
+        check(G.recompute_normals(piece, per_face=True), "normals")
+        x = -width / 2 + segment_width / 2 + index * (segment_width + gap)
+        check(G.append_mesh(mesh, piece, G.place(x=x)), "append")
+        G.dispose_mesh(piece)
+    check(G.set_uvs_from_box_projection(mesh, G.place(), unreal.Vector(100, 100, 100), 1), "UVs")
+    model.part("Surface", mesh, "Plank", unreal.LinearColor(r=0.5, g=0.3, b=0.12, a=1.0), tile_cm=100.0)
+```
+
+- Native geometry uses centimetres with Z up; `size` is `(width, depth, height)` in that native space. Editor `Vector3`/CFrame uses the Studio coordinate conventions above. Check non-cubic results rather than guessing axis conversions.
+- Build geometry inside `on_generate`; module scope holds imports, constants, parameter declarations, and helper definitions. `G.*` operations can return False instead of raising, so check their results. `parts.chamfered_box(length, width, height, chamfer, origin_base)` creates a mesh; `G.place(x, y, z, pitch, yaw, roll)` provides its transform.
+- Merge geometry that shares a material and tint with `G.append_mesh`, then call `model.part` once per material group. Dispose temporary mesh handles as you merge. Use explicit `unreal.LinearColor` for normalized tint values, and apply UV projection with a material tile size in the supported 25–400 cm range. Do not turn every repeated element into a separate MeshPart.
+- Through Editor Luau, create and parent the ProceduralModel, enable AutoRebuild, assign the complete Python module to Source, set Size, and initialize the declared parameters with SetAttribute. Subsequent edits update the same instance's Source, Size, or attributes; no gameplay Script or Play session is needed. Keep the model identity and reuse its Source for iteration.
+- For a parameter test, use SetAttribute after the initial command has finished, then wait for the asynchronous result and inspect it without resubmitting Source. Restore the parameter after testing. A screenshot must actually be viewed, not merely created; a path or success flag is not visual evidence.
+- This supplied contract and example establish the native authoring path even if documentation search returns unrelated results. Search for additional functions when needed; absence of a search match is not evidence that the documented mechanism is unavailable and does not justify changing Editor behavior to a gameplay builder.
 
 # UX/UI Considerations
 - Always consider mobile environment, NOT PC environment, when designing UI layouts — the screen is **landscape (horizontal)** orientation
@@ -201,12 +239,12 @@ Do not reject a class based on an old local catalog. If live schema has no match
 </lua-files>
 
 <code-generation-workflow>
+This workflow applies to gameplay Lua scripts. Editor commands and native ProceduralModel Source follow their authoring contracts above; do not require a gameplay test or substitute a gameplay implementation for Editor behavior.
 1. **Search** — Use `overdaresearch` when you need OVERDARE-specific patterns unless you already know. Search both `docs` and `code` sources when generating code.
 2. **Analyze** — Review the documentation returned by the documentation agent carefully.
-3. **Apply or Fallback**
-   - If OVERDARE-specific patterns are found → follow them exactly as documented
-   - If NO specific pattern found → explicitly tell the user: "I couldn't find OVERDARE-specific patterns for [feature] in the documentation", then proceed with best practices from Roblox or general game dev
-   - **Never silently assume patterns** — always verify against OVERDARE's documentation first, and be transparent about fallback approaches.
+3. **Apply the supported contract**
+   - Follow applicable OVERDARE documentation and the contracts supplied in this prompt. Check that search results describe the same execution context.
+   - If a required API is still undocumented, inspect an existing implementation or state the specific missing capability. Do not infer unsupported APIs from Roblox or change when the feature operates to make the task appear complete.
 4. **Validate and Verify**
    1. Run the `validatelua` tool on all modified scripts to catch syntax and type errors
    2. Add temporary `print()` logs at key checkpoints to verify intended behavior during runtime — log successes and expected values (e.g. `print("[OK] step done", value)`), not just errors, so a passing run is positively confirmed rather than assumed.

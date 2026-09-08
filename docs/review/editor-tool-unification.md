@@ -72,3 +72,29 @@ Socket-dependent checks were rerun with local networking permission. The tool CL
 mock originally omitted the new StudioRpcError export; it now preserves actual
 module exports while replacing the transport calls. No live failure is hidden by
 these test-environment repairs.
+
+## Authoring-reference follow-up
+
+Subsequent user sessions still substituted a gameplay Script after documentation
+search returned unrelated results. The bootstrap described the native lifecycle
+but omitted the working authoring reference previously supplied by the removed
+tool/skill path. Its general gameplay fallback instruction also allowed an
+incorrect change of execution context.
+
+The bootstrap now includes a complete minimal native Source module adapted from
+the existing implementation: parameter declaration, on_generate, beveled mesh
+creation, checked normals/append/UV operations, temporary handle disposal, and
+material-group declaration. Gameplay search and validation are explicitly scoped
+to gameplay Lua. A missing search match does not invalidate a supplied contract
+or permit replacing Editor behavior with a gameplay implementation.
+
+With explicit user approval, the exact new example was extracted from the prompt
+and run through Editor Luau on a disposable model. A later read returned one
+Surface MeshPart whose Size matched the model at X=120, Y=80, Z=60; the model was
+then deleted and cleanup confirmed. Python syntax validation, five bootstrap
+contract tests, lint, and typecheck passed.
+
+A fresh, read-only model-planning check selected ProceduralModel, native Unreal
+Python, and AutoRebuild for the user's adjustable-model request. That check proves
+the selected plan under the refreshed prompt, not complete generation of an
+arbitrary asset. No request-specific class-routing rule was added.

@@ -35,6 +35,12 @@ Results preserve `schemaVersion`, `classes`, `class`, `creatable`, `service`, an
 property `name`, `declaredOn`, optional `writeCondition`, and optional `valueSchema`.
 No matches is an empty classes array. This schema describes instance JSON editing,
 not every Luau member. Check creation and write conditions before editing.
+The query is one literal substring. Use a classes-only query to discover a class;
+do not concatenate class/property names into an expression and interpret the empty
+result as a capability check. Schema discovery does not provide geometry-function
+documentation. The bootstrap prompt carries a minimal native Source reference
+adapted from the previous implementation so that basic authoring does not depend
+on an unrelated search result.
 Schema discovery is read-only and does not request execute permission or save the
 world. Do not treat an old local list of unsupported classes as authoritative.
 
@@ -120,6 +126,20 @@ source files are preserved. It uses the same Editor tool: `Instance.new` creates
 MeshPart children. Source is still Python because that is the Studio class's
 native format; the agent has no separate recipe API, validation tool, or baking
 tool. Use existing source or Studio documentation rather than inventing Python APIs.
+
+The native module declares `OVDR_PARAMETERS` and defines
+`on_generate(model, size, attributes)`. Its module scope remains declarative;
+geometry is created inside the entry point. Merge meshes with the same material
+and tint, dispose temporary mesh handles, apply normals and UVs, then declare a
+generated child with `model.part`. The complete bootstrap example covers these
+steps using the existing `parts.chamfered_box`, `G.place`, `G.append_mesh`, and
+Unreal LinearColor contracts. It is an authoring reference, not a request-specific
+class-selection rule or a restored standalone tool family.
+
+Documentation search can supply additional APIs, but no search match is not proof
+that a mechanism defined by the supplied contract is unavailable. The gameplay
+Lua search/validation/Play workflow is scoped to gameplay scripts; it must not
+replace an Editor authoring requirement with a gameplay implementation.
 
 Live checks on 2026-09-08 confirmed Source assignment and automatic generation of
 two MeshPart children from an existing source. The children were absent inside
