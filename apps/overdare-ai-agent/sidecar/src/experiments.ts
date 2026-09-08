@@ -14,15 +14,6 @@ function isDevChannel(): boolean {
 
 export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
   {
-    id: "procedural",
-    title: "Procedural generation",
-    description: "Create and update scenes from reusable procedural Luau recipes.",
-    defaultEnabled: false,
-    toolNames: ["studiorpc_procedural_run"],
-    skillNames: ["procedural-builder"],
-    agentNames: ["procedural-builder"],
-  },
-  {
     // Internal diagnostics: the skill ships in the bundle but a prod-channel build filters
     // it out of the model's skill list, so creators never see it. Sending additionally
     // requires WEBHOOK_URL in the report script, which is blank by default.

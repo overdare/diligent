@@ -971,10 +971,20 @@ const rawInstancePropertiesUnion = z.union([
     .object({
       Padding: udim.describe("Space between list items (UDim)").optional(),
       Wraps: z.boolean().optional(),
-      FillDirection: z.string().describe('e.g. "Vertical"').optional(),
-      HorizontalAlignment: z.string().describe('e.g. "Center"').optional(),
-      VerticalAlignment: z.string().describe('e.g. "Top"').optional(),
-      SortOrder: z.string().describe('e.g. "LayoutOrder"').optional(),
+      FillDirection: z.enum(["Vertical", "Horizontal"]).optional(),
+      // These were free strings carrying an `e.g. "Center"` hint, and a hint is the only concrete
+      // value the model sees — so every generated UIListLayout came back centered, cropping its
+      // children against the engine's Left default. Enumerating the values (as UIGridStyleLayout
+      // already does) removes the example, and naming the default says what omitting it means.
+      HorizontalAlignment: z
+        .enum(["Left", "Center", "Right"])
+        .describe('Engine default is "Left"; set this only when the design calls for another alignment')
+        .optional(),
+      VerticalAlignment: z
+        .enum(["Top", "Center", "Bottom"])
+        .describe('Engine default is "Top"; set this only when the design calls for another alignment')
+        .optional(),
+      SortOrder: z.enum(["LayoutOrder", "Name"]).optional(),
     })
     .strict()
     .describe("Use when class=UIListLayout. Auto-arranges sibling UI elements in a horizontal or vertical list."),

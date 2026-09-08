@@ -1,5 +1,7 @@
 // @summary Slash command definitions, parser, and filter logic for web UI autocomplete
 
+import { MODE_COMMAND_NAMES, type Mode, ModeSchema } from "@diligent/protocol";
+
 export interface SlashCommand {
   name: string;
   description: string;
@@ -12,6 +14,12 @@ export interface SlashCommand {
 }
 
 const DEFAULT_EFFORT_USAGE = "minimal|low|medium|high|max";
+
+/** One direct switch per mode: /default, /plan, /exec. No arguments, no toggle. */
+const MODE_COMMANDS: SlashCommand[] = ModeSchema.options.map((mode) => ({
+  name: MODE_COMMAND_NAMES[mode],
+  description: `Switch to ${mode} mode`,
+}));
 
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   {
@@ -40,6 +48,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
     usage: `/effort <${DEFAULT_EFFORT_USAGE}>`,
     requiresArgs: true,
   },
+  ...MODE_COMMANDS,
   {
     name: "mcp",
     description: "List and manage MCP servers",
@@ -79,6 +88,11 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | null {
     name: trimmed.slice(1, spaceIdx),
     args: trimmed.slice(spaceIdx + 1).trim() || undefined,
   };
+}
+
+/** Mode a slash command selects, or null when it is not a mode switch. */
+export function modeForCommand(name: string): Mode | null {
+  return ModeSchema.options.find((mode) => MODE_COMMAND_NAMES[mode] === name) ?? null;
 }
 
 /** Filter commands by partial name (after the /) */

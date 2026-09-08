@@ -36,7 +36,7 @@ describe("ProviderManager", () => {
   });
 
   test("uses the current flagship models as provider defaults", () => {
-    expect(getDefaultModelRef("anthropic").modelId).toBe("claude-opus-4-8");
+    expect(getDefaultModelRef("anthropic").modelId).toBe("claude-opus-5");
     expect(getDefaultModelRef("openai").modelId).toBe("gpt-5.6-sol");
     expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-5.6-sol" });
   });

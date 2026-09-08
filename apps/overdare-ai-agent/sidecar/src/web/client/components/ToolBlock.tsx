@@ -21,8 +21,16 @@ interface ToolBlockProps {
 
 /* ── Tool-specific expanded content ───────────────────────────────── */
 
+function normalizeInputText(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text.trim();
+  }
+}
+
 function payloadIncludesText(render: ToolRenderPayload, text: string): boolean {
-  const value = text.trim();
+  const value = normalizeInputText(text);
   if (!value) return true;
 
   return render.blocks.some((block) => {
@@ -33,7 +41,7 @@ function payloadIncludesText(render: ToolRenderPayload, text: string): boolean {
         return block.filePath.trim() === value;
       case "text":
       case "summary":
-        return block.text.trim() === value;
+        return normalizeInputText(block.text) === value;
       case "list":
         return block.items.some((item) => item.trim() === value);
       case "key_value":
@@ -45,7 +53,7 @@ function payloadIncludesText(render: ToolRenderPayload, text: string): boolean {
 }
 
 function ToolContent({ item, render }: { item: Extract<RenderItem, { kind: "tool" }>; render?: ToolRenderPayload }) {
-  if (render) {
+  if (render && render.blocks.length > 0) {
     const inputText = (item.inputText || render.inputSummary || "").trim();
     const shouldShowInput = Boolean(inputText) && !payloadIncludesText(render, inputText);
 
@@ -59,10 +67,11 @@ function ToolContent({ item, render }: { item: Extract<RenderItem, { kind: "tool
     );
   }
 
-  // Final fallback: plugins or unknown tools
+  // Final fallback: plugins, unknown tools, or a start payload without output blocks.
+  const inputText = item.inputText || render?.inputSummary;
   return (
     <div className="space-y-2">
-      {item.inputText && <ContentText text={item.inputText} label="Input" />}
+      {inputText && <ContentText text={inputText} label="Input" />}
       {item.outputText && <ContentText text={item.outputText} label="Output" isError={item.isError} />}
     </div>
   );
@@ -111,7 +120,7 @@ export function ToolBlock({
   }, [assetGalleryAutoOpened, shouldAutoOpen]);
 
   return (
-    <div className={compactRow ? "pb-0" : "pb-1"}>
+    <div>
       <div className="min-w-0">
         <ToolActivityRow
           title={rowTitle}

@@ -204,7 +204,7 @@ The MCP server is a **subcommand of the same `diligent-web-server` binary** (no 
 artifact or pipeline). Run `diligent-web-server mcp-serve` to re-expose OVERDARE-only systems
 to any MCP client over **stdio** (the client spawns it as a subprocess):
 
-- **Tools** — studio built-in tools (`studiorpc_*`, `validatelua`) plus RAG search
+- **Tools** — studio built-in tools (`studiorpc_*`) plus RAG search
   (`overdaresearch`, `overdaresearch_deep`). Stateless: each call is delegated to the tool's
   `execute()` with auto-approval (no interactive host).
 - **Instruction tools** — `ensure_system_prompt` reads the product-managed global prompt

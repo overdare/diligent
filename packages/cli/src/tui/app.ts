@@ -8,10 +8,13 @@ import type {
   DiligentServerNotification,
   DiligentServerRequest,
   DiligentServerRequestResponse,
-  Mode as ProtocolMode,
   RequestId,
 } from "@diligent/protocol";
-import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import {
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  nextCycledMode,
+} from "@diligent/protocol";
 import { type DiligentPaths, formatModelRef, type SkillMetadata } from "@diligent/runtime";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
@@ -86,7 +89,6 @@ export class App {
   private streamRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly streamRenderBatchMs: number;
   private pendingUserMessageAcks: string[] = [];
-  private suppressNextSteeringInjectedCommit = false;
   private pendingAbortRestartMessage: string | null = null;
   private appServerLogDirInitialized = false;
   private pendingAppServerLogLines: string[] = [];
@@ -191,7 +193,6 @@ export class App {
         this.renderer.requestRender();
       },
       onTurnErrored: (message) => {
-        this.suppressNextSteeringInjectedCommit = false;
         this.pendingAbortRestartMessage = null;
         this.runtime.isProcessing = false;
         this.runtime.cancelRequested = false;
@@ -335,6 +336,10 @@ export class App {
           this.runtime.pendingMcpLoginResolve.set(server, resolve);
         }),
       syncActiveThreadState: () => this.syncActiveThreadState(),
+      removePendingSteer: (steerId) => {
+        this.runtime.consumePendingSteersByIds([steerId]);
+        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
+      },
       queuePendingSteer: (steer) => {
         this.runtime.queuePendingSteer(steer);
         this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
@@ -423,10 +428,7 @@ export class App {
   }
 
   private cycleMode(): void {
-    const modes: ProtocolMode[] = ["default", "plan", "execute"];
-    const idx = modes.indexOf(this.runtime.currentMode);
-    const next = modes[(idx + 1) % modes.length];
-    this.configManager.setMode(next);
+    this.configManager.setMode(nextCycledMode(this.runtime.currentMode));
   }
 
   private beginCompactionIndicator(estimatedTokens: number): void {
@@ -466,12 +468,6 @@ export class App {
           return text.length > 0 ? text : null;
         })
         .filter((content): content is string => content !== null);
-
-      if (this.suppressNextSteeringInjectedCommit) {
-        this.suppressNextSteeringInjectedCommit = false;
-        this.viewModel.prompt.setPendingSteers(this.runtime.pendingSteerContents());
-        return;
-      }
 
       const expectedCount = Math.max(0, event.messageCount);
       const consumed = event.steerIds?.length
@@ -552,7 +548,6 @@ export class App {
       const drainedSteers = this.chatView.consumePendingSteers();
       const drainedRuntimeSteers = this.runtime.drainPendingSteers();
       this.pendingAbortRestartMessage = drainedRuntimeSteers[0] ?? drainedSteers[0] ?? null;
-      this.suppressNextSteeringInjectedCommit = this.pendingAbortRestartMessage !== null;
       this.viewModel.prompt.setPendingSteers([]);
       this.chatView.clearActiveWithCommit();
       this.chatView.addLines([`  ${t.dim}Cancelled.${t.reset}`]);
@@ -561,7 +556,6 @@ export class App {
         .catch(() => {
           this.runtime.cancelRequested = false;
           this.pendingAbortRestartMessage = null;
-          this.suppressNextSteeringInjectedCommit = false;
         });
     } else if (!this.runtime.isProcessing) {
       this.shutdown();

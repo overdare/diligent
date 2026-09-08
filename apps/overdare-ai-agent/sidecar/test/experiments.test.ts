@@ -44,8 +44,4 @@ describe("issue-report experiment", () => {
   test("an explicit override wins over a prod channel", async () => {
     expect(await disabledSkills("prod", { "issue-report": true })).not.toContain("session-issue-report");
   });
-
-  test("leaves the procedural experiment off regardless of channel", async () => {
-    expect(await disabledSkills("dev")).toContain("procedural-builder");
-  });
 });

@@ -1,23 +1,8 @@
 // @summary Verifies OVERDARE bootstrap config defaults and essential cross-tool prompt policy.
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { loadDiligentConfig } from "@diligent/runtime/config";
-import { OVERDARE_EXPERIMENTS } from "../src/experiments";
-
-const originalHome = process.env.HOME;
-const originalStorageNamespace = process.env.DILIGENT_STORAGE_NAMESPACE;
-let testRoot: string | undefined;
-
-afterEach(async () => {
-  if (originalHome === undefined) delete process.env.HOME;
-  else process.env.HOME = originalHome;
-  if (originalStorageNamespace === undefined) delete process.env.DILIGENT_STORAGE_NAMESPACE;
-  else process.env.DILIGENT_STORAGE_NAMESPACE = originalStorageNamespace;
-  if (testRoot) await rm(testRoot, { recursive: true, force: true });
-});
 
 describe("OVERDARE bootstrap config", () => {
   test("keeps cross-tool play-test policy without duplicating individual tool definitions", async () => {
@@ -29,18 +14,56 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("<play-test-input>");
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
-
-  test("enables the procedural experiment by default", async () => {
-    testRoot = await mkdtemp(join(tmpdir(), "overdare-bootstrap-config-"));
-    const globalConfigDir = join(testRoot, ".overdare");
-    await mkdir(globalConfigDir, { recursive: true });
-    await cp(join(import.meta.dir, "../../bootstrap/config.jsonc"), join(globalConfigDir, "config.jsonc"));
-    process.env.HOME = testRoot;
-    process.env.DILIGENT_STORAGE_NAMESPACE = "overdare";
-
-    const { config } = await loadDiligentConfig(testRoot);
-
-    expect(OVERDARE_EXPERIMENTS.some((experiment) => experiment.id === "procedural")).toBe(true);
-    expect(config.experiments?.overrides?.procedural).toBe(true);
+  test("keeps compatibility upsert as a reference with supplementary live discovery", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("studiorpc_instance_schema_search");
+    expect(prompt).toContain("not the complete Luau member list");
+    expect(prompt).toContain("mutation_attempted");
+    expect(prompt).toContain("never automatically replay failed code");
+    expect(prompt).toContain("retains class-specific validation");
+    expect(prompt).toContain("not a prerequisite for every edit");
+    expect(prompt).toContain("as the default for world creation and editing");
+    expect(prompt).toContain("Successful Editor execution already saves the level");
+    expect(prompt).toContain("Do not reject a class based on an old local catalog");
+    expect(prompt).not.toContain("studiorpc_proceduralmodel_");
+    expect(prompt).not.toContain("geometry-recipe");
+  });
+  test("VFX guidance matches compatibility tags and playback defaults", async () => {
+    const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");
+    expect(skill).toContain("are injected by the sidecar");
+    expect(skill).toContain("default true");
+    expect(skill).toContain("short name");
+  });
+  test("explains execution lifetimes without routing request categories to a fixed class", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("OVDR_PARAMETERS");
+    expect(prompt).toContain("on_generate(model, size, attributes)");
+    expect(prompt).toContain("not Blender");
+    expect(prompt).toContain("without starting PIE");
+    expect(prompt).toContain("when it must run and what must remain active");
+    expect(prompt).toContain("Values and attributes store data");
+    expect(prompt).toContain("without re-running the authoring command");
+    expect(prompt).toContain("generation rules and parameters");
+    expect(prompt).toContain("derived output");
+    expect(prompt).not.toContain("Default to ProceduralModel");
+  });
+  test("includes native authoring reference without treating search misses as permission to change execution mode", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("query is a single literal substring");
+    expect(prompt).toContain("parts.chamfered_box");
+    expect(prompt).toContain("G.append_mesh");
+    expect(prompt).toContain("G.dispose_mesh");
+    expect(prompt).toContain("This workflow applies to gameplay Lua scripts");
+    expect(prompt).not.toContain("then proceed with best practices from Roblox or general game dev");
+  });
+  test("separates coordinate and execution contracts from generation evidence", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+    expect(prompt).toContain("# Gameplay Script Behavior");
+    expect(prompt).toContain("ordinary nil checks");
+    expect(prompt).toContain("Editor Size.Y is the vertical extent");
+    expect(prompt).toContain("(Editor Size.Z, Editor Size.X, Editor Size.Y)");
+    expect(prompt).toContain("derived dimensions must remain positive");
+    expect(prompt).toContain("A later empty result does not identify the cause");
+    expect(prompt).toContain("image could not be inspected");
   });
 });

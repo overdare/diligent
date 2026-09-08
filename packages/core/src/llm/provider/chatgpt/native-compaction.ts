@@ -4,21 +4,20 @@ import type { OpenAIOAuthTokens } from "../../../auth/types";
 import { flattenSections } from "../../system-sections";
 import type { NativeCompactFn } from "../native-compaction";
 import { readOpenAIFamilyCompactErrorBody } from "../openai/compact-errors";
-import { isGpt56Model, toResponseInputItems, toResponsesLiteRequestBody } from "../openai/responses";
+import { toResponseInputItems, toResponsesLiteRequestBody, usesResponsesLite } from "../openai/responses";
 import { describeCompactionPayload, extractOpenAICompactionState } from "../openai/shared";
-import { CHATGPT_SESSION_HEADER } from "./headers";
+import { CHATGPT_CODEX_CLIENT_VERSION, CHATGPT_SESSION_HEADER } from "./headers";
 
 const CHATGPT_COMPACT_URL = "https://chatgpt.com/backend-api/codex/responses/compact";
 const RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
 const CHATGPT_JSON_CONTENT_TYPE = "application/json";
-const CHATGPT_CODEX_CLIENT_VERSION = "0.144.1";
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
 
 export function createChatGPTNativeCompaction(getTokens: () => OpenAIOAuthTokens): NativeCompactFn {
   return async (input) => {
     const tokens = getTokens();
     const upstreamModelId = input.model.modelId;
-    const useResponsesLite = isGpt56Model(upstreamModelId);
+    const useResponsesLite = usesResponsesLite(upstreamModelId);
     const headers: Record<string, string> = {
       "Content-Type": CHATGPT_JSON_CONTENT_TYPE,
       Authorization: `Bearer ${tokens.access_token}`,
