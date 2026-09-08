@@ -37,7 +37,7 @@ describe("loadConfig", () => {
     await mkdir(dir, { recursive: true });
 
     const config = await loadConfig(dir);
-    expect(config.model.modelId).toBe("claude-opus-4-8");
+    expect(config.model.modelId).toBe("claude-opus-5");
     expect(config.model.provider).toBe("anthropic");
   });
 

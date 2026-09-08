@@ -1,4 +1,4 @@
-// @summary ChatGPT subscription stream — HTTP/SSE for legacy models and WebSocket Responses Lite for GPT-5.6
+// @summary ChatGPT subscription stream — HTTP/SSE for legacy models and WebSocket Responses Lite for GPT-5.6 and later
 import { arch, platform, release } from "node:os";
 import { createLogger } from "@diligent/logging";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
@@ -9,10 +9,10 @@ import { ProviderError, ProviderErrorType } from "../../types";
 
 export { createChatGPTNativeCompaction } from "./native-compaction";
 
-import { buildResponsesRequestBody, isGpt56Model, toResponsesLiteRequestBody } from "../openai/responses";
+import { buildResponsesRequestBody, toResponsesLiteRequestBody, usesResponsesLite } from "../openai/responses";
 import { classifyOpenAIFamilyError, parseOpenAIRetryAfter } from "../openai/shared";
 import { handleResponsesAPIEvents } from "../openai/sse";
-import { CHATGPT_SESSION_HEADER } from "./headers";
+import { CHATGPT_CODEX_CLIENT_VERSION, CHATGPT_SESSION_HEADER } from "./headers";
 import { iterateChatGPTJsonSse } from "./http-sse";
 import { type ChatGPTWebSocketSession, createChatGPTWebSocketSession } from "./websocket-session";
 
@@ -24,8 +24,6 @@ const CHATGPT_CODEX_WEBSOCKET_URL = "wss://chatgpt.com/backend-api/codex/respons
 const RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
 const CHATGPT_TURN_STATE_HEADER = "x-codex-turn-state";
 const CHATGPT_JSON_CONTENT_TYPE = "application/json";
-// Pinned to the Codex client version used to verify the GPT-5.6 transport contract.
-const CHATGPT_CODEX_CLIENT_VERSION = "0.144.1";
 const CHATGPT_WEBSOCKET_IDLE_TIMEOUT_MS = 300_000;
 const CHATGPT_HTTP_HEADER_TIMEOUT_MS = 15_000;
 const CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -250,7 +248,7 @@ function useChatGPTWebSocketTransportFailure(
   providerOptions: ChatGPTStreamOptions,
   model: Model,
 ): boolean {
-  if (providerOptions.useWebSocketForGpt56 !== true || !isGpt56Model(model.modelId)) return false;
+  if (providerOptions.useWebSocketForGpt56 !== true || !usesResponsesLite(model.modelId)) return false;
   return error instanceof ProviderError && error.errorType === ProviderErrorType.Network;
 }
 
@@ -258,7 +256,7 @@ function useChatGPTWebSocketTransportFailure(
  * Create a StreamFunction for ChatGPT subscription (OAuth).
  *
  * Bypasses the OpenAI Node SDK entirely. Models use raw HTTP/SSE by default,
- * while GPT-5.6 can opt into the ChatGPT Codex WebSocket Responses Lite transport.
+ * while Responses Lite models can opt into the ChatGPT Codex WebSocket transport.
  *
  * ChatGPT subscriber endpoint limitations (store: false enforced):
  * - store: true → 400 "Store must be set to false"
@@ -291,7 +289,7 @@ export function createChatGPTStream(
       try {
         if (options.signal?.aborted) return;
         const upstreamModelId = model.modelId;
-        const useResponsesLite = isGpt56Model(upstreamModelId);
+        const useResponsesLite = usesResponsesLite(upstreamModelId);
         const resolveHeaders = async (): Promise<Record<string, string>> => {
           const tokens = getTokens();
           const headers: Record<string, string> = {

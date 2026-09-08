@@ -456,7 +456,7 @@ describe("native compaction adapters", () => {
     expect(capturedUrl).toBe("https://chatgpt.com/backend-api/codex/responses/compact");
     expect(capturedHeaders.Authorization).toBe("Bearer access-token");
     expect(capturedHeaders["ChatGPT-Account-ID"]).toBe("acct_1");
-    expect(capturedHeaders.version).toBe("0.144.1");
+    expect(capturedHeaders.version).toBe("0.153.4");
     expect(capturedHeaders["session-id"]).toBe("session-1");
     expect(capturedHeaders.session_id).toBeUndefined();
     expect(capturedBody.store).toBeUndefined();
