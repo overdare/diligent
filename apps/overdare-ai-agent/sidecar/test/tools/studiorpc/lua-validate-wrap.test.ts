@@ -16,7 +16,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
+import { createStudioRpcToolProvider, scriptEditTargets } from "../../../src/tools/studiorpc";
 
 interface RpcCall {
   method: string;
@@ -181,6 +181,18 @@ describe("everything else is left alone", () => {
 
     expect(result.output).toContain("[Rejected by user]");
     expect(validateCalls()).toHaveLength(0);
+  });
+
+  test("an edit whose result names a non-Lua class validates nothing", () => {
+    // script_edit also edits a ProceduralModel, whose Source is a Python recipe.
+    const edited = (cls?: string) => ({
+      output: "",
+      metadata: { targetGuid: SCRIPT_GUID, ...(cls && { class: cls }) },
+    });
+    expect(scriptEditTargets({}, edited("ProceduralModel"))).toEqual([]);
+    expect(scriptEditTargets({}, edited("LocalScript"))).toEqual([SCRIPT_GUID]);
+    // A path that reports no class is still validated, so validation cannot go quiet unnoticed.
+    expect(scriptEditTargets({}, edited())).toEqual([SCRIPT_GUID]);
   });
 
   test("a validation failure reports itself without failing the edit", async () => {

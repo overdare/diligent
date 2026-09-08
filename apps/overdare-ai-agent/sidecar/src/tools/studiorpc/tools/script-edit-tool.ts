@@ -196,6 +196,7 @@ async function executeScriptEdit(
     let tabCount = 0;
     let eolCount = 0;
     let scriptName: string | undefined;
+    let scriptClass: string | undefined;
 
     readAndWriteOvdrjm(cwd, (rootDoc) => {
       const root = rootDoc.Root;
@@ -216,6 +217,7 @@ async function executeScriptEdit(
         );
       }
 
+      scriptClass = instanceType;
       scriptName = typeof target.Name === "string" ? target.Name : undefined;
       const source = typeof target.Source === "string" ? target.Source : "";
 
@@ -240,7 +242,7 @@ async function executeScriptEdit(
     return {
       output,
       render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
-      metadata: { method: "script.edit", targetGuid, count },
+      metadata: { method: "script.edit", targetGuid, count, class: scriptClass },
     };
   } catch (err) {
     return {

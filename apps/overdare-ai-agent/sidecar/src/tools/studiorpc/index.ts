@@ -151,9 +151,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The script a `script.edit` call rewrote, from the metadata both the v1 and v2 paths return. */
-function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
+export function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
   const guid = result.metadata?.targetGuid;
-  return typeof guid === "string" && guid ? [guid] : [];
+  if (typeof guid !== "string" || !guid) return [];
+  // script_edit also edits Source that is not Lua. Skip only what the result names as a
+  // non-Lua class: an unnamed class still gets validated, so a path that forgets to report
+  // one shows up as noise rather than as validation quietly going away.
+  const cls = result.metadata?.class;
+  if (typeof cls === "string" && !SCRIPT_CLASSES.has(cls)) return [];
+  return [guid];
 }
 
 /** The script a `script.add` call created, from the metadata both the v1 and v2 paths return. */
