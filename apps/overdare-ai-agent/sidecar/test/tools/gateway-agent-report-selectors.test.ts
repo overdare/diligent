@@ -138,16 +138,16 @@ describe("selector C — consecutive same-tool errors", () => {
 
   test("a success that arms repeated_call still resets the streak", () => {
     const s = createFailureSelectors({ errorStreak: 3 });
-    expect(s.onToolResult(call("a", { i: 1 }), result("a", { isError: true }))).toBeUndefined();
-    expect(s.onToolResult(call("a", { i: 2 }), result("a", { isError: true }))).toBeUndefined();
-    // Three identical successes: the third arms repeated_call and returns early, but every one
-    // of them must still reset the error streak.
-    expect(s.onToolResult(call("a", { same: true }), result("a"))).toBeUndefined();
-    expect(s.onToolResult(call("a", { same: true }), result("a"))).toBeUndefined();
-    expect(s.onToolResult(call("a", { same: true }), result("a"))?.kind).toBe("repeated_call");
-    expect(s.onToolResult(call("a", { i: 3 }), result("a", { isError: true }))).toBeUndefined();
-    expect(s.onToolResult(call("a", { i: 4 }), result("a", { isError: true }))).toBeUndefined();
-    expect(s.onToolResult(call("a", { i: 5 }), result("a", { isError: true }))).toEqual({
+    // The erroring calls themselves prime the doom detector, so the very first success after them
+    // is the one that arms repeated_call and returns early — it must still reset the streak.
+    const looping = call("a", { same: true });
+    expect(s.onToolResult(looping, result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(looping, result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(looping, result("a"))?.kind).toBe("repeated_call");
+    // Without the reset the streak would still be 2 here and this single error would trip.
+    expect(s.onToolResult(call("a", { other: 1 }), result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(call("a", { other: 2 }), result("a", { isError: true }))).toBeUndefined();
+    expect(s.onToolResult(call("a", { other: 3 }), result("a", { isError: true }))).toEqual({
       kind: "repeated_error",
       tool: "a",
       count: 3,
