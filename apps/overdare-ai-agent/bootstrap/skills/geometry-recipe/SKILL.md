@@ -15,21 +15,24 @@ Use geometry recipes when the deliverable is a single object whose surfaces and 
 
 `studiorpc_proceduralmodel_api` returns the authoring reference, current and self-describing. Call it
 **once** at the start of a prop and work from what it returns — it is the source of truth, not this
-file. The default reply is the **compact kit** (small on purpose — you never read or grep a file):
+file. The default reply is a starter kit; detailed signatures and long documents are queried separately:
 
 - `template` — a complete, working recipe. Copy it and change its marked `EDIT` blocks.
-- `lookup` — every `G.*` / `parts.*` / `layout.*` signature on one line, keyed exactly as you write it
-  in code (`lookup["G.place"]`, `lookup["parts.orient"]`).
+- `availableFunctions` — the callable `G.*` / `parts.*` / `layout.*` names. Query the names you need
+  (for example `query=["G.place", "parts.orient"]`) to read their current signatures and details.
 - `presets` — the ~94 material preset names, asked of the material service so they cannot drift.
   There is **no** `Iron`, `Steel`, `Stone`, `Leather` or `Rope`: iron is `Rust` / `RustySteel`,
   sawn timber is `Plank`. A wrong name is refused, not rendered grey.
 - When a call's exact arguments or a returned number look wrong, call it **again with `query`**
   (names/keywords, e.g. `query=["append_sphere","rib","bounds"]`) to get the verbose per-argument
-  docs and notes for just those calls. Do not dump the whole reference to hunt one signature.
+  docs for matching calls. Query `quickref` for authoring guidance, including `model.part`; query `notes`
+  only when the detailed prose is needed. Request each long document separately. `unmatchedQueries`
+  means no API entry matched that name. If `needsNarrowerQuery` is true, the response contains an index
+  instead of document text; request fewer exact API names or a smaller document selection.
 
 Nothing is pre-injected into a recipe; the imports it needs (`import unreal`, `G =
 unreal.OvdrGeometry`, `import ovdr_parts as parts`, `from ovdr_brickcolor import bc`) are all in
-`template`. Do not guess an API from memory when `lookup` has the exact signature.
+`template`. Do not guess an API from memory; query the function name for its exact signature.
 
 ## The contract — a recipe has one shape
 
