@@ -19,19 +19,26 @@ schema and model request size again when evaluating a replacement.
 
 ## Studio contract gate
 
-Confirm the intended full-class discovery contract with current engine docs/source
-and a live supported Studio build before implementing this layer. Record:
+The Studio-side update reported on 2026-09-08 confirms that an empty query
+performs a full search, and that descriptions may contain Korean UTF-8 text.
+Use an explicit `{"query":""}` as the full-search request to validate and wire
+through Diligent. This report supersedes the earlier empty-query rejection as the
+intended contract; it is not a claim that the updated build was retested here.
 
-- Exact full-list request and supported build identification, without assuming that
-  omitted filters, an empty query, or a wildcard is the intended request.
+Before implementing the integration, record the supported Studio build and verify:
+
+- The explicit empty query returns the full catalog. Do not assume omitted query,
+  whitespace-only query, or an empty query combined with classes has identical
+  semantics; confirm those cases independently rather than inventing normalization.
 - Whether Studio can return names/summary metadata without all property definitions,
   or whether Diligent must compact a full response after receiving it.
 - Class/property filtering and the meaning of schemaVersion, creatable, service,
-  writeCondition, and valueSchema, including any optional or missing fields.
+  description, writeCondition, and valueSchema, including optional/missing fields.
 - Observable differences between no matches, unavailable capability, malformed
   requests, transport failures, and an incompatible build.
 
-Observed on the connected Studio at 10.40.32.110:13378 on 2026-09-08:
+Earlier-build observations at 10.40.32.110:13378 on 2026-09-08, before the
+reported contract update (retain as old-build compatibility cases):
 
 | Request to instance.schema.search | Response |
 | --- | --- |
@@ -40,11 +47,31 @@ Observed on the connected Studio at 10.40.32.110:13378 on 2026-09-08:
 | `{"query":""}` | `-32602`: query must be a non-empty string |
 | `{"query":"*"}` | Empty classes array |
 
-These observations do not establish that the intended API lacks full enumeration.
-There is no confirmed full-list request in this repository yet. Do not add
-alphabetical probing, guessed endpoints, or a manually maintained class catalog as
-a substitute. Studio-side fixes and final wire shapes remain an external contract
-dependency; this draft is not the engine implementation.
+Do not preserve the old rejection as the expected behavior of the updated build.
+Do not add alphabetical probing, guessed endpoints, or a manually maintained
+catalog as a substitute for empty-query discovery.
+
+## Empty-query and UTF-8 integration requirements
+
+- Update the adapter's non-empty query validation when implementing this layer.
+  The lower PR currently uses `query: z.string().min(1).optional()`.
+- Preserve the intentional empty string through both the agent tool executor and
+  MCP/router entry points. Their shared `dropEmptyOptionals` currently removes
+  empty optional strings, so changing only `.min(1)` is insufficient. Cover the
+  full model/MCP-to-RPC path; a direct raw RPC test alone misses this boundary.
+  Scope the fix to semantic empty-query support without changing every optional
+  parameter's behavior as an incidental migration.
+- Preserve Korean descriptions through TCP chunk decoding, JSON parsing, catalog
+  projection, model output, persisted full-output files, and UI rendering. Keep
+  exact class/property identifiers; descriptions need not be translated to English.
+- Measure wire/output limits in UTF-8 bytes (`Buffer.byteLength` or `TextEncoder`),
+  not JavaScript string length. The current RPC logs label `.length` as bytes;
+  correct that diagnostic measurement as part of the integration. Do not split
+  multibyte text when compacting or truncating results.
+- Test Korean descriptions split across TCP chunks and near the output cap. Assert
+  exact round-trip strings and correct byte accounting, without replacement
+  characters or unintended double escaping. Distinguish legitimate JSON escapes
+  from corrupted rendered text.
 
 ## Intended data flow
 
@@ -52,7 +79,8 @@ dependency; this draft is not the engine implementation.
    execution lifetimes, and the distinction between JSON properties and Luau/native
    methods. Do not embed all class/property definitions there.
 2. Obtain the complete available class-name catalog from the connected Studio, using
-   the confirmed contract. Preserve supported summary metadata and expose an
+   the explicit empty-query contract. Preserve supported summary metadata, including
+   Korean descriptions where provided, and expose an
    explicit incomplete/unavailable state rather than presenting a partial catalog
    as complete.
 3. Use schema search to retrieve only the selected class/property details. Preserve
@@ -87,6 +115,9 @@ Use the same representative tasks against the lower PR and the proposed dynamic
 implementation. Record Studio build, request/response shapes, schemaVersion, exact
 branch heads, tool-definition bytes, lookup output bytes/truncation, and outcomes.
 
+- Verify that `{"query":""}` survives both agent and MCP input handling and
+  reaches Studio unchanged; compare the returned full catalog to the authoritative
+  engine listing. Verify Korean description round-trips and byte-limited output.
 - Discover a supported class whose name is not supplied in the user prompt, static
   prompt guidance, or the current world. Compare the catalog with an authoritative
   engine listing; do not validate completeness using the response itself.
@@ -105,8 +136,9 @@ branch heads, tool-definition bytes, lookup output bytes/truncation, and outcome
 ## Rollout
 
 Keep this PR draft while the Studio contract or any acceptance gate remains open.
-The lower compatibility PR is independently usable. Once the contract is confirmed,
-update this document with the concrete interface/data-flow decisions and implement
-against it; do not merge a schema-removal change merely to complete the stack.
+The lower compatibility PR is independently usable. The empty-query semantics are
+now reported by Studio, while deployment/build validation and the remaining
+interface decisions still need confirmation. Update this document with those
+verified details and implement against them; do not merge a schema-removal change merely to complete the stack.
 When #415 merges, retarget/rebase this branch onto its destination so only the
 long-term delta remains. No automatic merge or deployment is part of this plan.
