@@ -33,14 +33,17 @@ describe("OVERDARE bootstrap config", () => {
     expect(skill).not.toContain("default true");
     expect(skill).toContain("Include the required ObjectType tags");
   });
-  test("Editor parameter changes use native rebuilds rather than gameplay callbacks", async () => {
+  test("explains execution lifetimes without routing request categories to a fixed class", async () => {
     const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
     expect(prompt).toContain("OVDR_PARAMETERS");
     expect(prompt).toContain("on_generate(model, size, attributes)");
     expect(prompt).toContain("not Blender");
     expect(prompt).toContain("without starting PIE");
-    expect(prompt).toContain("ordinary Script/Value.Changed");
-    expect(prompt).toContain("Default to ProceduralModel when the user asks for an adjustable model");
-    expect(prompt).toContain("Do not substitute a Model with a Settings folder");
+    expect(prompt).toContain("when it must run and what must remain active");
+    expect(prompt).toContain("Values and attributes store data");
+    expect(prompt).toContain("without re-running the authoring command");
+    expect(prompt).toContain("generation rules and parameters");
+    expect(prompt).toContain("derived output");
+    expect(prompt).not.toContain("Default to ProceduralModel");
   });
 });

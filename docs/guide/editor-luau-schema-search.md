@@ -10,6 +10,19 @@ properties, edit the world with Editor Luau, and read back the affected objects.
 Existing instance and script tools remain available for focused reads and text
 edits. The agent does not select a separate authoring tool family for each class.
 
+Select an implementation from its execution lifetime, not from a keyword or model
+category. An Editor command runs once and its VM is discarded. A persistent
+Studio-managed mechanism can react after the command ends. A gameplay Script runs
+in the game, not in the Editor. Values and attributes are data; their existence
+does not establish an active change handler. Live property schemas do not describe
+that lifecycle, so combine them with the relevant execution contract.
+
+Validate the behavior where the user expects it: after setup, change an input and
+observe the result without resubmitting the authoring command. A gameplay test
+cannot establish Editor-time reactions. No request vocabulary forces a particular
+class; the documented native generation lifecycle below is a capability the agent
+can use when it satisfies the requested behavior.
+
 ## Discovering JSON properties
 
 `instance.schema.search` accepts a non-empty `query`, `classes` containing 1–20
@@ -91,8 +104,18 @@ Also check `skills/geometry-recipe/` and `agents/geometry-recipe/` under the sam
 global storage directory. Back up any customizations, then manually remove obsolete
 bundled definitions when present. Leftover definitions do not restore removed tools.
 
-`ProceduralModel` remains a Studio class, with existing world objects and user
-source files preserved. It uses the same Editor tool: `Instance.new` creates it,
+Procedural modeling represents a form as generation rules plus parameters. The
+rules encode relationships among generated parts; rerunning them with different
+inputs produces related forms. Parameters can control dimensions, counts, fill,
+spacing, or layout. The generated geometry is derived output rather than the
+authoritative description of the model. Lasting changes belong in the rules or
+their inputs, and a parameter has an effect only when the source consumes it.
+
+`ProceduralModel` is Studio's persistent implementation of this concept. It stores
+the source and inputs, and Studio regenerates its children independently of the
+short-lived Editor command. Merely creating ordinary parts with a loop does not
+retain that generation lifecycle. Existing world objects and user
+source files are preserved. It uses the same Editor tool: `Instance.new` creates it,
 `Size` and `Source` configure it, and `AutoRebuild=true` lets Studio generate its
 MeshPart children. Source is still Python because that is the Studio class's
 native format; the agent has no separate recipe API, validation tool, or baking
