@@ -11,6 +11,7 @@ import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
+import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
@@ -19,7 +20,6 @@ import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
-import { createProceduralRunTool } from "./tools/procedural-run-tool";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
 import { createScriptDeleteTool } from "./tools/script-delete-tool";
@@ -213,8 +213,8 @@ export async function createStudioRpcTools(ctx: {
 
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
+    wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
-    wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
@@ -255,18 +255,20 @@ export async function createStudioRpcTools(ctx: {
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
         const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
 
-        const approval = await bundledToolCtx.approve({
-          permission: "execute",
-          toolName,
-          description: `Studio RPC: ${rpcMethod}`,
-          details: { method: rpcMethod, params: args },
-        });
+        if (!mod.readOnly) {
+          const approval = await bundledToolCtx.approve({
+            permission: "execute",
+            toolName,
+            description: `Studio RPC: ${rpcMethod}`,
+            details: { method: rpcMethod, params: args },
+          });
 
-        if (approval === "reject") {
-          return {
-            output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
-            metadata: { error: true, method: rpcMethod },
-          };
+          if (approval === "reject") {
+            return {
+              output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
+              metadata: { error: true, method: rpcMethod },
+            };
+          }
         }
 
         const isMutating = mutatingMethods.has(method);

@@ -1,6 +1,7 @@
 // @summary Tests that instance.read accepts the GUID field name the other tools report.
 import { describe, expect, test } from "bun:test";
 import { normalizeArgs, params } from "../../../../src/tools/studiorpc/methods/instance.read";
+import { toReadableNode } from "../../../../src/tools/studiorpc/tools/instance-read-tool";
 
 describe("instance.read arguments", () => {
   test("accepts instanceGuid, the name every tool that reports a GUID uses", () => {
@@ -22,5 +23,68 @@ describe("instance.read arguments", () => {
     // schema deliberately stops rejecting it first.
     expect(() => params.parse(normalizeArgs({ recursive: true }))).not.toThrow();
     expect(params.parse(normalizeArgs({ recursive: true })).guid).toBeUndefined();
+  });
+  test("preserves read-only WorldTransform, Size, and future properties through recursive reads", () => {
+    const color = { ObjectType: "Color3", R: 1, G: 2, B: 3 };
+    const cframe = { ObjectType: "CFrame", Position: { ObjectType: "Vector3", X: 1, Y: 2, Z: 3 } };
+    const size = { ObjectType: "Vector3", X: 100, Y: 200, Z: 300 };
+    expect(
+      toReadableNode(
+        {
+          InstanceType: "Part",
+          ActorGuid: "P",
+          ObjectKey: 123,
+          Name: "Part",
+          Color: color,
+          WorldTransform: cframe,
+          Size: size,
+          Future: { Opaque: true },
+          LuaChildren: [
+            {
+              InstanceType: "FutureClass",
+              ActorGuid: "C",
+              Name: "Child",
+              CFrame: cframe,
+              WorldTransform: cframe,
+              Size: size,
+            },
+          ],
+        },
+        true,
+      ),
+    ).toEqual({
+      guid: "P",
+      name: "Part",
+      class: "Part",
+      properties: { Color: color, WorldTransform: cframe, Size: size, Future: { Opaque: true } },
+      children: [
+        {
+          guid: "C",
+          name: "Child",
+          class: "FutureClass",
+          properties: { CFrame: cframe, WorldTransform: cframe, Size: size },
+        },
+      ],
+    });
+  });
+  test("read filtering removes instance metadata without applying write restrictions", () => {
+    const properties = JSON.parse(
+      '{"constructor":"StudioValue","prototype":{"Value":3},"__proto__":{"fromStudio":true}}',
+    );
+    const result = toReadableNode(
+      {
+        InstanceType: "FutureWidget",
+        ActorGuid: "P",
+        ObjectKey: 123,
+        Name: "Future",
+        Parent: "workspace",
+        LuaChildren: [],
+        ...properties,
+      },
+      false,
+    );
+    expect(result).toEqual({ guid: "P", name: "Future", class: "FutureWidget", properties });
+    expect(Object.getPrototypeOf(result!.properties)).toBe(Object.prototype);
+    expect(Object.hasOwn(result!.properties, "__proto__")).toBe(true);
   });
 });

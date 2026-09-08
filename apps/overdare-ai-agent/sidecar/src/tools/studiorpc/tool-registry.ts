@@ -11,12 +11,10 @@ import * as gamePlay from "./methods/game.play";
 import * as gameScreenshot from "./methods/game.screenshot";
 import * as gameStop from "./methods/game.stop";
 import * as hubTokenRead from "./methods/hub.token.read";
+import * as instanceSchemaSearch from "./methods/instance.schema.search";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
-import * as proceduralModelApi from "./methods/proceduralmodel.api";
-import * as proceduralModelSet from "./methods/proceduralmodel.set";
-import * as proceduralModelValidate from "./methods/proceduralmodel.validate";
 // biome-ignore lint/correctness/noUnusedImports: script.add moved to tools/script-add-tool.ts
 import * as _scriptAdd from "./methods/script.add";
 // biome-ignore lint/correctness/noUnusedImports: script.delete moved to tools/script-delete-tool.ts
@@ -47,6 +45,7 @@ type MethodModule = {
   method: string;
   description: string;
   params: z.ZodType;
+  readOnly?: boolean;
   timeoutMs?: number;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
@@ -64,6 +63,7 @@ type RenderBuilder = (ctx: {
 }) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
+  instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
   actionSequencerApplyJson,
@@ -78,16 +78,11 @@ export const methodModules: MethodModule[] = [
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
-  proceduralModelApi,
-  proceduralModelValidate,
-  proceduralModelSet,
 ];
 export const mutatingMethods = new Set([
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
-  // Bakes MeshPart children into the scene, so it takes the same approval + snapshot path.
-  proceduralModelSet.method,
 ]);
 export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
 

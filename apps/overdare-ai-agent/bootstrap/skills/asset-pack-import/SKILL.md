@@ -30,75 +30,29 @@ scene. Composition is your job:
 ## 3. Branch on subset size
 
 - **Fewer than 5 assets** — import each with `studiorpc_asset_drawer_import`, then
-  position with `studiorpc_instance_move` / `studiorpc_instance_upsert`. No recipe
-  needed.
+  position with `studiorpc_instance_upsert`.
 - **5 or more assets** — import all with `studiorpc_asset_drawer_import_bulk`
-  (one approval, returns an assetid→guids map), then place them with a procedural
-  recipe (see the procedural-builder skill).
+  (one approval, returns an assetid→guids map), then place the selected roots with
+  `studiorpc_instance_upsert`.
 
 ## 4. GUID discipline (mandatory)
 
 Imported scene names differ from store titles (store "Can 01" spawns as
 `Metro_Can01`), so **never locate imported models by name**. The bulk import output
-maps every assetid to its scene GUIDs — pass those GUIDs into the placement recipe
-via `parameters.Attributes`:
+maps every assetid to its scene GUIDs — use those GUIDs in each placement call:
 
 ```json
-{
-  "Attributes": {
-    "PlacementGuids": ["653B201E4C45D9CAAC1040A0D816D859", "..."]
-  }
-}
+["653B201E4C45D9CAAC1040A0D816D859", "..."]
 ```
 
 Check the bulk output's `failed` list before placement; only place the GUIDs that
 actually imported.
 
-## 5. Placement recipe pattern
+## 5. Placement pattern
 
-Injected scene instances expose `.Guid`. Match against the GUID list and assign
-CFrames; follow the procedural-builder skill's convergence rules for reruns.
-
-```lua
---!strict
--- Places imported pack members on a grid. Attributes.PlacementGuids selects the
--- targets; edit the spacing constants to tune the layout.
-local MathUtils = require(script.Dependencies.MathUtils)
-
-local PlacePack = {}
-
-PlacePack.OnGenerate = function(parameters, targetContainer)
-	local guids = parameters.Attributes.PlacementGuids or {}
-	local wanted = {}
-	for _, guid in guids do
-		wanted[guid] = true
-	end
-
-	-- Collect the imported roots by GUID (names are unreliable).
-	local targets = {}
-	for _, inst in workspace:GetDescendants() do
-		if inst.Guid and wanted[inst.Guid] then
-			table.insert(targets, inst)
-		end
-	end
-
-	-- Simple grid layout in world centimeters; replace with pointsOnCircle /
-	-- hand-authored CFrames when the scene calls for it.
-	local spacing = 400
-	local perRow = 5
-	for i, inst in targets do
-		local row = math.floor((i - 1) / perRow)
-		local col = (i - 1) % perRow
-		inst.CFrame = CFrame.new(col * spacing, 0, row * spacing)
-	end
-end
-
-return PlacePack
-```
-
-Real scenes deserve real composition — walls along walls, rails in lines
-(`pointsOnLine`), props scattered with deterministic `MathUtils.random` — but the
-GUID lookup skeleton above stays the same.
+Use the bundled upsert parameters for known transform JSON shapes; supplement with `studiorpc_instance_schema_search` when needed. Use the returned GUIDs as exact update targets for `studiorpc_instance_upsert`, or edit through Editor Luau. Use `studiorpc_instance_move` only for reparenting; it does not translate objects. Place
+structure before fixtures and scatter props. Read back the target subtree after a
+batch so the next placement uses current positions rather than stale assumptions.
 
 ## 6. Verify
 

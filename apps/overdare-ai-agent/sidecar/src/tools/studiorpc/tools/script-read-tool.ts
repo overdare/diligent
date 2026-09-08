@@ -7,8 +7,7 @@ import type { Tool, ToolResult } from "../types";
 import { findNodeByActorGuid, readOvdrjmRoot } from "./ovdrjm-utils";
 import { readScriptViaRpc } from "./v2/script-read";
 
-// Also a ProceduralModel, whose Source is a Python recipe -- see the note in v2/scripts.ts.
-const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript", "ProceduralModel"]);
+const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
 const DEFAULT_LIMIT = 2000;
 
 function toToolName(method: string): string {
@@ -37,10 +36,10 @@ async function executeScriptRead(args: Record<string, unknown>, cwd: string): Pr
     }
 
     const instanceType = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-    if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+    if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
       return {
         output:
-          `Error: instance ${targetGuid} is ${instanceType ?? "unknown"}, which has no Source to read. ` +
+          `Error: instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
           "Use studiorpc_instance_read to read other instances.",
         metadata: { error: true },
       };
