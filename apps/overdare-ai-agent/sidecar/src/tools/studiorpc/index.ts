@@ -15,7 +15,7 @@ import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
-import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
+import { consumeHumanEdits, createHumanEditsTool, type HumanEditsCapture } from "./tools/human-edits-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -27,7 +27,7 @@ import { createScriptDeleteTool } from "./tools/script-delete-tool";
 import { createScriptEditTool } from "./tools/script-edit-tool";
 import { createScriptGrepTool } from "./tools/script-grep-tool";
 import { createScriptReadTool } from "./tools/script-read-tool";
-import { captureBaseline, captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
+import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
 import type { Tool, ToolResult } from "./types";
@@ -46,11 +46,11 @@ interface TurnSnapshotState {
   sessionId: string | undefined;
   taken: boolean;
   /**
-   * Human-edit diff frozen at turn start, before any agent edits. The
-   * human-edits tool returns this cache so a late call cannot misattribute
-   * the agent's own edits to the human.
+   * Human edits consumed from Studio's EditLogging at turn start. Holds the
+   * frozen summary (served by the human-edits tool as the turn cache) and the
+   * deferred deletion of the consumed log files.
    */
-  humanEdits?: ToolResult;
+  humanEdits?: HumanEditsCapture;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -60,7 +60,7 @@ interface TurnSnapshotState {
 }
 
 function createHumanEditsLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
-  let pendingHumanEdits: ToolResult | undefined;
+  let pendingHumanEdits: HumanEditsCapture | undefined;
 
   return {
     id: "studiorpc-human-edits",
@@ -70,15 +70,20 @@ function createHumanEditsLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
     beforeTurn() {
       const humanEdits = pendingHumanEdits;
       pendingHumanEdits = undefined;
-      if (humanEdits?.metadata?.humanEditsDetected !== true) return;
+      if (!humanEdits) return;
+      // The summary is now part of the turn (injected below or empty), so the
+      // consumed log files can be dropped. If this never runs, the rotated
+      // files are re-read next turn — a duplicate report, never a loss.
+      humanEdits.finalize();
+      if (humanEdits.result.metadata?.humanEditsDetected !== true) return;
       return [
         createPresentableContextInjection({
           source: "studiorpc-human-edits",
-          content: humanEdits.output,
+          content: humanEdits.result.output,
           presentation: {
             kind: "human-edits",
             title: "Human edits detected",
-            content: humanEdits.output,
+            content: humanEdits.result.output,
           },
         }),
       ];
@@ -95,27 +100,11 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
   // snapshot and never shadow the real baseline. `taken` enforces once-per-turn.
   const turnState: TurnSnapshotState = { sessionId: undefined, taken: false };
 
-  // Save the editor state to file at turn boundaries, then capture the
-  // agent-done baseline so the next turn can diff out human edits.
-  const saveLevel: PluginHookFn = async (input: HookInput) => {
-    await callRpc("level.save.file", {});
-    try {
-      captureBaseline(input.cwd);
-    } catch {
-      // not a Studio project / save not flushed — human-edits tool reports "no baseline"
-      // ponytail: stale-baseline window if save RPC fails at Stop; fix when Studio emits real edit events
-    }
-    return { blocked: false };
-  };
-  saveLevel.mode = "sync";
-
-  // Start of each user request: save the level and arm a fresh snapshot for the
-  // upcoming turn. The actual capture happens lazily on the first edit tool.
-  // The save flushes the human's Studio edits to file, so this is the one
-  // moment the file holds human edits but no agent edits — freeze the
-  // human-edit diff here.
+  // Start of each user request: consume Studio's edit log and arm a fresh
+  // snapshot for the upcoming turn. The actual capture happens lazily on the
+  // first edit tool. Studio logs only human edits (never the agent's), and
+  // saves the level itself on Send, so no turn-boundary save RPC is needed.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
-    await callRpc("level.save.file", {});
     turnState.sessionId = input.session_id;
     turnState.taken = false;
     // Store generously (2000 chars); display sites truncate to 120. Keeping the
@@ -123,7 +112,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.humanEdits = computeHumanEdits(input.cwd);
+    turnState.humanEdits = consumeHumanEdits(input.cwd);
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -135,7 +124,6 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     createTools: async ({ cwd, host }) =>
       createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
     onUserPromptSubmit: beginTurn,
-    onStop: saveLevel,
     createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createHumanEditsLoopHook(turnState)] : []),
   };
 }
@@ -315,7 +303,7 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createHumanEditsTool(ctx.cwd, () => ctx.turnState?.humanEdits),
+      createHumanEditsTool(ctx.cwd, () => ctx.turnState?.humanEdits?.result),
       ctx.host,
     ),
     createHubWorldLookupTool(),
