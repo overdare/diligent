@@ -76,7 +76,13 @@ function RenderSummary({ block }: { block: SummaryBlock }) {
 function RenderText({ block }: { block: ToolRenderTextBlock }) {
   return (
     <BlockShell title={block.title} copyText={block.text}>
-      <pre className={cn(toolBlockPreClasses, "font-mono text-xs", block.isError ? "text-muted" : "text-text/80")}>
+      <pre
+        className={cn(
+          toolBlockPreClasses,
+          "max-h-72 overflow-y-auto overscroll-contain font-mono text-xs",
+          block.isError ? "text-muted" : "text-text/80",
+        )}
+      >
         {block.text}
       </pre>
     </BlockShell>
