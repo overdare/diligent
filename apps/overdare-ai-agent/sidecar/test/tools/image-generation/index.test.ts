@@ -57,6 +57,9 @@ describe("generate_image", () => {
     expect(tool.description).toContain("preview");
     expect(tool.description).toContain("studiorpc_asset_manager_image_import");
     expect(tool.description).toContain("asset.assetid");
+    expect(tool.description).toContain("stop image work and report the error");
+    expect(tool.description).toContain("PIL, SVG, or canvas");
+    expect(tool.description).toContain("user explicitly approves an alternative");
   });
 
   test("the runtime-loaded UI skill retains Studio import guidance but not generation-provider guidance", async () => {
@@ -142,7 +145,13 @@ describe("generate_image", () => {
           throw new Error("Codex generation failed");
         },
       });
-      await expect(tool.execute({ prompt: "A coin" }, context())).rejects.toThrow("Codex generation failed");
+      const error = await tool.execute({ prompt: "A coin" }, context()).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toContain("Codex generation failed");
+      expect(message).toContain("stop image work and report the error");
+      expect(message).toContain("PIL, SVG, or canvas");
+      expect(message).toContain("user explicitly approves an alternative");
       expect(existsSync(join(resolvePaths(cwd).images, "generated"))).toBe(false);
     } finally {
       cleanup();
@@ -152,16 +161,17 @@ describe("generate_image", () => {
   test("does not save a Codex result after cancellation", async () => {
     const { cwd, cleanup } = project();
     const controller = new AbortController();
+    const cancellation = new Error("cancelled before saving");
     try {
       const tool = await toolFor({
         cwd,
         generateCodexImage: async () => {
-          controller.abort(new Error("cancelled before saving"));
+          controller.abort(cancellation);
           return { sourcePath: join(cwd, "unused.png") };
         },
       });
-      await expect(tool.execute({ prompt: "A coin" }, context(controller.signal))).rejects.toThrow(
-        "cancelled before saving",
+      expect(await tool.execute({ prompt: "A coin" }, context(controller.signal)).catch((error) => error)).toBe(
+        cancellation,
       );
       expect(existsSync(join(resolvePaths(cwd).images, "generated"))).toBe(false);
     } finally {
