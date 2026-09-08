@@ -56,6 +56,7 @@ export function deriveChildPreview(payload: ThreadReadResponse): ChildPreview {
         isError: item.isError ?? false,
         inputText,
         outputText,
+        outputImages: item.outputImages,
       } as const;
       if (!childToolsByCallId.has(item.toolCallId)) {
         childToolOrder.push(item.toolCallId);
@@ -248,6 +249,7 @@ function buildChildToolItem(
     toolName: entry.toolName,
     inputText: entry.inputText,
     outputText: entry.outputText,
+    outputImages: entry.outputImages,
     isError: entry.isError,
     status: entry.status === "running" ? "streaming" : "done",
     timestamp: 0,
