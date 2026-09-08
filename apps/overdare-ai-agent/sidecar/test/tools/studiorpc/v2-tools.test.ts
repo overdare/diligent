@@ -449,7 +449,14 @@ describe("v2 level.save.file", () => {
       const tools = await loadTools(makeStudioProject());
       const result = await tools.get(name)!.execute(args, toolContext());
       expect(result.metadata?.error).toBeUndefined();
-      expect(methodsCalled().at(-1)).toBe("level.save.file");
+      const methods = methodsCalled();
+      const writeIndex = methods.findLastIndex((method) =>
+        ["instance.create", "instance.update", "instance.move", "instance.delete"].includes(method),
+      );
+      expect(writeIndex).toBeGreaterThanOrEqual(0);
+      expect(methods.filter((method) => method === "level.save.file")).toHaveLength(1);
+      // Read-only validation may follow the save; the write must precede it.
+      expect(methods.indexOf("level.save.file")).toBeGreaterThan(writeIndex);
     });
   }
 
