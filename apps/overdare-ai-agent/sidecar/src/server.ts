@@ -5,6 +5,7 @@ import "./sentry";
 
 import { createLogger } from "@diligent/logging";
 import { loadDiligentConfig, resolveExperimentStates } from "@diligent/runtime";
+import { createDevStudioRpc } from "./dev/studio-rpc";
 import { OVERDARE_EXPERIMENTS } from "./experiments";
 import { configureSidecarLogging } from "./logging";
 import {
@@ -130,6 +131,13 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
   const cleanupParentWatchdog = startParentWatchdog(args.parentPid);
   const studioDisabled = process.env.STUDIO_DISABLED === "1" || process.env.STUDIO_DISABLED?.toLowerCase() === "true";
   const consentMode = createConsentMode(studioDisabled);
+  const studioRpc = {
+    callRpc: createDevStudioRpc({
+      enabled: args.dev && !studioDisabled,
+      localFileRoot: process.env.STUDIO_LOCAL_FILE_ROOT,
+      remoteFileRoot: process.env.STUDIO_REMOTE_FILE_ROOT,
+    }),
+  };
 
   // Built once, on first router request or catalog publish — never on the startup path.
   //
@@ -144,6 +152,7 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
         cwd,
         bootstrapDir: resolveBootstrapDir(),
         experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, config.experiments?.overrides),
+        studioRpc,
       });
     })();
     return registriesPromise;
@@ -170,6 +179,7 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
         canTransmitRecords: consentMode.canTransmitRecords,
         // STUDIO_DISABLED=1 → skip the Studio RPC provider entirely (no 13377 connects).
         studioDisabled,
+        studioRpc,
       }),
       experimentDefinitions: OVERDARE_EXPERIMENTS,
       // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for

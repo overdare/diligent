@@ -7,13 +7,14 @@ import { createHelloWorldToolProvider, type StudioToolProviderOptions } from "./
 import { createImageGenerationToolProvider } from "./image-generation";
 import { createRagToolProvider } from "./rag";
 import { createSleepToolProvider } from "./sleep";
-import { createStudioRpcToolProvider } from "./studiorpc";
+import { createStudioRpcToolProvider, type StudioRpcToolProviderOptions } from "./studiorpc";
 import { createValidatorToolProvider } from "./validator";
 
 export interface StudioBundledToolProviderOptions extends StudioToolProviderOptions {
   /** When true, omit the Studio RPC provider so nothing connects to Studio (13377). */
   studioDisabled?: boolean;
   canTransmitRecords?: () => boolean;
+  studioRpc?: StudioRpcToolProviderOptions;
 }
 
 export function createStudioBundledToolProviders(options: StudioBundledToolProviderOptions): BundledToolProvider[] {
@@ -25,7 +26,7 @@ export function createStudioBundledToolProviders(options: StudioBundledToolProvi
     createImageGenerationToolProvider(),
     // Studio RPC provider carries the level.save.file turn hooks, so skipping it
     // means zero connection attempts to Studio when running without one.
-    ...(options.studioDisabled ? [] : [createStudioRpcToolProvider()]),
+    ...(options.studioDisabled ? [] : [createStudioRpcToolProvider(options.studioRpc)]),
     createAnalyticsToolProvider(),
     createGatewayToolProvider(options),
   ];

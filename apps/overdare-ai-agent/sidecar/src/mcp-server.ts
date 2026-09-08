@@ -34,7 +34,7 @@ import { configureSidecarLogging } from "./logging";
 import { flushSentry } from "./sentry";
 import type { StudioCatalogSnapshot, StudioPromptDescriptor, StudioToolDescriptor } from "./studio-registry";
 import { createRagToolProvider } from "./tools/rag";
-import { createStudioRpcToolProvider } from "./tools/studiorpc";
+import { createStudioRpcToolProvider, type StudioRpcToolProviderOptions } from "./tools/studiorpc";
 import { createValidatorToolProvider } from "./tools/validator";
 
 const SERVER_INFO = { name: "overdare-ai-agent", version: "0.0.1" } as const;
@@ -59,6 +59,7 @@ export interface McpServerOptions {
   /** Product-managed global prompt deployed by `overdare-ai-agent init`. */
   systemPromptPath?: string;
   experiments?: ResolvedExperiment[];
+  studioRpc?: StudioRpcToolProviderOptions;
 }
 
 /** A prompt exposed over MCP (skill / agent / system prompt), loaded lazily. */
@@ -78,17 +79,18 @@ export interface McpRegistries {
  * Includes RAG search (`overdaresearch`, `overdaresearch_deep`); the gateway/analytics
  * providers expose no agent-callable tools (createTools -> []), so they are omitted.
  */
-function productToolProviders(): BundledToolProvider[] {
-  return [createStudioRpcToolProvider(), createValidatorToolProvider(), createRagToolProvider()];
+function productToolProviders(studioRpc?: StudioRpcToolProviderOptions): BundledToolProvider[] {
+  return [createStudioRpcToolProvider(studioRpc), createValidatorToolProvider(), createRagToolProvider()];
 }
 
 async function buildToolRegistry(
   cwd: string,
   experiments: readonly ResolvedExperiment[] = [],
+  studioRpc?: StudioRpcToolProviderOptions,
 ): Promise<Map<string, Tool>> {
   const { disabledToolNames } = resolveExperimentGates(experiments);
   const tools = new Map<string, Tool>();
-  for (const provider of productToolProviders()) {
+  for (const provider of productToolProviders(studioRpc)) {
     for (const tool of await provider.createTools({ cwd })) {
       if (disabledToolNames.has(tool.name)) continue;
       tools.set(tool.name, tool);
@@ -219,7 +221,7 @@ async function buildModelCallableTools(
 
 export async function buildRegistries(options: McpServerOptions): Promise<McpRegistries> {
   const [tools, modelCallableTools, prompts] = await Promise.all([
-    buildToolRegistry(options.cwd, options.experiments),
+    buildToolRegistry(options.cwd, options.experiments, options.studioRpc),
     buildModelCallableTools(
       options.bootstrapDir,
       options.systemPromptPath ?? resolveSystemPromptPath(),
