@@ -25,14 +25,8 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-WEBHOOK_ENV = "DILIGENT_ISSUE_WEBHOOK"
-# Fallback for an installed agent. A built binary launched by Studio inherits the launcher's
-# environment, and a GUI launch has no shell environment to inherit — so `.env.local` and
-# `export` only cover local `bun run` development. Baking the URL into the build is not an
-# option either: the repo is public and dev releases are prereleases on it, so a baked
-# secret would ship to anyone. A file the developer drops next to their own session data is
-# the one place that is per-machine, survives reinstalls, and is never distributed.
-WEBHOOK_FILE = "issue-report-webhook"
+# Set this to the Slack incoming webhook URL before sending reports.
+WEBHOOK_URL = ""
 # Kept in parity with the sidecar's 1st-pass ruleset (masking.ts, version `secrets-2`).
 # This path never reaches the gateway, so there is no server-side second pass behind us:
 # whatever these patterns miss, leaves the machine.
@@ -58,7 +52,7 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 ENTRY_PREVIEW_CHARS = 400
 BODY_MAX_CHARS = 6000
-DEFAULT_TAIL = 30
+DEFAULT_TAIL = 5
 
 
 def redact(text: str) -> str:
@@ -88,32 +82,6 @@ def session_dirs() -> list[Path]:
     return [root / f".{ns}" / "sessions" for root in roots for ns in namespaces]
 
 
-def resolve_webhook() -> tuple[str, str] | tuple[None, None]:
-    """The webhook URL and where it came from, or (None, None).
-
-    Environment first so a shell or `.env.local` can override per run; then the per-machine
-    file, which is what an installed agent actually has.
-    """
-    from_env = os.environ.get(WEBHOOK_ENV, "").strip()
-    if from_env:
-        return from_env, f"${WEBHOOK_ENV}"
-    seen: set[Path] = set()
-    # session_dirs() is ordered project-local first; keep that precedence rather than
-    # letting a set's iteration order pick between a project and a home-level file.
-    for directory in (d.parent for d in session_dirs()):
-        if directory in seen:
-            continue
-        seen.add(directory)
-        candidate = directory / WEBHOOK_FILE
-        if not candidate.is_file():
-            continue
-        for line in candidate.read_text(errors="replace").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                return line, str(candidate)
-    return None, None
-
-
 def newest_session() -> Path | None:
     candidates = [p for d in session_dirs() if d.is_dir() for p in d.glob("*.jsonl")]
     return max(candidates, key=lambda p: p.stat().st_mtime, default=None)
@@ -135,9 +103,9 @@ def render_message(message: dict) -> str | None:
     role = str(message.get("role", "?"))
 
     if role == "tool_result":
-        status = "ERROR" if message.get("isError") else "ok"
+        status = "오류" if message.get("isError") else "성공"
         name = message.get("toolName") or "?"
-        return f"[tool {name} {status}] {clip(message.get('output') or '')}"
+        return f"[도구 {name} · {status}] {clip(message.get('output') or '')}"
 
     content = message.get("content")
     if isinstance(content, str):
@@ -162,7 +130,8 @@ def render_message(message: dict) -> str | None:
     suffix = f" «stopReason={stop}»" if stop and stop not in ("end_turn", "tool_use") else ""
     if not text and not suffix:
         return None
-    return f"[{role}] {text}{suffix}"
+    role_label = {"user": "사용자", "assistant": "에이전트", "system": "시스템"}.get(role, role)
+    return f"[{role_label}] {text}{suffix}"
 
 
 def read_tail(path: Path, limit: int) -> tuple[str, list[str]]:
@@ -192,9 +161,9 @@ def read_tail(path: Path, limit: int) -> tuple[str, list[str]]:
             err = entry.get("error")
             if not isinstance(err, str):
                 err = json.dumps(err, ensure_ascii=False)
-            fatal = " fatal" if entry.get("fatal") else ""
-            kept.append(f"[error{fatal}] {clip(err)}")
-    return session_id, kept[-limit:]
+            fatal = " · 치명적" if entry.get("fatal") else ""
+            kept.append(f"[오류{fatal}] {clip(err)}")
+    return session_id, kept[-limit:] if limit else []
 
 
 def ledger_path(session_file: Path) -> Path:
@@ -231,21 +200,50 @@ def record(ledger: Path, session_id: str, key: str, title: str) -> None:
         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def build_text(kind: str, title: str, body: str, session_id: str, tail: list[str], cwd: str) -> str:
-    heading = {
-        "product": ":wrench: *Studio / agent defect*",
-        "self": ":repeat: *Agent self-critique*",
-    }[kind]
-    parts = [
-        f"{heading} — {mrkdwn(title)}",
-        f"session: `{mrkdwn(session_id)}` · cwd: `{mrkdwn(cwd)}` · {datetime.now(UTC):%Y-%m-%d %H:%M} UTC",
-        "",
-        mrkdwn(body.strip()),
+def build_payload(kind: str, title: str, body: str, session_id: str, tail: list[str], cwd: str) -> dict:
+    """Build native Slack blocks; report prose is plain text, never interpreted markup."""
+    category = {"product": "🔧 제품 문제", "self": "🔄 에이전트 작업 개선"}[kind]
+
+    def plain(text: str) -> dict:
+        return {"type": "plain_text", "text": text, "emoji": True}
+
+    def section(text: str) -> dict:
+        return {"type": "section", "text": plain(text)}
+
+    blocks = [
+        {"type": "header", "text": plain(title[:150] or "세션 문제 보고")},
+        {"type": "context", "elements": [plain(category), plain(f"{datetime.now(UTC):%Y-%m-%d %H:%M} UTC")]},
+        {"type": "divider"},
     ]
+    labels = {
+        "작업 상황": "📌 작업 상황",
+        "발생한 문제": "🚨 발생한 문제",
+        "보고 이유": "💡 보고 이유",
+        "개선 제안": "✅ 개선 제안",
+    }
+    for paragraph in re.split(r"\n\s*\n", body.strip(), maxsplit=7):
+        label, separator, content = paragraph.partition(":")
+        if separator and label.strip() in labels:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"*{labels[label.strip()]}*"}})
+            paragraph = content.strip()
+        for offset in range(0, len(paragraph), 2800):
+            blocks.append(section(paragraph[offset:offset + 2800]))
     if tail:
+        blocks += [
+            {"type": "divider"},
+            {"type": "section", "text": {"type": "mrkdwn", "text": "*📎 최근 세션 기록*"}},
+        ]
         rendered = "\n".join(tail)
-        parts += ["", "*Session tail*", "```", mrkdwn(rendered), "```"]
-    return "\n".join(parts)
+        for offset in range(0, len(rendered), 2800):
+            blocks.append(section(rendered[offset:offset + 2800]))
+    blocks += [
+        {"type": "divider"},
+        {"type": "context", "elements": [plain(f"세션: {session_id}"[:2000])]},
+        {"type": "context", "elements": [plain(f"작업 경로: {cwd}"[:2000])]},
+    ]
+    # Keep a readable notification/accessibility fallback without Markdown parsing.
+    fallback = f"{category} | {title}\n{body}\n세션: {session_id}"
+    return {"text": mrkdwn(fallback), "mrkdwn": False, "blocks": blocks, "unfurl_links": False, "unfurl_media": False}
 
 
 def main() -> int:
@@ -262,22 +260,20 @@ def main() -> int:
         print("send_report: nothing on stdin — pipe the report body in. Not sent.")
         return 0
 
-    webhook, webhook_source = resolve_webhook()
+    webhook = WEBHOOK_URL.strip()
     if not webhook and not args.dry_run:
         print(
-            f"send_report: no webhook configured, so nothing was sent. Set {WEBHOOK_ENV}, or "
-            f"put the URL in a `{WEBHOOK_FILE}` file beside your session data "
-            f"(e.g. ~/.overdare/{WEBHOOK_FILE}). This skill is internal-only; ask the team for "
-            "the channel webhook. Report the finding in your reply instead."
+            "send_report: no webhook configured, so nothing was sent. Set WEBHOOK_URL "
+            "in scripts/send_report.py. Report the finding in your reply instead."
         )
         return 0
 
     session_file = Path(args.session) if args.session else newest_session()
     if session_file is None or not session_file.is_file():
-        session_id, tail = "unknown", []
+        session_id, tail = "알 수 없음", []
         ledger = Path.home() / ".diligent" / "issue-reports.jsonl"
     else:
-        session_id, tail = read_tail(session_file, max(0, args.tail))
+        session_id, tail = read_tail(session_file, min(30, max(0, args.tail)))
         ledger = ledger_path(session_file)
 
     title = redact(" ".join(args.title.split()))[:160]
@@ -289,17 +285,11 @@ def main() -> int:
         print(f"send_report: already reported in this session ({key}); not sent again.")
         return 0
 
-    text = build_text(args.kind, title, body, session_id, tail, str(Path.cwd()))
-    payload = json.dumps({"text": text}, ensure_ascii=False).encode()
+    report = build_payload(args.kind, title, body, session_id, tail, redact(str(Path.cwd())))
+    payload = json.dumps(report, ensure_ascii=False).encode()
 
     if args.dry_run:
-        print(text)
-        return 0
-
-    if webhook is None:
-        # Unreachable: a missing webhook already returned above unless --dry-run, which
-        # returned too. Stated explicitly so the POST below has a plain `str`.
-        print("send_report: no webhook resolved; nothing sent.")
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
     request = urllib.request.Request(
@@ -317,7 +307,7 @@ def main() -> int:
 
     record(ledger, session_id, key, title)
     print(
-        f"send_report: sent ({status}) via {webhook_source}, fingerprint {key}, "
+        f"send_report: sent ({status}) via WEBHOOK_URL, fingerprint {key}, "
         f"session {session_id}, mask {MASK_VERSION}."
     )
     return 0

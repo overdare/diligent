@@ -1,6 +1,6 @@
 ---
 name: session-issue-report
-description: Report a Studio / OVERDARE-agent / diligent-tool defect, or the agent's own wasted effort, to the internal Slack channel with redacted session context. Fire it on your own judgment mid-task the moment you conclude that (1) a tool, RPC, or documented contract is broken, missing a capability the work genuinely needed, or behaving against its own schema or description, or (2) the work itself went wrong — a tool was misused, something already built got rebuilt, or many turns went into an approach that proved wasted. Those two conditions are the entire trigger, and they hold from either seat — the model working inside the agent, and the model driving that agent over MCP or a subagent call. Nobody will ask you to do this — the driver is usually another model rather than a person, and no harness prompts for reports, so do not wait for a request or a conversational cue. Internal only — needs DILIGENT_ISSUE_WEBHOOK and is gated off outside the dev channel.
+description: Report a Studio / OVERDARE-agent / diligent-tool defect, or the agent's own wasted effort, to the internal Slack channel with redacted session context. Fire it on your own judgment mid-task the moment you conclude that (1) a tool, RPC, or documented contract is broken, missing a capability the work genuinely needed, or behaving against its own schema or description, or (2) the work itself went wrong — a tool was misused, something already built got rebuilt, or many turns went into an approach that proved wasted. Those two conditions are the entire trigger, and they hold from either seat — the model working inside the agent, and the model driving that agent over MCP or a subagent call. Nobody will ask you to do this — the driver is usually another model rather than a person, and no harness prompts for reports, so do not wait for a request or a conversational cue. Internal only — needs WEBHOOK_URL configured in scripts/send_report.py and is gated off outside the dev channel.
 ---
 
 # Session Issue Report
@@ -96,35 +96,39 @@ path this SKILL.md was loaded from.
 
 ```bash
 printf '%s' "$(cat <<'EOF'
-**Seat:** inside the agent.
+작업 상황: 에이전트 내부에서 HUD 프레임에 UIStroke를 추가하고 있었습니다.
 
-**What I was doing:** placing a UIStroke on the level's HUD frame.
+발생한 문제: studiorpc_instance_upsert가 Thickness에 단위를 붙인 값을 INVALID_PROPERTY로 거부했습니다. 단위 표기를 바꾸며 네 차례 시도했지만 모두 실패했습니다.
 
-**What happened:** `studiorpc_instance_upsert` rejected `Thickness: "2px"` with
-`INVALID_PROPERTY`, four times, once per unit spelling I tried.
+보고 이유: 숫자형 속성에 문자열을 전달한 제 실수입니다. 오류 원인을 확인하지 않고 단위 표기만 바꾸며 재시도해 작업을 낭비했습니다.
 
-**Why I think this is reportable:** the schema types `Thickness` as `number`, but the
-tool description carries no unit example, so "2px" is the natural first guess. I only got
-it right by finding a number in an unrelated recipe.
-
-**What would have helped:** one `Thickness: 2` example in the tool description, or an
-error that says "expected a number of studs".
+개선 제안: 도구 설명에 Thickness: 2 예시를 추가하고, 오류 메시지에 숫자형 값을 사용해야 한다고 안내하면 좋겠습니다.
 EOF
 )" | python3 skills/session-issue-report/scripts/send_report.py \
-      --kind product \
-      --title "instance_upsert rejects UIStroke.Thickness with units; description has no example"
+      --kind self \
+      --title "UIStroke 두께 입력 오류를 확인하지 않고 반복 시도"
 ```
 
-Useful flags: `--dry-run` prints the exact Slack text without posting (use it to check the
+Useful flags: `--dry-run` prints the Slack Block Kit JSON payload without posting (use it to check the
 redaction or the tail first), `--tail N` changes how many session entries ride along
-(default 30), `--session PATH` pins a specific transcript — required from the driving seat.
+(default 5, maximum 30; 0 omits the tail), `--session PATH` pins a specific transcript — required from the driving seat.
 
-The script reads `DILIGENT_ISSUE_WEBHOOK` from the environment. **If it is unset it prints
-a note and sends nothing** — that is not a failure, so do not retry it and do not go
-looking for the URL. Report the finding in your reply instead, and mention the variable is
-unset so the caller can decide whether to set it.
+The script uses `WEBHOOK_URL` declared at the top of `scripts/send_report.py`.
+**If it is blank it prints a note and sends nothing** — that is not a failure, so do not
+retry it or look for the URL. Report the finding in your reply instead, and mention that
+the user can set `WEBHOOK_URL` in the script.
 
 ## Writing a body someone can act on
+
+Write every report title and all explanatory prose in Korean, regardless of the task's
+language. Preserve exact tool names, property names, error codes, and diagnostic excerpts
+when translating would change the evidence. The formatter does not translate input.
+
+Use the four Korean labels shown in the example: `작업 상황:`, `발생한 문제:`,
+`보고 이유:`, and `개선 제안:`. Separate them with blank lines. Include your vantage point
+in `작업 상황`. Write concise plain text, without Markdown headings, `**bold**`, tables,
+or code fences. The script adds native Slack headers, section labels, dividers, and
+session metadata. The session tail is supporting evidence beneath the report.
 
 Four things, in this order, because it is the order a reader needs them:
 
@@ -180,38 +184,15 @@ switch is one of:
 A local `make dev` run goes through no launcher, so `DILIGENT_ENV` is unset, which reads as
 prod and leaves the skill off. Use the override or export the variable.
 
-**3. A webhook URL must be configured.** None is shipped, so even an enabled experiment on
-a prod build has nowhere to post. The script looks in two places, in this order:
+**3. A webhook URL must be configured.** Edit `scripts/send_report.py` and set the
+`WEBHOOK_URL` variable near the top of the file:
 
-| Source | Good for |
-|---|---|
-| `DILIGENT_ISSUE_WEBHOOK` in the environment | local `bun run` / `make dev` — `.env.local` is auto-loaded and gitignored |
-| an `issue-report-webhook` file beside your session data, e.g. `~/.overdare/issue-report-webhook` | **an installed, built agent** |
-
-The file exists because the environment does not reach a real install. A built binary
-inherits whatever launched it, and Studio is a GUI app with no shell environment to
-inherit, so `export` and `.env.local` only cover local development. Baking the URL into the
-build is not an alternative: this repo is public and dev releases are prereleases on it, so
-a baked secret would ship to anyone who downloads one. A file the developer drops in their
-own namespace directory is the only spot that is per-machine, survives reinstalls, and is
-never distributed.
-
-```bash
-# local development
-echo 'DILIGENT_ISSUE_WEBHOOK=https://hooks.slack.com/services/...' >> .env.local
-
-# an installed agent (namespace is `overdare` under the launcher, `diligent` for the CLI)
-printf '%s\n' 'https://hooks.slack.com/services/...' > ~/.overdare/issue-report-webhook
-chmod 600 ~/.overdare/issue-report-webhook
+```python
+WEBHOOK_URL = "https://hooks.slack.com/services/..."
 ```
 
-Blank lines and `#` comments in that file are ignored, so it can carry a note about which
-channel it points at.
-
-Wherever it goes, keep it on the machine: never in a committed file, never in this skill,
-and never in a `config.jsonc` that lives inside a repo. A Slack webhook is write-only to a
-single channel, which is what makes a developer's own machine an acceptable home for it and
-a shipped artifact an unacceptable one.
+The variable is blank by default. The script does not read a webhook URL from environment
+variables or configuration files. Leaving it blank skips sending; `--dry-run` still works.
 
 `.diligent/skills/session-issue-report` is a symlink to this directory, so a diligent CLI
 run in this repo picks up the same single copy — there is no second version to keep in sync.

@@ -25,8 +25,8 @@ export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
   {
     // Internal diagnostics: the skill ships in the bundle but a prod-channel build filters
     // it out of the model's skill list, so creators never see it. Sending additionally
-    // requires DILIGENT_ISSUE_WEBHOOK, which is never shipped — two gates, both off by
-    // default in prod.
+    // requires WEBHOOK_URL in the report script, which is blank by default.
+    // Both gates are off by default in prod.
     id: "issue-report",
     title: "Internal issue reporting",
     description: "Let the agent report Studio/agent defects and its own wasted effort to an internal Slack channel.",
