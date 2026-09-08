@@ -9,10 +9,13 @@ import type {
   DiligentServerRequest,
   DiligentServerRequestResponse,
   PendingSteer,
-  Mode as ProtocolMode,
   RequestId,
 } from "@diligent/protocol";
-import { DILIGENT_CLIENT_REQUEST_METHODS, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import {
+  DILIGENT_CLIENT_REQUEST_METHODS,
+  DILIGENT_SERVER_NOTIFICATION_METHODS,
+  nextCycledMode,
+} from "@diligent/protocol";
 import { type DiligentPaths, formatModelRef, type SkillMetadata } from "@diligent/runtime";
 import { version as pkgVersion } from "../../package.json";
 import type { AppConfig } from "../config";
@@ -426,10 +429,7 @@ export class App {
   }
 
   private cycleMode(): void {
-    const modes: ProtocolMode[] = ["default", "plan", "execute"];
-    const idx = modes.indexOf(this.runtime.currentMode);
-    const next = modes[(idx + 1) % modes.length];
-    this.configManager.setMode(next);
+    this.configManager.setMode(nextCycledMode(this.runtime.currentMode));
   }
 
   private beginCompactionIndicator(estimatedTokens: number): void {

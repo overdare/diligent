@@ -68,4 +68,28 @@ describe("normalizeGeminiToolSchema", () => {
     expect(itemSchema.properties.value.anyOf).toEqual(expect.any(Array));
     expect(JSON.stringify(normalized)).not.toContain("$ref");
   });
+
+  test("caps sibling properties until an oversized schema fits the budget", () => {
+    const schema = {
+      type: "object",
+      properties: Object.fromEntries(
+        Array.from({ length: 600 }, (_, index) => [
+          `property${index}`,
+          { type: "string", description: "d".repeat(120) },
+        ]),
+      ),
+      required: ["property0", "property599"],
+    };
+    expect(JSON.stringify(schema).length).toBeGreaterThan(32_000);
+
+    const normalized = normalizeGeminiToolSchema(schema) as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+
+    expect(JSON.stringify(normalized).length).toBeLessThanOrEqual(32_000);
+    expect(Object.keys(normalized.properties)).toContain("property0");
+    expect(Object.keys(normalized.properties)).not.toContain("property599");
+    expect(normalized.required).toEqual(["property0"]);
+  });
 });

@@ -14,6 +14,19 @@ export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
 export const ModeSchema = z.enum(["default", "plan", "execute"]);
 export type Mode = z.infer<typeof ModeSchema>;
 
+/** Slash command that switches to each mode. `execute` is typed `/exec`. */
+export const MODE_COMMAND_NAMES: Record<Mode, string> = {
+  default: "default",
+  plan: "plan",
+  execute: "exec",
+};
+
+/** Next mode in the shift+tab cycle. An unrecognized mode lands on the first one. */
+export function nextCycledMode(mode: Mode): Mode {
+  const options = ModeSchema.options;
+  return options[(options.indexOf(mode) + 1) % options.length];
+}
+
 export const ThinkingEffortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 export type ThinkingEffort = z.infer<typeof ThinkingEffortSchema>;
 

@@ -566,7 +566,8 @@ Decisions made during synthesis reviews, with rationale.
   | `request_user_input` tool | Available in all modes | Not mode-gated — agent may ask user questions in any mode (D088) |
 - **Mode switching**:
   - CLI flag: `--mode plan`, `--mode execute`
-  - Slash command: `/mode plan`, `/mode` (picker)
+  - Slash command: one per mode — `/default`, `/plan`, `/exec`. Each switches directly; none toggles
+  - Keyboard: `shift+tab` cycles modes (TUI anywhere, Web from the composer)
   - Config default: `config.jsonc` → `"mode": "default"`
   - **Mode persists across turns** — user messages alone don't change mode (codex-rs principle)
   - Mode change recorded as `ModelChangeEntry`-style event in session JSONL
@@ -578,7 +579,7 @@ Decisions made during synthesis reviews, with rationale.
   | L4 (Approval) | Mode-aware default policy (plan → deny writes, execute → auto-approve) |
   | L5 (Config) | `mode` field in `DiligentConfig`. Per-mode settings (model, reasoning) |
   | L6 (Session) | Mode stored in session. `ModeChangeEntry` type for JSONL |
-  | L7 (TUI) | Mode indicator in status bar. `/mode` slash command. Mode-aware tool output |
+  | L7 (TUI) | Mode indicator always in status bar. Per-mode slash commands + `shift+tab`. Mode-aware tool output |
 - **What to adopt from codex-rs**:
   - Modal system prompt templates (separate `.md` files per mode)
   - `CollaborationMode = { mode: ModeKind, settings: Settings }` structure
