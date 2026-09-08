@@ -110,7 +110,7 @@ Use this when the target UI already exists and the change is: fix alignment/size
 2. Locate the target: `studiorpc_level_browse` scoped to the relevant subtree, or go straight to `studiorpc_instance_read` if you already know the path/guid. Read **only** the target instance/subtree, not the whole UI.
 3. Apply the change: `studiorpc_instance_upsert` with the existing `guid` (or `_move` / `_delete`). To add a single element, create just that one child under the existing parent — no new root or panel scaffolding.
 4. Only search worldAsset if the user explicitly asks for an asset you don't already have; otherwise reuse existing assets/instances.
-5. If you touched a script, validate with `validatelua`. Save, then report exactly what changed.
+5. If you touched a script, read the validation report appended to the write result (`SUMMARY errors`). Save, then report exactly what changed.
 
 ### Create new UI (full flow — only when the screen/panel doesn't exist yet)
 
@@ -121,7 +121,7 @@ Use this when the target UI already exists and the change is: fix alignment/size
 5. **worldAsset:** search `assets` with `overdaresearch` (prefer `categoryId = UI_ELEMENTS`), import with `studiorpc_asset_drawer_import`, inspect the imported hierarchy, move to `StarterGui` if needed. See `patterns/worldasset-ui.md`.
 6. **Direct:** create the root container first, then children one level at a time; use clear names; do not mix adds and updates in one `studiorpc_instance_upsert`. See `patterns/direct-gui.md`.
 7. Apply layout per `patterns/layout-rules.md` (Position mostly Scale, Size mostly Offset, ≥24px important text, ZIndex bands, safe areas). For a specific UI type, follow its `templates/` file.
-8. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; validate with `validatelua`. See `patterns/script-integration.md`.
+8. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; the write result carries Studio's validation report. See `patterns/script-integration.md`.
 9. Read back or browse the result and address any tool warnings.
 10. Save the level, then tell the user what was created and how to test it.
 
