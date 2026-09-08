@@ -404,9 +404,39 @@ describe("createAgentReportToolProvider — tool", () => {
     expect(calls).toHaveLength(1);
   });
 
+  test("waits for a session binding that lands after the tool call started", async () => {
+    const calls = installFetchSpy();
+    const provider = createAgentReportToolProvider({
+      cwd: "/tmp/project",
+      projectId: "proj-1",
+      canTransmitRecords: () => true,
+    });
+    const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
+    const signalId = armAndInject(hook);
+    const tool = await toolOf(provider);
+
+    // Production order: the entry hook runs fire-and-forget after the tool has already started.
+    const pending = tool.execute(
+      { signal_id: signalId, cause: "model_error", title: "t", summary: "s" },
+      toolCtx("tc-late"),
+    );
+    setTimeout(() => void provider.onEntryAppended?.(entryInput("tc-late")), 0);
+
+    const out = await pending;
+    expect(out.output).toContain("filed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.session_id).toBe("sess-1");
+    expect(calls[0].body.seq).toBe(168);
+  });
+
   test("reports nothing when the tool call id has no session binding", async () => {
     const calls = installFetchSpy();
-    const provider = createAgentReportToolProvider({ cwd: "/tmp/project", canTransmitRecords: () => true });
+    // Short cap so the wait for a binding that never arrives does not slow the suite.
+    const provider = createAgentReportToolProvider({
+      cwd: "/tmp/project",
+      canTransmitRecords: () => true,
+      bindingWaitMs: 50,
+    });
     const [hook] = provider.createAgentLoopHooks?.(hookContext()) ?? [];
     const signalId = armAndInject(hook);
     // Another thread's entry landed; it must not stand in for this tool call's session.

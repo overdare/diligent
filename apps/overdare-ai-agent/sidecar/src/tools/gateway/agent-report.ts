@@ -28,6 +28,8 @@ const logger = createLogger({ scope: "sidecar/gateway", context: { component: "a
 
 export interface AgentReportToolProviderOptions extends StudioToolProviderOptions {
   canTransmitRecords?: () => boolean;
+  /** Cap on the wait for this tool call's session binding. Tests shorten it; production keeps the default. */
+  bindingWaitMs?: number;
 }
 
 interface SessionBinding {
@@ -46,6 +48,13 @@ interface ProviderState {
 
 const MAX_ENTRIES = 256;
 
+// `onEntryAppended` is dispatched fire-and-forget behind a `setImmediate` once the entry has been
+// written to disk, while the agent loop reaches `tool.execute` with no macrotask in between — so the
+// binding for the tool call running right now normally lands *after* the tool starts. Hence the wait:
+// read the binding once and the report is a no-op in production. Do not "optimise" it away.
+const BINDING_WAIT_MS = 2_000;
+const BINDING_POLL_MS = 25;
+
 /** Insert into a FIFO-bounded map. */
 function setBounded<V>(map: Map<string, V>, key: string, value: V): void {
   map.set(key, value);
@@ -60,7 +69,7 @@ export function createAgentReportToolProvider(options: AgentReportToolProviderOp
   const cwd = options.cwd?.trim() ?? "";
 
   // Dispatched fire-and-forget after a `setImmediate`, so the binding for the tool call being
-  // executed right now may not have landed yet. The tool files nothing when it is missing.
+  // executed right now usually lands after it started; the tool waits for it (see BINDING_WAIT_MS).
   const onEntryAppended: PluginHookFn = async (input) => {
     const binding = bindingFromInput(input);
     for (const toolCallId of toolCallIdsInEntry(input)) {
@@ -146,9 +155,9 @@ function createAgentReportTool(
         return { output: "Reporting is disabled (AI-data consent not granted). Continue the task." };
       }
       // No fallback binding: guessing a session would file this thread's report against another's.
-      const binding = state.bindings.get(ctx.toolCallId);
-      if (!binding) return { output: "No session context is available; nothing reported. Continue the task." };
+      const binding = await waitForBinding(state, ctx.toolCallId, options.bindingWaitMs ?? BINDING_WAIT_MS);
       state.signals.delete(args.signal_id);
+      if (!binding) return { output: "No session context is available; nothing reported. Continue the task." };
 
       const projectId = explicitProjectId || `${binding.userId}:${cwd}`.replace(/[:/\\]/g, "_");
       const release = process.env.DILIGENT_SERVER_VERSION?.trim() || undefined;
@@ -188,6 +197,20 @@ function createAgentReportTool(
       }
     },
   };
+}
+
+/** Poll for the tool call's binding until it lands or the cap expires; no binding means no report. */
+async function waitForBinding(
+  state: ProviderState,
+  toolCallId: string,
+  waitMs: number,
+): Promise<SessionBinding | undefined> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const binding = state.bindings.get(toolCallId);
+    if (binding || Date.now() >= deadline) return binding;
+    await new Promise((resolve) => setTimeout(resolve, BINDING_POLL_MS));
+  }
 }
 
 function bindingFromInput(input: HookInput): SessionBinding {
