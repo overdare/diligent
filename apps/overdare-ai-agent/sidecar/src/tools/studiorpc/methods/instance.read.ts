@@ -5,6 +5,7 @@ export const method = "instance.read";
 export const description =
   "Read authored instance JSON by GUID, using Studio RPC by default or the saved level in the legacy file backend. " +
   "Returns properties without a local class whitelist. Use recursive to include descendants. " +
+  "WorldTransform is returned when provided by Studio or the saved level, alongside Size when present, for spatial inspection and camera placement. WorldTransform is a read-only derived cache; its presence does not imply writability. Use live schema search to find writable transform properties. " +
   "For gameplay state during a play test, use studiorpc_game_observe instead.";
 
 export const params = z.object({

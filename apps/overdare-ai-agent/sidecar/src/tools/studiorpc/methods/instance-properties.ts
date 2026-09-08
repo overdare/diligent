@@ -18,9 +18,7 @@ const propertyNameSchema = z
 
 export const instancePropertiesSchema = z.record(propertyNameSchema, z.unknown()).default({});
 
-/** Keeps Studio JSON values while excluding identity fields and derived caches. */
+/** Keeps Studio JSON values, including read-only caches, while separating identity fields. */
 export function pickInstanceProperties(node: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(node).filter(([key]) => !instanceMetadataKeys.has(key) && !derivedPropertyKeys.has(key)),
-  );
+  return Object.fromEntries(Object.entries(node).filter(([key]) => !instanceMetadataKeys.has(key)));
 }

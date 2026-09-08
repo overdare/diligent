@@ -54,9 +54,12 @@ Use the complete JSON shapes from live hints/current instance reads, and full VF
 asset paths. The legacy v1 file-edit path also preserves supplied JSON; it still
 requires Studio apply/save to validate and synchronize edits.
 
-`WorldTransform` is a derived cache: instance reads omit it from
-`properties`, and upsert rejects it for both additions and updates. Discover the
-class's writable transform properties through live schema search instead.
+`WorldTransform` is a read-only derived cache. Instance reads preserve it and
+`Size` when supplied by Studio or the saved level, so callers can inspect spatial
+data and place cameras. Readback does not imply writability: upsert rejects
+`WorldTransform` for both additions and updates. Discover the class's writable
+transform properties through live schema search instead. Missing values are not
+synthesized, and the legacy file backend can contain stale cached values.
 
 If v1 upsert's apply call fails, it restores the original file bytes only when
 the file still matches the bytes written by that upsert. A later external save

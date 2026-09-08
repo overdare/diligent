@@ -133,10 +133,13 @@ contract and regression checks; no live world was modified in this follow-up.
 
 ## Premerge property and file recovery follow-up
 
-The dynamic property boundary now excludes the derived WorldTransform cache from
-instance.read properties and rejects it in both add and update upserts. Tagged
-values and unknown future properties remain intact; the static class catalog is
-not restored. Both v1 and v2 use this shared property boundary.
+The dynamic property boundary preserves the derived WorldTransform cache in
+instance.read properties as read-only spatial information, alongside Size when
+present, and rejects WorldTransform in both add and update upserts. The old static
+read projection omitted it, but the old geometry guidance expected it for camera
+placement; keeping that omission would perpetuate the inconsistency. Tagged values
+and unknown future properties remain intact; the static class catalog is not
+restored. Both v1 and v2 use this shared property boundary.
 
 The v1 upsert path now retains pre-write bytes and attempts to restore them when
 level.apply rejects. It checks that the file still matches the upsert's output

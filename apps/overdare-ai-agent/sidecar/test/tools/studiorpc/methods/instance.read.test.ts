@@ -24,9 +24,10 @@ describe("instance.read arguments", () => {
     expect(() => params.parse(normalizeArgs({ recursive: true }))).not.toThrow();
     expect(params.parse(normalizeArgs({ recursive: true })).guid).toBeUndefined();
   });
-  test("preserves tagged and future properties through recursive reads while separating identities", () => {
+  test("preserves read-only WorldTransform, Size, and future properties through recursive reads", () => {
     const color = { ObjectType: "Color3", R: 1, G: 2, B: 3 };
     const cframe = { ObjectType: "CFrame", Position: { ObjectType: "Vector3", X: 1, Y: 2, Z: 3 } };
+    const size = { ObjectType: "Vector3", X: 100, Y: 200, Z: 300 };
     expect(
       toReadableNode(
         {
@@ -35,7 +36,8 @@ describe("instance.read arguments", () => {
           ObjectKey: 123,
           Name: "Part",
           Color: color,
-          WorldTransform: { cached: true },
+          WorldTransform: cframe,
+          Size: size,
           Future: { Opaque: true },
           LuaChildren: [
             {
@@ -43,7 +45,8 @@ describe("instance.read arguments", () => {
               ActorGuid: "C",
               Name: "Child",
               CFrame: cframe,
-              WorldTransform: { cached: true },
+              WorldTransform: cframe,
+              Size: size,
             },
           ],
         },
@@ -53,8 +56,15 @@ describe("instance.read arguments", () => {
       guid: "P",
       name: "Part",
       class: "Part",
-      properties: { Color: color, Future: { Opaque: true } },
-      children: [{ guid: "C", name: "Child", class: "FutureClass", properties: { CFrame: cframe } }],
+      properties: { Color: color, WorldTransform: cframe, Size: size, Future: { Opaque: true } },
+      children: [
+        {
+          guid: "C",
+          name: "Child",
+          class: "FutureClass",
+          properties: { CFrame: cframe, WorldTransform: cframe, Size: size },
+        },
+      ],
     });
   });
   test("read filtering removes instance metadata without applying write restrictions", () => {
