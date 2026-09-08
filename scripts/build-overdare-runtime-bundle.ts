@@ -12,7 +12,6 @@ const SIDECAR = resolve(OVERDARE_CLI, "sidecar");
 const DIST = resolve(ROOT, "dist");
 const DIAGNOSTICS_DIR = resolve(OVERDARE_CLI, ".diligent/diagnostics");
 const BOOTSTRAP_DIR = resolve(OVERDARE_CLI, "bootstrap");
-const SIDECAR_ASSETS = resolve(OVERDARE_CLI, "sidecar/assets");
 type PlatformConfig = {
   id: string;
   bunTarget: string;
@@ -113,14 +112,15 @@ function maybeStageRg(platform: PlatformConfig, stageDir: string): void {
   cpSync(source, target);
 }
 
-export function stageSidecarAssets(platform: PlatformConfig, stageDir: string): void {
-  const binDir = join(stageDir, "assets", "bin");
-  const luaDir = join(stageDir, "assets", "lua");
-  mkdirSync(binDir, { recursive: true });
-  mkdirSync(luaDir, { recursive: true });
-  const luauLspName = platform.id === "windows-x64" ? "luau-lsp.exe" : "luau-lsp";
-  cpSync(resolve(SIDECAR_ASSETS, "bin", luauLspName), join(binDir, luauLspName));
-  cpSync(resolve(SIDECAR_ASSETS, "lua", "overdare-types.d.lua"), join(luaDir, "overdare-types.d.lua"));
+/**
+ * The bundle keeps `assets/bin` and `assets/lua` in its layout even though nothing is staged
+ * into them any more: the retired procedural runner took the Luau interpreter with it, and
+ * Studio's own `lua.validate` replaced the bundled luau-lsp and its type definitions. The
+ * sidecar still resolves `assets/bin` for `rg`.
+ */
+export function stageSidecarAssets(stageDir: string): void {
+  mkdirSync(join(stageDir, "assets", "bin"), { recursive: true });
+  mkdirSync(join(stageDir, "assets", "lua"), { recursive: true });
 }
 
 function zipRuntimeBundle(stageDir: string, outPath: string): void {
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
 
   cpSync(sidecarPath, join(stageDir, `diligent-web-server${platform.ext}`));
   stageWebClient(resolve(SIDECAR, "dist/client"), stageDir);
-  stageSidecarAssets(platform, stageDir);
+  stageSidecarAssets(stageDir);
   stageBootstrap(stageDir);
   maybeStageRg(platform, stageDir);
 

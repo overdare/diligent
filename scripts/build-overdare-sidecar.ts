@@ -1,12 +1,11 @@
 // @summary Build a fresh standalone diligent-web-server binary for local overdare-ai-agent diagnostics.
 
-import { cp, mkdir, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OVERDARE_SIDECAR = resolve(ROOT, "apps/overdare-ai-agent/sidecar");
-const SIDECAR_ASSETS = resolve(OVERDARE_SIDECAR, "assets");
 const OUT_DIR = resolve(ROOT, "apps/overdare-ai-agent/.diligent/diagnostics");
 
 const TARGET_BY_PLATFORM = new Map<string, string>([
@@ -18,10 +17,6 @@ const TARGET_BY_PLATFORM = new Map<string, string>([
 
 function executableExtension(platformKey: string): string {
   return platformKey === "windows-x64" ? ".exe" : "";
-}
-
-function luauLspName(platformKey: string): string {
-  return platformKey === "windows-x64" ? "luau-lsp.exe" : "luau-lsp";
 }
 
 function currentPlatformKey(): string {
@@ -76,11 +71,6 @@ async function run(): Promise<void> {
   await rm(assetsDir, { recursive: true, force: true });
   await mkdir(resolve(assetsDir, "bin"), { recursive: true });
   await mkdir(resolve(assetsDir, "lua"), { recursive: true });
-  await cp(
-    resolve(SIDECAR_ASSETS, "bin", luauLspName(platformKey)),
-    resolve(assetsDir, "bin", luauLspName(platformKey)),
-  );
-  await cp(resolve(SIDECAR_ASSETS, "lua", "overdare-types.d.lua"), resolve(assetsDir, "lua", "overdare-types.d.lua"));
 
   console.log(outPath);
 }

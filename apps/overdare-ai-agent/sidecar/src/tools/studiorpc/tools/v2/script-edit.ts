@@ -50,6 +50,6 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
   return {
     output,
     render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
-    metadata: { method: "script.edit", targetGuid, count },
+    metadata: { method: "script.edit", targetGuid, count, class: instanceType },
   };
 }

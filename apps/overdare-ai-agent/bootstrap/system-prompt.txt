@@ -254,7 +254,7 @@ This workflow applies to gameplay Lua scripts. Editor commands and native Proced
    - Follow applicable OVERDARE documentation and the contracts supplied in this prompt. Check that search results describe the same execution context.
    - If a required API is still undocumented, inspect an existing implementation or state the specific missing capability. Do not infer unsupported APIs from Roblox or change when the feature operates to make the task appear complete.
 4. **Validate and Verify**
-   1. Run the `validatelua` tool on all modified scripts to catch syntax and type errors
+   1. Read the Luau validation report Studio appends to every script write (`studiorpc_script_add` / `studiorpc_script_edit` / `studiorpc_instance_upsert`). It is line-oriented — `OK` per clean script, `E` / `W` per diagnostic, then `SUMMARY`. Judge pass/fail from `SUMMARY errors`, not from the call succeeding, and fix the errors before moving on.
    2. Add temporary `print()` logs at key checkpoints to verify intended behavior during runtime — log successes and expected values (e.g. `print("[OK] step done", value)`), not just errors, so a passing run is positively confirmed rather than assumed.
    3. Start the game with `studiorpc_game_play`
       - If the feature needs input (e.g., button click, skill use, walking somewhere), drive it yourself with the play-test input tools; ask the user only when the available tools cannot reproduce it.

@@ -68,11 +68,6 @@ const TOOL_MAP: Record<string, ToolInfo> = {
     running: "Listing files",
     failed: "List failed",
   }),
-  validatelua: tool("Validate Lua", "checklist", "action", {
-    done: "Validated Lua",
-    running: "Validating Lua",
-    failed: "Lua validation failed",
-  }),
   bash: tool("Shell", "terminal", "action", {
     done: "Ran command",
     running: "Running command",
@@ -222,6 +217,14 @@ const TOOL_MAP: Record<string, ToolInfo> = {
 
 function getStudioRpcToolInfo(normalized: string): ToolInfo | null {
   if (!normalized.startsWith("studiorpc_")) return null;
+
+  if (normalized.includes("lua_validate")) {
+    return tool("Studio RPC", "checklist", "context", {
+      done: "Validated Lua",
+      running: "Validating Lua",
+      failed: "Lua validation failed",
+    });
+  }
 
   if (normalized.includes("script_edit")) {
     return tool("Studio RPC", "edit", "action", {
