@@ -7,6 +7,10 @@ import { type GenerateCodexImage, generateCodexImage } from "../codex-imagegen/g
 import { type GeneratedImageSource, type StoredImage, storeGeneratedImage } from "./image-store";
 
 const TOOL_NAME = "generate_image";
+const IMAGE_FAILURE_GUIDANCE =
+  "If generation fails, stop image work and report the error. " +
+  "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
+  "unless the user explicitly approves an alternative.";
 
 const parameters = z
   .object({
@@ -53,7 +57,8 @@ function createGenerateImageTool(
       "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
       "Returns the exact absolute output file path and a preview. To use it in OVERDARE Studio, separately " +
       "pass that file to studiorpc_asset_manager_image_import, then bind the returned asset.assetid to the target " +
-      "ImageLabel or ImageButton.",
+      "ImageLabel or ImageButton. " +
+      IMAGE_FAILURE_GUIDANCE,
     parameters,
     supportParallel: false,
     async execute(args, ctx) {
@@ -69,13 +74,19 @@ function createGenerateImageTool(
       }
 
       ctx.signal.throwIfAborted();
-      const generated = await generateImageForProvider(
-        { cwd, provider, prompt: args.prompt, signal: ctx.signal },
-        options,
-      );
-      ctx.signal.throwIfAborted();
-      const stored = await storeGeneratedImage(cwd, generated.image, { signal: ctx.signal });
-      return buildImageToolResult(stored, generated);
+      try {
+        const generated = await generateImageForProvider(
+          { cwd, provider, prompt: args.prompt, signal: ctx.signal },
+          options,
+        );
+        ctx.signal.throwIfAborted();
+        const stored = await storeGeneratedImage(cwd, generated.image, { signal: ctx.signal });
+        return buildImageToolResult(stored, generated);
+      } catch (error) {
+        ctx.signal.throwIfAborted();
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`${reason}\n\n${IMAGE_FAILURE_GUIDANCE}`, { cause: error });
+      }
     },
   };
 }
