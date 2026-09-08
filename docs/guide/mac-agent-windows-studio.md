@@ -182,6 +182,32 @@ When set, the sidecar `--cwd` becomes this path so edit tools modify the live wo
 >
 > The mounted project folder does **not** contain the bundle skills — the exe installs skills into **HOME `~/.overdare/skills`**, not the project (`init.rs` -> `global_storage_dir`). So even when you "mount and edit the world", **skills still come from the symlinked Mac global**. You need both.
 
+#### Image import during cross-machine development
+
+Studio's image import reads a path on the **Studio machine**; it does not read the Mac's
+`/Volumes/...` namespace. For a shared project, configure the two names of the same directory
+in the gitignored `.env.local` file:
+
+```sh
+STUDIO_LOCAL_FILE_ROOT=/Volumes/StudioProject
+STUDIO_REMOTE_FILE_ROOT='\\10.40.32.103\StudioProject'
+```
+
+Use the actual Windows share name or its Windows local directory as the remote root, then
+restart `make dev-cross`. The launcher prints and exports the mapping. Explicit shell values
+override `.env.local`.
+
+This adapter is enabled **only with `--dev`** and only rewrites `asset_manager.image.import`.
+The chat tools and that dev sidecar's HTTP/MCP router use the same adapter. The model keeps
+passing the original absolute local image path; the dev boundary maps its relative suffix to
+the Studio root. Already mapped Studio paths are preserved, and paths outside both roots are
+rejected before RPC. This maps an existing shared file; it does not copy or convert images.
+Normal Windows product execution and standalone MCP keep their existing behavior.
+
+An `Invalid file` response alone does not establish a PNG/JPEG compatibility problem. Check
+the mapped path's accessibility from Studio first. Keep a failed import blocked rather than
+marking it complete or substituting template icons without approval.
+
 #### SMB share + mount + write permission (required for editing)
 
 Editing means **writing** to the mounted `.ovdrjm`. If the mount is read-only it fails with `EACCES: permission denied ... .ovdrjm`. All of the following must hold.

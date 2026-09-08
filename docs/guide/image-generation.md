@@ -28,9 +28,19 @@ The result includes an absolute `file` path, the selected `provider`, its authen
 A provider failure is returned to the caller without automatically retrying
 with another provider.
 
+The tool description and failure output instruct the model to stop image work and report the
+error. Code-drawn images (PIL, SVG, or canvas), stock assets, and other providers are not
+substitutes unless the user explicitly approves an alternative. This is a model-facing
+instruction, not a restriction on general-purpose file or shell tools.
+
 For Studio workflows, pass the returned `file` directly to
 `studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
+
+When developing with a Mac agent and remote Windows Studio, configure the dev-only shared
+file-root mapping described in [the cross-Studio guide](./mac-agent-windows-studio.md#image-import-during-cross-machine-development).
+Image generation does not depend on this mapping; only the dev Studio RPC boundary converts
+the local file path before import.
 
 ## Credentials and local setup
 
@@ -38,6 +48,17 @@ Codex requires a local CLI signed in with managed ChatGPT OAuth and an account e
 image generation. It does not use Diligent's ChatGPT token store or an OpenAI API key.
 The executable defaults to `codex` on PATH; `DILIGENT_CODEX_BIN` can point to another
 installed Codex executable.
+
+For local development, set `DILIGENT_CODEX_BIN` in the gitignored `.env.local` file to the
+compatible installation you intend to test. For example, when using the CLI bundled with the
+macOS ChatGPT app:
+
+```sh
+DILIGENT_CODEX_BIN=/Applications/ChatGPT.app/Contents/Resources/codex
+```
+
+Restart the dev backend after changing it. The launcher logs the selected executable; check
+that executable's `--version` rather than assuming it is the same `codex` found on PATH.
 
 The CLI must support the model selected in the local Codex configuration. A successful
 account/capability check does not establish model-version compatibility. If Codex reports
