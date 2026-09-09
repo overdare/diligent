@@ -2,7 +2,7 @@
 // exposed as MCP tools, and bootstrap agents exposed as MCP prompts, via an in-memory MCP client.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveExperimentStates } from "@diligent/runtime";
@@ -27,12 +27,23 @@ const schemaSearchMock = mock(async (_params?: Record<string, unknown>) => ({
     },
   ],
 }));
+const nativeCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string, params?: Record<string, unknown>) => {
     if (method === "instance.schema.search") return schemaSearchMock(params);
+    if (
+      ["proceduralmodel.api", "proceduralmodel.validate", "proceduralmodel.set", "instance.create"].includes(method)
+    ) {
+      nativeCalls.push({ method, params: structuredClone(params) });
+      if (method === "proceduralmodel.api")
+        return { success: true, template: "template", lookup: {}, presets: ["Plank"] };
+      if (method === "proceduralmodel.validate") return { ok: true, findings: [] };
+      if (method === "instance.create") return { ActorGuids: ["RPC-MODEL"] };
+      return { success: true, run: { success: true, parts: [{ name: "body" }] } };
+    }
     if (method === "level.browse") return levelBrowseMock();
     throw new Error(`Unexpected RPC method in test: ${method}`);
   },
@@ -192,6 +203,55 @@ describe("OVERDARE MCP server", () => {
       expect(tools.tools.map((t) => t.name)).not.toContain("studiorpc_instance_upsert");
     } finally {
       await client.close();
+    }
+  });
+
+  test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {
+    const client = await connectClient(await makeBootstrapDir());
+    const directory = await mkdtemp(join(tmpdir(), "native-rpc-mcp-"));
+    const sourcePath = join(directory, "recipe.py");
+    const source = "def on_generate(model, size, attributes):\n    pass";
+    await writeFile(sourcePath, `\uFEFF${source}`, "utf8");
+    nativeCalls.length = 0;
+    try {
+      const api = await client.callTool({ name: "studiorpc_proceduralmodel_api", arguments: {} });
+      expect(api.isError).not.toBe(true);
+      const validation = await client.callTool({
+        name: "studiorpc_proceduralmodel_validate",
+        arguments: { sourcePath },
+      });
+      expect(validation.isError).not.toBe(true);
+      const baked = await client.callTool({
+        name: "studiorpc_proceduralmodel_set",
+        arguments: {
+          name: "Probe",
+          parentGuid: "WORKSPACE_GUID",
+          sourcePath,
+          rebuild: true,
+        },
+      });
+      expect(baked.isError).not.toBe(true);
+      expect(nativeCalls).toEqual([
+        { method: "proceduralmodel.api", params: {} },
+        { method: "proceduralmodel.validate", params: { code: source } },
+        {
+          method: "instance.create",
+          params: {
+            ParentActorGuid: "WORKSPACE_GUID",
+            Instances: [{ InstanceType: "ProceduralModel", Name: "Probe" }],
+          },
+        },
+        { method: "proceduralmodel.set", params: { guid: "RPC-MODEL", source, rebuild: true } },
+      ]);
+      const content = baked.content as Array<{ type: string; text: string }>;
+      expect(JSON.parse(content[0].text)).toMatchObject({
+        guid: "RPC-MODEL",
+        created: true,
+        run: { success: true, parts: [{ name: "body" }] },
+      });
+    } finally {
+      await client.close();
+      await rm(directory, { recursive: true, force: true });
     }
   });
 

@@ -330,3 +330,53 @@ describe("proceduralmodel.set forwarding through the tool wrapper", () => {
     expect(JSON.parse(executed.output)).toMatchObject({ success: true, guid: "MADEGUID", created: true });
   });
 });
+
+describe("native bake execution boundaries", () => {
+  test("rejecting approval sends neither creation nor bake RPCs", async () => {
+    const calls: string[] = [];
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async (method) => {
+        calls.push(method);
+        return {};
+      },
+    }).createTools({ cwd: "/tmp/project", host: { approve: async () => "reject" } });
+    const result = await tools
+      .find((t) => t.name === "studiorpc_proceduralmodel_set")!
+      .execute({ name: "Probe", source: RECIPE, rebuild: true }, toolContext());
+    expect(result.metadata?.error).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  test("two bake calls share the write lock", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((r) => {
+      release = r;
+    });
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    const calls: string[] = [];
+    const tools = await loadTools(async ({ method, params }) => {
+      if (method !== "proceduralmodel.set") throw new Error(method);
+      calls.push(String(params?.guid));
+      if (params?.guid === "A") {
+        entered();
+        await blocked;
+      }
+      return { success: true };
+    });
+    const tool = tools.get("studiorpc_proceduralmodel_set")!;
+    const first = tool.execute({ guid: "A", rebuild: true }, toolContext());
+    await started;
+    const second = tool.execute({ guid: "B", rebuild: true }, toolContext());
+    try {
+      await Bun.sleep(0);
+      expect(calls).toEqual(["A"]);
+    } finally {
+      release();
+    }
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["A", "B"]);
+  });
+});
