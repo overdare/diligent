@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalImageLoader } from "@diligent/core/image-contract";
 import { getDefaultModelRef } from "@diligent/core/model-registry";
-import type { Model } from "@diligent/core/provider-contract";
+import type { ImageGenerationFn, Model } from "@diligent/core/provider-contract";
 import { ProviderManager } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { z } from "zod";
@@ -349,6 +349,46 @@ describe("createAppServerConfig", () => {
     });
 
     expect(agent.tools.map((tool) => tool.name)).toContain("factory_bundled_tool");
+  });
+
+  it("assembles a selected-provider image capability that resolves the current OAuth login", async () => {
+    const runtimeConfig = makeRuntimeConfig();
+    const generated = { bytes: new Uint8Array([1]), mediaType: "image/png" as const, requestedModel: "test" };
+    const calls: string[] = [];
+    const installAuth = (name: string) =>
+      runtimeConfig.providerManager.setExternalAuth("chatgpt", {
+        isConfigured: () => true,
+        getStream: () => runtimeConfig.streamFunction,
+        getImageGeneration: () => async () => {
+          calls.push(name);
+          return generated;
+        },
+      });
+    installAuth("first");
+    let generate: ImageGenerationFn | undefined;
+    const config = createAppServerConfig({
+      cwd: "/tmp/test",
+      runtimeConfig,
+      bundledToolProviders: [
+        {
+          id: "image-test",
+          createTools: (context) => {
+            generate = context.generateImage;
+            return [];
+          },
+        },
+      ],
+    });
+    await config.createAgent({
+      cwd: "/tmp/test",
+      model: getDefaultModelRef("chatgpt"),
+      approve: async () => "once",
+      ask: async () => null,
+    });
+    expect(generate).toBeDefined();
+    installAuth("second");
+    expect(await generate!({ prompt: "Coin", model: "test" })).toBe(generated);
+    expect(calls).toEqual(["second"]);
   });
 
   it("transforms the final mode-filtered tool list without changing the default path", async () => {

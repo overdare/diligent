@@ -7,6 +7,7 @@ import { flattenSections } from "../../system-sections";
 import type { Model, ProviderEvent, ProviderResult, StreamContext, StreamFunction, StreamOptions } from "../../types";
 import { ProviderError, ProviderErrorType } from "../../types";
 
+export { type ChatGPTImageGenerationOptions, createChatGPTImageGeneration } from "./image-generation";
 export { createChatGPTNativeCompaction } from "./native-compaction";
 
 import { buildResponsesRequestBody, toResponsesLiteRequestBody, usesResponsesLite } from "../openai/responses";

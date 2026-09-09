@@ -7,12 +7,13 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt` and optional `referenceImages` file paths. The runtime
+`generate_image` accepts a `prompt`, optional `referenceImages` file paths, an optional image
+`model`, and `background` (`auto`, `opaque`, or `transparent`; omitted means `auto`). The runtime
 binds it to the selected chat provider:
 
 | Selected chat provider | Behavior |
 |---|---|
-| `chatgpt` | Use the local Codex CLI's managed ChatGPT OAuth account. |
+| `chatgpt` | Call the subscription image endpoint with Diligent's ChatGPT OAuth binding. |
 | Other or unknown | Do not expose the image-generation tool. |
 
 The model cannot override this selection through a tool argument. Only ChatGPT exposes image
@@ -24,7 +25,14 @@ and does not tell the model to switch providers or fabricate a mockup. Previousl
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
 The result includes an absolute `file` path, the selected `provider`, its authentication
-`source`, and an image preview. Codex may also return `revisedPrompt`.
+`source` (`chatgpt-oauth`), and an image preview. `requestedModel` and `requestedBackground`
+record the request. `model` and `background` are included only when reported by the backend;
+they are not inferred from the prompt, filename, or HTTP success.
+For `background: "transparent"`, `transparency` separately reports decoded original-pixel
+counts and a status: `has_transparency`, `opaque`, `empty`, or `unknown` if inspection was
+unavailable. Opaque/empty outputs include a warning and repair guidance but retain their saved
+file for reference-driven retries. Pixel transparency does not establish clean edges or correct
+placement; inspect the artwork before importing it.
 A provider failure is returned to the caller without automatically retrying
 with another provider.
 
@@ -87,10 +95,18 @@ with native controls and an explicit report of the substituted artwork, preservi
 assets. A missing remote screenshot is first resolved to a verified agent-host path rather than
 being discarded to bypass the failed generation.
 
+The optional temporary chroma-key path for opaque assets generates a flat green (or blue) background
+and runs the skill's `scripts/chroma_key.py` locally to create a separate RGBA PNG. It requires a
+host Python 3 environment with Pillow; Diligent does not install it. The script preserves the source,
+refuses output overwrite, and removes key-color contamination from keyed edge pixels. The key must
+not appear in the subject, and translucent materials keep the normal alpha workflow. Only the
+processed PNG is imported into Studio. Image calls retain the same retry budget.
+
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before
 the tool reads them. References must be existing non-empty files and are never overwritten.
-Codex receives them as `localImage` input attachments, not merely filenames in prompt text.
+References are sent as inline image data to the edits endpoint, not merely filenames in prompt text.
+Each file must be at most 32 MiB.
 
 Finish the game-specific guide or anchor image first, then issue independent `generate_image` calls together
 using the same references. The tool supports parallel execution and saves each result under a
@@ -100,26 +116,24 @@ generation improves consistency but does not guarantee identical pixels.
 
 ## Credentials and local setup
 
-Codex requires a local CLI signed in with managed ChatGPT OAuth and an account exposing
-image generation. It does not use Diligent's ChatGPT token store or an OpenAI API key.
-The executable defaults to `codex` on PATH; `DILIGENT_CODEX_BIN` can point to another
-installed Codex executable.
+Sign in to ChatGPT in Diligent. Image calls reuse its live OAuth binding and the same
+single-flight refresh used by chat requests. No Codex executable, Codex configuration, or
+separate API key is required. Credentials stay behind the provider boundary; bundled tools
+receive a generation capability, not tokens or a credential-store reader.
 
-For local development, set `DILIGENT_CODEX_BIN` in the gitignored `.env.local` file to the
-compatible installation you intend to test. For example, when using the CLI bundled with the
-macOS ChatGPT app:
+The client calls `https://chatgpt.com/backend-api/codex/images/generations`, or `images/edits`
+when references are present. It sends the requested model and background explicitly and asks
+for PNG output. These subscription endpoints are distinct from the public API-key Images API.
+Their acceptance of a model string is not proof of model selection: a diagnostic request using
+an invalid model name also returned an image. The default requested model is
+`gpt-image-2.5-sunburst`; actual 2.5 serving has not been established.
 
-```sh
-DILIGENT_CODEX_BIN=/Applications/ChatGPT.app/Contents/Resources/codex
-```
-
-Restart the dev backend after changing it. The launcher logs the selected executable; check
-that executable's `--version` rather than assuming it is the same `codex` found on PATH.
-
-The CLI must support the model selected in the local Codex configuration. A successful
-account/capability check does not establish model-version compatibility. If Codex reports
-that the selected model needs a newer CLI, use a compatible installation. The tool does not
-upgrade the CLI or change the user's model configuration.
+For transparent assets, pass `background: "transparent"` and inspect the delivered pixels.
+Neither PNG format, a successful response, nor an alpha channel alone proves a transparent
+background. Explicit-background requests have produced both real RGBA and opaque RGB in
+[upstream reports](https://github.com/openai/codex/issues/40572). Keep requested settings,
+reported settings, and actual alpha inspection separate; follow the repair budget above
+when the returned image is unusable.
 
 ## Storage and execution
 
@@ -138,39 +152,23 @@ Standalone MCP, the HTTP MCP router, and the product tool CLI do not receive the
 model provider, so they do not expose `generate_image`. They do not infer it from credentials,
 client names, or a different chat's persisted configuration.
 
-The Codex adapter uses one process per generation, with separate responsibilities:
-
-- `process.ts` owns process lifetime and line I/O.
-- `rpc-client.ts` continuously reads the wire, correlates responses by request ID, and buffers
-  notifications with the existing core `EventStream`. Waiting for a response never stops
-  notification delivery, and unread notifications never block a response.
-- `protocol.ts` validates the consumed fields with Zod and infers TypeScript types from those
-  schemas, without vendored protocol declarations.
-- `app-server-client.ts` starts a turn and collects its images. Success requires both the start
-  acknowledgement and successful completion; either request failure or turn failure rejects
-  immediately, regardless of their arrival order.
-- `generate.ts` checks authentication/capability, selects the last usable saved image from the
-  completed turn, and closes the client in `finally`. It does not handle wire ordering.
-
-The request/event separation follows the
-[official client design](https://github.com/openai/codex/blob/5ecb3afd1bf405149e2159bfda50093b0c1b5fab/codex-rs/app-server-client/src/remote.rs#L255)
-without embedding the Rust runtime or copying its generated types. The adapter validates only
-the fields it consumes; unrelated response fields do not require local type declarations.
-
-Codex uses one five-minute deadline covering initialization, authentication and capability
-checks, thread creation, and image generation.
+Image generation uses direct HTTP with a five-minute deadline covering reference loading,
+authentication readiness, generation, and saving. Cancelling a caller waiting for shared token
+refresh does not cancel other callers' refresh. If the login changes during readiness, the
+request fails instead of using the previous account.
 Cancellation propagates through direct MCP calls and the HTTP router endpoint to the provider.
 The Rust MCP router continues reading cancellation notifications while keeping tool calls
 serial; cancelling an active call drops its HTTP request, and cancelling a queued call removes
 it before execution.
 
-Codex processes are stopped and reaped on success, cancellation, and failure, with forced
-termination if graceful shutdown is ignored. Cancelled generations do not advance into saving;
+No child process or ephemeral chat thread is created. Cancelled generations do not advance into saving;
 an interrupted file write removes its partial output.
 
 ## Ownership
 
-- `sidecar/src/tools/codex-imagegen/`: Codex transport, account checks, and image-turn events.
+- `packages/core/src/llm/provider/chatgpt/image-generation.ts`: Direct OAuth HTTP request/response handling.
+- `packages/core/src/llm/provider-manager.ts`: Live provider capability selection and authentication readiness.
+- `packages/runtime/src/auth/provider-auth.ts`: Shared ChatGPT OAuth tokens and refresh lock.
 - `sidecar/src/tools/image-generation/image-store.ts`: Provider-independent local storage.
 - `sidecar/src/tools/image-generation/index.ts`: Tool approval, provider selection, and result assembly.
 - `sidecar/src/tools/studiorpc/`: Existing Studio import and level persistence.

@@ -1,6 +1,6 @@
 // @summary Exercises the real agent scheduler with independent image requests and isolated outputs.
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@diligent/core/agent";
@@ -11,16 +11,14 @@ import { createImageGenerationToolProvider } from "../../../src/tools/image-gene
 
 test("independent image calls overlap in the agent loop and save to distinct files", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "parallel-images-"));
-  const source = join(cwd, "source.png");
-  await writeFile(source, "fixture image");
   const bothStarted = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let started = 0;
   const tools = await createImageGenerationToolProvider({
-    generateCodexImage: async () => {
+    generateImage: async (input) => {
       if (++started === 2) bothStarted.resolve();
       await release.promise;
-      return { sourcePath: source };
+      return { bytes: Buffer.from("fixture image"), mediaType: "image/png", requestedModel: input.model };
     },
   }).createTools({ cwd, modelProvider: "chatgpt" });
   const model: Model = {

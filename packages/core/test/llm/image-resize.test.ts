@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_LONG_EDGE,
   downscaleImageIfNeeded,
   imageDimensionsFromHeader,
+  inspectImageAlpha,
   withImageDownscaling,
 } from "../../src/llm/image-resize";
 
@@ -45,6 +46,31 @@ beforeAll(async () => {
 });
 
 describe("downscaleImageIfNeeded", () => {
+  test("alpha inspection counts real pixel alpha rather than the presence of a channel", async () => {
+    const image = solidImage(3, 1);
+    image.data[3] = 0;
+    image.data[7] = 128;
+    const encoded = await encodePng(image);
+    expect(await inspectImageAlpha(encoded, "image/png")).toEqual({
+      width: 3,
+      height: 1,
+      transparentPixels: 1,
+      partialPixels: 1,
+      opaquePixels: 1,
+    });
+    expect(await inspectImageAlpha(smallPng, "image/png")).toEqual({
+      width: 100,
+      height: 80,
+      transparentPixels: 0,
+      partialPixels: 0,
+      opaquePixels: 8000,
+    });
+  });
+
+  test("alpha inspection reports unknown without decoding oversized or invalid images", async () => {
+    expect(await inspectImageAlpha(pngHeaderOnly(20000, 20000), "image/png")).toBeNull();
+    expect(await inspectImageAlpha(new ArrayBuffer(0), "image/png")).toBeNull();
+  });
   test("returns the original bytes unchanged when the long edge is under the cap", async () => {
     const result = await downscaleImageIfNeeded(smallPng, "image/png");
     expect(result.bytes).toBe(smallPng);

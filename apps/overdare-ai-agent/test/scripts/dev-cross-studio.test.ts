@@ -40,17 +40,12 @@ function createLauncherFixture(overrides: Partial<NodeJS.ProcessEnv> = {}): {
   copyFileSync(LAUNCHER_SOURCE, join(scripts, "dev-cross-studio.sh"));
   writeFileSync(
     join(root, ".env.local"),
-    [
-      "DILIGENT_CODEX_BIN=/from-env-file/codex",
-      "STUDIO_LOCAL_FILE_ROOT=/from-env-file/local",
-      "STUDIO_REMOTE_FILE_ROOT=//from-env-file/share",
-      "",
-    ].join("\n"),
+    ["STUDIO_LOCAL_FILE_ROOT=/from-env-file/local", "STUDIO_REMOTE_FILE_ROOT=//from-env-file/share", ""].join("\n"),
     "utf8",
   );
   writeExecutable(
     join(bin, "bun"),
-    '#!/usr/bin/env bash\nprintf \'bun %s local=%s remote=%s\\n\' "$*" "$STUDIO_LOCAL_FILE_ROOT" "$STUDIO_REMOTE_FILE_ROOT" >> "$DILIGENT_TEST_CALL_LOG"\nprintf \'codex-env %s\\n\' "$DILIGENT_CODEX_BIN" >> "$DILIGENT_TEST_CALL_LOG"\n',
+    '#!/usr/bin/env bash\nprintf \'bun %s local=%s remote=%s\\n\' "$*" "$STUDIO_LOCAL_FILE_ROOT" "$STUDIO_REMOTE_FILE_ROOT" >> "$DILIGENT_TEST_CALL_LOG"\n',
   );
   writeExecutable(
     join(bin, "lsof"),
@@ -73,7 +68,6 @@ function createLauncherFixture(overrides: Partial<NodeJS.ProcessEnv> = {}): {
     env: {
       ...process.env,
       BASH_ENV: bashEnv,
-      DILIGENT_CODEX_BIN: "/explicit/codex",
       DILIGENT_TEST_CALL_LOG: callLog,
       HOME: home,
       PATH: `${bin}:${process.env.PATH}`,
@@ -101,29 +95,14 @@ describe("dev-cross-studio launcher", () => {
     return invocation;
   }
 
-  test.each([
-    { source: "explicit environment", explicit: true, file: true, expected: "/explicit/codex" },
-    { source: ".env.local", explicit: false, file: true, expected: "/from-env-file/codex" },
-    { source: "PATH", explicit: false, file: false, expected: "" },
-  ])("passes the executable selected from $source to both dev processes and only cleans up listeners", ({
-    explicit,
-    file,
-    expected,
-  }) => {
+  test("only cleans up listening processes before launching both dev processes", () => {
     const fixture = createLauncherFixture();
-    if (!explicit) delete fixture.env.DILIGENT_CODEX_BIN;
-    if (!file) writeFileSync(join(fixture.root, ".env.local"), "", "utf8");
 
     const result = runLauncher(fixture);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`> Codex executable: ${expected || "codex (PATH)"}`);
-    if (!file) expect(result.stdout).not.toContain("> Studio file roots:");
     const calls = readFileSync(fixture.callLog, "utf8").split("\n");
-    expect(calls.filter((line) => line.startsWith("codex-env "))).toEqual([
-      `codex-env ${expected}`,
-      `codex-env ${expected}`,
-    ]);
+    expect(calls.filter((line) => line.startsWith("bun "))).toHaveLength(2);
     const listenerQueries = calls.filter((line) => line.startsWith("lsof "));
     expect(listenerQueries).toEqual([
       "lsof -nP -t -iTCP:7433 -sTCP:LISTEN",

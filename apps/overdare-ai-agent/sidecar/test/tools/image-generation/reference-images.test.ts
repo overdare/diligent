@@ -20,9 +20,9 @@ async function setup() {
   directories.push(cwd);
   const file = join(cwd, "mockup.png");
   await writeFile(file, png);
-  const generate = mock(async () => ({ sourcePath: file }));
+  const generate = mock(async () => ({ bytes: png, mediaType: "image/png" as const, requestedModel: "requested" }));
   const approve = mock(async () => "once" as const);
-  const [tool] = await createImageGenerationToolProvider({ generateCodexImage: generate }).createTools({
+  const [tool] = await createImageGenerationToolProvider({ generateImage: generate }).createTools({
     cwd,
     modelProvider: "chatgpt",
     host: { approve },
@@ -43,10 +43,13 @@ async function setup() {
 }
 
 test("attaches project-relative reference files to generation and retains the original", async () => {
-  const { cwd, file, generate, approve, call } = await setup();
+  const { file, generate, approve, call } = await setup();
   const result = await call({ prompt: "Keep this frame; change only the icon", referenceImages: ["mockup.png"] });
   expect(result.metadata?.error).not.toBe(true);
-  expect(generate).toHaveBeenCalledWith(expect.objectContaining({ cwd, referenceImages: [file] }));
+  expect(generate).toHaveBeenCalledWith(
+    expect.objectContaining({ referenceImages: [{ bytes: png, mediaType: "image/png" }] }),
+    { signal: expect.any(AbortSignal) },
+  );
   expect(approve).toHaveBeenCalledWith(
     expect.objectContaining({ details: expect.objectContaining({ referenceImages: ["mockup.png"] }) }),
   );
@@ -73,7 +76,10 @@ test.each([
 test("normalizes repeated references without changing their input order", async () => {
   const { file, generate, call } = await setup();
   await call({ prompt: "Variant", referenceImages: ["mockup.png", file] });
-  expect(generate).toHaveBeenCalledWith(expect.objectContaining({ referenceImages: [file] }));
+  expect(generate).toHaveBeenCalledWith(
+    expect.objectContaining({ referenceImages: [{ bytes: png, mediaType: "image/png" }] }),
+    { signal: expect.any(AbortSignal) },
+  );
 });
 
 test("an unreadable reference returns the retry policy through the tool executor without calling the provider", async () => {
@@ -88,7 +94,7 @@ test("an unreadable reference returns the retry policy through the tool executor
 
 test("rejecting generation does not inspect a missing reference or invoke the provider", async () => {
   const { cwd, generate } = await setup();
-  const [tool] = await createImageGenerationToolProvider({ generateCodexImage: generate }).createTools({
+  const [tool] = await createImageGenerationToolProvider({ generateImage: generate }).createTools({
     cwd,
     modelProvider: "chatgpt",
     host: { approve: async () => "reject" },

@@ -1,6 +1,7 @@
 // @summary Verifies cancellation propagation from MCP and HTTP requests into image providers.
 
 import { expect, test } from "bun:test";
+import type { ImageGenerationFn } from "@diligent/core/provider-contract";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { callRegistryTool, createMcpServer, type McpRegistries } from "../src/mcp-server";
@@ -11,7 +12,7 @@ async function cancellableImages() {
   const started = Promise.withResolvers<AbortSignal>();
   const stopped = Promise.withResolvers<boolean>();
   const cleanup = new AbortController();
-  const generate = async ({ signal }: { signal?: AbortSignal }): Promise<never> => {
+  const generate: ImageGenerationFn = async (_input, { signal } = {}): Promise<never> => {
     if (!signal) throw new Error("Missing provider signal");
     started.resolve(signal);
     return new Promise((_, reject) => {
@@ -27,7 +28,7 @@ async function cancellableImages() {
     });
   };
   const tools = await createImageGenerationToolProvider({
-    generateCodexImage: generate,
+    generateImage: generate,
   }).createTools({ cwd: process.cwd(), modelProvider: "chatgpt" });
   const registries: McpRegistries = {
     tools: new Map(tools.map((tool) => [tool.name, tool])),

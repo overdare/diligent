@@ -1,7 +1,7 @@
 // @summary Tests ChatGPT-bound image generation, unsupported-provider gating, and generate-and-store behavior.
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
@@ -29,8 +29,8 @@ async function toolFor(
 ): Promise<Tool> {
   const { cwd, approve, ...options } = input;
   const provider = createImageGenerationToolProvider({
-    generateCodexImage: async () => {
-      throw new Error("Unexpected Codex generation");
+    generateImage: async () => {
+      throw new Error("Unexpected image generation");
     },
     ...options,
   });
@@ -45,12 +45,56 @@ async function toolFor(
 }
 
 describe("generate_image", () => {
+  test.each([
+    {
+      status: "opaque",
+      reported: "transparent" as const,
+      warning: true,
+      png: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpH7z8XFxQAABvcBW4Wvy/wAAAAASUVORK5CYII=",
+    },
+    {
+      status: "has_transparency",
+      reported: "opaque" as const,
+      warning: false,
+      png: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPgEpH7z8DAwAAABpQBPFULoekAAAAASUVORK5CYII=",
+    },
+    {
+      status: "empty",
+      reported: "transparent" as const,
+      warning: true,
+      png: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAC0lEQVR4nGNggAIAAAkAAftSuKkAAAAASUVORK5CYII=",
+    },
+  ])("reports actual $status pixels independently of backend claims and preserves repairable bytes", async (fixture) => {
+    const { cwd, cleanup } = project();
+    const bytes = Buffer.from(fixture.png, "base64");
+    let calls = 0;
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => {
+          calls++;
+          return { bytes, mediaType: "image/png", requestedModel: input.model, background: fixture.reported };
+        },
+      });
+      const result = await tool.execute({ prompt: "Cutout", background: "transparent" }, context());
+      const output = JSON.parse(result.output);
+      expect(output.requestedBackground).toBe("transparent");
+      expect(output.background).toBe(fixture.reported);
+      expect(output.transparency.status).toBe(fixture.status);
+      expect(Boolean(output.transparency.warning)).toBe(fixture.warning);
+      if (fixture.warning) expect(output.guidance).toContain("initial call plus two retries");
+      expect(await readFile(output.file)).toEqual(bytes);
+      expect(calls).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
   test("describes the ChatGPT-bound Studio asset workflow", async () => {
     const tool = await toolFor({ cwd: "/repo" });
 
     expect(tool.description).toContain("UI mockup");
     expect(tool.description).toContain("referenceImages");
-    expect(tool.description).toContain("ChatGPT via local Codex OAuth");
+    expect(tool.description).toContain("Diligent ChatGPT OAuth");
     expect(tool.description).toContain("selected ChatGPT provider");
     expect(tool.description).toContain("cannot switch providers");
     expect(tool.description).toContain("exact absolute output file path");
@@ -70,7 +114,7 @@ describe("generate_image", () => {
   ] as const)("does not expose image generation for model provider %s", async (modelProvider) => {
     let generations = 0;
     const provider = createImageGenerationToolProvider({
-      generateCodexImage: async () => {
+      generateImage: async () => {
         generations += 1;
         throw new Error("Unexpected Codex generation");
       },
@@ -85,24 +129,34 @@ describe("generate_image", () => {
     expect(tool.parameters.safeParse({ prompt: "A coin", provider: "gemini" }).success).toBe(false);
   });
 
-  test("ChatGPT selection stores the Codex source-file fixture and returns its preview", async () => {
+  test("passes explicit model and background, stores returned bytes, and does not invent a reported model", async () => {
     const { cwd, cleanup } = project();
-    const sourcePath = join(cwd, "codex-output.webp");
-    const image = "codex-image";
-    writeFileSync(sourcePath, image);
+    const image = "generated-image";
     try {
       const tool = await toolFor({
         cwd,
-        generateCodexImage: async ({ prompt }) => ({ sourcePath, revisedPrompt: `${prompt} refined` }),
+        generateImage: async (input) => {
+          expect(input).toEqual({ prompt: "A red button", model: "requested-image-model", background: "transparent" });
+          return {
+            bytes: Buffer.from(image),
+            mediaType: "image/webp",
+            requestedModel: input.model,
+            background: "transparent",
+          };
+        },
       });
-      const result = await tool.execute({ prompt: "A red button" }, context());
+      const result = await tool.execute(
+        { prompt: "A red button", model: "requested-image-model", background: "transparent" },
+        context(),
+      );
       const output = JSON.parse(result.output);
       expect(output).toMatchObject({
         provider: "chatgpt",
-        source: "codex-oauth",
-        revisedPrompt: "A red button refined",
+        source: "chatgpt-oauth",
+        requestedModel: "requested-image-model",
+        background: "transparent",
       });
-      expect(output.file).not.toBe(sourcePath);
+      expect(output.model).toBeUndefined();
       expect(await readFile(output.file, "utf8")).toBe(image);
       expect(result.outputImages?.[0]?.source.media_type).toBe("image/webp");
       expect(result.outputImages?.[0]?.source.data).toBe(Buffer.from(image).toString("base64"));
@@ -111,13 +165,13 @@ describe("generate_image", () => {
     }
   });
 
-  test("a Codex error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
+  test("a provider error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
     const { cwd, cleanup } = project();
     let generations = 0;
     try {
       const tool = await toolFor({
         cwd,
-        generateCodexImage: async () => {
+        generateImage: async () => {
           generations += 1;
           throw new Error("Codex generation failed");
         },
@@ -138,16 +192,16 @@ describe("generate_image", () => {
     }
   });
 
-  test("does not save a Codex result after cancellation", async () => {
+  test("does not save a provider result after cancellation", async () => {
     const { cwd, cleanup } = project();
     const controller = new AbortController();
     const cancellation = new Error("cancelled before saving");
     try {
       const tool = await toolFor({
         cwd,
-        generateCodexImage: async () => {
+        generateImage: async (input) => {
           controller.abort(cancellation);
-          return { sourcePath: join(cwd, "unused.png") };
+          return { bytes: Buffer.from("unused"), mediaType: "image/png", requestedModel: input.model };
         },
       });
       expect(await tool.execute({ prompt: "A coin" }, context(controller.signal)).catch((error) => error)).toBe(
@@ -159,12 +213,12 @@ describe("generate_image", () => {
     }
   });
 
-  test("rejected approval does not start Codex generation", async () => {
+  test("rejected approval does not start generation", async () => {
     let generations = 0;
     const tool = await toolFor({
       cwd: "/repo",
       approve: "reject",
-      generateCodexImage: async () => {
+      generateImage: async () => {
         generations += 1;
         throw new Error("Unexpected Codex generation");
       },
@@ -181,9 +235,12 @@ describe("generate_image", () => {
     try {
       const tool = await toolFor({
         cwd: relative(process.cwd(), cwd),
-        generateCodexImage: async () => ({ sourcePath: join(cwd, "codex-output.png") }),
+        generateImage: async (input) => ({
+          bytes: Buffer.from("image-data"),
+          mediaType: "image/png",
+          requestedModel: input.model,
+        }),
       });
-      writeFileSync(join(cwd, "codex-output.png"), "image-data");
       const result = await tool.execute({ prompt: "A coin" }, context());
       expect(isAbsolute(JSON.parse(result.output).file)).toBe(true);
     } finally {

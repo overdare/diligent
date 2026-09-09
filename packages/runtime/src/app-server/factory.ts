@@ -164,6 +164,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
     host: { approve, ask },
+    generateImage: (input, options) =>
+      runtimeConfig.providerManager.generateImage(model.provider as ProviderName, input, options),
     bundledToolProviders,
     pluginDiscovery,
     disabledToolNames: runtimeConfig.disabledToolNames,
