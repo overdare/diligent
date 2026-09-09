@@ -112,6 +112,7 @@ test("changing selection during a turn preserves that turn's provider and applie
   }
   await running;
   expect(providers).toEqual(["gemini", "gemini"]);
+  expect(visibleTools.every((tools) => tools.includes(toolName))).toBe(true);
   await client.sendTurnAndWait(threadId, "next turn");
   expect(providers.at(-1)).toBe("anthropic");
   expect(visibleTools.at(-1)).not.toContain(toolName);

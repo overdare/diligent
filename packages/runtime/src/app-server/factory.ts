@@ -107,7 +107,7 @@ async function appendMcpNeedsAuthNote(
   return [...systemPrompt, { tag: "mcp_status", label: "mcp_needs_auth", content: note, cacheControl: "ephemeral" }];
 }
 
-async function createRuntimeAgent(args: {
+interface AgentAssemblyOptions {
   request: CreateAgentArgs;
   runtimeConfig: RuntimeConfig;
   getPaths: () => Promise<DiligentPaths>;
@@ -115,7 +115,9 @@ async function createRuntimeAgent(args: {
   pluginDiscovery: PluginDiscoveryMode;
   transformTools?: CreateAppServerConfigOptions["transformTools"];
   toolOutputStore?: ToolOutputFileStore;
-}): Promise<RuntimeAgent> {
+}
+
+async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
   const {
     request,
     runtimeConfig,
@@ -138,12 +140,6 @@ async function createRuntimeAgent(args: {
     userId,
   } = request;
   const paths = await getPaths();
-  const guardedSystemPrompt = withSkillGuardrail(runtimeConfig);
-  const systemPromptWithLatestKnowledge = await withLatestKnowledge(
-    guardedSystemPrompt,
-    paths,
-    runtimeConfig.diligent.knowledge,
-  );
   const model = resolveModel(modelRef);
   const toolsResult = await buildDefaultTools({
     cwd,
@@ -181,18 +177,7 @@ async function createRuntimeAgent(args: {
     mcpPrompts: runtimeConfig.diligent.mcp?.prompts,
   });
 
-  // Surface unauthenticated MCP servers to the agent. `buildDefaultTools` above already ran the MCP
-  // sync (with OAuth deps set), so `listStatus` reads the same authoritative needs_auth result from
-  // cache without reconnecting — keeping the note consistent with the tools actually exposed.
-  const promptSections = await appendMcpNeedsAuthNote(
-    systemPromptWithLatestKnowledge,
-    runtimeConfig.diligent.mcpServers,
-  );
-
   const activeMode = (mode ?? "default") as Mode;
-  const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
-    model.provider as ProviderName,
-  );
   const modeFilteredTools = filterToolsByMode(activeMode, toolsResult.tools);
   const filteredTools = transformTools
     ? transformTools(modeFilteredTools, { cwd, mode: activeMode, provider: model.provider as ProviderName })
@@ -211,6 +196,25 @@ async function createRuntimeAgent(args: {
       userId,
     });
   }
+  return { tools: filteredTools, registry: toolsResult.registry };
+}
+
+async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAgent> {
+  const { request, runtimeConfig, getPaths, bundledToolProviders } = args;
+  const { cwd, mode, effort, model: modelRef } = request;
+  const model = resolveModel(modelRef);
+  const activeMode = (mode ?? "default") as Mode;
+  const systemPrompt = await withLatestKnowledge(
+    withSkillGuardrail(runtimeConfig),
+    await getPaths(),
+    runtimeConfig.diligent.knowledge,
+  );
+  const { tools, registry } = await buildRuntimeAgentTools(args);
+  // Tool assembly syncs MCP auth first; read that same cached status for the prompt note.
+  const promptSections = await appendMcpNeedsAuthNote(systemPrompt, runtimeConfig.diligent.mcpServers);
+  const llmCompactionFn = runtimeConfig.providerManager.createNativeCompactionForProvider(
+    model.provider as ProviderName,
+  );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
   const loopHooks = [
     ...(runtimeConfig.planReminderIntervalTurns > 0
@@ -220,20 +224,20 @@ async function createRuntimeAgent(args: {
       cwd,
       agentKind: "main",
       model,
-      tools: filteredTools,
+      tools,
       logger: loopHookLogger,
     }),
   ];
   return new RuntimeAgent(
     model,
     applyModeToPrompt(activeMode, promptSections),
-    filteredTools,
+    tools,
     {
       effort,
       llmMsgStreamFn: runtimeConfig.streamFunction,
       llmCompactionFn,
       localImageLoader: createLocalImageLoader(cwd),
-      toolOutputStore: selectedOutputStore ?? toolOutputStore,
+      toolOutputStore: args.toolOutputStore ?? toolOutputStore,
       compaction: {
         enabled: runtimeConfig.compaction.enabled,
         reservePercent: runtimeConfig.compaction.reservePercent,
@@ -241,7 +245,7 @@ async function createRuntimeAgent(args: {
       },
       loopHooks,
     },
-    toolsResult.registry,
+    registry,
   );
 }
 
@@ -307,6 +311,14 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     pathsPromise ??= ensureDiligentDir(cwd);
     return pathsPromise;
   };
+  const assemblyOptions = {
+    runtimeConfig,
+    getPaths,
+    bundledToolProviders,
+    pluginDiscovery,
+    transformTools,
+    toolOutputStore,
+  };
 
   const config: DiligentAppServerConfig = {
     cwd,
@@ -323,15 +335,14 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
     },
     resolvePaths: (requestCwd) => ensureDiligentDir(requestCwd),
     createAgent: (args: CreateAgentArgs): Promise<RuntimeAgent> =>
-      createRuntimeAgent({
-        request: args,
-        runtimeConfig,
-        getPaths,
-        bundledToolProviders,
-        pluginDiscovery,
-        transformTools,
-        toolOutputStore,
-      }),
+      createRuntimeAgent({ ...assemblyOptions, request: args }),
+    refreshAgentTools: async (agent, request) => {
+      const { tools } = await buildRuntimeAgentTools({
+        ...assemblyOptions,
+        request: { ...request, existingAgent: agent },
+      });
+      agent.tools = tools;
+    },
     streamFunction: runtimeConfig.streamFunction,
     createNativeCompaction: (provider: ProviderName) =>
       runtimeConfig.providerManager.createNativeCompactionForProvider(provider),
