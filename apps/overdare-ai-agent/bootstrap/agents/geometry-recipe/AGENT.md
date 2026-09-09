@@ -14,9 +14,8 @@ separate world-editing protocol.
 - Read the skill and an existing working Source or the supplied complete example.
   Use `OVDR_PARAMETERS`, `on_generate(model, size, attributes)` and `model.part`.
   Consult applicable native API documentation for additional functions.
-- Query live class/property details when needed. If the appropriate class is
-  unknown, discover the catalog with an empty query. JSON schema is not a Python
-  function reference or a Luau method catalog.
+- Query live class/property details when needed using supported filters. JSON
+  schema is not a Python function reference or a Luau method catalog.
 - Use `studiorpc_execute_luau` with `target: "Editor"` to create/parent the model
   and configure Source, Size, attributes and AutoRebuild. Reuse the same model for
   revisions. Trust a verified parent context and inspect specific GUIDs rather

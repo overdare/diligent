@@ -4,3 +4,5 @@ sessions/
 plans/
 images/
 logs/
+# Duplicate-suppression ledger written by the session-issue-report skill
+issue-reports.jsonl

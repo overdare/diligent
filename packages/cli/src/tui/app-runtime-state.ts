@@ -65,8 +65,8 @@ export class AppRuntimeState {
     return this.pendingSteers.splice(0, Math.max(0, count)).map((steer) => steer.content);
   }
 
-  drainPendingSteers(): string[] {
-    const drained = this.pendingSteers.map((steer) => steer.content);
+  drainPendingSteers(): PendingSteer[] {
+    const drained = [...this.pendingSteers];
     this.pendingSteers.length = 0;
     return drained;
   }

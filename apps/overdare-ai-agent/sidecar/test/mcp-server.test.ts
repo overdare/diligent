@@ -116,12 +116,25 @@ describe("OVERDARE MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_level_browse");
-    expect(names).toContain("validatelua");
+    expect(names).toContain("studiorpc_rig_builder_insert");
+    // Luau validation runs inside the script-writing tools, so it is not a tool of its own.
+    expect(names).not.toContain("studiorpc_lua_validate");
     expect(names).toContain("overdaresearch");
     expect(names).toContain("overdaresearch_deep");
     const browse = tools.find((tool) => tool.name === "studiorpc_level_browse");
     expect(browse?.inputSchema).toBeDefined();
     expect(browse?.inputSchema).not.toHaveProperty("$schema");
+    const rigBuilderInsert = tools.find((tool) => tool.name === "studiorpc_rig_builder_insert");
+    expect(rigBuilderInsert?.inputSchema).toMatchObject({
+      type: "object",
+      properties: {
+        ParentActorGuid: { type: "string" },
+        Position: {
+          type: "object",
+          required: ["x", "y", "z"],
+        },
+      },
+    });
     await client.close();
   });
 

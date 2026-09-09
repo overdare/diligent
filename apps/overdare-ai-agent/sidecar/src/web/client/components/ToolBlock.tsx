@@ -8,6 +8,7 @@ import { formatDurationLabel } from "../lib/time-format";
 import { getToolActivityLabel, getToolInfo, summarizeInput, summarizeOutput } from "../lib/tool-info";
 import { ContentText } from "./ContentText";
 import { ToolActivityRow } from "./ToolActivityRow";
+import { ToolOutputImages } from "./ToolOutputImages";
 import { ToolRenderBlocks } from "./ToolRenderBlocks";
 
 interface ToolBlockProps {
@@ -91,7 +92,7 @@ export function ToolBlock({
   inlinePreviewWhenCollapsed = false,
 }: ToolBlockProps) {
   const renderPayload = item.render;
-  const shouldAutoOpen = hasAssetGalleryBlock(renderPayload);
+  const shouldAutoOpen = hasAssetGalleryBlock(renderPayload) || Boolean(item.outputImages?.length);
   const shouldInitiallyOpen = initialOpen ?? shouldAutoOpen;
   const [open, setOpen] = useState(shouldInitiallyOpen);
   const [assetGalleryAutoOpened, setAssetGalleryAutoOpened] = useState(shouldAutoOpen);
@@ -146,6 +147,7 @@ export function ToolBlock({
 
         {open && (
           <div className={nested ? "mt-0.5 max-h-72 overflow-y-auto overscroll-contain pr-2" : "mt-2"}>
+            <ToolOutputImages images={item.outputImages} />
             <ToolContent item={item} render={renderPayload} />
           </div>
         )}

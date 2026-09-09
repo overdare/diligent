@@ -1,17 +1,16 @@
 # Live schema discovery implementation draft
 
-Status: implementation draft against preview/release-40, which already contains
-merged compatibility PR #415. This draft removes upsert and implements dynamic
-discovery on top of that merged baseline.
+Status: implementation draft stacked on geometry restoration PR #434
+(`fix/restore-geometry-recipe`), targeting preview/release-40. Compatibility #415
+is already merged. This draft removes upsert and implements dynamic discovery.
 
 ## Implemented behavior
 
 - Remove the upsert tool, its static instance.params catalog, class-bound write
   validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
   Keep instance read, hierarchy move/delete, Source helpers and their shared
-  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Restore geometry-recipe
-  as active native ProceduralModel authoring guidance, adapting its former dedicated
-  RPC workflow to Editor Luau and asynchronous result inspection.
+  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Inherit the active geometry-recipe skill/agent from #434 unchanged; their
+  restoration is not part of this PR.
 - The schema tool accepts an empty query and no-filter calls. Normalize the latter
   to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
   property searches retain their existing Studio request shapes.

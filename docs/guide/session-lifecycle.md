@@ -134,6 +134,19 @@ Related operations:
 - `turn/interrupt`: aborts only when a turn is currently running
 - `turn/steer`: queues steering in session manager for a subsequent run boundary
 
+Web Stop and TUI Ctrl+C retain the automatic restart policy: when a pending steer exists,
+the client starts a new turn with the first pending steer's text and image attachments after
+`turn/interrupted`. With no pending steer, the turn simply stops. The client keeps the full
+`PendingSteer` through interruption, including attachments returned by `thread/read`, and
+resubmits them as `local_image` content blocks. This does not submit the Web composer's unsent
+draft or require an extra Send action. A rejected interruption does not trigger a restart.
+`turn/interrupt` retires the active turn and emits `turn/interrupted` and idle before replying;
+it does not wait for provider, tool, or lifecycle-hook cleanup. Late events and completion from
+the retired turn are suppressed. Session cleanup remains serialized before the next execution
+so its writes cannot race with a replacement turn. A replacement waiting for that cleanup is
+itself interruptible. Compaction and deletion remain unavailable until session execution has settled.
+An already-idle response refreshes the Web thread instead of waiting for another notification.
+
 ## Lifecycle hook modes
 
 Diligent has two hook tiers. The shell/plugin hooks below are coarse external lifecycle hooks and

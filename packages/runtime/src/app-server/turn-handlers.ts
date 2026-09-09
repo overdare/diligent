@@ -62,8 +62,8 @@ function normalizeLocalImageAttachment(
 }
 
 /**
- * Validate that no turn is already running, set up the turn's abort controller and metadata,
- * sync the model if it has changed, and return the initialised runtime and a new turn ID.
+ * Reserve the active turn and its abort controller. Session and model changes happen only
+ * after the preceding execution has settled in handleTurnStart.
  */
 async function initializeTurnRuntime(
   ctx: ThreadHandlersContext,
@@ -78,18 +78,6 @@ async function initializeTurnRuntime(
 
   runtime.abortController = new AbortController();
   runtime.isRunning = true;
-  runtime.runningEffortSnapshot = runtime.effort;
-  runtime.runningModelSnapshot = params.model ?? runtime.model;
-  runtime.currentTurnUserId = ctx.getUserId(connectionId);
-
-  const effectiveModel = runtime.runningModelSnapshot;
-  const lastRecordedModel = runtime.manager.getCurrentModel();
-  if (!sameModelRef(effectiveModel, lastRecordedModel)) {
-    const model = resolveModel(effectiveModel);
-    runtime.manager.appendModelChange(model.provider, model.modelId);
-    runtime.model = effectiveModel;
-    runtime.agent = undefined; // force rebuild so per-turn model overrides update the provider stream
-  }
 
   const turnId = `turn-${crypto.randomUUID().slice(0, 8)}`;
   runtime.currentTurnId = turnId;
@@ -157,6 +145,7 @@ async function applyUserPromptHooks(
 ): Promise<HookOutcome> {
   const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
   const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
+  if (runtime.currentTurnId !== turnId) return { blocked: true };
 
   if (shellHandlers.length === 0 && pluginHandlers.length === 0) {
     return { blocked: false, userMessage };
@@ -173,8 +162,10 @@ async function applyUserPromptHooks(
   };
 
   const hookResult = await runCombinedHooks(shellHandlers, pluginHandlers, hookInput, runtime.cwd);
+  if (runtime.currentTurnId !== turnId) return { blocked: true };
 
   if (hookResult.blocked) {
+    runtime.turnWork = undefined;
     resetTurnRuntimeState(runtime);
     await ctx.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
@@ -184,14 +175,16 @@ async function applyUserPromptHooks(
         fatal: false,
       },
     });
+    if (runtime.currentTurnId !== null) return { blocked: true };
     await ctx.emit({
       method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED,
       params: { threadId: runtime.id, turnId },
     });
-    await ctx.emit({
-      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-      params: { threadId: runtime.id, status: "idle" },
-    });
+    if (runtime.currentTurnId === null)
+      await ctx.emit({
+        method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+        params: { threadId: runtime.id, status: "idle" },
+      });
     return { blocked: true };
   }
 
@@ -211,43 +204,77 @@ export async function handleTurnStart(
   turnInitiators: Map<string, string>,
 ): Promise<{ accepted: true; userMessageId?: string }> {
   const { runtime, turnId } = await initializeTurnRuntime(ctx, params, connectionId, turnInitiators);
-
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
-    params: { threadId: runtime.id, status: "busy" },
+  const controller = runtime.abortController!;
+  const previousWork = runtime.turnWork ?? Promise.resolve();
+  let resolveWork!: () => void;
+  const work = new Promise<void>((resolve) => {
+    resolveWork = resolve;
   });
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
-    params: { threadId: runtime.id, turnId },
-  });
+  runtime.turnWork = work;
+  const finishWork = () => {
+    // A cancelled queued start must not let its successor overtake the old execution.
+    void previousWork.then(() => {
+      if (runtime.turnWork === work) {
+        runtime.turnWork = undefined;
+        if (runtime.currentTurnId === null) resetTurnRuntimeState(runtime);
+      }
+      resolveWork();
+    });
+  };
+  const isCurrent = () => runtime.currentTurnId === turnId && !controller.signal.aborted;
+  let consuming = false;
+  try {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "busy" },
+    });
+    if (!isCurrent()) return { accepted: true };
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_STARTED,
+      params: { threadId: runtime.id, turnId },
+    });
+    await previousWork;
+    if (!isCurrent()) return { accepted: true };
 
-  const { userMessage, content } = prepareTurnMessage(ctx, params, runtime);
+    runtime.runningEffortSnapshot = runtime.effort;
+    runtime.runningModelSnapshot = params.model ?? runtime.model;
+    runtime.currentTurnUserId = ctx.getUserId(connectionId);
 
-  const hookOutcome = await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId);
-  if (hookOutcome.blocked) return { accepted: true };
+    const effectiveModel = runtime.runningModelSnapshot;
+    const lastRecordedModel = runtime.manager.getCurrentModel();
+    if (!sameModelRef(effectiveModel, lastRecordedModel)) {
+      const model = resolveModel(effectiveModel);
+      runtime.manager.appendModelChange(model.provider, model.modelId);
+      runtime.model = effectiveModel;
+      runtime.agent = undefined; // force rebuild so per-turn model overrides update the provider stream
+    }
 
-  const finalUserMessage = hookOutcome.userMessage;
-  const userItemId = generateEntryId();
-  await ctx.emit({
-    method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
-    params: {
-      threadId: runtime.id,
-      turnId,
-      event: {
-        type: "user_message",
-        itemId: userItemId,
-        message: finalUserMessage,
+    const { userMessage, content } = prepareTurnMessage(ctx, params, runtime);
+    const hookOutcome = await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId);
+    if (hookOutcome.blocked || !isCurrent()) return { accepted: true };
+
+    const finalUserMessage = hookOutcome.userMessage;
+    const userItemId = generateEntryId();
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
+      params: {
+        threadId: runtime.id,
+        turnId,
+        event: { type: "user_message", itemId: userItemId, message: finalUserMessage },
+        threadStatus: "busy",
       },
-      threadStatus: "busy",
-    },
-  });
-
-  const runPromise = runtime.manager.run(finalUserMessage, {
-    signal: runtime.abortController!.signal,
-    userMessageId: userItemId,
-  });
-  void ctx.consumeTurn(runtime, runPromise, turnId);
-  return { accepted: true, userMessageId: userItemId };
+    });
+    if (!isCurrent()) return { accepted: true, userMessageId: userItemId };
+    const runPromise = runtime.manager.run(finalUserMessage, { signal: controller.signal, userMessageId: userItemId });
+    consuming = true;
+    void ctx.consumeTurn(runtime, runPromise, turnId).finally(finishWork);
+    return { accepted: true, userMessageId: userItemId };
+  } catch (error) {
+    if (isCurrent()) await ctx.consumeTurn(runtime, Promise.reject(error), turnId);
+    throw error;
+  } finally {
+    if (!consuming) finishWork();
+  }
 }
 
 export async function handleTurnInterrupt(
@@ -256,7 +283,23 @@ export async function handleTurnInterrupt(
 ): Promise<{ interrupted: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   if (!runtime.isRunning || !runtime.abortController) return { interrupted: false };
-  runtime.abortController.abort();
+  const controller = runtime.abortController;
+  const turnId = runtime.currentTurnId!;
+  // Retire first: synchronous abort callbacks and later cleanup cannot revive this turn.
+  runtime.currentTurnId = null;
+  runtime.abortController = null;
+  runtime.isRunning = false;
+  controller.abort();
+  await ctx.emit({
+    method: DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED,
+    params: { threadId: runtime.id, turnId },
+  });
+  if (runtime.currentTurnId === null) {
+    await ctx.emit({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_STATUS_CHANGED,
+      params: { threadId: runtime.id, status: "idle" },
+    });
+  }
   return { interrupted: true };
 }
 

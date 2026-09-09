@@ -29,22 +29,18 @@ describe("OVERDARE runtime bundle assets", () => {
     expect(existsSync(join(stageDir, "dist", "client", "assets", "app-hash.js"))).toBe(true);
   });
 
-  test("omits retired procedural runtime assets while retaining Luau validation assets", () => {
+  test("stages neither the retired procedural runtime nor the retired luau-lsp assets", () => {
     const stageDir = mkdtempSync(join(tmpdir(), "overdare-runtime-assets-"));
     temporaryDirectories.push(stageDir);
 
-    stageSidecarAssets(
-      {
-        id: "windows-x64",
-        bunTarget: "bun-windows-x64",
-        ext: ".exe",
-      },
-      stageDir,
-    );
+    stageSidecarAssets(stageDir);
 
+    // The procedural runner went with Editor Luau; luau-lsp went with Studio's lua.validate.
     expect(existsSync(join(stageDir, "assets", "bin", "luau.exe"))).toBe(false);
     expect(existsSync(join(stageDir, "assets", "lua", "procedural"))).toBe(false);
-    expect(existsSync(join(stageDir, "assets", "bin", "luau-lsp.exe"))).toBe(true);
-    expect(existsSync(join(stageDir, "assets", "lua", "overdare-types.d.lua"))).toBe(true);
+    expect(existsSync(join(stageDir, "assets", "bin", "luau-lsp.exe"))).toBe(false);
+    expect(existsSync(join(stageDir, "assets", "lua", "overdare-types.d.lua"))).toBe(false);
+    // The layout itself stays — the sidecar resolves assets/bin for rg.
+    expect(existsSync(join(stageDir, "assets", "bin"))).toBe(true);
   });
 });

@@ -164,7 +164,13 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
                 ...item,
                 childTools: item.childTools.map((t) =>
                   t.toolCallId === event.toolCallId
-                    ? { ...t, status: "done" as const, isError: event.isError, outputText: event.output ?? "" }
+                    ? {
+                        ...t,
+                        status: "done" as const,
+                        isError: event.isError,
+                        outputText: event.output ?? "",
+                        outputImages: event.outputImages,
+                      }
                     : t,
                 ),
                 childTimeline: (item.childTimeline ?? []).map((entry) =>
@@ -174,6 +180,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
                         status: "done" as const,
                         isError: event.isError,
                         outputText: event.output ?? "",
+                        outputImages: event.outputImages,
                       }
                     : entry,
                 ),
@@ -194,6 +201,7 @@ export function reduceToolEvent(state: ThreadState, event: ToolAgentEvent): Thre
             ? {
                 ...current,
                 outputText: event.output || current.outputText,
+                outputImages: event.outputImages,
                 isError: event.isError,
                 status: "done" as const,
                 timestamp:

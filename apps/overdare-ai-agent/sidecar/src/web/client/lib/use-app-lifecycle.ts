@@ -7,6 +7,7 @@ import type {
   InitializeResponse,
   Mode,
   ModelRef,
+  PendingSteer,
   ProviderAuthStatus,
   SkillInfo,
   ThinkingEffort,
@@ -62,7 +63,7 @@ export function shouldDispatchNotificationToActiveThread(
 }
 
 type SteeringRefs = {
-  pendingAbortRestartMessageRef: MutableRefObject<string | null>;
+  pendingAbortRestartSteerRef: MutableRefObject<PendingSteer | null>;
   restartFromPendingAbortSteer: (threadId: string) => Promise<void>;
 };
 
@@ -181,7 +182,7 @@ export function useAppRpcBindings({
         notificationParams &&
         typeof notificationParams.threadId === "string" &&
         notificationParams.threadId === activeThreadIdRef.current &&
-        steering.pendingAbortRestartMessageRef.current
+        steering.pendingAbortRestartSteerRef.current
       ) {
         const interruptedThreadId = notificationParams.threadId;
         queueMicrotask(() => {

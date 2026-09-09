@@ -6,12 +6,13 @@ import type {
   Mode,
   ModelInfo,
   ModelRef,
+  PendingSteer,
   SkillInfo,
   ThinkingEffort,
   ThreadReadResponse,
 } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
-import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback } from "react";
+import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback, useRef } from "react";
 import { toWebImageUrl } from "../../shared/image-routes";
 import { type AgentContextItem, prependContextToMessage } from "./agent-native-bridge";
 import type { AppAction, PendingImage } from "./app-state";
@@ -52,7 +53,7 @@ export function clearComposerInputAfterSend({
 }
 
 type SteeringControl = {
-  pendingAbortRestartMessageRef: MutableRefObject<string | null>;
+  pendingAbortRestartSteerRef: MutableRefObject<PendingSteer | null>;
 };
 
 export async function prepareNewThreadForFirstMessage({
@@ -745,24 +746,39 @@ export function useAppActions({
     void sendMessage();
   }, [activeInput, slashCommands, handleSlashCommand, sendMessage]);
 
+  const interruptRequestRef = useRef<{ threadId: string; turnId: string | null } | null>(null);
   const handleInterrupt = useCallback(() => {
+    const rpc = rpcRef.current;
+    const snapshot = stateRef.current;
+    const threadId = snapshot.activeThreadId;
+    if (!rpc || !threadId || snapshot.threadStatus !== "busy") return;
+    const turnId = snapshot.activeTurnId;
+    if (interruptRequestRef.current?.threadId === threadId && interruptRequestRef.current.turnId === turnId) return;
+    const request = { threadId, turnId };
+    interruptRequestRef.current = request;
+    steeringControl.pendingAbortRestartSteerRef.current = snapshot.pendingSteers[0] ?? null;
     void (async () => {
-      const rpc = rpcRef.current;
-      const threadId = state.activeThreadId;
-      if (!rpc || !threadId) return;
-      steeringControl.pendingAbortRestartMessageRef.current = stateRef.current.pendingSteers[0]?.content ?? null;
       try {
-        await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
+        const result = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.TURN_INTERRUPT, { threadId });
+        if (!result.interrupted) {
+          if (interruptRequestRef.current === request) steeringControl.pendingAbortRestartSteerRef.current = null;
+          const history = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ, { threadId });
+          if (stateRef.current.activeThreadId === threadId && stateRef.current.activeTurnId === turnId) {
+            dispatch({ type: "hydrate", payload: { threadId, mode: stateRef.current.mode, history } });
+          }
+        }
       } catch (error) {
-        steeringControl.pendingAbortRestartMessageRef.current = null;
+        if (interruptRequestRef.current === request) steeringControl.pendingAbortRestartSteerRef.current = null;
         logger.error("turn.interrupt_failed", {
           message: "[App] turn/interrupt failed:",
           error,
           threadId,
         });
+      } finally {
+        if (interruptRequestRef.current === request) interruptRequestRef.current = null;
       }
     })();
-  }, [rpcRef, state.activeThreadId, stateRef, steeringControl]);
+  }, [rpcRef, stateRef, steeringControl, dispatch]);
 
   const handleRetryLastTurn = useCallback(() => {
     void (async () => {

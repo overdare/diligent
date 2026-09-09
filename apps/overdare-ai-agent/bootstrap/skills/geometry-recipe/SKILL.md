@@ -19,8 +19,8 @@ when available. Native generation uses `import unreal`, `unreal.OvdrGeometry`, a
 for additional `G.*`, `parts.*`, or `layout.*` signatures before using them.
 
 Query `studiorpc_instance_schema_search` for ProceduralModel properties and any
-unfamiliar instance material values. If the appropriate class is unknown, use an
-empty query to discover class names first. JSON property schemas do not document
+unfamiliar instance material values using the supported class/property filters.
+JSON property schemas do not document
 native Python function arguments and may omit Source, which the documented Editor
 path can still read and assign. Do not invent an API after an unrelated search hit
 or replace Editor behavior with a gameplay Script.

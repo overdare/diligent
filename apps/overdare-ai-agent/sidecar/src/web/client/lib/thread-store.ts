@@ -8,6 +8,7 @@ import type {
   ConversationLiveState,
   DiligentServerNotification,
   ErrorRecovery,
+  ImageBlock,
   Mode,
   PendingSteer,
   SessionSummary,
@@ -104,6 +105,7 @@ export type RenderItem =
       toolName: string;
       inputText: string;
       outputText: string;
+      outputImages?: ImageBlock[];
       isError: boolean;
       status: "streaming" | "done";
       timestamp: number;
@@ -134,6 +136,7 @@ export type RenderItem =
         isError: boolean;
         inputText: string;
         outputText: string;
+        outputImages?: ImageBlock[];
       }>;
       childMessages?: string[];
       childTimeline?: Array<
@@ -150,6 +153,7 @@ export type RenderItem =
             isError: boolean;
             inputText: string;
             outputText: string;
+            outputImages?: ImageBlock[];
           }
       >;
       timestamp: number;
