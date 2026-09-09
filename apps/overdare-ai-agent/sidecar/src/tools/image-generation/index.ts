@@ -5,7 +5,7 @@ import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
 import { type GenerateGeminiImage, generateGeminiImage } from "./gemini";
 import { type GeminiImageConfig, resolveGeminiImageConfig } from "./gemini-config";
-import { storeGeneratedImage } from "./image-store";
+import { type ImageMediaType, storeGeneratedImage } from "./image-store";
 import { readReferenceImages, resolveReferenceImages } from "./reference-images";
 import { inspectTransparency } from "./transparency";
 
@@ -20,22 +20,35 @@ const IMAGE_FAILURE_GUIDANCE =
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
-const parameters = z.object({
-  prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
-  model: z.string().trim().min(1).max(100).optional().describe("ChatGPT-only requested image model. Gemini uses its configured image model."),
-  background: z.enum(["auto", "opaque", "transparent"]).optional().describe("ChatGPT-only API background setting. Transparent is for cutout assets; opaque is for guides or chroma-key backgrounds."),
-  referenceImages: z.array(z.string().trim().min(1)).max(5).optional().describe("Optional PNG, JPEG, or WebP references on the agent host. Absolute paths are preferred; relative paths resolve from the project directory."),
-}).strict();
+const parameters = z
+  .object({
+    prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
+    background: z
+      .enum(["auto", "opaque", "transparent"])
+      .optional()
+      .describe(
+        "ChatGPT-only API background setting. Transparent is for cutout assets; opaque is for guides or chroma-key backgrounds.",
+      ),
+    referenceImages: z
+      .array(z.string().trim().min(1))
+      .max(5)
+      .optional()
+      .describe(
+        "Optional PNG, JPEG, or WebP references on the agent host. Absolute paths are preferred; relative paths resolve from the project directory.",
+      ),
+  })
+  .strict();
 
 type ImageProvider = "chatgpt" | "gemini";
 export interface ImageGenerationToolProviderOptions {
   generateImage?: ImageGenerationFn;
-  model?: string;
   generateGeminiImage?: GenerateGeminiImage;
   resolveGeminiImageConfig?: (cwd: string) => Promise<GeminiImageConfig | undefined>;
 }
 
-export function createImageGenerationToolProvider(options: ImageGenerationToolProviderOptions = {}): BundledToolProvider {
+export function createImageGenerationToolProvider(
+  options: ImageGenerationToolProviderOptions = {},
+): BundledToolProvider {
   return {
     id: "@overdare/image-generation-tools",
     displayName: "Image Generation",
@@ -46,7 +59,13 @@ export function createImageGenerationToolProvider(options: ImageGenerationToolPr
   };
 }
 
-function createGenerateImageTool(cwd: string, provider: ImageProvider, host: RuntimeToolHost | undefined, chatGPTGenerate: ImageGenerationFn | undefined, options: ImageGenerationToolProviderOptions): Tool<typeof parameters> {
+function createGenerateImageTool(
+  cwd: string,
+  provider: ImageProvider,
+  host: RuntimeToolHost | undefined,
+  chatGPTGenerate: ImageGenerationFn | undefined,
+  options: ImageGenerationToolProviderOptions,
+): Tool<typeof parameters> {
   const chatGPT = provider === "chatgpt";
   return {
     name: TOOL_NAME,
@@ -62,13 +81,21 @@ function createGenerateImageTool(cwd: string, provider: ImageProvider, host: Run
     supportParallel: true,
     async execute(args, ctx): Promise<ToolResult> {
       ctx.signal.throwIfAborted();
-      const requestedModel = args.model ?? options.model ?? DEFAULT_CHATGPT_IMAGE_MODEL;
+      const requestedModel = DEFAULT_CHATGPT_IMAGE_MODEL;
       const requestedBackground = args.background ?? "auto";
       const approval = await host?.approve?.({
-        permission: "execute", toolName: TOOL_NAME, description: "Generate and save an image",
-        details: { provider, ...(chatGPT ? { model: requestedModel, background: requestedBackground } : {}), prompt: args.prompt, ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}) },
+        permission: "execute",
+        toolName: TOOL_NAME,
+        description: "Generate and save an image",
+        details: {
+          provider,
+          ...(chatGPT ? { model: requestedModel, background: requestedBackground } : {}),
+          prompt: args.prompt,
+          ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}),
+        },
       });
-      if (approval === "reject") return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
+      if (approval === "reject")
+        return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
       const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(300_000)]);
       try {
         const paths = await resolveReferenceImages(cwd, args.referenceImages, signal);
@@ -76,18 +103,52 @@ function createGenerateImageTool(cwd: string, provider: ImageProvider, host: Run
           const config = await (options.resolveGeminiImageConfig ?? resolveGeminiImageConfig)(cwd);
           signal.throwIfAborted();
           if (!config) throw new Error("Gemini API key is not configured.");
-          const generated = await (options.generateGeminiImage ?? generateGeminiImage)({ ...config, prompt: args.prompt, signal, ...(paths.length ? { referenceImages: paths } : {}) });
-          const stored = await storeGeneratedImage(cwd, { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType }, { signal });
-          return imageResult(stored.file, stored.mediaType, stored.bytes, { provider, source: "gemini-api", model: generated.model });
+          const generated = await (options.generateGeminiImage ?? generateGeminiImage)({
+            ...config,
+            prompt: args.prompt,
+            signal,
+            ...(paths.length ? { referenceImages: paths } : {}),
+          });
+          const stored = await storeGeneratedImage(
+            cwd,
+            { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
+            { signal },
+          );
+          return imageResult(stored.file, stored.mediaType, stored.bytes, {
+            provider,
+            source: "gemini-api",
+            model: generated.model,
+          });
         }
         if (!chatGPTGenerate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
         const referenceImages = await readReferenceImages(paths, signal);
-        const generated = await chatGPTGenerate({ prompt: args.prompt, model: requestedModel, background: requestedBackground, ...(referenceImages.length ? { referenceImages } : {}) }, { signal });
+        const generated = await chatGPTGenerate(
+          {
+            prompt: args.prompt,
+            model: requestedModel,
+            background: requestedBackground,
+            ...(referenceImages.length ? { referenceImages } : {}),
+          },
+          { signal },
+        );
         signal.throwIfAborted();
         const transparency = requestedBackground === "transparent" ? await inspectTransparency(generated) : undefined;
         signal.throwIfAborted();
-        const stored = await storeGeneratedImage(cwd, { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType }, { signal });
-        return imageResult(stored.file, stored.mediaType, stored.bytes, { provider, source: "chatgpt-oauth", requestedModel, requestedBackground, ...(generated.model ? { model: generated.model } : {}), ...(generated.background ? { background: generated.background } : {}), ...(transparency ? { transparency } : {}), ...(transparency?.warning ? { guidance: IMAGE_FAILURE_GUIDANCE } : {}) });
+        const stored = await storeGeneratedImage(
+          cwd,
+          { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
+          { signal },
+        );
+        return imageResult(stored.file, stored.mediaType, stored.bytes, {
+          provider,
+          source: "chatgpt-oauth",
+          requestedModel,
+          requestedBackground,
+          ...(generated.model ? { model: generated.model } : {}),
+          ...(generated.background ? { background: generated.background } : {}),
+          ...(transparency ? { transparency } : {}),
+          ...(transparency?.warning ? { guidance: IMAGE_FAILURE_GUIDANCE } : {}),
+        });
       } catch (error) {
         ctx.signal.throwIfAborted();
         const reason = error instanceof Error ? error.message : String(error);
@@ -97,8 +158,19 @@ function createGenerateImageTool(cwd: string, provider: ImageProvider, host: Run
   };
 }
 
-function imageResult(file: string, mediaType: string, bytes: Buffer, details: Record<string, unknown>): ToolResult {
-  return { output: JSON.stringify({ file, ...details }, null, 2), outputImages: [{ type: "image", source: { type: "base64", media_type: mediaType, data: bytes.toString("base64") } }], metadata: { operation: "image_generation", file, ...details } };
+function imageResult(
+  file: string,
+  mediaType: ImageMediaType,
+  bytes: Buffer,
+  details: Record<string, unknown>,
+): ToolResult {
+  return {
+    output: JSON.stringify({ file, ...details }, null, 2),
+    outputImages: [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: bytes.toString("base64") } },
+    ],
+    metadata: { operation: "image_generation", file, ...details },
+  };
 }
 
 export type { GeneratedGeminiImage, GenerateGeminiImage } from "./gemini";
