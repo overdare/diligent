@@ -316,31 +316,6 @@ export function buildInstanceReadRender(args: Record<string, unknown>, output: s
   };
 }
 
-export function buildInstanceUpsertRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
-  const items = Array.isArray(args.items) ? args.items : [];
-  const addCount = items.filter((i) => isRecord(i) && "parentGuid" in i).length;
-  const updateCount = items.filter((i) => isRecord(i) && "guid" in i && !("parentGuid" in i)).length;
-  const parts: string[] = [];
-  if (addCount > 0) parts.push(summarizeCount(addCount, "add"));
-  if (updateCount > 0) parts.push(summarizeCount(updateCount, "update"));
-  const summary = parts.join(", ") || "upsert";
-  return {
-    inputSummary: clip(summary),
-    outputSummary: summarizeText(output, "Instances upserted."),
-    blocks: [
-      {
-        type: "key_value",
-        title: "Studio instance upsert",
-        items: [
-          { key: "adds", value: String(addCount) },
-          { key: "updates", value: String(updateCount) },
-        ],
-      },
-      { type: "summary", text: firstLine(output, "Instances upserted."), tone: "success" },
-    ],
-  };
-}
-
 export function buildInstanceMoveRender(args: Record<string, unknown>, output: string): ToolRenderPayload {
   const items = Array.isArray(args.items) ? args.items : [];
   const moveCount = items.filter(

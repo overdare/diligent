@@ -75,6 +75,39 @@ describe("Studio RPC cancellation", () => {
       message: expect.stringContaining("Reason: navigationSystemUnavailable"),
     });
   });
+  test("full discovery preserves UTF-8 descriptions split across TCP chunks", async () => {
+    const description = "\uD55C\uAE00 \uC18D\uC131 \uC124\uBA85";
+    server = createServer((socket) => {
+      accepted = socket;
+      socket.once("data", (bytes) => {
+        const request = JSON.parse(bytes.toString("utf8"));
+        expect(request.params).toEqual({ query: "" });
+        const response = Buffer.from(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            result: { schemaVersion: "utf8", classes: [{ class: "FutureWidget", description, properties: [] }] },
+          }) + "\n",
+          "utf8",
+        );
+        const split = response.indexOf(Buffer.from(description, "utf8")) + 1;
+        socket.write(response.subarray(0, split));
+        setTimeout(() => socket.write(response.subarray(split)), 5);
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_HOST = "127.0.0.1";
+    process.env.STUDIO_PORT = String(address.port);
+    const tools = await createStudioRpcToolProvider().createTools({ cwd: "/tmp/schema-discovery" });
+    const result = await tools
+      .find((t) => t.name === "studiorpc_instance_schema_search")!
+      .execute({ query: "" }, { toolCallId: "utf8", signal: new AbortController().signal, abort() {} });
+    expect(JSON.parse(result.output).classes[0].description).toBe(description);
+    expect(result.output).not.toContain("\uFFFD");
+  });
+
   test("Editor error data survives the wire and reaches shared tool output without retry", async () => {
     const data = { command_id: "cmd-wire", mutation_attempted: true, undo_recorded: true };
     let requests = 0;

@@ -1,14 +1,13 @@
 // @summary Tests OVERDARE Studio bundled Studio RPC tool provider assembly.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
 import { createStudioBundledToolProviders } from "../../src/tools";
 import { createStudioRpcToolProvider } from "../../src/tools/studiorpc";
 import * as levelBrowse from "../../src/tools/studiorpc/methods/level.browse";
-import { findNodeByActorGuid } from "../../src/tools/studiorpc/tools/ovdrjm-utils";
 
 const createdDirs: string[] = [];
 
@@ -116,7 +115,7 @@ describe("createStudioRpcToolProvider", () => {
     const toolNames = tools.map((tool) => tool.name);
 
     expect(toolNames).toContain("studiorpc_instance_read");
-    expect(toolNames).toContain("studiorpc_instance_upsert");
+    expect(toolNames).not.toContain("studiorpc_instance_upsert");
     expect(toolNames).toContain("studiorpc_script_edit");
     expect(toolNames).toContain("get_collision_channels");
     expect(toolNames).toContain("create_collision_profile");
@@ -318,66 +317,6 @@ describe("createStudioRpcToolProvider", () => {
     expect(result.output).toContain("studiorpc_level_browse");
   });
 
-  test("returns structured readback status for upsert missing target and parent GUIDs", async () => {
-    const cwd = makeStudioProject();
-    const rpcCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
-    const tools = await loadStudioTools(cwd, rpcCalls);
-    const upsertTool = tools.get("studiorpc_instance_upsert")!;
-
-    const updateResult = await upsertTool.execute(
-      { items: [{ guid: "missing-target", properties: {} }] },
-      toolContext(),
-    );
-    const addResult = await upsertTool.execute(
-      { items: [{ class: "Folder", parentGuid: "missing-parent", name: "NewFolder", properties: {} }] },
-      toolContext(),
-    );
-
-    expectStatus(updateResult, {
-      kind: "missing_guid",
-      code: "missing_target_guid",
-      operation: "instance.upsert",
-      guid: "missing-target",
-      role: "target",
-      requiresReadback: true,
-      suggestedTool: "studiorpc_level_browse",
-    });
-    expectStatus(addResult, {
-      kind: "missing_guid",
-      code: "missing_parent_guid",
-      operation: "instance.upsert",
-      guid: "missing-parent",
-      role: "parent",
-      requiresReadback: true,
-      suggestedTool: "studiorpc_level_browse",
-    });
-    expect(rpcCalls).toEqual([]);
-  });
-
-  test("reports ignored Mobility when upserting below a Workspace top-level object", async () => {
-    const cwd = makeStudioProject();
-    const tools = await loadStudioTools(cwd);
-    const result = await tools.get("studiorpc_instance_upsert")!.execute(
-      {
-        items: [
-          {
-            class: "Part",
-            parentGuid: folderGuid,
-            name: "NestedPart",
-            properties: { Mobility: "Static" },
-          },
-        ],
-      },
-      toolContext(),
-    );
-
-    expect(result.metadata?.info).toEqual([
-      expect.stringMatching(/^Ignored Mobility for .+: Mobility can only be changed on a direct child of Workspace\.$/),
-    ]);
-    expect(result.output).toContain("<suggestions>");
-    expect(result.output).toContain("Ignored Mobility");
-  });
-
   test("returns structured readback status for move missing target and new parent GUIDs", async () => {
     const cwd = makeStudioProject();
     const rpcCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
@@ -486,24 +425,5 @@ describe("createStudioRpcToolProvider", () => {
       requiresReadback: false,
     });
     expect(rpcCalls).toEqual([]);
-  });
-
-  test("instance_move re-normalizes Mobility when a node's top-level ancestor changes", async () => {
-    const cwd = makeStudioProject();
-    const tools = await loadStudioTools(cwd);
-    const upsert = tools.get("studiorpc_instance_upsert")!;
-    // Both Folder and Part are direct children of Workspace, so their Mobility is authoritative.
-    await upsert.execute({ items: [{ guid: folderGuid, properties: { Mobility: "Movable" } }] }, toolContext());
-    await upsert.execute({ items: [{ guid: partGuid, properties: { Mobility: "Static" } }] }, toolContext());
-
-    // Moving the Part under the (Movable) Folder demotes it to a descendant that must follow the Folder.
-    await tools
-      .get("studiorpc_instance_move")!
-      .execute({ items: [{ guid: partGuid, parentGuid: folderGuid }] }, toolContext());
-
-    const doc = JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf-8")) as {
-      Root: Parameters<typeof findNodeByActorGuid>[0];
-    };
-    expect(findNodeByActorGuid(doc.Root, partGuid)?.Mobility).toBe("Movable");
   });
 });

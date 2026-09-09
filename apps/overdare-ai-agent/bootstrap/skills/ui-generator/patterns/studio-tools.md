@@ -17,8 +17,8 @@ Use scripts only when the UI needs behavior, such as button activation, visibili
 | Browse the level tree or find GUI objects | `studiorpc_level_browse` |
 | Read one GUI object's properties | `studiorpc_instance_read` |
 | Read a whole GUI subtree | `studiorpc_instance_read` with `recursive = true` |
-| Add GUI instances | `studiorpc_instance_upsert` with `parentGuid`, `class`, `name` |
-| Update existing GUI instances | `studiorpc_instance_upsert` with `guid` |
+| Add GUI instances | `studiorpc_execute_luau` with `target: "Editor"` |
+| Update existing GUI instances | Editor Luau on the verified target |
 | Move GUI to another parent | `studiorpc_instance_move` |
 | Delete GUI instances | `studiorpc_instance_delete` |
 | Import Asset Drawer UI | `studiorpc_asset_drawer_import` |
@@ -54,7 +54,7 @@ Use `recursive = true` when inspecting an imported UI pack or a full UI subtree.
 
 ## Add: Create New GUI
 
-Use `studiorpc_instance_upsert` with `parentGuid`, `class`, and `name`.
+Query live class/property schemas, then use `studiorpc_execute_luau` with `target: "Editor"` to create and parent GUI instances.
 
 Parent-first creation is required:
 
@@ -63,15 +63,15 @@ Parent-first creation is required:
 3. Create panel-level children.
 4. Create labels, buttons, images, layout helpers, and constraints under those panels.
 
-Do not create deeply nested structures in one step. Create one hierarchy level at a time so the returned GUIDs can be used as parents for the next level.
+Create and parent containers before their children. Related hierarchy creation can share one Editor command.
 
-Do not mix adds and updates in the same `studiorpc_instance_upsert` call.
+Read back the affected hierarchy after the command.
 
 ---
 
 ## Update: Change GUI Properties
 
-Use `studiorpc_instance_upsert` with an existing `guid`.
+Read the existing GUID to identify the target, then use supported Editor hierarchy lookup to edit that object with Editor Luau.
 
 Common update cases:
 
@@ -247,15 +247,15 @@ Important properties:
 4. Create panel-level objects: scoreboard, status panel, action panel.
 5. Create labels/buttons/images under each panel.
 6. Read or browse the result.
-7. Save the level.
+7. Successful Editor commands already save the level.
 
 ### Modify Existing UI
 
 1. Browse or read the existing UI hierarchy.
 2. Identify the target GUID.
-3. Update properties with `studiorpc_instance_upsert` using `guid`.
+3. Update the verified object through Editor Luau.
 4. Read back the changed object if the change is important.
-5. Save the level.
+5. Successful Editor commands already save the level.
 
 ### Connect a Button
 
