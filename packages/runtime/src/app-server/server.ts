@@ -2,7 +2,7 @@
 
 import { userInfo } from "node:os";
 import { toSerializableError } from "@diligent/core/agent";
-import { getDefaultModelRef, sameModelRef } from "@diligent/core/model-registry";
+import { getDefaultModelRef, resolveModel, sameModelRef } from "@diligent/core/model-registry";
 import {
   DEFAULT_PROVIDER,
   type ModelRef,
@@ -102,6 +102,8 @@ export interface DiligentAppServerConfig {
   getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   createAgent: (args: CreateAgentArgs) => RuntimeAgent | Promise<RuntimeAgent>;
+  /** Refresh provider-dependent tools between turns without replacing the agent or its state. */
+  refreshAgentTools?: (agent: RuntimeAgent, args: CreateAgentArgs) => void | Promise<void>;
   streamFunction?: StreamFunction;
   createNativeCompaction?: (provider: ProviderName) => NativeCompactFn | undefined;
   compaction?: SessionManagerConfig["compaction"];
@@ -604,30 +606,48 @@ export class DiligentAppServer {
     };
 
     const paths = await this.config.resolvePaths(cwd);
+    // Track the resolved selection independently from config/set's immediate model update.
+    let lastResolvedModel: ModelRef | undefined;
     runtime.manager = new SessionManager({
       cwd,
       paths,
       agent: async () => {
         const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
-        if (!runtime.agent || !sameModelRef(runtime.agent.model, selectedModel)) {
-          const newAgent = await this.config.createAgent({
-            cwd,
-            mode: runtime.mode,
-            effort: runtime.runningEffortSnapshot ?? runtime.effort,
-            model: selectedModel,
-            approve: (request) => this.requestApproval(runtime.id, request),
-            ask: (request) => this.requestUserInput(runtime.id, request),
-            getSessionId: () => runtime.manager.sessionId,
-            existingAgent: runtime.agent,
-            onChildStop: (info) => this.runStopHooksFor(info),
-            userId: runtime.currentTurnUserId,
-          });
-          runtime.agent = newAgent;
+        const request: CreateAgentArgs = {
+          cwd,
+          mode: runtime.mode,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          model: selectedModel,
+          approve: (request) => this.requestApproval(runtime.id, request),
+          ask: (request) => this.requestUserInput(runtime.id, request),
+          getSessionId: () => runtime.manager.sessionId,
+          existingAgent: runtime.agent,
+          onChildStop: (info) => this.runStopHooksFor(info),
+          userId: runtime.currentTurnUserId,
+        };
+        let agent = runtime.agent;
+        if (!agent) {
+          agent = await this.config.createAgent(request);
+          runtime.agent = agent;
           for (const histAgent of runtime.manager.getHistoricalCollabAgents()) {
-            newAgent.registry?.restoreAgent(histAgent.threadId, histAgent.nickname, histAgent.policy);
+            agent.registry?.restoreAgent(histAgent.threadId, histAgent.nickname, histAgent.policy);
           }
+        } else {
+          // Defer catalog/registry updates until the active turn has finished using them.
+          if (lastResolvedModel?.provider !== selectedModel.provider) {
+            await this.config.refreshAgentTools?.(agent, request);
+          }
+          if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
+            agent.setModel(
+              resolveModel(selectedModel),
+              this.config.streamFunction,
+              this.config.createNativeCompaction?.(selectedModel.provider),
+            );
+          }
+          agent.setEffort(request.effort);
         }
-        return runtime.agent;
+        lastResolvedModel = selectedModel;
+        return agent;
       },
       compaction: this.config.compaction,
       knowledgePath: paths.knowledge,

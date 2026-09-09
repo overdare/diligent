@@ -73,8 +73,9 @@ results retain their image format. The returned preview contains the same bytes 
 file.
 
 OVERDARE's runtime passes the selected thread provider into bundled tool factories. Tool
-settings and model-facing tools follow that provider; switching models rebuilds the agent's
-tools on the next turn while preserving an in-flight turn's model snapshot. Generation remains
+settings and model-facing tools follow that provider. Changing the thread model via `config/set`
+uses the existing agent's model setter; only a provider change refreshes its tools on the next
+turn. The agent and its state are retained, and an in-flight turn keeps its model and tools snapshot. Generation remains
 available for ChatGPT when `STUDIO_DISABLED=1`.
 
 Standalone MCP, the HTTP MCP router, and the product tool CLI do not receive the calling chat's

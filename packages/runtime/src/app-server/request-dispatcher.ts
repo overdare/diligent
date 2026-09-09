@@ -364,8 +364,9 @@ export async function dispatchClientRequest(
         if (!sameModelRef(runtime.model, result.model)) {
           runtime.model = result.model;
           const model = resolveModel(result.model);
-          // Keep the active turn's model/tools snapshot intact. The next agent resolution
-          // rebuilds for the selected model and reuses the existing collaboration registry.
+          const llmCompactionFn = ctx.createNativeCompaction?.(model.provider as ProviderName);
+          const llmMsgStreamFn = ctx.streamFunction;
+          runtime.agent?.setModel(model, llmMsgStreamFn, llmCompactionFn);
           const normalizedEffort = normalizeThinkingEffort(model, runtime.effort);
           if (normalizedEffort !== runtime.effort) {
             runtime.effort = normalizedEffort;
