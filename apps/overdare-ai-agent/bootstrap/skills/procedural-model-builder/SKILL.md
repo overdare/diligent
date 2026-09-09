@@ -1,118 +1,149 @@
 ---
 name: procedural-model-builder
-description: Author detailed, textured or parameter-driven geometry with native ProceduralModel Python Source, real MeshPart children, material presets, tints and UV projection. Use for coherent modeled assets whose form and surfaces matter. Create and edit through Editor Luau, then verify automatic regeneration and the rendered result.
+description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. Use Editor Luau directly for ordinary scene placement.
 ---
 
-# Native ProceduralModel authoring
+# OVERDARE geometry recipes
 
-Build native **ProceduralModel** assets whose Python Source generates real
-MeshPart children. Preserve generation rules and editable parameters so changes
-produce related forms. This skill provides geometry authoring guidance; the actual
-world editing entry point is `studiorpc_execute_luau` with `target: "Editor"`.
-Ordinary one-time placement of existing objects does not require a generator.
+Write a Python recipe that builds a mesh and bakes it into a **ProceduralModel** as real
+`MeshPart` children — solid geometry with material presets, tints, UV projection and a triangle
+budget. This is the system for **one prop made well**: a crate, a bench, a lantern, a barrel, a
+bookshelf. Ordinary scene placement can use Editor Luau directly. Reach for this one when the deliverable
+is a single object whose surfaces and silhouette matter.
 
-## Establish the authoring contract
+## Read the authoring reference first
 
-Read the system prompt's complete native Source example and reuse a working Source
-when available. Native generation uses `import unreal`, `unreal.OvdrGeometry`, and
-`ovdr_parts`; it does not use Blender. Consult applicable OVERDARE documentation
-for additional `G.*`, `parts.*`, or `layout.*` signatures before using them.
+Use the complete native Source reference in the system prompt and a working recipe
+when available. Query `studiorpc_instance_schema_search` for class/property and
+material hints; it does not describe Python geometry function signatures. Consult
+applicable native API documentation for additional `G.*`, `parts.*` and `layout.*`
+functions rather than guessing an API from memory.
 
-Query `studiorpc_instance_schema_search` for ProceduralModel properties and any
-unfamiliar instance material values using the supported class/property filters.
-JSON property schemas do not document
-native Python function arguments and may omit Source, which the documented Editor
-path can still read and assign. Do not invent an API after an unrelated search hit
-or replace Editor behavior with a gameplay Script.
+Nothing is pre-injected into a recipe; include the imports it needs (`import unreal`,
+`G = unreal.OvdrGeometry`, `import ovdr_parts as parts`, or `from ovdr_brickcolor import bc`).
 
-## Native Source contract
+## The contract — a recipe has one shape
 
-- Declare defaults in `OVDR_PARAMETERS` and implement
-  `on_generate(model, size, attributes)`. Keep module scope declarative: imports,
-  constants and helper definitions. Generate meshes inside `on_generate`.
-- Use the complete working module in the system prompt as a starting point. It
-  demonstrates mesh creation, normals, append operations, UV projection, handle
-  disposal and `model.part`; adapt its rules and materials to the requested form.
-- `model.part(name, mesh, preset, tint=..., location_cm=(0,0,0), tile_cm=0)` declares
-  a generated MeshPart. Merge geometry sharing a `(preset, tint)` pair with
-  `G.append_mesh` before declaring its part. A material boundary requires a part
-  boundary; do not make a separate MeshPart for every repeated component.
-- `size` uses native `(width, depth, height)` in centimetres with Z up. Editor
-  Size.Y is vertical. In the tested Studio mapping, the native tuple corresponds
-  to `(Editor Size.Z, Editor Size.X, Editor Size.Y)`. Check non-cubic proportions
-  and orientation rather than assuming the horizontal axes are interchangeable.
-- Consume Size and the declared attributes in the generation rules; storing an
-  unused parameter does not make geometry adjustable. Validate positive derived
-  dimensions after subtracting framing, clearances, gaps and repeated layers.
-- Keep randomness deterministic with an explicit seed when repeatability matters.
+A recipe is a Python module that declares its parameters and defines **one** entry point:
 
-## Model and material quality
+```python
+OVDR_PARAMETERS = {"plank_count": 5}          # module level: knobs, constants, helper defs only
 
-Use geometry for defining grooves, ribs, holes and silhouette changes instead of
-assuming a tint or texture supplies the form. Check the available native functions
-for the required operation; do not guess arguments for bevels, orientation or CSG.
+def on_generate(model, size, attributes):
+    w, d, h = size                            # the model's Size in cm, Z up
+    mesh = G.new_mesh()
+    # ... build geometry ...
+    model.part("crate_wood", mesh, "Plank", tint=bc("Dark orange"))
+```
 
-Choose exact supported material preset names and normalized `unreal.LinearColor`
-tints. The example's Plank is one working preset, not a required material for every
-surface. Instance material enums help identify names, but do not establish every
-argument accepted by native `model.part`.
+- The runner **refuses a module without `on_generate`** before executing a line of it, and refuses
+  one whose `on_generate` does not take exactly `(model, size, attributes)`. Top-level code stays
+  declarative — imports, constants, helper `def`s. Geometry belongs *inside* `on_generate`.
+- `model.part(name, mesh, preset, tint=..., location_cm=(0,0,0), tile_cm=0)` turns the in-memory
+  mesh into a MeshPart child. **One part per distinct `(preset, tint)` pair, never per body part** —
+  a squirrel's body, head, ears and legs are all one fur, so they are **one** part. `G.append_mesh`
+  everything that shares a material into one mesh first.
+- `size` is the built-in `(width, depth, height)` in cm, Z up. Build to it and dragging the model's
+  Size handle re-runs the recipe at the new footprint; ignore it and the handle does nothing.
+- `attributes` are the parameters `OVDR_PARAMETERS` declares, by name. Declared struct types arrive
+  as friendly Python values (a `Color` for Color3, a `Vector3`, a `UDim2`, a `CFrame`, …).
 
-Apply UV projection at the intended material scale. The native preset guidance
-uses `tile_cm` in the 25-400 cm range. The earlier geometry implementation's
-resource guidance is a ceiling of 256 live mesh handles and fewer than 30,000
-triangles; verify current limits if newer Studio documentation differs. Reuse and
-append repeated geometry, disposing temporary handles as you go. Do not accumulate
-all temporary meshes until the end or spend triangles that do not improve the form.
+Check the Python contract after writing or editing Source. Do not use the gameplay
+Lua validator for this Python module. Editor execution is not a synchronous bake
+validation report; inspect the generated result and available diagnostics later.
 
-Check boolean failure returns from `G.*` operations and surface
-`G.get_last_error()` where available. Python helpers may raise exceptions. Native
-Unreal enum values are objects, not the bare strings printed in some references.
+## The loop
 
-## Author and iterate in the Editor
+1. Read the native Source reference and any existing recipe; inspect the target's
+   class/property hints when needed.
+2. Keep the Python recipe in a project file and check its contract. Through
+   `studiorpc_execute_luau` with `target: "Editor"`, create and parent a ProceduralModel,
+   assign the file's complete text to Source, set Size/attributes and enable AutoRebuild.
+   Editor Size is `[x, y, z]`, Y up; the tested native size tuple is `(Editor Z, Editor X, Editor Y)`.
+3. Resolve and keep the model GUID with focused browse/readback. Read generated
+   MeshParts in a later call: Editor saves successful edits, but generation is
+   asynchronous. Do not call unsupported Rebuild/Bake methods or replay creation.
+4. Use `studiorpc_game_screenshot` with `{ instanceId: <guid>, yaws: [35, 215] }`
+   to inspect the model. See "Looking at the prop" below.
+5. Fix the same recipe/model and synchronize changed file text to Source. Test
+   AutoRebuild by changing an attribute after the initial command ends without
+   resubmitting Source, then observe the result. Ship when the measured result and
+   the picture agree; save subsequent generated changes if needed.
 
-1. Establish the target parent and reuse an existing model when iterating. Read a
-   supplied GUID to confirm the specific object; avoid rescanning the whole world.
-2. Through Editor Luau, create and parent a ProceduralModel, enable AutoRebuild,
-   assign its complete Python Source, set Size and initialize declared attributes.
-   Resolve the resulting GUID with focused readback/browse. Do not invent GUID
-   lookup, Rebuild or Bake methods in the Editor VM.
-3. Successful Editor execution saves its edits, but generation is asynchronous.
-   Read the generated children in a later call. Assignment success is not a bake
-   report, and an empty result alone does not identify the cause of failure.
-4. Change one parameter after the initial command has ended, without resubmitting
-   Source, and observe the expected geometric change. Restore the test value when
-   it was only a verification probe. Compare a relevant measurement or appearance;
-   unchanged child GUIDs and outer bounds do not establish regeneration failure.
-5. Make fixes to the same model's rules or inputs. Generated children are derived
-   output, so direct child edits may be overwritten by the next regeneration.
-6. Inspect the visible result before reporting completion. Save later generated
-   changes when needed; do not replay creation to recover a failed save.
+The ProceduralModel owns the generation Source and renders it live; asset ids are
+issued at publish, not on each pass. An Editor return is authored by your code, not
+an automatic report of the later bake.
 
-## Source ownership
+## Judge on the numbers before the picture
 
-For an existing model, read its Source and use focused `studiorpc_script_read` /
-`studiorpc_script_edit` for small text changes, preserving Python indentation.
-Editor Luau can assign the complete module when necessary. Do not validate this
-Python module with the gameplay Lua validator.
+Use observed part data or native diagnostics when available. The Editor tool does
+not return the old dedicated bake report; do not invent its fields when unavailable:
 
-If the user provides or requests a project recipe file, keep that file and the
-model's Source synchronized and report its path. A file edit alone does not trigger
-Studio generation: the revised text must reach Source. Editor execution accepts
-Luau code, not a recipe file-path parameter. Otherwise, report Source on the model
-as the persistent recipe rather than inventing a file or recipe identifier.
+- `boundsCm` — the part's footprint. `parts.fits_within(mesh, x, y, z)` asserts it in-recipe.
+- `triangles` — under 30,000; **under-spending is the common mistake**, not overspending. Set
+  dressing 1,000–4,000, a pickup 1,500–6,000. A tenth of the budget usually means detail was left
+  out.
+- `warnings` — read every warning actually returned; missing diagnostics do not mean no warnings.
+- On the **preset (material) path**, project UVs at the size the pattern was drawn for — each preset
+  tiles at its own `LocalUVWscale`, and `model.part`'s `tile_cm` must land in **25–400 cm** (a
+  finer tile is refused, and would render as flat colour anyway). A 400 cm wall tiled every 20 cm
+  is a grey field; the same wall at 128 cm reads as masonry.
 
-## Inspect and report evidence
+## Looking at the prop
 
-Use `studiorpc_game_screenshot` with `instanceId` for an isolated model render;
-`yaws` and `pitch` select useful views. For custom viewport framing, inspect
-WorldTransform and Size when available and use the screenshot tool's camera
-position/lookAt controls. They are observations for framing, not writable fields.
-Actually view the image. If a Windows path is unreadable on the host, use its
-mounted project counterpart when available or report that visual inspection failed.
+The recipe does not render; the baked MeshParts do. `studiorpc_game_screenshot` with an
+`instanceId` renders **that model alone** — nothing else of the level in frame, fixed key light and
+exposure, the creator's camera untouched — so two shots are comparable and you see the prop as it
+ships. Steer the view without changing anything:
 
-Check part/material grouping, silhouette, proportions, UV scale and the effect of
-parameters. Report triangle counts, bounds, native errors and warnings only when
-those values were actually returned or measured. The shared Editor tool does not
-supply the former dedicated bake report. Unknown diagnostics remain unknown; do
-not turn missing warnings into "no warnings" or identical measurements into a
-successful change claim.
+- `yaws: [35, 215]` — compass angles to orbit through, one PNG each (up to 8). The default camera
+  sits on the **+X / +Y** side, so **build the prop facing +X, standing on z=0**; a face on -X / -Y
+  is invisible in the default shot unless you pass the yaw that turns it into view.
+- `pitch` — degrees above the horizon to look down from (default 20).
+
+For a **tighter or wider framing (zoom)**, the instance render frames automatically; there is no
+zoom knob and adding one would change the RPC. When you need a specific distance or a detail
+close-up, take the ordinary viewport shot instead and frame it host-side with the existing
+`camera`: read the model's world bounds with `studiorpc_instance_read` (`WorldTransform` +
+`Size`), then call `studiorpc_game_screenshot` with `camera: { position, lookAt }` — `lookAt` at
+the bounds centre, `position` pulled back along your chosen yaw/pitch by a distance set from the
+bounds radius and the field of view (nearer = tighter). This needs no spec change; it trades the
+fixed-light isolation of the instance render for full control of direction and zoom.
+
+## Gotchas that cost an iteration (the reference has the full list)
+
+- **Grooves and holes are shapes, not textures.** There is one albedo map, no normal map and no
+  opacity. A cut groove reads as nothing — raise a rib (`parts.rib`). A defining perforation is
+  `parts.perforated_tube`; a one-off opening is a boolean subtract. Glass is a thin solid with the
+  `Glass` preset — nothing shows through it.
+- **One material is one mesh, so a material boundary must be a part boundary.** "Moss below the
+  water line, dry stone above" is two parts split at that height, not one textured mesh.
+- **256 live mesh handles.** Build one element, `append_mesh` it wherever it repeats, dispose the
+  source. Merge as you go — collecting parts in a list and merging at the end runs out on anything
+  repeated (tiles, bricks, books, balusters). The `template` merges as it goes for this reason.
+- **Every sign error in this API is silent** — no error, no warning, no changed number. Prefer
+  `parts.orient(at, z_toward=..., x_toward=...)` over hand-picked pitch/yaw/roll, and never copy a
+  rotation between two calls that need different orientations.
+- **`G.*` returns `False` instead of raising** — wrap each call in a `ck(...)` that raises on
+  `False` (the template ships one). `parts.*` and `layout.*` are ordinary Python and do raise.
+- **Enums are objects**: `unreal.OvdrOriginMode.BASE`, `unreal.OvdrAxis.Z`,
+  `unreal.OvdrBooleanOp.SUBTRACT`. The report prints a default as a bare string like `"Base"`,
+  which is not what you type.
+
+## Storing recipes — the recipe is a file
+
+Keep one semantic recipe per prop, **in a file**, and iterate on that file. A recipe is the source of
+truth; the baked MeshParts are derived output. This is the default loop:
+
+1. Write the recipe to a file in the project (a plain path you choose, e.g.
+   `geometry-recipes/ammo-crate.py`). Not an OS temp directory.
+2. Read that file and assign its contents to the same model's Source through Editor
+   Luau. A project file edit alone does not regenerate the Studio model; Editor
+   execution takes Luau code, not a sourcePath argument.
+3. To change something, edit the project file and synchronize Source. Focused
+   `studiorpc_script_read` / `studiorpc_script_edit` can inspect or patch model Source
+   by GUID, but keep the project file synchronized. Preserve Python indentation.
+
+There is **no recipe `id` and no namespaced copy** of the source: keep the actual
+project file path and model GUID for iteration. Do not invent a path for an existing
+model whose Source has not been saved to a project file.

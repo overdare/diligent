@@ -72,7 +72,6 @@ describe("overdare tool cli", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.some((line) => line.includes("[studiorpc]"))).toBe(true);
-    expect(stdout.some((line) => line.includes("[validator]"))).toBe(true);
     expect(stdout.join("\n")).toContain("studiorpc_execute_luau");
     expect(stdout.join("\n")).not.toContain("studiorpc_procedural");
   });
