@@ -55,6 +55,38 @@ const MAX_ENCODED_BYTES = 2 * 1024 * 1024;
 
 type ImageDataLike = { data: Uint8ClampedArray; width: number; height: number };
 
+export interface ImageAlphaStats {
+  width: number;
+  height: number;
+  transparentPixels: number;
+  partialPixels: number;
+  opaquePixels: number;
+}
+
+/** Inspect original pixels without resizing or re-encoding; null means inspection was unavailable. */
+export async function inspectImageAlpha(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+): Promise<ImageAlphaStats | null> {
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (!dimensions || dimensions.width * dimensions.height > MAX_DECODE_PIXELS) return null;
+  try {
+    const image = await decodeImage(bytes, mediaType);
+    let transparentPixels = 0;
+    let partialPixels = 0;
+    let opaquePixels = 0;
+    for (let index = 3; index < image.data.length; index += 4) {
+      const alpha = image.data[index];
+      if (alpha === 0) transparentPixels++;
+      else if (alpha === 255) opaquePixels++;
+      else partialPixels++;
+    }
+    return { width: image.width, height: image.height, transparentPixels, partialPixels, opaquePixels };
+  } catch {
+    return null;
+  }
+}
+
 async function wasmBytes(path: string): Promise<ArrayBuffer> {
   return await Bun.file(path).arrayBuffer();
 }
