@@ -26,7 +26,7 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("Successful Editor execution already saves the level");
     expect(prompt).toContain("Do not reject a class based on an old local catalog");
     expect(prompt).not.toContain("studiorpc_proceduralmodel_");
-    expect(prompt).not.toContain("geometry-recipe");
+    expect(prompt).toContain("geometry-recipe");
   });
   test("VFX guidance matches compatibility tags and playback defaults", async () => {
     const skill = await readFile(join(import.meta.dir, "../../bootstrap/skills/vfx-recipe/SKILL.md"), "utf-8");

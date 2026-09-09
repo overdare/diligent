@@ -124,7 +124,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("a saved procedural override exposes deprecated guides without restoring retired tools", async () => {
+  test("native geometry guidance is active while the old builder stays deprecated", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -138,11 +138,21 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
     for (const name of ["procedural-builder", "geometry-recipe"]) {
       const prompt = registries.prompts.get(`agent-${name}`)!;
-      expect(prompt.description).toContain("Deprecated");
+      if (name === "geometry-recipe") {
+        expect(prompt.description).not.toContain("Deprecated");
+      } else {
+        expect(prompt.description).toContain("Deprecated");
+      }
       const body = await prompt.load();
       expect(body).toContain("ProceduralModel");
-      expect(body).not.toContain("studiorpc_procedural_run");
-      expect(body).not.toContain("studiorpc_proceduralmodel_");
+      if (name === "geometry-recipe") {
+        expect(body).toContain("studiorpc_execute_luau");
+        expect(body).toContain("AutoRebuild");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
+      } else {
+        expect(body).not.toContain("studiorpc_procedural_run");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
+      }
       const skill = await registries.tools.get("load_skill")!.execute(
         { name },
         {
@@ -151,8 +161,13 @@ describe("OVERDARE MCP server", () => {
           abort() {},
         },
       );
-      expect(skill.output).toContain("Deprecated");
-      expect(skill.output).toContain("studiorpc_execute_luau");
+      if (name === "geometry-recipe") {
+        expect(skill.output).not.toContain("# Deprecated");
+        expect(skill.output).toContain("on_generate");
+      } else {
+        expect(skill.output).toContain("Deprecated");
+      }
+      if (name !== "geometry-recipe") expect(skill.output).toContain("studiorpc_execute_luau");
     }
   });
 
