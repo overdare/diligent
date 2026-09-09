@@ -124,7 +124,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry guidance is active while the old builder stays deprecated", async () => {
+  test("native geometry tools and guidance are active while the old builder stays deprecated", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -133,7 +133,9 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_"))).toEqual([]);
+    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_")).sort()).toEqual(
+      ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
+    );
     expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
     expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
     for (const name of ["procedural-builder", "geometry-recipe"]) {

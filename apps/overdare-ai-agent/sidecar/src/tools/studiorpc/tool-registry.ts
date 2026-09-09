@@ -15,6 +15,9 @@ import * as instanceSchemaSearch from "./methods/instance.schema.search";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
+import * as proceduralModelApi from "./methods/proceduralmodel.api";
+import * as proceduralModelSet from "./methods/proceduralmodel.set";
+import * as proceduralModelValidate from "./methods/proceduralmodel.validate";
 import * as rigBuilderInsert from "./methods/rig_builder.insert";
 // biome-ignore lint/correctness/noUnusedImports: script.add moved to tools/script-add-tool.ts
 import * as _scriptAdd from "./methods/script.add";
@@ -64,6 +67,9 @@ type RenderBuilder = (ctx: {
 }) => ToolRenderPayload | undefined;
 
 export const methodModules: MethodModule[] = [
+  proceduralModelApi,
+  proceduralModelValidate,
+  proceduralModelSet,
   instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
@@ -82,6 +88,7 @@ export const methodModules: MethodModule[] = [
   hubTokenRead,
 ];
 export const mutatingMethods = new Set([
+  proceduralModelSet.method,
   assetDrawerImport.method,
   assetManagerImageImport.method,
   actionSequencerApplyJson.method,
