@@ -7,9 +7,10 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `referenceImages` file paths, an optional image
-`model`, and `background` (`auto`, `opaque`, or `transparent`; omitted means `auto`). The runtime
-binds it to the selected chat provider:
+`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
+(`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
+the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
+tool arguments. The runtime binds generation to the selected chat provider:
 
 | Selected chat provider | Behavior |
 |---|---|
