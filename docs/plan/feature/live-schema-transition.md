@@ -9,8 +9,9 @@ is already merged. This draft removes upsert and implements dynamic discovery.
 - Remove the upsert tool, its static instance.params catalog, class-bound write
   validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
   Keep instance read, hierarchy move/delete, Source helpers and their shared
-  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Inherit the active geometry-recipe skill/agent from #434 unchanged; their
-  restoration is not part of this PR.
+  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Rename the active geometry-recipe skill/agent inherited from #434 to
+  procedural-model-builder and remove the old geometry-recipe entries here. The
+  underlying native authoring guidance is restored by #434, not by this PR.
 - The schema tool accepts an empty query and no-filter calls. Normalize the latter
   to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
   property searches retain their existing Studio request shapes.

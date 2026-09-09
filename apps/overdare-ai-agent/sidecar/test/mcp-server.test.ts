@@ -138,7 +138,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry guidance remains available without the retired builder or write tools", async () => {
+  test("native model builder replaces the old geometry name without retired write tools", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -150,12 +150,14 @@ describe("OVERDARE MCP server", () => {
     expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
     expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
     expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
-    const geometry = registries.prompts.get("agent-geometry-recipe")!;
+    expect(registries.prompts.has("agent-geometry-recipe")).toBe(false);
+    expect(registries.tools.get("load_skill")?.description).not.toContain("geometry-recipe");
+    const geometry = registries.prompts.get("agent-procedural-model-builder")!;
     expect(geometry).toBeDefined();
     expect(geometry.description).not.toContain("Deprecated");
     const agentBody = await geometry.load();
     const skill = await registries.tools.get("load_skill")!.execute(
-      { name: "geometry-recipe" },
+      { name: "procedural-model-builder" },
       {
         toolCallId: "geometry-guide",
         signal: new AbortController().signal,

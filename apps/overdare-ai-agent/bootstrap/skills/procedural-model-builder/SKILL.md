@@ -1,9 +1,9 @@
 ---
-name: geometry-recipe
+name: procedural-model-builder
 description: Author detailed, textured or parameter-driven geometry with native ProceduralModel Python Source, real MeshPart children, material presets, tints and UV projection. Use for coherent modeled assets whose form and surfaces matter. Create and edit through Editor Luau, then verify automatic regeneration and the rendered result.
 ---
 
-# OVERDARE geometry recipes
+# Native ProceduralModel authoring
 
 Build native **ProceduralModel** assets whose Python Source generates real
 MeshPart children. Preserve generation rules and editable parameters so changes

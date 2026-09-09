@@ -139,8 +139,9 @@ The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
 and its Source format are retained in Studio.
 
 The `procedural-builder` skill and agent definitions remain removed: they belonged
-to the retired local Luau runner. The `geometry-recipe` skill and agent are active
-native ProceduralModel authoring guides. They retain geometry/material/UV/resource
+to the retired local Luau runner. The native authoring skill and agent restored as `geometry-recipe` by #434 are
+renamed to `procedural-model-builder` here; the old geometry-recipe entries are
+removed from this branch. They remain active native ProceduralModel authoring guides. They retain geometry/material/UV/resource
 and verification guidance while using Editor Luau, Source helpers and later
 readback instead of the removed dedicated recipe RPCs. They are not deprecated
 redirects, and restoring them does not restore a second world-editing tool family.
