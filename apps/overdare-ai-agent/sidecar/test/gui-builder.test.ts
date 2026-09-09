@@ -50,7 +50,7 @@ test("loads only the renamed GUI builder and resolves its references after deplo
       } else if (path.endsWith(".md")) {
         const body = bytes.toString("utf8");
         expect(loaded.output).not.toContain(body.trim());
-        const nested = [...body.matchAll(/\]\(([^)]+\.(?:md|png))\)/g)].map((match) => match[1]);
+        const nested = [...body.matchAll(/\]\(([^)]+\.(?:md|png|py))\)/g)].map((match) => match[1]);
         for (const link of nested) {
           if (!link.includes("://")) await verifyResource(resolve(dirname(path), link));
         }
