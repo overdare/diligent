@@ -1,8 +1,8 @@
 // @summary Verifies GUI builder discovery, packaged references, and documented Studio font assignments.
 import { expect, test } from "bun:test";
-import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { discoverSkills, renderSkillsSection } from "@diligent/runtime/skills";
 import { createSkillTool } from "@diligent/runtime/tools/skill";
 import { parseArgs } from "../src/tools/studiorpc/methods/instance.upsert";
@@ -38,7 +38,25 @@ test("loads only the renamed GUI builder and resolves its references after deplo
     const baseDir = skills.find((skill) => skill.name === "gui-builder")!.baseDir;
     const links = [...loaded.output.matchAll(/\]\(((?:references|assets)\/[^)]+)\)/g)].map((match) => match[1]);
     expect(links.length).toBeGreaterThan(0);
-    for (const path of links) await access(resolve(baseDir, path));
+    const visited = new Set<string>();
+    async function verifyResource(path: string): Promise<void> {
+      expect(relative(baseDir, path).startsWith("..")).toBe(false);
+      if (visited.has(path)) return;
+      visited.add(path);
+      const bytes = await readFile(path);
+      expect(bytes.length).toBeGreaterThan(0);
+      if (path.endsWith(".png")) {
+        expect(bytes.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      } else if (path.endsWith(".md")) {
+        const body = bytes.toString("utf8");
+        expect(loaded.output).not.toContain(body.trim());
+        const nested = [...body.matchAll(/\]\(([^)]+\.(?:md|png))\)/g)].map((match) => match[1]);
+        for (const link of nested) {
+          if (!link.includes("://")) await verifyResource(resolve(dirname(path), link));
+        }
+      }
+    }
+    for (const path of links) await verifyResource(resolve(baseDir, path));
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

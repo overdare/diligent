@@ -48,8 +48,9 @@ The bundled `gui-builder` skill builds actual GUI using generated images and nat
 a guide image tailored to the current game's atmosphere, scene/UI context, and requested screen.
 That image is attached as the shared reference for reusable artwork, then the native GUI is
 constructed and verified in Studio. Producing the guide alone does not complete the GUI task.
-There is no bundled genre-image library or template-selection gate. Small existing-UI edits
-that need no new artwork do not require another generation step.
+There is no bundled genre-image library or template-selection gate. New GUI and full visual redesign
+requests use this image-guided workflow by default; explicit no-generation or existing-assets-only
+requests override it. Focused font, text, layout, or behavior edits load only their relevant references.
 Legacy `ui-generator`, `overdare-ui-templates`, and `mobile-ui-design` entries are disabled upgrade placeholders;
 they are not advertised or invocable by the model.
 
@@ -60,6 +61,23 @@ visual intent: final labels and counters use native TextLabel/TextButton `FontFa
 The sidecar adds the internal Font tag; authored requests specify Family, Weight, and Style
 together. Readback checks the selected value, while actual glyph coverage, wrapping, and
 clipping still require visual verification. No font binaries or additional font service are bundled.
+
+Mobile HUD design starts with required touch actions, not only information panels. Manual-fire
+shooters need a visible fire control, reachable movement/aiming input, and the other supported
+actions. The skill maps active system controls before generating the guide. It includes one
+viewport-focused system-control reference because gameplay captures can omit CoreGui. This is
+layout context, not a visual theme or an asset to import into the level. Font-only work does not load it.
+
+If default jump conflicts with a new/full HUD design, the skill can integrate a working custom
+jump while preserving the joystick and existing movement rules. The conditional `custom-jump.md`
+reference covers connection, visibility, respawn, and verification; small unrelated edits do not
+replace system controls.
+
+For transparent assets, the skill distinguishes real alpha from a baked checkerboard and asks
+for one reference-guided background repair before abandoning an otherwise usable image. A second
+failure leaves that artwork unfinished and requires a user decision before further attempts or
+replacing the generated art with native panels. This is model-facing workflow guidance, not an
+automatic retry loop or a guarantee of image quality.
 
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before
