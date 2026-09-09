@@ -7,7 +7,7 @@ import { callRegistryTool, createMcpServer, type McpRegistries } from "../src/mc
 import { createRouterEndpoint, ROUTER_TOOL_CALL_ROUTE } from "../src/router-endpoint";
 import { createImageGenerationToolProvider } from "../src/tools/image-generation";
 
-async function cancellableImages(modelProvider: "chatgpt" | "gemini" = "gemini") {
+async function cancellableImages() {
   const started = Promise.withResolvers<AbortSignal>();
   const stopped = Promise.withResolvers<boolean>();
   const cleanup = new AbortController();
@@ -28,9 +28,7 @@ async function cancellableImages(modelProvider: "chatgpt" | "gemini" = "gemini")
   };
   const tools = await createImageGenerationToolProvider({
     generateCodexImage: generate,
-    generateGeminiImage: generate,
-    resolveGeminiImageConfig: async () => ({ apiKey: "test-key", model: "test-image-model" }),
-  }).createTools({ cwd: process.cwd(), modelProvider });
+  }).createTools({ cwd: process.cwd(), modelProvider: "chatgpt" });
   const registries: McpRegistries = {
     tools: new Map(tools.map((tool) => [tool.name, tool])),
     prompts: new Map(),
@@ -52,11 +50,8 @@ async function stopsPromptly(stopped: Promise<boolean>): Promise<boolean> {
   }
 }
 
-test.each([
-  "chatgpt",
-  "gemini",
-] as const)("MCP cancellation reaches a provider-bound %s tool fixture", async (provider) => {
-  const images = await cancellableImages(provider);
+test("MCP cancellation reaches the ChatGPT-bound tool fixture", async () => {
+  const images = await cancellableImages();
   const server = createMcpServer(images.registries);
   const client = new Client({ name: "cancellation-test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
