@@ -18,6 +18,7 @@ export interface CodexTurnInput {
   threadId: string;
   cwd: string;
   prompt: string;
+  referenceImages?: string[];
 }
 
 export interface CodexAppServerSession {
@@ -62,7 +63,9 @@ class CodexAppServer implements CodexAppServerSession {
       cwd,
       ephemeral: true,
       developerInstructions:
-        "Generate exactly one requested image with the built-in image generation skill. Do not edit project files or run unrelated tools.",
+        "Generate exactly one requested image with the built-in image generation skill. " +
+        "Use any attached images as actual image-generation references, not just as text inspiration. " +
+        "Do not edit project files or run unrelated tools.",
     });
     return parseCodexPayload(method, threadSchema, response).thread.id;
   }
@@ -71,7 +74,10 @@ class CodexAppServer implements CodexAppServerSession {
     const started = this.rpc.request("turn/start", {
       threadId: input.threadId,
       cwd: input.cwd,
-      input: [{ type: "text", text: `$imagegen\n${input.prompt}` }],
+      input: [
+        { type: "text", text: `$imagegen\n${input.prompt}` },
+        ...(input.referenceImages ?? []).map((path) => ({ type: "localImage", path })),
+      ],
     });
     // Consume notifications independently: failure must not wait for a missing acknowledgement.
     const [, images] = await Promise.all([started, this.collectTurn(input.threadId)]);

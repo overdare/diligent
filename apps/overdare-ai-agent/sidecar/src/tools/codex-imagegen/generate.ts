@@ -14,6 +14,7 @@ export interface GeneratedCodexImage {
 export type GenerateCodexImage = (input: {
   cwd: string;
   prompt: string;
+  referenceImages?: string[];
   signal?: AbortSignal;
 }) => Promise<GeneratedCodexImage>;
 
@@ -21,12 +22,12 @@ export function createGenerateCodexImage(
   createClient: CreateCodexAppServer = createCodexAppServer,
   options: { timeoutMs?: number } = {},
 ): GenerateCodexImage {
-  return async ({ cwd, prompt, signal }) => {
+  return async ({ cwd, prompt, signal, referenceImages }) => {
     const client = createClient({ cwd, signal, timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT_MS });
     try {
       await prepareImageSession(client);
       const threadId = await client.startThread(cwd);
-      const images = await client.runTurn({ threadId, cwd, prompt });
+      const images = await client.runTurn({ threadId, cwd, prompt, ...(referenceImages ? { referenceImages } : {}) });
       return selectGeneratedImage(images);
     } finally {
       await client.close();

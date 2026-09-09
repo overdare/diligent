@@ -5,6 +5,7 @@ import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
 import { type GenerateCodexImage, generateCodexImage } from "../codex-imagegen/generate";
 import { type GeneratedImageSource, type StoredImage, storeGeneratedImage } from "./image-store";
+import { resolveReferenceImages } from "./reference-images";
 
 const TOOL_NAME = "generate_image";
 const IMAGE_FAILURE_GUIDANCE =
@@ -15,6 +16,13 @@ const IMAGE_FAILURE_GUIDANCE =
 const parameters = z
   .object({
     prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
+    referenceImages: z
+      .array(z.string().trim().min(1))
+      .max(5)
+      .optional()
+      .describe(
+        "Optional PNG, JPEG, or WebP reference files on the agent host. Reuse a mockup or anchor image for consistent variants. Absolute paths are preferred; relative paths resolve from the project directory.",
+      ),
   })
   .strict();
 
@@ -53,21 +61,27 @@ function createGenerateImageTool(
   return {
     name: TOOL_NAME,
     description:
-      "Generate and save one bespoke icon, panel, or illustration from a prompt with ChatGPT via local Codex OAuth. " +
+      "Generate and save one UI mockup, icon, panel, or illustration with ChatGPT via local Codex OAuth. " +
+      "Attach referenceImages to guide edits or match a mockup's visual style. Independent requests can run in parallel; " +
+      "finish a shared reference image before starting variants that depend on it. " +
       "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
       "Returns the exact absolute output file path and a preview. To use it in OVERDARE Studio, separately " +
       "pass that file to studiorpc_asset_manager_image_import, then bind the returned asset.assetid to the target " +
       "ImageLabel or ImageButton. " +
       IMAGE_FAILURE_GUIDANCE,
     parameters,
-    supportParallel: false,
+    supportParallel: true,
     async execute(args, ctx) {
       ctx.signal.throwIfAborted();
       const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
         description: "Generate and save an image",
-        details: { provider, prompt: args.prompt },
+        details: {
+          provider,
+          prompt: args.prompt,
+          ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}),
+        },
       });
       if (approval === "reject") {
         return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
@@ -75,8 +89,15 @@ function createGenerateImageTool(
 
       ctx.signal.throwIfAborted();
       try {
+        const referenceImages = await resolveReferenceImages(cwd, args.referenceImages, ctx.signal);
         const generated = await generateImageForProvider(
-          { cwd, provider, prompt: args.prompt, signal: ctx.signal },
+          {
+            cwd,
+            provider,
+            prompt: args.prompt,
+            signal: ctx.signal,
+            ...(referenceImages.length ? { referenceImages } : {}),
+          },
           options,
         );
         ctx.signal.throwIfAborted();
@@ -92,13 +113,13 @@ function createGenerateImageTool(
 }
 
 async function generateImageForProvider(
-  input: { cwd: string; provider: ImageProvider; prompt: string; signal: AbortSignal },
+  input: { cwd: string; provider: ImageProvider; prompt: string; signal: AbortSignal; referenceImages?: string[] },
   options: ImageGenerationToolProviderOptions,
 ): Promise<GeneratedImage> {
-  const { cwd, provider, prompt, signal } = input;
+  const { cwd, provider, prompt, signal, referenceImages } = input;
 
   const generate = options.generateCodexImage ?? generateCodexImage;
-  const generated = await generate({ cwd, prompt, signal });
+  const generated = await generate({ cwd, prompt, signal, ...(referenceImages ? { referenceImages } : {}) });
   return {
     image: { type: "file", file: generated.sourcePath },
     provider,
