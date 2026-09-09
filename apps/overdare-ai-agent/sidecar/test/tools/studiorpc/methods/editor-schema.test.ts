@@ -8,12 +8,13 @@ import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 const context = { toolCallId: "test", signal: new AbortController().signal, abort() {} };
 
 describe("live Editor tools", () => {
-  test("world editing has no separate procedural authoring tool surface", async () => {
+  test("Editor world editing coexists with native ProceduralModel tools", async () => {
     const tools = await createStudioRpcToolProvider().createTools({ cwd: "/tmp/nonexistent-schema-free-project" });
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_execute_luau");
     expect(names).toContain("studiorpc_instance_schema_search");
-    expect(names.filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
+    expect(names).not.toContain("studiorpc_procedural_run");
+    for (const name of ["api", "validate", "set"]) expect(names).toContain(`studiorpc_proceduralmodel_${name}`);
   });
   test("schema discovery does not request execute permission or save the world", async () => {
     const calls: string[] = [];
