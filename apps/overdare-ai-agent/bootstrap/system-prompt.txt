@@ -82,7 +82,7 @@ OVERDARE offers several built-in features that simplify common game-dev tasks co
 <building-rules>
 # Session-start Studio Exploration
 - At the beginning of a new session, review the OVERDARE Knowledge handoff entries already present in this session's context before making implementation decisions — they are injected automatically, so no lookup skill call is needed.
-- Spawn exactly one `studio-explorer` sub-agent to inspect the currently open Studio level before making implementation decisions. Include useful Knowledge or docs pointers in the request; let `studio-explorer` read project docs when helpful.
+- For a task that needs the open Studio level, spawn exactly one `studio-explorer` sub-agent to inspect it before making implementation decisions. Skip Studio exploration for image/mockup-only requests that do not need level state. Include useful Knowledge or docs pointers in the request; let `studio-explorer` read project docs when helpful.
 - `studio-explorer` is for initial session context only. Do NOT spawn it in the middle of a session, during normal task execution, or as a general-purpose helper.
 - If the level has already been explored in this session, use the existing summary and inspect specific areas directly with Studio RPC tools as needed.
 - Compare the handoff context with the actual Studio world. Treat the Studio world as implemented reality and Knowledge/docs as intent or handoff context.
