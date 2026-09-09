@@ -49,32 +49,6 @@ describe("buildDefaultTools MCP OAuth wiring", () => {
 });
 
 describe("buildDefaultTools web gating", () => {
-  test("passes the selected model provider to bundled tool factories", async () => {
-    const seen: Array<string | undefined> = [];
-    const bundle: BundledToolProvider = {
-      id: "@test/provider-bound-tools",
-      createTools: ({ modelProvider }) => {
-        seen.push(modelProvider);
-        return modelProvider === "gemini"
-          ? [
-              {
-                name: "provider_bound_tool",
-                description: "Provider-specific fixture",
-                parameters: z.object({}),
-                execute: async () => ({ output: "ok" }),
-              },
-            ]
-          : [];
-      },
-    };
-
-    for (const provider of ["gemini", "anthropic", undefined] as const) {
-      const result = await buildDefaultTools({ cwd: "/tmp", provider, bundledToolProviders: [bundle] });
-      expect(toolNamesFor(result).includes("provider_bound_tool")).toBe(provider === "gemini");
-    }
-    expect(seen).toEqual(["gemini", "anthropic", undefined]);
-  });
-
   test("omits provider-native web placeholder tool when tools.web_action is false", async () => {
     const result = await buildDefaultTools({ cwd: "/tmp", toolsConfig: { web_action: false } });
     const names = result.tools.map((tool) => tool.name);

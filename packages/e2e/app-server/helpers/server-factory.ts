@@ -87,7 +87,7 @@ export function createTestServer(opts: {
     ...opts.runtimeConfigOverrides,
   };
 
-  const base = createAppServerConfig({ cwd: opts.cwd, runtimeConfig, bundledToolProviders: opts.bundledToolProviders });
+  const base = createAppServerConfig({ cwd: opts.cwd, runtimeConfig });
 
   return new DiligentAppServer({
     ...base,
