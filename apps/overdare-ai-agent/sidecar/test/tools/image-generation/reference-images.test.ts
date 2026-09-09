@@ -76,6 +76,16 @@ test("normalizes repeated references without changing their input order", async 
   expect(generate).toHaveBeenCalledWith(expect.objectContaining({ referenceImages: [file] }));
 });
 
+test("an unreadable reference returns the retry policy through the tool executor without calling the provider", async () => {
+  const { generate, call } = await setup();
+  const result = await call({ prompt: "Use the reference", referenceImages: ["missing.png"] });
+  expect(result.metadata?.error).toBe(true);
+  expect(result.output).toContain("Cannot read reference image");
+  expect(result.output).toContain("at most three attempts per requested image");
+  expect(result.output).toContain("native Studio GUI");
+  expect(generate).not.toHaveBeenCalled();
+});
+
 test("rejecting generation does not inspect a missing reference or invoke the provider", async () => {
   const { cwd, generate } = await setup();
   const [tool] = await createImageGenerationToolProvider({ generateCodexImage: generate }).createTools({

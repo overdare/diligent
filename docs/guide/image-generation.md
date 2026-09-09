@@ -28,10 +28,12 @@ The result includes an absolute `file` path, the selected `provider`, its authen
 A provider failure is returned to the caller without automatically retrying
 with another provider.
 
-The tool description and failure output instruct the model to stop image work and report the
-error. Code-drawn images (PIL, SVG, or canvas), stock assets, and other providers are not
-substitutes unless the user explicitly approves an alternative. This is a model-facing
-instruction, not a restriction on general-purpose file or shell tools.
+The tool description and failure output allow the initial call plus two retries or repairs
+with the same tool, then direct GUI tasks to continue with native Studio panels, text, and controls.
+Recoverable input errors should be corrected before retrying. Cancellation or rejection does
+not authorize a retry or fallback. Code-drawn images (PIL, SVG, or canvas), stock assets, and other
+providers still require explicit user approval. This is model-facing guidance; the tool does
+not retry internally or block general-purpose file or shell tools.
 
 For Studio workflows, pass the returned `file` directly to
 `studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
@@ -48,6 +50,11 @@ The bundled `gui-builder` skill builds actual GUI using generated images and nat
 a guide image tailored to the current game's atmosphere, scene/UI context, and requested screen.
 That image is attached as the shared reference for reusable artwork, then the native GUI is
 constructed and verified in Studio. Producing the guide alone does not complete the GUI task.
+Guide generation, button/frame artwork generation and import, GUI binding, and verification
+remain separate plan stages. Each planned visual piece must map to a reused asset ID or a
+generated file, imported ID, and target binding, or an explicit fallback after its retry budget.
+`ImageButton` and `ImageLabel` are native GUI instances; editable controls do not imply replacing
+generated artwork with plain Frames or TextButtons. Missing gameplay code is reported separately.
 There is no bundled genre-image library or template-selection gate. New GUI and full visual redesign
 requests use this image-guided workflow by default; explicit no-generation or existing-assets-only
 requests override it. Focused font, text, layout, or behavior edits load only their relevant references.
@@ -73,11 +80,12 @@ jump while preserving the joystick and existing movement rules. The conditional 
 reference covers connection, visibility, respawn, and verification; small unrelated edits do not
 replace system controls.
 
-For transparent assets, the skill distinguishes real alpha from a baked checkerboard and asks
-for one reference-guided background repair before abandoning an otherwise usable image. A second
-failure leaves that artwork unfinished and requires a user decision before further attempts or
-replacing the generated art with native panels. This is model-facing workflow guidance, not an
-automatic retry loop or a guarantee of image quality.
+For transparent assets, the skill distinguishes real alpha from a baked checkerboard and uses
+the remaining retry budget for reference-guided background repair. Execution errors and visual
+defects share the three-attempt limit for each image. After the third failure, the GUI continues
+with native controls and an explicit report of the substituted artwork, preserving successful
+assets. A missing remote screenshot is first resolved to a verified agent-host path rather than
+being discarded to bypass the failed generation.
 
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before

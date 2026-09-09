@@ -111,12 +111,14 @@ describe("generate_image", () => {
     }
   });
 
-  test("a Codex error rejects without storing an image", async () => {
+  test("a Codex error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
     const { cwd, cleanup } = project();
+    let generations = 0;
     try {
       const tool = await toolFor({
         cwd,
         generateCodexImage: async () => {
+          generations += 1;
           throw new Error("Codex generation failed");
         },
       });
@@ -124,10 +126,13 @@ describe("generate_image", () => {
       expect(error).toBeInstanceOf(Error);
       const message = (error as Error).message;
       expect(message).toContain("Codex generation failed");
+      expect(message).toContain("at most three attempts per requested image");
+      expect(message).toContain("native Studio GUI");
       expect(message).toContain("stop image work and report the error");
       expect(message).toContain("PIL, SVG, or canvas");
       expect(message).toContain("user explicitly approves an alternative");
       expect(existsSync(join(resolvePaths(cwd).images, "generated"))).toBe(false);
+      expect(generations).toBe(1);
     } finally {
       cleanup();
     }

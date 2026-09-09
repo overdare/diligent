@@ -9,7 +9,11 @@ import { resolveReferenceImages } from "./reference-images";
 
 const TOOL_NAME = "generate_image";
 const IMAGE_FAILURE_GUIDANCE =
-  "If generation fails, stop image work and report the error. " +
+  "Use at most three attempts per requested image: the initial call plus two retries or repairs with this same tool. " +
+  "On failure, correct recoverable inputs (including unreadable reference paths) before retrying; " +
+  "do not fall back on the first or second failure. After the third failure, stop image work and report the error. " +
+  "For GUI tasks, then continue with native Studio GUI panels, text, and controls, reusing successful assets; " +
+  "explain that generated artwork could not be used. User cancellation or rejection stops the task, not a retry or fallback. " +
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
