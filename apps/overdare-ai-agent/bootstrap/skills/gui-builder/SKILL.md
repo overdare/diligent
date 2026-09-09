@@ -1,60 +1,27 @@
 ---
 name: gui-builder
-description: Build and restyle OVERDARE screen-space GUI with game-specific guide images, reusable artwork, and supported Studio fonts. Use for HUDs, menus, action buttons, panels, and typography changes that need actual GUI implementation. Not for 3D world decoration or gameplay-only changes.
+description: Create and edit OVERDARE screen-space GUI in Studio, including HUDs, menus, controls, layout, and typography. Not for standalone artwork, 3D decoration, or gameplay-only changes.
 ---
 
 # GUI Builder
 
-Build functioning GUI in Studio from the user's visual goal: generate a guide image that fits the game, use it to produce coherent reusable artwork, then construct and verify the screen. Do not start from an official UI template. Repeated text prompts alone do not ensure consistent images; attach the actual reference files when generating related assets.
+Build the requested GUI in Studio, preserving the existing screen owner and unrelated work. Follow the user's explicit design choices over this skill's workflow defaults. Inspect the relevant screen and properties before editing; read its controller when changing behavior or investigating runtime overrides. Match the game's visual direction and reuse suitable existing assets.
 
-Use existing screenshots, images, and assets supplied by the user. Inspect the current screen and controller before changing an existing UI. Ask only for missing choices that materially affect the result, such as a different screen purpose or orientation; do not run a template-selection questionnaire.
+## Read only what the task needs
 
-For a small edit to existing GUI that needs no new art, read the target and its owner, make the focused change, and verify it without regenerating images.
+- **Fonts:** Read [references/fonts.md](references/fonts.md) when selecting or changing a font family, weight, or style. Reusing a verified existing `FontFace` on a new screen does not require another catalog lookup.
+- **New GUI or full visual redesign:** Read [references/image-assets.md](references/image-assets.md) before building the screen. Establish a game-specific guide, attach it for related asset generation, then implement the actual GUI. This is the default for requests such as "make an FPS GUI"; the user does not need to separately request images. Also read it when an existing GUI edit needs new artwork.
+- **Studio implementation:** Read [references/studio-ui.md](references/studio-ui.md) for hierarchy, layout, image binding, or controller changes. For gameplay HUDs, map required actions to touch inputs, then resolve active system-control space and whether to retain or replace jump before generating the guide. A font-only property edit can use the assignment and verification instructions in the font reference.
+- **Custom jump:** Read [references/custom-jump.md](references/custom-jump.md) when replacing the default jump button or wiring a custom button to character jumping.
 
-## Choose typography that Studio can render
+Do not load all references up front. Focused text, font, color, spacing, or behavior edits to existing GUI need only their relevant references. Skip image generation for a new GUI when the user explicitly requests existing assets only, native controls only, or no generation. Being able to construct a screen from plain Frames and text is not a reason to bypass its visual design workflow.
 
-Read [references/fonts.md](references/fonts.md) when choosing or changing fonts. For a new screen, choose supported family/weight/style combinations for the text roles before generating the guide image. Match the game's mood while keeping body text and controls readable; preserve existing typography when the request does not change it.
+## Implement the requested change
 
-Include the selected families and text hierarchy in the guide prompt as design intent, not a promise of exact generated font rendering. Keep labels, counters, and localized copy as native text. Apply their actual `FontFace` values in Studio rather than baking text into image assets to imitate a font.
+Keep labels, counters, live fills, and interactions native so they can change independently. Preserve existing typography unless it is part of the requested change. Use the game's context and established project choices for routine design details, briefly state the direction, and carry the request through to the working GUI. Do not require a generic HUD/style questionnaire before starting. Ask only about unresolved choices that change the task's scope or behavior; retain answers already given and continue independent, authorized work while a blocking choice is unresolved.
 
-## Generate a guide for this game
+Keep Studio writes in one editing session. Reuse existing parents and controllers, create parents before children, and batch sibling edits where supported. Add only the requested behavior.
 
-Ground the guide in the current game's mood and visual language: its existing scene/UI screenshots when available, the user's art direction, genre, palette, materials, and requested screen purpose. Use the context already available; do not choose a generic genre preset or introduce a template-selection questionnaire.
+Match verification to the change: read back edited properties and inspect the affected area at the actual viewport; exercise changed interactions and validate changed scripts. Broaden or repeat checks only after another change, a failure, or an unresolved concern.
 
-Generate one project-specific guide with `generate_image` before producing its individual UI assets. Use landscape mobile orientation unless the user specifies otherwise. Make GUI placement, hierarchy, touch targets, typography, and the requested elements clearly readable; keep any scene backdrop subdued so it supports the game's atmosphere without hiding the layout. Request a flat screen design, not a phone photograph or presentation board.
-
-Pass relevant user images or saved game screenshots in `referenceImages`, explaining whether each supplies visual style or layout context. Inspect the returned preview (or use `read_image`) and retain its exact `file` as the guide for downstream generation. Actually attach that file in subsequent `referenceImages`; repeating its written description is not a substitute. Treat requested dimensions as design intent, not proof of the saved image dimensions.
-
-If this task already has a guide matching the current game's UI direction, reuse it. Generate a new guide when that direction changes substantially, not for each icon or minor existing-UI edit. Do not stop for an extra approval round unless the user requested a design review or a genuinely blocking choice remains.
-
-Keep the top-left system menu, bottom-left joystick, and bottom-right jump region clear in gameplay HUD concepts. Intentional full-screen menus and modals need a different layout from in-game controls. Do not generate unused screens or several alternatives unless the request warrants them.
-
-Reserved regions constrain placement, not control names: a requested custom Jump button can sit above or inward from the native jump region. Do not assume the user wants to replace a system control merely because both have the same action.
-
-If `generate_image` is unavailable for the selected provider, explain that limitation. Do not claim to have generated a guide image, switch providers, or substitute code-drawn or stock art without approval. Native GUI edits that do not need generated art can still proceed within the request.
-
-## Generate a coherent asset set efficiently
-
-Translate the chosen design into a small asset list before generating: shared button/frame art, distinct glyphs, reusable panel backgrounds, and any illustration that really belongs in the screen. Keep live labels, numbers, health fills, and touch behavior as native UI, not baked into artwork.
-
-- Create a common frame once and reuse the same imported asset behind different glyphs when exact geometry matters. Do not regenerate the frame independently for every button.
-- Distinguish identical frames across the new controls from pixel-identical copying of a supplied image. The former needs one shared frame asset. The latter needs source artwork or an available extraction method; generative editing must not be presented as lossless extraction.
-- Use the guide image and, when useful, one finished anchor asset in `referenceImages` for all related requests. Ask to preserve the relevant material, lighting, edge treatment, and proportions while changing the requested content. Specify which attached image controls layout versus asset styling.
-- Keep a stable reference set. Do not chain each new variant from the previous variant and accumulate style drift. Reference-guided generation improves consistency but does not guarantee identical pixels.
-- After shared references exist, submit independent `generate_image` calls together in the same tool batch. One call produces one image. Do not mix generation with Studio mutation calls in that batch, or spawn a separate editing agent for every icon.
-- Each request must be self-contained: the intended asset, the shared reference paths, what changes, what stays, transparency, padding, and any exclusion such as no labels. A glyph layer should have a transparent background and no duplicate button frame.
-- Keep outputs associated with their requested roles, not completion order. Reuse successful outputs; on a failed request, report it and do not restart the whole set or silently substitute a different method.
-
-Use real local paths from user attachments, `generate_image.file`, or saved screenshots. Reading an image or naming it in a prompt is not the same as attaching it: pass the paths explicitly in `referenceImages` for each dependent call. The current tool accepts up to five PNG, JPEG, or WebP references.
-
-## Build and verify the actual screen
-
-Read [references/studio-ui.md](references/studio-ui.md) when creating, importing, or wiring Studio GUI instances. Reuse the existing screen owner. Import each reusable image once through `studiorpc_asset_manager_image_import`, then use its returned `asset.assetid` for the appropriate `ImageLabel` or `ImageButton`.
-
-Assign each native text role its complete `FontFace` (Family, Weight, Style) from the typography plan. Read it back and check the actual rendering for glyph coverage, line wrapping, clipping, and readability; the guide image cannot verify those properties.
-
-Image generation is independent work; Studio imports, hierarchy edits, and script changes still belong to one editing session. Create parents before children, batch siblings where supported, and do not run competing Studio writers. Build native controls and live labels; do not substitute a full-screen guide bitmap with invisible buttons for the actual GUI.
-
-Read back important properties and inspect a play-test screenshot. Check touch-target separation, safe areas, text contrast and overflow, icon proportions, shared frame consistency, and visual feedback. Validate changed scripts and exercise requested interactions. If Studio or play-test access is unavailable, state what was produced and what remains unverified.
-
-Report the guide image used, generated/imported assets, actual GUI changes, and verification. A guide image alone does not complete the GUI task.
+Report the implemented result and relevant verification briefly. If blocked, identify the missing input or access and the unfinished part; if a skill instruction caused the stop, cite that specific instruction. Do not claim checks that Studio or play-test access did not allow.
