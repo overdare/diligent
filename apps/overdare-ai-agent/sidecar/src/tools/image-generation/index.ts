@@ -1,34 +1,44 @@
-// @summary Exposes image generation bound to the selected ChatGPT chat provider.
-
+// @summary Generates and stores images through Diligent's selected ChatGPT OAuth provider.
+import type { ImageGenerationFn } from "@diligent/core/provider-contract";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
-import { type GenerateCodexImage, generateCodexImage } from "../codex-imagegen/generate";
-import { type GeneratedImageSource, type StoredImage, storeGeneratedImage } from "./image-store";
+import { storeGeneratedImage } from "./image-store";
+import { readReferenceImages, resolveReferenceImages } from "./reference-images";
+import { inspectTransparency } from "./transparency";
 
 const TOOL_NAME = "generate_image";
+const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 const IMAGE_FAILURE_GUIDANCE =
-  "If generation fails, stop image work and report the error. " +
+  "Use at most three attempts per requested image: the initial call plus two retries or repairs with this same tool. " +
+  "On failure, correct recoverable inputs (including unreadable reference paths) before retrying; " +
+  "do not fall back on the first or second failure. After the third failure, stop image work and report the error. " +
+  "For GUI tasks, then continue with native Studio GUI panels, text, and controls, reusing successful assets; " +
+  "explain that generated artwork could not be used. User cancellation or rejection stops the task, not a retry or fallback. " +
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
 const parameters = z
   .object({
     prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
+    background: z
+      .enum(["auto", "opaque", "transparent"])
+      .optional()
+      .describe(
+        "Explicit API background setting: transparent for cutout assets, opaque for guides or chroma-key backgrounds; defaults to auto.",
+      ),
+    referenceImages: z
+      .array(z.string().trim().min(1))
+      .max(5)
+      .optional()
+      .describe(
+        "Optional PNG, JPEG, or WebP references on the agent host. Absolute paths are preferred; relative paths resolve from the project directory.",
+      ),
   })
   .strict();
 
-type ImageProvider = "chatgpt";
-
-interface GeneratedImage {
-  image: GeneratedImageSource;
-  provider: ImageProvider;
-  source: "codex-oauth";
-  revisedPrompt?: string;
-}
-
 export interface ImageGenerationToolProviderOptions {
-  generateCodexImage?: GenerateCodexImage;
+  generateImage?: ImageGenerationFn;
 }
 
 export function createImageGenerationToolProvider(
@@ -37,51 +47,94 @@ export function createImageGenerationToolProvider(
   return {
     id: "@overdare/image-generation-tools",
     displayName: "Image Generation",
-    createTools: ({ cwd, host, modelProvider }) => {
+    createTools: ({ cwd, host, modelProvider, generateImage }) => {
       if (modelProvider !== "chatgpt") return [];
-      return [createGenerateImageTool(cwd, modelProvider, host, options)];
+      return [createGenerateImageTool(cwd, host, options.generateImage ?? generateImage, DEFAULT_IMAGE_MODEL)];
     },
   };
 }
 
 function createGenerateImageTool(
   cwd: string,
-  provider: ImageProvider,
   host: RuntimeToolHost | undefined,
-  options: ImageGenerationToolProviderOptions,
+  generate: ImageGenerationFn | undefined,
+  defaultModel: string,
 ): Tool<typeof parameters> {
   return {
     name: TOOL_NAME,
     description:
-      "Generate and save one bespoke icon, panel, or illustration from a prompt with ChatGPT via local Codex OAuth. " +
+      "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
+      "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
+      "Independent requests can run in parallel after shared references exist. " +
       "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
-      "Returns the exact absolute output file path and a preview. To use it in OVERDARE Studio, separately " +
-      "pass that file to studiorpc_asset_manager_image_import, then bind the returned asset.assetid to the target " +
-      "ImageLabel or ImageButton. " +
+      "Returns the exact absolute output file path and a preview. requestedModel records the request, while model is included only if the server reports it. " +
+      "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
+      "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
       IMAGE_FAILURE_GUIDANCE,
     parameters,
-    supportParallel: false,
-    async execute(args, ctx) {
+    supportParallel: true,
+    async execute(args, ctx): Promise<ToolResult> {
       ctx.signal.throwIfAborted();
+      const requestedModel = defaultModel;
+      const background = args.background ?? "auto";
       const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
         description: "Generate and save an image",
-        details: { provider, prompt: args.prompt },
+        details: {
+          provider: "chatgpt",
+          model: requestedModel,
+          background,
+          prompt: args.prompt,
+          ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}),
+        },
       });
-      if (approval === "reject") {
+      if (approval === "reject")
         return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
-      }
-
       ctx.signal.throwIfAborted();
+      const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(300_000)]);
       try {
-        const generated = await generateImageForProvider(
-          { cwd, provider, prompt: args.prompt, signal: ctx.signal },
-          options,
+        if (!generate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
+        const paths = await resolveReferenceImages(cwd, args.referenceImages, signal);
+        const referenceImages = await readReferenceImages(paths, signal);
+        const generated = await generate(
+          {
+            prompt: args.prompt,
+            model: requestedModel,
+            background,
+            ...(referenceImages.length ? { referenceImages } : {}),
+          },
+          { signal },
         );
-        ctx.signal.throwIfAborted();
-        const stored = await storeGeneratedImage(cwd, generated.image, { signal: ctx.signal });
-        return buildImageToolResult(stored, generated);
+        signal.throwIfAborted();
+        const transparency = background === "transparent" ? await inspectTransparency(generated) : undefined;
+        signal.throwIfAborted();
+        const stored = await storeGeneratedImage(
+          cwd,
+          { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
+          { signal },
+        );
+        const details = {
+          file: stored.file,
+          provider: "chatgpt",
+          source: "chatgpt-oauth",
+          requestedModel,
+          requestedBackground: background,
+          ...(generated.model ? { model: generated.model } : {}),
+          ...(generated.background ? { background: generated.background } : {}),
+          ...(transparency ? { transparency } : {}),
+          ...(transparency?.warning ? { guidance: IMAGE_FAILURE_GUIDANCE } : {}),
+        };
+        return {
+          output: JSON.stringify(details, null, 2),
+          outputImages: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
+            },
+          ],
+          metadata: { operation: "image_generation", ...details },
+        };
       } catch (error) {
         ctx.signal.throwIfAborted();
         const reason = error instanceof Error ? error.message : String(error);
@@ -90,36 +143,3 @@ function createGenerateImageTool(
     },
   };
 }
-
-async function generateImageForProvider(
-  input: { cwd: string; provider: ImageProvider; prompt: string; signal: AbortSignal },
-  options: ImageGenerationToolProviderOptions,
-): Promise<GeneratedImage> {
-  const { cwd, provider, prompt, signal } = input;
-
-  const generate = options.generateCodexImage ?? generateCodexImage;
-  const generated = await generate({ cwd, prompt, signal });
-  return {
-    image: { type: "file", file: generated.sourcePath },
-    provider,
-    source: "codex-oauth",
-    revisedPrompt: generated.revisedPrompt,
-  };
-}
-
-function buildImageToolResult(stored: StoredImage, generated: GeneratedImage): ToolResult {
-  const { provider, source, revisedPrompt } = generated;
-  const details = { file: stored.file, provider, source };
-  return {
-    output: JSON.stringify({ ...details, ...(revisedPrompt ? { revisedPrompt } : {}) }, null, 2),
-    outputImages: [
-      {
-        type: "image",
-        source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
-      },
-    ],
-    metadata: { operation: "image_generation", ...details },
-  };
-}
-
-export type { GenerateCodexImage, GeneratedCodexImage } from "../codex-imagegen/generate";
