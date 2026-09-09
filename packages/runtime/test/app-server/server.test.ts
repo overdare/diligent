@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventStream } from "@diligent/core/event-stream";
-import { resolveModel } from "@diligent/core/model-registry";
+import { getModelInfoList, resolveModel } from "@diligent/core/model-registry";
 import { type Model, ProviderError, ProviderManager, type StreamFunction } from "@diligent/core/provider-contract";
 import type {
   DiligentServerNotification,
@@ -869,6 +869,117 @@ describe("DiligentAppServer", () => {
     expect(
       (readResult(newThreadRead) as { currentModel?: { provider: string; modelId: string } }).currentModel,
     ).toEqual({ provider: "openai", modelId: "gpt-5.6-terra" });
+  });
+
+  it.each([
+    false,
+    true,
+  ])("preserves the agent and only refreshes tools across providers (provider changed: %s)", async (changeProvider) => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "diligent-model-refresh-"));
+    const models = getModelInfoList();
+    const initialModel = models.find((model) => model.provider === "anthropic")!;
+    const nextModel = models.find((model) =>
+      changeProvider
+        ? model.provider === "openai"
+        : model.provider === initialModel.provider && model.modelId !== initialModel.modelId,
+    )!;
+    const toolBuilds: string[] = [];
+    const restore = mock(() => {});
+    const onPromptStart = mock(() => {});
+    const createAgentLoopHooks = mock(() => [{ id: "stateful-hook", restore, onPromptStart }]);
+    const config = createAppServerConfig({
+      cwd: projectRoot,
+      runtimeConfig: makeFactoryRuntimeConfig({ model: initialModel }),
+      pluginDiscovery: "explicit",
+      bundledToolProviders: [
+        {
+          id: "provider-tools",
+          createAgentLoopHooks,
+          createTools: ({ modelProvider }) => {
+            toolBuilds.push(modelProvider!);
+            return [
+              {
+                name: `tool_${modelProvider}`,
+                description: "Provider-bound fixture",
+                parameters: z.object({}),
+                execute: async () => ({ output: "ok" }),
+              },
+            ];
+          },
+        },
+      ],
+    });
+    const createAgent = mock(config.createAgent);
+    config.createAgent = createAgent;
+    const server = new DiligentAppServer(config);
+    const connection = connectTestPeer(server);
+    let requestId = 0;
+    try {
+      const started = readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: ++requestId,
+          method: "thread/start",
+          params: { cwd: projectRoot },
+        }),
+      ) as { threadId: string };
+      const { threadId } = started;
+      const sendTurn = async () => {
+        const finished = Promise.withResolvers<void>();
+        connection.setNotificationListener((notification) => {
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) finished.resolve();
+          if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR) {
+            finished.reject(new Error(JSON.stringify(notification.params)));
+          }
+        });
+        readResult(
+          await server.handleRequest(TEST_CONNECTION_ID, {
+            id: ++requestId,
+            method: "turn/start",
+            params: { threadId, message: "hello" },
+          }),
+        );
+        await finished.promise;
+      };
+      await sendTurn();
+      const agent = await createAgent.mock.results[0].value;
+      const originalTools = agent.tools;
+      const registry = agent.registry;
+      const subscriber = mock(() => {});
+      const unsubscribe = agent.subscribe(subscriber);
+
+      readResult(
+        await server.handleRequest(TEST_CONNECTION_ID, {
+          id: ++requestId,
+          method: "config/set",
+          params: { threadId, model: nextModel },
+        }),
+      );
+      expect(agent.model.modelId).toBe(nextModel.modelId);
+      expect(agent.tools).toBe(originalTools);
+      await sendTurn();
+
+      expect(createAgent).toHaveBeenCalledTimes(1);
+      expect(agent.registry).toBe(registry);
+      expect(createAgentLoopHooks).toHaveBeenCalledTimes(1);
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(onPromptStart).toHaveBeenCalledTimes(2);
+      expect(subscriber).toHaveBeenCalled();
+      expect(agent.getMessages().filter((message) => message.role === "user")).toHaveLength(2);
+      expect(toolBuilds).toEqual(
+        changeProvider ? [initialModel.provider, nextModel.provider] : [initialModel.provider],
+      );
+      expect(agent.tools.map((tool) => tool.name)).toContain(`tool_${nextModel.provider}`);
+      if (changeProvider) {
+        expect(agent.tools).not.toBe(originalTools);
+        expect(agent.tools.map((tool) => tool.name)).not.toContain(`tool_${initialModel.provider}`);
+      } else {
+        expect(agent.tools).toBe(originalTools);
+      }
+      unsubscribe();
+    } finally {
+      connection.disconnect();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 
   it("config/reload re-discovers skills and forces the next turn to rebuild its agent", async () => {
