@@ -1,19 +1,17 @@
 // @summary Declares the Studio RPC method that returns the geometry-recipe API reference.
+import { MAX_OUTPUT_BYTES } from "@diligent/core/tool-contract";
 import { z } from "zod";
 
 export const method = "proceduralmodel.api";
 
 export const description =
-  "Fetch the live authoring reference for OVERDARE geometry recipes — the Python `on_generate(model, " +
-  "size, attributes)` system that bakes real MeshParts with presets and tints, distinct from the Luau " +
-  "GeometryPrimitives runner (studiorpc_procedural_run). Call it ONCE at the start of a recipe task and " +
-  "work from what it returns; it is the source of truth, not this description. By default the reply is the " +
-  "COMPACT authoring kit — `template` (a complete working recipe to copy), `lookup` (every G.*/parts.*/" +
-  "layout.* signature on one line, keyed exactly as you write it), `presets` (the ~94 material preset names, " +
-  "a wrong name is refused not rendered grey), `enums`, and `quickref`. This is small on purpose — you do not " +
-  "need to read a file or grep it. When a call's exact arguments or a number come back wrong, call again with " +
-  '`query` (names or keywords, e.g. ["append_sphere", "rib", "bounds"]) to get the verbose per-argument ' +
-  "docs and notes for just those calls. Costs a few seconds; read the compact kit before writing any recipe.";
+  "Fetch the live Python geometry-recipe API for baking ProceduralModel MeshParts. " +
+  "For Editor scene layout from primitive blocks, use studiorpc_execute_luau. " +
+  "Call once at the start for a working template, material presets, enums, and availableFunctions (names only). " +
+  "Use query with API names/keywords to get matching signatures and docs. When query is present, document sections " +
+  "template, quickref, notes, presets, and enums are included only when named explicitly in a query. " +
+  "Request long document sections separately. Unmatched queries are reported; model.part authoring guidance " +
+  "is in template and quickref. If a selection is too large, needsNarrowerQuery returns an index instead of cut-off content. Read the returned API before writing a recipe.";
 
 export const params = z
   .object({
@@ -21,7 +19,7 @@ export const params = z
       .union([z.string(), z.array(z.string())])
       .optional()
       .describe(
-        'Names or keywords to expand into verbose signatures/docs, e.g. ["append_sphere","rib"]. Omit for the compact kit.',
+        "API names/keywords, or section names: template, quickref, notes, presets, enums. Omit for the starter kit.",
       ),
   })
   .strict();
@@ -51,9 +49,9 @@ function filterMap(map: unknown, terms: string[]): Record<string, unknown> {
 }
 
 /** Array entries (each `{ name, ... }`) whose name contains any term. */
-function filterFunctions(functions: unknown, terms: string[]): unknown[] {
+function filterFunctions(functions: unknown, terms: string[]): Record<string, unknown>[] {
   if (!Array.isArray(functions)) return [];
-  return functions.filter((fn) => {
+  return functions.filter((fn): fn is Record<string, unknown> => {
     const name = isRecord(fn) && typeof fn.name === "string" ? fn.name.toLowerCase() : "";
     return terms.some((term) => name.includes(term));
   });
@@ -64,34 +62,81 @@ export function normalizeArgs(_args: Args): Args {
   return {};
 }
 
-/**
- * Trims the reference so an agent never has to read or grep a spilled file. The default reply keeps the
- * one-line `lookup` signatures, `template`, `presets`, `enums`, and `quickref` but drops the verbose
- * `functions` docs and prose `notes`; a `query` expands just the requested calls back to full detail.
- */
+/** Keep complete JSON under the shared tool cap; a broad selection returns an index to narrow. */
+function boundedReference(response: Record<string, unknown>, index: Record<string, unknown>): Record<string, unknown> {
+  if (Buffer.byteLength(JSON.stringify(response, null, 2), "utf8") <= MAX_OUTPUT_BYTES) return response;
+  return {
+    ...index,
+    needsNarrowerQuery: true,
+    hint: "The selected documentation exceeds one tool response. Request fewer exact API names or one document section; no document text was returned.",
+  };
+}
+
+const SECTION_NAMES = ["template", "quickref", "notes", "presets", "enums"] as const;
+
+/** Return a starter kit, or only the API entries and document sections the query requests. */
 export function postProcess(result: unknown, args: Args): unknown {
   if (!isRecord(result)) return result;
-  const r = result;
   const base: Record<string, unknown> = {};
-  for (const key of ["class", "success", "template", "presets", "enums", "quickref"]) {
-    if (r[key] !== undefined) base[key] = r[key];
+  for (const key of ["class", "success"]) {
+    if (result[key] !== undefined) base[key] = result[key];
   }
-
+  const availableSections = SECTION_NAMES.filter((key) => result[key] !== undefined);
   const terms = toTerms(args.query);
-  if (terms.length > 0) {
-    return {
+  if (terms.length === 0) {
+    const starter = { ...base };
+    for (const key of ["template", "presets", "enums"]) {
+      if (result[key] !== undefined) starter[key] = result[key];
+    }
+    const index = {
       ...base,
-      query: terms,
-      lookup: filterMap(r.lookup, terms),
-      signatures: filterMap(r.signatures, terms),
-      functions: filterFunctions(r.functions, terms),
-      ...(r.notes !== undefined ? { notes: r.notes } : {}),
+      availableFunctions: isRecord(result.lookup) ? Object.keys(result.lookup) : [],
+      availableSections,
     };
+    return boundedReference(
+      {
+        ...starter,
+        ...index,
+        hint: "Use query with API names for signatures and details. Request quickref or notes separately for authoring guidance.",
+      },
+      index,
+    );
   }
 
-  return {
+  const selectedSections = availableSections.filter((key) => terms.includes(key));
+  const sections = Object.fromEntries(selectedSections.map((key) => [key, result[key]]));
+  const lookup = filterMap(result.lookup, terms);
+  const signatures = filterMap(result.signatures, terms);
+  const functions = filterFunctions(result.functions, terms);
+  const matchedNames = [
+    ...selectedSections,
+    ...Object.keys(lookup),
+    ...Object.keys(signatures),
+    ...functions.map((entry) => String(entry.name)),
+  ].map((name) => name.toLowerCase());
+  const unmatchedQueries = terms.filter((term) => !matchedNames.some((name) => name.includes(term)));
+
+  const response = {
     ...base,
-    lookup: r.lookup,
-    hint: 'Compact kit. For verbose per-argument docs or notes on specific calls, call again with `query`, e.g. query: ["append_sphere","rib"].',
+    ...sections,
+    query: terms,
+    ...(Object.keys(lookup).length > 0 ? { lookup } : {}),
+    ...(Object.keys(signatures).length > 0 ? { signatures } : {}),
+    ...(functions.length > 0 ? { functions } : {}),
+    ...(unmatchedQueries.length > 0
+      ? {
+          unmatchedQueries,
+          availableSections,
+          hint: "No API entry matched these queries. Try another name, or query template/quickref for authoring guidance such as model.part.",
+        }
+      : {}),
   };
+  return boundedReference(response, {
+    ...base,
+    query: terms,
+    availableFunctions: [
+      ...new Set([...Object.keys(lookup), ...Object.keys(signatures), ...functions.map((entry) => String(entry.name))]),
+    ],
+    availableSections,
+  });
 }
