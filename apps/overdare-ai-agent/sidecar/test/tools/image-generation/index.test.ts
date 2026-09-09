@@ -62,7 +62,7 @@ describe("generate_image", () => {
     expect(tool.description).toContain("user explicitly approves an alternative");
   });
 
-  test("the runtime-loaded mobile UI skill keeps image generation conditional on tool availability", async () => {
+  test("the runtime-loaded GUI builder keeps image generation conditional on tool availability", async () => {
     const { cwd, cleanup } = project();
     try {
       const { skills } = await discoverSkills({
@@ -70,9 +70,9 @@ describe("generate_image", () => {
         globalConfigDir: join(cwd, "empty-global"),
         additionalPaths: [join(import.meta.dir, "../../../../bootstrap/skills")],
       });
-      const uiSkills = skills.filter((skill) => skill.name === "mobile-ui-design");
+      const uiSkills = skills.filter((skill) => skill.name === "gui-builder");
       const loadSkill = createSkillTool(uiSkills);
-      const result = await loadSkill.execute({ name: "mobile-ui-design" }, context());
+      const result = await loadSkill.execute({ name: "gui-builder" }, context());
 
       expect(result.output).toContain("studiorpc_asset_manager_image_import");
       expect(result.output).toContain("asset.assetid");

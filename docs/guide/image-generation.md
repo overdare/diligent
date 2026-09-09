@@ -19,7 +19,7 @@ The model cannot override this selection through a tool argument. Only ChatGPT e
 generation; selecting another provider does not fall back to Codex.
 
 The generation tool description is provider-bound, so unsupported providers do not receive
-the tool. The shared `mobile-ui-design` skill checks tool availability before generating art
+the tool. The shared `gui-builder` skill checks tool availability before generating art
 and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
@@ -44,14 +44,22 @@ the local file path before import.
 
 ## Image-guided mobile GUI construction
 
-The bundled `mobile-ui-design` skill builds actual GUI using generated images. It first creates
+The bundled `gui-builder` skill builds actual GUI using generated images and native Studio fonts. It first creates
 a guide image tailored to the current game's atmosphere, scene/UI context, and requested screen.
 That image is attached as the shared reference for reusable artwork, then the native GUI is
 constructed and verified in Studio. Producing the guide alone does not complete the GUI task.
 There is no bundled genre-image library or template-selection gate. Small existing-UI edits
 that need no new artwork do not require another generation step.
-Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
+Legacy `ui-generator`, `overdare-ui-templates`, and `mobile-ui-design` entries are disabled upgrade placeholders;
 they are not advertised or invocable by the model.
+
+Before generating the guide, the skill selects typography from the supplied internal Studio
+font catalog. The full family IDs and supported Weight/Style combinations live in its
+`references/fonts.md`, loaded when choosing or changing fonts. Generated lettering is only
+visual intent: final labels and counters use native TextLabel/TextButton `FontFace` values.
+The sidecar adds the internal Font tag; authored requests specify Family, Weight, and Style
+together. Readback checks the selected value, while actual glyph coverage, wrapping, and
+clipping still require visual verification. No font binaries or additional font service are bundled.
 
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before
