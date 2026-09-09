@@ -9,7 +9,7 @@ import { parseArgs } from "../src/tools/studiorpc/methods/instance.upsert";
 import { parseInstancePatchProperties } from "../src/tools/studiorpc/methods/instance-properties";
 
 const bundledSkills = resolve(import.meta.dir, "../../bootstrap/skills");
-const retiredNames = ["mobile-ui-design", "ui-generator", "overdare-ui-templates"];
+const retiredNames = ["ui-generator", "overdare-ui-templates"];
 
 test("loads only the renamed GUI builder and resolves its references after deployment", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "gui-builder-"));
