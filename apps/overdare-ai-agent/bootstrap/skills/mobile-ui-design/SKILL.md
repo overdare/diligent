@@ -10,16 +10,20 @@ Design from the user's visual goal, not from an official UI template. A mockup i
 ## Choose the needed depth
 
 - **Mockup only:** generate and show the requested design image. Do not import assets or change Studio unless asked.
-- **New or substantially restyled UI:** establish the visual direction, produce only the reusable art the design needs, then build and verify the real UI.
+- **New or substantially restyled UI:** generate a game-specific UI guide image first, use it as the visual reference for reusable art, then build and verify the real UI.
 - **Small existing-UI edit:** read the target and its owner, make the focused change, and verify it. Skip mockup generation and asset searches unless the edit needs new art.
 
 Use existing screenshots, images, and assets supplied by the user. Inspect the current screen and controller before changing an existing UI. Ask only for missing choices that materially affect the result, such as a different screen purpose or orientation; do not run a template-selection questionnaire.
 
-## Establish a visual reference
+## Generate a guide for this game
 
-For a new design, start with a landscape mobile UI mockup unless the user specifies another orientation. Describe the screen purpose, content hierarchy, touch targets, game-view clearance, palette, typography, materials, and the elements the user actually requested. Request a flat screen design, not a phone photographed in a hand or a presentation board.
+Ground the guide in the current game's mood and visual language: its existing scene/UI screenshots when available, the user's art direction, genre, palette, materials, and requested screen purpose. Use the context already available; do not choose a generic genre preset or introduce a template-selection questionnaire. Mockup-only work does not require a Studio connection.
 
-Call `generate_image` with the mockup prompt. If the user supplied local reference images, include their paths in `referenceImages`. The tool returns `file` and a preview; inspect the result, using `read_image` if needed. Treat requested dimensions as design intent, not proof of the saved image dimensions.
+Generate one project-specific guide with `generate_image` before producing its individual UI assets. Use landscape mobile orientation unless the user specifies otherwise. Make GUI placement, hierarchy, touch targets, typography, and the requested elements clearly readable; keep any scene backdrop subdued so it supports the game's atmosphere without hiding the layout. Request a flat screen design, not a phone photograph or presentation board.
+
+Pass relevant user images or saved game screenshots in `referenceImages`, explaining whether each supplies visual style or layout context. Inspect the returned preview (or use `read_image`) and retain its exact `file` as the guide for downstream generation. Actually attach that file in subsequent `referenceImages`; repeating its written description is not a substitute. Treat requested dimensions as design intent, not proof of the saved image dimensions.
+
+If this task already has a guide matching the current game's UI direction, reuse it. Generate a new guide when that direction changes substantially, not for each icon or minor existing-UI edit. Do not stop for an extra approval round unless the user requested a design review or a genuinely blocking choice remains.
 
 Keep the top-left system menu, bottom-left joystick, and bottom-right jump region clear in gameplay HUD concepts. Intentional full-screen menus and modals need a different layout from in-game controls. Do not generate unused screens or several alternatives unless the request warrants them.
 
