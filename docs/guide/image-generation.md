@@ -51,7 +51,7 @@ constructed and verified in Studio. Producing the guide alone does not complete 
 There is no bundled genre-image library or template-selection gate. New GUI and full visual redesign
 requests use this image-guided workflow by default; explicit no-generation or existing-assets-only
 requests override it. Focused font, text, layout, or behavior edits load only their relevant references.
-Legacy `ui-generator`, `overdare-ui-templates`, and `mobile-ui-design` entries are disabled upgrade placeholders;
+Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
 they are not advertised or invocable by the model.
 
 Before generating the guide, the skill selects typography from the supplied internal Studio
