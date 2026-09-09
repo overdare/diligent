@@ -1,6 +1,6 @@
 ---
 name: geometry-recipe
-description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. Not for laying out a scene from primitive blocks; that is procedural-builder (studiorpc_procedural_run).
+description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. Use Editor Luau directly for ordinary scene placement.
 ---
 
 # OVERDARE geometry recipes
@@ -8,29 +8,19 @@ description: Author a solid, textured 3D prop for OVERDARE by writing a Python g
 Write a Python recipe that builds a mesh and bakes it into a **ProceduralModel** as real
 `MeshPart` children — solid geometry with material presets, tints, UV projection and a triangle
 budget. This is the system for **one prop made well**: a crate, a bench, a lantern, a barrel, a
-bookshelf. It is a different system from `procedural_builder` / `studiorpc_procedural_run`, which
-assembles a scene out of primitive `Part` blocks in Luau. Reach for this one when the deliverable
+bookshelf. Ordinary scene placement can use Editor Luau directly. Reach for this one when the deliverable
 is a single object whose surfaces and silhouette matter.
 
-## The one rule that saves you: read the live API first
+## Read the authoring reference first
 
-`studiorpc_proceduralmodel_api` returns the authoring reference, current and self-describing. Call it
-**once** at the start of a prop and work from what it returns — it is the source of truth, not this
-file. The default reply is the **compact kit** (small on purpose — you never read or grep a file):
+Use the complete native Source reference in the system prompt and a working recipe
+when available. Query `studiorpc_instance_schema_search` for class/property and
+material hints; it does not describe Python geometry function signatures. Consult
+applicable native API documentation for additional `G.*`, `parts.*` and `layout.*`
+functions rather than guessing an API from memory.
 
-- `template` — a complete, working recipe. Copy it and change its marked `EDIT` blocks.
-- `lookup` — every `G.*` / `parts.*` / `layout.*` signature on one line, keyed exactly as you write it
-  in code (`lookup["G.place"]`, `lookup["parts.orient"]`).
-- `presets` — the ~94 material preset names, asked of the material service so they cannot drift.
-  There is **no** `Iron`, `Steel`, `Stone`, `Leather` or `Rope`: iron is `Rust` / `RustySteel`,
-  sawn timber is `Plank`. A wrong name is refused, not rendered grey.
-- When a call's exact arguments or a returned number look wrong, call it **again with `query`**
-  (names/keywords, e.g. `query=["append_sphere","rib","bounds"]`) to get the verbose per-argument
-  docs and notes for just those calls. Do not dump the whole reference to hunt one signature.
-
-Nothing is pre-injected into a recipe; the imports it needs (`import unreal`, `G =
-unreal.OvdrGeometry`, `import ovdr_parts as parts`, `from ovdr_brickcolor import bc`) are all in
-`template`. Do not guess an API from memory when `lookup` has the exact signature.
+Nothing is pre-injected into a recipe; include the imports it needs (`import unreal`,
+`G = unreal.OvdrGeometry`, `import ovdr_parts as parts`, or `from ovdr_brickcolor import bc`).
 
 ## The contract — a recipe has one shape
 
@@ -58,37 +48,42 @@ def on_generate(model, size, attributes):
 - `attributes` are the parameters `OVDR_PARAMETERS` declares, by name. Declared struct types arrive
   as friendly Python values (a `Color` for Color3, a `Vector3`, a `UDim2`, a `CFrame`, …).
 
-Run `studiorpc_proceduralmodel_validate` (`code` = the recipe, or `sourcePath` = a recipe file) after writing
-or editing it: it checks the contract shape without a bake, so a slip is caught in milliseconds.
+Check the Python contract after writing or editing Source. Do not use the gameplay
+Lua validator for this Python module. Editor execution is not a synchronous bake
+validation report; inspect the generated result and available diagnostics later.
 
 ## The loop
 
-1. **`studiorpc_proceduralmodel_api`** once. Read `template`, copy it, change the `EDIT` blocks.
-2. **`studiorpc_proceduralmodel_validate`** with the recipe `code` (or `sourcePath` = a recipe file). Fix any
-   findings — cheaper than a bake.
-3. **`studiorpc_proceduralmodel_set`** creates the model *and* bakes it in one call:
-   `{ name, parentGuid?, source | sourcePath, size, attributes?, rebuild: true }`. Omit `guid` and pass
-   `name` to create a new `ProceduralModel` (parent defaults to Workspace) — the reply returns its
-   `guid`; **keep it** to iterate. Pass the recipe inline as `source` or point at a file with
-   `sourcePath`. The reply carries the whole run — `parts` (triangles, boundsCm, tint, tier),
-   `modelBoundsCm`, `warnings`, `stdout`, and on failure `error`. **Judge the numbers first.**
-4. **`studiorpc_game_screenshot`** with `{ instanceId: <guid>, yaws: [35, 215] }` once the numbers
-   are clean, to see it. See "Looking at the prop" below.
-5. Fix and re-bake the **same** model: `studiorpc_proceduralmodel_set` with
-   `{ guid, source | sourcePath, size, rebuild: true }`. Ship when the numbers and the picture agree.
+1. Read the native Source reference and any existing recipe; inspect the target's
+   class/property hints when needed.
+2. Keep the Python recipe in a project file and check its contract. Through
+   `studiorpc_execute_luau` with `target: "Editor"`, create and parent a ProceduralModel,
+   assign the file's complete text to Source, set Size/attributes and enable AutoRebuild.
+   Editor Size is `[x, y, z]`, Y up; the tested native size tuple is `(Editor Z, Editor X, Editor Y)`.
+3. Resolve and keep the model GUID with focused browse/readback. Read generated
+   MeshParts in a later call: Editor saves successful edits, but generation is
+   asynchronous. Do not call unsupported Rebuild/Bake methods or replay creation.
+4. Use `studiorpc_game_screenshot` with `{ instanceId: <guid>, yaws: [35, 215] }`
+   to inspect the model. See "Looking at the prop" below.
+5. Fix the same recipe/model and synchronize changed file text to Source. Test
+   AutoRebuild by changing an attribute after the initial command ends without
+   resubmitting Source, then observe the result. Ship when the measured result and
+   the picture agree; save subsequent generated changes if needed.
 
-There is no separate draft or "execute": the ProceduralModel owns the recipe and renders it live;
-asset ids are issued at publish, not on each pass.
+The ProceduralModel owns the generation Source and renders it live; asset ids are
+issued at publish, not on each pass. An Editor return is authored by your code, not
+an automatic report of the later bake.
 
 ## Judge on the numbers before the picture
 
-The `parts` and top-level fields in the run report catch most mistakes without a screenshot:
+Use observed part data or native diagnostics when available. The Editor tool does
+not return the old dedicated bake report; do not invent its fields when unavailable:
 
 - `boundsCm` — the part's footprint. `parts.fits_within(mesh, x, y, z)` asserts it in-recipe.
 - `triangles` — under 30,000; **under-spending is the common mistake**, not overspending. Set
   dressing 1,000–4,000, a pickup 1,500–6,000. A tenth of the budget usually means detail was left
   out.
-- `warnings` — read every one; they are top-level on the result, not per mesh.
+- `warnings` — read every warning actually returned; missing diagnostics do not mean no warnings.
 - On the **preset (material) path**, project UVs at the size the pattern was drawn for — each preset
   tiles at its own `LocalUVWscale`, and `model.part`'s `tile_cm` must land in **25–400 cm** (a
   finer tile is refused, and would render as flat colour anyway). A 400 cm wall tiled every 20 cm
@@ -142,13 +137,13 @@ truth; the baked MeshParts are derived output. This is the default loop:
 
 1. Write the recipe to a file in the project (a plain path you choose, e.g.
    `geometry-recipes/ammo-crate.py`). Not an OS temp directory.
-2. Validate and bake by passing **`sourcePath`** to `studiorpc_proceduralmodel_validate` and
-   `studiorpc_proceduralmodel_set` — the file is read host-side, so **you never re-send the recipe
-   you already wrote**. That is the point: it is far cheaper than pasting the whole source on every
-   pass.
-3. To change something, **edit the file** (`studiorpc_script_edit` for a small fix) and re-bake with
-   the same `sourcePath`.
+2. Read that file and assign its contents to the same model's Source through Editor
+   Luau. A project file edit alone does not regenerate the Studio model; Editor
+   execution takes Luau code, not a sourcePath argument.
+3. To change something, edit the project file and synchronize Source. Focused
+   `studiorpc_script_read` / `studiorpc_script_edit` can inspect or patch model Source
+   by GUID, but keep the project file synchronized. Preserve Python indentation.
 
-Pass the whole recipe inline — `source` to bake, `code` to validate — only for a throwaway or the
-very first draft. There is **no recipe `id` and no namespaced copy** of the source: the file path is
-the recipe's identity. Don't invent an id or a placeholder for one.
+There is **no recipe `id` and no namespaced copy** of the source: keep the actual
+project file path and model GUID for iteration. Do not invent a path for an existing
+model whose Source has not been saved to a project file.

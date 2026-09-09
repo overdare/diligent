@@ -146,7 +146,9 @@ describe("OVERDARE MCP server", () => {
       const body = await prompt.load();
       expect(body).toContain("ProceduralModel");
       if (name === "geometry-recipe") {
-        expect(body).toContain("studiorpc_proceduralmodel_set");
+        expect(body).toContain("studiorpc_execute_luau");
+        expect(body).toContain("AutoRebuild");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
       } else {
         expect(body).not.toContain("studiorpc_procedural_run");
         expect(body).not.toContain("studiorpc_proceduralmodel_");
