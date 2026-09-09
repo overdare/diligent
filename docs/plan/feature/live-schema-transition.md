@@ -1,10 +1,13 @@
 # Live schema discovery implementation draft
 
-Status: implementation draft stacked on geometry restoration PR #434
-(`fix/restore-geometry-recipe`), targeting preview/release-40. Compatibility #415
-is already merged. This draft removes upsert and implements dynamic discovery.
+Status: implementation draft stacked on native RPC restoration PR #441
+(`fix/restore-proceduralmodel-rpcs`), targeting preview/release-40. Compatibility
+#415 and geometry restoration #434 are already merged. This draft removes upsert and implements dynamic discovery.
 
 ## Implemented behavior
+
+- Inherit proceduralmodel.api / validate / set unchanged from #441. These native
+  authoring tools remain available; only the local procedural runner stays retired.
 
 - Remove the upsert tool, its static instance.params catalog, class-bound write
   validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.

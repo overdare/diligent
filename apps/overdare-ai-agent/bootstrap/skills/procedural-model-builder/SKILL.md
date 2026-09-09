@@ -11,6 +11,12 @@ budget. This is the system for **one prop made well**: a crate, a bench, a lante
 bookshelf. Ordinary scene placement can use Editor Luau directly. Reach for this one when the deliverable
 is a single object whose surfaces and silhouette matter.
 
+Native authoring tools are available: use `studiorpc_proceduralmodel_api` for the
+full reference, `studiorpc_proceduralmodel_validate` to check Python Source, and
+`studiorpc_proceduralmodel_set` when an explicit authoring/bake report is needed.
+The Editor route described below remains available; its return alone is not that
+native bake report.
+
 ## Read the authoring reference first
 
 Use the complete native Source reference in the system prompt and a working recipe

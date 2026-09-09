@@ -134,16 +134,17 @@ Studio-side generator; those capabilities remain owned by Studio.
 
 ## Procedural removal and release
 
-The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
-`proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
-and its Source format are retained in Studio.
+The procedural dummy-JSON runner, experiment and interpreter bundle remain retired.
+Native `proceduralmodel.api / validate / set` tools are restored by the preceding
+PR #441 and remain available here. They supply the full Python API reference,
+recipe validation and explicit authoring/bake reports.
 
 The `procedural-builder` skill and agent definitions remain removed: they belonged
 to the retired local Luau runner. The native authoring skill and agent restored as `geometry-recipe` by #434 are
 renamed to `procedural-model-builder` here; the old geometry-recipe entries are
 removed from this branch. They remain active native ProceduralModel authoring guides. They retain geometry/material/UV/resource
 and verification guidance while using Editor Luau, Source helpers and later
-readback instead of the removed dedicated recipe RPCs. They are not deprecated
+readback, alongside the restored native recipe RPCs. They are not deprecated
 redirects, and restoring them does not restore a second world-editing tool family.
 Existing installed builder copies are not automatically deleted by the name-based
 updater; this change adds no broad filesystem cleanup.

@@ -28,7 +28,7 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("as the default for world creation and editing");
     expect(prompt).toContain("Successful Editor execution already saves the level");
     expect(prompt).toContain("Do not reject a class based on an old local catalog");
-    expect(prompt).not.toContain("studiorpc_proceduralmodel_");
+    for (const name of ["api", "validate", "set"]) expect(prompt).toContain(`studiorpc_proceduralmodel_${name}`);
     expect(prompt).toContain("procedural-model-builder");
   });
   test("VFX guidance uses Editor authoring without retired JSON conversions", async () => {

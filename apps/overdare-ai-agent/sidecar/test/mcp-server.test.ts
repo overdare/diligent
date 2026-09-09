@@ -138,7 +138,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native model builder replaces the old geometry name without retired write tools", async () => {
+  test("native model builder keeps native RPCs without the retired local runner", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -147,7 +147,9 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_upsert")).toBe(false);
-    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
+    expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
+    for (const name of ["api", "validate", "set"])
+      expect(registries.tools.has(`studiorpc_proceduralmodel_${name}`)).toBe(true);
     expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
     expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
     expect(registries.prompts.has("agent-geometry-recipe")).toBe(false);
@@ -171,7 +173,7 @@ describe("OVERDARE MCP server", () => {
       expect(body).toContain("AutoRebuild");
       expect(body).toContain("on_generate");
       expect(body).not.toContain("studiorpc_procedural_run");
-      expect(body).not.toContain("studiorpc_proceduralmodel_");
+      expect(body).toContain("studiorpc_proceduralmodel_api");
       expect(body).not.toContain("studiorpc_instance_upsert");
     }
   });

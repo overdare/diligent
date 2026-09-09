@@ -73,7 +73,8 @@ describe("overdare tool cli", () => {
     expect(exitCode).toBe(0);
     expect(stdout.some((line) => line.includes("[studiorpc]"))).toBe(true);
     expect(stdout.join("\n")).toContain("studiorpc_execute_luau");
-    expect(stdout.join("\n")).not.toContain("studiorpc_procedural");
+    expect(stdout.some((line) => line.startsWith("studiorpc_procedural_run ["))).toBe(false);
+    expect(stdout.join("\n")).toContain("studiorpc_proceduralmodel_api");
   });
 
   test("inspect returns schema and source in json mode", async () => {
