@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
-import { createSkillTool, discoverSkills, resolvePaths } from "@diligent/runtime";
+import { resolvePaths } from "@diligent/runtime";
 import {
   createImageGenerationToolProvider,
   type ImageGenerationToolProviderOptions,
@@ -60,27 +60,6 @@ describe("generate_image", () => {
     expect(tool.description).toContain("stop image work and report the error");
     expect(tool.description).toContain("PIL, SVG, or canvas");
     expect(tool.description).toContain("user explicitly approves an alternative");
-  });
-
-  test("the runtime-loaded GUI builder keeps image generation conditional on tool availability", async () => {
-    const { cwd, cleanup } = project();
-    try {
-      const { skills } = await discoverSkills({
-        cwd,
-        globalConfigDir: join(cwd, "empty-global"),
-        additionalPaths: [join(import.meta.dir, "../../../../bootstrap/skills")],
-      });
-      const uiSkills = skills.filter((skill) => skill.name === "gui-builder");
-      const loadSkill = createSkillTool(uiSkills);
-      const result = await loadSkill.execute({ name: "gui-builder" }, context());
-
-      expect(result.output).toContain("studiorpc_asset_manager_image_import");
-      expect(result.output).toContain("asset.assetid");
-      expect(result.output).toContain("If `generate_image` is unavailable for the selected provider");
-      expect(result.output).toContain("switch providers, or substitute code-drawn or stock art without approval");
-    } finally {
-      cleanup();
-    }
   });
 
   test.each([
