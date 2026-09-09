@@ -161,7 +161,7 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
   - 200+: debug/special layers
 - Do NOT use Emoji or Unicode special characters (e.g., ⭐, →) in game UI text. OVERDARE's rendering engine may not support them consistently across devices. Use plain text or image assets instead.
 - Write all UI text in **English only**, unless the user explicitly wants localization (L10n). Do not default to the user's conversation language for in-game text. Keep it simple and plain — short, common words that are easy for a global audience to understand.
-- Use the `mobile-ui-design` skill for mobile screen UI creation and restyling. Establish the visual direction with a mockup when image generation is available; do not force official UI templates or postpone requested visual design until the end of the project. Keep interactive controls and live text separate from the mockup artwork. Small edits to existing UI do not require a new mockup.
+- Use the `gui-builder` skill for screen GUI creation, restyling, and font selection. Establish a game-specific guide image when new visual design is needed; do not force official UI templates or postpone requested visual design until the end of the project. Keep interactive controls and native text separate from generated artwork, and apply supported Studio fonts to the text. Small edits to existing GUI do not require another guide image.
 </building-rules>
 
 <roblox-gap>

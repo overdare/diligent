@@ -17,6 +17,7 @@ Use the actual screen or viewport when available. The existing mobile-landscape 
 - Position groups primarily with Scale and AnchorPoint; use Offset for padding and concrete touch-target sizes. Preserve icon aspect ratios.
 - Keep custom gameplay controls away from the system menu (top-left), joystick (bottom-left), and jump button (bottom-right). Inspect their current bounds when possible rather than hardcoding a template's reserved rectangle.
 - Use legible text with strong backing contrast. Important mobile labels usually need at least 24px at the reference viewport. Prefer short English text unless the user requests localization; use image glyphs instead of emoji.
+- For typography, use the supported faces and full `FontFace` assignments in [fonts.md](fonts.md). Keep text live in `TextLabel` / `TextButton`; validate wrapping and glyphs at the actual viewport, not only in the generated guide image.
 - Keep normal HUDs in ZIndex 0–99, intentional overlays/modals in 100–199, and debug layers in 200+. Runtime overlap checks compare the same band; do not move ordinary buttons into overlay bands to hide warnings.
 - Use `DisplayOrder` to order screen roots and ZIndex for elements within them. Handle overflow and tool warnings rather than clipping away a layout error.
 
