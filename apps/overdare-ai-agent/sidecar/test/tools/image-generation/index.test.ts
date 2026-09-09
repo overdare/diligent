@@ -77,7 +77,7 @@ describe("generate_image", () => {
       expect(result.output).toContain("studiorpc_asset_manager_image_import");
       expect(result.output).toContain("asset.assetid");
       expect(result.output).toContain("If `generate_image` is unavailable for the selected provider");
-      expect(result.output).toContain("Do not claim to have generated a mockup, switch providers");
+      expect(result.output).toContain("switch providers, or substitute code-drawn or stock art without approval");
     } finally {
       cleanup();
     }

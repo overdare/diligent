@@ -1,6 +1,6 @@
 // @summary Verifies discovery and model-facing replacement of legacy UI template skills.
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { discoverSkills, renderSkillsSection } from "@diligent/runtime/skills";
@@ -34,6 +34,10 @@ test("discovers the mobile UI skill while excluding retired template routes from
     expect(loaded.metadata?.error).not.toBe(true);
     expect(loaded.output).toContain('<skill_content name="mobile-ui-design">');
     expect(loaded.output).toContain("Base directory:");
+    const baseDir = skills.find((skill) => skill.name === "mobile-ui-design")!.baseDir;
+    for (const [, path] of loaded.output.matchAll(/\]\(((?:references|assets)\/[^)]+)\)/g)) {
+      await access(resolve(baseDir, path));
+    }
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

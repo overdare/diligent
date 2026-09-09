@@ -42,11 +42,14 @@ file-root mapping described in [the cross-Studio guide](./mac-agent-windows-stud
 Image generation does not depend on this mapping; only the dev Studio RPC boundary converts
 the local file path before import.
 
-## Mobile UI mockups and reference images
+## Image-guided mobile GUI construction
 
-The bundled `mobile-ui-design` skill replaces the official-template gate with a visual workflow:
-create a mobile screen mockup, use that image as a shared reference for reusable assets, and
-implement the requested interactive UI in Studio. Mockup-only requests stop at the design image.
+The bundled `mobile-ui-design` skill builds actual GUI using generated images. It first creates
+a guide image tailored to the current game's atmosphere, scene/UI context, and requested screen.
+That image is attached as the shared reference for reusable artwork, then the native GUI is
+constructed and verified in Studio. Producing the guide alone does not complete the GUI task.
+There is no bundled genre-image library or template-selection gate. Small existing-UI edits
+that need no new artwork do not require another generation step.
 Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
 they are not advertised or invocable by the model.
 
@@ -55,7 +58,7 @@ relative paths resolve from the project directory. Approval includes the referen
 the tool reads them. References must be existing non-empty files and are never overwritten.
 Codex receives them as `localImage` input attachments, not merely filenames in prompt text.
 
-Finish a mockup or anchor image first, then issue independent `generate_image` calls together
+Finish the game-specific guide or anchor image first, then issue independent `generate_image` calls together
 using the same references. The tool supports parallel execution and saves each result under a
 unique path. Keep Studio imports and edits in the single editing session. For exact shared
 button geometry, import one common frame and reuse it behind separate glyphs; reference-guided
