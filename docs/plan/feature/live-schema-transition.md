@@ -9,9 +9,9 @@ discovery on top of that merged baseline.
 - Remove the upsert tool, its static instance.params catalog, class-bound write
   validators/defaults/transformations, upsert renderer, and v1/v2 upsert execution.
   Keep instance read, hierarchy move/delete, Source helpers and their shared
-  Mobility/singleton safeguards. Remove the procedural-builder and geometry-recipe skill/agent definitions from
-  this upper branch; their deprecated migration guides belong to the merged
-  compatibility implementation.
+  Mobility/singleton safeguards. Remove the procedural-builder skill/agent definitions. Restore geometry-recipe
+  as active native ProceduralModel authoring guidance, adapting its former dedicated
+  RPC workflow to Editor Luau and asynchronous result inspection.
 - The schema tool accepts an empty query and no-filter calls. Normalize the latter
   to `{"query":""}` after shared optional-input cleanup. Class-only and non-empty
   property searches retain their existing Studio request shapes.

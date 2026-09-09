@@ -125,7 +125,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("a saved procedural override cannot restore removed guides or tools", async () => {
+  test("native geometry guidance remains available without the retired builder or write tools", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -135,9 +135,29 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_upsert")).toBe(false);
     expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_procedural"))).toEqual([]);
-    for (const name of ["procedural-builder", "geometry-recipe"]) {
-      expect(registries.tools.get("load_skill")?.description).not.toContain(name);
-      expect(registries.prompts.has(`agent-${name}`)).toBe(false);
+    expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
+    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    const geometry = registries.prompts.get("agent-geometry-recipe")!;
+    expect(geometry).toBeDefined();
+    expect(geometry.description).not.toContain("Deprecated");
+    const agentBody = await geometry.load();
+    const skill = await registries.tools.get("load_skill")!.execute(
+      { name: "geometry-recipe" },
+      {
+        toolCallId: "geometry-guide",
+        signal: new AbortController().signal,
+        abort() {},
+      },
+    );
+    expect(skill.metadata?.error).not.toBe(true);
+    for (const body of [agentBody, skill.output]) {
+      expect(body).toContain("ProceduralModel");
+      expect(body).toContain("studiorpc_execute_luau");
+      expect(body).toContain("AutoRebuild");
+      expect(body).toContain("on_generate");
+      expect(body).not.toContain("studiorpc_procedural_run");
+      expect(body).not.toContain("studiorpc_proceduralmodel_");
+      expect(body).not.toContain("studiorpc_instance_upsert");
     }
   });
 

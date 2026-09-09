@@ -138,12 +138,14 @@ The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
 `proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
 and its Source format are retained in Studio.
 
-The `procedural-builder` and `geometry-recipe` skill and agent definitions are
-removed from this long-term branch. Their deprecated compatibility definitions
-were shipped by the merged lower PR; this branch does not retain or advertise
-those bundled entries. Existing installed copies are not automatically deleted
-by the name-based updater. This change adds no broad filesystem cleanup; the
-system prompt supplies the native authoring guidance directly.
+The `procedural-builder` skill and agent definitions remain removed: they belonged
+to the retired local Luau runner. The `geometry-recipe` skill and agent are active
+native ProceduralModel authoring guides. They retain geometry/material/UV/resource
+and verification guidance while using Editor Luau, Source helpers and later
+readback instead of the removed dedicated recipe RPCs. They are not deprecated
+redirects, and restoring them does not restore a second world-editing tool family.
+Existing installed builder copies are not automatically deleted by the name-based
+updater; this change adds no broad filesystem cleanup.
 
 Procedural modeling represents a form as generation rules plus parameters. The
 rules encode relationships among generated parts; rerunning them with different
@@ -208,6 +210,6 @@ Tests exercise empty-query full search through the shared tool executor and MCP,
 compact class catalogs, unchanged targeted schemas, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
 also verify that upsert is absent while Editor error/save handling and retained
-instance/Source tools continue to work. The removed procedural/geometry skill and agent definitions are not advertised
-by the bundled registry. Actual full-catalog discovery
+instance/Source tools continue to work. The bundled registry exposes the active geometry-recipe skill/agent while keeping
+the procedural-builder and retired tools absent. Actual full-catalog discovery
 on the updated Studio and end-to-end model authoring remain draft gates.
