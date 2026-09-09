@@ -149,13 +149,16 @@ The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
 `proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
 and its Source format are retained in Studio.
 
-Both `procedural-builder` and `geometry-recipe` remain as short deprecated
-compatibility guides under bootstrap skills and agents (four entries total).
-Their names are stable so an applied update's existing `FullSync` replaces old
-installed instructions. Each points to Editor Luau and the shared native Source
-reference rather than restoring a separate runner or tool family. User-created
-entries with other names remain untouched; project world/source files are not
-migrated or removed.
+`geometry-recipe` is an active skill and specialist agent for native ProceduralModel
+Source, mesh/material grouping, UVs, resource management and result verification.
+It uses the common Editor Luau workflow and focused Source tools instead of the
+retired dedicated recipe RPCs. It is distinct from the former local Luau runner.
+
+`procedural-builder` remains a short deprecated compatibility skill/agent. Stable
+names allow the existing applied-update `FullSync` to replace old installed copies
+of either guide. User-created entries with other names remain untouched; project
+world/source files are not migrated or removed. This restoration does not remove
+the compatibility upsert schema or change schema-search behavior.
 
 Ordinary startup uses `MissingOnly` and does not replace existing entries.
 `scripts/dev-cross-studio.sh` also only creates missing links; restarting it is not
