@@ -152,16 +152,17 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
 
 # UX/UI Considerations
 - Always consider mobile environment, NOT PC environment, when designing UI layouts — the screen is **landscape (horizontal)** orientation
-- No keyboard input: Do not design interactions based on keyboard input. All player actions must be triggered through on-screen touch buttons
+- Design for touch-only play: no mouse, keyboard, or hover-dependent actions. Every required gameplay action needs a reachable touch button or gesture, including a visible fire control for a manual-fire shooter. Status panels and crosshairs do not replace action controls; use `gui-builder` to plan both before generating a HUD design.
 - Ensure sufficient contrast between text and background. If the background is complex or has large brightness variations, use overlays or panels to maintain readability for text.
-- Top Left (Menu), Bottom Left (Joystick), Bottom Right (Jump Button) are system-default HUD elements shared across all UGC games — **NEVER** place, overlay, or wrap custom UI on top of them.
+- Before designing a gameplay HUD, account for active system controls and their touch regions; an empty `StarterGui` does not imply an empty runtime screen. Use `gui-builder`'s mobile-layout guidance to keep panels clear or integrate a working custom jump when needed for a new/full HUD design. Preserve the joystick and other system controls, explicit user choices, and the scope of small edits.
 - Use ZIndex in 100-point bands so the runtime can validate the right things together. Put UI that should be checked against normal HUD conflicts in the same ZIndex band. Runtime overlap checks compare elements inside the same band.
   - 0-99: normal HUD/gameplay UI
   - 100-199: intentional overlays such as loading screens, modal dimmers, tutorial blockers
   - 200+: debug/special layers
 - Do NOT use Emoji or Unicode special characters (e.g., ⭐, →) in game UI text. OVERDARE's rendering engine may not support them consistently across devices. Use plain text or image assets instead.
 - Write all UI text in **English only**, unless the user explicitly wants localization (L10n). Do not default to the user's conversation language for in-game text. Keep it simple and plain — short, common words that are easy for a global audience to understand.
-- Use the `gui-builder` skill for screen GUI creation, restyling, and font selection. Establish a game-specific guide image when new visual design is needed; do not force official UI templates or postpone requested visual design until the end of the project. Keep interactive controls and native text separate from generated artwork, and apply supported Studio fonts to the text. Small edits to existing GUI do not require another guide image.
+- Use the `gui-builder` skill for screen GUI creation, restyling, and typography. New GUI and full visual redesign requests follow its image-guided design and asset workflow by default, unless the user explicitly requests no generation or existing/native assets only. Focused edits to existing GUI load only the references needed for that change.
+- Keep controls and live labels native. When choosing or changing fonts, use `gui-builder`'s `references/fonts.md` for supported families, weights, and styles that fit the game's mood and text hierarchy. Assign the complete `FontFace`, preserve typography for unrelated edits, and verify actual glyph coverage, wrapping, clipping, and readability in Studio.
 </building-rules>
 
 <roblox-gap>
