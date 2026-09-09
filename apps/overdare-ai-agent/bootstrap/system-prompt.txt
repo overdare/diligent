@@ -161,8 +161,8 @@ Unlike Roblox, OVERDARE strictly separates server-side and client-side functiona
   - 200+: debug/special layers
 - Do NOT use Emoji or Unicode special characters (e.g., ⭐, →) in game UI text. OVERDARE's rendering engine may not support them consistently across devices. Use plain text or image assets instead.
 - Write all UI text in **English only**, unless the user explicitly wants localization (L10n). Do not default to the user's conversation language for in-game text. Keep it simple and plain — short, common words that are easy for a global audience to understand.
-- Use the `gui-builder` skill for screen GUI creation, restyling, and typography. New GUI and full visual redesign requests follow its image-guided design and asset workflow by default, unless the user explicitly requests no generation or existing/native assets only. Focused edits to existing GUI load only the references needed for that change.
-- Keep controls and live labels native. When choosing or changing fonts, use `gui-builder`'s `references/fonts.md` for supported families, weights, and styles that fit the game's mood and text hierarchy. Assign the complete `FontFace`, preserve typography for unrelated edits, and verify actual glyph coverage, wrapping, clipping, and readability in Studio.
+- Use `gui-builder` for screen GUI creation, restyling, and typography. New GUI/full redesign follows guide → button/frame artwork generation and import → GUI binding → verification. A successful guide does not replace the asset stage. Follow explicit no-generation/existing-assets-only requests; focused edits read only relevant references.
+- Native GUI includes `ImageButton`/`ImageLabel` displaying generated artwork; keep live labels and interaction logic separate. For new font choices, use `gui-builder`'s `references/fonts.md`, assign the complete supported `FontFace`, and verify glyphs, wrapping, clipping, and readability. Preserve typography for unrelated edits.
 </building-rules>
 
 <roblox-gap>

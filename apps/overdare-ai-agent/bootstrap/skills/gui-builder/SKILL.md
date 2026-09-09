@@ -10,7 +10,7 @@ Build the requested GUI in Studio, preserving the existing screen owner and unre
 ## Read only what the task needs
 
 - **Fonts:** Read [references/fonts.md](references/fonts.md) when selecting or changing a font family, weight, or style. Reusing a verified existing `FontFace` on a new screen does not require another catalog lookup.
-- **New GUI or full visual redesign:** Read [references/image-assets.md](references/image-assets.md) before building the screen. Establish a game-specific guide, attach it for related asset generation, then implement the actual GUI. This is the default for requests such as "make an FPS GUI"; the user does not need to separately request images. Also read it when an existing GUI edit needs new artwork.
+- **New GUI or full visual redesign:** Read [references/image-assets.md](references/image-assets.md). Plan and execute guide → button/frame asset generation and import → GUI binding → verification as distinct stages. A guide alone does not satisfy artwork generation. This is the default even when the user does not explicitly mention images; also use it for new artwork in an existing GUI.
 - **Studio implementation:** Read [references/studio-ui.md](references/studio-ui.md) for hierarchy, layout, image binding, or controller changes. For gameplay HUDs, map required actions to touch inputs, then resolve active system-control space and whether to retain or replace jump before generating the guide. A font-only property edit can use the assignment and verification instructions in the font reference.
 - **Custom jump:** Read [references/custom-jump.md](references/custom-jump.md) when replacing the default jump button or wiring a custom button to character jumping.
 
@@ -18,7 +18,9 @@ Do not load all references up front. Focused text, font, color, spacing, or beha
 
 ## Implement the requested change
 
-Keep labels, counters, live fills, and interactions native so they can change independently. Preserve existing typography unless it is part of the requested change. Use the game's context and established project choices for routine design details, briefly state the direction, and carry the request through to the working GUI. Do not require a generic HUD/style questionnaire before starting. Ask only about unresolved choices that change the task's scope or behavior; retain answers already given and continue independent, authorized work while a blocking choice is unresolved.
+Native GUI means editable instances, not image-free styling: use `ImageButton`/`ImageLabel` for generated artwork and separate text, live fills, and input behavior. Do not skip button artwork because a `TextButton` is clickable or the game controller is not implemented yet.
+
+Preserve typography for unrelated edits. Use project context for routine design choices, briefly state the direction, and implement it without a generic HUD/style questionnaire. Ask only about unresolved scope or behavior choices; retain answers already given.
 
 Keep Studio writes in one editing session. Reuse existing parents and controllers, create parents before children, and batch sibling edits where supported. Add only the requested behavior.
 
