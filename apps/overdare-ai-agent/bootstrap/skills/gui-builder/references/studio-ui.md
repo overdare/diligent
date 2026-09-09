@@ -6,9 +6,11 @@ Use the available Studio tool schemas and `overdaresearch` for unfamiliar APIs; 
 
 - Browse the relevant `StarterGui` subtree with `studiorpc_level_browse` and read target GUIDs with `studiorpc_instance_read`. Preserve unrelated screens and the existing controller's responsibilities.
 - Build static UI with `studiorpc_instance_upsert`, not a script that recreates the entire screen at runtime. Reuse or create a `ScreenGui`, then containers, then sibling controls. Use returned parent GUIDs; do not mix adds and updates in one call.
-- Move existing instances with `studiorpc_instance_move` instead of deleting and recreating them. Delete only an explicitly replaced target or your own temporary objects.
+- Change existing `Position`/`Size` through `studiorpc_instance_upsert`; use `studiorpc_instance_move` only to change parent hierarchy. Delete only an explicitly replaced target or your own temporary objects.
 - For a local image not yet imported, pass its verified absolute path to `studiorpc_asset_manager_image_import` and use the returned `asset.assetid`. Import each reusable image once. In cross-host dev setups, let the existing import bridge map the path.
 - Bind verified image asset IDs to Image properties, not local file paths. Reuse the same frame asset across sibling buttons, with separate glyph images where appropriate. A resizing panel/frame should use `ScaleType = "Slice"` and a `SliceCenter` measured in source-image pixels when its artwork supports nine-slicing.
+- Use `ImageButton` for a clickable generated image or a native hit target with `ImageLabel`/text children. `TextButton` is for text controls; it is not a replacement for planned button artwork. Keep parent-relative placement separate from viewport-relative observation rectangles.
+- Validate properties for the target class. `BorderColor3`, `BorderMode`, and `BorderPixelSize` belong to `Frame`, not `TextButton` or `ImageButton`. For button decoration use the imported artwork, or a supported `UIStroke` when appropriate; do not repeat a rejected property on another button.
 
 ## Mobile layout
 
