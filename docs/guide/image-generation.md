@@ -7,7 +7,8 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts only a `prompt`. The runtime binds it to the selected chat provider:
+`generate_image` accepts a `prompt` and optional `referenceImages` file paths. The runtime
+binds it to the selected chat provider:
 
 | Selected chat provider | Behavior |
 |---|---|
@@ -17,10 +18,9 @@ or new Studio RPC methods.
 The model cannot override this selection through a tool argument. Only ChatGPT exposes image
 generation; selecting another provider does not fall back to Codex.
 
-Generation instructions live in the provider-bound tool description, so unsupported providers
-receive neither the tool nor its instructions. The common `ui-generator` skill only describes
-importing existing local image files and applying Studio asset IDs; it does not advertise
-generation or tell the model to switch providers. Previously loaded conversation history is
+The generation tool description is provider-bound, so unsupported providers do not receive
+the tool. The shared `mobile-ui-design` skill checks tool availability before generating art
+and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
 The result includes an absolute `file` path, the selected `provider`, its authentication
@@ -41,6 +41,25 @@ When developing with a Mac agent and remote Windows Studio, configure the dev-on
 file-root mapping described in [the cross-Studio guide](./mac-agent-windows-studio.md#image-import-during-cross-machine-development).
 Image generation does not depend on this mapping; only the dev Studio RPC boundary converts
 the local file path before import.
+
+## Mobile UI mockups and reference images
+
+The bundled `mobile-ui-design` skill replaces the official-template gate with a visual workflow:
+create a mobile screen mockup, use that image as a shared reference for reusable assets, and
+implement the requested interactive UI in Studio. Mockup-only requests stop at the design image.
+Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
+they are not advertised or invocable by the model.
+
+Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
+relative paths resolve from the project directory. Approval includes the reference paths before
+the tool reads them. References must be existing non-empty files and are never overwritten.
+Codex receives them as `localImage` input attachments, not merely filenames in prompt text.
+
+Finish a mockup or anchor image first, then issue independent `generate_image` calls together
+using the same references. The tool supports parallel execution and saves each result under a
+unique path. Keep Studio imports and edits in the single editing session. For exact shared
+button geometry, import one common frame and reuse it behind separate glyphs; reference-guided
+generation improves consistency but does not guarantee identical pixels.
 
 ## Credentials and local setup
 

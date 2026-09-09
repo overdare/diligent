@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { Tool } from "@diligent/core/tool-contract";
-import { createSkillTool, discoverSkills, renderSkillsSection, resolvePaths } from "@diligent/runtime";
+import { createSkillTool, discoverSkills, resolvePaths } from "@diligent/runtime";
 import {
   createImageGenerationToolProvider,
   type ImageGenerationToolProviderOptions,
@@ -48,8 +48,8 @@ describe("generate_image", () => {
   test("describes the ChatGPT-bound Studio asset workflow", async () => {
     const tool = await toolFor({ cwd: "/repo" });
 
-    expect(tool.description).toContain("one bespoke icon, panel, or illustration");
-    expect(tool.description).toContain("prompt");
+    expect(tool.description).toContain("UI mockup");
+    expect(tool.description).toContain("referenceImages");
     expect(tool.description).toContain("ChatGPT via local Codex OAuth");
     expect(tool.description).toContain("selected ChatGPT provider");
     expect(tool.description).toContain("cannot switch providers");
@@ -62,7 +62,7 @@ describe("generate_image", () => {
     expect(tool.description).toContain("user explicitly approves an alternative");
   });
 
-  test("the runtime-loaded UI skill retains Studio import guidance but not generation-provider guidance", async () => {
+  test("the runtime-loaded mobile UI skill keeps image generation conditional on tool availability", async () => {
     const { cwd, cleanup } = project();
     try {
       const { skills } = await discoverSkills({
@@ -70,18 +70,14 @@ describe("generate_image", () => {
         globalConfigDir: join(cwd, "empty-global"),
         additionalPaths: [join(import.meta.dir, "../../../../bootstrap/skills")],
       });
-      const uiSkills = skills.filter((skill) => skill.name === "ui-generator");
+      const uiSkills = skills.filter((skill) => skill.name === "mobile-ui-design");
       const loadSkill = createSkillTool(uiSkills);
-      const result = await loadSkill.execute({ name: "ui-generator" }, context());
+      const result = await loadSkill.execute({ name: "mobile-ui-design" }, context());
 
       expect(result.output).toContain("studiorpc_asset_manager_image_import");
       expect(result.output).toContain("asset.assetid");
-      for (const content of [result.output, renderSkillsSection(uiSkills), loadSkill.description]) {
-        expect(content).not.toContain("generate_image");
-        expect(content).not.toContain("ChatGPT");
-        expect(content).not.toContain("Gemini");
-        expect(content).not.toContain("provider");
-      }
+      expect(result.output).toContain("If `generate_image` is unavailable for the selected provider");
+      expect(result.output).toContain("Do not claim to have generated a mockup, switch providers");
     } finally {
       cleanup();
     }
