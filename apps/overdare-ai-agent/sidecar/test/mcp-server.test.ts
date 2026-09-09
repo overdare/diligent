@@ -145,8 +145,12 @@ describe("OVERDARE MCP server", () => {
       }
       const body = await prompt.load();
       expect(body).toContain("ProceduralModel");
-      expect(body).not.toContain("studiorpc_procedural_run");
-      expect(body).not.toContain("studiorpc_proceduralmodel_");
+      if (name === "geometry-recipe") {
+        expect(body).toContain("studiorpc_proceduralmodel_set");
+      } else {
+        expect(body).not.toContain("studiorpc_procedural_run");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
+      }
       const skill = await registries.tools.get("load_skill")!.execute(
         { name },
         {
@@ -158,11 +162,10 @@ describe("OVERDARE MCP server", () => {
       if (name === "geometry-recipe") {
         expect(skill.output).not.toContain("# Deprecated");
         expect(skill.output).toContain("on_generate");
-        expect(skill.output).toContain("AutoRebuild");
       } else {
         expect(skill.output).toContain("Deprecated");
       }
-      expect(skill.output).toContain("studiorpc_execute_luau");
+      if (name !== "geometry-recipe") expect(skill.output).toContain("studiorpc_execute_luau");
     }
   });
 

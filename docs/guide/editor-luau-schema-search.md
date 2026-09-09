@@ -149,10 +149,12 @@ The procedural dummy-JSON runner, experiment, interpreter bundle, and separate
 `proceduralmodel.api / validate / set` tools remain retired. Native ProceduralModel
 and its Source format are retained in Studio.
 
-`geometry-recipe` is an active skill and specialist agent for native ProceduralModel
-Source, mesh/material grouping, UVs, resource management and result verification.
-It uses the common Editor Luau workflow and focused Source tools instead of the
-retired dedicated recipe RPCs. It is distinct from the former local Luau runner.
+The `geometry-recipe` skill and agent are restored byte-for-byte from their
+original definitions at `4dac65bc`. They describe native ProceduralModel geometry
+authoring, not the former local procedural runner. This restoration does not
+rewrite their recipe API instructions; renaming and adapting that workflow to
+Editor Luau belong to the subsequent long-term PR #429. The original guidance
+still refers to the dedicated recipe RPC tools, which are not restored here.
 
 `procedural-builder` remains a short deprecated compatibility skill/agent. Stable
 names allow the existing applied-update `FullSync` to replace old installed copies
