@@ -97,13 +97,6 @@ with native controls and an explicit report of the substituted artwork, preservi
 assets. A missing remote screenshot is first resolved to a verified agent-host path rather than
 being discarded to bypass the failed generation.
 
-The optional temporary chroma-key path for opaque assets generates a flat green (or blue) background
-and runs the skill's `scripts/chroma_key.py` locally to create a separate RGBA PNG. It requires a
-host Python 3 environment with Pillow; Diligent does not install it. The script preserves the source,
-refuses output overwrite, and removes key-color contamination from keyed edge pixels. The key must
-not appear in the subject, and translucent materials keep the normal alpha workflow. Only the
-processed PNG is imported into Studio. Image calls retain the same retry budget.
-
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before
 the tool reads them. References must be existing non-empty files and are never overwritten.
@@ -141,8 +134,11 @@ when the returned image is unusable.
 
 The storage helper is independent of the image provider. Files are written under
 `<project>/.<storage-namespace>/images/generated/` with unique names. PNG, JPEG, and WebP
-results retain their image format. The returned preview contains the same bytes as the saved
-file.
+results retain their original bytes and image format. The runtime may resize or recompress the
+tool-result preview through its shared image policy; alpha inspection uses the original image.
+ChatGPT responses must decode successfully within the existing 64-megapixel decode limit before
+they are returned as assets. Invalid image data is a generation error, distinct from a valid opaque
+image retained as a repair reference.
 
 OVERDARE's runtime passes the selected thread provider into bundled tool factories. Tool
 settings and model-facing tools follow that provider. Changing the thread model via `config/set`
@@ -158,10 +154,9 @@ Image generation uses direct HTTP with a five-minute deadline covering reference
 authentication readiness, generation, and saving. Cancelling a caller waiting for shared token
 refresh does not cancel other callers' refresh. If the login changes during readiness, the
 request fails instead of using the previous account.
-Cancellation propagates through direct MCP calls and the HTTP router endpoint to the provider.
-The Rust MCP router continues reading cancellation notifications while keeping tool calls
-serial; cancelling an active call drops its HTTP request, and cancelling a queued call removes
-it before execution.
+MCP and HTTP router cancellation are separate transport behavior for the tools those registries
+expose; these registries do not expose image generation. Their cancellation tests with an injected
+image tool prove signal propagation, not production image-tool availability.
 
 No child process or ephemeral chat thread is created. Cancelled generations do not advance into saving;
 an interrupted file write removes its partial output.

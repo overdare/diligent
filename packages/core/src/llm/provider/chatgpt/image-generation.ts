@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
+import { validateImage } from "../../image-resize";
 import type { ImageGenerationFn, ImageMediaType } from "../image-generation";
 import { CHATGPT_CODEX_CLIENT_VERSION } from "./headers";
 
@@ -114,9 +115,17 @@ export function createChatGPTImageGeneration(
     }
     const bytes = Buffer.from(encoded, "base64");
     if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("ChatGPT returned invalid image size.");
+    const outputMediaType = mediaType(bytes);
+    try {
+      await validateImage(Uint8Array.from(bytes).buffer, outputMediaType);
+    } catch (error) {
+      signal.throwIfAborted();
+      throw new Error("ChatGPT returned invalid image data.", { cause: error });
+    }
+    signal.throwIfAborted();
     return {
       bytes,
-      mediaType: mediaType(bytes),
+      mediaType: outputMediaType,
       requestedModel: input.model,
       ...(parsed.data.model ? { model: parsed.data.model } : {}),
       ...(parsed.data.background ? { background: parsed.data.background } : {}),

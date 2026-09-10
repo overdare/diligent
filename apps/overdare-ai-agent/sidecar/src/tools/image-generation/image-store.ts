@@ -1,34 +1,17 @@
-// @summary Persists generated image files or bytes into managed project-local storage.
+// @summary Persists generated image bytes into managed project-local storage.
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import type { ImageMediaType } from "@diligent/core/provider-contract";
 import { ensureDiligentDir } from "@diligent/runtime";
 
-export type ImageMediaType = "image/png" | "image/jpeg" | "image/webp";
-
-export type GeneratedImageSource =
-  | { type: "file"; file: string }
-  | { type: "bytes"; bytes: Uint8Array; mediaType: ImageMediaType };
+export type { ImageMediaType } from "@diligent/core/provider-contract";
 
 export interface StoredImage {
   file: string;
   mediaType: ImageMediaType;
   bytes: Buffer;
-}
-
-function mediaTypeForFile(path: string): ImageMediaType {
-  switch (extname(path).toLowerCase()) {
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".webp":
-      return "image/webp";
-    case ".png":
-      return "image/png";
-    default:
-      throw new Error("Image generation returned an unsupported image format.");
-  }
 }
 
 function extensionForMediaType(mediaType: ImageMediaType): string {
@@ -44,15 +27,14 @@ function extensionForMediaType(mediaType: ImageMediaType): string {
 
 export async function storeGeneratedImage(
   cwd: string,
-  source: GeneratedImageSource,
+  source: { bytes: Uint8Array; mediaType: ImageMediaType },
   options: { signal?: AbortSignal } = {},
 ): Promise<StoredImage> {
   const { signal } = options;
   signal?.throwIfAborted();
-  const mediaType = source.type === "file" ? mediaTypeForFile(source.file) : source.mediaType;
-  const extension =
-    source.type === "file" ? extname(source.file).toLowerCase() : extensionForMediaType(source.mediaType);
-  const bytes = source.type === "file" ? await readFile(source.file, { signal }) : Buffer.from(source.bytes);
+  const mediaType = source.mediaType;
+  const extension = extensionForMediaType(mediaType);
+  const bytes = Buffer.from(source.bytes);
   signal?.throwIfAborted();
   const directory = join((await ensureDiligentDir(resolve(cwd))).images, "generated");
   await mkdir(directory, { recursive: true });

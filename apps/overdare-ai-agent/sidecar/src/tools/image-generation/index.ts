@@ -27,7 +27,7 @@ const parameters = z
       .enum(["auto", "opaque", "transparent"])
       .optional()
       .describe(
-        "ChatGPT-only API background setting. Transparent is for cutout assets; opaque is for guides or chroma-key backgrounds.",
+        "ChatGPT-only API background setting. Transparent is for cutout assets; opaque is for guides or solid backgrounds.",
       ),
     referenceImages: z
       .array(z.string().trim().min(1))
@@ -109,11 +109,7 @@ function createGenerateImageTool(
             signal,
             ...(paths.length ? { referenceImages: paths } : {}),
           });
-          const stored = await storeGeneratedImage(
-            cwd,
-            { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
-            { signal },
-          );
+          const stored = await storeGeneratedImage(cwd, generated, { signal });
           return imageResult(stored.file, stored.mediaType, stored.bytes, {
             provider,
             source: "gemini-api",
@@ -134,11 +130,7 @@ function createGenerateImageTool(
         signal.throwIfAborted();
         const transparency = requestedBackground === "transparent" ? await inspectTransparency(generated) : undefined;
         signal.throwIfAborted();
-        const stored = await storeGeneratedImage(
-          cwd,
-          { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
-          { signal },
-        );
+        const stored = await storeGeneratedImage(cwd, generated, { signal });
         return imageResult(stored.file, stored.mediaType, stored.bytes, {
           provider,
           source: "chatgpt-oauth",
