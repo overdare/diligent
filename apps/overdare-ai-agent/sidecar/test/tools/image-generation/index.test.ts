@@ -129,14 +129,14 @@ describe("generate_image", () => {
     expect(tool.parameters.safeParse({ prompt: "A coin", provider: "gemini" }).success).toBe(false);
   });
 
-  test("passes explicit model and background, stores returned bytes, and does not invent a reported model", async () => {
+  test("pins the ChatGPT request model, forwards background, and does not invent a reported model", async () => {
     const { cwd, cleanup } = project();
     const image = "generated-image";
     try {
       const tool = await toolFor({
         cwd,
         generateImage: async (input) => {
-          expect(input).toEqual({ prompt: "A red button", model: "requested-image-model", background: "transparent" });
+          expect(input).toEqual({ prompt: "A red button", model: "gpt-image-2.5-sunburst", background: "transparent" });
           return {
             bytes: Buffer.from(image),
             mediaType: "image/webp",
@@ -145,15 +145,12 @@ describe("generate_image", () => {
           };
         },
       });
-      const result = await tool.execute(
-        { prompt: "A red button", model: "requested-image-model", background: "transparent" },
-        context(),
-      );
+      const result = await tool.execute({ prompt: "A red button", background: "transparent" }, context());
       const output = JSON.parse(result.output);
       expect(output).toMatchObject({
         provider: "chatgpt",
         source: "chatgpt-oauth",
-        requestedModel: "requested-image-model",
+        requestedModel: "gpt-image-2.5-sunburst",
         background: "transparent",
       });
       expect(output.model).toBeUndefined();
