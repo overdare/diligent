@@ -3,6 +3,7 @@
 import { EventStream } from "../event-stream";
 import { createAnthropicNativeCompaction, createAnthropicStream } from "./provider/anthropic";
 import { createGeminiStream } from "./provider/gemini";
+import type { ImageGenerationFn, ImageGenerationInput, ImageGenerationOptions } from "./provider/image-generation";
 import type { NativeCompactionLookup } from "./provider/native-compaction";
 import { createOpenAINativeCompaction, createOpenAIStream } from "./provider/openai";
 import type { OpenAIImageDetail } from "./provider/openai/responses";
@@ -24,6 +25,7 @@ export interface ExternalProviderAuth {
   isConfigured: () => boolean;
   getStream: () => StreamFunction;
   getNativeCompaction?: () => import("./provider/native-compaction").NativeCompactFn | undefined;
+  getImageGeneration?: () => ImageGenerationFn;
   ensureFresh?: () => Promise<void>;
 }
 
@@ -157,7 +159,22 @@ function createCompactionRegistry(
 
 async function ensureExternalProviderReady(external: ExternalProviderAuth, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new Error("Aborted");
-  await external.ensureFresh?.();
+  const readiness = external.ensureFresh?.();
+  if (!signal) return readiness;
+  // Stop this caller's wait without cancelling a refresh shared by other requests.
+  let onAbort: (() => void) | undefined;
+  try {
+    await Promise.race([
+      readiness,
+      new Promise<never>((_, reject) => {
+        onAbort = () => reject(new Error("Aborted", { cause: signal.reason }));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }),
+    ]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
   if (signal?.aborted) throw new Error("Aborted");
 }
 
@@ -226,6 +243,23 @@ export class ProviderManager {
   removeExternalAuth(provider: ProviderName): void {
     this.streamCache.invalidateProvider(provider);
     this.authState.removeExternalAuth(provider);
+  }
+
+  async generateImage(provider: ProviderName, input: ImageGenerationInput, options: ImageGenerationOptions = {}) {
+    options.signal?.throwIfAborted();
+    const external = this.authState.getExternalAuth(provider);
+    if (!external?.getImageGeneration) {
+      throw new ProviderError(`Image generation requires configured ${provider} OAuth authentication.`, {
+        errorType: ProviderErrorType.Auth,
+        isRetryable: false,
+        reason: ProviderErrorReason.CredentialsMissing,
+      });
+    }
+    await ensureExternalProviderReady(external, options.signal);
+    options.signal?.throwIfAborted();
+    if (this.authState.getExternalAuth(provider) !== external)
+      throw new Error("Provider authentication changed before image generation; retry the request.");
+    return external.getImageGeneration()(input, options);
   }
 
   // Verify an API key before persisting it. Throws with a user-facing message if the key is invalid.

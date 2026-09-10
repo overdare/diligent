@@ -2,7 +2,7 @@
 
 import { userInfo } from "node:os";
 import { toSerializableError } from "@diligent/core/agent";
-import { getDefaultModelRef } from "@diligent/core/model-registry";
+import { getDefaultModelRef, resolveModel, sameModelRef } from "@diligent/core/model-registry";
 import {
   DEFAULT_PROVIDER,
   type ModelRef,
@@ -102,6 +102,8 @@ export interface DiligentAppServerConfig {
   getInitializeResult?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   resolvePaths: (cwd: string) => Promise<DiligentPaths>;
   createAgent: (args: CreateAgentArgs) => RuntimeAgent | Promise<RuntimeAgent>;
+  /** Refresh provider-dependent tools between turns without replacing the agent or its state. */
+  refreshAgentTools?: (agent: RuntimeAgent, args: CreateAgentArgs) => void | Promise<void>;
   streamFunction?: StreamFunction;
   createNativeCompaction?: (provider: ProviderName) => NativeCompactFn | undefined;
   compaction?: SessionManagerConfig["compaction"];
@@ -604,29 +606,48 @@ export class DiligentAppServer {
     };
 
     const paths = await this.config.resolvePaths(cwd);
+    // Track the resolved selection independently from config/set's immediate model update.
+    let lastResolvedModel: ModelRef | undefined;
     runtime.manager = new SessionManager({
       cwd,
       paths,
       agent: async () => {
-        if (!runtime.agent) {
-          const newAgent = await this.config.createAgent({
-            cwd,
-            mode: runtime.mode,
-            effort: runtime.runningEffortSnapshot ?? runtime.effort,
-            model: runtime.runningModelSnapshot ?? runtime.model,
-            approve: (request) => this.requestApproval(runtime.id, request),
-            ask: (request) => this.requestUserInput(runtime.id, request),
-            getSessionId: () => runtime.manager.sessionId,
-            existingAgent: runtime.agent,
-            onChildStop: (info) => this.runStopHooksFor(info),
-            userId: runtime.currentTurnUserId,
-          });
-          runtime.agent = newAgent;
+        const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
+        const request: CreateAgentArgs = {
+          cwd,
+          mode: runtime.mode,
+          effort: runtime.runningEffortSnapshot ?? runtime.effort,
+          model: selectedModel,
+          approve: (request) => this.requestApproval(runtime.id, request),
+          ask: (request) => this.requestUserInput(runtime.id, request),
+          getSessionId: () => runtime.manager.sessionId,
+          existingAgent: runtime.agent,
+          onChildStop: (info) => this.runStopHooksFor(info),
+          userId: runtime.currentTurnUserId,
+        };
+        let agent = runtime.agent;
+        if (!agent) {
+          agent = await this.config.createAgent(request);
+          runtime.agent = agent;
           for (const histAgent of runtime.manager.getHistoricalCollabAgents()) {
-            newAgent.registry?.restoreAgent(histAgent.threadId, histAgent.nickname, histAgent.policy);
+            agent.registry?.restoreAgent(histAgent.threadId, histAgent.nickname, histAgent.policy);
           }
+        } else {
+          // Defer catalog/registry updates until the active turn has finished using them.
+          if (lastResolvedModel?.provider !== selectedModel.provider) {
+            await this.config.refreshAgentTools?.(agent, request);
+          }
+          if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
+            agent.setModel(
+              resolveModel(selectedModel),
+              this.config.streamFunction,
+              this.config.createNativeCompaction?.(selectedModel.provider),
+            );
+          }
+          agent.setEffort(request.effort);
         }
-        return runtime.agent;
+        lastResolvedModel = selectedModel;
+        return agent;
       },
       compaction: this.config.compaction,
       knowledgePath: paths.knowledge,
@@ -715,14 +736,14 @@ export class DiligentAppServer {
 
   private async resolveToolsContext(
     threadId?: string,
-  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }> {
+  ): Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined; modelProvider?: ProviderName }> {
     const manager = this.config.toolConfig;
     if (!manager) throw Object.assign(new Error("Tool config not available"), { code: -32601 });
 
     if (threadId || this.activeThreadId) {
       try {
         const runtime = await this.resolveThreadRuntime(threadId);
-        return { cwd: runtime.cwd, tools: manager.getTools() };
+        return { cwd: runtime.cwd, tools: manager.getTools(), modelProvider: runtime.model.provider as ProviderName };
       } catch {
         // A stale thread pointer (e.g. a deleted thread still referenced by the
         // connection or the global active id) must not break the read-only tools
@@ -732,7 +753,7 @@ export class DiligentAppServer {
 
     const cwd = this.config.cwd ?? process.cwd();
     this.knownCwds.add(cwd);
-    return { cwd, tools: manager.getTools() };
+    return { cwd, tools: manager.getTools(), modelProvider: this.currentModel?.provider as ProviderName | undefined };
   }
 
   private async resolveSkillSettingsCwd(threadId?: string): Promise<string> {

@@ -6,7 +6,9 @@ const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
+const rpc = await import("../../sidecar/src/tools/studiorpc/rpc.ts");
 mock.module("../../sidecar/src/tools/studiorpc/rpc.ts", () => ({
+  ...rpc,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string) => {
     if (method === "level.browse") return levelBrowseMock();

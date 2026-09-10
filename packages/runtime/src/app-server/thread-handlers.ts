@@ -2,6 +2,7 @@
 
 import { toSerializableError } from "@diligent/core/agent";
 import { normalizeThinkingEffort, resolveModel, supportsThinkingEffort } from "@diligent/core/model-registry";
+import type { ProviderName } from "@diligent/core/provider-contract";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { calculateUsageCost } from "../cost";
@@ -81,7 +82,11 @@ export interface ThreadHandlersContext {
   getLatestModelForCwd: (cwd: string) => Promise<ModelRef | undefined>;
   emit: (notification: DiligentServerNotification) => Promise<void>;
   consumeTurn: (runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string) => Promise<void>;
-  resolveToolsContext: (threadId?: string) => Promise<{ cwd: string; tools: DiligentConfig["tools"] | undefined }>;
+  resolveToolsContext: (threadId?: string) => Promise<{
+    cwd: string;
+    tools: DiligentConfig["tools"] | undefined;
+    modelProvider?: ProviderName;
+  }>;
   resolveSkillSettingsCwd: (threadId?: string) => Promise<string>;
   resolveSubagentSettingsCwd: (threadId?: string) => Promise<string>;
   getBundledToolProviders: () => BundledToolProvider[];

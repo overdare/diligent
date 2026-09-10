@@ -38,6 +38,8 @@ cd "$REPO_ROOT"
 EXPLICIT_HOST="${1:-${STUDIO_HOST:-}}"
 EXPLICIT_PORT="${2:-${STUDIO_PORT:-}}"
 EXPLICIT_WORLD="${3:-${STUDIO_PROJECT_DIR:-}}"
+EXPLICIT_STUDIO_LOCAL_FILE_ROOT="${STUDIO_LOCAL_FILE_ROOT:-}"
+EXPLICIT_STUDIO_REMOTE_FILE_ROOT="${STUDIO_REMOTE_FILE_ROOT:-}"
 
 # Load .env.local (if present). `set -a` exports so child processes (bun) get them too.
 ENV_FILE="${REPO_ROOT}/.env.local"
@@ -53,6 +55,9 @@ fi
 STUDIO_HOST="${EXPLICIT_HOST:-${STUDIO_HOST:-}}"
 STUDIO_PORT="${EXPLICIT_PORT:-${STUDIO_PORT:-13377}}"
 WORLD_DIR="${EXPLICIT_WORLD:-${STUDIO_PROJECT_DIR:-}}"
+STUDIO_LOCAL_FILE_ROOT="${EXPLICIT_STUDIO_LOCAL_FILE_ROOT:-${STUDIO_LOCAL_FILE_ROOT:-}}"
+STUDIO_REMOTE_FILE_ROOT="${EXPLICIT_STUDIO_REMOTE_FILE_ROOT:-${STUDIO_REMOTE_FILE_ROOT:-}}"
+export STUDIO_LOCAL_FILE_ROOT STUDIO_REMOTE_FILE_ROOT
 
 BACKEND_PORT=7433
 FRONTEND_PORT=5174
@@ -61,6 +66,10 @@ BOOTSTRAP="${REPO_ROOT}/apps/overdare-ai-agent/bootstrap"
 SIDECAR="${REPO_ROOT}/apps/overdare-ai-agent/sidecar/src/server.ts"
 
 STUDIO_DISABLED="${STUDIO_DISABLED:-}"
+
+if [ -n "$STUDIO_LOCAL_FILE_ROOT" ] || [ -n "$STUDIO_REMOTE_FILE_ROOT" ]; then
+  echo "> Studio file roots: ${STUDIO_LOCAL_FILE_ROOT:-<unset>} -> ${STUDIO_REMOTE_FILE_ROOT:-<unset>}"
+fi
 
 if [ -n "$STUDIO_DISABLED" ]; then
   echo "> Studio: DISABLED (no RPC connection to 13377; edit/rollback tools unavailable)"
@@ -142,13 +151,13 @@ fi
 free_port() {
   local port="$1"
   local pids
-  pids="$(lsof -ti:"$port" 2>/dev/null || true)"
+  pids="$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
   if [ -n "$pids" ]; then
     echo "  + killing process(es) holding port ${port}: ${pids}"
     # shellcheck disable=SC2086
     kill $pids 2>/dev/null || true
     sleep 1
-    pids="$(lsof -ti:"$port" 2>/dev/null || true)"
+    pids="$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
     # shellcheck disable=SC2086
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   fi

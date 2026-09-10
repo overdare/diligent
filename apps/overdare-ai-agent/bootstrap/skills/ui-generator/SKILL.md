@@ -9,10 +9,11 @@ Build, adjust, and integrate **screen-space 2D UI** in OVERDARE Studio — the f
 
 **Scope:** this skill is 2D screen UI only. It does **not** decorate the 3D world — no `BillboardGui`/`SurfaceGui`, nameplates over characters, in-world signs, or images/decals on part surfaces. See [Do Not Use When](#do-not-use-when).
 
-Two creation approaches, one per reference file — see [Reference Files](#reference-files-read-on-demand):
+Three creation approaches — see [Reference Files](#reference-files-read-on-demand) for shared UI guidance:
 
 - **Direct GUI** — build instances (`ScreenGui`, `Frame`, `TextButton`, …) for custom layouts and predictable hierarchy.
 - **worldAsset import** — search and import `UI_ELEMENTS` packs when a visual style already exists.
+- **Local image asset** — import an existing local image file into Studio, then bind the returned asset ID to GUI image properties.
 
 ## Gate: Check `overdare-ui-templates` First
 
@@ -117,13 +118,14 @@ Use this when the target UI already exists and the change is: fix alignment/size
 1. Resolve the [Gate](#gate-check-overdare-ui-templates-first).
 2. Browse the current hierarchy with `studiorpc_level_browse`; find `StarterGui` and any existing UI so you don't overwrite it.
 3. Find or create the UI parent — normally a `ScreenGui` under `StarterGui`.
-4. Pick the approach (direct / worldAsset import / hybrid) and read the matching reference file.
+4. Pick the approach (direct / worldAsset import / local image asset / hybrid) and read the matching reference file.
 5. **worldAsset:** search `assets` with `overdaresearch` (prefer `categoryId = UI_ELEMENTS`), import with `studiorpc_asset_drawer_import`, inspect the imported hierarchy, move to `StarterGui` if needed. See `patterns/worldasset-ui.md`.
-6. **Direct:** create the root container first, then children one level at a time; use clear names; do not mix adds and updates in one `studiorpc_instance_upsert`. See `patterns/direct-gui.md`.
-7. Apply layout per `patterns/layout-rules.md` (Position mostly Scale, Size mostly Offset, ≥24px important text, ZIndex bands, safe areas). For a specific UI type, follow its `templates/` file.
-8. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; validate with `validatelua`. See `patterns/script-integration.md`.
-9. Read back or browse the result and address any tool warnings.
-10. Save the level, then tell the user what was created and how to test it.
+6. **Local image:** import an existing absolute image `file` with `studiorpc_asset_manager_image_import`, then bind the returned `asset.assetid` to the target `ImageLabel` or `ImageButton`.
+7. **Direct:** create the root container first, then children one level at a time; use clear names; do not mix adds and updates in one `studiorpc_instance_upsert`. See `patterns/direct-gui.md`.
+8. Apply layout per `patterns/layout-rules.md` (Position mostly Scale, Size mostly Offset, ≥24px important text, ZIndex bands, safe areas). For a specific UI type, follow its `templates/` file.
+9. Add behavior only if requested — `LocalScript` + `Activated`, referencing runtime UI from `PlayerGui`; validate with `validatelua`. See `patterns/script-integration.md`.
+10. Read back or browse the result and address any tool warnings.
+11. Save the level, then tell the user what was created and how to test it.
 
 ## Output
 
@@ -131,7 +133,7 @@ Before reporting done, scan the result for the defects users actually catch: tex
 
 When finishing, report:
 
-- Approach used (direct / worldAsset import / hybrid).
+- Approach used (direct / worldAsset import / local image asset / hybrid).
 - Created or modified hierarchy paths and important UI names.
 - Any imported asset name + assetId, and any script added/modified.
 - Any tool warnings or safe-area conflicts handled.
