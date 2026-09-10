@@ -7,9 +7,10 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `referenceImages` file paths, an optional image
-`model`, and `background` (`auto`, `opaque`, or `transparent`; omitted means `auto`). The runtime
-binds it to the selected chat provider:
+`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
+(`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
+the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
+tool arguments. The runtime binds generation to the selected chat provider:
 
 | Selected chat provider | Behavior |
 |---|---|
@@ -139,8 +140,11 @@ when the returned image is unusable.
 
 The storage helper is independent of the image provider. Files are written under
 `<project>/.<storage-namespace>/images/generated/` with unique names. PNG, JPEG, and WebP
-results retain their image format. The returned preview contains the same bytes as the saved
-file.
+results retain their original bytes and image format. The runtime may resize or recompress the
+tool-result preview through its shared image policy; alpha inspection uses the original image.
+ChatGPT responses must decode successfully within the existing 64-megapixel decode limit before
+they are returned as assets. Invalid image data is a generation error, distinct from a valid opaque
+image retained as a repair reference.
 
 OVERDARE's runtime passes the selected thread provider into bundled tool factories. Tool
 settings and model-facing tools follow that provider. Changing the thread model via `config/set`
@@ -156,10 +160,9 @@ Image generation uses direct HTTP with a five-minute deadline covering reference
 authentication readiness, generation, and saving. Cancelling a caller waiting for shared token
 refresh does not cancel other callers' refresh. If the login changes during readiness, the
 request fails instead of using the previous account.
-Cancellation propagates through direct MCP calls and the HTTP router endpoint to the provider.
-The Rust MCP router continues reading cancellation notifications while keeping tool calls
-serial; cancelling an active call drops its HTTP request, and cancelling a queued call removes
-it before execution.
+MCP and HTTP router cancellation are separate transport behavior for the tools those registries
+expose; these registries do not expose image generation. Their cancellation tests with an injected
+image tool prove signal propagation, not production image-tool availability.
 
 No child process or ephemeral chat thread is created. Cancelled generations do not advance into saving;
 an interrupted file write removes its partial output.
