@@ -151,13 +151,16 @@ describe("generate_image", () => {
           return { bytes: Buffer.from("gemini-image"), mediaType: "image/png", model };
         },
       });
+      expect(tool.parameters.safeParse({ prompt: "A blue coin", n: 2 }).success).toBe(false);
       const result = await tool.execute({ prompt: "A blue coin" }, context());
       expect(JSON.parse(result.output)).toMatchObject({
         provider: "gemini",
         source: "gemini-api",
         model: "test-gemini-image-model",
+        requestedCount: 1,
+        images: [expect.objectContaining({ mediaType: "image/png" })],
       });
-      expect(await readFile(JSON.parse(result.output).file, "utf8")).toBe("gemini-image");
+      expect(await readFile(JSON.parse(result.output).images[0].file, "utf8")).toBe("gemini-image");
       expect(chatGPTCalls).toBe(0);
     } finally {
       cleanup();
