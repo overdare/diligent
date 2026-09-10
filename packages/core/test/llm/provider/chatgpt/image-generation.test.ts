@@ -110,6 +110,18 @@ test.each([
   await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow();
 });
 
+test.each([
+  { name: "PNG signature without image data", bytes: png.subarray(0, 8) },
+  { name: "PNG dimensions without pixel data", bytes: png.subarray(0, 33) },
+  { name: "JPEG signature without image data", bytes: Buffer.from([0xff, 0xd8, 0xff]) },
+  { name: "WebP container without image data", bytes: Buffer.from("RIFF\u0004\u0000\u0000\u0000WEBP") },
+])("rejects $name instead of returning an unusable generated asset", async ({ bytes }) => {
+  const generate = createChatGPTImageGeneration(() => tokens, {
+    fetch: async () => Response.json({ data: [{ b64_json: bytes.toString("base64") }] }),
+  });
+  await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow("invalid image data");
+});
+
 test("pre-cancellation prevents authentication and network access", async () => {
   const controller = new AbortController();
   controller.abort(new Error("cancelled"));

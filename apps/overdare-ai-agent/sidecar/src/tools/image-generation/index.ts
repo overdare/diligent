@@ -25,7 +25,7 @@ const parameters = z
       .enum(["auto", "opaque", "transparent"])
       .optional()
       .describe(
-        "Explicit API background setting: transparent for cutout assets, opaque for guides or chroma-key backgrounds; defaults to auto.",
+        "Explicit API background setting: transparent for cutout assets, opaque for guides or solid backgrounds; defaults to auto.",
       ),
     referenceImages: z
       .array(z.string().trim().min(1))
@@ -109,11 +109,7 @@ function createGenerateImageTool(
         signal.throwIfAborted();
         const transparency = background === "transparent" ? await inspectTransparency(generated) : undefined;
         signal.throwIfAborted();
-        const stored = await storeGeneratedImage(
-          cwd,
-          { type: "bytes", bytes: generated.bytes, mediaType: generated.mediaType },
-          { signal },
-        );
+        const stored = await storeGeneratedImage(cwd, generated, { signal });
         const details = {
           file: stored.file,
           provider: "chatgpt",
