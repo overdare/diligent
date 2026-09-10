@@ -96,13 +96,6 @@ with native controls and an explicit report of the substituted artwork, preservi
 assets. A missing remote screenshot is first resolved to a verified agent-host path rather than
 being discarded to bypass the failed generation.
 
-The optional temporary chroma-key path for opaque assets generates a flat green (or blue) background
-and runs the skill's `scripts/chroma_key.py` locally to create a separate RGBA PNG. It requires a
-host Python 3 environment with Pillow; Diligent does not install it. The script preserves the source,
-refuses output overwrite, and removes key-color contamination from keyed edge pixels. The key must
-not appear in the subject, and translucent materials keep the normal alpha workflow. Only the
-processed PNG is imported into Studio. Image calls retain the same retry budget.
-
 Pass up to five local PNG, JPEG, or WebP files in `referenceImages`. Absolute paths are preferred;
 relative paths resolve from the project directory. Approval includes the reference paths before
 the tool reads them. References must be existing non-empty files and are never overwritten.
