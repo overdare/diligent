@@ -10,7 +10,10 @@ test("chat and parallel image requests share one refresh and all use the refresh
   const authorizations: string[] = [];
   const persisted: string[] = [];
   let refreshes = 0;
-  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==",
+    "base64",
+  );
   globalThis.fetch = (async (url, init) => {
     if (String(url).includes("/oauth/token")) {
       refreshes++;
