@@ -45,8 +45,6 @@ After the third failure, stop further attempts for that piece, explain the failu
 
 ### Transparent output
 
-As a temporary workaround for isolated opaque artwork, use [chroma-key.md](chroma-key.md) to generate a flat green background and remove it with the bundled Python script when the host has Python/Pillow and the key color is absent from the subject. Use the normal alpha path below for translucent art or unsuitable key colors. The guide image itself does not use chroma keying.
-
 Pass `background: "transparent"` to `generate_image` for alpha assets and their repairs; saying it only in the prompt leaves the API setting at auto. Specify the alpha regions separately from material: an opaque button face with transparent exterior, a hollow frame with transparent exterior and opening, or a deliberately translucent face. Avoid an ambiguous "dark transparent center." Keep the full silhouette inside padding and constrain glow/shadows. Request actual PNG alpha, not a checkerboard depiction; the guide itself need not be transparent.
 
 Inspect each asset. A viewer may display its own checkerboard behind real transparency. The tool's `transparency` reports actual original-pixel counts when available; also inspect a composited preview for placement and edge quality. PNG format or an alpha channel alone is not proof. Keep `requestedBackground`, backend `background` (possibly absent), and actual transparent pixels distinct: even an explicit request can return opaque artwork. An `opaque` or `empty` warning is an unusable attempt, not an instruction to discard the saved repair reference. If inspection is unavailable, report uncertainty rather than declaring success or failure from the background alone.
