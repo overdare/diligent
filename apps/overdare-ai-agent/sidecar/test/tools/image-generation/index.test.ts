@@ -162,6 +162,11 @@ describe("generate_image", () => {
     }
   });
 
+  test("does not accept a model override from the model", async () => {
+    const tool = await toolFor({ cwd: "/repo" });
+    expect(tool.parameters.safeParse({ prompt: "A coin", model: "gpt-image-1" }).success).toBe(false);
+  });
+
   test("a provider error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
     const { cwd, cleanup } = project();
     let generations = 0;
