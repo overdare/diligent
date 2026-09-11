@@ -30,6 +30,19 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).not.toContain("`studiorpc_game_pie_status` ");
   });
 
+  test("advertises optional concurrency and a single Studio editing owner", async () => {
+    const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+
+    expect(prompt).toContain("Parallelism is optional");
+    expect(prompt).toContain("Independent work alone is not a reason to spawn");
+    expect(prompt).toContain("Once parallel work is selected");
+    expect(prompt).toContain("one active Studio editing owner");
+    expect(prompt).toContain(
+      "Preparation workers return their files, assumptions, and validation limits without mutating Studio",
+    );
+    expect(prompt).not.toContain("Run implementation sub-agents one at a time");
+  });
+
   test("enables the procedural experiment by default", async () => {
     testRoot = await mkdtemp(join(tmpdir(), "overdare-bootstrap-config-"));
     const globalConfigDir = join(testRoot, ".overdare");

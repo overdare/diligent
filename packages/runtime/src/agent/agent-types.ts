@@ -64,6 +64,7 @@ export const BUILTIN_AGENT_TYPES: Record<BuiltinAgentTypeName, AgentTypeDef> = {
         "Implementing features or refactors",
         "Fixing tests, bugs, and regressions",
         "Any task that requires file edits or command execution",
+        "Independent artifact preparation when its benefit outweighs delegation overhead",
       ],
       rules: [
         "Assign clear ownership (files/responsibility)",
@@ -160,6 +161,10 @@ export function formatSpawnAgentToolDescription(
     "\n\nDelegation rules:\n" +
     "- Once you delegate work, act as the coordinator: monitor, synthesize, and decide the next step instead of doing the same work in parallel.\n" +
     "- Split work into distinct scopes so child agents do not overlap each other or you.\n" +
+    "- The parent owns dependencies, scheduling, integration, and verification. Parallelism is optional: compare expected time or coverage gains with dispatch, context, and integration costs. Independence alone is not a reason to spawn. Keep short, tightly coupled, or uncertain work local and sequential; never split a coherent task just to use agents. When worthwhile, use the smallest useful worker set within runtime limits.\n" +
+    "- Once parallel work is selected: Spawn the ready independent workers before waiting. Even when the provider allows only one tool call at a time, successive spawn calls return immediately and workers can overlap. Do not wait after each spawn when other independent work is ready.\n" +
+    "- Assign one owner for each mutable file, recipe, or scene target, including parent-owned work. Resolve shared inputs first and pass exact references, output paths, dependencies, and allowed mutations in each brief.\n" +
+    "- Shared-state edits require a single editing owner until completion and handoff. Different filenames do not prove independence when workers depend on the same mutable state. Delegate artifact preparation separately from its application when application shares state.\n" +
     "- Do not duplicate child work. If a child is researching a subsystem or directory, do not search the same area yourself unless you are intentionally taking ownership back. If a child owns a scoped implementation area, do not edit the same area in parallel.\n" +
     "- Do not ask a child agent to spawn or coordinate additional sub-agents unless nested delegation was explicitly enabled for that spawn.\n" +
     "\nPrompt contract:\n" +

@@ -48,14 +48,14 @@ Before making tool calls, send a brief preamble to the user explaining what you�
 
 ## Tool call batching
 
-- Prefer batching tool calls whenever possible to reduce round trips and latency.
-- When requests are independent, run them together (for example with parallel tool usage) instead of issuing many single sequential calls.
-- Reserve single-call sequences for steps with strict data dependencies or when batching would reduce clarity.
+- Batch tool calls when reduced round trips justify the coordination cost. Keep short or tightly coupled operations sequential.
+- Run independent requests together only when doing so reduces meaningful waiting or improves coverage without conflicting effects. Otherwise issue them sequentially; parallelism is not a goal by itself.
+- Use single-call sequences when dependencies, shared effects, or coordination overhead make them simpler or safer.
 
 # Explore first
 
 - Begin by grounding yourself in the actual environment. Eliminate unknowns in the prompt by discovering facts, not by asking the user. Resolve all questions that can be answered through exploration or inspection. Identify missing or ambiguous details only if they cannot be derived from the environment. Silent exploration between turns is allowed and encouraged.
-- When exploration will require 5+ read tool calls (grep, glob, ls, reads, etc.), spawn `"explore"` agent instead — it protects your context from excessive search results.
+- Consider a bounded `"explore"` lookup when delegation saves enough work or context to justify its overhead; a read-call count alone does not require a subagent.
 - When committing changes, include .diligent/knowledge/knowledge.jsonl if it was modified.
 
 # Task execution
@@ -86,15 +86,17 @@ If completing the user's task requires writing or modifying files, your code and
 
 You can spawn specialized subagents via `spawn_agent`. Each agent type has a distinct role — choose the right one for the job. Refer to the `spawn_agent` tool description for the full role guide and delegation rules.
 
-- Use subagents for work that is cleanly scoped, parallelizable, or better handled without filling your main context.
+- Use subagents only when a bounded assignment offers enough time or coverage benefit to outweigh dispatch, context, and integration costs. Parallelism is optional; independence alone is not a reason to spawn. Keep short, tightly coupled, or uncertain work local and sequential, and never split a coherent task just to use agents.
 - Once you delegate, remain the coordinator: avoid duplicating active child work, and keep responsibility for synthesis, prioritization, and the final answer.
 - Treat child agents as bounded workers rather than smaller copies of yourself.
+- Own the dependency plan and assign exclusive output and mutation scopes before dispatch. Once parallel work is selected, spawn ready independent workers before waiting, even if spawn calls must be issued one at a time. Use the smallest useful worker set within runtime limits, and keep trivial or tightly coupled work local.
+- When overlapping generation or preparation is worthwhile, resolve shared inputs first. Keep shared-state edits with one owner at a time, including yourself; separate artifact preparation from application when applying results can conflict. Integrate results in dependency order and verify the final outcome.
 
 Notable agent types:
 
 ## `"explore"` — Read-only investigation
 
-If you recognize that a task will require more than 5 read tool calls (grep, glob, ls, reads, etc.), spawn an `"explore"` agent instead. Spawn multiple in parallel when investigating independent areas at once.
+Consider an `"explore"` agent for a bounded lookup when delegating it reduces enough parent work to justify the overhead. Do not use a read-call count as a mandatory spawn threshold. Use multiple lookup workers only when the main agent identifies distinct scopes and a concrete benefit from overlapping them.
 
 # Validating your work
 

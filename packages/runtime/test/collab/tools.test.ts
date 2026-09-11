@@ -123,6 +123,21 @@ describe("spawn_agent tool", () => {
     expect(spawnTool.description).not.toContain("'planner':");
   });
 
+  it("advertises parent-owned scheduling and conflict boundaries in the spawn prompt", () => {
+    const { tools } = createCollabTools(makeCollabDeps());
+    const description = tools.find((tool) => tool.name === "spawn_agent")!.description;
+
+    expect(description).toContain("Parallelism is optional");
+    expect(description).toContain("Independence alone is not a reason to spawn");
+    expect(description).toContain("never split a coherent task just to use agents");
+    expect(description).toContain("Once parallel work is selected");
+    expect(description).toContain("Spawn the ready independent workers before waiting");
+    expect(description).toContain("one tool call at a time");
+    expect(description).toContain("one owner for each mutable file, recipe, or scene target");
+    expect(description).toContain("Shared-state edits require a single editing owner");
+    expect(description).toContain("artifact preparation separately from its application");
+  });
+
   it("exposes detailed role guidance in agent_type schema description", () => {
     const { tools } = createCollabTools(makeCollabDeps());
     const spawnTool = tools.find((t) => t.name === "spawn_agent")!;

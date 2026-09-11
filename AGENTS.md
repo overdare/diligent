@@ -38,7 +38,11 @@ Most source files include a `@summary` annotation on the first line: `// @summar
 ## Rules
 
 - English only in all files
-- Do not spawn more than one subagent for a task.
+- The main agent owns dependency planning, scheduling, integration, and verification. Parallelism is optional: use it only when reduced waiting or better coverage outweighs dispatch, context, and integration costs. Independent work alone is not a reason to spawn agents.
+- Keep short, tightly coupled, or uncertain work local and sequential. Do not split a coherent task just to use agents. When concurrency has a concrete benefit, use the smallest useful worker set within runtime limits rather than a fixed one-subagent cap.
+- Before dispatch, assign inputs, dependencies, output paths, and exclusive mutable targets. Once parallel work is selected, spawn the ready independent workers before waiting; sequential spawn calls still allow their work to overlap.
+- Give each mutable file, script, recipe, or scene target one owner at a time, including the main agent. Shared-state read-modify-write work requires completion and ownership handoff before another editor proceeds. Different filenames do not establish independence when work shares mutable state.
+- Separate artifact preparation from application when application can conflict. Keep one active Studio editing owner for script edits, imports, scene mutations, and procedural application. The main agent integrates results in dependency order and verifies the final outcome.
 - Clarify requirements fully before implementing — no assumptions
 - When implementing new features or modifying existing behavior, write or strengthen tests first whenever possible.
 - Run tests after code changes
