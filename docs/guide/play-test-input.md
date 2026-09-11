@@ -53,6 +53,28 @@ annotation exclusion, not a live game hiding the control.
 
 ![Reserved UI POC: default regions above, JumpButton excluded below](../review/assets/reserved-ui-overlay-poc.png)
 
+### Editor UI layout diagnostics
+
+`studiorpc_ui_inspect_layout` is a Diligent-owned read-only diagnostic, not a new Studio RPC. It reads
+`level.browse` and the current `StarterGui` subtree through `instance.read`, then reports:
+
+- Overlap with reference jump, joystick, toolbar, and side-inset regions.
+- Intersections between unrelated buttons in the normal HUD layer.
+- Authored element rectangles outside the layout viewport.
+
+Optional `screenGuid` selects one ScreenGui, `hiddenCoreGui` reuses screenshot exclusions, `viewport`
+sets the dimensions used to resolve authored Scale/Offset values, and `maxFindings` caps output.
+The default viewport is the existing `1386x640` reference. Coordinates are normalized and marked
+`geometry: "authored-estimate"`; they are not measured Slate bounds or runtime PlayerGui state.
+Unsupported geometry and missing data are reported, and truncation is explicit. Parent-child and
+background/text combinations are not treated as button-pair overlap. Intentional overlay layers
+are excluded from reserved-region and button-pair checks.
+
+Run the diagnostic after GUI edits, including Editor Luau, review relevant findings, then verify a
+screenshot. The tool never saves, changes the scene, blocks an edit, starts PIE, or automatically fixes
+layout. An unreadable Studio response is `unavailable`, not an empty successful inspection. This
+module is independent of the legacy upsert schema so it can remain when Editor Luau replaces upsert.
+
 ### Viewport coordinates
 
 `game.ui.browse` and `game.screenshot` report positions in the same viewport-normalized `0..1` space that

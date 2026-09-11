@@ -46,6 +46,10 @@ UI screenshots include a translucent red preview of estimated reserved mobile re
 
 ## Behavior and evidence
 
+After creating, moving, or resizing a GUI, run `studiorpc_ui_inspect_layout` before final screenshot verification. It reads current Editor `StarterGui` properties without saving or executing code, so the same diagnostic works after instance tools or Editor Luau edits. Pass the same `hiddenCoreGui` hints used for the screenshot. Use `screenGuid` to narrow the inspection to one ScreenGui when appropriate.
+
+Review reserved-region, unrelated button-overlap, and outside-viewport findings, then fix relevant issues and inspect again. Findings are candidates, not automatic placement errors: do not move intentional overlays or infer that a background/text pair must be separated. The tool estimates authored layout and reports unsupported or missing geometry in `skippedElements`; `partial` or `unavailable` is not a clean result. It does not inspect the runtime PlayerGui or measure rendered pixels. Finish with the actual screenshot and affected interactions rather than treating an empty findings list as visual acceptance.
+
 Read the existing owning script before adding another. Touch events and local UI belong in a `LocalScript`; game-rule validation belongs on the server. Scripts must use `studiorpc_script_read`, `_add`, `_edit`, or `_delete`, never filesystem editing of Luau sources.
 
 At runtime, `StarterGui` is copied to each player's `PlayerGui`; bind the runtime controls there. Use `Activated` for tap actions. For held actions, use the project's input controller and supported touch start/end/cancel APIs, ensuring release or interrupted input stops the action. Keep live values and text native so they can update independently of art.
