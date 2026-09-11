@@ -20,7 +20,10 @@ async function setup() {
   directories.push(cwd);
   const file = join(cwd, "mockup.png");
   await writeFile(file, png);
-  const generate = mock(async () => ({ bytes: png, mediaType: "image/png" as const, requestedModel: "requested" }));
+  const generate = mock(async () => ({
+    images: [{ bytes: png, mediaType: "image/png" as const }],
+    requestedModel: "requested",
+  }));
   const approve = mock(async () => "once" as const);
   const [tool] = await createImageGenerationToolProvider({ generateImage: generate }).createTools({
     cwd,

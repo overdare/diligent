@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
 import { validateImage } from "../../image-resize";
-import type { ImageGenerationFn, ImageGenerationInput, ImageMediaType } from "../image-generation";
+import {
+  type ImageGenerationFn,
+  type ImageGenerationImage,
+  type ImageGenerationInput,
+  type ImageMediaType,
+  MAX_IMAGE_GENERATION_COUNT,
+} from "../image-generation";
 import { CHATGPT_CODEX_CLIENT_VERSION } from "./headers";
 
 const IMAGE_BASE_URL = "https://chatgpt.com/backend-api/codex/images";
@@ -19,7 +25,8 @@ const responseSchema = z.object({
           .max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(MAX_IMAGE_GENERATION_COUNT),
   model: z.string().nullish(),
   background: z.enum(["auto", "opaque", "transparent"]).nullish(),
 });
@@ -37,16 +44,22 @@ export function createChatGPTImageGeneration(
     const signal = requestOptions.signal ? AbortSignal.any([requestOptions.signal, timeout]) : timeout;
     signal.throwIfAborted();
 
+    const count = input.n ?? 1;
+    if (!Number.isInteger(count) || count < 1 || count > MAX_IMAGE_GENERATION_COUNT) {
+      throw new Error(`Image generation count must be an integer from 1 to ${MAX_IMAGE_GENERATION_COUNT}.`);
+    }
+
     const tokens = getTokens();
     if (!tokens) throw new Error("ChatGPT OAuth is not configured in Diligent.");
 
-    const response = await requestImageGeneration(input, tokens, signal);
+    const response = await requestImageGeneration(input, tokens, signal, count);
     const payload = await readImageResponse(response, tokens, signal);
-    const image = await decodeImage(payload.data[0].b64_json, signal);
+    const images: ImageGenerationImage[] = [];
+    for (const image of payload.data) images.push(await decodeImage(image.b64_json, signal));
     signal.throwIfAborted();
 
     return {
-      ...image,
+      images,
       requestedModel: input.model,
       ...(payload.model ? { model: payload.model } : {}),
       ...(payload.background ? { background: payload.background } : {}),
@@ -58,6 +71,7 @@ async function requestImageGeneration(
   input: ImageGenerationInput,
   tokens: OpenAIOAuthTokens,
   signal: AbortSignal,
+  count: number,
 ): Promise<Response> {
   const references = input.referenceImages ?? [];
   if (references.length > 5) throw new Error("Use at most five reference images.");
@@ -75,7 +89,7 @@ async function requestImageGeneration(
       background: input.background ?? "auto",
       quality: input.quality ?? "auto",
       size: input.size ?? "auto",
-      n: 1,
+      n: count,
       output_format: "png",
       ...(references.length
         ? {

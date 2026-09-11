@@ -50,27 +50,58 @@ test("posts explicit model and transparency through OAuth without claiming an un
     prompt: "A coin",
     n: 1,
   });
-  expect(result.bytes).toEqual(png);
+  expect(result.images).toEqual([{ bytes: png, mediaType: "image/png" }]);
   expect(result.requestedModel).toBe("test-image-model");
   expect(result.model).toBeUndefined();
   expect(JSON.stringify(result)).not.toContain("test-token");
 });
 
-test("posts references as ordered inline image URLs to the edits endpoint", async () => {
+test("forwards n to the edits endpoint and preserves every returned image in order", async () => {
+  const secondPng = Buffer.concat([png, Buffer.from("second")]);
   mockFetch(async (url, init) => {
     expect(url.endsWith("/images/edits")).toBe(true);
-    expect(JSON.parse(String(init.body)).images).toEqual([
-      { image_url: `data:image/png;base64,${png.toString("base64")}` },
-    ]);
-    return Response.json({ data: [{ b64_json: png.toString("base64") }], model: "reported-model" });
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      n: 2,
+      images: [{ image_url: `data:image/png;base64,${png.toString("base64")}` }],
+    });
+    return Response.json({
+      data: [{ b64_json: png.toString("base64") }, { b64_json: secondPng.toString("base64") }],
+      model: "reported-model",
+    });
   });
   const generate = createChatGPTImageGeneration(() => tokens);
   const result = await generate({
     prompt: "Change the glyph",
     model: "requested-model",
+    n: 2,
     referenceImages: [{ bytes: png, mediaType: "image/png" }],
   });
+  expect(result.images).toEqual([
+    { bytes: png, mediaType: "image/png" },
+    { bytes: secondPng, mediaType: "image/png" },
+  ]);
   expect(result.model).toBe("reported-model");
+});
+
+test("forwards n to generations once and returns a short upstream response unchanged", async () => {
+  let calls = 0;
+  mockFetch(async (_url, init) => {
+    calls++;
+    expect(JSON.parse(String(init.body)).n).toBe(2);
+    return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+  });
+  const generate = createChatGPTImageGeneration(() => tokens);
+  const result = await generate({ prompt: "Two coins", model: "test", n: 2 });
+  expect(result.images).toEqual([{ bytes: png, mediaType: "image/png" }]);
+  expect(calls).toBe(1);
+});
+
+test.each([0, 1.5, 11])("rejects invalid image count %p before sending a request", async (n) => {
+  const generate = createChatGPTImageGeneration(() => {
+    throw new Error("must not read auth");
+  });
+  await expect(generate({ prompt: "Coin", model: "test", n })).rejects.toThrow("count");
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test("redacts credentials from a provider error and never retries implicitly", async () => {
@@ -95,7 +126,7 @@ test("validates production-sized base64 without recursive regular-expression ove
   const bytes = Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]);
   mockFetch(async () => Response.json({ data: [{ b64_json: bytes.toString("base64") }] }));
   const generate = createChatGPTImageGeneration(() => tokens);
-  expect((await generate({ prompt: "Coin", model: "test" })).bytes).toEqual(bytes);
+  expect((await generate({ prompt: "Coin", model: "test" })).images[0]?.bytes).toEqual(bytes);
 });
 
 test("deadline cancels the in-flight request without an implicit retry", async () => {
@@ -137,6 +168,12 @@ test.each([
   mockFetch(async () => Response.json(payload));
   const generate = createChatGPTImageGeneration(() => tokens);
   await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow();
+});
+
+test("rejects the whole response when a later image is invalid", async () => {
+  mockFetch(async () => Response.json({ data: [{ b64_json: png.toString("base64") }, { b64_json: "not-base64" }] }));
+  const generate = createChatGPTImageGeneration(() => tokens);
+  await expect(generate({ prompt: "Coin", model: "test", n: 2 })).rejects.toThrow("invalid base64");
 });
 
 test.each([
