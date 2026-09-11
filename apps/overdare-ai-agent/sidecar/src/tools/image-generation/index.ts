@@ -1,4 +1,4 @@
-// @summary Generates and stores images through Diligent's selected ChatGPT OAuth provider.
+// @summary Generates and stores images through the selected ChatGPT OAuth or Gemini provider.
 import {
   type ImageGenerationFn,
   type ImageMediaType,
@@ -7,6 +7,8 @@ import {
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
+import { type GenerateGeminiImage, generateGeminiImage } from "./gemini";
+import { type GeminiImageConfig, resolveGeminiImageConfig } from "./gemini-config";
 import { storeGeneratedImage } from "./image-store";
 import { readReferenceImages, resolveReferenceImages } from "./reference-images";
 import { inspectTransparency } from "./transparency";
@@ -38,7 +40,7 @@ const parameters = z
       .enum(["auto", "opaque", "transparent"])
       .optional()
       .describe(
-        "Explicit API background setting: transparent for cutout assets, opaque for guides or solid backgrounds; defaults to auto.",
+        "ChatGPT-only API background setting: transparent for cutout assets, opaque for guides or solid backgrounds; defaults to auto.",
       ),
     referenceImages: z
       .array(z.string().trim().min(1))
@@ -50,8 +52,14 @@ const parameters = z
   })
   .strict();
 
+const geminiParameters = parameters.extend({
+  n: z.literal(1).optional().describe("Gemini currently supports one image per call."),
+});
+
 export interface ImageGenerationToolProviderOptions {
   generateImage?: ImageGenerationFn;
+  generateGeminiImage?: GenerateGeminiImage;
+  resolveGeminiImageConfig?: (cwd: string) => Promise<GeminiImageConfig | undefined>;
 }
 
 export function createImageGenerationToolProvider(
@@ -61,8 +69,17 @@ export function createImageGenerationToolProvider(
     id: "@overdare/image-generation-tools",
     displayName: "Image Generation",
     createTools: ({ cwd, host, modelProvider, generateImage }) => {
-      if (modelProvider !== "chatgpt") return [];
-      return [createGenerateImageTool(cwd, host, options.generateImage ?? generateImage, DEFAULT_IMAGE_MODEL)];
+      if (modelProvider !== "chatgpt" && modelProvider !== "gemini") return [];
+      return [
+        createGenerateImageTool(
+          cwd,
+          host,
+          options.generateImage ?? generateImage,
+          DEFAULT_IMAGE_MODEL,
+          modelProvider,
+          options,
+        ),
+      ];
     },
   };
 }
@@ -72,36 +89,42 @@ function createGenerateImageTool(
   host: RuntimeToolHost | undefined,
   generate: ImageGenerationFn | undefined,
   defaultModel: string,
-): Tool<typeof parameters> {
+  provider: "chatgpt" | "gemini",
+  options: ImageGenerationToolProviderOptions,
+): Tool<typeof parameters | typeof geminiParameters> {
+  const chatGPT = provider === "chatgpt";
   return {
     name: TOOL_NAME,
     description:
-      "Generate and save UI mockups, icons, panels, or illustrations directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
+      `Generate and save UI mockups, icons, panels, or illustrations with ${chatGPT ? "Diligent ChatGPT OAuth" : "Gemini"}. ` +
       "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
       "Independent requests can run in parallel after shared references exist. " +
-      "Use n for multiple images of the same prompt in one request. All returned images are preserved in order. " +
-      "A count shortfall is reported and does not trigger extra calls; do not automatically retry or top up a shortfall. " +
-      "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
-      "Returns each exact absolute output file path in files, per-image details in images, and previews. A single returned image also keeps file and transparency fields. requestedModel records the request, while model is included only if the server reports it. " +
-      "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
+      (chatGPT
+        ? "Use n for multiple images of the same prompt in one request. All returned images are preserved in order. " +
+          "A count shortfall is reported and does not trigger extra calls; do not automatically retry or top up a shortfall. "
+        : "Gemini generates one image using its configured image model. ") +
+      `This tool is bound to the selected ${chatGPT ? "ChatGPT" : "Gemini"} provider and cannot switch providers. ` +
+      (chatGPT
+        ? "Returns each exact absolute output file path in files, per-image details in images, and previews. A single returned image also keeps file and transparency fields. requestedModel records the request, while model is included only if the server reports it. "
+        : "Returns the exact absolute output file path and a preview. ") +
+      "Transparent ChatGPT requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
       "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
       IMAGE_FAILURE_GUIDANCE,
-    parameters,
+    parameters: chatGPT ? parameters : geminiParameters,
     supportParallel: true,
     async execute(args, ctx): Promise<ToolResult> {
       ctx.signal.throwIfAborted();
       const requestedModel = defaultModel;
       const background = args.background ?? "auto";
       const requestedCount = args.n ?? 1;
+      if (!chatGPT && requestedCount !== 1) throw new Error("Gemini currently supports one image per call.");
       const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
         description: "Generate and save an image",
         details: {
-          provider: "chatgpt",
-          model: requestedModel,
-          n: requestedCount,
-          background,
+          provider,
+          ...(chatGPT ? { model: requestedModel, n: requestedCount, background } : {}),
           prompt: args.prompt,
           ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}),
         },
@@ -112,8 +135,31 @@ function createGenerateImageTool(
       const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(300_000)]);
       const savedFiles: string[] = [];
       try {
-        if (!generate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
         const paths = await resolveReferenceImages(cwd, args.referenceImages, signal);
+        if (!chatGPT) {
+          const config = await (options.resolveGeminiImageConfig ?? resolveGeminiImageConfig)(cwd);
+          signal.throwIfAborted();
+          if (!config) throw new Error("Gemini API key is not configured.");
+          const generated = await (options.generateGeminiImage ?? generateGeminiImage)({
+            ...config,
+            prompt: args.prompt,
+            signal,
+            ...(paths.length ? { referenceImages: paths } : {}),
+          });
+          const stored = await storeGeneratedImage(cwd, generated, { signal });
+          const details = { file: stored.file, provider, source: "gemini-api", model: generated.model };
+          return {
+            output: JSON.stringify(details, null, 2),
+            outputImages: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
+              },
+            ],
+            metadata: { operation: "image_generation", ...details },
+          };
+        }
+        if (!generate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
         const referenceImages = await readReferenceImages(paths, signal);
         const generated = await generate(
           {
@@ -187,3 +233,6 @@ function createGenerateImageTool(
     },
   };
 }
+
+export type { GeneratedGeminiImage, GenerateGeminiImage } from "./gemini";
+export type { GeminiImageConfig } from "./gemini-config";

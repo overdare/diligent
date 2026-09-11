@@ -15,17 +15,19 @@ tool arguments. The runtime binds generation to the selected chat provider:
 | Selected chat provider | Behavior |
 |---|---|
 | `chatgpt` | Call the subscription image endpoint with Diligent's ChatGPT OAuth binding. |
+| `gemini` | Use Gemini's configured API key and image model for one image. |
 | Other or unknown | Do not expose the image-generation tool. |
 
-The model cannot override this selection through a tool argument. Only ChatGPT exposes image
-generation; selecting another provider does not fall back to Codex.
+The model cannot override this selection through a tool argument. ChatGPT and Gemini each use
+only their selected provider; neither falls back to the other. Multiple-image `n` requests are ChatGPT-only;
+Gemini accepts only `n: 1` and preserves its single-file result.
 
 The generation tool description is provider-bound, so unsupported providers do not receive
 the tool. The shared `gui-builder` skill checks tool availability before generating art
 and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
-The result includes ordered absolute `files` paths, per-image `images` entries, the selected `provider`, its authentication
+The ChatGPT result includes ordered absolute `files` paths, per-image `images` entries, the selected `provider`, its authentication
 `source` (`chatgpt-oauth`), and image previews. `requestedModel` and `requestedBackground`
 record the request. `model` and `background` are included only when reported by the backend;
 they are not inferred from the prompt, filename, or HTTP success.

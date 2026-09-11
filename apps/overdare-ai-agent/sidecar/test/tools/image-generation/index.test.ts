@@ -24,19 +24,24 @@ function context(signal = new AbortController().signal) {
 async function toolFor(
   input: ImageGenerationToolProviderOptions & {
     cwd: string;
+    modelProvider?: "chatgpt" | "gemini";
     approve?: "once" | "reject";
   },
 ): Promise<Tool> {
-  const { cwd, approve, ...options } = input;
+  const { cwd, modelProvider = "chatgpt", approve, ...options } = input;
   const provider = createImageGenerationToolProvider({
     generateImage: async () => {
       throw new Error("Unexpected image generation");
     },
+    generateGeminiImage: async () => {
+      throw new Error("Unexpected Gemini generation");
+    },
+    resolveGeminiImageConfig: async () => ({ apiKey: "test-key", model: "test-gemini-image-model" }),
     ...options,
   });
   const tools = await provider.createTools({
     cwd,
-    modelProvider: "chatgpt",
+    modelProvider,
     host: { approve: async () => approve ?? "once" },
   });
   const tool = tools.find((candidate) => candidate.name === "generate_image");
@@ -111,7 +116,6 @@ describe("generate_image", () => {
   });
 
   test.each([
-    "gemini",
     "anthropic",
     "openai",
     undefined,
@@ -127,13 +131,56 @@ describe("generate_image", () => {
     expect(generations).toBe(0);
   });
 
+  test("Gemini selection uses its own configured key and never reads the ChatGPT image capability", async () => {
+    const { cwd, cleanup } = project();
+    let chatGPTCalls = 0;
+    try {
+      const tool = await toolFor({
+        cwd,
+        modelProvider: "gemini",
+        generateImage: async () => {
+          chatGPTCalls++;
+          throw new Error("Wrong provider");
+        },
+        generateGeminiImage: async ({ apiKey, model, prompt }) => {
+          expect({ apiKey, model, prompt }).toEqual({
+            apiKey: "test-key",
+            model: "test-gemini-image-model",
+            prompt: "A blue coin",
+          });
+          return { bytes: Buffer.from("gemini-image"), mediaType: "image/png", model };
+        },
+      });
+      expect(tool.parameters.safeParse({ prompt: "A blue coin", n: 2 }).success).toBe(false);
+      const result = await tool.execute({ prompt: "A blue coin" }, context());
+      expect(JSON.parse(result.output)).toMatchObject({
+        provider: "gemini",
+        source: "gemini-api",
+        model: "test-gemini-image-model",
+      });
+      expect(await readFile(JSON.parse(result.output).file, "utf8")).toBe("gemini-image");
+      expect(chatGPTCalls).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
   test("the model cannot override the image provider through tool arguments", async () => {
     const tool = await toolFor({ cwd: "/repo" });
     expect(tool.parameters.safeParse({ prompt: "A coin" }).success).toBe(true);
     expect(tool.parameters.safeParse({ prompt: "A coin", provider: "gemini" }).success).toBe(false);
   });
 
-  test("pins the ChatGPT request model, forwards background, and does not invent a reported model", async () => {
+  test.each([
+    "chatgpt",
+    "gemini",
+  ] as const)("does not expose or accept an image model override for %s", async (modelProvider) => {
+    const [tool] = await createImageGenerationToolProvider().createTools({ cwd: "/repo", modelProvider });
+    expect(tool.parameters.safeParse({ prompt: "A coin" }).success).toBe(true);
+    expect(tool.parameters.safeParse({ prompt: "A coin", model: "gpt-image-1" }).success).toBe(false);
+  });
+
+  test("pins the ChatGPT request model internally, forwards background, and does not invent a reported model", async () => {
     const { cwd, cleanup } = project();
     const image = "generated-image";
     try {
@@ -163,11 +210,6 @@ describe("generate_image", () => {
     } finally {
       cleanup();
     }
-  });
-
-  test("does not accept a model override from the model", async () => {
-    const tool = await toolFor({ cwd: "/repo" });
-    expect(tool.parameters.safeParse({ prompt: "A coin", model: "gpt-image-1" }).success).toBe(false);
   });
 
   test("a provider error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
