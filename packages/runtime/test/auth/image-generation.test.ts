@@ -64,7 +64,7 @@ test("chat and parallel image requests share one refresh and all use the refresh
     expect(authorizations).toEqual([]);
     release.resolve();
     const [results] = await Promise.all([images, chatting]);
-    expect(results.map((result) => result.bytes)).toEqual([png, png]);
+    expect(results.map((result) => result.images[0]?.bytes)).toEqual([png, png]);
     expect(refreshes).toBe(1);
     expect(persisted).toEqual(["fresh-access"]);
     expect(authorizations).toEqual(["Bearer fresh-access", "Bearer fresh-access", "Bearer fresh-access"]);

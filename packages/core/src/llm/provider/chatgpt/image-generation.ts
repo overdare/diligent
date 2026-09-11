@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
 import { validateImage } from "../../image-resize";
-import type { ImageGenerationFn, ImageMediaType } from "../image-generation";
+import {
+  type ImageGenerationFn,
+  type ImageGenerationImage,
+  type ImageMediaType,
+  MAX_IMAGE_GENERATION_COUNT,
+} from "../image-generation";
 import { CHATGPT_CODEX_CLIENT_VERSION } from "./headers";
 
 const IMAGE_BASE_URL = "https://chatgpt.com/backend-api/codex/images";
@@ -18,7 +23,8 @@ const responseSchema = z.object({
           .max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(MAX_IMAGE_GENERATION_COUNT),
   model: z.string().nullish(),
   background: z.enum(["auto", "opaque", "transparent"]).nullish(),
 });
@@ -50,6 +56,24 @@ function errorMessage(payload: unknown, status: number, tokens: OpenAIOAuthToken
   return `ChatGPT image generation failed (${status})${detail ? `: ${redact(detail, tokens)}` : "."}`;
 }
 
+async function decodeImage(encoded: string, signal: AbortSignal): Promise<ImageGenerationImage> {
+  signal.throwIfAborted();
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+    throw new Error("ChatGPT returned invalid base64 image data.");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("ChatGPT returned invalid image size.");
+  const outputMediaType = mediaType(bytes);
+  try {
+    await validateImage(Uint8Array.from(bytes).buffer, outputMediaType);
+  } catch (error) {
+    signal.throwIfAborted();
+    throw new Error("ChatGPT returned invalid image data.", { cause: error });
+  }
+  signal.throwIfAborted();
+  return { bytes, mediaType: outputMediaType };
+}
+
 export function createChatGPTImageGeneration(
   getTokens: () => OpenAIOAuthTokens | undefined,
   options: ChatGPTImageGenerationOptions = {},
@@ -58,6 +82,10 @@ export function createChatGPTImageGeneration(
     const timeout = AbortSignal.timeout(options.timeoutMs ?? 300_000);
     const signal = requestOptions.signal ? AbortSignal.any([requestOptions.signal, timeout]) : timeout;
     signal.throwIfAborted();
+    const count = input.n ?? 1;
+    if (!Number.isInteger(count) || count < 1 || count > MAX_IMAGE_GENERATION_COUNT) {
+      throw new Error(`Image generation count must be an integer from 1 to ${MAX_IMAGE_GENERATION_COUNT}.`);
+    }
     const tokens = getTokens();
     if (!tokens) throw new Error("ChatGPT OAuth is not configured in Diligent.");
     const references = input.referenceImages ?? [];
@@ -87,7 +115,7 @@ export function createChatGPTImageGeneration(
           background: input.background ?? "auto",
           quality: input.quality ?? "auto",
           size: input.size ?? "auto",
-          n: 1,
+          n: count,
           output_format: "png",
           ...(references.length
             ? {
@@ -109,23 +137,11 @@ export function createChatGPTImageGeneration(
     if (!response.ok) throw new Error(errorMessage(payload, response.status, tokens));
     const parsed = responseSchema.safeParse(payload);
     if (!parsed.success) throw new Error("ChatGPT returned an invalid image-generation response.");
-    const encoded = parsed.data.data[0].b64_json;
-    if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
-      throw new Error("ChatGPT returned invalid base64 image data.");
-    }
-    const bytes = Buffer.from(encoded, "base64");
-    if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("ChatGPT returned invalid image size.");
-    const outputMediaType = mediaType(bytes);
-    try {
-      await validateImage(Uint8Array.from(bytes).buffer, outputMediaType);
-    } catch (error) {
-      signal.throwIfAborted();
-      throw new Error("ChatGPT returned invalid image data.", { cause: error });
-    }
+    const images: ImageGenerationImage[] = [];
+    for (const image of parsed.data.data) images.push(await decodeImage(image.b64_json, signal));
     signal.throwIfAborted();
     return {
-      bytes,
-      mediaType: outputMediaType,
+      images,
       requestedModel: input.model,
       ...(parsed.data.model ? { model: parsed.data.model } : {}),
       ...(parsed.data.background ? { background: parsed.data.background } : {}),
