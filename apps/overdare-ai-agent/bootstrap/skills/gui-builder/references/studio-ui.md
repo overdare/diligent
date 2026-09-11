@@ -34,6 +34,10 @@ Choose how the requested HUD coexists with these controls:
 
 Carry this retain/replace decision and occupied regions into the guide prompt. A design reference without default controls is incomplete layout evidence, not proof that its corners are available. If the runtime viewport cannot be inspected, use available screenshots conservatively and leave actual fit explicitly unverified.
 
+Before a layout screenshot, use `studiorpc_script_grep` and `studiorpc_script_read` to inspect the current GUI/input controller for `SetCoreGuiEnabled`. When an active client script unconditionally hides `Enum.CoreGuiType.JumpButton` or `Joystick`, pass that name in `hiddenCoreGui` to `studiorpc_game_screenshot` and related `studiorpc_instance_upsert` calls. Follow the `StarterGui` variable binding and surrounding control flow; a comment, disabled script, uncalled function, conditional branch, or later re-enable is not sufficient. Omit an exclusion when uncertain. This is an agent decision from source inspection, not automatic static analysis or verified runtime visibility. Do not add a diagnostic script or change Studio merely to obtain the hint.
+
+UI screenshots include a translucent red preview of estimated reserved mobile regions. `hiddenCoreGui` excludes only the declared control regions; it never changes the game. The response keeps the clean capture in `path` and the annotated PNG in `reservedUi.path`, with normalized rectangles and their reference-layout source. Treat the red regions as layout guidance, not actual game pixels or measured device bounds. Use `reservedUi: false` for a clean preview, or `includeGui: false` for world-only captures. Use the original `path` for artwork/style references so generated assets do not inherit the red tint. The estimates use the existing mobile reference layout, so confirm fit at the actual viewport and keep intentional full-screen overlays distinct from normal HUD placement.
+
 - Position groups primarily with Scale and AnchorPoint; use Offset for padding and concrete touch-target sizes. Preserve icon aspect ratios.
 - Use legible text with strong backing contrast. Important mobile labels usually need at least 24px at the reference viewport. Prefer short English text unless the user requests localization; use image glyphs instead of emoji.
 - When selecting or changing font faces, read [fonts.md](fonts.md). Keep text live in `TextLabel` / `TextButton`; validate wrapping and glyphs at the actual viewport.
@@ -41,6 +45,10 @@ Carry this retain/replace decision and occupied regions into the guide prompt. A
 - Use `DisplayOrder` to order screen roots and ZIndex for elements within them. Handle overflow and tool warnings rather than clipping away a layout error.
 
 ## Behavior and evidence
+
+After creating, moving, or resizing a GUI, run `studiorpc_ui_inspect_layout` before final screenshot verification. It reads current Editor `StarterGui` properties without saving or executing code, so the same diagnostic works after instance tools or Editor Luau edits. Pass the same `hiddenCoreGui` hints used for the screenshot. Use `screenGuid` to narrow the inspection to one ScreenGui when appropriate.
+
+Review reserved-region, unrelated button-overlap, and outside-viewport findings, then fix relevant issues and inspect again. Findings are candidates, not automatic placement errors: do not move intentional overlays or infer that a background/text pair must be separated. The tool estimates authored layout and reports unsupported or missing geometry in `skippedElements`; `partial` or `unavailable` is not a clean result. It does not inspect the runtime PlayerGui or measure rendered pixels. Finish with the actual screenshot and affected interactions rather than treating an empty findings list as visual acceptance.
 
 Read the existing owning script before adding another. Touch events and local UI belong in a `LocalScript`; game-rule validation belongs on the server. Scripts must use `studiorpc_script_read`, `_add`, `_edit`, or `_delete`, never filesystem editing of Luau sources.
 

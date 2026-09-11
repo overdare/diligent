@@ -1,5 +1,8 @@
 // @summary Declares the Studio RPC method for capturing a screenshot of the editor viewport.
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
+import { compositeImageRects } from "@diligent/core/image-contract";
 import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
 import { type CameraBlock, projectWorldToScreen } from "../camera-projection";
@@ -11,6 +14,7 @@ import {
   readVec3,
   withCameraAxes,
 } from "../camera-response";
+import { getReservedUiZones, hiddenCoreGuiParam, REFERENCE_VIEWPORT } from "../reserved-ui";
 import { StudioRpcError } from "../rpc";
 
 export const method = "game.screenshot";
@@ -18,7 +22,9 @@ export const method = "game.screenshot";
 export const description =
   "Capture the active OVERDARE Studio viewport and return the PNG with its file path, captured size, and " +
   "camera. UI is included by default. Use screenshots for rendered layout, clipping, overlap, and visual " +
-  "quality; use game.observe for live property values such as colors and contrast. `locate` projects world " +
+  "quality. UI captures include a red preview overlay of estimated mobile reserved regions; raw path is preserved. " +
+  "Use hiddenCoreGui only after reading scripts that hide those controls; reservedUi:false returns a clean preview. " +
+  "Use game.observe for live property values such as colors and contrast. `locate` projects world " +
   "positions or instance names/paths into the same normalized 0..1 coordinates used by input injection. " +
   "`screen` is the unclamped projected bounds and `onScreen` means inside the camera frustum, not visible " +
   "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits.";
@@ -31,6 +37,14 @@ const worldPoint = z.object({
 
 export const params = z
   .object({
+    reservedUi: z
+      .boolean()
+      .optional()
+      .describe(
+        "Add a translucent red preview of estimated mobile HUD/control regions. Defaults to true when includeGui is true. " +
+          "The original screenshot path is unchanged; false disables the annotation.",
+      ),
+    hiddenCoreGui: hiddenCoreGuiParam,
     includeGui: z
       .boolean()
       .optional()
@@ -59,9 +73,9 @@ export const params = z
   .strict();
 // Default at the RPC boundary (not via zod .default) so every call path —
 // agent runtime and MCP server — sends an explicit includeGui to Studio.
-/** locate is computed here from the returned camera; Studio does not know it. */
+/** Projection and reserved UI guidance are local; Studio receives no extra parameters. */
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const { locate: _l, camera, ...rest } = args;
+  const { locate: _l, reservedUi: _r, hiddenCoreGui: _h, camera, ...rest } = args;
   if (isRecord(camera)) {
     Object.assign(rest, { cameraPosition: camera.position, lookAt: camera.lookAt });
   }
@@ -84,13 +98,98 @@ export async function recover(error: unknown, args: Record<string, unknown>): Pr
     retry: { omitCamera: true },
   };
 }
-export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
+export async function attachImages(
+  result: unknown,
+  _args?: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ImageBlock[] | undefined> {
   if (!isRecord(result) || typeof result.path !== "string") return undefined;
+  const overlay = isRecord(result.reservedUi) ? result.reservedUi : undefined;
+  const paths =
+    overlay?.status === "annotated" && typeof overlay.path === "string" ? [overlay.path, result.path] : [result.path];
+  for (const path of paths) {
+    try {
+      const bytes = await readFile(path, { signal });
+      return [{ type: "image", source: { type: "base64", media_type: "image/png", data: bytes.toString("base64") } }];
+    } catch {
+      signal?.throwIfAborted();
+    }
+  }
+  return undefined;
+}
+
+async function annotateReservedUi(
+  result: unknown,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  signal?.throwIfAborted();
+  if (
+    args.includeGui === false ||
+    args.reservedUi === false ||
+    !isRecord(result) ||
+    result.success === false ||
+    typeof result.path !== "string"
+  )
+    return result;
+  const hiddenCoreGui = [...new Set(hiddenCoreGuiParam.parse(args.hiddenCoreGui) ?? [])];
+  const zones = getReservedUiZones(hiddenCoreGui).map((zone) => ({
+    ...zone,
+    rect: {
+      left: zone.rect.left / REFERENCE_VIEWPORT.width,
+      top: zone.rect.top / REFERENCE_VIEWPORT.height,
+      right: zone.rect.right / REFERENCE_VIEWPORT.width,
+      bottom: zone.rect.bottom / REFERENCE_VIEWPORT.height,
+    },
+  }));
+  const guidance = {
+    source: "reference-layout",
+    visibilitySource: hiddenCoreGui.length ? "caller-script-review" : "assumed-defaults",
+    referenceViewport: REFERENCE_VIEWPORT,
+    hiddenCoreGui,
+    zones,
+    note:
+      "Red regions are estimated mobile layout guidance, not game pixels or measured runtime bounds. " +
+      "Hidden controls were declared by the caller after script review, not verified at runtime. " +
+      "Do not reproduce the red tint in generated artwork. Use the original path for clean image references.",
+  };
+  let writtenPath: string | undefined;
   try {
-    const bytes = await readFile(result.path);
-    return [{ type: "image", source: { type: "base64", media_type: "image/png", data: bytes.toString("base64") } }];
-  } catch {
-    return undefined;
+    const original = await readFile(result.path, { signal });
+    const image = await compositeImageRects(
+      Uint8Array.from(original).buffer,
+      "image/png",
+      zones.map((zone) => zone.rect),
+      [255, 0, 0, 64],
+    );
+    signal?.throwIfAborted();
+    const path = join(
+      dirname(result.path),
+      `${basename(result.path, extname(result.path))}.reserved-ui-${randomUUID()}.png`,
+    );
+    try {
+      await writeFile(path, new Uint8Array(image.bytes), { signal, flag: "wx" });
+      writtenPath = path;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") await unlink(path).catch(() => {});
+      throw error;
+    }
+    signal?.throwIfAborted();
+    return {
+      ...result,
+      reservedUi: { ...guidance, status: "annotated", path, image: { width: image.width, height: image.height } },
+    };
+  } catch (error) {
+    if (writtenPath) await unlink(writtenPath).catch(() => {});
+    signal?.throwIfAborted();
+    return {
+      ...result,
+      reservedUi: {
+        ...guidance,
+        status: "unavailable",
+        warning: error instanceof Error ? error.message : String(error),
+      },
+    };
   }
 }
 
@@ -188,7 +287,17 @@ function aspectNote(read: { camera: CameraBlock; image: { width: number; height:
   );
 }
 
-export async function postProcess(result: unknown, args: Record<string, unknown>, callRpc: CallRpc): Promise<unknown> {
+export async function postProcess(
+  result: unknown,
+  args: Record<string, unknown>,
+  callRpc: CallRpc,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  signal?.throwIfAborted();
+  return annotateReservedUi(await postProcessCamera(result, args, callRpc), args, signal);
+}
+
+async function postProcessCamera(result: unknown, args: Record<string, unknown>, callRpc: CallRpc): Promise<unknown> {
   const requested = Array.isArray(args.locate) ? (args.locate as (string | Point)[]) : [];
   const locate = requested.filter((entry): entry is Point => typeof entry !== "string");
   const locateNames = requested.filter((entry): entry is string => typeof entry === "string");

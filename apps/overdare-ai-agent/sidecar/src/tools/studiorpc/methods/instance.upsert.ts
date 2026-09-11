@@ -1,5 +1,13 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
+import {
+  getReservedUiZones,
+  type HiddenCoreGui,
+  hiddenCoreGuiParam,
+  REFERENCE_VIEWPORT,
+  type UiRect as Rect,
+  type ReservedUiZone,
+} from "../reserved-ui";
 import { instanceClassEnum, instancePropertiesSchema, serviceClassEnum } from "./instance.params";
 import { parseInstanceCreateProperties } from "./instance-properties";
 
@@ -30,6 +38,7 @@ const itemParams = z
 
 export const params = z
   .object({
+    hiddenCoreGui: hiddenCoreGuiParam,
     items: z
       .array(itemParams)
       .min(1)
@@ -73,11 +82,12 @@ export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
     z.object({ guid: z.string(), name: z.string().optional(), properties: rawProperties }).strict(),
   ]);
   const result = z
-    .object({ items: z.array(structuralItem).min(1).max(100) })
+    .object({ items: z.array(structuralItem).min(1).max(100), hiddenCoreGui: hiddenCoreGuiParam })
     .strict()
     .safeParse(value);
   if (result.success) {
     return {
+      ...(result.data.hiddenCoreGui ? { hiddenCoreGui: result.data.hiddenCoreGui } : {}),
       items: result.data.items.map((item) => {
         if ("guid" in item) return { ...item, properties: item.properties ?? {} };
         return { ...item, properties: parseInstanceCreateProperties(item.class, item.properties) };
@@ -118,29 +128,8 @@ export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
 //   (for example loading screens, modal dimmers, tutorial blockers).
 // ---------------------------------------------------------------------------
 
-const SCREEN_W = 1386;
-const SCREEN_H = 640;
-
-/** Default jump button layout — the canonical mobile reference point. */
-const JUMP_BUTTON = {
-  anchorX: 1,
-  anchorY: 1,
-  posScaleX: 1,
-  posOffsetX: -140,
-  posScaleY: 1,
-  posOffsetY: -70,
-  sizeScaleX: 0,
-  sizeOffsetX: 180,
-  sizeScaleY: 0,
-  sizeOffsetY: 180,
-} as const;
-
-interface Rect {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
+const SCREEN_W = REFERENCE_VIEWPORT.width;
+const SCREEN_H = REFERENCE_VIEWPORT.height;
 
 /** Classes that resolve a rect (for parent propagation and overlap checks). */
 const GUI_OBJECT_CLASSES = new Set(["Frame", "ImageButton", "ImageLabel", "TextButton", "TextLabel", "ScrollingFrame"]);
@@ -195,40 +184,6 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 }
 
 const SCREEN_RECT: Rect = { left: 0, top: 0, right: SCREEN_W, bottom: SCREEN_H };
-
-/** Native HUD area at top-left corner that must not be obscured. */
-const NATIVE_HUD: Rect = { left: 0, top: 0, right: 210, bottom: 70 };
-
-/** Mobile joystick area at bottom-left corner (anchor 0,1 — 300×300). */
-const JOYSTICK: Rect = { left: 0, top: SCREEN_H - 300, right: 300, bottom: SCREEN_H };
-
-/** Left/right safe area insets for device notch and OS menus (52px each side). */
-const SAFE_INSET = 40;
-const LEFT_INSET: Rect = { left: 0, top: 0, right: SAFE_INSET, bottom: SCREEN_H };
-const RIGHT_INSET: Rect = { left: SCREEN_W - SAFE_INSET, top: 0, right: SCREEN_W, bottom: SCREEN_H };
-
-interface ReservedZone {
-  label: string;
-  rect: Rect;
-}
-
-function buildReservedZones(): ReservedZone[] {
-  const j = JUMP_BUTTON;
-  const px = j.posScaleX * SCREEN_W + j.posOffsetX;
-  const py = j.posScaleY * SCREEN_H + j.posOffsetY;
-  const sw = j.sizeScaleX * SCREEN_W + j.sizeOffsetX;
-  const sh = j.sizeScaleY * SCREEN_H + j.sizeOffsetY;
-  const left = px - j.anchorX * sw;
-  const top = py - j.anchorY * sh;
-
-  return [
-    { label: "mobile jump button", rect: { left, top, right: left + sw, bottom: top + sh } },
-    { label: "mobile HUD", rect: NATIVE_HUD },
-    { label: "mobile joystick", rect: JOYSTICK },
-    { label: "left safe area (notch/OS menu)", rect: LEFT_INSET },
-    { label: "right safe area (notch/OS menu)", rect: RIGHT_INSET },
-  ];
-}
 
 type OvdrjmNode = Record<string, unknown> & { LuaChildren?: unknown };
 
@@ -295,10 +250,13 @@ export interface UiDiagnostics {
   info: string[];
 }
 
-export function collectUiDiagnostics(root: OvdrjmNode): UiDiagnostics {
+export function collectUiDiagnostics(
+  root: OvdrjmNode,
+  options: { hiddenCoreGui?: readonly HiddenCoreGui[] } = {},
+): UiDiagnostics {
   const warnings: string[] = [];
   const info: string[] = [];
-  const zones = buildReservedZones();
+  const zones = getReservedUiZones(options.hiddenCoreGui);
   const buttons: GuiEntry[] = [];
   const allGui: GuiEntry[] = [];
   walkNodes(root, SCREEN_RECT, zones, warnings, info, buttons, allGui, new Set());
@@ -351,7 +309,7 @@ export function collectUiDiagnostics(root: OvdrjmNode): UiDiagnostics {
 function walkNodes(
   node: OvdrjmNode,
   parentRect: Rect,
-  zones: ReservedZone[],
+  zones: ReservedUiZone[],
   warnings: string[],
   info: string[],
   buttons: GuiEntry[],

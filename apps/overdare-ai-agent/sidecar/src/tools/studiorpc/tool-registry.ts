@@ -48,9 +48,18 @@ type MethodModule = {
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
   preCall?: (args: Record<string, unknown>, callRpc: CallRpc) => Promise<void>;
-  postProcess?: (result: unknown, args: Record<string, unknown>, callRpc: CallRpc) => unknown | Promise<unknown>;
+  postProcess?: (
+    result: unknown,
+    args: Record<string, unknown>,
+    callRpc: CallRpc,
+    signal?: AbortSignal,
+  ) => unknown | Promise<unknown>;
   recover?: (error: unknown, args: Record<string, unknown>, callRpc: CallRpc) => Promise<unknown>;
-  attachImages?: (result: unknown, args: Record<string, unknown>) => Promise<ImageBlock[] | undefined>;
+  attachImages?: (
+    result: unknown,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<ImageBlock[] | undefined>;
 };
 
 type RenderBuilder = (ctx: {

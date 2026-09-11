@@ -90,7 +90,7 @@ async function runUpsert(parsedArgs: InstanceUpsertArgs): Promise<ToolResult> {
   applyMobilityCascade(root);
   await saveLevelFile();
 
-  const diag = collectUiDiagnostics(root);
+  const diag = collectUiDiagnostics(root, parsedArgs);
   diag.info.push(...mobilityInfo, ...takeWarnings());
   const addedGuids = added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (isUpdateItem(item) ? [item.guid] : []));

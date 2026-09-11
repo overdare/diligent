@@ -14,6 +14,7 @@ import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
+import { createInspectUiLayoutTool } from "./tools/inspect-ui-layout-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -212,6 +213,7 @@ export async function createStudioRpcTools(ctx: {
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
+    wrapTool(createInspectUiLayoutTool(callRpc), ctx.host),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
@@ -285,7 +287,7 @@ export async function createStudioRpcTools(ctx: {
               result = await mod.recover(rpcError, args as Record<string, unknown>, toolCallRpc);
             }
             if (mod.postProcess) {
-              result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
+              result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc, toolCtx.signal);
             }
             // Persist editor-state changes to file immediately on success.
             if (savingMethods.has(method)) {
@@ -295,7 +297,7 @@ export async function createStudioRpcTools(ctx: {
             const renderBuilder = renderBuilders[toolName];
             const render = renderBuilder?.({ args: args as Record<string, unknown>, normalizedArgs, output, result });
             const outputImages = mod.attachImages
-              ? await mod.attachImages(result, args as Record<string, unknown>)
+              ? await mod.attachImages(result, args as Record<string, unknown>, toolCtx.signal)
               : undefined;
 
             return {

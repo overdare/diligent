@@ -24,6 +24,59 @@ registered by the Studio RPC provider, so they reach the product agent, the TUI,
 
 ## Aiming without measuring a picture
 
+### Reserved mobile UI preview
+
+`game.screenshot` adds a translucent red annotation to UI previews by default. The rectangles come
+from Diligent's existing `1386x640` mobile reference layout: jump, joystick, upper-left HUD, and side
+insets. They are scaled proportionally to the captured PNG, not measured from current native widgets.
+This POC requires no Studio changes or extra RPCs. `reservedUi: false` disables the annotation;
+`includeGui: false` also keeps the preview clean.
+
+The original `path` and camera/locate data are preserved. The annotated PNG is returned separately at
+`reservedUi.path` and attached as the tool preview. `reservedUi.zones` contains normalized rectangles;
+its source and visibility fields distinguish reference geometry from caller-provided script review.
+If annotation fails, the original result remains available with `reservedUi.status: "unavailable"`
+and a warning. A later missing annotated file falls back to the raw preview. Cancellation propagates
+through post-processing and removes incomplete output files.
+
+An agent may pass `hiddenCoreGui: ["JumpButton"]` or `["Joystick"]` after reading the relevant current
+client script and finding an unconditional `SetCoreGuiEnabled(..., false)` call. Comments, disabled
+scripts, conditional code, and later re-enables do not establish a hidden control. Missing pixels or
+missing UI browse entries are not hiding evidence. The same hint on `instance.upsert` excludes the
+control from its post-write warnings. Hints are per-call, do not mutate Studio, and are not runtime
+verification; omitted hints preserve the default reservations. Other write tools retain their default
+diagnostics. Use raw `path` for image-generation references to avoid copying the red annotation into art.
+
+The POC below uses the same bundled reference capture twice: default regions above, and a caller-provided
+`hiddenCoreGui: ["JumpButton"]` below. The underlying jump artwork remains in this reference; this shows
+annotation exclusion, not a live game hiding the control.
+
+![Reserved UI POC: default regions above, JumpButton excluded below](../review/assets/reserved-ui-overlay-poc.png)
+
+### Editor UI layout diagnostics
+
+`studiorpc_ui_inspect_layout` is a Diligent-owned read-only diagnostic, not a new Studio RPC. It reads
+`level.browse` and the current `StarterGui` subtree through `instance.read`, then reports:
+
+- Overlap with reference jump, joystick, toolbar, and side-inset regions.
+- Intersections between unrelated buttons in the normal HUD layer.
+- Authored element rectangles outside the layout viewport.
+
+Optional `screenGuid` selects one ScreenGui, `hiddenCoreGui` reuses screenshot exclusions, `viewport`
+sets the dimensions used to resolve authored Scale/Offset values, and `maxFindings` caps output.
+The default viewport is the existing `1386x640` reference. Coordinates are normalized and marked
+`geometry: "authored-estimate"`; they are not measured Slate bounds or runtime PlayerGui state.
+Unsupported geometry and missing data are reported, and truncation is explicit. Parent-child and
+background/text combinations are not treated as button-pair overlap. Intentional overlay layers
+are excluded from reserved-region and button-pair checks.
+
+Run the diagnostic after GUI edits, including Editor Luau, review relevant findings, then verify a
+screenshot. The tool never saves, changes the scene, blocks an edit, starts PIE, or automatically fixes
+layout. An unreadable Studio response is `unavailable`, not an empty successful inspection. This
+module is independent of the legacy upsert schema so it can remain when Editor Luau replaces upsert.
+
+### Viewport coordinates
+
 `game.ui.browse` and `game.screenshot` report positions in the same viewport-normalized `0..1` space that
 `pointerMove` consumes, so clicking a button is: browse, take the centre of its `rect`, move, press. Nothing
 is read off an image, which matters because screenshots are resized on the way to the model — a normalized
