@@ -1,8 +1,8 @@
 // @summary Checks original output pixels without discarding images that can be repaired.
 import { inspectImageAlpha } from "@diligent/core/image-contract";
-import type { ImageGenerationResult } from "@diligent/core/provider-contract";
+import type { ImageGenerationImage } from "@diligent/core/provider-contract";
 
-export async function inspectTransparency(image: ImageGenerationResult) {
+export async function inspectTransparency(image: ImageGenerationImage) {
   const pixels = await inspectImageAlpha(Uint8Array.from(image.bytes).buffer, image.mediaType);
   if (!pixels)
     return {

@@ -1,13 +1,13 @@
 # Image generation
 
-OVERDARE exposes one `generate_image` tool for generating an image and saving it locally.
+OVERDARE exposes one `generate_image` tool for requesting images and saving every returned image locally.
 Studio import remains a separate operation using the existing
 `studiorpc_asset_manager_image_import` tool. Generation does not require a Studio connection
 or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
+`generate_image` accepts a `prompt`, optional `n` (integer 1–10, default 1), `referenceImages` file paths, and `background`
 (`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
 the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
 tool arguments. The runtime binds generation to the selected chat provider:
@@ -25,17 +25,28 @@ the tool. The shared `gui-builder` skill checks tool availability before generat
 and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
-The result includes an absolute `file` path, the selected `provider`, its authentication
-`source` (`chatgpt-oauth`), and an image preview. `requestedModel` and `requestedBackground`
+The result includes ordered absolute `files` paths, per-image `images` entries, the selected `provider`, its authentication
+`source` (`chatgpt-oauth`), and image previews. `requestedModel` and `requestedBackground`
 record the request. `model` and `background` are included only when reported by the backend;
 they are not inferred from the prompt, filename, or HTTP success.
-For `background: "transparent"`, `transparency` separately reports decoded original-pixel
+For `background: "transparent"`, each image's `transparency` reports decoded original-pixel
 counts and a status: `has_transparency`, `opaque`, `empty`, or `unknown` if inspection was
 unavailable. Opaque/empty outputs include a warning and repair guidance but retain their saved
 file for reference-driven retries. Pixel transparency does not establish clean edges or correct
 placement; inspect the artwork before importing it.
 A provider failure is returned to the caller without automatically retrying
 with another provider.
+
+`n` is forwarded once to the generation or edit endpoint, with one shared prompt and references.
+It does not fan out into separate calls. `requestedCount`, `returnedCount`, and `countStatus`
+(`matched`, `shortfall`, or `excess`) describe the actual response. Every returned image is kept in
+response order, including extras. A single returned image also keeps the existing top-level `file`
+and `transparency` fields. A shortfall is a visible warning, not an instruction to retry or fill in
+missing images. The tool never makes supplementary requests for a count mismatch.
+
+On 2026-09-11, a direct ChatGPT OAuth probe with `n: 2` returned HTTP 200 with one valid PNG and no
+reported model. The input supports multiple-image requests, but this endpoint's response count is
+not guaranteed. Report the delivered count rather than claiming the requested batch completed.
 
 The tool description and failure output allow the initial call plus two retries or repairs
 with the same tool, then direct GUI tasks to continue with native Studio panels, text, and controls.
@@ -44,7 +55,7 @@ not authorize a retry or fallback. Code-drawn images (PIL, SVG, or canvas), stoc
 providers still require explicit user approval. This is model-facing guidance; the tool does
 not retry internally or block general-purpose file or shell tools.
 
-For Studio workflows, pass the returned `file` directly to
+For Studio workflows, pass each selected path from `files` (or the single-image `file`) directly to
 `studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
 
