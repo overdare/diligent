@@ -16,8 +16,7 @@ function auth(generate: ImageGenerationFn, ensureFresh = async () => {}): Extern
 }
 function generator(label: string) {
   return mock(async () => ({
-    bytes: Buffer.from(label),
-    mediaType: "image/png" as const,
+    images: [{ bytes: Buffer.from(label), mediaType: "image/png" as const }],
     requestedModel: input.model,
   }));
 }
@@ -27,9 +26,9 @@ test("uses the current login for every image call and rejects after logout", asy
   const first = generator("first");
   const second = generator("second");
   manager.setExternalAuth("chatgpt", auth(first));
-  expect((await manager.generateImage("chatgpt", input)).bytes).toEqual(Buffer.from("first"));
+  expect((await manager.generateImage("chatgpt", input)).images[0]?.bytes).toEqual(Buffer.from("first"));
   manager.setExternalAuth("chatgpt", auth(second));
-  expect((await manager.generateImage("chatgpt", input)).bytes).toEqual(Buffer.from("second"));
+  expect((await manager.generateImage("chatgpt", input)).images[0]?.bytes).toEqual(Buffer.from("second"));
   manager.removeExternalAuth("chatgpt");
   await expect(manager.generateImage("chatgpt", input)).rejects.toThrow("OAuth");
   expect(first).toHaveBeenCalledTimes(1);

@@ -25,6 +25,7 @@ Generate the missing artwork next. In a new HUD with no suitable existing art, b
 - Generate a shared button shell once and reuse it behind distinct glyphs. Separate frame and glyph images when matching geometry matters; a glyph request should not include another button frame.
 - Attach the guide's actual `file` and, when useful, a finished anchor asset in each related `referenceImages` call. Repeating its description is not attachment. Keep references stable instead of chaining variant after variant.
 - Request one isolated production asset per call: identify what changes and what stays, its material, proportions, padding, alpha regions, and exclusions such as no labels. Borrow style without inheriting the guide's background, system controls, or neighboring panels.
+- Use `n` only when several variants of that same prompt are needed; different asset roles still need separate prompts. Read `returnedCount` and the ordered `files` list. If the server returns fewer images than requested, preserve those files and report the shortfall; do not automatically issue more calls to fill the count.
 - Once shared references exist, issue independent asset calls together. Keep Studio mutations in the single editing session. Match results by role rather than completion order and preserve successful outputs.
 
 ## Import, bind, and verify
