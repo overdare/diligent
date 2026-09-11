@@ -928,6 +928,10 @@ describe("DiligentAppServer", () => {
     const paths = await ensureDiligentDir(projectRoot);
     const authStore = { path: join(projectRoot, "auth.jsonc"), mode: "file" as const };
     const providerManager = new ProviderManager({});
+    // This scenario verifies disconnect state, not the external credentials endpoint.
+    providerManager.validateApiKey = mock(async () => {
+      throw new Error("invalid Anthropic key");
+    });
     providerManager.setApiKey("openai", "valid-openai-key");
 
     const server = new DiligentAppServer({
