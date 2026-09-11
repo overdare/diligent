@@ -28,6 +28,8 @@ For the chosen replacement, connect the new button first, then hide the default:
 starterGui:SetCoreGuiEnabled(Enum.CoreGuiType.JumpButton, false)
 ```
 
+After reading back the saved controller and confirming this hide call is active and unconditional, pass `hiddenCoreGui: ["JumpButton"]` to subsequent `studiorpc_game_screenshot` and `studiorpc_instance_upsert` calls. This removes the estimated default jump reservation from Diligent's preview and warnings; it does not verify that the running game executed the code. If the controller conditionally hides jump or restores it elsewhere, keep the reservation until the relevant behavior is clear.
+
 Connect the replacement before hiding the default. Use `StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.JumpButton)` to read its visibility state. Do not delete CoreGui descendants or disable `Enum.CoreGuiType.All`; the joystick and unrelated system UI should keep working.
 
 Hiding the button changes its visibility, not the character's jump mechanics. Preserve `JumpHeight`, `JumpPower`, `UseJumpPower`, jump counts, and existing movement restrictions. Do not zero those values or disable the Jumping state to hide the default button.

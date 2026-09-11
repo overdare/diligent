@@ -32,6 +32,14 @@ import type { ImageBlock } from "../types";
 
 export type ResizableMediaType = "image/png" | "image/jpeg" | "image/webp";
 
+/** A rectangle expressed as fractions of an image's width and height. */
+export interface NormalizedImageRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 // Anthropic processes images at no token penalty up to 1568px on the long edge (~1.15 MP). Matching
 // that threshold means we send the smallest image that costs the least without sacrificing detail
 // the model could use.
@@ -99,6 +107,124 @@ export async function inspectImageAlpha(
   } catch {
     return null;
   }
+}
+
+type PixelRect = { left: number; top: number; right: number; bottom: number };
+
+function validImageDimensions(width: number, height: number): boolean {
+  return (
+    Number.isSafeInteger(width) &&
+    Number.isSafeInteger(height) &&
+    width > 0 &&
+    height > 0 &&
+    width * height <= MAX_DECODE_PIXELS
+  );
+}
+
+function normalizedPixelRect(rect: NormalizedImageRect, width: number, height: number): PixelRect | null {
+  if (
+    !Number.isFinite(rect.left) ||
+    !Number.isFinite(rect.top) ||
+    !Number.isFinite(rect.right) ||
+    !Number.isFinite(rect.bottom)
+  ) {
+    return null;
+  }
+  const left = Math.max(0, Math.min(1, rect.left));
+  const top = Math.max(0, Math.min(1, rect.top));
+  const right = Math.max(0, Math.min(1, rect.right));
+  const bottom = Math.max(0, Math.min(1, rect.bottom));
+  if (left >= right || top >= bottom) return null;
+
+  const pixelRect = {
+    left: Math.max(0, Math.floor(left * width)),
+    top: Math.max(0, Math.floor(top * height)),
+    right: Math.min(width, Math.ceil(right * width)),
+    bottom: Math.min(height, Math.ceil(bottom * height)),
+  };
+  return pixelRect.left < pixelRect.right && pixelRect.top < pixelRect.bottom ? pixelRect : null;
+}
+
+function assertOverlayColor(color: readonly [number, number, number, number]): void {
+  if (color.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)) {
+    throw new Error("Invalid overlay color.");
+  }
+}
+
+function compositePixel(
+  data: Uint8ClampedArray,
+  offset: number,
+  color: readonly [number, number, number, number],
+  sourceAlpha: number,
+): void {
+  const destinationAlpha = data[offset + 3] / 255;
+  const outputAlpha = sourceAlpha + destinationAlpha * (1 - sourceAlpha);
+  if (outputAlpha === 0) return;
+
+  const destinationWeight = destinationAlpha * (1 - sourceAlpha);
+  data[offset] = Math.round((color[0] * sourceAlpha + data[offset] * destinationWeight) / outputAlpha);
+  data[offset + 1] = Math.round((color[1] * sourceAlpha + data[offset + 1] * destinationWeight) / outputAlpha);
+  data[offset + 2] = Math.round((color[2] * sourceAlpha + data[offset + 2] * destinationWeight) / outputAlpha);
+  data[offset + 3] = Math.round(outputAlpha * 255);
+}
+
+/**
+ * Render a single source-over tint across the union of normalized rectangles. Invalid or empty
+ * rectangles are ignored; malformed images and invalid colors reject without mutating input bytes.
+ */
+export async function compositeImageRects(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+  rects: readonly NormalizedImageRect[],
+  color: readonly [number, number, number, number],
+): Promise<{ bytes: ArrayBuffer; mediaType: "image/png"; width: number; height: number }> {
+  assertOverlayColor(color);
+  const header = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (!header || !validImageDimensions(header.width, header.height)) {
+    throw new Error("Invalid or oversized image dimensions.");
+  }
+
+  let decoded: ImageDataLike;
+  try {
+    decoded = await decodeImage(bytes, mediaType);
+  } catch {
+    throw new Error("Unable to decode image.");
+  }
+  if (
+    !validImageDimensions(decoded.width, decoded.height) ||
+    decoded.width !== header.width ||
+    decoded.height !== header.height ||
+    decoded.data.length !== decoded.width * decoded.height * 4
+  ) {
+    throw new Error("Invalid or oversized image dimensions.");
+  }
+
+  const pixelRects = rects
+    .map((rect) => normalizedPixelRect(rect, decoded.width, decoded.height))
+    .filter((rect): rect is PixelRect => rect !== null);
+  const data = new Uint8ClampedArray(decoded.data);
+  const sourceAlpha = color[3] / 255;
+
+  // Merge row intervals before compositing so overlap remains a union, not a darker double tint.
+  if (sourceAlpha > 0) {
+    for (let y = 0; y < decoded.height; y++) {
+      const intervals = pixelRects
+        .filter((rect) => rect.top <= y && y < rect.bottom)
+        .map(({ left, right }) => ({ left, right }))
+        .sort((a, b) => a.left - b.left || a.right - b.right);
+      let intervalIndex = 0;
+      while (intervalIndex < intervals.length) {
+        let { left, right } = intervals[intervalIndex++];
+        while (intervalIndex < intervals.length && intervals[intervalIndex].left <= right) {
+          right = Math.max(right, intervals[intervalIndex++].right);
+        }
+        for (let x = left; x < right; x++) compositePixel(data, (y * decoded.width + x) * 4, color, sourceAlpha);
+      }
+    }
+  }
+
+  const encoded = await encodeImage({ data, width: decoded.width, height: decoded.height }, "image/png");
+  return { bytes: encoded, mediaType: "image/png", width: decoded.width, height: decoded.height };
 }
 
 async function wasmBytes(path: string): Promise<ArrayBuffer> {
