@@ -100,7 +100,7 @@ export async function executeInstanceUpsertInner(
   if (applyAndSaveChanges) {
     await (options.applyLevelChanges ?? applyLevelChangesDefault)();
   }
-  const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
+  const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot, parsedArgs) : { warnings: [], info: [] };
   diag.info.push(...fileResult.mobilityInfo);
   const addedGuids = fileResult.added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));

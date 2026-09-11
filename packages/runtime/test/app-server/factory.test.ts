@@ -353,7 +353,10 @@ describe("createAppServerConfig", () => {
 
   it("assembles a selected-provider image capability that resolves the current OAuth login", async () => {
     const runtimeConfig = makeRuntimeConfig();
-    const generated = { bytes: new Uint8Array([1]), mediaType: "image/png" as const, requestedModel: "test" };
+    const generated = {
+      images: [{ bytes: new Uint8Array([1]), mediaType: "image/png" as const }],
+      requestedModel: "test",
+    };
     const calls: string[] = [];
     const installAuth = (name: string) =>
       runtimeConfig.providerManager.setExternalAuth("chatgpt", {

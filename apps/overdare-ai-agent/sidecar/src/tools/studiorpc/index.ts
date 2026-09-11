@@ -285,7 +285,7 @@ export async function createStudioRpcTools(ctx: {
               result = await mod.recover(rpcError, args as Record<string, unknown>, toolCallRpc);
             }
             if (mod.postProcess) {
-              result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
+              result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc, toolCtx.signal);
             }
             // Persist editor-state changes to file immediately on success.
             if (savingMethods.has(method)) {
@@ -295,7 +295,7 @@ export async function createStudioRpcTools(ctx: {
             const renderBuilder = renderBuilders[toolName];
             const render = renderBuilder?.({ args: args as Record<string, unknown>, normalizedArgs, output, result });
             const outputImages = mod.attachImages
-              ? await mod.attachImages(result, args as Record<string, unknown>)
+              ? await mod.attachImages(result, args as Record<string, unknown>, toolCtx.signal)
               : undefined;
 
             return {

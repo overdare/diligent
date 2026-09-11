@@ -78,7 +78,11 @@ describe("generate_image", () => {
         cwd,
         generateImage: async (input) => {
           calls++;
-          return { bytes, mediaType: "image/png", requestedModel: input.model, background: fixture.reported };
+          return {
+            images: [{ bytes, mediaType: "image/png" }],
+            requestedModel: input.model,
+            background: fixture.reported,
+          };
         },
       });
       const result = await tool.execute({ prompt: "Cutout", background: "transparent" }, context());
@@ -147,6 +151,7 @@ describe("generate_image", () => {
           return { bytes: Buffer.from("gemini-image"), mediaType: "image/png", model };
         },
       });
+      expect(tool.parameters.safeParse({ prompt: "A blue coin", n: 2 }).success).toBe(false);
       const result = await tool.execute({ prompt: "A blue coin" }, context());
       expect(JSON.parse(result.output)).toMatchObject({
         provider: "gemini",
@@ -184,8 +189,7 @@ describe("generate_image", () => {
         generateImage: async (input) => {
           expect(input).toEqual({ prompt: "A red button", model: "gpt-image-2.5-sunburst", background: "transparent" });
           return {
-            bytes: Buffer.from(image),
-            mediaType: "image/webp",
+            images: [{ bytes: Buffer.from(image), mediaType: "image/webp" }],
             requestedModel: input.model,
             background: "transparent",
           };
@@ -244,7 +248,7 @@ describe("generate_image", () => {
         cwd,
         generateImage: async (input) => {
           controller.abort(cancellation);
-          return { bytes: Buffer.from("unused"), mediaType: "image/png", requestedModel: input.model };
+          return { images: [{ bytes: Buffer.from("unused"), mediaType: "image/png" }], requestedModel: input.model };
         },
       });
       expect(await tool.execute({ prompt: "A coin" }, context(controller.signal)).catch((error) => error)).toBe(
@@ -279,8 +283,7 @@ describe("generate_image", () => {
       const tool = await toolFor({
         cwd: relative(process.cwd(), cwd),
         generateImage: async (input) => ({
-          bytes: Buffer.from("image-data"),
-          mediaType: "image/png",
+          images: [{ bytes: Buffer.from("image-data"), mediaType: "image/png" }],
           requestedModel: input.model,
         }),
       });

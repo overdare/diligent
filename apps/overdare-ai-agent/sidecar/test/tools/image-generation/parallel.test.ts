@@ -18,7 +18,7 @@ test("independent image calls overlap in the agent loop and save to distinct fil
     generateImage: async (input) => {
       if (++started === 2) bothStarted.resolve();
       await release.promise;
-      return { bytes: Buffer.from("fixture image"), mediaType: "image/png", requestedModel: input.model };
+      return { images: [{ bytes: Buffer.from("fixture image"), mediaType: "image/png" }], requestedModel: input.model };
     },
   }).createTools({ cwd, modelProvider: "chatgpt" });
   const model: Model = {

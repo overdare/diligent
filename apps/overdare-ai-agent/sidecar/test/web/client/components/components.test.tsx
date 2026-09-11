@@ -2577,7 +2577,7 @@ test("tool block renders asset gallery previews expanded", () => {
   expect(html).not.toContain("aria-pressed");
 });
 
-test("collab event block renders as a compact agent activity row", () => {
+test("collab event block uses the standard activity row padding", () => {
   const html = renderToStaticMarkup(
     <CollabEventBlock
       item={{
@@ -2600,7 +2600,9 @@ test("collab event block renders as a compact agent activity row", () => {
   expect(html).toContain("Spawned Juniper [explore]");
   expect(html).toContain("completed");
   expect(html).toContain("text-success/85");
-  expect(html).toContain("gap-2 py-0.5");
+  expect(html).toContain("flex gap-2");
+  expect(html).toContain("py-2");
+  expect(html).not.toContain("inline-flex gap-2 py-0.5");
   expect(html).not.toContain("bg-surface-dark py-2.5");
   expect(html).not.toContain(">expand<");
   expect(html).not.toContain(">collapse<");

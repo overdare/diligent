@@ -534,6 +534,15 @@ export function buildGameScreenshotRender(
   if (source) items.push({ key: "source", value: source });
   if (path) items.push({ key: "path", value: path });
 
+  const overlay = isRecord(result) && isRecord(result.reservedUi) ? result.reservedUi : undefined;
+  if (overlay) {
+    items.push({
+      key: "reservedUi",
+      value: overlay.status === "annotated" ? "Estimated mobile regions (red)" : "Annotation unavailable",
+    });
+    if (typeof overlay.path === "string") items.push({ key: "annotatedPath", value: overlay.path });
+  }
+
   return {
     inputSummary: clip(`screenshot ${captureType}`),
     outputSummary: path ? `saved: ${path}` : summarizeText(output, "Screenshot captured."),
