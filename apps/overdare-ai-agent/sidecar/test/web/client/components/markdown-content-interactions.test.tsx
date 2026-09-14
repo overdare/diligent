@@ -2,7 +2,7 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import hljs from "highlight.js/lib/core";
 
-GlobalRegistrator.register();
+GlobalRegistrator.register({ url: "http://localhost:5174/" });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 import { afterAll, expect, test } from "bun:test";
@@ -13,6 +13,37 @@ import { MarkdownContent } from "../../../../src/web/client/components/MarkdownC
 afterAll(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   void GlobalRegistrator.unregister();
+});
+
+test("generated Markdown images have collapsible thumbnails and use the shared image viewer", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(MarkdownContent, {
+          text: "![Landscape](/Volumes/world/.overdare/images/generated/photo.png)",
+        }),
+      ),
+    );
+    const thumbnail = container.querySelector<HTMLButtonElement>("[data-image-open]");
+    expect(thumbnail).not.toBeNull();
+    expect(container.textContent).toContain("1 image");
+    await act(async () => thumbnail?.click());
+    const dialog = document.querySelector('[role="dialog"][aria-label="Image preview"]');
+    expect(dialog?.querySelector("img")?.getAttribute("src")).toBe("/_diligent/image/generated/photo.png");
+    expect(dialog?.querySelector("a[download]")?.getAttribute("download")).toBe("photo.png");
+    await act(async () => dialog?.querySelector<HTMLButtonElement>('[aria-label="Close image preview"]')?.click());
+    expect(document.querySelector('[role="dialog"][aria-label="Image preview"]')).toBeNull();
+    const toggle = container.querySelector<HTMLButtonElement>("[data-image-toggle]");
+    await act(async () => toggle?.click());
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(thumbnail?.hidden).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });
 
 test("code-block copy button copies raw code and shows a check state for one second", async () => {
