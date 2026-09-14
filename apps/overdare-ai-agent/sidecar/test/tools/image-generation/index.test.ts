@@ -144,7 +144,6 @@ describe("generate_image", () => {
             prompt: "A red button",
             model: "gpt-image-2.5-sunburst",
             background: "transparent",
-            n: 1,
           });
           return {
             images: [{ bytes: Buffer.from(image), mediaType: "image/webp" }],

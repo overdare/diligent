@@ -7,7 +7,7 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `n` (integer 1–10, default 1), `referenceImages` file paths, and `background`
+`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
 (`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
 the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
 tool arguments. The runtime binds generation to the selected chat provider:
@@ -37,15 +37,15 @@ placement; inspect the artwork before importing it.
 A provider failure is returned to the caller without automatically retrying
 with another provider.
 
-`n` is forwarded once to the generation or edit endpoint, with one shared prompt and references.
-It does not fan out into separate calls. `requestedCount` records the request; `images.length`
-is the actual returned count. Every returned image is kept in response order, including extras.
-One returned image uses the same array contract as multiple images. Compare the request with
-the array length and report any difference; the tool never retries or tops up a count mismatch.
-
-On 2026-09-11, a direct ChatGPT OAuth probe with `n: 2` returned HTTP 200 with one valid PNG and no
-reported model. The input supports multiple-image requests, but this endpoint's response count is
-not guaranteed. Report the delivered count rather than claiming the requested batch completed.
+The tool has no `n` input. The ChatGPT generation and edit HTTP requests always send `n: 1`.
+For multiple images, the agent issues one tool call per image in parallel in the same tool round,
+with the same `referenceImages` in every call and one composition per prompt. Shared references
+must exist before starting the calls. Without references, omit them consistently. Do not chain
+generated outputs into subsequent references unless the user requests sequential edits.
+`requestedCount` is 1 per call; `images.length` records the actual returned count. Preserve all
+returned files and report the explicit warning if the counts differ. There is no internal fan-out
+or automatic top-up. This replaces batch requests because observed OAuth `n > 1` requests returned
+only one file. A collage is never counted as multiple independent files.
 
 The tool description and failure output allow the initial call plus two retries or repairs
 with the same tool, then direct GUI tasks to continue with native Studio panels, text, and controls.
