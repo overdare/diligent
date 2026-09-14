@@ -35,6 +35,16 @@ async function setup(bytes: Buffer[]) {
   return { tool, ctx, generate, approve };
 }
 
+test("the model-facing contract separates distinct pictures and counts returned files", async () => {
+  const { tool } = await setup([]);
+  expect(tool.description).toContain("For different subjects or compositions, make separate calls");
+  expect(tool.description).toContain("Do not combine separate requested pictures into a collage");
+  expect(tool.description).toContain("images.length is the delivered file count");
+  expect(tool.description).toContain("report any shortfall instead of claiming completion");
+  expect(tool.parameters.shape.prompt.description).toContain("one image composition");
+  expect(tool.parameters.shape.n.description).toContain("same single-image prompt");
+});
+
 test("n=2 uses one request, stores both images in order, and inspects each original", async () => {
   const { tool, ctx, generate, approve } = await setup([opaque, transparent]);
   const result = await tool.execute(
