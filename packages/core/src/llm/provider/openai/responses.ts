@@ -171,6 +171,7 @@ export function toResponsesLiteRequestBody(body: Record<string, unknown>): Recor
     ...rest,
     input: [...prefix, ...inputItems],
     reasoning: { ...reasoningOptions, context: "all_turns" },
+    // Responses Lite rejects true with HTTP 400 (unsupported_value).
     parallel_tool_calls: false,
   };
 }
