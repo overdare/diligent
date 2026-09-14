@@ -157,9 +157,14 @@ function createGenerateImageTool(
             source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
           });
         }
+        const warning =
+          images.length === requestedCount
+            ? undefined
+            : `Requested ${requestedCount} ${requestedCount === 1 ? "image" : "images"}, but the server returned ${images.length} ${images.length === 1 ? "image" : "images"}.`;
         const details = {
           images,
           requestedCount,
+          ...(warning ? { warning } : {}),
           provider: "chatgpt",
           source: "chatgpt-oauth",
           requestedModel,
