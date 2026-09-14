@@ -30,7 +30,6 @@ const responseSchema = z.object({
 });
 
 export interface ChatGPTImageGenerationOptions {
-  fetch?: (url: string, init: RequestInit) => Promise<Response>;
   timeoutMs?: number;
 }
 
@@ -102,31 +101,28 @@ export function createChatGPTImageGeneration(
     };
     if (tokens.account_id) headers["ChatGPT-Account-ID"] = tokens.account_id;
     if (tokens.account_info?.chatgpt_account_is_fedramp) headers["X-OpenAI-Fedramp"] = "true";
-    const response = await (options.fetch ?? fetch)(
-      `${IMAGE_BASE_URL}/${references.length ? "edits" : "generations"}`,
-      {
-        method: "POST",
-        headers,
-        redirect: "error",
-        signal,
-        body: JSON.stringify({
-          prompt: input.prompt,
-          model: input.model,
-          background: input.background ?? "auto",
-          quality: input.quality ?? "auto",
-          size: input.size ?? "auto",
-          n: count,
-          output_format: "png",
-          ...(references.length
-            ? {
-                images: references.map((image) => ({
-                  image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-                })),
-              }
-            : {}),
-        }),
-      },
-    ).catch((error: unknown) => {
+    const response = await fetch(`${IMAGE_BASE_URL}/${references.length ? "edits" : "generations"}`, {
+      method: "POST",
+      headers,
+      redirect: "error",
+      signal,
+      body: JSON.stringify({
+        prompt: input.prompt,
+        model: input.model,
+        background: input.background ?? "auto",
+        quality: input.quality ?? "auto",
+        size: input.size ?? "auto",
+        n: count,
+        output_format: "png",
+        ...(references.length
+          ? {
+              images: references.map((image) => ({
+                image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+              })),
+            }
+          : {}),
+      }),
+    }).catch((error: unknown) => {
       signal.throwIfAborted();
       throw new Error(
         `ChatGPT image request failed: ${redact(error instanceof Error ? error.message : String(error), tokens)}`,
