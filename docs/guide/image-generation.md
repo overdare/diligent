@@ -7,7 +7,7 @@ or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
+`generate_image` accepts a `prompt` string or an array of 1–10 prompt strings, optional `referenceImages` file paths, and `background`
 (`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
 the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
 tool arguments. The runtime binds generation to the selected chat provider:
@@ -38,14 +38,14 @@ A provider failure is returned to the caller without automatically retrying
 with another provider.
 
 The tool has no `n` input. The ChatGPT generation and edit HTTP requests always send `n: 1`.
-For multiple images, the agent issues one tool call per image in parallel in the same tool round,
-with the same `referenceImages` in every call and one composition per prompt. Shared references
-must exist before starting the calls. Without references, omit them consistently. Do not chain
-generated outputs into subsequent references unless the user requests sequential edits.
-`requestedCount` is 1 per call; `images.length` records the actual returned count. Preserve all
-returned files and report the explicit warning if the counts differ. There is no internal fan-out
-or automatic top-up. This replaces batch requests because observed OAuth `n > 1` requests returned
-only one file. A collage is never counted as multiple independent files.
+For multiple images, the agent supplies a prompt array in a single tool call. The tool concurrently
+starts one independent HTTP request per prompt, sharing the same reference bytes across all requests.
+This works with Responses Lite's required `parallel_tool_calls: false`: concurrency is inside the tool,
+not dependent on the model emitting multiple tool calls. Shared references must exist first. Without
+references, omit them. Do not chain outputs into subsequent references unless sequential edits are requested.
+`requestedCount` is the number of prompts; `images.length` records the delivered files. Partial failures
+return successful files, a count warning when appropriate, and zero-based failed `promptIndex` entries.
+No automatic retry or top-up is performed. A collage is never counted as multiple independent files.
 
 The tool description and failure output allow the initial call plus two retries or repairs
 with the same tool, then direct GUI tasks to continue with native Studio panels, text, and controls.

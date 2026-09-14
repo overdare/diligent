@@ -37,8 +37,8 @@ async function setup(bytes: Buffer[]) {
 
 test("the model-facing contract separates distinct pictures and counts returned files", async () => {
   const { tool } = await setup([]);
-  expect(tool.description).toContain("one call per image in parallel in the same tool round");
-  expect(tool.description).toContain("same referenceImages to every call");
+  expect(tool.description).toContain("submit all prompts in one generate_image call");
+  expect(tool.description).toContain("same referenceImages are shared by every request");
   expect(tool.description).toContain("Do not combine separate requested pictures into a collage");
   expect(tool.description).toContain("images.length is the delivered file count");
   expect(tool.description).toContain("report any shortfall instead of claiming completion");
