@@ -109,6 +109,25 @@ test("deadline cancels the in-flight request without an implicit retry", async (
   await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow("timed out");
 });
 
+test("cancellation while reading the response takes precedence over an invalid payload", async () => {
+  const controller = new AbortController();
+  const cancelled = new Error("cancelled while reading response");
+  mockFetch(async () => {
+    const response = Response.json({});
+    response.json = async () => {
+      controller.abort(cancelled);
+      return {};
+    };
+    return response;
+  });
+  const generate = createChatGPTImageGeneration(() => tokens);
+  const error = await generate({ prompt: "Coin", model: "test" }, { signal: controller.signal }).catch(
+    (error) => error,
+  );
+  expect(error).toBe(cancelled);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 test.each([
   {},
   { data: [] },
