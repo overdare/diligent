@@ -17,13 +17,14 @@ export async function handleToolsList(
   tools: ToolDescriptor[];
   plugins: PluginDescriptor[];
 }> {
-  const { cwd, tools } = await ctx.resolveToolsContext(threadId);
+  const { cwd, tools, modelProvider } = await ctx.resolveToolsContext(threadId);
   const paths = await ctx.resolvePaths(cwd);
   const result = await buildDefaultTools({
     cwd,
     paths,
     toolsConfig: tools,
     bundledToolProviders: ctx.getBundledToolProviders(),
+    provider: modelProvider,
     disabledToolNames: ctx.getDisabledToolNames?.(),
     mcpServers: ctx.getMcpServers(),
   });
@@ -59,7 +60,7 @@ export async function handleToolsSet(
   tools: ToolDescriptor[];
   plugins: PluginDescriptor[];
 }> {
-  const { cwd } = await ctx.resolveToolsContext(threadId);
+  const { cwd, modelProvider } = await ctx.resolveToolsContext(threadId);
   const writeResult = await writeGlobalToolsConfig({
     web_action: params.web_action,
     builtin: params.builtin,
@@ -75,6 +76,7 @@ export async function handleToolsSet(
     paths,
     toolsConfig: writeResult.config.tools,
     bundledToolProviders: ctx.getBundledToolProviders(),
+    provider: modelProvider,
     disabledToolNames: ctx.getDisabledToolNames?.(),
     mcpServers: ctx.getMcpServers(),
   });

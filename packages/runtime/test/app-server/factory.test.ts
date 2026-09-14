@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalImageLoader } from "@diligent/core/image-contract";
-import type { Model } from "@diligent/core/provider-contract";
+import { getDefaultModelRef } from "@diligent/core/model-registry";
+import type { ImageGenerationFn, Model } from "@diligent/core/provider-contract";
 import { ProviderManager } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { z } from "zod";
@@ -350,6 +351,46 @@ describe("createAppServerConfig", () => {
     expect(agent.tools.map((tool) => tool.name)).toContain("factory_bundled_tool");
   });
 
+  it("assembles a selected-provider image capability that resolves the current OAuth login", async () => {
+    const runtimeConfig = makeRuntimeConfig();
+    const generated = { bytes: new Uint8Array([1]), mediaType: "image/png" as const, requestedModel: "test" };
+    const calls: string[] = [];
+    const installAuth = (name: string) =>
+      runtimeConfig.providerManager.setExternalAuth("chatgpt", {
+        isConfigured: () => true,
+        getStream: () => runtimeConfig.streamFunction,
+        getImageGeneration: () => async () => {
+          calls.push(name);
+          return generated;
+        },
+      });
+    installAuth("first");
+    let generate: ImageGenerationFn | undefined;
+    const config = createAppServerConfig({
+      cwd: "/tmp/test",
+      runtimeConfig,
+      bundledToolProviders: [
+        {
+          id: "image-test",
+          createTools: (context) => {
+            generate = context.generateImage;
+            return [];
+          },
+        },
+      ],
+    });
+    await config.createAgent({
+      cwd: "/tmp/test",
+      model: getDefaultModelRef("chatgpt"),
+      approve: async () => "once",
+      ask: async () => null,
+    });
+    expect(generate).toBeDefined();
+    installAuth("second");
+    expect(await generate!({ prompt: "Coin", model: "test" })).toBe(generated);
+    expect(calls).toEqual(["second"]);
+  });
+
   it("transforms the final mode-filtered tool list without changing the default path", async () => {
     const runtimeConfig = makeRuntimeConfig();
     const baseline = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
@@ -421,6 +462,64 @@ describe("createAppServerConfig", () => {
     await agent.prompt({ role: "user", content: "second", timestamp: Date.now() });
     expect(factoryCalls).toBe(1);
     expect(hookCalls).toEqual(["product", "product"]);
+  });
+
+  it("refreshes provider tools through the same mode, plugin and product filters", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "diligent-tool-refresh-"));
+    tempHomes.push(cwd);
+    const transformedProviders: string[] = [];
+    const config = createAppServerConfig({
+      cwd,
+      runtimeConfig: makeRuntimeConfig({
+        diligent: { tools: { plugins: [{ package: "@test/factory-plugin", enabled: true }] } },
+      }),
+      pluginDiscovery: "explicit",
+      bundledToolProviders: [
+        {
+          id: "provider-tool",
+          createTools: ({ modelProvider }) => [
+            {
+              name: "provider_tool",
+              description: `Tool for ${modelProvider}`,
+              parameters: z.object({}),
+              execute: async () => ({ output: modelProvider! }),
+            },
+          ],
+        },
+      ],
+      transformTools: (tools, { provider }) => {
+        transformedProviders.push(provider);
+        return tools.filter((tool) => tool.name !== "read");
+      },
+    });
+    const request = {
+      cwd,
+      mode: "plan" as const,
+      effort: "medium" as const,
+      model: getDefaultModelRef("anthropic"),
+      approve: async () => "once" as const,
+      ask: async () => null,
+    };
+    const agent = await config.createAgent(request);
+    const previousTools = agent.tools;
+    const prompt = agent.systemPrompt;
+    const registry = agent.registry!;
+    registry.restoreAgent("existing-child", "Child");
+    const children = registry.getKnownAgents();
+
+    await config.refreshAgentTools!(agent, { ...request, model: getDefaultModelRef("chatgpt") });
+
+    const names = agent.tools.map((tool) => tool.name);
+    expect(names).toContain("provider_tool");
+    expect(names).toContain("factory_plugin_tool");
+    expect(names).not.toContain("bash");
+    expect(names).not.toContain("read");
+    expect(agent.tools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for chatgpt");
+    expect(previousTools.find((tool) => tool.name === "provider_tool")?.description).toBe("Tool for anthropic");
+    expect(transformedProviders).toEqual(["anthropic", "chatgpt"]);
+    expect(agent.systemPrompt).toBe(prompt);
+    expect(agent.registry).toBe(registry);
+    expect(registry.getKnownAgents()).toEqual(children);
   });
 
   it("reads the latest persisted knowledge whenever it creates an agent", async () => {

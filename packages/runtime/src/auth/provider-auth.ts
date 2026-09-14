@@ -12,6 +12,7 @@ import type {
 } from "@diligent/core/provider-contract";
 import {
   type ChatGPTStreamOptions,
+  createChatGPTImageGeneration,
   createChatGPTNativeCompaction,
   createChatGPTStream,
 } from "@diligent/core/providers/chatgpt";
@@ -86,6 +87,7 @@ export function createChatGPTOAuthBinding(args?: {
     isConfigured: () => oauthTokens !== undefined,
     getStream: () => stream,
     getNativeCompaction: () => createChatGPTNativeCompaction(() => oauthTokens!),
+    getImageGeneration: () => createChatGPTImageGeneration(() => oauthTokens),
     ensureFresh,
   };
 

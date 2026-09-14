@@ -219,6 +219,28 @@ Editing means **writing** to the mounted `.ovdrjm`. If the mount is read-only it
 
 The script itself is `scripts/dev-cross-studio.sh`. To understand how it works, see the manual steps above.
 
+## Image import during cross-machine development
+
+Studio reads imported images on the Windows host. Configure both shared-directory roots so the
+dev sidecar can translate an agent-local path for `studiorpc_asset_manager_image_import`:
+
+```sh
+STUDIO_LOCAL_FILE_ROOT=/Volumes/StudioProject
+STUDIO_REMOTE_FILE_ROOT='C:/Projects/StudioProject'
+```
+
+These must be absolute paths to the same shared directory on their respective hosts. A Windows
+UNC path such as `//studio-pc/StudioProject` is also supported. The mapping does not transfer files;
+verify that both hosts can read the shared file. Place the variables in `.env.local` when using
+`scripts/dev-cross-studio.sh`, or export them when starting the sidecar manually with `--dev`.
+Explicit environment values take precedence over `.env.local` in the launcher.
+
+For example, `/Volumes/StudioProject/.overdare/images/generated/icon.png` maps to
+`C:/Projects/StudioProject/.overdare/images/generated/icon.png`. Pass the image tool's absolute
+output path to the import tool. Paths outside the configured roots are rejected; already mapped
+Windows paths within the remote root are accepted. The adapter is enabled only with `--dev`
+and an enabled Studio connection. It does not affect image generation or normal same-host imports.
+
 ## No build needed
 
 - **Runtime**: `bun run` executes the TypeScript natively. No exe compile, no release download.
