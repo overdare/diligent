@@ -108,7 +108,7 @@ function createGenerateImageTool(
   defaultModel: string,
   provider: "chatgpt" | "gemini",
   options: ImageGenerationToolProviderOptions,
-): Tool<typeof parameters> {
+): Tool<typeof parameters | typeof geminiParameters> {
   const chatGPT = provider === "chatgpt";
   return {
     name: TOOL_NAME,
