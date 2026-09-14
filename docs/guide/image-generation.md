@@ -1,13 +1,13 @@
 # Image generation
 
-OVERDARE exposes one `generate_image` tool for generating an image and saving it locally.
+OVERDARE exposes one `generate_image` tool for requesting images and saving every returned image locally.
 Studio import remains a separate operation using the existing
 `studiorpc_asset_manager_image_import` tool. Generation does not require a Studio connection
 or new Studio RPC methods.
 
 ## Tool contract
 
-`generate_image` accepts a `prompt`, optional `referenceImages` file paths, and `background`
+`generate_image` accepts a `prompt` string or an array of 1–10 prompt strings, optional `referenceImages` file paths, and `background`
 (`auto`, `opaque`, or `transparent`; omitted means `auto`). ChatGPT requests are always sent with
 the internally pinned `gpt-image-2.5-sunburst` request model; the model cannot override it through
 tool arguments. The runtime binds generation to the selected chat provider:
@@ -25,17 +25,27 @@ the tool. The shared `gui-builder` skill checks tool availability before generat
 and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
-The result includes an absolute `file` path, the selected `provider`, its authentication
-`source` (`chatgpt-oauth`), and an image preview. `requestedModel` and `requestedBackground`
+The result always includes ordered `images` entries with absolute `file` paths and media types, the selected `provider`, its authentication
+`source` (`chatgpt-oauth`), and image previews. `requestedModel` and `requestedBackground`
 record the request. `model` and `background` are included only when reported by the backend;
 they are not inferred from the prompt, filename, or HTTP success.
-For `background: "transparent"`, `transparency` separately reports decoded original-pixel
+For `background: "transparent"`, each image's `transparency` reports decoded original-pixel
 counts and a status: `has_transparency`, `opaque`, `empty`, or `unknown` if inspection was
 unavailable. Opaque/empty outputs include a warning and repair guidance but retain their saved
 file for reference-driven retries. Pixel transparency does not establish clean edges or correct
 placement; inspect the artwork before importing it.
 A provider failure is returned to the caller without automatically retrying
 with another provider.
+
+The tool has no `n` input. The ChatGPT generation and edit HTTP requests always send `n: 1`.
+For multiple images, the agent supplies a prompt array in a single tool call. The tool concurrently
+starts one independent HTTP request per prompt, sharing the same reference bytes across all requests.
+This works with Responses Lite's required `parallel_tool_calls: false`: concurrency is inside the tool,
+not dependent on the model emitting multiple tool calls. Shared references must exist first. Without
+references, omit them. Do not chain outputs into subsequent references unless sequential edits are requested.
+`requestedCount` is the number of prompts; `images.length` records the delivered files. Partial failures
+return successful files, a count warning when appropriate, and zero-based failed `promptIndex` entries.
+No automatic retry or top-up is performed. A collage is never counted as multiple independent files.
 
 The tool description and failure output allow the initial call plus two retries or repairs
 with the same tool, then direct GUI tasks to continue with native Studio panels, text, and controls.
@@ -44,7 +54,7 @@ not authorize a retry or fallback. Code-drawn images (PIL, SVG, or canvas), stoc
 providers still require explicit user approval. This is model-facing guidance; the tool does
 not retry internally or block general-purpose file or shell tools.
 
-For Studio workflows, pass the returned `file` directly to
+For Studio workflows, pass each selected `images[i].file` directly to
 `studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
 

@@ -3,6 +3,7 @@
 export type {
   ImageBackground,
   ImageGenerationFn,
+  ImageGenerationImage,
   ImageGenerationInput,
   ImageGenerationOptions,
   ImageGenerationResult,

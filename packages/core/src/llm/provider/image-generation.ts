@@ -15,9 +15,13 @@ export interface ImageGenerationOptions {
   signal?: AbortSignal;
 }
 
-export interface ImageGenerationResult {
+export interface ImageGenerationImage {
   bytes: Uint8Array;
   mediaType: ImageMediaType;
+}
+
+export interface ImageGenerationResult {
+  images: ImageGenerationImage[];
   requestedModel: string;
   /** Only populated when the upstream response reports a model. */
   model?: string;

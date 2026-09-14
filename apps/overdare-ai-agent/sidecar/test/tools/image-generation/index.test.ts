@@ -73,17 +73,21 @@ describe("generate_image", () => {
         cwd,
         generateImage: async (input) => {
           calls++;
-          return { bytes, mediaType: "image/png", requestedModel: input.model, background: fixture.reported };
+          return {
+            images: [{ bytes, mediaType: "image/png" }],
+            requestedModel: input.model,
+            background: fixture.reported,
+          };
         },
       });
       const result = await tool.execute({ prompt: "Cutout", background: "transparent" }, context());
       const output = JSON.parse(result.output);
       expect(output.requestedBackground).toBe("transparent");
       expect(output.background).toBe(fixture.reported);
-      expect(output.transparency.status).toBe(fixture.status);
-      expect(Boolean(output.transparency.warning)).toBe(fixture.warning);
-      if (fixture.warning) expect(output.guidance).toContain("initial call plus two retries");
-      expect(await readFile(output.file)).toEqual(bytes);
+      expect(output.images[0].transparency.status).toBe(fixture.status);
+      expect(Boolean(output.images[0].transparency.warning)).toBe(fixture.warning);
+
+      expect(await readFile(output.images[0].file)).toEqual(bytes);
       expect(calls).toBe(1);
     } finally {
       cleanup();
@@ -136,10 +140,13 @@ describe("generate_image", () => {
       const tool = await toolFor({
         cwd,
         generateImage: async (input) => {
-          expect(input).toEqual({ prompt: "A red button", model: "gpt-image-2.5-sunburst", background: "transparent" });
+          expect(input).toEqual({
+            prompt: "A red button",
+            model: "gpt-image-2.5-sunburst",
+            background: "transparent",
+          });
           return {
-            bytes: Buffer.from(image),
-            mediaType: "image/webp",
+            images: [{ bytes: Buffer.from(image), mediaType: "image/webp" }],
             requestedModel: input.model,
             background: "transparent",
           };
@@ -154,7 +161,7 @@ describe("generate_image", () => {
         background: "transparent",
       });
       expect(output.model).toBeUndefined();
-      expect(await readFile(output.file, "utf8")).toBe(image);
+      expect(await readFile(output.images[0].file, "utf8")).toBe(image);
       expect(result.outputImages?.[0]?.source.media_type).toBe("image/webp");
       expect(result.outputImages?.[0]?.source.data).toBe(Buffer.from(image).toString("base64"));
     } finally {
@@ -208,7 +215,7 @@ describe("generate_image", () => {
         cwd,
         generateImage: async (input) => {
           controller.abort(cancellation);
-          return { bytes: Buffer.from("unused"), mediaType: "image/png", requestedModel: input.model };
+          return { images: [{ bytes: Buffer.from("unused"), mediaType: "image/png" }], requestedModel: input.model };
         },
       });
       expect(await tool.execute({ prompt: "A coin" }, context(controller.signal)).catch((error) => error)).toBe(
@@ -243,13 +250,12 @@ describe("generate_image", () => {
       const tool = await toolFor({
         cwd: relative(process.cwd(), cwd),
         generateImage: async (input) => ({
-          bytes: Buffer.from("image-data"),
-          mediaType: "image/png",
+          images: [{ bytes: Buffer.from("image-data"), mediaType: "image/png" }],
           requestedModel: input.model,
         }),
       });
       const result = await tool.execute({ prompt: "A coin" }, context());
-      expect(isAbsolute(JSON.parse(result.output).file)).toBe(true);
+      expect(isAbsolute(JSON.parse(result.output).images[0].file)).toBe(true);
     } finally {
       cleanup();
     }

@@ -1,6 +1,6 @@
 // @summary Exercises the real agent scheduler with independent image requests and isolated outputs.
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@diligent/core/agent";
@@ -9,16 +9,23 @@ import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/provider-contract";
 import { createImageGenerationToolProvider } from "../../../src/tools/image-generation";
 
-test("independent image calls overlap in the agent loop and save to distinct files", async () => {
+test("three image calls share the same reference, overlap, and save distinct files", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "parallel-images-"));
+  const reference = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpH7z8XFxQAABvcBW4Wvy/wAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await writeFile(join(cwd, "reference.png"), reference);
   const bothStarted = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let started = 0;
   const tools = await createImageGenerationToolProvider({
     generateImage: async (input) => {
-      if (++started === 2) bothStarted.resolve();
+      expect(input.referenceImages).toEqual([{ bytes: reference, mediaType: "image/png" }]);
+      expect(input).not.toHaveProperty("n");
+      if (++started === 3) bothStarted.resolve();
       await release.promise;
-      return { bytes: Buffer.from("fixture image"), mediaType: "image/png", requestedModel: input.model };
+      return { images: [{ bytes: Buffer.from("fixture image"), mediaType: "image/png" }], requestedModel: input.model };
     },
   }).createTools({ cwd, modelProvider: "chatgpt" });
   const model: Model = {
@@ -38,11 +45,11 @@ test("independent image calls overlap in the agent loop and save to distinct fil
       stopReason: round++ === 0 ? "tool_use" : "end_turn",
       content:
         round === 1
-          ? ["attack", "jump"].map((name) => ({
+          ? ["attack", "jump", "defend"].map((name) => ({
               type: "tool_call",
               id: name,
               name: "generate_image",
-              input: { prompt: name },
+              input: { prompt: name, referenceImages: ["reference.png"] },
             }))
           : [{ type: "text", text: "done" }],
     };
@@ -57,7 +64,7 @@ test("independent image calls overlap in the agent loop and save to distinct fil
     return stream;
   };
   const agent = new Agent(model, [], tools, { llmMsgStreamFn: streamFunction });
-  const running = agent.prompt({ role: "user", content: "Generate two independent icons", timestamp: Date.now() });
+  const running = agent.prompt({ role: "user", content: "Generate three independent icons", timestamp: Date.now() });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const overlapped = await Promise.race([
@@ -73,9 +80,9 @@ test("independent image calls overlap in the agent loop and save to distinct fil
     await running;
     try {
       const results = agent.getMessages().filter((message) => message.role === "tool_result");
-      expect(results).toHaveLength(2);
-      const files = results.map((result) => JSON.parse(result.output).file);
-      expect(new Set(files).size).toBe(2);
+      expect(results).toHaveLength(3);
+      const files = results.map((result) => JSON.parse(result.output).images[0].file);
+      expect(new Set(files).size).toBe(3);
       for (const file of files) expect(await readFile(file, "utf8")).toBe("fixture image");
     } finally {
       await rm(cwd, { recursive: true, force: true });

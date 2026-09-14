@@ -3,12 +3,18 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
 import { validateImage } from "../../image-resize";
-import type { ImageGenerationFn, ImageGenerationInput, ImageMediaType } from "../image-generation";
+import type {
+  ImageGenerationFn,
+  ImageGenerationImage,
+  ImageGenerationInput,
+  ImageMediaType,
+} from "../image-generation";
 import { CHATGPT_CODEX_CLIENT_VERSION } from "./headers";
 
 const IMAGE_BASE_URL = "https://chatgpt.com/backend-api/codex/images";
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_RETURNED_IMAGES = 10;
 const responseSchema = z.object({
   data: z
     .array(
@@ -19,7 +25,8 @@ const responseSchema = z.object({
           .max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(MAX_RETURNED_IMAGES),
   model: z.string().nullish(),
   background: z.enum(["auto", "opaque", "transparent"]).nullish(),
 });
@@ -42,11 +49,12 @@ export function createChatGPTImageGeneration(
 
     const response = await requestImageGeneration(input, tokens, signal);
     const payload = await readImageResponse(response, tokens, signal);
-    const image = await decodeImage(payload.data[0].b64_json, signal);
+    const images: ImageGenerationImage[] = [];
+    for (const image of payload.data) images.push(await decodeImage(image.b64_json, signal));
     signal.throwIfAborted();
 
     return {
-      ...image,
+      images,
       requestedModel: input.model,
       ...(payload.model ? { model: payload.model } : {}),
       ...(payload.background ? { background: payload.background } : {}),

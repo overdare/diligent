@@ -20,7 +20,10 @@ async function setup() {
   directories.push(cwd);
   const file = join(cwd, "mockup.png");
   await writeFile(file, png);
-  const generate = mock(async () => ({ bytes: png, mediaType: "image/png" as const, requestedModel: "requested" }));
+  const generate = mock(async () => ({
+    images: [{ bytes: png, mediaType: "image/png" as const }],
+    requestedModel: "requested",
+  }));
   const approve = mock(async () => "once" as const);
   const [tool] = await createImageGenerationToolProvider({ generateImage: generate }).createTools({
     cwd,
@@ -53,7 +56,7 @@ test("attaches project-relative reference files to generation and retains the or
   expect(approve).toHaveBeenCalledWith(
     expect.objectContaining({ details: expect.objectContaining({ referenceImages: ["mockup.png"] }) }),
   );
-  const saved = JSON.parse(result.output).file;
+  const saved = JSON.parse(result.output).images[0].file;
   expect(saved).not.toBe(file);
   expect(await readFile(saved)).toEqual(png);
   expect(await readFile(file)).toEqual(png);
