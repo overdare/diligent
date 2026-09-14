@@ -1,6 +1,6 @@
 // @summary Validates and applies hierarchy-only instance moves inside an ovdrjm document.
 
-import { serviceClassEnum } from "../methods/instance.params";
+import { isProtectedInstanceClass } from "../methods/instance-safety";
 import { invalidInstanceOperationError, missingGuidError } from "./instance-status";
 import {
   clearStaleWorldTransforms,
@@ -18,8 +18,6 @@ export interface InstanceMoveItem {
 export interface ValidateInstanceMovesOptions {
   unavailableGuids?: ReadonlySet<string>;
 }
-
-const serviceClasses = new Set<string>(serviceClassEnum.options);
 
 function hierarchyParents(root: OvdrjmNode): Map<string, string | undefined> {
   const parents = new Map<string, string | undefined>();
@@ -67,7 +65,7 @@ export function validateInstanceMoves(
     const target = findNodeByActorGuid(root, item.guid);
     if (!target) throw missingGuidError({ operation: "instance.move", guid: item.guid, role: "target" });
     const targetClass = typeof target.InstanceType === "string" ? target.InstanceType : undefined;
-    if (targetClass && serviceClasses.has(targetClass)) {
+    if (targetClass && isProtectedInstanceClass(targetClass)) {
       throw invalidInstanceOperationError({
         operation: "instance.move",
         code: "protected_service_class",

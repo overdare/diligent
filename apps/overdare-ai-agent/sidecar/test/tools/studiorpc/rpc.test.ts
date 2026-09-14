@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server, type Socket } from "node:net";
+import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { call } from "../../../src/tools/studiorpc/rpc";
 
 let server: Server | undefined;
@@ -73,5 +74,35 @@ describe("Studio RPC cancellation", () => {
       data: { name: "moveRejected", reason: "navigationSystemUnavailable" },
       message: expect.stringContaining("Reason: navigationSystemUnavailable"),
     });
+  });
+  test("Editor error data survives the wire and reaches shared tool output without retry", async () => {
+    const data = { command_id: "cmd-wire", mutation_attempted: true, undo_recorded: true };
+    let requests = 0;
+    server = createServer((socket) => {
+      accepted = socket;
+      socket.once("data", (bytes) => {
+        requests++;
+        const request = JSON.parse(bytes.toString());
+        socket.write(
+          `${JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: -32000, message: "runtime failure", data } })}\n`,
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_HOST = "127.0.0.1";
+    process.env.STUDIO_PORT = String(address.port);
+    const tools = await createStudioRpcToolProvider().createTools({ cwd: "/tmp/schema-free-project" });
+    const result = await tools
+      .find((tool) => tool.name === "studiorpc_execute_luau")!
+      .execute(
+        { target: "Editor", code: "error('stop')" },
+        { toolCallId: "wire", signal: new AbortController().signal, abort() {} },
+      );
+    expect(result.metadata).toMatchObject({ error: true, code: -32000, data });
+    expect(result.output).toContain('"command_id": "cmd-wire"');
+    expect(result.output).toContain("Do not automatically retry");
+    expect(requests).toBe(1);
   });
 });

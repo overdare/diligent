@@ -253,11 +253,11 @@ export class AgentRegistry {
     const abortController = new AbortController();
 
     const parentModel = resolveModel(this.deps.model);
+    // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
+    // one; otherwise it inherits the parent's model and effort. A spawn-time `params.modelClass` is ignored on
+    // purpose — only a resume keeps its original class.
     const targetClass: ModelClass =
-      restoredPolicy?.modelClass ??
-      params.modelClass ??
-      agentDefinition.defaultModelClass ??
-      getModelClass(parentModel);
+      restoredPolicy?.modelClass ?? agentDefinition.defaultModelClass ?? getModelClass(parentModel);
     const effectiveAllowedTools = normalizeToolAllowlist(restoredPolicy?.allowedTools);
     const effectivePolicy: CollabResumePolicy = {
       agentType,
@@ -306,10 +306,7 @@ export class AgentRegistry {
 
     // Resume uses the original model class; a new child uses the requested or role-default class.
     const childModel = resolveModelForClass(parentModel, targetClass);
-    const useClassDefaultEffort =
-      restoredPolicy !== undefined ||
-      params.modelClass !== undefined ||
-      agentDefinition.defaultModelClass !== undefined;
+    const useClassDefaultEffort = restoredPolicy !== undefined || agentDefinition.defaultModelClass !== undefined;
     const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel, useClassDefaultEffort);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));

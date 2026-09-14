@@ -19,10 +19,10 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
   }
 
   const instanceType = instanceTypeOf(target);
-  if (!instanceType || !SCRIPT_CLASSES.has(instanceType)) {
+  if (typeof target.Source !== "string" && (!instanceType || !SCRIPT_CLASSES.has(instanceType))) {
     throw new Error(
-      `Instance ${targetGuid} is ${instanceType ?? "unknown"}, not a script. ` +
-        "Use studiorpc_instance_upsert to edit non-script instances.",
+      `Instance ${targetGuid} (${instanceType ?? "unknown"}) has no Source. ` +
+        "Use studiorpc_instance_upsert to edit other instances.",
     );
   }
 
@@ -30,7 +30,10 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
   const source = typeof target.Source === "string" ? target.Source : "";
 
   const { result: edited, count } = applyEdit(source, { old_string, new_string, replace_all });
-  const normalized = normalizeLeadingSpaces(edited);
+  const normalized =
+    instanceType && SCRIPT_CLASSES.has(instanceType)
+      ? normalizeLeadingSpaces(edited)
+      : { result: edited, converted: 0 };
   const eolNormalized = normalizeLineEndings(normalized.result);
 
   await callInstanceRpc("instance.update", {
@@ -47,6 +50,6 @@ export async function editScriptViaRpc(parsed: ScriptEditArgs): Promise<ToolResu
   return {
     output,
     render: buildScriptEditRender({ targetGuid, scriptName, old_string, new_string, replace_all }, output, count),
-    metadata: { method: "script.edit", targetGuid, count },
+    metadata: { method: "script.edit", targetGuid, count, class: instanceType },
   };
 }
