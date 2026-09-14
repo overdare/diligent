@@ -22,6 +22,18 @@ const IMAGE_FAILURE_GUIDANCE =
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
+const IMAGE_TOOL_DESCRIPTION =
+  "Generate and save UI mockups, icons, panels, or illustrations directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
+  "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
+  "Independent requests can run in parallel after shared references exist. " +
+  "Use n for multiple images of the same prompt in one request. All returned images are preserved in order. " +
+  "A count shortfall is reported and does not trigger extra calls; do not automatically retry or top up a shortfall. " +
+  "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
+  "Returns each exact absolute output file path in files, per-image details in images, and previews. A single returned image also keeps file and transparency fields. requestedModel records the request, while model is included only if the server reports it. " +
+  "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
+  "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
+  IMAGE_FAILURE_GUIDANCE;
+
 const parameters = z
   .object({
     prompt: z.string().trim().min(1).max(6_000).describe("Shared image-generation prompt for the requested images."),
@@ -75,17 +87,7 @@ function createGenerateImageTool(
 ): Tool<typeof parameters> {
   return {
     name: TOOL_NAME,
-    description:
-      "Generate and save UI mockups, icons, panels, or illustrations directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
-      "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
-      "Independent requests can run in parallel after shared references exist. " +
-      "Use n for multiple images of the same prompt in one request. All returned images are preserved in order. " +
-      "A count shortfall is reported and does not trigger extra calls; do not automatically retry or top up a shortfall. " +
-      "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
-      "Returns each exact absolute output file path in files, per-image details in images, and previews. A single returned image also keeps file and transparency fields. requestedModel records the request, while model is included only if the server reports it. " +
-      "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
-      "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
-      IMAGE_FAILURE_GUIDANCE,
+    description: IMAGE_TOOL_DESCRIPTION,
     parameters,
     supportParallel: true,
     async execute(args, ctx): Promise<ToolResult> {
