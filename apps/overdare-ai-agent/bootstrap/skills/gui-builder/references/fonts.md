@@ -5,8 +5,8 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 ## Selection rules
 
 - Preserve verified existing FontFace choices unless the request changes them. For new text with no typography direction, use `NotoSans Regular Normal` for body text and `NotoSans SemiBold Normal` for headings or buttons.
-- Use no more than two families on one screen unless the user requests a deliberately mixed style.
-- Keep body text in NotoSans, Roboto, Nunito, or VarelaRound. Decorative families belong on short headings, counters, logos, or callouts.
+- Prefer one or two families for a cohesive screen; preserve an established or explicitly requested typography system.
+- NotoSans, Roboto, Nunito, and VarelaRound are useful body-text defaults. Prefer decorative faces for short headings or callouts, but honor requested supported faces and verify readability at the actual viewport.
 - For Korean, non-Latin, or mixed-language text, prefer NotoSans until actual glyph coverage is available or the result can be checked visually. The catalog lists files and faces, but does not prove script coverage.
 - Select a Weight and Style explicitly listed for the family. Studio can substitute a nearby face, but authored UI should not depend on that substitution. If a requested face is not listed, verify it against an updated catalog or Studio rather than inventing an ID or weight.
 - Assign the complete `FontFace` value. Do not mutate `label.FontFace.Weight` or another nested member in isolation.

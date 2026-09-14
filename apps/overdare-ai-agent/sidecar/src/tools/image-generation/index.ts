@@ -11,10 +11,12 @@ const TOOL_NAME = "generate_image";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 const IMAGE_FAILURE_GUIDANCE =
   "Use at most three attempts per requested image: the initial call plus two retries or repairs with this same tool. " +
-  "On failure, correct recoverable inputs (including unreadable reference paths) before retrying; " +
-  "do not fall back on the first or second failure. After the third failure, stop image work and report the error. " +
-  "For GUI tasks, then continue with native Studio GUI panels, text, and controls, reusing successful assets; " +
-  "explain that generated artwork could not be used. User cancellation or rejection stops the task, not a retry or fallback. " +
+  "Retry only after correcting inputs, for a transient failure, or for a targeted visual repair. " +
+  "Do not repeat unchanged authentication, permission, or unsupported-capability failures. " +
+  "When blocked or after the third failure, stop image work and report the error. " +
+  "For GUI tasks, continue with native Studio GUI panels, text, and controls only if that serves the requested scope; " +
+  "reuse successful assets and explain the fallback. If generated artwork is required, report that deliverable as unfinished. " +
+  "User cancellation or rejection stops the task, not a retry or fallback. " +
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
@@ -24,7 +26,8 @@ const IMAGE_TOOL_DESCRIPTION =
   "Independent requests can run in parallel after shared references exist. " +
   "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
   "Returns the exact absolute output file path and a preview. requestedModel records the request, while model is included only if the server reports it. " +
-  "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
+  "Transparent requests include actual pixel inspection. Repair opaque output using its preserved file; " +
+  "regenerate empty output from the guide or last non-empty source within the same retry budget. " +
   "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
   IMAGE_FAILURE_GUIDANCE;
 

@@ -232,8 +232,7 @@ def on_generate(model, size, attributes):
   - 200+: debug/special layers
 - Do NOT use Emoji or Unicode special characters (e.g., ⭐, →) in game UI text. OVERDARE's rendering engine may not support them consistently across devices. Use plain text or image assets instead.
 - Write all UI text in **English only**, unless the user explicitly wants localization (L10n). Do not default to the user's conversation language for in-game text. Keep it simple and plain — short, common words that are easy for a global audience to understand.
-- Use `gui-builder` for screen GUI creation, restyling, and typography. New GUI/full redesign follows guide → button/frame artwork generation and import → GUI binding → verification. A successful guide does not replace the asset stage. Follow explicit no-generation/existing-assets-only requests; focused edits read only relevant references.
-- Native GUI includes `ImageButton`/`ImageLabel` displaying generated artwork; keep live labels and interaction logic separate. For new font choices, use `gui-builder`'s `references/fonts.md`, assign the complete supported `FontFace`, and verify glyphs, wrapping, clipping, and readability. Preserve typography for unrelated edits.
+- Use `gui-builder` for screen GUI creation, review, restyling, and typography. It defines the image-guided build workflow, focused-edit routes, and supported font assignments; load only the references relevant to the requested deliverable.
 </building-rules>
 
 <roblox-gap>

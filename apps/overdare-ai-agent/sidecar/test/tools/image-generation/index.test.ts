@@ -167,7 +167,7 @@ describe("generate_image", () => {
     expect(tool.parameters.safeParse({ prompt: "A coin", model: "gpt-image-1" }).success).toBe(false);
   });
 
-  test("a provider error emits the three-attempt GUI fallback policy without retrying or storing internally", async () => {
+  test("a provider error emits bounded retry and scope-preserving fallback instructions without retrying internally", async () => {
     const { cwd, cleanup } = project();
     let generations = 0;
     try {
@@ -183,6 +183,11 @@ describe("generate_image", () => {
       const message = (error as Error).message;
       expect(message).toContain("Codex generation failed");
       expect(message).toContain("at most three attempts per requested image");
+      expect(message).toContain(
+        "Do not repeat unchanged authentication, permission, or unsupported-capability failures",
+      );
+      expect(message).toContain("If generated artwork is required, report that deliverable as unfinished");
+      expect(message).not.toContain("do not fall back on the first or second failure");
       expect(message).toContain("native Studio GUI");
       expect(message).toContain("stop image work and report the error");
       expect(message).toContain("PIL, SVG, or canvas");

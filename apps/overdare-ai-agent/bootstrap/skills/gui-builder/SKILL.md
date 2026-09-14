@@ -1,11 +1,13 @@
 ---
 name: gui-builder
-description: Create and edit OVERDARE screen-space GUI in Studio, including HUDs, menus, controls, layout, and typography. Not for standalone artwork, 3D decoration, or gameplay-only changes.
+description: Create, edit, or review OVERDARE screen-space GUI in Studio, including HUDs, menus, controls, layout, and typography. Not for standalone artwork, 3D decoration, or gameplay-only changes.
 ---
 
 # GUI Builder
 
 Build the requested GUI in Studio, preserving the existing screen owner and unrelated work. Follow the user's explicit design choices over this skill's workflow defaults. Inspect the relevant screen and properties before editing; read its controller when changing behavior or investigating runtime overrides. Match the game's visual direction and reuse suitable existing assets.
+
+For review-only requests, inspect the supplied GUI and relevant references, then report findings without generating images or editing Studio. For a requested mockup or preview, stop at that deliverable; continue through implementation when the user requested a build.
 
 ## Read only what the task needs
 
@@ -19,7 +21,7 @@ Do not load all references up front. Focused text, font, color, spacing, or beha
 
 ## Implement the requested change
 
-Native GUI means editable instances, not image-free styling: use `ImageButton`/`ImageLabel` for generated artwork and separate text, live fills, and input behavior. Do not skip button artwork because a `TextButton` is clickable or the game controller is not implemented yet.
+Native GUI means editable instances: bind artwork with `ImageButton`/`ImageLabel` and keep text, live fills, and input behavior separate.
 
 Preserve typography for unrelated edits. Use project context for routine design choices, briefly state the direction, and implement it without a generic HUD/style questionnaire. Ask only about unresolved scope or behavior choices; retain answers already given.
 
