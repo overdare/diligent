@@ -13,7 +13,7 @@ The official [CoreGuiType reference](https://docs.overdare.com/development/api-r
 | `JumpButton` | Avatar jump button. | Retain it or connect a replacement using [custom-jump.md](custom-jump.md). |
 | `All` | Controls all CoreGui elements together. | Do not use it to hide one control. |
 
-`PlayerList`, `Health`, `Chat`, `EmotesMenu`, and `SelfView` are marked **currently not supported**. Their enum names are not evidence that working default widgets exist. The StarterGui page's generic Chat example does not override that support table. Check current OVERDARE documentation and the installed runtime with `overdaresearch` before depending on a feature; do not substitute Roblox APIs or support claims.
+`PlayerList`, `Health`, `Chat`, `EmotesMenu`, and `SelfView` are marked **currently not supported**. This is the support status of those visibility-control enums, not proof that the corresponding system UI is absent. Inspect actual native UI and preserve its interaction space rather than assuming either existence or absence from an enum name. The StarterGui page's generic Chat example does not override that support table. Check current OVERDARE documentation and the installed runtime with `overdaresearch` before depending on a feature; do not substitute Roblox APIs or support claims.
 
 ## Inspect before replacing
 
