@@ -6,12 +6,14 @@ import { validateImage } from "../../image-resize";
 import {
   type ImageGenerationFn,
   type ImageGenerationImage,
+  type ImageGenerationInput,
   type ImageMediaType,
   MAX_IMAGE_GENERATION_COUNT,
 } from "../image-generation";
 import { CHATGPT_CODEX_CLIENT_VERSION } from "./headers";
 
 const IMAGE_BASE_URL = "https://chatgpt.com/backend-api/codex/images";
+const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const responseSchema = z.object({
   data: z
@@ -33,7 +35,119 @@ export interface ChatGPTImageGenerationOptions {
   timeoutMs?: number;
 }
 
-function mediaType(bytes: Buffer): ImageMediaType {
+export function createChatGPTImageGeneration(
+  getTokens: () => OpenAIOAuthTokens | undefined,
+  options: ChatGPTImageGenerationOptions = {},
+): ImageGenerationFn {
+  return async (input, requestOptions = {}) => {
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const signal = requestOptions.signal ? AbortSignal.any([requestOptions.signal, timeout]) : timeout;
+    signal.throwIfAborted();
+
+    const count = input.n ?? 1;
+    if (!Number.isInteger(count) || count < 1 || count > MAX_IMAGE_GENERATION_COUNT) {
+      throw new Error(`Image generation count must be an integer from 1 to ${MAX_IMAGE_GENERATION_COUNT}.`);
+    }
+
+    const tokens = getTokens();
+    if (!tokens) throw new Error("ChatGPT OAuth is not configured in Diligent.");
+
+    const response = await requestImageGeneration(input, tokens, signal, count);
+    const payload = await readImageResponse(response, tokens, signal);
+    const images: ImageGenerationImage[] = [];
+    for (const image of payload.data) images.push(await decodeImage(image.b64_json, signal));
+    signal.throwIfAborted();
+
+    return {
+      images,
+      requestedModel: input.model,
+      ...(payload.model ? { model: payload.model } : {}),
+      ...(payload.background ? { background: payload.background } : {}),
+    };
+  };
+}
+
+async function requestImageGeneration(
+  input: ImageGenerationInput,
+  tokens: OpenAIOAuthTokens,
+  signal: AbortSignal,
+  count: number,
+): Promise<Response> {
+  const references = input.referenceImages ?? [];
+  if (references.length > 5) throw new Error("Use at most five reference images.");
+  if (references.some((image) => !image.bytes.length || image.bytes.length > MAX_IMAGE_BYTES)) {
+    throw new Error("Reference images must be non-empty and at most 32 MiB each.");
+  }
+  return fetch(`${IMAGE_BASE_URL}/${references.length ? "edits" : "generations"}`, {
+    method: "POST",
+    headers: createRequestHeaders(tokens),
+    redirect: "error",
+    signal,
+    body: JSON.stringify({
+      prompt: input.prompt,
+      model: input.model,
+      background: input.background ?? "auto",
+      quality: input.quality ?? "auto",
+      size: input.size ?? "auto",
+      n: count,
+      output_format: "png",
+      ...(references.length
+        ? {
+            images: references.map((image) => ({
+              image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+            })),
+          }
+        : {}),
+    }),
+  }).catch((error: unknown) => {
+    signal.throwIfAborted();
+    throw new Error(
+      `ChatGPT image request failed: ${redact(error instanceof Error ? error.message : String(error), tokens)}`,
+    );
+  });
+}
+
+function createRequestHeaders(tokens: OpenAIOAuthTokens): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${tokens.access_token}`,
+    "Content-Type": "application/json",
+    originator: "diligent",
+    version: CHATGPT_CODEX_CLIENT_VERSION,
+    "x-codex-image-turn-id": randomUUID(),
+  };
+  if (tokens.account_id) headers["ChatGPT-Account-ID"] = tokens.account_id;
+  if (tokens.account_info?.chatgpt_account_is_fedramp) headers["X-OpenAI-Fedramp"] = "true";
+  return headers;
+}
+
+async function readImageResponse(response: Response, tokens: OpenAIOAuthTokens, signal: AbortSignal) {
+  const payload: unknown = await response.json().catch(() => undefined);
+  signal.throwIfAborted();
+  if (!response.ok) throw new Error(errorMessage(payload, response.status, tokens));
+  const parsed = responseSchema.safeParse(payload);
+  if (!parsed.success) throw new Error("ChatGPT returned an invalid image-generation response.");
+  return parsed.data;
+}
+
+async function decodeImage(encoded: string, signal: AbortSignal) {
+  signal.throwIfAborted();
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+    throw new Error("ChatGPT returned invalid base64 image data.");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("ChatGPT returned invalid image size.");
+  const outputMediaType = detectImageMediaType(bytes);
+  try {
+    await validateImage(Uint8Array.from(bytes).buffer, outputMediaType);
+  } catch (error) {
+    signal.throwIfAborted();
+    throw new Error("ChatGPT returned invalid image data.", { cause: error });
+  }
+  signal.throwIfAborted();
+  return { bytes, mediaType: outputMediaType };
+}
+
+function detectImageMediaType(bytes: Buffer): ImageMediaType {
   if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") return "image/webp";
@@ -53,94 +167,4 @@ function errorMessage(payload: unknown, status: number, tokens: OpenAIOAuthToken
     .safeParse(payload);
   const detail = error.success ? (error.data.error?.message ?? error.data.detail) : undefined;
   return `ChatGPT image generation failed (${status})${detail ? `: ${redact(detail, tokens)}` : "."}`;
-}
-
-async function decodeImage(encoded: string, signal: AbortSignal): Promise<ImageGenerationImage> {
-  signal.throwIfAborted();
-  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
-    throw new Error("ChatGPT returned invalid base64 image data.");
-  }
-  const bytes = Buffer.from(encoded, "base64");
-  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("ChatGPT returned invalid image size.");
-  const outputMediaType = mediaType(bytes);
-  try {
-    await validateImage(Uint8Array.from(bytes).buffer, outputMediaType);
-  } catch (error) {
-    signal.throwIfAborted();
-    throw new Error("ChatGPT returned invalid image data.", { cause: error });
-  }
-  signal.throwIfAborted();
-  return { bytes, mediaType: outputMediaType };
-}
-
-export function createChatGPTImageGeneration(
-  getTokens: () => OpenAIOAuthTokens | undefined,
-  options: ChatGPTImageGenerationOptions = {},
-): ImageGenerationFn {
-  return async (input, requestOptions = {}) => {
-    const timeout = AbortSignal.timeout(options.timeoutMs ?? 300_000);
-    const signal = requestOptions.signal ? AbortSignal.any([requestOptions.signal, timeout]) : timeout;
-    signal.throwIfAborted();
-    const count = input.n ?? 1;
-    if (!Number.isInteger(count) || count < 1 || count > MAX_IMAGE_GENERATION_COUNT) {
-      throw new Error(`Image generation count must be an integer from 1 to ${MAX_IMAGE_GENERATION_COUNT}.`);
-    }
-    const tokens = getTokens();
-    if (!tokens) throw new Error("ChatGPT OAuth is not configured in Diligent.");
-    const references = input.referenceImages ?? [];
-    if (references.length > 5) throw new Error("Use at most five reference images.");
-    if (references.some((image) => !image.bytes.length || image.bytes.length > MAX_IMAGE_BYTES)) {
-      throw new Error("Reference images must be non-empty and at most 32 MiB each.");
-    }
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${tokens.access_token}`,
-      "Content-Type": "application/json",
-      originator: "diligent",
-      version: CHATGPT_CODEX_CLIENT_VERSION,
-      "x-codex-image-turn-id": randomUUID(),
-    };
-    if (tokens.account_id) headers["ChatGPT-Account-ID"] = tokens.account_id;
-    if (tokens.account_info?.chatgpt_account_is_fedramp) headers["X-OpenAI-Fedramp"] = "true";
-    const response = await fetch(`${IMAGE_BASE_URL}/${references.length ? "edits" : "generations"}`, {
-      method: "POST",
-      headers,
-      redirect: "error",
-      signal,
-      body: JSON.stringify({
-        prompt: input.prompt,
-        model: input.model,
-        background: input.background ?? "auto",
-        quality: input.quality ?? "auto",
-        size: input.size ?? "auto",
-        n: count,
-        output_format: "png",
-        ...(references.length
-          ? {
-              images: references.map((image) => ({
-                image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-              })),
-            }
-          : {}),
-      }),
-    }).catch((error: unknown) => {
-      signal.throwIfAborted();
-      throw new Error(
-        `ChatGPT image request failed: ${redact(error instanceof Error ? error.message : String(error), tokens)}`,
-      );
-    });
-    const payload: unknown = await response.json().catch(() => undefined);
-    signal.throwIfAborted();
-    if (!response.ok) throw new Error(errorMessage(payload, response.status, tokens));
-    const parsed = responseSchema.safeParse(payload);
-    if (!parsed.success) throw new Error("ChatGPT returned an invalid image-generation response.");
-    const images: ImageGenerationImage[] = [];
-    for (const image of parsed.data.data) images.push(await decodeImage(image.b64_json, signal));
-    signal.throwIfAborted();
-    return {
-      images,
-      requestedModel: input.model,
-      ...(parsed.data.model ? { model: parsed.data.model } : {}),
-      ...(parsed.data.background ? { background: parsed.data.background } : {}),
-    };
-  };
 }
