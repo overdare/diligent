@@ -35,7 +35,6 @@ import { flushSentry } from "./sentry";
 import type { StudioCatalogSnapshot, StudioPromptDescriptor, StudioToolDescriptor } from "./studio-registry";
 import { createRagToolProvider } from "./tools/rag";
 import { createStudioRpcToolProvider, type StudioRpcToolProviderOptions } from "./tools/studiorpc";
-import { createValidatorToolProvider } from "./tools/validator";
 
 const SERVER_INFO = { name: "overdare-ai-agent", version: "0.0.1" } as const;
 const logger = createLogger({ scope: "sidecar/mcp" });
@@ -80,7 +79,7 @@ export interface McpRegistries {
  * providers expose no agent-callable tools (createTools -> []), so they are omitted.
  */
 function productToolProviders(studioRpc?: StudioRpcToolProviderOptions): BundledToolProvider[] {
-  return [createStudioRpcToolProvider(studioRpc), createValidatorToolProvider(), createRagToolProvider()];
+  return [createStudioRpcToolProvider(studioRpc), createRagToolProvider()];
 }
 
 async function buildToolRegistry(

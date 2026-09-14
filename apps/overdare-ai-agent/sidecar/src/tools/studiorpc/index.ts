@@ -7,26 +7,27 @@ import {
   type PluginHookFn,
   type RuntimeToolHost,
 } from "@diligent/runtime";
+import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
+import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
-import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
+import { consumeHumanEdits, createHumanEditsTool, type HumanEditsCapture } from "./tools/human-edits-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
 import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
-import { createProceduralRunTool } from "./tools/procedural-run-tool";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
 import { createScriptDeleteTool } from "./tools/script-delete-tool";
 import { createScriptEditTool } from "./tools/script-edit-tool";
 import { createScriptGrepTool } from "./tools/script-grep-tool";
 import { createScriptReadTool } from "./tools/script-read-tool";
-import { captureBaseline, captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
+import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
 import type { Tool, ToolResult } from "./types";
@@ -45,11 +46,11 @@ interface TurnSnapshotState {
   sessionId: string | undefined;
   taken: boolean;
   /**
-   * Human-edit diff frozen at turn start, before any agent edits. The
-   * human-edits tool returns this cache so a late call cannot misattribute
-   * the agent's own edits to the human.
+   * Human edits consumed from Studio's EditLogging at turn start. Holds the
+   * frozen summary (served by the human-edits tool as the turn cache) and the
+   * deferred deletion of the consumed log files.
    */
-  humanEdits?: ToolResult;
+  humanEdits?: HumanEditsCapture;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -59,7 +60,7 @@ interface TurnSnapshotState {
 }
 
 function createHumanEditsLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
-  let pendingHumanEdits: ToolResult | undefined;
+  let pendingHumanEdits: HumanEditsCapture | undefined;
 
   return {
     id: "studiorpc-human-edits",
@@ -69,15 +70,20 @@ function createHumanEditsLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
     beforeTurn() {
       const humanEdits = pendingHumanEdits;
       pendingHumanEdits = undefined;
-      if (humanEdits?.metadata?.humanEditsDetected !== true) return;
+      if (!humanEdits) return;
+      // The summary is now part of the turn (injected below or empty), so the
+      // consumed log files can be dropped. If this never runs, the rotated
+      // files are re-read next turn — a duplicate report, never a loss.
+      humanEdits.finalize();
+      if (humanEdits.result.metadata?.humanEditsDetected !== true) return;
       return [
         createPresentableContextInjection({
           source: "studiorpc-human-edits",
-          content: humanEdits.output,
+          content: humanEdits.result.output,
           presentation: {
             kind: "human-edits",
             title: "Human edits detected",
-            content: humanEdits.output,
+            content: humanEdits.result.output,
           },
         }),
       ];
@@ -94,27 +100,11 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
   // snapshot and never shadow the real baseline. `taken` enforces once-per-turn.
   const turnState: TurnSnapshotState = { sessionId: undefined, taken: false };
 
-  // Save the editor state to file at turn boundaries, then capture the
-  // agent-done baseline so the next turn can diff out human edits.
-  const saveLevel: PluginHookFn = async (input: HookInput) => {
-    await callRpc("level.save.file", {});
-    try {
-      captureBaseline(input.cwd);
-    } catch {
-      // not a Studio project / save not flushed — human-edits tool reports "no baseline"
-      // ponytail: stale-baseline window if save RPC fails at Stop; fix when Studio emits real edit events
-    }
-    return { blocked: false };
-  };
-  saveLevel.mode = "sync";
-
-  // Start of each user request: save the level and arm a fresh snapshot for the
-  // upcoming turn. The actual capture happens lazily on the first edit tool.
-  // The save flushes the human's Studio edits to file, so this is the one
-  // moment the file holds human edits but no agent edits — freeze the
-  // human-edit diff here.
+  // Start of each user request: consume Studio's edit log and arm a fresh
+  // snapshot for the upcoming turn. The actual capture happens lazily on the
+  // first edit tool. Studio logs only human edits (never the agent's), and
+  // saves the level itself on Send, so no turn-boundary save RPC is needed.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
-    await callRpc("level.save.file", {});
     turnState.sessionId = input.session_id;
     turnState.taken = false;
     // Store generously (2000 chars); display sites truncate to 120. Keeping the
@@ -122,7 +112,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.humanEdits = computeHumanEdits(input.cwd);
+    turnState.humanEdits = consumeHumanEdits(input.cwd);
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -134,13 +124,64 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     createTools: async ({ cwd, host }) =>
       createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
     onUserPromptSubmit: beginTurn,
-    onStop: saveLevel,
     createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createHumanEditsLoopHook(turnState)] : []),
   };
 }
 
 function toToolName(method: string): string {
   return `studiorpc_${method.replace(/\./g, "_")}`;
+}
+
+const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** The script a `script.edit` call rewrote, from the metadata both the v1 and v2 paths return. */
+export function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
+  const guid = result.metadata?.targetGuid;
+  if (typeof guid !== "string" || !guid) return [];
+  // script_edit also edits Source that is not Lua. Skip only what the result names as a
+  // non-Lua class: an unnamed class still gets validated, so a path that forgets to report
+  // one shows up as noise rather than as validation quietly going away.
+  const cls = result.metadata?.class;
+  if (typeof cls === "string" && !SCRIPT_CLASSES.has(cls)) return [];
+  return [guid];
+}
+
+/** The script a `script.add` call created, from the metadata both the v1 and v2 paths return. */
+function scriptAddTargets(_args: unknown, result: ToolResult): string[] {
+  const guid = result.metadata?.guid;
+  return typeof guid === "string" && guid ? [guid] : [];
+}
+
+/**
+ * The scripts an `instance.upsert` batch wrote Lua into. Added instances carry their
+ * class in the result, but an update item does not — it is just a guid and a property
+ * bag — so an update counts only when it actually set `Source`, which is the same
+ * condition under which validating means anything.
+ */
+function instanceUpsertTargets(args: unknown, result: ToolResult): string[] {
+  const targets = new Set<string>();
+  const added = result.metadata?.added;
+  if (Array.isArray(added)) {
+    for (const entry of added) {
+      if (!isRecord(entry)) continue;
+      if (typeof entry.class === "string" && SCRIPT_CLASSES.has(entry.class) && typeof entry.guid === "string") {
+        targets.add(entry.guid);
+      }
+    }
+  }
+  const items = isRecord(args) ? args.items : undefined;
+  if (Array.isArray(items)) {
+    for (const item of items) {
+      if (!isRecord(item) || typeof item.guid !== "string") continue;
+      const properties = item.properties;
+      if (isRecord(properties) && typeof properties.Source === "string") targets.add(item.guid);
+    }
+  }
+  return [...targets];
 }
 
 function withApproval(ctx: CoreToolContext, host?: RuntimeToolHost): StudioRpcToolContext {
@@ -209,19 +250,51 @@ export async function createStudioRpcTools(ctx: {
       return warning ? { ...result, output: `${warning}\n${result.output}` } : result;
     },
   });
+  // Wrap a tool that writes Lua so the scripts it touched are validated as part
+  // of the same call. The system prompt already asks the agent to validate after
+  // editing, but a prompt is skippable — appending Studio's report to the tool's
+  // own result puts the diagnostics where the agent has to read them.
+  const withLuaValidate = (tool: Tool, targetsOf: (args: unknown, result: ToolResult) => string[]): Tool => ({
+    ...tool,
+    execute: async (args, toolCtx) => {
+      const result = await tool.execute(args, toolCtx);
+      if (result.metadata?.error === true) return result; // failed or rejected — nothing was written
+      const targetGuids = targetsOf(args, result);
+      if (targetGuids.length === 0) return result;
+      try {
+        const reply = await withSignal(callRpc, toolCtx.signal)(
+          luaValidate.method,
+          luaValidate.normalizeArgs({ targetGuids }),
+          { timeoutMs: luaValidate.timeoutMs },
+        );
+        const report = luaValidate.postProcess(reply);
+        return typeof report === "string" ? { ...result, output: `${result.output}\n\n${report}` } : result;
+      } catch (error) {
+        // The edit succeeded; a validation failure must not be reported as if it
+        // had not. Say the check was skipped and leave the result standing.
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ...result, output: `${result.output}\n\n[lua.validate skipped: ${reason}]` };
+      }
+    },
+  });
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
-    wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
-    wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
+    wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
+    wrapTool(
+      withSnapshot(
+        withLuaValidate(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges), instanceUpsertTargets),
+      ),
+      ctx.host,
+    ),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
     wrapTool(createScriptGrepTool(ctx.cwd), ctx.host),
-    wrapTool(withSnapshot(createScriptAddTool(ctx.cwd, writeLock)), ctx.host),
+    wrapTool(withSnapshot(withLuaValidate(createScriptAddTool(ctx.cwd, writeLock), scriptAddTargets)), ctx.host),
     wrapTool(withSnapshot(createScriptDeleteTool(ctx.cwd, writeLock)), ctx.host),
-    wrapTool(withSnapshot(createScriptEditTool(ctx.cwd, writeLock)), ctx.host),
+    wrapTool(withSnapshot(withLuaValidate(createScriptEditTool(ctx.cwd, writeLock), scriptEditTargets)), ctx.host),
     wrapTool(withSnapshot(createAssetDrawerImportBulkTool(callRpc, writeLock)), ctx.host),
     ...createCollisionProfileTools(ctx.cwd, writeLock, applyLevelChanges).map((tool) =>
       wrapTool(isCollisionEdit(tool.name) ? withSnapshot(tool) : tool, ctx.host),
@@ -230,7 +303,7 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createHumanEditsTool(ctx.cwd, () => ctx.turnState?.humanEdits),
+      createHumanEditsTool(ctx.cwd, () => ctx.turnState?.humanEdits?.result),
       ctx.host,
     ),
     createHubWorldLookupTool(),
@@ -255,18 +328,20 @@ export async function createStudioRpcTools(ctx: {
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
         const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
 
-        const approval = await bundledToolCtx.approve({
-          permission: "execute",
-          toolName,
-          description: `Studio RPC: ${rpcMethod}`,
-          details: { method: rpcMethod, params: args },
-        });
+        if (!mod.readOnly) {
+          const approval = await bundledToolCtx.approve({
+            permission: "execute",
+            toolName,
+            description: `Studio RPC: ${rpcMethod}`,
+            details: { method: rpcMethod, params: args },
+          });
 
-        if (approval === "reject") {
-          return {
-            output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
-            metadata: { error: true, method: rpcMethod },
-          };
+          if (approval === "reject") {
+            return {
+              output: warning ? `${warning}\n[Rejected by user]` : "[Rejected by user]",
+              metadata: { error: true, method: rpcMethod },
+            };
+          }
         }
 
         const isMutating = mutatingMethods.has(method);

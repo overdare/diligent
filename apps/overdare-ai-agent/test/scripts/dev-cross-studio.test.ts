@@ -104,12 +104,14 @@ describe("dev-cross-studio launcher", () => {
     const calls = readFileSync(fixture.callLog, "utf8").split("\n");
     expect(calls.filter((line) => line.startsWith("bun "))).toHaveLength(2);
     const listenerQueries = calls.filter((line) => line.startsWith("lsof "));
-    expect(listenerQueries).toEqual([
-      "lsof -nP -t -iTCP:7433 -sTCP:LISTEN",
-      "lsof -nP -t -iTCP:7433 -sTCP:LISTEN",
-      "lsof -nP -t -iTCP:5174 -sTCP:LISTEN",
-      "lsof -nP -t -iTCP:5174 -sTCP:LISTEN",
-    ]);
+    expect(listenerQueries).toHaveLength(4);
+    for (const query of listenerQueries) {
+      const args = query.split(" ").slice(1);
+      expect(args).toContain("-b");
+      expect(args).toContain("-w");
+      expect(args).toContain("-sTCP:LISTEN");
+      expect(args.some((arg) => arg.startsWith("-iTCP:"))).toBe(true);
+    }
   });
 
   test("loads configured Studio file mappings and exports them to the backend", () => {

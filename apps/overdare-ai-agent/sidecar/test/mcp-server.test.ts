@@ -2,19 +2,35 @@
 // exposed as MCP tools, and bootstrap agents exposed as MCP prompts, via an in-memory MCP client.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveExperimentStates } from "@diligent/runtime";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { OVERDARE_EXPERIMENTS } from "../src/experiments";
+import { StudioRpcError } from "../src/tools/studiorpc/rpc";
 
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
+const nativeCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
+  StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
-  call: (method: string) => {
+  call: (method: string, params?: Record<string, unknown>) => {
+    if (
+      ["proceduralmodel.api", "proceduralmodel.validate", "proceduralmodel.set", "instance.create"].includes(method)
+    ) {
+      nativeCalls.push({ method, params: structuredClone(params) });
+      if (method === "proceduralmodel.api")
+        return { success: true, template: "template", lookup: {}, presets: ["Plank"] };
+      if (method === "proceduralmodel.validate") return { ok: true, findings: [] };
+      if (method === "instance.create") return { ActorGuids: ["RPC-MODEL"] };
+      return { success: true, run: { success: true, parts: [{ name: "body" }] } };
+    }
     if (method === "level.browse") return levelBrowseMock();
     throw new Error(`Unexpected RPC method in test: ${method}`);
   },
@@ -40,14 +56,6 @@ async function makeBootstrapDir(): Promise<string> {
     "utf-8",
   );
 
-  const proceduralSkillDir = join(dir, "skills", "procedural-builder");
-  await mkdir(proceduralSkillDir, { recursive: true });
-  await writeFile(
-    join(proceduralSkillDir, "SKILL.md"),
-    "---\nname: procedural-builder\ndescription: Procedural preview\n---\nPROCEDURAL SKILL BODY",
-    "utf-8",
-  );
-
   // A skill that is not usable over MCP — load_skill must exclude it (see MCP_EXCLUDED_SKILLS).
   const excludedSkillDir = join(dir, "skills", "record-project-memory");
   await mkdir(excludedSkillDir, { recursive: true });
@@ -62,14 +70,6 @@ async function makeBootstrapDir(): Promise<string> {
   await writeFile(
     join(agentDir, "AGENT.md"),
     "---\nname: test-agent\ndescription: A test agent\nmodel_class: lite\n---\nAGENT BODY CONTENT",
-    "utf-8",
-  );
-
-  const proceduralAgentDir = join(dir, "agents", "procedural-builder");
-  await mkdir(proceduralAgentDir, { recursive: true });
-  await writeFile(
-    join(proceduralAgentDir, "AGENT.md"),
-    "---\nname: procedural-builder\ndescription: Procedural builder\n---\nPROCEDURAL AGENT BODY",
     "utf-8",
   );
 
@@ -114,38 +114,124 @@ describe("OVERDARE MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_level_browse");
-    expect(names).toContain("validatelua");
+    expect(names).toContain("studiorpc_rig_builder_insert");
+    // Luau validation runs inside the script-writing tools, so it is not a tool of its own.
+    expect(names).not.toContain("studiorpc_lua_validate");
     expect(names).toContain("overdaresearch");
     expect(names).toContain("overdaresearch_deep");
     const browse = tools.find((tool) => tool.name === "studiorpc_level_browse");
     expect(browse?.inputSchema).toBeDefined();
     expect(browse?.inputSchema).not.toHaveProperty("$schema");
+    const rigBuilderInsert = tools.find((tool) => tool.name === "studiorpc_rig_builder_insert");
+    expect(rigBuilderInsert?.inputSchema).toMatchObject({
+      type: "object",
+      properties: {
+        ParentActorGuid: { type: "string" },
+        Position: {
+          type: "object",
+          required: ["x", "y", "z"],
+        },
+      },
+    });
     await client.close();
   });
 
-  test("applies the same disabled experiment gate to procedural tool, skill, and agent", async () => {
-    const bootstrapDir = await makeBootstrapDir();
+  test("native geometry tools and guidance are active while the old builder stays deprecated", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
-      bootstrapDir,
-      systemPromptPath: globalSystemPromptPath(bootstrapDir),
-      experiments: [
-        {
-          id: "procedural",
-          title: "Procedural generation",
-          description: "Procedural preview",
-          defaultEnabled: false,
-          enabled: false,
-          toolNames: ["studiorpc_procedural_run"],
-          skillNames: ["procedural-builder"],
-          agentNames: ["procedural-builder"],
-        },
-      ],
+      bootstrapDir: join(import.meta.dir, "../../bootstrap"),
+      experiments: resolveExperimentStates(OVERDARE_EXPERIMENTS, { procedural: true }),
     });
+    expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
+    expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    const loadSkill = registries.tools.get("load_skill");
-    expect(loadSkill?.description).not.toContain("procedural-builder");
-    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_")).sort()).toEqual(
+      ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
+    );
+    expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
+    expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
+    for (const name of ["procedural-builder", "geometry-recipe"]) {
+      const prompt = registries.prompts.get(`agent-${name}`)!;
+      if (name === "geometry-recipe") {
+        expect(prompt.description).not.toContain("Deprecated");
+      } else {
+        expect(prompt.description).toContain("Deprecated");
+      }
+      const body = await prompt.load();
+      expect(body).toContain("ProceduralModel");
+      if (name === "geometry-recipe") {
+        expect(body).toContain("studiorpc_execute_luau");
+        expect(body).toContain("AutoRebuild");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
+      } else {
+        expect(body).not.toContain("studiorpc_procedural_run");
+        expect(body).not.toContain("studiorpc_proceduralmodel_");
+      }
+      const skill = await registries.tools.get("load_skill")!.execute(
+        { name },
+        {
+          toolCallId: "deprecated-guide",
+          signal: new AbortController().signal,
+          abort() {},
+        },
+      );
+      if (name === "geometry-recipe") {
+        expect(skill.output).not.toContain("# Deprecated");
+        expect(skill.output).toContain("on_generate");
+      } else {
+        expect(skill.output).toContain("Deprecated");
+      }
+      if (name !== "geometry-recipe") expect(skill.output).toContain("studiorpc_execute_luau");
+    }
+  });
+
+  test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {
+    const client = await connectClient(await makeBootstrapDir());
+    const directory = await mkdtemp(join(tmpdir(), "native-rpc-mcp-"));
+    const sourcePath = join(directory, "recipe.py");
+    const source = "def on_generate(model, size, attributes):\n    pass";
+    await writeFile(sourcePath, `\uFEFF${source}`, "utf8");
+    nativeCalls.length = 0;
+    try {
+      const api = await client.callTool({ name: "studiorpc_proceduralmodel_api", arguments: {} });
+      expect(api.isError).not.toBe(true);
+      const validation = await client.callTool({
+        name: "studiorpc_proceduralmodel_validate",
+        arguments: { sourcePath },
+      });
+      expect(validation.isError).not.toBe(true);
+      const baked = await client.callTool({
+        name: "studiorpc_proceduralmodel_set",
+        arguments: {
+          name: "Probe",
+          parentGuid: "WORKSPACE_GUID",
+          sourcePath,
+          rebuild: true,
+        },
+      });
+      expect(baked.isError).not.toBe(true);
+      expect(nativeCalls).toEqual([
+        { method: "proceduralmodel.api", params: {} },
+        { method: "proceduralmodel.validate", params: { code: source } },
+        {
+          method: "instance.create",
+          params: {
+            ParentActorGuid: "WORKSPACE_GUID",
+            Instances: [{ InstanceType: "ProceduralModel", Name: "Probe" }],
+          },
+        },
+        { method: "proceduralmodel.set", params: { guid: "RPC-MODEL", source, rebuild: true } },
+      ]);
+      const content = baked.content as Array<{ type: string; text: string }>;
+      expect(JSON.parse(content[0].text)).toMatchObject({
+        guid: "RPC-MODEL",
+        created: true,
+        run: { success: true, parts: [{ name: "body" }] },
+      });
+    } finally {
+      await client.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test("calls a studio tool and returns its output", async () => {

@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import type { Tool, ToolContext, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../sidecar/src/tools/studiorpc";
-import { createValidatorToolProvider } from "../../sidecar/src/tools/validator";
 
 type CliBundledToolProvider = Pick<BundledToolProvider, "id" | "createTools">;
 
@@ -29,7 +28,7 @@ export interface ParsedCliArgs {
   yes: boolean;
 }
 
-const bundledToolProviders: CliBundledToolProvider[] = [createStudioRpcToolProvider(), createValidatorToolProvider()];
+const bundledToolProviders: CliBundledToolProvider[] = [createStudioRpcToolProvider()];
 
 function bundledProviderSource(id: string): string {
   return id
@@ -101,7 +100,6 @@ Usage:
 Examples:
   overdare-tools list
   overdare-tools inspect studiorpc_level_browse
-  overdare-tools run validatelua --args '{"source":"print(1)"}'
   overdare-tools run studiorpc_level_browse --args '{}' --json
 `);
 }

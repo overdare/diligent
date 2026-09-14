@@ -31,7 +31,6 @@ export interface AddedInstanceMetadata {
 }
 
 export interface InstanceDocumentWriteOptions {
-  mobilityPolicy?: "ignore-non-top-level" | "preserve-for-normalization";
   mobilityInfo?: string[];
 }
 
@@ -111,8 +110,7 @@ function syncDescendantMobility(node: OvdrjmNode, mobility: MobilityValue): void
 
 /**
  * Applies the Mobility policy for one property write. Regular upserts ignore a
- * Mobility value outside Workspace's direct children. Procedural JSON apply
- * preserves it until the completed hierarchy is normalized.
+ * Mobility value outside Workspace's direct children.
  */
 function applyMobilityWritePolicy(
   root: OvdrjmNode,
@@ -121,7 +119,7 @@ function applyMobilityWritePolicy(
   options: InstanceDocumentWriteOptions,
   isTopLevel = locateWorkspaceObject(root, guid)?.isTopLevel === true,
 ): Record<string, unknown> {
-  if (!("Mobility" in properties) || options.mobilityPolicy === "preserve-for-normalization") return properties;
+  if (!("Mobility" in properties)) return properties;
   if (isTopLevel) return properties;
   const filtered = { ...properties };
   delete filtered.Mobility;
