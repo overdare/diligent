@@ -25,7 +25,7 @@ the tool. The shared `gui-builder` skill checks tool availability before generat
 and does not tell the model to switch providers or fabricate a mockup. Previously loaded conversation history is
 not rewritten when switching providers, but the current tool catalog remains authoritative.
 
-The result includes ordered absolute `files` paths, per-image `images` entries, the selected `provider`, its authentication
+The result always includes ordered `images` entries with absolute `file` paths and media types, the selected `provider`, its authentication
 `source` (`chatgpt-oauth`), and image previews. `requestedModel` and `requestedBackground`
 record the request. `model` and `background` are included only when reported by the backend;
 they are not inferred from the prompt, filename, or HTTP success.
@@ -38,11 +38,10 @@ A provider failure is returned to the caller without automatically retrying
 with another provider.
 
 `n` is forwarded once to the generation or edit endpoint, with one shared prompt and references.
-It does not fan out into separate calls. `requestedCount`, `returnedCount`, and `countStatus`
-(`matched`, `shortfall`, or `excess`) describe the actual response. Every returned image is kept in
-response order, including extras. A single returned image also keeps the existing top-level `file`
-and `transparency` fields. A shortfall is a visible warning, not an instruction to retry or fill in
-missing images. The tool never makes supplementary requests for a count mismatch.
+It does not fan out into separate calls. `requestedCount` records the request; `images.length`
+is the actual returned count. Every returned image is kept in response order, including extras.
+One returned image uses the same array contract as multiple images. Compare the request with
+the array length and report any difference; the tool never retries or tops up a count mismatch.
 
 On 2026-09-11, a direct ChatGPT OAuth probe with `n: 2` returned HTTP 200 with one valid PNG and no
 reported model. The input supports multiple-image requests, but this endpoint's response count is
@@ -55,7 +54,7 @@ not authorize a retry or fallback. Code-drawn images (PIL, SVG, or canvas), stoc
 providers still require explicit user approval. This is model-facing guidance; the tool does
 not retry internally or block general-purpose file or shell tools.
 
-For Studio workflows, pass each selected path from `files` (or the single-image `file`) directly to
+For Studio workflows, pass each selected `images[i].file` directly to
 `studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
 
