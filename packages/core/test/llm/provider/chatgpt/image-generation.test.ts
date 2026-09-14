@@ -56,12 +56,12 @@ test("posts explicit model and transparency through OAuth without claiming an un
   expect(JSON.stringify(result)).not.toContain("test-token");
 });
 
-test("forwards n to the edits endpoint and preserves every returned image in order", async () => {
+test("requests one image from the edits endpoint and preserves every returned image in order", async () => {
   const secondPng = Buffer.concat([png, Buffer.from("second")]);
   mockFetch(async (url, init) => {
     expect(url.endsWith("/images/edits")).toBe(true);
     expect(JSON.parse(String(init.body))).toMatchObject({
-      n: 2,
+      n: 1,
       images: [{ image_url: `data:image/png;base64,${png.toString("base64")}` }],
     });
     return Response.json({
@@ -73,7 +73,6 @@ test("forwards n to the edits endpoint and preserves every returned image in ord
   const result = await generate({
     prompt: "Change the glyph",
     model: "requested-model",
-    n: 2,
     referenceImages: [{ bytes: png, mediaType: "image/png" }],
   });
   expect(result.images).toEqual([
@@ -83,25 +82,17 @@ test("forwards n to the edits endpoint and preserves every returned image in ord
   expect(result.model).toBe("reported-model");
 });
 
-test("forwards n to generations once and returns a short upstream response unchanged", async () => {
+test("always sends n=1 even when a legacy caller supplies another count", async () => {
   let calls = 0;
   mockFetch(async (_url, init) => {
     calls++;
-    expect(JSON.parse(String(init.body)).n).toBe(2);
+    expect(JSON.parse(String(init.body)).n).toBe(1);
     return Response.json({ data: [{ b64_json: png.toString("base64") }] });
   });
   const generate = createChatGPTImageGeneration(() => tokens);
-  const result = await generate({ prompt: "Two coins", model: "test", n: 2 });
+  const result = await generate({ ...{ n: 3 }, prompt: "A coin", model: "test" });
   expect(result.images).toEqual([{ bytes: png, mediaType: "image/png" }]);
   expect(calls).toBe(1);
-});
-
-test.each([0, 1.5, 11])("rejects invalid image count %p before sending a request", async (n) => {
-  const generate = createChatGPTImageGeneration(() => {
-    throw new Error("must not read auth");
-  });
-  await expect(generate({ prompt: "Coin", model: "test", n })).rejects.toThrow("count");
-  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test("redacts credentials from a provider error and never retries implicitly", async () => {
@@ -173,7 +164,7 @@ test.each([
 test("rejects the whole response when a later image is invalid", async () => {
   mockFetch(async () => Response.json({ data: [{ b64_json: png.toString("base64") }, { b64_json: "not-base64" }] }));
   const generate = createChatGPTImageGeneration(() => tokens);
-  await expect(generate({ prompt: "Coin", model: "test", n: 2 })).rejects.toThrow("invalid base64");
+  await expect(generate({ prompt: "Coin", model: "test" })).rejects.toThrow("invalid base64");
 });
 
 test.each([
