@@ -12,4 +12,11 @@ export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
     skillNames: ["procedural-builder"],
     agentNames: ["procedural-builder"],
   },
+  {
+    id: "agent-report",
+    title: "Agent failure reports",
+    description: "Let the agent file a failure report to the OVERDARE gateway when a repeat-failure signal fires.",
+    defaultEnabled: false,
+    toolNames: ["agent_report_failure"],
+  },
 ];
