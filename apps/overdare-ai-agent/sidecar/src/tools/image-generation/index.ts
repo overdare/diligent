@@ -23,10 +23,10 @@ const IMAGE_FAILURE_GUIDANCE =
 const IMAGE_TOOL_DESCRIPTION =
   "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
   "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
-  "Describe one image composition per prompt. Each call requests exactly one image. " +
+  "Describe one image composition per prompt. Use a string for one image, or an array of prompts for multiple images. " +
   "Do not combine separate requested pictures into a collage, grid, diptych, or split-screen unless the user explicitly requests that layout. " +
-  "When multiple images are requested, make one call per image in parallel in the same tool round. " +
-  "Pass the same referenceImages to every call in the set; wait for shared references to exist before starting the parallel calls. " +
+  "When multiple images are requested, submit all prompts in one generate_image call. The tool executes one n=1 HTTP request per prompt in parallel. " +
+  "The same referenceImages are shared by every request; wait for shared references to exist before calling the tool. " +
   "If no references were supplied or created, omit referenceImages from every call. Do not use an earlier result as the next call's reference unless the user requested sequential edits. " +
   "images.length is the delivered file count; requestedCount is only the request. A collage in one file counts as one image. " +
   "Inspect the previews and report any shortfall instead of claiming completion. " +
@@ -40,12 +40,9 @@ const IMAGE_TOOL_DESCRIPTION =
 const parameters = z
   .object({
     prompt: z
-      .string()
-      .trim()
-      .min(1)
-      .max(6_000)
+      .union([z.string().trim().min(1).max(6_000), z.array(z.string().trim().min(1).max(6_000)).min(1).max(10)])
       .describe(
-        "Describe exactly one image composition. For multiple images, submit separate calls in parallel with the same referenceImages. Do not enumerate multiple pictures or request a collage unless explicitly requested.",
+        "Describe exactly one image composition per string. For multiple images, provide an array of prompts in this single call; the tool runs them in parallel with the same referenceImages. Repeat a prompt for variants. Do not combine separate pictures into one prompt.",
       ),
     background: z
       .enum(["auto", "opaque", "transparent"])
@@ -95,7 +92,8 @@ function createGenerateImageTool(
       ctx.signal.throwIfAborted();
       const requestedModel = defaultModel;
       const background = args.background ?? "auto";
-      const requestedCount = 1;
+      const prompts = Array.isArray(args.prompt) ? args.prompt : [args.prompt];
+      const requestedCount = prompts.length;
       const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
@@ -122,16 +120,38 @@ function createGenerateImageTool(
         if (!generate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
         const paths = await resolveReferenceImages(cwd, args.referenceImages, signal);
         const referenceImages = await readReferenceImages(paths, signal);
-        const generated = await generate(
-          {
-            prompt: args.prompt,
-            model: requestedModel,
-            background,
-            ...(referenceImages.length ? { referenceImages } : {}),
-          },
-          { signal },
+        const results = await Promise.allSettled(
+          prompts.map((prompt) =>
+            generate(
+              { prompt, model: requestedModel, background, ...(referenceImages.length ? { referenceImages } : {}) },
+              { signal },
+            ),
+          ),
         );
         signal.throwIfAborted();
+        if (results.length === 1 && results[0].status === "rejected") throw results[0].reason;
+        const errors = results.flatMap((result, index) =>
+          result.status === "rejected"
+            ? [
+                {
+                  promptIndex: index,
+                  message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+                },
+              ]
+            : [],
+        );
+        const completed = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+        const generated = {
+          images: completed.flatMap((result) => result.images),
+          model:
+            completed.length && completed.every((result) => result.model === completed[0].model)
+              ? completed[0].model
+              : undefined,
+          background:
+            completed.length && completed.every((result) => result.background === completed[0].background)
+              ? completed[0].background
+              : undefined,
+        };
         const outputImages: NonNullable<ToolResult["outputImages"]> = [];
         for (const image of generated.images) {
           signal.throwIfAborted();
@@ -152,6 +172,12 @@ function createGenerateImageTool(
           images,
           requestedCount,
           ...(warning ? { warning } : {}),
+          ...(errors.length
+            ? {
+                errors,
+                repairGuidance: `Retry only failed prompt indexes, preserving successful files. ${IMAGE_FAILURE_GUIDANCE}`,
+              }
+            : {}),
           provider: "chatgpt",
           source: "chatgpt-oauth",
           requestedModel,
