@@ -78,6 +78,8 @@ test("a short response keeps its file and reports the actual count without retry
   expect(generate).toHaveBeenCalledTimes(1);
   expect(output.requestedCount).toBe(2);
   expect(output.images).toHaveLength(1);
+  expect(output.warning).toBe("Requested 2 images, but the server returned 1 image.");
+  expect(result.metadata?.warning).toBe(output.warning);
   expect(await readFile(output.images[0].file)).toEqual(opaque);
   expect(output.file).toBeUndefined();
   expect(result.outputImages).toHaveLength(1);
@@ -106,5 +108,6 @@ test("extra server images are preserved and reported instead of silently discard
   const output = JSON.parse((await tool.execute({ prompt: "Icon", n: 1 }, ctx)).output);
   expect(output.requestedCount).toBe(1);
   expect(output.images).toHaveLength(2);
+  expect(output.warning).toBe("Requested 1 image, but the server returned 2 images.");
   expect(generate).toHaveBeenCalledTimes(1);
 });
