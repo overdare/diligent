@@ -18,6 +18,16 @@ const IMAGE_FAILURE_GUIDANCE =
   "Do not substitute code-drawn images (PIL, SVG, or canvas), stock assets, or another provider " +
   "unless the user explicitly approves an alternative.";
 
+const IMAGE_TOOL_DESCRIPTION =
+  "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
+  "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
+  "Independent requests can run in parallel after shared references exist. " +
+  "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
+  "Returns the exact absolute output file path and a preview. requestedModel records the request, while model is included only if the server reports it. " +
+  "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
+  "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
+  IMAGE_FAILURE_GUIDANCE;
+
 const parameters = z
   .object({
     prompt: z.string().trim().min(1).max(6_000).describe("Image-generation prompt for one image."),
@@ -62,15 +72,7 @@ function createGenerateImageTool(
 ): Tool<typeof parameters> {
   return {
     name: TOOL_NAME,
-    description:
-      "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
-      "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
-      "Independent requests can run in parallel after shared references exist. " +
-      "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
-      "Returns the exact absolute output file path and a preview. requestedModel records the request, while model is included only if the server reports it. " +
-      "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
-      "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
-      IMAGE_FAILURE_GUIDANCE,
+    description: IMAGE_TOOL_DESCRIPTION,
     parameters,
     supportParallel: true,
     async execute(args, ctx): Promise<ToolResult> {
