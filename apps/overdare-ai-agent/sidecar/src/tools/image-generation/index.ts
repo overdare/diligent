@@ -29,7 +29,7 @@ const IMAGE_TOOL_DESCRIPTION =
   "Use n for multiple images of the same prompt in one request. All returned images are preserved in order. " +
   "A count shortfall is reported and does not trigger extra calls; do not automatically retry or top up a shortfall. " +
   "This tool is bound to the selected ChatGPT provider and cannot switch providers. " +
-  "Returns each exact absolute output file path in files, per-image details in images, and previews. A single returned image also keeps file and transparency fields. requestedModel records the request, while model is included only if the server reports it. " +
+  "Returns an images array with each exact absolute output file path, media type, and optional transparency inspection, plus previews. requestedModel records the request, while model is included only if the server reports it. " +
   "Transparent requests include actual pixel inspection; an opaque or empty warning needs repair within the retry budget, using the preserved file as a reference. " +
   "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
   IMAGE_FAILURE_GUIDANCE;
@@ -112,7 +112,11 @@ function createGenerateImageTool(
         return { output: "[Rejected by user]", metadata: { error: true, operation: "image_generation" } };
       ctx.signal.throwIfAborted();
       const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(300_000)]);
-      const savedFiles: string[] = [];
+      const images: Array<{
+        file: string;
+        mediaType: ImageMediaType;
+        transparency?: Awaited<ReturnType<typeof inspectTransparency>>;
+      }> = [];
       try {
         if (!generate) throw new Error("Direct image generation requires Diligent's ChatGPT OAuth runtime.");
         const paths = await resolveReferenceImages(cwd, args.referenceImages, signal);
@@ -122,58 +126,33 @@ function createGenerateImageTool(
             prompt: args.prompt,
             model: requestedModel,
             background,
-            ...(args.n !== undefined ? { n: requestedCount } : {}),
+            n: requestedCount,
             ...(referenceImages.length ? { referenceImages } : {}),
           },
           { signal },
         );
         signal.throwIfAborted();
-        const images: Array<{
-          file: string;
-          mediaType: ImageMediaType;
-          transparency?: Awaited<ReturnType<typeof inspectTransparency>>;
-        }> = [];
         const outputImages: NonNullable<ToolResult["outputImages"]> = [];
         for (const image of generated.images) {
           signal.throwIfAborted();
           const transparency = background === "transparent" ? await inspectTransparency(image) : undefined;
           signal.throwIfAborted();
           const stored = await storeGeneratedImage(cwd, image, { signal });
-          savedFiles.push(stored.file);
           images.push({ file: stored.file, mediaType: stored.mediaType, ...(transparency ? { transparency } : {}) });
           outputImages.push({
             type: "image",
             source: { type: "base64", media_type: stored.mediaType, data: stored.bytes.toString("base64") },
           });
         }
-        const returnedCount = images.length;
-        const countStatus =
-          returnedCount < requestedCount ? "shortfall" : returnedCount > requestedCount ? "excess" : "matched";
-        const singleImage = returnedCount === 1 ? images[0] : undefined;
         const details = {
-          files: savedFiles,
           images,
           requestedCount,
-          returnedCount,
-          countStatus,
-          ...(singleImage
-            ? {
-                file: singleImage.file,
-                ...(singleImage.transparency ? { transparency: singleImage.transparency } : {}),
-              }
-            : {}),
-          ...(countStatus !== "matched"
-            ? {
-                warning: `Requested ${requestedCount} images, but the server returned ${returnedCount}. No additional generation requests were made. Preserve the returned files and report the count mismatch without automatically topping up.`,
-              }
-            : {}),
           provider: "chatgpt",
           source: "chatgpt-oauth",
           requestedModel,
           requestedBackground: background,
           ...(generated.model ? { model: generated.model } : {}),
           ...(generated.background ? { background: generated.background } : {}),
-          ...(images.some((image) => image.transparency?.warning) ? { guidance: IMAGE_FAILURE_GUIDANCE } : {}),
         };
         return {
           output: JSON.stringify(details, null, 2),
@@ -183,7 +162,9 @@ function createGenerateImageTool(
       } catch (error) {
         ctx.signal.throwIfAborted();
         const reason = error instanceof Error ? error.message : String(error);
-        const preserved = savedFiles.length ? `\nSaved images before failure: ${JSON.stringify(savedFiles)}` : "";
+        const preserved = images.length
+          ? `\nSaved images before failure: ${JSON.stringify(images.map((image) => image.file))}`
+          : "";
         throw new Error(`${reason}${preserved}\n\n${IMAGE_FAILURE_GUIDANCE}`, { cause: error });
       }
     },

@@ -74,7 +74,7 @@ test("independent image calls overlap in the agent loop and save to distinct fil
     try {
       const results = agent.getMessages().filter((message) => message.role === "tool_result");
       expect(results).toHaveLength(2);
-      const files = results.map((result) => JSON.parse(result.output).file);
+      const files = results.map((result) => JSON.parse(result.output).images[0].file);
       expect(new Set(files).size).toBe(2);
       for (const file of files) expect(await readFile(file, "utf8")).toBe("fixture image");
     } finally {

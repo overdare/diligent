@@ -45,10 +45,11 @@ test("n=2 uses one request, stores both images in order, and inspects each origi
   expect(generate).toHaveBeenCalledTimes(1);
   expect(generate).toHaveBeenCalledWith(expect.objectContaining({ n: 2 }), { signal: expect.any(AbortSignal) });
   expect(approve).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ n: 2 }) }));
-  expect(output).toMatchObject({ requestedCount: 2, returnedCount: 2, countStatus: "matched" });
-  expect(output.files).toHaveLength(2);
-  expect(output.files[0]).not.toBe(output.files[1]);
-  expect(await Promise.all(output.files.map((file: string) => readFile(file)))).toEqual([opaque, transparent]);
+  expect(output.requestedCount).toBe(2);
+  const files = output.images.map((image: { file: string }) => image.file);
+  expect(files).toHaveLength(2);
+  expect(files[0]).not.toBe(files[1]);
+  expect(await Promise.all(files.map((file: string) => readFile(file)))).toEqual([opaque, transparent]);
   expect(output.images.map((image: { transparency: { status: string } }) => image.transparency.status)).toEqual([
     "opaque",
     "has_transparency",
@@ -65,20 +66,23 @@ test("a short response keeps its file and reports the actual count without retry
   const result = await tool.execute(tool.parameters.parse({ prompt: "Two variants", n: 2 }), ctx);
   const output = JSON.parse(result.output);
   expect(generate).toHaveBeenCalledTimes(1);
-  expect(output).toMatchObject({ requestedCount: 2, returnedCount: 1, countStatus: "shortfall" });
-  expect(output.warning).toContain("Requested 2 images, but the server returned 1");
-  expect(output.warning).toContain("No additional generation requests");
-  expect(output.files).toEqual([output.file]);
-  expect(await readFile(output.file)).toEqual(opaque);
+  expect(output.requestedCount).toBe(2);
+  expect(output.images).toHaveLength(1);
+  expect(await readFile(output.images[0].file)).toEqual(opaque);
+  expect(output.file).toBeUndefined();
   expect(result.outputImages).toHaveLength(1);
 });
 
-test("the default keeps the single-file contract and reports one requested image", async () => {
-  const { tool, ctx } = await setup([opaque]);
+test("the default uses the same image-array contract and forwards n=1", async () => {
+  const { tool, ctx, generate } = await setup([opaque]);
   const output = JSON.parse((await tool.execute({ prompt: "An icon" }, ctx)).output);
-  expect(output).toMatchObject({ requestedCount: 1, returnedCount: 1, countStatus: "matched" });
-  expect(output.files).toEqual([output.file]);
-  expect(await readFile(output.file)).toEqual(opaque);
+  expect(output.requestedCount).toBe(1);
+  expect(output.images).toHaveLength(1);
+  expect(await readFile(output.images[0].file)).toEqual(opaque);
+  expect(generate).toHaveBeenCalledWith(expect.objectContaining({ n: 1 }), { signal: expect.any(AbortSignal) });
+  for (const field of ["file", "files", "transparency", "returnedCount", "countStatus"]) {
+    expect(output).not.toHaveProperty(field);
+  }
 });
 
 test.each([0, -1, 1.5, 11])("rejects invalid count %s at the tool boundary", async (n) => {
@@ -90,7 +94,7 @@ test.each([0, -1, 1.5, 11])("rejects invalid count %s at the tool boundary", asy
 test("extra server images are preserved and reported instead of silently discarded", async () => {
   const { tool, ctx, generate } = await setup([opaque, transparent]);
   const output = JSON.parse((await tool.execute({ prompt: "Icon", n: 1 }, ctx)).output);
-  expect(output).toMatchObject({ requestedCount: 1, returnedCount: 2, countStatus: "excess" });
-  expect(output.files).toHaveLength(2);
+  expect(output.requestedCount).toBe(1);
+  expect(output.images).toHaveLength(2);
   expect(generate).toHaveBeenCalledTimes(1);
 });

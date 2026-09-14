@@ -56,7 +56,7 @@ test("attaches project-relative reference files to generation and retains the or
   expect(approve).toHaveBeenCalledWith(
     expect.objectContaining({ details: expect.objectContaining({ referenceImages: ["mockup.png"] }) }),
   );
-  const saved = JSON.parse(result.output).file;
+  const saved = JSON.parse(result.output).images[0].file;
   expect(saved).not.toBe(file);
   expect(await readFile(saved)).toEqual(png);
   expect(await readFile(file)).toEqual(png);
