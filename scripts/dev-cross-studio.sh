@@ -151,13 +151,14 @@ fi
 free_port() {
   local port="$1"
   local pids
-  pids="$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  # Avoid blocking on remote mounts, and target only TCP listeners.
+  pids="$(lsof -b -w -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
   if [ -n "$pids" ]; then
     echo "  + killing process(es) holding port ${port}: ${pids}"
     # shellcheck disable=SC2086
     kill $pids 2>/dev/null || true
     sleep 1
-    pids="$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    pids="$(lsof -b -w -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
     # shellcheck disable=SC2086
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   fi

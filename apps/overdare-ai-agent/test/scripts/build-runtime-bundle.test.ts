@@ -3,10 +3,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { stageSidecarAssets, stageWebClient } from "../../../../scripts/build-overdare-runtime-bundle";
 
-const ROOT = resolve(import.meta.dir, "../../../..");
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -30,23 +29,18 @@ describe("OVERDARE runtime bundle assets", () => {
     expect(existsSync(join(stageDir, "dist", "client", "assets", "app-hash.js"))).toBe(true);
   });
 
-  test("stages the vendored Luau interpreter for Windows x64", () => {
+  test("stages neither the retired procedural runtime nor the retired luau-lsp assets", () => {
     const stageDir = mkdtempSync(join(tmpdir(), "overdare-runtime-assets-"));
     temporaryDirectories.push(stageDir);
 
-    stageSidecarAssets(
-      {
-        id: "windows-x64",
-        bunTarget: "bun-windows-x64",
-        ext: ".exe",
-      },
-      stageDir,
-    );
+    stageSidecarAssets(stageDir);
 
-    const stagedLuau = readFileSync(join(stageDir, "assets", "bin", "luau.exe"));
-    const vendoredLuau = readFileSync(
-      join(ROOT, "apps", "overdare-ai-agent", "sidecar", "vendor", "luau", "0.723", "win32", "luau.exe"),
-    );
-    expect(stagedLuau).toEqual(vendoredLuau);
+    // The procedural runner went with Editor Luau; luau-lsp went with Studio's lua.validate.
+    expect(existsSync(join(stageDir, "assets", "bin", "luau.exe"))).toBe(false);
+    expect(existsSync(join(stageDir, "assets", "lua", "procedural"))).toBe(false);
+    expect(existsSync(join(stageDir, "assets", "bin", "luau-lsp.exe"))).toBe(false);
+    expect(existsSync(join(stageDir, "assets", "lua", "overdare-types.d.lua"))).toBe(false);
+    // The layout itself stays — the sidecar resolves assets/bin for rg.
+    expect(existsSync(join(stageDir, "assets", "bin"))).toBe(true);
   });
 });

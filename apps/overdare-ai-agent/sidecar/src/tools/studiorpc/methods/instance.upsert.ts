@@ -1,7 +1,10 @@
 // @summary Defines batched argument schemas for instance upserts.
 import { z } from "zod";
 import { instanceClassEnum, instancePropertiesSchema, serviceClassEnum } from "./instance.params";
-import { parseInstanceCreateProperties } from "./instance-properties";
+import {
+  parseInstanceCreateProperties,
+  instancePropertiesSchema as writePropertiesSchema,
+} from "./instance-properties";
 
 const addParams = z
   .object({
@@ -43,7 +46,7 @@ export const params = z
 export const method = "instance.upsert";
 
 export const description =
-  "Upsert instances in batch. " +
+  "Upsert instances in batch. The bundled input schema supplies the compatibility class/property reference, validation, defaults, and JSON conversions. Use its class and property hints when planning Editor Luau; JSON schemas do not define Luau methods. Live schema search is supplementary and does not replace this tool's validation. " +
   "Do not mix adds and updates in a single call — use one call for all adds, another for all updates. " +
   "Start with a small number of items first, then increase up to 100 if needed. " +
   "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. " +
@@ -64,18 +67,36 @@ export function isUpdateItem(value: InstanceUpsertItemArgs): value is InstanceUp
  * Validates properties of each item against the class-specific schema for precise error messages.
  * Falls back to the raw ZodError if no class-specific issues are found.
  */
+const inputEnvelope = z
+  .object({
+    items: z
+      .array(
+        z.union([
+          z
+            .object({
+              class: instanceClassEnum,
+              parentGuid: z.string(),
+              name: z.string(),
+              properties: writePropertiesSchema.optional(),
+            })
+            .strict(),
+          z
+            .object({ guid: z.string(), name: z.string().optional(), properties: writePropertiesSchema.optional() })
+            .strict(),
+        ]),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict();
+
+/** Do not run the advertised cross-class union's defaults before class-bound parsing. */
+export function parseInput(value: unknown) {
+  return inputEnvelope.parse(value);
+}
+
 export function parseArgs(value: Record<string, unknown>): InstanceUpsertArgs {
-  const rawProperties = z.record(z.string(), z.unknown()).optional();
-  const structuralItem = z.union([
-    z
-      .object({ class: instanceClassEnum, parentGuid: z.string(), name: z.string(), properties: rawProperties })
-      .strict(),
-    z.object({ guid: z.string(), name: z.string().optional(), properties: rawProperties }).strict(),
-  ]);
-  const result = z
-    .object({ items: z.array(structuralItem).min(1).max(100) })
-    .strict()
-    .safeParse(value);
+  const result = inputEnvelope.safeParse(value);
   if (result.success) {
     return {
       items: result.data.items.map((item) => {

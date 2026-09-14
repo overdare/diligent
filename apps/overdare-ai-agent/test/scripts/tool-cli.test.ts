@@ -2,13 +2,14 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+const rpcModule = await import("../../sidecar/src/tools/studiorpc/rpc.ts");
+
 const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
-const rpc = await import("../../sidecar/src/tools/studiorpc/rpc.ts");
 mock.module("../../sidecar/src/tools/studiorpc/rpc.ts", () => ({
-  ...rpc,
+  ...rpcModule,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string) => {
     if (method === "level.browse") return levelBrowseMock();
@@ -71,7 +72,9 @@ describe("overdare tool cli", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.some((line) => line.includes("[studiorpc]"))).toBe(true);
-    expect(stdout.some((line) => line.includes("[validator]"))).toBe(true);
+    expect(stdout.join("\n")).toContain("studiorpc_execute_luau");
+    expect(stdout.some((line) => line.startsWith("studiorpc_procedural_run ["))).toBe(false);
+    expect(stdout.join("\n")).toContain("studiorpc_proceduralmodel_api");
   });
 
   test("inspect returns schema and source in json mode", async () => {
