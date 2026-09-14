@@ -14,7 +14,6 @@ import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { computeHumanEdits, createHumanEditsTool } from "./tools/human-edits-tool";
-import { createInspectUiLayoutTool } from "./tools/inspect-ui-layout-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -213,7 +212,6 @@ export async function createStudioRpcTools(ctx: {
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
-    wrapTool(createInspectUiLayoutTool(callRpc), ctx.host),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(withSnapshot(createProceduralRunTool(ctx.cwd, writeLock)), ctx.host),
