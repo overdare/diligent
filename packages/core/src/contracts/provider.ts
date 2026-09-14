@@ -9,7 +9,6 @@ export type {
   ImageGenerationResult,
   ImageMediaType,
 } from "../llm/provider/image-generation";
-export { MAX_IMAGE_GENERATION_COUNT } from "../llm/provider/image-generation";
 
 export type {
   NativeCompactFn,

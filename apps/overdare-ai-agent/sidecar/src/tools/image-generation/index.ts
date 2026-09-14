@@ -1,9 +1,5 @@
 // @summary Generates and stores images through Diligent's selected ChatGPT OAuth provider.
-import {
-  type ImageGenerationFn,
-  type ImageMediaType,
-  MAX_IMAGE_GENERATION_COUNT,
-} from "@diligent/core/provider-contract";
+import type { ImageGenerationFn, ImageMediaType } from "@diligent/core/provider-contract";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import type { BundledToolProvider, RuntimeToolHost } from "@diligent/runtime";
 import { z } from "zod";
@@ -27,10 +23,11 @@ const IMAGE_FAILURE_GUIDANCE =
 const IMAGE_TOOL_DESCRIPTION =
   "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
   "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
-  "Describe one image composition per prompt. For different subjects or compositions, make separate calls, each with n=1. " +
+  "Describe one image composition per prompt. Each call requests exactly one image. " +
   "Do not combine separate requested pictures into a collage, grid, diptych, or split-screen unless the user explicitly requests that layout. " +
-  "Independent requests can run in parallel after shared references exist. " +
-  "Use n for multiple independent variants of the same single-image prompt, without enumerating several pictures in the prompt. All returned images are preserved in order. " +
+  "When multiple images are requested, make one call per image in parallel in the same tool round. " +
+  "Pass the same referenceImages to every call in the set; wait for shared references to exist before starting the parallel calls. " +
+  "If no references were supplied or created, omit referenceImages from every call. Do not use an earlier result as the next call's reference unless the user requested sequential edits. " +
   "images.length is the delivered file count; requestedCount is only the request. A collage in one file counts as one image. " +
   "Inspect the previews and report any shortfall instead of claiming completion. " +
   "A count mismatch is returned as an explicit warning and does not trigger extra calls; do not automatically retry or top up a shortfall. " +
@@ -48,16 +45,7 @@ const parameters = z
       .min(1)
       .max(6_000)
       .describe(
-        "Describe one image composition, shared by all n variants. Use separate calls for different pictures; do not enumerate Image 1 / Image 2 or request a collage unless explicitly requested.",
-      ),
-    n: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_IMAGE_GENERATION_COUNT)
-      .optional()
-      .describe(
-        "Number of independent variants of the same single-image prompt to request in one HTTP call (default 1). Use separate n=1 calls for different pictures. The server may return fewer; Diligent reports the actual count without extra requests.",
+        "Describe exactly one image composition. For multiple images, submit separate calls in parallel with the same referenceImages. Do not enumerate multiple pictures or request a collage unless explicitly requested.",
       ),
     background: z
       .enum(["auto", "opaque", "transparent"])
@@ -107,7 +95,7 @@ function createGenerateImageTool(
       ctx.signal.throwIfAborted();
       const requestedModel = defaultModel;
       const background = args.background ?? "auto";
-      const requestedCount = args.n ?? 1;
+      const requestedCount = 1;
       const approval = await host?.approve?.({
         permission: "execute",
         toolName: TOOL_NAME,
@@ -139,7 +127,6 @@ function createGenerateImageTool(
             prompt: args.prompt,
             model: requestedModel,
             background,
-            n: requestedCount,
             ...(referenceImages.length ? { referenceImages } : {}),
           },
           { signal },

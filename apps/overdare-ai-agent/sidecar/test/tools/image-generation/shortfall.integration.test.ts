@@ -1,4 +1,4 @@
-// @summary A short image response reaches the next agent turn without failing or generating extra images.
+// @summary A single image response reaches the next agent turn without failing or generating extra images.
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import type { AssistantMessage } from "@diligent/core/message-contract";
 import type { Model, ProviderEvent, ProviderResult, StreamFunction } from "@diligent/core/provider-contract";
 import { createImageGenerationToolProvider } from "../../../src/tools/image-generation";
 
-test("n=2 returning one image continues the agent loop with the preserved preview and count", async () => {
+test("one returned image continues the agent loop with the preserved preview and count", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "image-shortfall-"));
   const bytes = Buffer.from("image fixture");
   let generations = 0;
@@ -35,7 +35,7 @@ test("n=2 returning one image continues the agent loop with the preserved previe
       expect(result).toBeDefined();
       if (!result || result.role !== "tool_result") throw new Error("Expected tool result");
       expect(result.isError).toBe(false);
-      expect(JSON.parse(result.output)).toMatchObject({ requestedCount: 2, images: [expect.any(Object)] });
+      expect(JSON.parse(result.output)).toMatchObject({ requestedCount: 1, images: [expect.any(Object)] });
       expect(result.outputImages).toHaveLength(1);
     }
     const message: AssistantMessage = {
@@ -45,8 +45,8 @@ test("n=2 returning one image continues the agent loop with the preserved previe
       usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
       stopReason: secondRound ? "end_turn" : "tool_use",
       content: secondRound
-        ? [{ type: "text", text: "Only one image was returned." }]
-        : [{ type: "tool_call", id: "image", name: "generate_image", input: { prompt: "A lake", n: 2 } }],
+        ? [{ type: "text", text: "One image was returned." }]
+        : [{ type: "tool_call", id: "image", name: "generate_image", input: { prompt: "A lake" } }],
     };
     const stream = new EventStream<ProviderEvent, ProviderResult>(
       (event) => event.type === "done",
@@ -61,7 +61,7 @@ test("n=2 returning one image continues the agent loop with the preserved previe
   const agent = new Agent(model, [], tools, { llmMsgStreamFn: streamFunction });
   agent.subscribe((event) => events.push(event.type));
   try {
-    const messages = await agent.prompt({ role: "user", content: "Two lake photos", timestamp: Date.now() });
+    const messages = await agent.prompt({ role: "user", content: "A lake photo", timestamp: Date.now() });
     const result = messages.find((message) => message.role === "tool_result");
     if (!result || result.role !== "tool_result") throw new Error("Expected saved result");
     expect(await readFile(JSON.parse(result.output).images[0].file)).toEqual(bytes);
