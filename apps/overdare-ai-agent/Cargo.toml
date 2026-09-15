@@ -2,6 +2,7 @@
 name = "overdare-ai-agent"
 version = "0.0.1"
 edition = "2021"
+rust-version = "1.89"
 
 [[bin]]
 name = "overdare-ai-agent"
@@ -15,9 +16,15 @@ path = "src/bin/overdare-mcp.rs"
 name = "mcp-router-binary"
 path = "test/mcp_router_binary.rs"
 
+[[test]]
+name = "skill-manifest"
+path = "test/skill_manifest.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml_ng = "0.10"
+semver = "1"
 # io-std + sync are for the MCP router (src/mcp_router.rs): stdio transport and the single-writer
 # stdout channel that keeps notifications from interleaving with responses.
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "io-std", "sync"] }
