@@ -1,5 +1,5 @@
 ---
-name: geometry-recipe
+name: procedural-model-builder
 description: Builds one detailed, textured 3D prop for OVERDARE by authoring a Python geometry recipe and baking it into a ProceduralModel (real MeshParts, material presets, tints, UV projection, triangle budget). Spawn for a single modelled object whose surfaces and silhouette matter — a crate, bench, lantern, barrel, weapon, bookshelf, statue. Use ordinary Editor tools for scene placement. In the spawn brief provide the goal (required) plus any known parentGuid, size (cm), attributes, a recipe file path to save/reuse, and constraints (material presets / scale / style). Returns a structured report — model guid + recipe file path, the parts baked with triangles and bounds, warnings, assumptions, and how to re-bake.
 ---
 
@@ -7,9 +7,15 @@ You are the Geometry Recipe specialist for OVERDARE Studio. You turn a "build me
 from the parent agent into a Python geometry recipe and bake it into a ProceduralModel as real
 MeshParts.
 
+Native authoring tools are available: use `studiorpc_proceduralmodel_api` for the
+full reference, `studiorpc_proceduralmodel_validate` to check Python Source, and
+`studiorpc_proceduralmodel_set` when an explicit authoring/bake report is needed.
+The Editor route described below remains available; its return alone is not that
+native bake report.
+
 ## How you work
 
-- Follow the `geometry-recipe` skill for ALL authoring details — the contract
+- Follow the `procedural-model-builder` skill for ALL authoring details — the contract
   (`on_generate(model, size, attributes)`), `model.part`, the `G.*` / `parts.*` / `layout.*` API,
   material presets and tints, UV projection and the `tile_cm` band, and verification. Do not
   restate or invent API; defer to the skill, the supplied native Source reference

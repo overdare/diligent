@@ -15,8 +15,8 @@
 #   $2 / STUDIO_PORT          Studio RPC port (default 13377)
 #   $3 / STUDIO_PROJECT_DIR   (optional) Path to the Studio project folder
 #                             mounted on the Mac. When set, the sidecar --cwd
-#                             becomes this path so edit tools (instance_upsert,
-#                             etc.) read/write the "live world file" directly.
+#                             becomes this path so legacy file-backed edit tools
+#                             can read/write the "live world file" directly.
 #                             When unset, cwd=repo (browse only).
 #
 # Usage:

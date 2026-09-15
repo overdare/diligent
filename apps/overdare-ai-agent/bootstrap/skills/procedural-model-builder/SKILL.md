@@ -1,5 +1,5 @@
 ---
-name: geometry-recipe
+name: procedural-model-builder
 description: Author a solid, textured 3D prop for OVERDARE by writing a Python geometry recipe that bakes real MeshParts with material presets and tints. Use for a single detailed asset — a crate, bench, lantern, barrel, weapon, bookshelf — that reads as one modelled object. Use Editor Luau directly for ordinary scene placement.
 ---
 
@@ -11,6 +11,12 @@ budget. This is the system for **one prop made well**: a crate, a bench, a lante
 bookshelf. Ordinary scene placement can use Editor Luau directly. Reach for this one when the deliverable
 is a single object whose surfaces and silhouette matter.
 
+Native authoring tools are available: use `studiorpc_proceduralmodel_api` for the
+full reference, `studiorpc_proceduralmodel_validate` to check Python Source, and
+`studiorpc_proceduralmodel_set` when an explicit authoring/bake report is needed.
+The Editor route described below remains available; its return alone is not that
+native bake report.
+
 ## Read the authoring reference first
 
 Use the complete native Source reference in the system prompt and a working recipe
@@ -18,6 +24,18 @@ when available. Query `studiorpc_instance_schema_search` for class/property and
 material hints; it does not describe Python geometry function signatures. Consult
 applicable native API documentation for additional `G.*`, `parts.*` and `layout.*`
 functions rather than guessing an API from memory.
+
+Start from a complete, working template or the model's existing working recipe.
+Copy the template and change its marked EDIT sections when present; otherwise
+limit changes to the requested generation rules, parameters and materials. Keep
+its validated imports, entry point, error checks and mesh cleanup unless the
+change requires modifying them. Do not rebuild a working recipe from scratch.
+
+The original material reference uses `Rust` / `RustySteel` for iron-like weathered
+surfaces and `Plank` for sawn timber. These are selection examples, not defaults
+for every surface. Use the current material hints and native reference to confirm
+supported names; do not invent `Iron` or `Steel` from an appearance description,
+or copy the template's Plank onto unrelated surfaces without choosing a material.
 
 Nothing is pre-injected into a recipe; include the imports it needs (`import unreal`,
 `G = unreal.OvdrGeometry`, `import ovdr_parts as parts`, or `from ovdr_brickcolor import bc`).

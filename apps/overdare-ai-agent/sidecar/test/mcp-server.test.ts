@@ -15,12 +15,25 @@ const levelBrowseMock = mock(async () => [
   { guid: "WORKSPACE_GUID", name: "Workspace", class: "Folder", children: [] },
 ]);
 
+const schemaSearchMock = mock(async (_params?: Record<string, unknown>) => ({
+  schemaVersion: "unicode-build",
+  classes: [
+    {
+      class: "FutureWidget",
+      description: "\uD55C\uAE00 \uC124\uBA85",
+      creatable: true,
+      service: false,
+      properties: [{ name: "Material", description: "\uC7AC\uC9C8" }],
+    },
+  ],
+}));
 const nativeCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
 
 mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   StudioRpcError,
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string, params?: Record<string, unknown>) => {
+    if (method === "instance.schema.search") return schemaSearchMock(params);
     if (
       ["proceduralmodel.api", "proceduralmodel.validate", "proceduralmodel.set", "instance.create"].includes(method)
     ) {
@@ -136,7 +149,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry tools and guidance are active while the old builder stays deprecated", async () => {
+  test("native model builder keeps native RPCs without the retired local runner", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -144,44 +157,52 @@ describe("OVERDARE MCP server", () => {
     });
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
+    expect(registries.tools.has("studiorpc_instance_upsert")).toBe(false);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_")).sort()).toEqual(
-      ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
+    for (const name of ["api", "validate", "set"])
+      expect(registries.tools.has(`studiorpc_proceduralmodel_${name}`)).toBe(true);
+    expect(registries.tools.get("load_skill")?.description).not.toContain("procedural-builder");
+    expect(registries.prompts.has("agent-procedural-builder")).toBe(false);
+    expect(registries.prompts.has("agent-geometry-recipe")).toBe(false);
+    expect(registries.tools.get("load_skill")?.description).not.toContain("geometry-recipe");
+    const geometry = registries.prompts.get("agent-procedural-model-builder")!;
+    expect(geometry).toBeDefined();
+    expect(geometry.description).not.toContain("Deprecated");
+    const agentBody = await geometry.load();
+    const skill = await registries.tools.get("load_skill")!.execute(
+      { name: "procedural-model-builder" },
+      {
+        toolCallId: "geometry-guide",
+        signal: new AbortController().signal,
+        abort() {},
+      },
     );
-    expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
-    expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
-    for (const name of ["procedural-builder", "geometry-recipe"]) {
-      const prompt = registries.prompts.get(`agent-${name}`)!;
-      if (name === "geometry-recipe") {
-        expect(prompt.description).not.toContain("Deprecated");
-      } else {
-        expect(prompt.description).toContain("Deprecated");
-      }
-      const body = await prompt.load();
+    expect(skill.metadata?.error).not.toBe(true);
+    for (const body of [agentBody, skill.output]) {
       expect(body).toContain("ProceduralModel");
-      if (name === "geometry-recipe") {
-        expect(body).toContain("studiorpc_execute_luau");
-        expect(body).toContain("AutoRebuild");
-        expect(body).not.toContain("studiorpc_proceduralmodel_");
-      } else {
-        expect(body).not.toContain("studiorpc_procedural_run");
-        expect(body).not.toContain("studiorpc_proceduralmodel_");
-      }
-      const skill = await registries.tools.get("load_skill")!.execute(
-        { name },
-        {
-          toolCallId: "deprecated-guide",
-          signal: new AbortController().signal,
-          abort() {},
-        },
-      );
-      if (name === "geometry-recipe") {
-        expect(skill.output).not.toContain("# Deprecated");
-        expect(skill.output).toContain("on_generate");
-      } else {
-        expect(skill.output).toContain("Deprecated");
-      }
-      if (name !== "geometry-recipe") expect(skill.output).toContain("studiorpc_execute_luau");
+      expect(body).toContain("studiorpc_execute_luau");
+      expect(body).toContain("AutoRebuild");
+      expect(body).toContain("on_generate");
+      expect(body).not.toContain("studiorpc_procedural_run");
+      expect(body).toContain("studiorpc_proceduralmodel_api");
+      expect(body).not.toContain("studiorpc_instance_upsert");
+    }
+  });
+
+  test("MCP full discovery preserves the empty query and Korean catalog descriptions", async () => {
+    schemaSearchMock.mockClear();
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const result = await client.callTool({ name: "studiorpc_instance_schema_search", arguments: { query: "" } });
+      expect(schemaSearchMock).toHaveBeenCalledWith({ query: "" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      const catalog = JSON.parse(content[0].text);
+      expect(catalog.classes[0].description).toBe("\uD55C\uAE00 \uC124\uBA85");
+      expect(catalog.classes[0]).not.toHaveProperty("properties");
+      const tools = await client.listTools();
+      expect(tools.tools.map((t) => t.name)).not.toContain("studiorpc_instance_upsert");
+    } finally {
+      await client.close();
     }
   });
 

@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { discoverSkills, renderSkillsSection } from "@diligent/runtime/skills";
 import { createSkillTool } from "@diligent/runtime/tools/skill";
-import { parseArgs } from "../src/tools/studiorpc/methods/instance.upsert";
-import { parseInstancePatchProperties } from "../src/tools/studiorpc/methods/instance-properties";
 
 const bundledSkills = resolve(import.meta.dir, "../../bootstrap/skills");
 const retiredNames = ["ui-generator", "overdare-ui-templates"];
@@ -62,7 +60,7 @@ test("loads only the renamed GUI builder and resolves its references after deplo
   }
 });
 
-test("documented font faces normalize without substituting their family, weight, or style", async () => {
+test("documents catalog-backed font faces through Editor Luau without the retired upsert path", async () => {
   const reference = await readFile(join(bundledSkills, "gui-builder/references/fonts.md"), "utf8");
   const rows = reference.split("\n").filter((line) => /^\|[^|]+\|\s*\d+\s*\|/.test(line));
   expect(rows.length).toBeGreaterThan(0);
@@ -71,26 +69,13 @@ test("documented font faces normalize without substituting their family, weight,
       .split("|")
       .slice(1, -1)
       .map((cell) => cell.trim());
-    for (const weight of weights.split(", ")) {
-      for (const style of styles.split(", ")) {
-        const face = { Family: `ovdrassetid://${id}`, Weight: weight, Style: style };
-        for (const className of ["TextLabel", "TextButton"]) {
-          const created = parseArgs({
-            items: [{ class: className, parentGuid: "screen", name: family, properties: { FontFace: face } }],
-          });
-          const updated = parseInstancePatchProperties(className, { FontFace: face });
-          expect(created.items[0].properties?.FontFace).toEqual({ ObjectType: "Font", ...face });
-          expect(updated).toEqual({ FontFace: { ObjectType: "Font", ...face } });
-        }
-      }
-    }
+    expect(family).toBeTruthy();
+    expect(Number(id)).toBeGreaterThan(0);
+    expect(weights.split(", ").every(Boolean)).toBe(true);
+    expect(styles.split(", ").every(Boolean)).toBe(true);
   }
-  const example = reference.match(/```json\s*([\s\S]*?)```/);
-  expect(example).not.toBeNull();
-  const parsed = parseArgs(JSON.parse(example![1]));
-  const inputFace = parsed.items[0].properties?.FontFace;
-  expect(parseInstancePatchProperties("TextLabel", { FontFace: inputFace }).FontFace).toEqual({
-    ObjectType: "Font",
-    ...(inputFace as object),
-  });
+  expect(reference).toContain("studiorpc_execute_luau");
+  expect(reference).toContain("Font.fromId(");
+  expect(reference).toContain("Font.fromName(");
+  expect(reference).not.toContain("instance_upsert");
 });

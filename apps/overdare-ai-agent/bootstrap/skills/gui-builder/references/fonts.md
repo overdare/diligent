@@ -58,9 +58,9 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 | Gothic fantasy | GrenzeGotisch |
 | Comic or deliberately chaotic | OverWacky |
 
-## Editor Luau assignment (when available)
+## Editor Luau assignment
 
-Prefer the instance-upsert form below for ordinary static GUI edits. If the host exposes an Editor Luau execution tool, these assignment forms are also supported. Replace the sample hierarchy with the verified target.
+Use `studiorpc_execute_luau` with target `Editor` for static GUI font edits. Replace the sample hierarchy with the verified target, and query `FontFace` through live schema discovery when the target class is unfamiliar.
 
 Use a family asset ID when the catalog provides one. The Editor VM uses `game.StarterGui` or another direct hierarchy path; it does not support `game:GetService`. This restriction applies to the Editor VM, not normal runtime LocalScripts.
 
@@ -84,27 +84,6 @@ label.FontFace = Font.fromName(
 	Enum.FontWeight.Bold,
 	Enum.FontStyle.Normal
 )
-```
-
-## Instance upsert assignment
-
-For a focused TextLabel or TextButton edit, pass the public shape below. The sidecar adds the internal `ObjectType: "Font"` tag. Supply all three public members so the authored choice is visible in the request.
-
-```json
-{
-  "items": [
-    {
-      "guid": "<TextLabel or TextButton GUID>",
-      "properties": {
-        "FontFace": {
-          "Family": "ovdrassetid://900004166",
-          "Weight": "SemiBold",
-          "Style": "Normal"
-        }
-      }
-    }
-  ]
-}
 ```
 
 Use `studiorpc_instance_read` after the edit for exact Family, Weight, and Style readback. Readback confirms the authored value, not actual glyph coverage or absence of font fallback. Check a focused Studio screenshot with Studio in the foreground, and play-test the actual viewport when relevant. Inspect clipping, wrapping, text/background contrast, and localized strings.

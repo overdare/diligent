@@ -11,7 +11,7 @@ export const description =
   "it needs no screenshot. " +
   "During a play test this returns the player camera, otherwise the editor viewport camera — the same " +
   "camera studiorpc_game_screenshot captures, and the one studiorpc_viewport_camera_set aims. " +
-  "CFrame matches studiorpc_instance_read and studiorpc_instance_upsert: Position in world units (1 unit = " +
+  "CFrame matches studiorpc_instance_read: Position in world units (1 unit = " +
   "1 cm) and Orientation as XYZ Euler angles in degrees — degrees, not radians — so a value read here can be " +
   "written straight back into a placement. Orientation.Y is the heading and Orientation.X the pitch: a yaw " +
   "of 0 looks down -Z, +90 looks down -X, and a positive pitch looks up. That is the convention " +
@@ -19,7 +19,7 @@ export const description =
   "relative look turns within, and the same number studiorpc_game_character_read reports as facing.yaw — " +
   "one heading in one frame, with no sign to flip between them. " +
   "centerHit is what the middle of the screen lands on — its position in those same coordinates (handed " +
-  "to studiorpc_instance_upsert or a lookAt as-is) and its name; null when the center hits nothing. The " +
+  "as a lookAt or use it to plan an Editor Luau edit) and its name; null when the center hits nothing. The " +
   "distance from Position to centerHit.position is how zoomed-in the view effectively is — a perspective " +
   "camera keeps fieldOfView fixed and zooms by moving. fieldOfView and aspectRatio are the projection's " +
   "two numbers, enough to compute where any world point sits on screen. fieldOfView is the HORIZONTAL " +
