@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" focusable="false" aria-hidden="true" data-icon="agent-logo">
-  <path d="M10 14V5L14.5 13H20L14 17V27.05L10 17.95H5L10 14Z" fill="currentColor"/>
-  <path d="M21 8.50002L24 4.40002V9.00002L27 11L24 12L21 17V11L17 8.50002H21Z" fill="currentColor"/>
-  <path d="M20.5 20L23 17V21L27 23H22.55L18.5 27.5L19.5 22.5L16 20H20.5Z" fill="currentColor"/>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true" data-icon="agent-logo">
+  <path d="M10.0117 14.0977L11.5 23.0498H10.5L7.0498 17L1 13.5498V12.5L10.0117 14.0977Z" fill="white"/>
+  <path d="M23 13.5498L16.9502 17L13.5 23.0498H12.5L13.9883 14.0977L23 12.5V13.5498Z" fill="white"/>
+  <path d="M12 10C13.1046 10 14 10.8954 14 12C14 13.1046 13.1046 14 12 14C10.8954 14 10 13.1046 10 12C10 10.8954 10.8954 10 12 10Z" fill="white"/>
+  <path d="M10.0117 9.95215L1 11.5498V10.5L7.0498 7.0498L10.5 1H11.5L10.0117 9.95215Z" fill="white"/>
+  <path d="M16.9502 7.0498L23 10.5V11.5498L13.9883 9.95215L12.5 1H13.5L16.9502 7.0498Z" fill="white"/>
 </svg>

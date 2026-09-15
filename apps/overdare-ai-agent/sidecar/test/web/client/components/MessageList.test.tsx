@@ -280,6 +280,7 @@ test("MessageList marks the completed assistant response with the agent logo whe
 
   expect(html).toContain('data-message-list-row="status:response-complete"');
   expect(html).toContain('aria-label="Response complete"');
+  expect(html).toContain('data-icon="agent-logo"');
 });
 
 test("MessageList hides the response-complete logo while the agent is busy", () => {
