@@ -6,15 +6,14 @@ description: Genre-neutral OVERDARE debugging entry skill for defects whose caus
 # OVERDARE Debug Expert
 
 This is a debugging entry skill that works regardless of genre (action/racing/puzzle/simulation, etc.).
-This skill defines the **procedure only**. Concrete case examples and symptom-specific treatments are provided by the RAG case DB —
-a collection of **cases resolved in past sessions** — and RAG results are used **only as diagnostic hints**. Because each past case was fixed under its own context, do not assume it transfers as-is; derive the final solution directly according to the procedure (§4).
+This skill defines the **procedure only**. Use logs, runtime state, and relevant API documentation to derive the solution directly according to the procedure (§4).
 
 ---
 
 ## 1. MUST / MUST NOT
 
 **MUST**
-- **Off-ramp first:** if, with the request in hand, the target is already pinpointed and the fix is a direct single edit to an instance/property (position·size·color·alignment·text·visibility), make that edit directly — skip the format and RAG below — and stop. (The description gates first load; this bullet catches follow-up turns where the cause is already known.)
+- **Off-ramp first:** if, with the request in hand, the target is already pinpointed and the fix is a direct single edit to an instance/property (position·size·color·alignment·text·visibility), make that edit directly — skip the format below — and stop. (The description gates first load; this bullet catches follow-up turns where the cause is already known.)
 - Output the **first response format** (§2) before implementation/patching.
 - Before making changes, **directly check logs (Play.log, etc.) or runtime state at least once**. (Do not say "logs are clean" before opening the file.)
 - Choose the work area using the **Decision order** (§3), and include the step number in the classification rationale.
@@ -25,7 +24,7 @@ a collection of **cases resolved in past sessions** — and RAG results are used
 **MUST NOT**
 - Do not change code based only on guesses without checking logs/state.
 - Do not change code/maps without classification, goal, and rationale.
-- Do not copy a RAG-provided "solution case" directly into a patch (§5).
+- Do not patch based only on documentation without checking the failing runtime path (§5).
 - Do not touch two or more work areas in the same loop.
 - Do not report "fixed" without a reproduction path.
 - If minimum input is insufficient, **ask instead of guessing**.
@@ -39,7 +38,7 @@ Skill used: overdare-debug-expert
 Work area: script | ui | 3d
 Classification rationale: decision step N — (one-sentence condition)
 Reproduction path: (when / where / what action)
-Reference cases: {case ID — check priority} | none (reason)
+Documentation checked: {API or guide — relevant behavior} | none (reason)
 Goal for this loop: (one sentence: what to reproduce or verify)
 First checks: (1–3 logs/state items)
 ```
@@ -74,8 +73,8 @@ Classification aid: **if there is an error log, script**; **if it is visible and
 
 1. **Declare the goal** — one single symptom to resolve in this loop.
 2. **Fix the work area** — one §3 classification. Do not change it during the loop.
-3. **Collect RAG hints** — query §5 → extract only the "how to check" items.
-4. **Check logs/state** — directly inspect logs/state in the priority order suggested by RAG. Separate input → judgment → application, and record server authority and client display separately.
+3. **Check relevant documentation** — use §5 when API behavior is unclear.
+4. **Check logs/state** — directly inspect logs/state in the priority order supported by observed evidence. Separate input → judgment → application, and record server authority and client display separately.
 5. **Single hypothesis → single change → reproduction verification.** If it fails, roll back **only the last change**.
 6. **Judge loop completion** (§4.2).
 
@@ -109,33 +108,29 @@ If any one is unmet, it is incomplete → summarize observed facts in 1–3 line
 
 **Procedure:**
 
-1. **Insert logs** — Based on observed facts so far and the RAG "how to check" items, insert `print()` statements at suspected problem points (state transitions, conditional branches, event handler entry/exit, immediately before/after major variable changes). **Do not** make functional changes other than logs.
+1. **Insert logs** — Based on observed facts so far and relevant API behavior, insert `print()` statements at suspected problem points (state transitions, conditional branches, event handler entry/exit, immediately before/after major variable changes). **Do not** make functional changes other than logs.
 2. **State the reproduction path and request playthrough** — Write the exact action sequence that reveals the bug in one sentence and ask the creator to play through that path. Example: `"Please play through the path where doing B in situation A causes C, and tell me 'test complete' when finished."` Do not make additional changes before the creator responds.
 3. **Analyze logs → rediagnose** — When the creator sends the **"test complete"** signal, immediately open the logs and check the inserted output. If the actual execution path/state differs from the existing hypothesis, reclassify from §3 and restart the loop with a new hypothesis. If the same hypothesis is confirmed, proceed with the §4 single-change procedure.
 4. **Remove logs** — Once diagnosis is complete, remove all inserted `print()` statements.
 
 ---
 
-## 5. RAG Query and Response Handling (Immediately After Classification, Diagnostic Hints Only)
+## 5. Documentation Lookup (When API Behavior Is Unclear)
 
-Once the work area is chosen, query **immediately**. **Call the `overdaresearch` tool with `source` set to `debug`.**
+Use `overdaresearch` with `source` set to `docs` to check relevant API behavior or constraints.
 
-- `query`: Summarize the symptom in natural language (for example: `display disappears after transition`, `weapon drops from hand`).
-- `source`: `debug`
-- `topK`: `3`
-- To narrow by work area (§3), put `script` | `ui` | `3d` in `debugCaseFilter.category`. If needed, also provide `severity`·`caseId` (exact match), `symptomTags`·`genreTags` (contains any of the tags). Multiple fields are combined with AND, and the `overdareVersion` filter is not supported.
+- `query`: Name the API or behavior being investigated in English.
+- `source`: `docs`
+- `topK`: `4`
 
 Example call (tool arguments):
 ```json
-{ "query": "display disappears after transition", "source": "debug", "topK": 3, "debugCaseFilter": { "category": "script" } }
+{ "query": "screen visibility during character respawn", "source": "docs", "topK": 4 }
 ```
 
-**Response handling rules**
-- Refer only to the **"how to check"** items from the top 3 similar cases → use them only to decide what to inspect first in logs and how to prioritize state tracing.
-- Read each case's **"solution case" only as reference, and do not patch it verbatim.** Derive the solution directly through the §4 procedure.
-- Trust and apply each case's **"OVERDARE-specific notes"** (unsupported APIs, etc.) as environment constraints.
-- If there are no similar cases or the server does not respond, **continue the procedure as-is**.
-- Record the result in the first response in **one line**: `Reference cases: {case ID} — {check priority summary}` / if unused, `Reference cases: none (no similar cases | search unavailable)`.
+Use documentation to guide log inspection and state tracing; confirm the actual cause against the reproduction path before patching. If no relevant documentation is found or search is unavailable, continue with direct inspection of logs and runtime state.
+
+Record the reference in one line: `Documentation checked: {API or guide} — {relevant behavior}` or `Documentation checked: none (not needed | no relevant results | search unavailable)`.
 
 ---
 
