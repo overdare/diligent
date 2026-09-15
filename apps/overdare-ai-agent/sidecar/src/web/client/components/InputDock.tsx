@@ -428,7 +428,9 @@ export function InputDock({
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-x-0 top-0 flex h-5 items-center gap-0.5 overflow-hidden text-[#565F69]"
               >
-                <AgentLogo className="h-5 w-5 shrink-0" />
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center p-0.5">
+                  <AgentLogo className="h-4 w-4" />
+                </span>
                 {/* Design `Ls` is a single 20px row, so the hint truncates instead of wrapping when narrow. */}
                 <span className="min-w-0 truncate text-sm leading-5">
                   {isBusy ? "Queue a message…" : supportsVision ? "Ask anything or attach images…" : "Ask anything…"}
