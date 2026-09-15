@@ -11,6 +11,8 @@ export interface SkillMetadata {
   source: "global" | "project" | "config";
   /** Whether the LLM can autonomously decide to use this skill */
   disableModelInvocation: boolean;
+  /** Global launcher policy to recheck when a cached skill is invoked. */
+  revocationStatePath?: string;
 }
 
 export interface SkillLoadResult {

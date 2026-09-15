@@ -19,7 +19,13 @@ import { createLogger } from "@diligent/logging";
 import type { BundledToolProvider, ResolvedExperiment } from "@diligent/runtime";
 import { loadDiligentConfig, resolveExperimentGates, resolveExperimentStates } from "@diligent/runtime";
 import { resolveProjectDirName } from "@diligent/runtime/infrastructure";
-import { discoverSkills, extractBody, parseFrontmatter } from "@diligent/runtime/skills";
+import {
+  assertSkillNotRevoked,
+  discoverSkills,
+  extractBody,
+  parseFrontmatter,
+  resolveSkillRevocationStatePath,
+} from "@diligent/runtime/skills";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -57,6 +63,8 @@ export interface McpServerOptions {
   bootstrapDir: string;
   /** Product-managed global prompt deployed by `overdare-ai-agent init`. */
   systemPromptPath?: string;
+  /** Global launcher policy; independent of the bundle-only discovery root. */
+  revocationStatePath?: string;
   experiments?: ResolvedExperiment[];
   studioRpc?: StudioRpcToolProviderOptions;
 }
@@ -159,16 +167,19 @@ async function buildModelCallableTools(
   bootstrapDir: string,
   systemPromptPath: string,
   experiments: readonly ResolvedExperiment[] = [],
+  revocationStatePath = resolveSkillRevocationStatePath(),
 ): Promise<Tool[]> {
   const skillsDir = join(bootstrapDir, "skills");
   const { skills: discovered } = await discoverSkills({
     cwd: bootstrapDir,
     globalConfigDir: join(bootstrapDir, "__no_global__"),
+    revocationStatePath,
     additionalPaths: [skillsDir],
   });
   const { disabledSkillNames } = resolveExperimentGates(experiments);
   const skills = discovered.filter(
-    (skill) => !MCP_EXCLUDED_SKILLS.has(skill.name) && !disabledSkillNames.has(skill.name),
+    (skill) =>
+      !skill.disableModelInvocation && !MCP_EXCLUDED_SKILLS.has(skill.name) && !disabledSkillNames.has(skill.name),
   );
   const skillsByName = new Map(skills.map((skill) => [skill.name, skill]));
   const skillIndex = skills.length
@@ -207,6 +218,7 @@ async function buildModelCallableTools(
         return { output: `Unknown skill "${name}". Available skills:\n${skillIndex}`, metadata: { error: true } };
       }
       try {
+        await assertSkillNotRevoked(skill.name, skill.revocationStatePath);
         return { output: extractBody(await readFile(skill.path, "utf-8")) };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -225,6 +237,7 @@ export async function buildRegistries(options: McpServerOptions): Promise<McpReg
       options.bootstrapDir,
       options.systemPromptPath ?? resolveSystemPromptPath(),
       options.experiments,
+      options.revocationStatePath,
     ),
     buildPromptRegistry(options.bootstrapDir, options.experiments),
   ]);

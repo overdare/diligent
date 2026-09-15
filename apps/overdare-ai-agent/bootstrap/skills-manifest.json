@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "skills": [
+    { "name": "actionsequence", "entry": "actionsequence" },
+    { "name": "agent-guide", "entry": "agent-guide" },
+    { "name": "asset-pack-import", "entry": "asset-pack-import" },
+    { "name": "geometry-recipe", "entry": "geometry-recipe" },
+    { "name": "gui-builder", "entry": "gui-builder" },
+    { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
+    { "name": "overdare-debug-expert", "entry": "overdare-debug-expert" },
+    { "name": "procedural-builder", "entry": "procedural-builder" },
+    { "name": "record-project-memory", "entry": "record-project-memory" },
+    { "name": "session-issue-report", "entry": "session-issue-report" },
+    { "name": "tpa", "entry": "tpa" },
+    { "name": "vfx-recipe", "entry": "vfx-recipe" },
+    { "name": "world-publish", "entry": "world-publish" }
+  ],
+  "revoked": [
+    { "name": "overdare-ui-templates", "entry": "overdare-ui-templates" },
+    { "name": "ui-generator", "entry": "ui-generator" }
+  ]
+}

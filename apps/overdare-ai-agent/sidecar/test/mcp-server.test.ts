@@ -90,6 +90,41 @@ async function connectClient(bootstrapDir: string): Promise<Client> {
 }
 
 describe("OVERDARE MCP server", () => {
+  test("load_skill rechecks global revocation even with bundle-only discovery", async () => {
+    const bootstrapDir = await makeBootstrapDir();
+    const statePath = join(bootstrapDir, "__global__", ".bootstrap-skills-state.json");
+    try {
+      const registries = await buildRegistries({
+        cwd: bootstrapDir,
+        bootstrapDir,
+        systemPromptPath: globalSystemPromptPath(bootstrapDir),
+        revocationStatePath: statePath,
+      });
+      const tool = registries.tools.get("load_skill")!;
+      expect(tool.description).toContain("test-skill");
+      await writeFile(
+        statePath,
+        JSON.stringify({
+          schemaVersion: 1,
+          runtimeVersion: "2.0.0",
+          skills: [],
+          revoked: [{ name: "test-skill", entry: "test-skill" }],
+          pending: [],
+        }),
+      );
+      const result = await tool.execute(
+        { name: "test-skill" },
+        { toolCallId: "revoked", signal: new AbortController().signal, abort: () => {} },
+      );
+      expect(result.metadata?.error).toBe(true);
+      expect(result.output).not.toContain("SKILL BODY CONTENT");
+      const reloaded = await buildRegistries({ cwd: bootstrapDir, bootstrapDir, revocationStatePath: statePath });
+      expect(reloaded.tools.get("load_skill")!.description).not.toContain("test-skill");
+    } finally {
+      await rm(bootstrapDir, { recursive: true, force: true });
+    }
+  });
+
   beforeEach(() => {
     levelBrowseMock.mockClear();
   });

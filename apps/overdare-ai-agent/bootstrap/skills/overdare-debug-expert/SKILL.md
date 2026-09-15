@@ -1,6 +1,7 @@
 ---
 name: overdare-debug-expert
-description: Genre-neutral OVERDARE debugging entry skill for defects whose cause is NOT yet narrowed. Do NOT use when the target is already pinpointed and the request is a direct single edit to an instance/property — position, size, color, alignment, text, visibility, and the like — handle those directly without this skill. Use it only for defects that are NOT such direct edits and that show at least one of these signals: the cause or next step is unclear; the same symptom recurs after a prior fix ("still", "again", "not fixed"); the symptom is intermittent or tied to a state transition (re-entry/restart/mode switch/network sync); or a runtime error or crash log is present.
+description: >-
+  Genre-neutral OVERDARE debugging entry skill for defects whose cause is NOT yet narrowed. Do NOT use when the target is already pinpointed and the request is a direct single edit to an instance/property — position, size, color, alignment, text, visibility, and the like — handle those directly without this skill. Use it only for defects that are NOT such direct edits and that show at least one of these signals: the cause or next step is unclear; the same symptom recurs after a prior fix ("still", "again", "not fixed"); the symptom is intermittent or tied to a state transition (re-entry/restart/mode switch/network sync); or a runtime error or crash log is present.
 ---
 
 # OVERDARE Debug Expert
