@@ -22,7 +22,7 @@ describe("ChatGPT WebSocket session", () => {
   test("can explicitly use WebSocket + Lite for ChatGPT GPT-5.6", async () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -39,7 +39,7 @@ describe("ChatGPT WebSocket session", () => {
   test("reuses one WebSocket for sequential scoped requests and closes it with the scope", async () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
     const scope = createStreamTurnScope();
@@ -90,7 +90,7 @@ describe("ChatGPT WebSocket session", () => {
     });
     const events = await collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
     );
@@ -104,7 +104,7 @@ describe("ChatGPT WebSocket session", () => {
     const controller = new AbortController();
     const scope = createStreamTurnScope();
     const stream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
       webSocketIdleTimeoutMs: 1,
     })(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
@@ -135,7 +135,7 @@ describe("ChatGPT WebSocket session", () => {
     });
     const events = await collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
     );
@@ -154,7 +154,7 @@ describe("ChatGPT WebSocket session", () => {
     });
     const events = await collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
     );
@@ -246,7 +246,7 @@ describe("ChatGPT WebSocket session", () => {
       });
       const events = await collectScopedChatGPTEvents(
         createChatGPTStream(() => testTokens(), {
-          useWebSocketForGpt56: true,
+          useResponsesLiteWebSocket: true,
           webSocketFactory: harness.factory,
         }),
       );
@@ -275,7 +275,7 @@ describe("ChatGPT WebSocket session", () => {
     });
     const events = await collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
     );
@@ -292,7 +292,7 @@ describe("ChatGPT WebSocket session", () => {
     const openingController = new AbortController();
     const openingCollection = collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: openingHarness.factory,
       }),
       { signal: openingController.signal },
@@ -306,7 +306,7 @@ describe("ChatGPT WebSocket session", () => {
     const activeController = new AbortController();
     const activeCollection = collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: activeHarness.factory,
       }),
       { signal: activeController.signal },
@@ -325,7 +325,7 @@ describe("ChatGPT WebSocket session", () => {
     const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
     const events = await collectScopedChatGPTEvents(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
     );
@@ -348,7 +348,7 @@ describe("ChatGPT WebSocket session", () => {
     }) as unknown as typeof fetch;
     const stream = withRetry(
       createChatGPTStream(() => testTokens(), {
-        useWebSocketForGpt56: true,
+        useResponsesLiteWebSocket: true,
         webSocketFactory: harness.factory,
       }),
       { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 },
@@ -457,12 +457,12 @@ describe("ChatGPT WebSocket session", () => {
     expect(requestBodies[0]?.parallel_tool_calls).toBe(true);
   });
 
-  test("surfaces a retryable error when a GPT-5.6 WebSocket closes before completion", async () => {
+  test("surfaces a retryable error when a Responses Lite WebSocket closes before completion", async () => {
     const harness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() => socket.emitClose());
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -478,10 +478,10 @@ describe("ChatGPT WebSocket session", () => {
     expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
   });
 
-  test("times out when a GPT-5.6 WebSocket never opens", async () => {
+  test("times out when a Responses Lite WebSocket never opens", async () => {
     const harness = createWebSocketHarness(undefined, { autoOpen: false });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
       webSocketIdleTimeoutMs: 1,
     });
@@ -499,10 +499,10 @@ describe("ChatGPT WebSocket session", () => {
     expect(harness.requests[0]?.socket.terminated).toBe(true);
   });
 
-  test("times out after GPT-5.6 WebSocket open while waiting for response", async () => {
+  test("times out after Responses Lite WebSocket open while waiting for response", async () => {
     const harness = createWebSocketHarness();
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
       webSocketIdleTimeoutMs: 1,
     });
@@ -520,12 +520,12 @@ describe("ChatGPT WebSocket session", () => {
     expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
   });
 
-  test("maps GPT-5.6 WebSocket send throws to retryable network errors", async () => {
+  test("maps Responses Lite WebSocket send throws to retryable network errors", async () => {
     const harness = createWebSocketHarness(undefined, {
       sendError: new Error("send failed"),
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
       webSocketIdleTimeoutMs: 100,
     });
@@ -542,12 +542,12 @@ describe("ChatGPT WebSocket session", () => {
     expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(true);
   });
 
-  test("preserves GPT-5.6 WebSocket close code and reason before completion", async () => {
+  test("preserves Responses Lite WebSocket close code and reason before completion", async () => {
     const harness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() => socket.emitClose(1011, "upstream unavailable"));
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -588,7 +588,7 @@ describe("ChatGPT WebSocket session", () => {
       });
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -627,7 +627,7 @@ describe("ChatGPT WebSocket session", () => {
       socket.emitRaw(delayedBlob);
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -652,7 +652,7 @@ describe("ChatGPT WebSocket session", () => {
     expect(events.some((event) => event.type === "done")).toBe(true);
   });
 
-  test("maps top-level GPT-5.6 WebSocket errors and terminates on abort", async () => {
+  test("maps top-level Responses Lite WebSocket errors and terminates on abort", async () => {
     const errorHarness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() =>
         socket.emit({
@@ -663,7 +663,7 @@ describe("ChatGPT WebSocket session", () => {
       );
     });
     const errorStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: errorHarness.factory,
     });
     const errorEvents = await collectEvents(
@@ -679,7 +679,7 @@ describe("ChatGPT WebSocket session", () => {
     const abortHarness = createWebSocketHarness();
     const abortController = new AbortController();
     const abortStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: abortHarness.factory,
     })(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
       effort: "medium",
@@ -692,7 +692,7 @@ describe("ChatGPT WebSocket session", () => {
     expect(abortHarness.requests[0]?.socket.terminated).toBe(true);
   });
 
-  test("preserves GPT-5.6 WebSocket usage-limit diagnostics with a stable reason", async () => {
+  test("preserves Responses Lite WebSocket usage-limit diagnostics with a stable reason", async () => {
     const harness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() =>
         socket.emit({
@@ -706,7 +706,7 @@ describe("ChatGPT WebSocket session", () => {
       );
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -725,7 +725,7 @@ describe("ChatGPT WebSocket session", () => {
     expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
   });
 
-  test("maps GPT-5.6 WebSocket status_code alias as rate limit", async () => {
+  test("maps Responses Lite WebSocket status_code alias as rate limit", async () => {
     const harness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() =>
         socket.emit({
@@ -736,7 +736,7 @@ describe("ChatGPT WebSocket session", () => {
       );
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -766,7 +766,7 @@ describe("ChatGPT WebSocket session", () => {
       );
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 
@@ -782,7 +782,7 @@ describe("ChatGPT WebSocket session", () => {
     expect((error?.error as { isRetryable?: boolean }).isRetryable).toBe(false);
   });
 
-  test("maps GPT-5.6 WebSocket connection-limit code as retryable", async () => {
+  test("maps Responses Lite WebSocket connection-limit code as retryable", async () => {
     const harness = createWebSocketHarness((_body, socket) => {
       queueMicrotask(() =>
         socket.emit({
@@ -796,7 +796,7 @@ describe("ChatGPT WebSocket session", () => {
       );
     });
     const chatgptStream = createChatGPTStream(() => testTokens(), {
-      useWebSocketForGpt56: true,
+      useResponsesLiteWebSocket: true,
       webSocketFactory: harness.factory,
     });
 

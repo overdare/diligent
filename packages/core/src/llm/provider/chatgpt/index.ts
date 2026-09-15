@@ -31,8 +31,8 @@ const CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS = 300_000;
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
 
 export interface ChatGPTStreamOptions {
-  /** Retained compatibility switch for the legacy GPT-5.6 WebSocket + Responses Lite path. */
-  useWebSocketForGpt56?: boolean;
+  /** Retained compatibility switch for the legacy Responses Lite-over-WebSocket path. */
+  useResponsesLiteWebSocket?: boolean;
   webSocketFactory?: (url: string, headers: Record<string, string>) => WebSocket;
   webSocketIdleTimeoutMs?: number;
   /** Maximum wait for HTTP response headers. Does not limit SSE body streaming. */
@@ -245,12 +245,12 @@ function createChatGPTWebSocketSessionForProvider(input: {
     },
   });
 }
-function useChatGPTWebSocketTransportFailure(
+function isResponsesLiteWebSocketTransportFailure(
   error: unknown,
   providerOptions: ChatGPTStreamOptions,
   model: Model,
 ): boolean {
-  if (providerOptions.useWebSocketForGpt56 !== true || !usesResponsesLite(model.modelId)) return false;
+  if (providerOptions.useResponsesLiteWebSocket !== true || !usesResponsesLite(model.modelId)) return false;
   return error instanceof ProviderError && error.errorType === ProviderErrorType.Network;
 }
 
@@ -291,7 +291,8 @@ export function createChatGPTStream(
       try {
         if (options.signal?.aborted) return;
         const upstreamModelId = model.modelId;
-        const useResponsesLite = usesResponsesLite(upstreamModelId) && providerOptions.useWebSocketForGpt56 === true;
+        const useResponsesLite =
+          usesResponsesLite(upstreamModelId) && providerOptions.useResponsesLiteWebSocket === true;
         const resolveHeaders = async (): Promise<Record<string, string>> => {
           const tokens = getTokens();
           const headers: Record<string, string> = {
@@ -311,7 +312,7 @@ export function createChatGPTStream(
         const effort = options.effort;
         const useReasoning = model.supportsThinking;
         const useWebSocket =
-          useResponsesLite && providerOptions.useWebSocketForGpt56 === true && !transportState.websocketDisabled;
+          useResponsesLite && providerOptions.useResponsesLiteWebSocket === true && !transportState.websocketDisabled;
 
         const standardBody = await buildResponsesRequestBody({
           model: upstreamModelId,
@@ -451,7 +452,7 @@ export function createChatGPTStream(
 
         await handleResponsesAPIEvents(responseEvents, stream, model, options.signal);
       } catch (err) {
-        if (useChatGPTWebSocketTransportFailure(err, providerOptions, model)) {
+        if (isResponsesLiteWebSocketTransportFailure(err, providerOptions, model)) {
           transportState.consecutiveTransportFailures += 1;
           if (transportState.consecutiveTransportFailures >= 2) transportState.websocketDisabled = true;
         }
