@@ -38,7 +38,7 @@ describe("ChatGPT HTTP transport", () => {
     ).toBe("error status=429 code=rate_limit message=try again");
   });
 
-  test("uses standard Responses over HTTP/SSE with parallel tool calls for GPT-5.6 by default", async () => {
+  test("uses standard Responses over HTTP/SSE with parallel tool calls by default", async () => {
     const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -88,7 +88,7 @@ describe("ChatGPT HTTP transport", () => {
     });
   });
 
-  test("sends the Lite header and Lite body for gpt-6-astra", async () => {
+  test("uses the same standard Responses HTTP/SSE contract for gpt-6-astra", async () => {
     const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -108,14 +108,14 @@ describe("ChatGPT HTTP transport", () => {
 
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
-    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
+    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBeNull();
 
     const body = request.body;
     expect(body.model).toBe("gpt-6-astra");
-    expect(body.parallel_tool_calls).toBe(false);
-    expect((body.reasoning as { context: string }).context).toBe("all_turns");
+    expect(body.parallel_tool_calls).toBe(true);
+    expect((body.reasoning as { context?: string }).context).toBeUndefined();
     expect((body.reasoning as { effort: string }).effort).toBe("xhigh");
-    expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
+    expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "message", role: "user" });
   });
 
   test("preserves raw HTTP/SSE incomplete terminal classification", async () => {

@@ -454,6 +454,7 @@ describe("ChatGPT WebSocket session", () => {
     expect(webSocketCalled).toBe(false);
     expect(requestBodies[0]?.model).toBe("gpt-5.5");
     expect(requestBodies[0]?.type).toBeUndefined();
+    expect(requestBodies[0]?.parallel_tool_calls).toBe(true);
   });
 
   test("surfaces a retryable error when a GPT-5.6 WebSocket closes before completion", async () => {
