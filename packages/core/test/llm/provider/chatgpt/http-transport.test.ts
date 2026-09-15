@@ -38,7 +38,7 @@ describe("ChatGPT HTTP transport", () => {
     ).toBe("error status=429 code=rate_limit message=try again");
   });
 
-  test("uses HTTP/SSE + Lite by default for a compatible ChatGPT model", async () => {
+  test("uses standard Responses over HTTP/SSE with parallel tool calls by default", async () => {
     const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -67,7 +67,7 @@ describe("ChatGPT HTTP transport", () => {
     expect(requests).toHaveLength(1);
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
-    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
+    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBeNull();
     expect(request.headers.get("version")).toBe("0.153.4");
     expect(request.headers.get("ChatGPT-Account-ID")).toBe("acct_1");
     expect(request.headers.get("session-id")).toBe("session_1");
@@ -79,16 +79,16 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.reasoning as { effort: string }).effort).toBe("medium");
     expect(body.instructions).toBeUndefined();
     expect(body.tools).toBeUndefined();
-    expect(body.parallel_tool_calls).toBe(false);
-    expect((body.reasoning as { context: string }).context).toBe("all_turns");
+    expect(body.parallel_tool_calls).toBe(true);
+    expect((body.reasoning as { context?: string }).context).toBeUndefined();
     expect((body.input as Array<Record<string, unknown>>)[0]).toEqual({
-      type: "additional_tools",
-      role: "developer",
-      tools: [],
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "hello" }],
     });
   });
 
-  test("sends the Lite header and Lite body for gpt-6-astra", async () => {
+  test("uses the same standard Responses HTTP/SSE contract for gpt-6-astra", async () => {
     const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -108,14 +108,14 @@ describe("ChatGPT HTTP transport", () => {
 
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
-    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
+    expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBeNull();
 
     const body = request.body;
     expect(body.model).toBe("gpt-6-astra");
-    expect(body.parallel_tool_calls).toBe(false);
-    expect((body.reasoning as { context: string }).context).toBe("all_turns");
+    expect(body.parallel_tool_calls).toBe(true);
+    expect((body.reasoning as { context?: string }).context).toBeUndefined();
     expect((body.reasoning as { effort: string }).effort).toBe("xhigh");
-    expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
+    expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "message", role: "user" });
   });
 
   test("preserves raw HTTP/SSE incomplete terminal classification", async () => {
