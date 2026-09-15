@@ -1130,6 +1130,8 @@ test("input dock keeps the agent logo before the placeholder while the input is 
   expect(idleHtml).toContain('data-icon="agent-logo"');
   // Design `Title`: the agent logo and the placeholder text share #565F69.
   expect(idleHtml).toContain("items-center gap-0.5 overflow-hidden text-[#565F69]");
+  expect(idleHtml).toContain('class="flex h-5 w-5 shrink-0 items-center justify-center p-0.5"');
+  expect(idleHtml).toContain('class="h-4 w-4"');
   // Design `Ls` is one 20px row — the hint truncates rather than wrapping to a second line.
   expect(idleHtml).toContain('<span class="min-w-0 truncate text-sm leading-5">');
   expect(idleHtml).not.toContain("placeholder=");
