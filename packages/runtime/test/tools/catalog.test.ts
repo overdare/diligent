@@ -845,6 +845,28 @@ describe("loadBuiltins", () => {
 });
 
 describe("loadBundledBatches", () => {
+  it("passes the provider-bound image capability without exposing credentials", async () => {
+    const generateImage = async () => ({
+      bytes: new Uint8Array([1]),
+      mediaType: "image/png" as const,
+      requestedModel: "test",
+    });
+    let received: unknown;
+    const provider: BundledToolProvider = {
+      id: "image-capability-test",
+      createTools: (context) => {
+        received = context;
+        return [mockTool("image_tool")];
+      },
+    };
+    const { batches, errors } = await loadBundledBatches([provider], "/tmp", undefined, 0, {
+      modelProvider: "chatgpt",
+      generateImage,
+    });
+    expect(errors).toEqual([]);
+    expect(batches).toHaveLength(1);
+    expect(received).toEqual({ cwd: "/tmp", host: undefined, modelProvider: "chatgpt", generateImage });
+  });
   it("returns a batch for each provider that succeeds", async () => {
     const provider: BundledToolProvider = {
       id: "test-bundled",

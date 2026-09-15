@@ -69,7 +69,9 @@ export function MessageListRowContent({
       return (
         <div className="py-1">
           <div className="flex items-center pt-1" role="img" aria-label="Response complete">
-            <AgentLogo className="h-8 w-8 text-text" aria-hidden="true" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center p-1">
+              <AgentLogo className="h-6 w-6 text-[#DCE2E8]" aria-hidden="true" />
+            </div>
           </div>
         </div>
       );

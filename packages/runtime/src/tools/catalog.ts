@@ -1,6 +1,7 @@
 // @summary Tool catalog builder — phase-based pipeline that merges builtins and plugins with config toggles
 
 import { withImageDownscaling } from "@diligent/core/image-contract";
+import type { ImageGenerationFn, ProviderName } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
 import { COLLAB_TOOL_NAMES } from "../collab";
 import type { DiligentConfig } from "../config/schema";
@@ -67,6 +68,8 @@ export type ToolMapEntry = {
 
 export interface BuildToolCatalogOptions {
   bundledProviders?: BundledToolProvider[];
+  modelProvider?: ProviderName;
+  generateImage?: ImageGenerationFn;
   disabledToolNames?: ReadonlySet<string>;
   pluginDiscovery?: PluginDiscoveryMode;
 }
@@ -142,7 +145,7 @@ export async function loadBundledBatches(
   cwd: string,
   host: RuntimeToolHost | undefined,
   orderStart: number,
-  disabledToolNames: ReadonlySet<string> = new Set(),
+  options: Pick<BuildToolCatalogOptions, "disabledToolNames" | "modelProvider" | "generateImage"> = {},
 ): Promise<{ batches: ProviderToolBatch[]; errors: PluginLoadError[] }> {
   const batches: ProviderToolBatch[] = [];
   const errors: PluginLoadError[] = [];
@@ -150,7 +153,14 @@ export async function loadBundledBatches(
   for (const [providerIndex, provider] of bundledProviders.entries()) {
     let providerTools: Tool[];
     try {
-      providerTools = await Promise.resolve(provider.createTools({ cwd, host }));
+      providerTools = await Promise.resolve(
+        provider.createTools({
+          cwd,
+          host,
+          modelProvider: options.modelProvider,
+          ...(options.generateImage ? { generateImage: options.generateImage } : {}),
+        }),
+      );
     } catch (err) {
       errors.push({
         package: provider.id,
@@ -164,7 +174,9 @@ export async function loadBundledBatches(
       id: provider.id,
       tools: providerTools,
       orderBase: orderStart + providerIndex * 1000,
-      toolToggles: Object.fromEntries(providerTools.map((tool) => [tool.name, !disabledToolNames.has(tool.name)])),
+      toolToggles: Object.fromEntries(
+        providerTools.map((tool) => [tool.name, !options.disabledToolNames?.has(tool.name)]),
+      ),
       label: "Bundled provider",
     });
   }
@@ -528,7 +540,7 @@ export async function buildToolCatalog(
     cwd,
     host,
     bundledOrderStart,
-    options.disabledToolNames,
+    options,
   );
 
   // Phase 3: plugins

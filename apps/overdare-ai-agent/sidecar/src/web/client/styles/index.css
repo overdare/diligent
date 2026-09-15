@@ -273,8 +273,107 @@
   text-decoration-color: color-mix(in srgb, var(--color-accent-hover) 75%, transparent);
 }
 .prose-content img {
-  max-width: 100%;
+  max-width: min(100%, 32rem);
+  height: auto;
   border-radius: var(--radius-lg);
+}
+.image-gallery {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.markdown-image-preview {
+  display: inline-flex;
+  vertical-align: top;
+}
+.image-gallery-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text-soft);
+  font-size: 0.875rem;
+}
+.image-gallery-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+.image-gallery-thumbnails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.image-thumbnail {
+  display: block;
+  width: 10rem;
+  max-width: 100%;
+  height: 10rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  cursor: zoom-in;
+}
+.image-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.image-thumbnail[hidden] {
+  display: none;
+}
+.image-thumbnail:focus-visible,
+.image-gallery-toggle:focus-visible,
+.image-lightbox button:focus-visible,
+.image-lightbox a:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgb(0 0 0 / 85%);
+  color: white;
+}
+.image-lightbox-toolbar {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  display: flex;
+  gap: 0.5rem;
+}
+.image-lightbox-toolbar a,
+.image-lightbox-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: #f5f5f5;
+  color: #222;
+  font-size: 1.5rem;
+}
+.image-lightbox-stage {
+  position: absolute;
+  inset: 3.5rem 0;
+  display: flex;
+  overflow: auto;
+  padding: 0.5rem;
+}
+.image-lightbox-stage img {
+  flex-shrink: 0;
+  max-width: calc(100vw - 4rem);
+  max-height: calc(100vh - 8rem);
+  margin: auto;
+  object-fit: contain;
+}
+.image-lightbox-stage output {
+  margin: auto;
 }
 .prose-content strong {
   font-weight: 600;

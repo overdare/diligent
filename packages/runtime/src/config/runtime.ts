@@ -201,6 +201,7 @@ export async function loadRuntimeConfig(
       // referencing them validates against the real runtime tool set instead of only the generic
       // built-ins — otherwise shipped agents like studio-explorer emit false "unknown tool" warnings.
       bundledToolProviders: options?.bundledToolProviders,
+      provider: model?.provider as ProviderName | undefined,
       disabledToolNames,
     });
     const result = await discoverAgents({

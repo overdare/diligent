@@ -1,7 +1,7 @@
 // @summary Shared default tool assembly used by both CLI and Web server
 
 import { dirname, join } from "node:path";
-import type { ProviderName } from "@diligent/core/provider-contract";
+import type { ImageGenerationFn, ProviderName } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
 import { openBrowser } from "../auth";
 import type { AgentRegistry, CollabToolDeps } from "../collab";
@@ -57,6 +57,7 @@ export interface BuildDefaultToolsOptions {
   bundledToolProviders?: BundledToolProvider[];
   disabledToolNames?: ReadonlySet<string>;
   provider?: ProviderName;
+  generateImage?: ImageGenerationFn;
   /** Whether plugin assembly includes globally discovered packages (default `global`). */
   pluginDiscovery?: PluginDiscoveryMode;
   /** External MCP servers whose tools are exposed to the agent (P069). */
@@ -171,6 +172,8 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
 
         return buildToolCatalog(builtinTools, toolsConfig, cwd, host, {
           bundledProviders: providers,
+          modelProvider: provider,
+          generateImage: options.generateImage,
           disabledToolNames,
           pluginDiscovery,
         });

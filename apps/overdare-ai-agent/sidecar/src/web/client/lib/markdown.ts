@@ -2,8 +2,28 @@
 import hljs from "highlight.js";
 import { marked } from "marked";
 import { markedHighlight } from "marked-highlight";
+import { toWebImageUrl } from "../../shared/image-routes";
 
 const renderer = new marked.Renderer();
+const IMAGE_GALLERY_ICON = `<svg class="image-gallery-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <rect x="7" y="3" width="13" height="13" rx="2.5" stroke="currentColor" stroke-width="1.6"/>
+  <path d="m9.5 13 2.7-2.7 2.2 2.2 1.6-1.6 2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="15.5" cy="7.5" r="1.25" fill="currentColor"/>
+  <rect x="3" y="7" width="13" height="13" rx="2.5" stroke="currentColor" stroke-width="1.6"/>
+  <path d="m5.5 17 2.7-2.7 2.2 2.2 1.6-1.6 1.5 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="11.5" cy="11.5" r="1.25" fill="currentColor"/>
+</svg>`;
+const renderImage = renderer.image.bind(renderer);
+renderer.image = (token) => {
+  const image = renderImage({
+    ...token,
+    href: /^(?:[a-z][a-z0-9+.-]*:\/\/|\/\/)/i.test(token.href) ? token.href : toWebImageUrl(token.href),
+  });
+  return `<span class="image-gallery markdown-image-preview" data-image-preview="true">
+    <button type="button" class="image-gallery-toggle" data-image-toggle="true" aria-expanded="true">${IMAGE_GALLERY_ICON} 1 image <span aria-hidden="true" data-image-chevron="true">⌄</span></button>
+    <button type="button" class="image-thumbnail" data-image-open="true" aria-label="${escapeHtml(`View ${token.text || "image"}`)}">${image}</button>
+  </span>`;
+};
 
 function escapeHtml(value: string): string {
   return value.replace(

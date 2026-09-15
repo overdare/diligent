@@ -83,11 +83,11 @@ describe("Studio RPC cancellation", () => {
         const request = JSON.parse(bytes.toString("utf8"));
         expect(request.params).toEqual({ query: "" });
         const response = Buffer.from(
-          JSON.stringify({
+          `${JSON.stringify({
             jsonrpc: "2.0",
             id: request.id,
             result: { schemaVersion: "utf8", classes: [{ class: "FutureWidget", description, properties: [] }] },
-          }) + "\n",
+          })}\n`,
           "utf8",
         );
         const split = response.indexOf(Buffer.from(description, "utf8")) + 1;

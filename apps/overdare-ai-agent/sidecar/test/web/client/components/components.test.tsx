@@ -1130,6 +1130,8 @@ test("input dock keeps the agent logo before the placeholder while the input is 
   expect(idleHtml).toContain('data-icon="agent-logo"');
   // Design `Title`: the agent logo and the placeholder text share #565F69.
   expect(idleHtml).toContain("items-center gap-0.5 overflow-hidden text-[#565F69]");
+  expect(idleHtml).toContain('class="flex h-5 w-5 shrink-0 items-center justify-center p-0.5"');
+  expect(idleHtml).toContain('class="h-4 w-4"');
   // Design `Ls` is one 20px row — the hint truncates rather than wrapping to a second line.
   expect(idleHtml).toContain('<span class="min-w-0 truncate text-sm leading-5">');
   expect(idleHtml).not.toContain("placeholder=");
@@ -2577,7 +2579,7 @@ test("tool block renders asset gallery previews expanded", () => {
   expect(html).not.toContain("aria-pressed");
 });
 
-test("collab event block renders as a compact agent activity row", () => {
+test("collab event block uses the standard activity row padding", () => {
   const html = renderToStaticMarkup(
     <CollabEventBlock
       item={{
@@ -2600,7 +2602,9 @@ test("collab event block renders as a compact agent activity row", () => {
   expect(html).toContain("Spawned Juniper [explore]");
   expect(html).toContain("completed");
   expect(html).toContain("text-success/85");
-  expect(html).toContain("gap-2 py-0.5");
+  expect(html).toContain("flex gap-2");
+  expect(html).toContain("py-2");
+  expect(html).not.toContain("inline-flex gap-2 py-0.5");
   expect(html).not.toContain("bg-surface-dark py-2.5");
   expect(html).not.toContain(">expand<");
   expect(html).not.toContain(">collapse<");

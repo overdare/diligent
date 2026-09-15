@@ -140,11 +140,12 @@ PR #441 and remain available here. They supply the full Python API reference,
 recipe validation and explicit authoring/bake reports.
 
 The `procedural-builder` skill and agent definitions remain removed: they belonged
-to the retired local Luau runner. The native authoring skill and agent restored as `geometry-recipe` by #434 are
-renamed to `procedural-model-builder` here; the old geometry-recipe entries are
-removed from this branch. They remain active native ProceduralModel authoring guides. They retain geometry/material/UV/resource
-and verification guidance while using Editor Luau, Source helpers and later
-readback, alongside the restored native recipe RPCs. They are not deprecated
+to the retired local Luau runner. The native authoring skill and agent restored as
+`geometry-recipe` by #434 are renamed to `procedural-model-builder` here; the old
+geometry-recipe entries are removed from this branch. They remain active native
+ProceduralModel authoring guides and retain geometry/material/UV/resource and
+verification guidance while using Editor Luau, Source helpers and later readback,
+alongside the restored native recipe RPCs. They are not deprecated
 redirects, and restoring them does not restore a second world-editing tool family.
 Existing installed builder copies are not automatically deleted by the name-based
 updater; this change adds no broad filesystem cleanup.
@@ -163,8 +164,9 @@ retain that generation lifecycle. Existing world objects and user
 source files are preserved. It uses the same Editor tool: `Instance.new` creates it,
 `Size` and `Source` configure it, and `AutoRebuild=true` lets Studio generate its
 MeshPart children. Source is still Python because that is the Studio class's
-native format; the agent has no separate recipe API, validation tool, or baking
-tool. Use existing source or Studio documentation rather than inventing Python APIs.
+native format. The dedicated ProceduralModel reference, validation, and set tools
+supplement this shared Editor path; they do not restore generic JSON upsert. Use
+existing source or Studio documentation rather than inventing Python APIs.
 
 The native module declares `OVDR_PARAMETERS` and defines
 `on_generate(model, size, attributes)`. Its module scope remains declarative;
@@ -212,6 +214,7 @@ Tests exercise empty-query full search through the shared tool executor and MCP,
 compact class catalogs, unchanged targeted schemas, Korean descriptions split
 across TCP chunks, UTF-8 byte accounting, and persisted truncated results. They
 also verify that upsert is absent while Editor error/save handling and retained
-instance/Source tools continue to work. The bundled registry exposes the active geometry-recipe skill/agent while keeping
-the procedural-builder and retired tools absent. Actual full-catalog discovery
+instance/Source tools continue to work. The bundled registry exposes the active
+procedural-model-builder skill/agent while keeping procedural-builder and the
+retired local runner absent. Actual full-catalog discovery
 on the updated Studio and end-to-end model authoring remain draft gates.

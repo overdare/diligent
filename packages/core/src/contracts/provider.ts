@@ -1,6 +1,15 @@
 // @summary Public provider engine contracts, manager, retry, and turn-resource boundary
 
 export type {
+  ImageBackground,
+  ImageGenerationFn,
+  ImageGenerationInput,
+  ImageGenerationOptions,
+  ImageGenerationResult,
+  ImageMediaType,
+} from "../llm/provider/image-generation";
+
+export type {
   NativeCompactFn,
   NativeCompactionInput,
   NativeCompactionLookup,

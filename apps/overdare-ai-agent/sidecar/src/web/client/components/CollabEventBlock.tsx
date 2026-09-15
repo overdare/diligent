@@ -396,7 +396,6 @@ export function CollabEventBlock({ item, loadChildThread, initialOpen = false }:
         metaTone={meta?.tone}
         expanded={open}
         expandable={isInteractive}
-        compact={true}
         onToggle={toggleOpen}
       />
 
