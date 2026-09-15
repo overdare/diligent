@@ -368,7 +368,7 @@ describe("ChatGPT WebSocket session", () => {
     await scope.dispose();
   });
 
-  test("moves ChatGPT GPT-5.6 instructions, tools, and compacted history into Lite HTTP input items", async () => {
+  test("keeps GPT-5.6 instructions and tools in standard Responses fields over HTTP/SSE", async () => {
     let requestBody: Record<string, unknown> = {};
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -401,34 +401,29 @@ describe("ChatGPT WebSocket session", () => {
     );
     expect(events.some((event) => event.type === "done")).toBe(true);
 
+    expect(requestBody.instructions).toBe("System instructions");
+    expect(requestBody.parallel_tool_calls).toBe(true);
+    expect(requestBody.tools).toEqual([
+      {
+        type: "function",
+        name: "read",
+        description: "Read a file",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+        },
+      },
+      { type: "web_search" },
+    ]);
+    expect((requestBody.reasoning as { context?: string }).context).toBeUndefined();
+
     const input = requestBody.input as Array<Record<string, unknown>>;
     expect(input[0]).toEqual({
-      type: "additional_tools",
-      role: "developer",
-      tools: [
-        {
-          type: "function",
-          name: "read",
-          description: "Read a file",
-          parameters: {
-            type: "object",
-            properties: { path: { type: "string" } },
-            required: ["path"],
-          },
-        },
-        { type: "web_search" },
-      ],
-    });
-    expect(input[1]).toEqual({
-      type: "message",
-      role: "developer",
-      content: [{ type: "input_text", text: "System instructions" }],
-    });
-    expect(input[2]).toEqual({
       type: "compaction",
       encrypted_content: "summary",
     });
-    expect(input[3]).toEqual({
+    expect(input[1]).toEqual({
       type: "message",
       role: "user",
       content: [{ type: "input_text", text: "hello" }],

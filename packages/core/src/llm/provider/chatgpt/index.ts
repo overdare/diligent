@@ -1,4 +1,4 @@
-// @summary ChatGPT subscription stream — HTTP/SSE for legacy models and WebSocket Responses Lite for GPT-5.6 and later
+// @summary ChatGPT subscription stream — standard HTTP/SSE for GPT-5.6 with retained opt-in WebSocket/Lite support
 import { arch, platform, release } from "node:os";
 import { createLogger } from "@diligent/logging";
 import type { OpenAIOAuthTokens } from "../../../auth/types";
@@ -30,7 +30,12 @@ const CHATGPT_HTTP_HEADER_TIMEOUT_MS = 15_000;
 const CHATGPT_HTTP_STREAM_IDLE_TIMEOUT_MS = 300_000;
 const USER_AGENT = `diligent (${platform()} ${release()}; ${arch()})`;
 
+function isGpt56Model(modelId: string): boolean {
+  return modelId === "gpt-5.6" || modelId.startsWith("gpt-5.6-");
+}
+
 export interface ChatGPTStreamOptions {
+  /** Retained compatibility switch for the legacy GPT-5.6 WebSocket + Responses Lite path. */
   useWebSocketForGpt56?: boolean;
   webSocketFactory?: (url: string, headers: Record<string, string>) => WebSocket;
   webSocketIdleTimeoutMs?: number;
@@ -290,7 +295,9 @@ export function createChatGPTStream(
       try {
         if (options.signal?.aborted) return;
         const upstreamModelId = model.modelId;
-        const useResponsesLite = usesResponsesLite(upstreamModelId);
+        const useStandardGpt56Responses =
+          isGpt56Model(upstreamModelId) && providerOptions.useWebSocketForGpt56 !== true;
+        const useResponsesLite = usesResponsesLite(upstreamModelId) && !useStandardGpt56Responses;
         const resolveHeaders = async (): Promise<Record<string, string>> => {
           const tokens = getTokens();
           const headers: Record<string, string> = {
@@ -325,6 +332,7 @@ export function createChatGPTStream(
           localImageLoader: context.localImageLoader,
           provider: "chatgpt",
         });
+        if (useStandardGpt56Responses) standardBody.parallel_tool_calls = true;
 
         const requestBody = useResponsesLite ? toResponsesLiteRequestBody(standardBody) : standardBody;
 
