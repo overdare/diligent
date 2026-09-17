@@ -151,6 +151,9 @@ DILIGENT_UPDATE_URL=https://example.com/update-manifest.json cargo run --manifes
 
 ## Notes
 
+- Bootstrap skill ownership, permanent revocation, and retry behavior are documented in
+  [Bootstrap skill deployment](../../docs/guide/bootstrap-skills.md).
+
 - `start` does not execute repo TypeScript directly; it launches the updated runtime subprocess
 - `start` prints the selected runtime port as `WEBSERVER_PORT=<port>` on stdout
 - `start --studio-rpc-port=<port>` forwards that value to the runtime subprocess as `STUDIO_PORT`

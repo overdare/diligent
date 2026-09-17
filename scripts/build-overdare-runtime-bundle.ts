@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { validateBootstrapSkills } from "./bootstrap-skills-manifest";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OVERDARE_CLI = resolve(ROOT, "apps/overdare-ai-agent");
@@ -98,6 +99,7 @@ function buildSidecar(platform: PlatformConfig): string {
 }
 
 function stageBootstrap(stageDir: string): void {
+  validateBootstrapSkills(BOOTSTRAP_DIR);
   const defaultsOut = join(stageDir, "defaults");
   cpSync(BOOTSTRAP_DIR, defaultsOut, { recursive: true });
 }

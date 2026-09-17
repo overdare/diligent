@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveProjectDirName } from "../infrastructure/diligent-dir";
 import { parseFrontmatter } from "./frontmatter";
+import { readRevokedSkillNames, resolveSkillRevocationStatePath } from "./revocation";
 import type { SkillLoadError, SkillLoadResult, SkillMetadata } from "./types";
 
 export interface DiscoveryOptions {
@@ -14,6 +15,8 @@ export interface DiscoveryOptions {
   globalConfigDir?: string;
   /** Additional skill paths from config */
   additionalPaths?: string[];
+  /** Global product policy, independent of discovery roots (e.g. an MCP bundle). */
+  revocationStatePath?: string;
 }
 
 /**
@@ -28,12 +31,24 @@ export async function discoverSkills(options: DiscoveryOptions): Promise<SkillLo
   const skills: SkillMetadata[] = [];
   const errors: SkillLoadError[] = [];
   const seen = new Map<string, string>(); // name → first path
+  const statePath = options.revocationStatePath ?? resolveSkillRevocationStatePath(options.globalConfigDir);
+  let revoked: Set<string>;
+  try {
+    revoked = await readRevokedSkillNames(statePath);
+  } catch (error) {
+    return { skills: [], errors: [{ path: statePath, message: `Cannot read skill revocation policy: ${error}` }] };
+  }
 
   for (const { dir, source } of getDiscoveryRoots(options)) {
     await scanSkillDirectory(dir, source, skills, errors, seen);
   }
 
-  return { skills, errors };
+  return {
+    skills: skills
+      .filter((skill) => !revoked.has(skill.name))
+      .map((skill) => ({ ...skill, revocationStatePath: statePath })),
+    errors,
+  };
 }
 
 function resolveGlobalConfigDir(): string {

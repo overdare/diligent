@@ -169,16 +169,11 @@ fn deploy_plugins(
     Ok(())
 }
 
-/// Sync a directory that mixes product-managed entries (shipped in bootstrap)
-/// with user-created ones. `~/.overdare/skills` and `~/.overdare/agents` are
-/// discovered as global user extension locations (skills/agents discovery.ts),
-/// yet they also hold the bundled product skills/agents. Overwrite only the
-/// entries whose names exist in the bootstrap source; never delete a user-added
-/// entry that isn't shipped. Mirrors deploy_plugins' per-entry behavior instead
-/// of remove_dir_all-ing the whole destination (which wiped user content).
+/// Sync non-skill directories that mix bundled entries and user additions.
+/// Skills use skill_manifest's journal and revocation policy instead.
 ///
 /// ponytail: an entry dropped from a newer bootstrap lingers in dest (we can't
-/// tell "user removed a product skill" from "user's own skill"). Upgrade path:
+/// distinguish a retired product agent from a user-created agent). Upgrade path:
 /// track a manifest of product-managed names and prune those absent from src.
 fn deploy_managed_dir(
     src: &Path,
@@ -229,9 +224,19 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         return Ok(());
     };
     fs::create_dir_all(&global).map_err(|e| format!("Cannot create {}: {e}", global.display()))?;
+    let _deployment_lock = crate::skill_manifest::DeploymentLock::acquire(&global)?;
     let Some(bootstrap) = resolve_updated_bootstrap_dir(env, &mut log) else {
         return Ok(());
     };
+    // Read the identity beside the captured source, not the mutable active
+    // pointer (another launcher may switch that pointer during this init).
+    let runtime_version = bootstrap
+        .parent()
+        .and_then(|runtime| fs::read_to_string(runtime.join("version.json")).ok())
+        .and_then(|json| serde_json::from_str::<crate::update::InstalledVersion>(&json).ok())
+        .map(|installed| installed.version)
+        .unwrap_or_else(|| bootstrap.display().to_string());
+    crate::skill_manifest::deploy_skills(&bootstrap, &global, &runtime_version, update_applied)?;
     // Fresh staging dir for atomic swaps; clear any leftovers from a prior crash.
     let staging = staging_dir(&global);
     let _ = fs::remove_dir_all(&staging);
@@ -239,6 +244,9 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
         fs::read_dir(&bootstrap).map_err(|e| format!("Cannot read bootstrap dir: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
+        if name == "skills" || name == "skills-manifest.json" {
+            continue;
+        }
         let src = entry.path();
         let dest = global.join(&name);
         if src.is_file() {
@@ -253,7 +261,7 @@ pub fn run(env: Env, update_applied: bool) -> Result<(), String> {
             if name.to_string_lossy() == "plugins" {
                 let _ = deploy_plugins(&src, &dest, &staging, &mut log, mode);
             } else {
-                // skills/agents (and any bootstrap dir) mix bundled product
+                // Agents (and other bootstrap dirs) mix bundled product
                 // entries with user-created ones; sync per-entry so an applied
                 // update overwrites bundled names but preserves user additions.
                 let _ = deploy_managed_dir(&src, &dest, &staging, &mut log, mode);

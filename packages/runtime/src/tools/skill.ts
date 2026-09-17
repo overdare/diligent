@@ -3,6 +3,7 @@
 import type { Tool, ToolRegistryBuilder, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { extractBody, type SkillMetadata } from "../skills";
+import { assertSkillNotRevoked } from "../skills/revocation";
 
 const SkillParams = z.object({
   name: z.string().describe("Skill name from the available skills list"),
@@ -38,6 +39,7 @@ export function createSkillTool(skills: SkillMetadata[]): Tool<typeof SkillParam
 
       let content: string;
       try {
+        await assertSkillNotRevoked(selected.name, selected.revocationStatePath);
         content = await Bun.file(selected.path).text();
       } catch (error) {
         return {
