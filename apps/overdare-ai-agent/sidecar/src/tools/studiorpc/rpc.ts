@@ -80,8 +80,8 @@ export async function call(
     const connectHost = host === "localhost" ? "127.0.0.1" : host;
     const rawRequest = JSON.stringify(request);
     logger.debug("request.sent", {
-      message: `[RPC →] ${method} (${rawRequest.length} bytes)`,
-      fields: { id, method, bytes: rawRequest.length },
+      message: `[RPC →] ${method} (${Buffer.byteLength(rawRequest, "utf8")} bytes)`,
+      fields: { id, method, bytes: Buffer.byteLength(rawRequest, "utf8") },
     });
     const socket = net.createConnection({ host: connectHost, port }, () => {
       socket.write(`${rawRequest}\n`);
@@ -123,8 +123,8 @@ export async function call(
         try {
           const response = JSON.parse(line) as JsonRpcResponse;
           logger.debug("response.received", {
-            message: `[RPC ←] ${method} (${line.length} bytes)`,
-            fields: { id, method, bytes: line.length },
+            message: `[RPC ←] ${method} (${Buffer.byteLength(line, "utf8")} bytes)`,
+            fields: { id, method, bytes: Buffer.byteLength(line, "utf8") },
           });
           if (response.error) {
             let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;

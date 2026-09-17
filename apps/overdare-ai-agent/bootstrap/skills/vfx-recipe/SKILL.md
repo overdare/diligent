@@ -13,7 +13,7 @@ Owns all VFX effect work in OVERDARE Studio. All VFX reference data is bundled i
 | **Template** | `references/templates/` | A recipe pre-composed from several sources | Copy its Original Payload JSON as a `VFXRecipe` — verbatim, or with sources swapped / structure modified |
 | **Source** | `references/sources.md` | One raw ingredient asset for a recipe layer (Base/Detail/Extra) | Placed as items inside a `VFXRecipe`'s layer arrays |
 
-A **recipe** is the placed `VFXRecipe` instance itself — created and edited through `studiorpc_instance_upsert` like any other Studio instance. Runtime scripts tune a placed recipe via `SetParam` / `SetParamAt` using each source item's `Name`.
+A **recipe** is the placed `VFXRecipe` instance itself — created and edited through Editor Luau like other Studio instances. Runtime scripts tune a placed recipe via `SetParam` / `SetParamAt` using each source item's `Name`.
 
 ## Routing — ask the user first
 
@@ -35,7 +35,7 @@ If the chosen path yields no acceptable match, say so and offer the next path do
 
 1. `grep` `references/presets.md` case-insensitively with English keywords from the request (element, mood, purpose — e.g. `muzzle|gunfire`, `heal|buff`). Try synonyms before concluding there is no match. Each row is `| Resource | DisplayName | Category | Subcategory | Genre | Keywords |`.
 2. Present the top 2–4 matching presets via `request_user_input` — label = DisplayName (fall back to Resource), description = category + keywords — **plus one extra option: `레시피 기반 커스텀으로 만들기` (switch to the template flow)**.
-3. On selection, `studiorpc_instance_upsert` with `class: "VFXPreset"`, `PresetName` = the Resource value, parented under the target Workspace object.
+3. On selection, use Editor Luau to create a `VFXPreset`, parent it under the verified Workspace object, and set `PresetName` to the Resource value.
 
 ## Flow: template-based recipe
 
@@ -46,20 +46,20 @@ If the chosen path yields no acceptable match, say so and offer the next path do
    - **Theme/element change**: swap **Color / Alpha keypoints only** (e.g. all layers toward `#FF3000` for lava, `#3080FF` for frost). Keep the sources.
    - **Motion/shape change**: swap a source item's `NiagaraSystem` for another source **from the same layer** (check `references/sources.md`), or add/remove source items — keep at least one BaseLayer item.
    - **Intensity**: scale `SpawnCount` / `SpawnRate` together across layers.
-5. `studiorpc_instance_upsert` with `class: "VFXRecipe"`, parented under the target Workspace object.
+5. Use Editor Luau to create and configure a `VFXRecipe` under the verified Workspace object.
 
 ## Flow: direct composition
 
 1. Read `references/sources.md` and plan layers: **BaseLayer** carries the effect's body (at least one item; `neutral`-element sources are the universal fallback), DetailLayer/ExtraLayer add accents and residue.
-2. Use each source's short name as `NiagaraSystem` — the resource name minus its `VFX_UGC_<Layer>_` prefix (e.g. `VFX_UGC_Base_FireRise_A` → `FireRise_A`). Full resource names and full serving-asset paths also validate.
+2. Query `studiorpc_instance_schema_search` for `VFXRecipe` and use the exact JSON shape it returns. Use each source's full `NiagaraSystem` serving-asset path from `references/sources.md`; the tool no longer expands short names or injects ObjectType tags/defaults.
 3. Set per-source parameters the chosen source supports (its catalog entry lists them; unsupported ones are silently ignored).
-4. Create the `VFXRecipe` via `studiorpc_instance_upsert` — prefer one call when the composition is already decided.
+4. Create and configure the `VFXRecipe` via `studiorpc_execute_luau` with `target: "Editor"` — prefer one call when the composition is already decided.
 
 ## Flow: edit an existing recipe
 
 1. `studiorpc_instance_read` the placed VFXRecipe to get its current layer arrays.
 2. Modify in place: swap a `NiagaraSystem` (same layer only), tweak parameters, add/remove source items. Layer arrays are replaced whole on update — always send the complete modified array, not a delta.
-3. `studiorpc_instance_upsert` **update** form (by `guid`) with the changed layer properties.
+3. Read the target GUID, resolve the verified object through supported Editor lookup, and assign the changed layer properties using Editor Luau.
 
 ## Rate vs Burst sources
 
@@ -69,7 +69,7 @@ Sources with `_R` in the name are **Rate emitters**: set `Duration` (seconds) an
 
 - Some short names exist in **multiple layers** as distinct assets — `LiquidScatter_R_A` and `LightRise_R_A` (Base and Extra), `SmokeBurst_A` (Base and Detail); the layer you place one in decides which asset plays.
 - `EmptySprite` / `EmptySprite_R` (Element: Empty) are blank templates for manual authoring in the editor — never pick them when composing an effect.
-- A source from another layer is rejected by schema validation — the error lists the layer's valid sources.
-- `ObjectType` tags (`Vector3` / `Color3` / `Content`) are injected by the sidecar — author plain `{X,Y,Z}`, `{R,G,B,Time}`, `{Content}` values; tagged values from template payloads also pass.
-- Playback: `AutoActivate` (default true), `InfiniteLoop` (default true), `LoopCount` (used when `InfiniteLoop=false`). One-shot effects: `InfiniteLoop: false, LoopCount: 1`.
+- Check layer membership in the bundled references and current Studio schema hints; Studio validates the submitted JSON.
+- Include the required ObjectType tags (`Vector3` / `Color3` / `Content`) in submitted JSON, following live schema hints or the tagged template payloads. For Editor assignments, use the documented Luau value constructors; JSON schema shapes do not define Luau methods.
+- Set playback fields explicitly when they matter: `AutoActivate`, `InfiniteLoop`, and `LoopCount` (used when `InfiniteLoop=false`). The sidecar supplies no playback defaults. One-shot effects: `InfiniteLoop: false, LoopCount: 1`.
 - Total recipe length is derived (`LoopDuration` is read-only): to shorten an effect, adjust source `Duration`/`Delay` or swap the longest source — don't try to set `LoopDuration`.

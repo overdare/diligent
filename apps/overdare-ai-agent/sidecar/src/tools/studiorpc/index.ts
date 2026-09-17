@@ -19,7 +19,6 @@ import { consumeHumanEdits, createHumanEditsTool, type HumanEditsCapture } from 
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
-import { createInstanceUpsertTool } from "./tools/instance-upsert-tool";
 import { createPieInputTools } from "./tools/pie-input";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
@@ -134,10 +133,6 @@ function toToolName(method: string): string {
 
 const SCRIPT_CLASSES = new Set(["Script", "LocalScript", "ModuleScript"]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 /** The script a `script.edit` call rewrote, from the metadata both the v1 and v2 paths return. */
 export function scriptEditTargets(_args: unknown, result: ToolResult): string[] {
   const guid = result.metadata?.targetGuid;
@@ -154,34 +149,6 @@ export function scriptEditTargets(_args: unknown, result: ToolResult): string[] 
 function scriptAddTargets(_args: unknown, result: ToolResult): string[] {
   const guid = result.metadata?.guid;
   return typeof guid === "string" && guid ? [guid] : [];
-}
-
-/**
- * The scripts an `instance.upsert` batch wrote Lua into. Added instances carry their
- * class in the result, but an update item does not — it is just a guid and a property
- * bag — so an update counts only when it actually set `Source`, which is the same
- * condition under which validating means anything.
- */
-function instanceUpsertTargets(args: unknown, result: ToolResult): string[] {
-  const targets = new Set<string>();
-  const added = result.metadata?.added;
-  if (Array.isArray(added)) {
-    for (const entry of added) {
-      if (!isRecord(entry)) continue;
-      if (typeof entry.class === "string" && SCRIPT_CLASSES.has(entry.class) && typeof entry.guid === "string") {
-        targets.add(entry.guid);
-      }
-    }
-  }
-  const items = isRecord(args) ? args.items : undefined;
-  if (Array.isArray(items)) {
-    for (const item of items) {
-      if (!isRecord(item) || typeof item.guid !== "string") continue;
-      const properties = item.properties;
-      if (isRecord(properties) && typeof properties.Source === "string") targets.add(item.guid);
-    }
-  }
-  return [...targets];
 }
 
 function withApproval(ctx: CoreToolContext, host?: RuntimeToolHost): StudioRpcToolContext {
@@ -282,12 +249,6 @@ export async function createStudioRpcTools(ctx: {
   const tools: Tool[] = [
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
-    wrapTool(
-      withSnapshot(
-        withLuaValidate(createInstanceUpsertTool(ctx.cwd, writeLock, applyLevelChanges), instanceUpsertTargets),
-      ),
-      ctx.host,
-    ),
     wrapTool(withSnapshot(createInstanceDeleteTool(ctx.cwd, writeLock)), ctx.host),
     wrapTool(withSnapshot(createInstanceMoveTool(ctx.cwd, writeLock, applyLevelChanges)), ctx.host),
     wrapTool(createScriptReadTool(ctx.cwd), ctx.host),
@@ -378,6 +339,7 @@ export async function createStudioRpcTools(ctx: {
               render,
               outputImages,
               metadata: { method: rpcMethod, result },
+              ...(mod.truncateDirection ? { truncateDirection: mod.truncateDirection } : {}),
             };
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but

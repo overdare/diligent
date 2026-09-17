@@ -30,10 +30,10 @@ scene. Composition is your job:
 ## 3. Branch on subset size
 
 - **Fewer than 5 assets** — import each with `studiorpc_asset_drawer_import`, then
-  position with `studiorpc_instance_upsert`.
+  position with `studiorpc_execute_luau` with `target: "Editor"`.
 - **5 or more assets** — import all with `studiorpc_asset_drawer_import_bulk`
   (one approval, returns an assetid→guids map), then place the selected roots with
-  `studiorpc_instance_upsert`.
+  `studiorpc_execute_luau` with `target: "Editor"`.
 
 ## 4. GUID discipline (mandatory)
 
@@ -50,7 +50,11 @@ actually imported.
 
 ## 5. Placement pattern
 
-Use the bundled upsert parameters for known transform JSON shapes; supplement with `studiorpc_instance_schema_search` when needed. Use the returned GUIDs as exact update targets for `studiorpc_instance_upsert`, or edit through Editor Luau. Use `studiorpc_instance_move` only for reparenting; it does not translate objects. Place
+Query the selected classes with `studiorpc_instance_schema_search` for supported
+transform properties. Read the returned GUIDs to identify the imported roots and
+resolve those verified objects through supported Editor hierarchy lookup before
+editing; do not invent a GUID lookup method. Place them with Editor Luau.
+Use `studiorpc_instance_move` only for reparenting; it does not translate objects. Place
 structure before fixtures and scatter props. Read back the target subtree after a
 batch so the next placement uses current positions rather than stale assumptions.
 

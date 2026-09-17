@@ -2,7 +2,7 @@
 
 import type { ToolRenderPayload, ToolResult } from "../types";
 
-export type InstanceOperation = "instance.read" | "instance.upsert" | "instance.move" | "instance.delete";
+export type InstanceOperation = "instance.read" | "instance.move" | "instance.delete";
 export type InstanceGuidRole = "target" | "parent" | "new_parent";
 export type MissingGuidCode = "missing_target_guid" | "missing_parent_guid" | "missing_new_parent_guid";
 export type InvalidOperationCode =
