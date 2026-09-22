@@ -2,25 +2,33 @@
 
 For a new GUI or full visual redesign, produce usable artwork and bind it in Studio. A guide image establishes the design; it is not the button/frame asset and does not finish the image work. Follow an explicit request for existing assets only, no generation, or a preview before implementation.
 
+This workflow applies equally to `ScreenGui`, `BillboardGui`, and `SurfaceGui`, including their icons and image-backed gauges. Rendering in the world does not remove image generation or reference-image support. Reuse suitable user-supplied icons, project images, and verified imported assets across roots; treat a style reference as guidance unless it is also suitable production artwork.
+
 Track the guide, asset generation/import, GUI binding, and verification separately. When resuming, reconcile progress with actual files and imported asset IDs.
 
 ## Establish the guide
 
-For gameplay HUDs, read the mobile-layout guidance in [studio-ui.md](studio-ui.md) first. Map actions to touch inputs, reserve active system-control space, and decide whether to retain or replace jump. Select typography from [fonts.md](fonts.md) only when choosing new faces.
+For screen-space gameplay HUDs, read the mobile-layout guidance in [studio-ui.md](studio-ui.md) first. Map actions to touch inputs, reserve active system-control space, and decide whether to retain or replace jump. Select typography from [fonts.md](fonts.md) only when choosing new faces.
 
 Use the actual scene and user art direction for the game's mood. Open and attach the bundled [default mobile controls reference](default-mobile-controls.png) when generating a mobile HUD guide, alongside relevant scene/style images. Resolve its absolute path from the skill base directory: `references/default-mobile-controls.png`. It supplies control-placement context when gameplay captures omit CoreGui; do not copy its character or scenery. Retained system controls are layout context, not assets to regenerate or import.
 
 Check that every reference is readable on the agent host before calling `generate_image`. In Mac-to-Windows dev, a Studio screenshot's `C:/...` path is not a Mac path: use the configured shared roots to locate and verify its local counterpart. Do not prepend the working directory to a foreign-host path or discard a required reference to bypass an error. Accept up to five PNG, JPEG, or WebP references per call.
 
-Generate one flat screen design with `background: "opaque"` using the target viewport/orientation, defaulting to mobile landscape. Keep the backdrop subdued; show the required touch controls and gesture space as well as status displays. A manual-fire shooter guide needs a visible fire button, not just ammo and a reticle. Include the planned custom jump or retained default-control space. Generated lettering indicates hierarchy; final labels use native text.
+Generate a guide with `background: "opaque"` for the requested GUI type:
 
-Inspect the guide for missing controls and overlaps before deriving assets. Reuse an existing guide if it already fits. Generate alternatives only when requested or needed to resolve a concrete design issue. For a requested mockup or preview, deliver the guide; for a build, continue to artwork production without an extra approval step. Reviewing an existing design does not require generating a guide.
+- **ScreenGui:** Use a flat design at the target viewport/orientation, defaulting to mobile landscape. Keep the backdrop subdued and show required touch controls and gesture space. A manual-fire shooter needs a fire button; include planned custom jump or retained default-control space.
+- **BillboardGui:** Use the nameplate, marker, or badge aspect ratio and a scene reference showing its target. Design for its apparent size at the intended viewing distance.
+- **SurfaceGui:** Use the target face/panel aspect ratio and a scene reference showing placement. Keep the production design front-facing; scene perspective is context, not distortion to bake into the asset.
+
+Do not force world GUI into a full-screen landscape guide or attach the default mobile-controls image unless a screen HUD is also being designed. Generated lettering indicates hierarchy; final labels use native text.
+
+Inspect the guide for missing requested elements, readability, and overlaps before deriving assets. Reuse an existing guide if it already fits. Generate alternatives only when requested or needed to resolve a concrete design issue. For a requested mockup or preview, deliver the guide; for a build, continue to artwork production without an extra approval step. Reviewing an existing design does not require generating a guide.
 
 ## Produce the assets, not just the guide
 
-Once the guide fits the request, list the actual visual pieces: button shells, action glyphs, panel backplates, and any needed illustration. For each piece, keep its role, intended GUI target, and either a verified existing asset ID or a generation request. Track generated files and their import results with that list.
+Once the guide fits the request, list the actual visual pieces: button shells, icons/action glyphs, nameplate or sign backplates, gauge track/fill images, and any needed illustration. A noninteractive marker needs only its relevant pieces, not invented buttons. For each piece, keep its role, intended GUI target, and either a verified existing asset ID or a generation request. Track generated files and their import results with that list.
 
-Generate the missing artwork next. In a new HUD with no suitable existing art, buttons and styled panels need their own image requests; copying the guide's colors into `TextButton` and `Frame` is not this workflow. Plain text, live fills, hit targets, and simple layout primitives stay native. Missing gameplay/controller code does not remove the need for button artwork; report unconnected behavior separately.
+Generate the missing artwork next. In a new GUI with no suitable existing art, buttons and styled panels need their own image requests; copying the guide's colors into `TextButton` and `Frame` is not this workflow. Plain text, live fills, hit targets, and simple layout primitives stay native. Missing gameplay/controller code does not remove the need for button artwork; report unconnected behavior separately.
 
 - Generate a shared button shell once and reuse it behind distinct glyphs. Separate frame and glyph images when matching geometry matters; a glyph request should not include another button frame.
 - Attach the guide's actual `file` and, when useful, a finished anchor asset in each related `referenceImages` call. Repeating its description is not attachment. Keep references stable instead of chaining variant after variant.
@@ -31,9 +39,9 @@ Generate the missing artwork next. In a new HUD with no suitable existing art, b
 
 Import each reusable output once using `studiorpc_asset_manager_image_import` with its returned absolute `file`; retain `asset.assetid`. Follow [studio-ui.md](studio-ui.md) for hierarchy and image sizing.
 
-`ImageButton` and `ImageLabel` are native GUI instances. Bind the generated shell/backplate/glyph IDs to their `Image` properties; keep text, live values, and input behavior separate. A native hit target can contain image and text children. Do not flatten the entire guide behind invisible buttons or replace all artwork with plain Frames merely because the GUI must remain editable.
+`ImageButton` and `ImageLabel` are native GUI instances. Bind the generated shell/backplate/glyph IDs to their `Image` properties; keep text, live values, and input behavior separate. For `ProgressBar`, bind track/fill artwork to `TrackImage`/`FillImage` and update `Value` independently; see [gui-types.md](gui-types.md). A native hit target can contain image and text children. Do not flatten the entire guide behind invisible buttons or replace all artwork with plain Frames merely because the GUI must remain editable.
 
-Before marking artwork complete, reconcile the asset list with generated files, imported IDs, and target bindings. A guide alone, zero button-art requests with no existing art, or an import step recorded as "attempted" is incomplete. Report per-piece reuse or fallback explicitly. Verify the actual screen's images, proportions, text readability, and touch behavior.
+Before marking artwork complete, reconcile the asset list with generated files, imported IDs, and target bindings. A guide alone, missing production artwork for planned pieces with no existing art, or an import step recorded as "attempted" is incomplete. Report per-piece reuse or fallback explicitly. Verify images, proportions, and text in the actual rendering context. Test touch behavior for interactive GUI and distance/angle/occlusion for world GUI; a static marker does not require a button interaction.
 
 ## Retry and fallback
 
