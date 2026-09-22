@@ -20,6 +20,8 @@ import type {
   SessionEntry,
   SessionInfo,
   SessionManagerConfig,
+  SessionRunOptions,
+  SessionRunOutcome,
 } from "./types";
 import { generateEntryId } from "./types";
 
@@ -228,8 +230,15 @@ export class SessionManager {
    * Persists user message and agent response to session.
    * Compaction is handled by the Agent internally.
    */
-  async run(userMessage: Message, opts?: { signal?: AbortSignal; userMessageId?: string }): Promise<void> {
-    await this.orchestrator.run(userMessage, opts);
+  async run(userMessage: Message, options?: SessionRunOptions): Promise<void> {
+    await this.runWithOutcome(userMessage, options);
+    if (options?.signal?.aborted) {
+      throw new Error("Aborted");
+    }
+  }
+
+  async runWithOutcome(userMessage: Message, options?: SessionRunOptions): Promise<SessionRunOutcome> {
+    return this.orchestrator.runWithOutcome(userMessage, options);
   }
 
   /** Wait for all pending writes to complete. */

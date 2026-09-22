@@ -24,6 +24,24 @@ afterEach(() => {
 });
 
 describe("StatusBar context window display", () => {
+  test("shows compact goal state and run progress", () => {
+    const bar = new StatusBar();
+    bar.update({
+      model: "test",
+      goal: {
+        status: "active",
+        tokensUsed: 2500,
+        tokenBudget: 10000,
+        turnsUsed: 3,
+        maxTurns: 12,
+      },
+    });
+    const text = stripAnsi(bar.render(120).join(""));
+    expect(text).toContain("goal:active");
+    expect(text).toContain("2.5K/10K");
+    expect(text).toContain("3/12 runs");
+  });
+
   test("shows Xk / Yk (X%) format when contextWindow is set", () => {
     const bar = new StatusBar();
     bar.update({ model: "test", tokensUsed: 15000, contextWindow: 200000 });

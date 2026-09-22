@@ -16,6 +16,7 @@ import { openBrowser as defaultOpenBrowser } from "../auth";
 import { loadDiligentConfig } from "../config/loader";
 import { loadRuntimeConfig, type RuntimeConfig } from "../config/runtime";
 import { getGlobalConfigPath, saveGlobalModel } from "../config/writer";
+import { createGoalContextHook } from "../goals/tools";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge";
 import { discoverSkills } from "../skills";
@@ -145,6 +146,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     cwd,
     paths,
     collabDeps: {
+      getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
       agentDefinitions: runtimeConfig.agentDefinitions,
@@ -164,6 +166,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     enableCollabTools: true,
     existingRegistry: existingAgent?.registry,
     host: { approve, ask },
+    goalHost: request.goalHost,
     generateImage: (input, options) =>
       runtimeConfig.providerManager.generateImage(model.provider as ProviderName, input, options),
     bundledToolProviders,
@@ -186,6 +189,7 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     : modeFilteredTools;
   if (toolsResult.registry) {
     toolsResult.registry.updateDeps({
+      getGoalScope: request.goalHost?.scope,
       model: modelRef,
       effort,
       agentDefinitions: runtimeConfig.agentDefinitions,
@@ -219,6 +223,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
   );
   const loopHookLogger = logger.child({ scope: "runtime.agent.loop-hooks" });
   const loopHooks = [
+    ...(request.goalHost ? [createGoalContextHook(request.goalHost)] : []),
     ...(runtimeConfig.planReminderIntervalTurns > 0
       ? [createPlanReminderHook({ intervalTurns: runtimeConfig.planReminderIntervalTurns, logger: loopHookLogger })]
       : []),
@@ -345,6 +350,7 @@ export function createAppServerConfig(opts: CreateAppServerConfigOptions): Dilig
       });
       agent.tools = tools;
     },
+    getGoalsConfig: () => runtimeConfig.diligent.goals,
     streamFunction: runtimeConfig.streamFunction,
     createNativeCompaction: (provider: ProviderName) =>
       runtimeConfig.providerManager.createNativeCompactionForProvider(provider),

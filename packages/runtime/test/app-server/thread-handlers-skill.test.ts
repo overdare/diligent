@@ -49,7 +49,7 @@ describe("handleTurnStart slash skill rewriting", () => {
         emit: async (notification) => {
           notifications.push(notification);
         },
-        consumeTurn: async () => {},
+        consumeTurn: async () => undefined,
         resolveToolsContext: async () => ({ cwd: "/tmp/project", tools: undefined }),
         resolveSkillSettingsCwd: async () => "/tmp/project",
         getUserId: () => "test-user",
@@ -113,7 +113,7 @@ describe("handleTurnStart slash skill rewriting", () => {
         resolveThreadRuntime: async () => runtime,
         getLatestEffortForCwd: async () => "medium",
         emit: async () => {},
-        consumeTurn: async () => {},
+        consumeTurn: async () => undefined,
         resolveToolsContext: async () => ({ cwd: "/tmp/project", tools: undefined }),
         resolveSkillSettingsCwd: async () => "/tmp/project",
         getUserId: () => "test-user",

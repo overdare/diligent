@@ -18,6 +18,12 @@ import {
   ThinkingEffortSchema,
   ThreadItemSchema,
 } from "./data-model";
+import {
+  ThreadGoalGetParamsSchema,
+  ThreadGoalResponseSchema,
+  ThreadGoalSchema,
+  ThreadGoalSetParamsSchema,
+} from "./goals";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "./methods";
 
 export const InitializeParamsSchema = z.object({
@@ -109,6 +115,8 @@ export const ThreadReadParamsSchema = z.object({
 export type ThreadReadParams = z.infer<typeof ThreadReadParamsSchema>;
 
 export const ThreadReadResponseSchema = z.object({
+  goal: ThreadGoalSchema.nullable().optional(),
+  goalSequence: z.number().int().nonnegative().optional(),
   cwd: z.string(),
   items: z.array(ThreadItemSchema),
   errors: z
@@ -638,6 +646,8 @@ export const McpLogoutResponseSchema = z.object({
 export type McpLogoutResponse = z.infer<typeof McpLogoutResponseSchema>;
 
 export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET), params: ThreadGoalGetParamsSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET), params: ThreadGoalSetParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE), params: InitializeParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START), params: ThreadStartParamsSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), params: ThreadResumeParamsSchema }),
@@ -703,6 +713,8 @@ export const DiligentClientRequestSchema = z.discriminatedUnion("method", [
 export type DiligentClientRequest = z.infer<typeof DiligentClientRequestSchema>;
 
 export const DiligentClientResponseSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET), result: ThreadGoalResponseSchema }),
+  z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET), result: ThreadGoalResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE), result: InitializeResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_START), result: ThreadStartResponseSchema }),
   z.object({ method: z.literal(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_RESUME), result: ThreadResumeResponseSchema }),

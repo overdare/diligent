@@ -224,6 +224,7 @@ export async function dispatchClientRequest(
           supportsFollowUp: true,
           supportsApprovals: true,
           supportsUserInput: true,
+          goals: true,
         },
         ...extra,
       };
@@ -246,6 +247,24 @@ export async function dispatchClientRequest(
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
       return handleThreadRead(ctx.threadHandlersCtx, request.params.threadId);
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET:
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET: {
+      const runtime = await ctx.resolveThreadRuntime(request.params.threadId);
+      const goal = await ctx.threadHandlersCtx.ensureGoal?.(runtime);
+      if (!goal) throw new Error("Goal mode is unavailable");
+      if (runtime.isChildSession) throw new Error("Goals belong to root threads, not child sessions");
+      if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET) {
+        const config = ctx.threadHandlersCtx.getGoalsConfig?.();
+        await goal.change(request.params, {
+          idle: !runtime.isRunning && !runtime.turnWork,
+          enabled: config?.enabled === true,
+          mode: runtime.mode,
+          defaultMaxTurns: config?.defaultMaxTurns,
+        });
+      }
+      return goal.snapshot();
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START:
       return handleThreadCompactStart(ctx.threadHandlersCtx, request.params.threadId);
@@ -383,8 +402,15 @@ export async function dispatchClientRequest(
       return result;
     }
 
-    case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD:
-      return handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+    case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD: {
+      const result = await handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+      if (!ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled) {
+        await Promise.all(
+          [...ctx.threadHandlersCtx.threads.values()].map((runtime) => runtime.goal?.pause("disabled")),
+        );
+      }
+      return result;
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
       const pm = ctx.providerManager;

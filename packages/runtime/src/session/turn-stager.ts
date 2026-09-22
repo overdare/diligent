@@ -21,9 +21,18 @@ export class TurnStager {
   private currentLeafId: string | null;
   private readonly assistantEntryIds = new Map<string, string>();
 
-  constructor(baseLeafId: string | null, userMessage: Message, userMessageId = generateEntryId()) {
+  constructor(
+    baseLeafId: string | null,
+    userMessage: Message,
+    userMessageId = generateEntryId(),
+    internal?: { source: string },
+  ) {
     this.currentLeafId = baseLeafId;
-    this.stageMessage(userMessage, undefined, userMessageId);
+    this.stageMessage(
+      userMessage,
+      internal ? { visibility: "internal", source: internal.source } : undefined,
+      userMessageId,
+    );
   }
 
   handleEvent(event: CoreAgentEvent): TurnStagerEventResult {

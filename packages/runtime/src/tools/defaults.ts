@@ -8,6 +8,7 @@ import type { AgentRegistry, CollabToolDeps } from "../collab";
 import { createCollabTools } from "../collab";
 import { getGlobalConfigPath } from "../config";
 import type { DiligentConfig } from "../config/schema";
+import { createGoalTools, type GoalToolHost } from "../goals/tools";
 import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
 import { createApplyPatchTool } from "./apply-patch";
@@ -40,6 +41,7 @@ export interface BuildDefaultToolsResult {
 }
 
 export interface BuildDefaultToolsOptions {
+  goalHost?: GoalToolHost;
   cwd: string;
   paths?: DiligentPaths;
   collabDeps?: Omit<CollabToolDeps, "cwd" | "paths" | "parentTools">;
@@ -159,6 +161,7 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
           createGrepTool(cwd),
           createPlanTool(),
           createRequestUserInputTool(host),
+          ...(options.goalHost ? createGoalTools(options.goalHost) : []),
         ];
 
         if (webEnabled) {

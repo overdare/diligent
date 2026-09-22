@@ -35,7 +35,7 @@ import {
   type SupportedImageMediaType,
 } from "../protocol/index";
 import { PROVIDER_DESCRIPTORS } from "../provider/descriptors";
-import type { ThreadRuntime } from "./thread-handlers";
+import { hasGoalOwnedCleanupPending, type ThreadRuntime } from "./thread-handlers";
 
 type EmitFn = (notification: DiligentServerNotification) => Promise<void>;
 
@@ -79,6 +79,14 @@ export async function handleConfigReload(
 ): Promise<ConfigReloadResult> {
   if (!reloadConfig) {
     throw Object.assign(new Error("Config reload is not supported by this app server."), { code: -32601 });
+  }
+  const goalActivity = [...threads.values()].map((runtime) => ({
+    runtime,
+    wasActive: runtime.goal?.read().goal?.status === "active",
+  }));
+  await Promise.all(goalActivity.map(({ runtime }) => runtime.goal?.pause("config_reload")));
+  if (goalActivity.some(({ runtime, wasActive }) => hasGoalOwnedCleanupPending(runtime, wasActive))) {
+    throw new Error("Wait for goal-owned work cleanup before reloading configuration");
   }
   const result = await reloadConfig();
   for (const runtime of threads.values()) {

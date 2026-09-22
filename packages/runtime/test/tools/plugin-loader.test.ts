@@ -13,6 +13,20 @@ import {
 } from "../../src/tools/plugin-loader";
 
 const CWD = "/tmp/test-cwd";
+mock.module("@test/cancellable-interactions", () => ({
+  manifest: { name: "@test/cancellable-interactions", apiVersion: "1.0", version: "1.0.0" },
+  createTools: () => [
+    {
+      name: "interactive",
+      description: "Ask",
+      parameters: z.object({}),
+      execute: async (_args: unknown, ctx: import("@diligent/plugin-sdk").ToolContext) => {
+        await ctx.ask({ questions: [] });
+        return { output: "answered" };
+      },
+    },
+  ],
+}));
 const TEST_HOME = join(tmpdir(), `diligent-plugin-loader-home-${Date.now()}`);
 const ORIGINAL_HOME = process.env.HOME;
 
@@ -169,6 +183,22 @@ mock.module("@test/explicit-hook-plugin", () => ({
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("loadPlugin", () => {
+  it("forwards the executing child's signal to plugin interaction hosts", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const result = await loadPlugin("@test/cancellable-interactions", CWD, {
+      ask: async (_request, options) => {
+        receivedSignal = options?.signal;
+        return { answers: {} };
+      },
+    });
+    await result.tools[0].execute({}, { toolCallId: "child-question", signal: controller.signal, abort: () => {} });
+    expect(receivedSignal).toBe(controller.signal);
+    controller.abort();
+    await expect(
+      result.tools[0].execute({}, { toolCallId: "cancelled-question", signal: controller.signal, abort: () => {} }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
   const originalWarn = console.warn;
 
   afterAll(async () => {

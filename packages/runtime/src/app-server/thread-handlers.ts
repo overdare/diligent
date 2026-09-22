@@ -6,6 +6,7 @@ import type { ProviderName } from "@diligent/core/provider-contract";
 import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { calculateUsageCost } from "../cost";
+import type { GoalController, GoalWorkScope } from "../goals/controller";
 import type { DiligentPaths } from "../infrastructure";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -16,7 +17,7 @@ import {
   type ThreadItem,
 } from "../protocol/index";
 import type { SessionManager } from "../session/manager";
-import { generateSessionId } from "../session/types";
+import { generateSessionId, type SessionRunOutcome } from "../session/types";
 import type { BundledToolProvider } from "../tools/bundled-provider";
 import type { CollectedPluginHooks } from "../tools/plugin-loader";
 import {
@@ -26,6 +27,13 @@ import {
 } from "./thread-read-builder";
 
 export interface ThreadRuntime {
+  pendingUserStarts?: number;
+  isChildSession?: boolean;
+  goal?: GoalController;
+  goalLoading?: Promise<GoalController>;
+  goalScope?: GoalWorkScope;
+  goalTimer?: ReturnType<typeof setTimeout>;
+  goalWakeVersion?: number;
   id: string;
   cwd: string;
   mode: Mode;
@@ -45,6 +53,11 @@ export interface ThreadRuntime {
   agent?: RuntimeAgent;
 }
 
+/** Agent rebuilds must wait until goal-owned work can no longer reference the old registry. */
+export function hasGoalOwnedCleanupPending(runtime: ThreadRuntime, goalWasActive = false): boolean {
+  return !!runtime.goalScope || !!runtime.goal?.hasChildren || (goalWasActive && !!runtime.turnWork);
+}
+
 /**
  * Reset all turn-lifecycle state on a ThreadRuntime after a turn ends (normally, via abort, or via
  * hook block before the agent loop starts). Centralises the field list so both the normal finally
@@ -60,6 +73,8 @@ export function resetTurnRuntimeState(runtime: ThreadRuntime): void {
 }
 
 export interface ThreadHandlersContext {
+  ensureGoal?: (runtime: ThreadRuntime) => Promise<GoalController>;
+  getGoalsConfig?: () => DiligentConfig["goals"];
   activeThreadId: string | null;
   threads: Map<string, ThreadRuntime>;
   knownCwds: Set<string>;
@@ -81,7 +96,11 @@ export interface ThreadHandlersContext {
   getLatestEffortForCwd: (cwd: string) => Promise<ThinkingEffort>;
   getLatestModelForCwd: (cwd: string) => Promise<ModelRef | undefined>;
   emit: (notification: DiligentServerNotification) => Promise<void>;
-  consumeTurn: (runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string) => Promise<void>;
+  consumeTurn: (
+    runtime: ThreadRuntime,
+    runPromise: Promise<void>,
+    turnId: string,
+  ) => Promise<SessionRunOutcome | undefined>;
   resolveToolsContext: (threadId?: string) => Promise<{
     cwd: string;
     tools: DiligentConfig["tools"] | undefined;
@@ -132,8 +151,13 @@ export async function handleThreadRead(
   currentEffort: ThinkingEffort;
   currentModel?: ModelRef;
   totalCost?: number;
+  goal?: import("@diligent/protocol").ThreadGoal | null;
+  goalSequence?: number;
 }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+
+  const goal = await ctx.ensureGoal?.(runtime);
+  const goalSnapshot = await goal?.snapshot();
 
   // If runtime memory drifts from persisted JSONL, refresh from disk for read consistency.
   // Do this only when idle to avoid mutating active turn state mid-stream.
@@ -166,6 +190,8 @@ export async function handleThreadRead(
 
   return {
     cwd: runtime.cwd,
+    goal: goalSnapshot?.goal,
+    goalSequence: goalSnapshot?.sequence,
     items,
     errors: runtime.manager.getErrors(),
     hasFollowUp: runtime.manager.hasPendingMessages(),
@@ -236,6 +262,11 @@ export async function handleModeSet(
   mode: Mode,
 ): Promise<{ mode: Mode }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  const goalWasActive = runtime.goal?.read().goal?.status === "active";
+  if (mode === "plan") await runtime.goal?.pause("plan_mode");
+  if (hasGoalOwnedCleanupPending(runtime, goalWasActive)) {
+    throw new Error("Wait for goal-owned work cleanup before changing mode");
+  }
   runtime.mode = mode;
   runtime.agent = undefined; // force agent rebuild on next turn
   runtime.manager.appendModeChange(mode, "command");

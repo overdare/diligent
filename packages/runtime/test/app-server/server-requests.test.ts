@@ -6,9 +6,70 @@ import {
   DILIGENT_SERVER_REQUEST_METHODS,
   type JSONRPCMessage,
 } from "@diligent/protocol";
-import { broadcastServerRequest, handleServerResponseMessage } from "@diligent/runtime/app-server/server-requests";
+import {
+  broadcastServerRequest,
+  handleServerResponseMessage,
+  requestApprovalFromConnections,
+} from "@diligent/runtime/app-server/server-requests";
 
 describe("broadcastServerRequest", () => {
+  it("goal approval rejects missing and unanswered consumers instead of granting once", async () => {
+    let paused = 0;
+    const pending = new Map();
+    const args = {
+      threadId: "thread",
+      request: { permission: "execute" as const, toolName: "bash", description: "Run tests" },
+      connections: new Map(),
+      pendingServerRequests: pending,
+      allocateServerRequestId: () => 4,
+      onUnavailable: async () => {
+        paused++;
+      },
+    };
+    expect(await requestApprovalFromConnections(args)).toBe("reject");
+    const connections = new Map([["c", { id: "c", peer: { async send() {}, onMessage() {} } }]]);
+    const response = requestApprovalFromConnections({ ...args, connections });
+    pending.get(4).resolve(null);
+    clearTimeout(pending.get(4).timeoutId);
+    pending.delete(4);
+    expect(await response).toBe("reject");
+    expect(paused).toBe(2);
+  });
+  it("cancels durable requests without resolving a permissive null response", async () => {
+    const received: JSONRPCMessage[] = [];
+    const connections = new Map([
+      [
+        "c",
+        {
+          id: "c",
+          peer: {
+            async send(message: JSONRPCMessage) {
+              received.push(message);
+            },
+            onMessage() {},
+          },
+        },
+      ],
+    ]);
+    const pending = new Map();
+    const controller = new AbortController();
+    const response = broadcastServerRequest({
+      method: DILIGENT_SERVER_REQUEST_METHODS.USER_INPUT_REQUEST,
+      params: {},
+      connections,
+      pendingServerRequests: pending,
+      allocateServerRequestId: () => 1,
+      timeoutMs: null,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(response).rejects.toMatchObject({ name: "AbortError" });
+    expect(pending.size).toBe(0);
+    expect(received).toContainEqual({
+      method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+      params: { requestId: 1 },
+    });
+  });
   it("emits server_request_resolved to recipients when request times out", async () => {
     const received: JSONRPCMessage[] = [];
     const connections = new Map([

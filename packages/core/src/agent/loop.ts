@@ -13,7 +13,7 @@ import { streamAssistantMessage } from "./assistant";
 import { getCompactionDecision, runCompaction } from "./compaction";
 import type { AgentLoopHookDispatcher } from "./loop-hooks";
 import { runToolCalls } from "./tool";
-import type { AgentStream, CompactionConfig, QueuedSteeringMessage } from "./types";
+import type { AgentStopReason, AgentStream, CompactionConfig, QueuedSteeringMessage } from "./types";
 import { DoomLoopDetector } from "./util/doom-loop";
 import { toSerializableError } from "./util/errors";
 
@@ -84,6 +84,7 @@ export async function runAgentLoop(
   const providerStream = streamFunction;
   let itemCounter = 0;
   let turnNumber = 0;
+  let stopReason: AgentStopReason = "completed";
   const nextItemId = () => `item-${++itemCounter}`;
 
   stream.emit({ type: "agent_start" });
@@ -226,11 +227,16 @@ export async function runAgentLoop(
     }
   } catch (err) {
     if (!userSignal?.aborted) {
+      stopReason = "failed";
       stream.emit({ type: "error", error: toSerializableError(err), fatal: true });
       throw err;
     }
+    stopReason = "interrupted";
   } finally {
-    stream.emit({ type: "agent_end", messages: conversation });
+    if (stopReason !== "failed" && signal.aborted) {
+      stopReason = "interrupted";
+    }
+    stream.emit({ type: "agent_end", messages: conversation, stopReason });
   }
 
   return {

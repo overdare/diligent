@@ -63,6 +63,14 @@ describe("skill commands", () => {
     expect(registry.get("help")?.hidden).toBeUndefined();
   });
 
+  it("reserves goal ahead of a dynamic skill while hiding unsupported controls", () => {
+    const registry = new CommandRegistry();
+    registerBuiltinCommands(registry, [makeSkill("goal")]);
+
+    expect(registry.get("goal")?.hidden).toBe(true);
+    expect(registry.complete("go")).toEqual([]);
+  });
+
   it("delegates /skillName invocation through unified slash path", async () => {
     const registry = new CommandRegistry();
     registerBuiltinCommands(registry, [makeSkill("tidy-plan")]);

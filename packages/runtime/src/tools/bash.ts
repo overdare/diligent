@@ -64,12 +64,16 @@ export function createBashTool(cwd: string, host?: RuntimeToolHost): Tool<typeof
       "Execute a shell command. Use this to run programs, install packages, manage files, or interact with the system.",
     parameters: BashParams,
     async execute(args, ctx): Promise<ToolResult> {
-      const approval = await requestToolApproval(host, {
-        permission: "execute",
-        toolName: "bash",
-        description: args.description ?? args.command,
-        details: { command: args.command },
-      });
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "execute",
+          toolName: "bash",
+          description: args.description ?? args.command,
+          details: { command: args.command },
+        },
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return {

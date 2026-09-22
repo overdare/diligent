@@ -169,6 +169,20 @@ describe("BUILTIN_COMMANDS", () => {
 });
 
 describe("buildCommandList", () => {
+  test("exposes goal only when the server advertises the capability", () => {
+    expect(buildCommandList([], { goals: false }).some((command) => command.name === "goal")).toBe(false);
+    expect(buildCommandList([], { goals: true }).find((command) => command.name === "goal")).toEqual({
+      name: "goal",
+      description: "Show or control the thread goal",
+      usage: "/goal [set] <objective> [--tokens N] [--turns N] | pause | resume | clear | edit <objective>",
+    });
+  });
+
+  test("reserves goal ahead of a dynamic skill even when controls are hidden", () => {
+    const commands = buildCommandList([{ name: "goal", description: "Skill collision" }], { goals: false });
+    expect(commands.some((command) => command.name === "goal")).toBe(false);
+  });
+
   test("returns builtins when no skills", () => {
     const commands = buildCommandList([]);
     expect(commands).toEqual(BUILTIN_COMMANDS);

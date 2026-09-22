@@ -21,10 +21,18 @@ import type { SessionPersistence } from "./persistence";
 import type { SessionCache } from "./session-cache";
 import type { SessionStateStore } from "./state-store";
 import { TurnStager, type TurnStagerEventResult } from "./turn-stager";
-import type { CompactionEntry, ErrorEntry, SessionEntry, SessionManagerConfig } from "./types";
+import type {
+  CompactionEntry,
+  ErrorEntry,
+  SessionEntry,
+  SessionManagerConfig,
+  SessionRunOptions,
+  SessionRunOutcome,
+} from "./types";
 import { generateEntryId } from "./types";
 
 const logger = createLogger({ scope: "runtime.session" });
+type AgentStopReason = Extract<CoreAgentEvent, { type: "agent_end" }>["stopReason"];
 
 export interface TurnOrchestratorContext {
   state: SessionStateStore;
@@ -64,10 +72,10 @@ export class TurnOrchestrator {
    * Run the agent loop with the current session context.
    * Persists user message and agent response to session.
    */
-  async run(userMessage: Message, opts?: { signal?: AbortSignal; userMessageId?: string }): Promise<void> {
+  async runWithOutcome(userMessage: Message, options?: SessionRunOptions): Promise<SessionRunOutcome> {
     const turnScope = createStreamTurnScope();
     try {
-      await this.runInternal(userMessage, { ...opts, turnScope });
+      return await this.runInternal(userMessage, { ...options, turnScope });
     } finally {
       await turnScope.dispose();
     }
@@ -75,30 +83,33 @@ export class TurnOrchestrator {
 
   private async runInternal(
     userMessage: Message,
-    opts: { signal?: AbortSignal; userMessageId?: string; turnScope: StreamTurnScope },
-  ): Promise<void> {
+    options: SessionRunOptions & { turnScope: StreamTurnScope },
+  ): Promise<SessionRunOutcome> {
     this.emitBusyStatus();
 
-    const prepared = await this.prepareRun(userMessage, opts.userMessageId);
-    const { unsubscribe, getCurrentTurnId, getLastAgentError } = this.subscribeRunEvents(prepared);
+    const prepared = await this.prepareRun(userMessage, options.userMessageId, options.internal);
+    const { unsubscribe, getCurrentTurnId, getLastAgentError, getAgentStopReason } = this.subscribeRunEvents(prepared);
 
-    let normalCompletion = false;
+    let outcome: SessionRunOutcome;
     try {
-      await this.executeRun(prepared.agent, userMessage, opts.signal, opts.turnScope);
+      await this.executeRun(prepared.agent, userMessage, options.signal, options.turnScope);
       this.commitRun(prepared.turnStager);
-      normalCompletion = true;
+      outcome =
+        getAgentStopReason() === "interrupted" || options.signal?.aborted
+          ? { status: "interrupted" }
+          : { status: "completed" };
     } catch (err) {
-      this.handleRunError(err, prepared.turnStager, getCurrentTurnId(), getLastAgentError());
+      const error = this.handleRunError(err, prepared.turnStager, getCurrentTurnId(), getLastAgentError());
+      outcome = { status: "failed", error };
     } finally {
       this.finishRun(unsubscribe);
     }
 
-    const shouldRunStop = normalCompletion || opts.signal?.aborted === true;
-    if (shouldRunStop) {
+    if (outcome.status !== "failed") {
       await this.ctx.config.onStop?.(this.ctx.getContext());
     }
 
-    this.throwIfAborted(opts.signal);
+    return outcome;
   }
 
   async compactNow(): Promise<{
@@ -233,11 +244,12 @@ export class TurnOrchestrator {
   private async prepareRun(
     userMessage: Message,
     userMessageId?: string,
+    internal?: { source: string },
   ): Promise<{ agent: Agent; turnStager: TurnStager }> {
     this.ctx.repairEntries();
 
     const context = buildSessionContext(this.ctx.state.getCommittedEntries(), this.ctx.state.getCommittedLeafId(), {});
-    const turnStager = new TurnStager(this.ctx.state.getCommittedLeafId(), userMessage, userMessageId);
+    const turnStager = new TurnStager(this.ctx.state.getCommittedLeafId(), userMessage, userMessageId, internal);
     const snapshot = turnStager.getSnapshot();
     this.ctx.state.setPending(snapshot.entries, snapshot.leafId);
 
@@ -274,13 +286,16 @@ export class TurnOrchestrator {
     unsubscribe: () => void;
     getCurrentTurnId: () => string | undefined;
     getLastAgentError: () => { error: ErrorEntry["error"]; fatal: boolean } | undefined;
+    getAgentStopReason: () => AgentStopReason | undefined;
   } {
     const { agent, turnStager } = prepared;
     let currentTurnId: string | undefined;
     let lastAgentError: { error: ErrorEntry["error"]; fatal: boolean } | undefined;
+    let agentStopReason: AgentStopReason | undefined;
 
     const unsubscribe = agent.subscribe((event: CoreAgentEvent) => {
       if (event.type === "turn_start") currentTurnId = event.turnId;
+      if (event.type === "agent_end") agentStopReason = event.stopReason;
       if (event.type === "error") {
         lastAgentError = { error: event.error, fatal: event.fatal };
       }
@@ -315,6 +330,7 @@ export class TurnOrchestrator {
       unsubscribe,
       getCurrentTurnId: () => currentTurnId,
       getLastAgentError: () => lastAgentError,
+      getAgentStopReason: () => agentStopReason,
     };
   }
 
@@ -336,7 +352,7 @@ export class TurnOrchestrator {
     turnStager: TurnStager,
     turnId?: string,
     agentError?: { error: ErrorEntry["error"]; fatal: boolean },
-  ): void {
+  ): ErrorEntry["error"] {
     const pendingEntries = turnStager.flushPendingEntries();
     this.ctx.appendEntries(pendingEntries);
     this._initializedAgent = null;
@@ -360,17 +376,12 @@ export class TurnOrchestrator {
       fields: { lastPersisted, serializedError: serializable, runContext },
     });
     this.ctx.appendError(serializable, { fatal: false, turnId, persist: true });
+    return serializable;
   }
 
   private finishRun(unsubscribe: () => void): void {
     this.ctx.state.clearPending();
     unsubscribe();
-  }
-
-  private throwIfAborted(signal?: AbortSignal): void {
-    if (signal?.aborted) {
-      throw new Error("Aborted");
-    }
   }
 
   private persistCompactionEntry(event: {

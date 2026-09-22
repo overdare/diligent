@@ -5,6 +5,40 @@ import { appReducer } from "../../../../src/web/client/lib/app-state";
 import { initialThreadState } from "../../../../src/web/client/lib/thread-store";
 import { resolveDraftModel } from "../../../../src/web/client/lib/use-provider-manager";
 
+test("late goal command replies cannot replace another thread's goal state", () => {
+  const state = { ...initialThreadState, activeThreadId: "new", goalSequence: 2 };
+  const next = appReducer(state, {
+    type: "set_goal_snapshot",
+    payload: { threadId: "old", goal: null, sequence: 100 },
+  });
+  expect(next).toBe(state);
+});
+
+test("a stale read of the same thread cannot roll back a newer goal notification", () => {
+  const state = { ...initialThreadState, activeThreadId: "thread", goalSequence: 10 };
+  const next = appReducer(state, {
+    type: "hydrate",
+    payload: {
+      threadId: "thread",
+      mode: "default",
+      history: {
+        cwd: "/tmp",
+        items: [],
+        errors: [],
+        hasFollowUp: false,
+        pendingSteers: [],
+        entryCount: 0,
+        isRunning: false,
+        currentMode: "default",
+        currentEffort: "medium",
+        goal: null,
+        goalSequence: 4,
+      },
+    },
+  });
+  expect(next.goalSequence).toBe(10);
+});
+
 test("set_threads keeps optimistic first message when server value is empty", () => {
   const seeded = {
     ...initialThreadState,

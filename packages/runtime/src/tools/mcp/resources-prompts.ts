@@ -60,12 +60,16 @@ export function createMcpResourceTools(
           metadata: { error: true },
         };
       }
-      const decision = await requestToolApproval(host, {
-        permission: "execute",
-        toolName: "mcp_read_resource",
-        description: `Read MCP resource "${uri}" from server "${server}"`,
-        details: { server, uri },
-      });
+      const decision = await requestToolApproval(
+        host,
+        {
+          permission: "execute",
+          toolName: "mcp_read_resource",
+          description: `Read MCP resource "${uri}" from server "${server}"`,
+          details: { server, uri },
+        },
+        { signal: ctx.signal },
+      );
       if (decision === "reject") return { output: "Resource read rejected by user." };
       const result = await manager.readResource(server, uri, ctx.signal);
       return { output: result.text || "(empty resource)", metadata: { mcpServer: server, mcpResource: uri } };
@@ -109,12 +113,16 @@ export function createMcpPromptTools(servers: string[], manager: McpConnectionMa
           metadata: { error: true },
         };
       }
-      const decision = await requestToolApproval(host, {
-        permission: "execute",
-        toolName: "mcp_get_prompt",
-        description: `Render MCP prompt "${name}" from server "${server}"`,
-        details: { server, name, args },
-      });
+      const decision = await requestToolApproval(
+        host,
+        {
+          permission: "execute",
+          toolName: "mcp_get_prompt",
+          description: `Render MCP prompt "${name}" from server "${server}"`,
+          details: { server, name, args },
+        },
+        { signal: ctx.signal },
+      );
       if (decision === "reject") return { output: "Prompt render rejected by user." };
       const result = await manager.getPrompt(server, name, args, ctx.signal);
       const header = result.description ? `${result.description}\n\n` : "";

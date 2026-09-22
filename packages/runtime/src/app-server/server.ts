@@ -20,6 +20,9 @@ import type { ChildStopInfo } from "../collab/types";
 import type { DiligentConfig } from "../config/schema";
 import { presentRuntimeError } from "../errors/presentation";
 import { resolveExperimentGates } from "../experiments";
+import { GoalController } from "../goals/controller";
+import { openGoalStore } from "../goals/store";
+import type { GoalToolHost } from "../goals/tools";
 import {
   getLastAssistantMessage,
   getTurnUsage,
@@ -46,7 +49,8 @@ import {
 } from "../protocol/index";
 import { isRpcNotification, isRpcRequest, isRpcResponse, type RpcPeer } from "../rpc/channel";
 import { SessionManager, type SessionManagerConfig } from "../session/manager";
-import type { AppendedEntryInfo } from "../session/types";
+import { readSessionFile } from "../session/persistence";
+import type { AppendedEntryInfo, SessionRunOutcome } from "../session/types";
 import { type BundledToolProvider, collectBundledHooks } from "../tools/bundled-provider";
 import { collectPluginHooks, type PluginDiscoveryMode } from "../tools/plugin-loader";
 import type { UserInputRequest, UserInputResponse } from "../tools/user-input-types";
@@ -71,18 +75,26 @@ import { getLatestEffortFromSessions, getLatestModelFromSessions } from "./sessi
 import type { SkillConfigManager } from "./skill-handlers";
 import type { SubagentConfigManager } from "./subagent-handlers";
 import { resetTurnRuntimeState, type ThreadRuntime } from "./thread-handlers";
+import { handleTurnStart } from "./turn-handlers";
 
 export type { ConnectedPeer, ModelConfig, ToolConfigManager } from "./request-dispatcher";
 export type { SkillConfigManager } from "./skill-handlers";
 export type { SubagentConfigManager } from "./subagent-handlers";
 
 export interface CreateAgentArgs {
+  goalHost?: GoalToolHost;
   cwd: string;
   mode: Mode;
   effort: ThinkingEffort;
   model: ModelRef;
-  approve: (request: ApprovalRequest) => Promise<ApprovalResponse>;
-  ask: (request: UserInputRequest) => Promise<UserInputResponse>;
+  approve: (
+    request: ApprovalRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<ApprovalResponse>;
+  ask: (
+    request: UserInputRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ) => Promise<UserInputResponse>;
   /** Lazily returns the current session ID for collab parent-session linking. */
   getSessionId?: () => string | undefined;
   /** The thread's current agent, if one already exists. Passed so createAgent can reuse the registry. */
@@ -94,6 +106,7 @@ export interface CreateAgentArgs {
 }
 
 export interface DiligentAppServerConfig {
+  getGoalsConfig?: () => DiligentConfig["goals"];
   serverName?: string;
   serverVersion?: string;
   cwd?: string;
@@ -166,6 +179,7 @@ export class DiligentAppServer {
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly knownCwds = new Set<string>();
   private activeThreadId: string | null = null;
+  private closing = false;
 
   // New multi-connection infrastructure
   private readonly connections = new Map<string, ConnectedPeer>();
@@ -243,6 +257,10 @@ export class DiligentAppServer {
   disconnect(connectionId: string): void {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
+    // Revoke goal ownership synchronously before the legacy approval fallback can run.
+    if (this.connections.size === 1) {
+      for (const runtime of this.threads.values()) void runtime.goal?.pause("disconnected").catch(() => {});
+    }
 
     // Clean up subscriptions for this connection
     for (const [subId, sub] of this.subscriptionMap) {
@@ -266,6 +284,25 @@ export class DiligentAppServer {
     }
 
     this.connections.delete(connectionId);
+  }
+
+  /** Stop automatic work and durably pause goals before a host exits. */
+  async shutdown(): Promise<void> {
+    this.closing = true;
+    for (const runtime of this.threads.values()) {
+      if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
+    }
+    await Promise.all(
+      [...this.threads.values()].map(async (runtime) => {
+        await runtime.goal?.pause("shutdown");
+        // Normal turns and a completed goal's final reply may still be waiting
+        // for input. Cancel them before awaiting cleanup during host shutdown.
+        runtime.abortController?.abort();
+        await runtime.turnWork;
+        await runtime.agent?.registry?.shutdownAll();
+        await runtime.goal?.close();
+      }),
+    );
   }
 
   subscribeToThread(connectionId: string, threadId: string): string {
@@ -310,6 +347,7 @@ export class DiligentAppServer {
     if (!request.success) {
       return this.errorResponse("unknown", -32600, "Invalid Request", request.error.message);
     }
+    if (this.closing) return this.errorResponse(request.data.id, -32000, "Server is shutting down");
 
     const rawParams = (request.data.params ?? {}) as Record<string, unknown>;
     const params = applySessionDefaults(connectionId, request.data.method, rawParams, (id) => this.connections.get(id));
@@ -349,7 +387,11 @@ export class DiligentAppServer {
 
   // ─── Turn consumption ────────────────────────────────────────────────────────
 
-  private async consumeTurn(runtime: ThreadRuntime, runPromise: Promise<void>, turnId: string): Promise<void> {
+  private async consumeTurn(
+    runtime: ThreadRuntime,
+    runPromise: Promise<void>,
+    turnId: string,
+  ): Promise<SessionRunOutcome | undefined> {
     // Wire collab events from the registry into the notification stream.
     const wiredRegistries = new Set<import("../collab/registry").AgentRegistry>();
     const collabEventHandler = (event: AgentEvent) => {
@@ -377,10 +419,10 @@ export class DiligentAppServer {
       await runtime.manager.waitForWrites();
       if (runtime.currentTurnId === turnId) terminal = "completed";
     } catch (error) {
+      const isAbort =
+        (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
+        controller?.signal.aborted === true;
       if (runtime.currentTurnId === turnId) {
-        const isAbort =
-          (error instanceof Error && (error.name === "AbortError" || error.message === "Aborted")) ||
-          controller?.signal.aborted === true;
         if (isAbort) terminal = "interrupted";
         else
           await this.emit({
@@ -388,11 +430,12 @@ export class DiligentAppServer {
             params: { threadId: runtime.id, error: toSerializableError(error), fatal: false },
           });
       }
+      // The goal coordinator must see cleanup failures as well as model outcomes.
+      return isAbort ? { status: "interrupted" } : { status: "failed", error: toSerializableError(error) };
     } finally {
       unsub();
       for (const registry of wiredRegistries) registry.setCollabEventHandler(undefined);
       if (runtime.currentTurnId === turnId) {
-        runtime.turnWork = undefined;
         resetTurnRuntimeState(runtime);
         if (terminal)
           await this.emit({
@@ -542,7 +585,14 @@ export class DiligentAppServer {
     return this.serverRequestSeq;
   }
 
-  private async requestApproval(threadId: string, request: ApprovalRequest): Promise<ApprovalResponse> {
+  private async requestApproval(
+    threadId: string,
+    request: ApprovalRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ): Promise<ApprovalResponse> {
+    const runtime = this.threads.get(threadId);
+    const signal = options?.signal ?? runtime?.goalScope?.signal;
+    signal?.throwIfAborted();
     const policyAction = this.config.permissionEngine?.evaluate(request);
     if (policyAction === "allow") {
       return "once";
@@ -557,16 +607,28 @@ export class DiligentAppServer {
       connections: this.connections,
       pendingServerRequests: this.pendingServerRequests,
       allocateServerRequestId: () => this.allocateServerRequestId(),
+      signal,
+      onUnavailable:
+        runtime?.goalScope || runtime?.goal?.hasChildren
+          ? () => runtime.goal!.pause("interaction_unavailable")
+          : undefined,
     });
 
     if (decision === "always") {
       this.config.permissionEngine?.remember(request, "allow");
     }
 
+    runtime?.goal?.wake();
+
     return decision;
   }
 
-  private async requestUserInput(threadId: string, request: UserInputRequest): Promise<UserInputResponse> {
+  private async requestUserInput(
+    threadId: string,
+    request: UserInputRequest,
+    options?: import("../tools/capabilities").RuntimeRequestOptions,
+  ): Promise<UserInputResponse> {
+    const signal = options?.signal ?? this.threads.get(threadId)?.goalScope?.signal;
     // Serialize per thread: if the agent issues several user-input prompts at once
     // (e.g. parallel selectable asset searches), present them one at a time so each
     // is resolved before the next is broadcast.
@@ -577,11 +639,78 @@ export class DiligentAppServer {
         connections: this.connections,
         pendingServerRequests: this.pendingServerRequests,
         allocateServerRequestId: () => this.allocateServerRequestId(),
+        signal,
       }),
-    );
+    ).finally(() => this.threads.get(threadId)?.goal?.wake());
   }
 
   // ─── Thread runtime utilities ────────────────────────────────────────────────
+
+  private async ensureGoal(runtime: ThreadRuntime): Promise<GoalController> {
+    if (runtime.goal) return runtime.goal;
+    runtime.goalLoading ??= (async () => {
+      const paths = await this.config.resolvePaths(runtime.cwd);
+      if (runtime.manager.sessionPath) {
+        const { header } = await readSessionFile(runtime.manager.sessionPath, { materializeImages: false });
+        runtime.isChildSession = !!header.parentSession;
+      }
+      const store = await openGoalStore(paths.sessions, runtime.id);
+      runtime.goal = await GoalController.open(store, runtime.id, {
+        changed: (snapshot) =>
+          this.emit({
+            method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED,
+            params: { threadId: runtime.id, ...snapshot },
+          }),
+        wake: (delay) => this.scheduleGoal(runtime, delay),
+      });
+      return runtime.goal;
+    })();
+    return runtime.goalLoading;
+  }
+
+  private scheduleGoal(runtime: ThreadRuntime, delayMs = 0): void {
+    if (this.closing) return;
+    const version = (runtime.goalWakeVersion ?? 0) + 1;
+    runtime.goalWakeVersion = version;
+    if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
+    runtime.goalTimer = setTimeout(() => {
+      runtime.goalTimer = undefined;
+      void (async () => {
+        await runtime.turnWork;
+        if (runtime.goalWakeVersion !== version || runtime.pendingUserStarts) return;
+        if ([...this.pendingServerRequests.values()].some((request) => request.threadId === runtime.id)) return;
+        if (
+          this.closing ||
+          !this.threads.has(runtime.id) ||
+          runtime.goal?.read().goal?.status !== "active" ||
+          runtime.isRunning ||
+          runtime.goal.hasChildren
+        )
+          return;
+        if (!this.config.getGoalsConfig?.()?.enabled || runtime.mode === "plan" || this.connections.size === 0) {
+          await runtime.goal.pause("execution_unavailable");
+          return;
+        }
+        await handleTurnStart(
+          this.buildThreadHandlersContext(),
+          {
+            threadId: runtime.id,
+            message: "Continue working toward the active goal. Verify results before reporting completion.",
+          },
+          undefined,
+          this.turnInitiators,
+          { goal: runtime.goal, isCurrent: () => !this.closing && runtime.goalWakeVersion === version },
+        );
+      })().catch(async (error: unknown) => {
+        await runtime.goal?.pause("runtime_error").catch(() => {});
+        await this.emit({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.ERROR,
+          params: { threadId: runtime.id, error: toSerializableError(error), fatal: false },
+        });
+      });
+    }, delayMs);
+    runtime.goalTimer.unref?.();
+  }
 
   private async createThreadRuntime(
     threadId: string,
@@ -614,12 +743,13 @@ export class DiligentAppServer {
       agent: async () => {
         const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
         const request: CreateAgentArgs = {
+          goalHost: { controller: () => runtime.goal, scope: () => runtime.goalScope },
           cwd,
           mode: runtime.mode,
           effort: runtime.runningEffortSnapshot ?? runtime.effort,
           model: selectedModel,
-          approve: (request) => this.requestApproval(runtime.id, request),
-          ask: (request) => this.requestUserInput(runtime.id, request),
+          approve: (request, options) => this.requestApproval(runtime.id, request, options),
+          ask: (request, options) => this.requestUserInput(runtime.id, request, options),
           getSessionId: () => runtime.manager.sessionId,
           existingAgent: runtime.agent,
           onChildStop: (info) => this.runStopHooksFor(info),
@@ -910,6 +1040,8 @@ export class DiligentAppServer {
 
   private buildThreadHandlersContext() {
     return {
+      ensureGoal: (runtime: ThreadRuntime) => this.ensureGoal(runtime),
+      getGoalsConfig: () => this.config.getGoalsConfig?.(),
       activeThreadId: this.activeThreadId,
       threads: this.threads,
       knownCwds: this.knownCwds,

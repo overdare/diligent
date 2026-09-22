@@ -189,7 +189,62 @@ describe("Agent loop", () => {
     expect(types).toContain("turn_end");
     expect(types).toContain("agent_end");
 
+    const agentEnd = events.find((event) => event.type === "agent_end");
+    expect(agentEnd).toMatchObject({ type: "agent_end", stopReason: "completed" });
+
     expect(result.length).toBeGreaterThan(1); // user + assistant
+  });
+
+  test("provider failure reports a failed outer stop reason", async () => {
+    const streamFn: StreamFunction = () => {
+      const stream = new EventStream<ProviderEvent, ProviderResult>(
+        (event) => event.type === "done" || event.type === "error",
+        (event) => {
+          if (event.type === "done") return { message: event.message };
+          throw (event as { type: "error"; error: Error }).error;
+        },
+      );
+      queueMicrotask(() => {
+        stream.push({ type: "start" });
+        stream.push({ type: "error", error: new Error("provider failed") });
+      });
+      return stream;
+    };
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+      effort: "medium",
+      retry: { maxRetries: 0, baseDelayMs: 1, maxDelayMs: 1 },
+      llmMsgStreamFn: streamFn,
+    });
+    const events: CoreAgentEvent[] = [];
+    const unsubscribe = agent.subscribe((event) => events.push(event));
+
+    await expect(agent.prompt({ role: "user", content: "fail", timestamp: Date.now() })).rejects.toThrow(
+      "provider failed",
+    );
+    unsubscribe();
+
+    expect(events.filter((event) => event.type === "agent_end")).toEqual([
+      expect.objectContaining({ type: "agent_end", stopReason: "failed" }),
+    ]);
+  });
+
+  test("external abort reports an interrupted outer stop reason", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const agent = new Agent(TEST_MODEL, [{ label: "test", content: "test" }], [], {
+      effort: "medium",
+      llmMsgStreamFn: createMockStreamFunction([makeAssistant([{ type: "text", text: "unused" }])]),
+    });
+
+    const { events } = await runAgent(
+      agent,
+      { role: "user", content: "stop", timestamp: Date.now() },
+      controller.signal,
+    );
+
+    expect(events.filter((event) => event.type === "agent_end")).toEqual([
+      expect.objectContaining({ type: "agent_end", stopReason: "interrupted" }),
+    ]);
   });
 
   test("tool call: two turns (LLM → tool → LLM → response)", async () => {
@@ -491,7 +546,7 @@ describe("Agent loop", () => {
       llmMsgStreamFn: streamFn,
     });
 
-    const { result } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
+    const { events, result } = await runAgent(agent, { role: "user", content: "go", timestamp: Date.now() });
 
     const assistant = result.find((message) => message.role === "assistant") as AssistantMessage;
     const toolUseIds = assistant.content.filter((block) => block.type === "tool_call").map((block) => block.id);
@@ -501,6 +556,9 @@ describe("Agent loop", () => {
 
     // Invariant: every tool_use in the conversation has a matching tool_result.
     expect(toolResultIds.sort()).toEqual(toolUseIds.sort());
+    expect(events.filter((event) => event.type === "agent_end")).toEqual([
+      expect.objectContaining({ type: "agent_end", stopReason: "interrupted" }),
+    ]);
   });
 });
 
