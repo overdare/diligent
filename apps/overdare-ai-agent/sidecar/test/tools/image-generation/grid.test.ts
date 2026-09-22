@@ -1,4 +1,4 @@
-// @summary Verifies that failed or cancelled grid persistence removes only that attempt's partial crops.
+// @summary Verifies grid pixel diagnostics, crop persistence, and cleanup after failure or cancellation.
 import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,8 +12,46 @@ const bytes = Buffer.from(
   "base64",
 );
 
+test.each(["coin", null])("treats partial-alpha artwork as visible in a cell requested as %s", async (item) => {
+  const cwd = await mkdtemp(join(tmpdir(), "grid-partial-alpha-"));
+  const partial = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgEpFrAAABJQC97kY5HgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  try {
+    const result = await storeImageGrid(
+      cwd,
+      { bytes: partial, mediaType: "image/png", requestedModel: "fixture" },
+      { rows: 1, columns: 1, items: [item] },
+      "transparent",
+      new AbortController().signal,
+    );
+    const cell = item === null ? result.details.skippedCells[0] : result.details.cells[0];
+    expect(cell.transparency).toEqual({
+      status: "has_transparency",
+      transparentPixels: 0,
+      partialPixels: 1,
+      opaquePixels: 0,
+    });
+    if (item === null) {
+      expect(cell.warning).toContain("visible pixels remain");
+      expect(result.details.cells).toHaveLength(0);
+      expect(result.stored).toHaveLength(0);
+      expect(result.details.skippedCells[0].reason).toBe("requested_empty");
+    } else {
+      expect(cell.warning).toBeUndefined();
+      expect(result.details.skippedCells).toHaveLength(0);
+      expect(result.stored).toHaveLength(1);
+      expect(await Bun.file(result.details.cells[0].file).exists()).toBe(true);
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test.each([
   "cancel",
+  "cancel after last write",
   "write failure",
 ])("cleans partial crops after %s and preserves previously saved images", async (failure) => {
   const cwd = await mkdtemp(join(tmpdir(), "grid-cleanup-"));
@@ -25,7 +63,9 @@ test.each([
     if (writes === 1 && failure === "write failure") throw new Error("disk full");
     const image = await save(...args);
     writes++;
-    if (failure === "cancel") controller.abort(new Error("cancel cropping"));
+    if (failure === "cancel" || (failure === "cancel after last write" && writes === 2)) {
+      controller.abort(new Error("cancel cropping"));
+    }
     return image;
   });
   try {
@@ -37,8 +77,8 @@ test.each([
         "transparent",
         controller.signal,
       ),
-    ).rejects.toThrow(failure === "cancel" ? "cancel cropping" : "disk full");
-    expect(writes).toBe(1);
+    ).rejects.toThrow(failure === "write failure" ? "disk full" : "cancel cropping");
+    expect(writes).toBe(failure === "cancel after last write" ? 2 : 1);
     const remaining = await readdir(join(resolvePaths(cwd).images, "generated"));
     expect(remaining).toHaveLength(1);
     expect(original.file.endsWith(remaining[0])).toBe(true);
