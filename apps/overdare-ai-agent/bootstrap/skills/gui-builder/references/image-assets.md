@@ -35,9 +35,18 @@ Generate the missing artwork identified by the chosen design. When it calls for 
 - Request one isolated production asset per call, or use `grid` for a batch of matching isolated assets. Identify what changes and what stays, material, proportions, padding, alpha regions, and exclusions such as no labels. Borrow style without inheriting the guide's background, system controls, or neighboring panels.
 - Once shared references exist, issue independent asset calls together. Keep Studio mutations in the single editing session. Match results by role rather than completion order and preserve successful outputs.
 
+### Choose the image model
+
+Choose and pass `model` based on the work. Honor a model the user names; otherwise make the selection without asking the user to choose an implementation detail. Both models generate and edit images using text and `referenceImages`:
+
+- `gpt-image-2.5-flare` emphasizes speed and high-quality everyday generation. Prefer it for new icons, illustrations, mockups, and matching asset batches when fast iteration matters.
+- `gpt-image-2.5-sunburst` emphasizes editing precision. Prefer it for targeted edits, background repairs, and revisions that need to preserve existing composition, geometry, or fine details.
+
+Having a style reference does not by itself require Sunburst; distinguish generating new artwork from preserving an existing image during an edit. Both use the selected ChatGPT OAuth provider. Model selection does not switch accounts or providers.
+
 ### Batch matching assets with a grid
 
-`generate_image` accepts optional `model: "gpt-image-2.5-flare"` for fast everyday generation; omitting it keeps `gpt-image-2.5-sunburst` for editing precision. Both use the selected ChatGPT OAuth provider. Model selection does not switch accounts or providers.
+Choose a grid when several isolated assets share a style and can use the same cell proportions. Use separate calls for different aspect ratios, assets needing more individual detail, or targeted repairs. Account for each asset's usable resolution within the shared sheet when choosing the batch size; the cell limit is not a recommended batch size.
 
 For an asset sheet, pass `grid: { rows, columns, items }`. Supply exactly `rows * columns` item descriptions in row-major order (left to right, then top to bottom), with `null` for each intentional empty cell. Use up to 64 cells. Put common style, perspective, and exclusions in `prompt`; attach the guide using `referenceImages` as usual. Grid requests default to `background: "transparent"`, but pass it explicitly when alpha is required.
 

@@ -25,8 +25,12 @@ const IMAGE_FAILURE_GUIDANCE =
 const IMAGE_TOOL_DESCRIPTION =
   "Generate and save one UI mockup, icon, panel, or illustration directly with Diligent ChatGPT OAuth. No Codex installation is required. " +
   "Attach referenceImages for edits or coherent variants, and set background explicitly for transparent assets. " +
-  "Optionally select model gpt-image-2.5-flare for fast everyday generation; the default remains gpt-image-2.5-sunburst for editing precision. " +
-  "For a batch of matching isolated assets, pass grid with rows, columns, and row-major items (null for blank cells). " +
+  "Choose the model that fits the task and set model explicitly; honor a model the user names, otherwise make the choice yourself. " +
+  "Both models generate and edit images from text and referenceImages. " +
+  "gpt-image-2.5-flare emphasizes speed and high-quality everyday generation: prefer it for new icons, illustrations, mockups, and asset batches when fast iteration matters. " +
+  "gpt-image-2.5-sunburst emphasizes editing precision: prefer it for targeted changes to existing artwork, background repairs, and revisions that must preserve composition, geometry, or fine details. " +
+  "Choose grid when several isolated assets share a style and can use the same cell proportions; use separate calls for different aspect ratios, assets needing more individual detail, or targeted repairs. " +
+  "Set grid rows, columns, and row-major items (null for blank cells). " +
   "Grid mode generates one sheet, adds layout/padding instructions, and returns the original plus occupied cells as lossless PNGs. Intentional blanks and fully transparent crops are omitted; skippedCells retains their diagnostics. " +
   "Grid backgrounds default to transparent. Inspect crops: generation may misplace objects despite the requested layout. " +
   "Independent requests can run in parallel after shared references exist. " +
@@ -43,11 +47,13 @@ const parameters = z
     model: z
       .enum([DEFAULT_IMAGE_MODEL, "gpt-image-2.5-flare"])
       .optional()
-      .describe("Optional image model; defaults to gpt-image-2.5-sunburst."),
+      .describe(
+        "Choose explicitly for the task: gpt-image-2.5-flare for fast generation and iteration; gpt-image-2.5-sunburst for precise edits and preserving existing detail. Both support reference images. Honor the user's model choice. If omitted, uses gpt-image-2.5-sunburst.",
+      ),
     grid: gridSchema
       .optional()
       .describe(
-        "Optional asset sheet layout (up to 64 cells). The tool builds the layout prompt and returns the original plus occupied cell PNGs in row-major order, omitting blank cells.",
+        "Use for matching isolated assets that can share cell proportions (up to 64 cells); omit for a single image, different aspect ratios, or a targeted repair. The tool builds the layout prompt and returns the original plus occupied cell PNGs in row-major order, omitting blank cells.",
       ),
     background: z
       .enum(["auto", "opaque", "transparent"])
