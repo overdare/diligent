@@ -6,6 +6,7 @@
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
     { "name": "geometry-recipe", "entry": "geometry-recipe" },
     { "name": "gui-builder", "entry": "gui-builder" },
+    { "name": "image-asset-generation", "entry": "image-asset-generation" },
     { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
     { "name": "overdare-debug-expert", "entry": "overdare-debug-expert" },
     { "name": "procedural-builder", "entry": "procedural-builder" },

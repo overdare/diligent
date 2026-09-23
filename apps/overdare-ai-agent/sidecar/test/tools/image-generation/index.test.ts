@@ -162,9 +162,177 @@ describe("generate_image", () => {
     }
   });
 
-  test("does not accept a model override from the model", async () => {
+  test("rejects unsupported image models", async () => {
     const tool = await toolFor({ cwd: "/repo" });
     expect(tool.parameters.safeParse({ prompt: "A coin", model: "gpt-image-1" }).success).toBe(false);
+  });
+
+  test("forwards the explicitly selected GPT Image 2.5 Flare model", async () => {
+    const { cwd, cleanup } = project();
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => {
+          expect(input.model).toBe("gpt-image-2.5-flare");
+          return { bytes: Buffer.from("image"), mediaType: "image/png", requestedModel: input.model };
+        },
+      });
+      const args = tool.parameters.parse({ prompt: "A coin", model: "gpt-image-2.5-flare" });
+      const result = await tool.execute(args, context());
+      expect(JSON.parse(result.output).requestedModel).toBe("gpt-image-2.5-flare");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("validates grid geometry and requires an explicit item or null for each cell", async () => {
+    const tool = await toolFor({ cwd: "/repo" });
+    for (const grid of [
+      { rows: 0, columns: 1, items: ["coin"] },
+      { rows: 1.5, columns: 1, items: ["coin"] },
+      { rows: 2, columns: 2, items: ["coin"] },
+      { rows: 1, columns: 1, items: [""] },
+      { rows: 9, columns: 9, items: Array(81).fill("coin") },
+      { rows: 1, columns: 1, items: ["coin"], extra: true },
+    ])
+      expect(tool.parameters.safeParse({ prompt: "Icons", grid }).success).toBe(false);
+  });
+
+  test("generates once and returns the original plus occupied PNG cells, skipping requested blanks", async () => {
+    const { cwd, cleanup } = project();
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPgEpH7z8DAwAAABpQBPFULoekAAAAASUVORK5CYII=",
+      "base64",
+    );
+    let calls = 0;
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => {
+          calls++;
+          expect(input.background).toBe("transparent");
+          expect(input.prompt).toContain("Warm pastel icons");
+          expect(input.prompt).toContain("2 columns x 1 rows");
+          expect(input.prompt).toContain("Cell 1 (row 1, column 1): coin");
+          expect(input.prompt).toContain("Cell 2 (row 1, column 2): EMPTY");
+          return { bytes, mediaType: "image/png", requestedModel: input.model };
+        },
+      });
+      const result = await tool.execute(
+        tool.parameters.parse({ prompt: "Warm pastel icons", grid: { rows: 1, columns: 2, items: ["coin", null] } }),
+        context(),
+      );
+      const output = JSON.parse(result.output);
+      expect(calls).toBe(1);
+      expect(await readFile(output.file)).toEqual(bytes);
+      expect(output.grid).toMatchObject({ rows: 1, columns: 2, width: 2, height: 1 });
+      expect(output.grid.cells).toHaveLength(1);
+      expect(output.grid.cells[0]).toMatchObject({
+        index: 1,
+        row: 1,
+        column: 1,
+        item: "coin",
+        requestedEmpty: false,
+        width: 1,
+        height: 1,
+      });
+      expect(output.grid.skippedCells[0]).toMatchObject({
+        index: 2,
+        row: 1,
+        column: 2,
+        item: null,
+        requestedEmpty: true,
+        transparency: { status: "empty" },
+      });
+      expect(output.grid.skippedCells[0].warning).toBeUndefined();
+      expect(output.grid.skippedCells[0].file).toBeUndefined();
+      expect(result.outputImages).toHaveLength(2);
+      for (const [index, cell] of output.grid.cells.entries()) {
+        expect(isAbsolute(cell.file)).toBe(true);
+        expect(cell.file.endsWith(".png")).toBe(true);
+        expect((await readFile(cell.file)).toString("base64")).toBe(result.outputImages?.[index + 1]?.source.data);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("preserves the generated sheet when grid extraction fails", async () => {
+    const { cwd, cleanup } = project();
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => ({
+          bytes: Buffer.from("invalid"),
+          mediaType: "image/png",
+          requestedModel: input.model,
+        }),
+      });
+      const result = await tool.execute({ prompt: "Icons", grid: { rows: 1, columns: 1, items: ["coin"] } }, context());
+      expect(result.metadata?.error).toBe(true);
+      const output = JSON.parse(result.output);
+      expect(output.grid.error).toContain("dimensions");
+      expect(await readFile(output.file, "utf8")).toBe("invalid");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("warns on unexpected artwork in blank cells and missing artwork in occupied cells without changing pixels", async () => {
+    const { cwd, cleanup } = project();
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPgEpH7z8DAwAAABpQBPFULoekAAAAASUVORK5CYII=",
+      "base64",
+    );
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => ({ bytes, mediaType: "image/png", requestedModel: input.model }),
+      });
+      const result = await tool.execute(
+        { prompt: "Icons", grid: { rows: 1, columns: 2, items: [null, "coin"] } },
+        context(),
+      );
+      const output = JSON.parse(result.output);
+      const cells = output.grid.skippedCells;
+      expect(output.grid.cells).toHaveLength(0);
+      expect(result.outputImages).toHaveLength(1);
+      expect(cells[0].warning).toContain("visible pixels remain");
+      expect(cells[1].warning).toContain("no visible artwork");
+      expect(cells[0].transparency.status).toBe("opaque");
+      expect(cells[1].transparency.status).toBe("empty");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("an explicit opaque grid background is forwarded and does not demand transparent empty cells", async () => {
+    const { cwd, cleanup } = project();
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpH7z8XFxQAABvcBW4Wvy/wAAAAASUVORK5CYII=",
+      "base64",
+    );
+    try {
+      const tool = await toolFor({
+        cwd,
+        generateImage: async (input) => {
+          expect(input.background).toBe("opaque");
+          expect(input.prompt).not.toContain("real PNG alpha");
+          return { bytes, mediaType: "image/png", requestedModel: input.model };
+        },
+      });
+      const result = await tool.execute(
+        { prompt: "Icons", background: "opaque", grid: { rows: 1, columns: 2, items: [null, "coin"] } },
+        context(),
+      );
+      const grid = JSON.parse(result.output).grid;
+      expect(grid.cells).toHaveLength(1);
+      expect(grid.cells[0]).toMatchObject({ index: 2, column: 2, item: "coin" });
+      expect(grid.skippedCells[0]).toMatchObject({ index: 1, requestedEmpty: true });
+      expect([...grid.cells, ...grid.skippedCells].every((cell: { warning?: string }) => !cell.warning)).toBe(true);
+    } finally {
+      cleanup();
+    }
   });
 
   test("a provider error emits bounded retry and scope-preserving fallback instructions without retrying internally", async () => {

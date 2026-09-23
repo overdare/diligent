@@ -77,6 +77,72 @@ export interface ImageAlphaStats {
   opaquePixels: number;
 }
 
+export interface ImageGridCell extends ImageAlphaStats {
+  row: number;
+  column: number;
+  x: number;
+  y: number;
+  bytes: ArrayBuffer;
+}
+
+/** Lossless PNG crops covering the original bitmap, including remainder pixels and empty cells. */
+export async function splitImageGrid(
+  bytes: ArrayBuffer,
+  mediaType: ResizableMediaType,
+  grid: { rows: number; columns: number },
+  options: { signal?: AbortSignal } = {},
+): Promise<{ width: number; height: number; cells: ImageGridCell[] }> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const { rows, columns } = grid;
+  if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(columns) || rows < 1 || columns < 1 || rows * columns > 64) {
+    throw new Error("Image grids must contain between 1 and 64 cells with positive integer rows and columns.");
+  }
+  const dimensions = imageDimensionsFromHeader(new Uint8Array(bytes), mediaType);
+  if (
+    !dimensions ||
+    dimensions.width < columns ||
+    dimensions.height < rows ||
+    dimensions.width * dimensions.height > MAX_DECODE_PIXELS
+  ) {
+    throw new Error("Invalid or oversized image dimensions for the requested grid.");
+  }
+  const source = await decodeImage(bytes, mediaType);
+  const cells: ImageGridCell[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      signal?.throwIfAborted();
+      const x = Math.floor((column * source.width) / columns);
+      const y = Math.floor((row * source.height) / rows);
+      const width = Math.floor(((column + 1) * source.width) / columns) - x;
+      const height = Math.floor(((row + 1) * source.height) / rows) - y;
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let line = 0; line < height; line++) {
+        const start = ((y + line) * source.width + x) * 4;
+        data.set(source.data.subarray(start, start + width * 4), line * width * 4);
+      }
+      const image = { data, width, height };
+      const encoded = await encodeImage(image, "image/png");
+      signal?.throwIfAborted();
+      cells.push({ row: row + 1, column: column + 1, x, y, bytes: encoded, ...countImageAlpha(image) });
+    }
+  }
+  return { width: source.width, height: source.height, cells };
+}
+
+function countImageAlpha(image: ImageDataLike): ImageAlphaStats {
+  let transparentPixels = 0;
+  let partialPixels = 0;
+  let opaquePixels = 0;
+  for (let index = 3; index < image.data.length; index += 4) {
+    const alpha = image.data[index];
+    if (alpha === 0) transparentPixels++;
+    else if (alpha === 255) opaquePixels++;
+    else partialPixels++;
+  }
+  return { width: image.width, height: image.height, transparentPixels, partialPixels, opaquePixels };
+}
+
 /** Inspect original pixels without resizing or re-encoding; null means inspection was unavailable. */
 export async function inspectImageAlpha(
   bytes: ArrayBuffer,
@@ -86,16 +152,7 @@ export async function inspectImageAlpha(
   if (!dimensions || dimensions.width * dimensions.height > MAX_DECODE_PIXELS) return null;
   try {
     const image = await decodeImage(bytes, mediaType);
-    let transparentPixels = 0;
-    let partialPixels = 0;
-    let opaquePixels = 0;
-    for (let index = 3; index < image.data.length; index += 4) {
-      const alpha = image.data[index];
-      if (alpha === 0) transparentPixels++;
-      else if (alpha === 255) opaquePixels++;
-      else partialPixels++;
-    }
-    return { width: image.width, height: image.height, transparentPixels, partialPixels, opaquePixels };
+    return countImageAlpha(image);
   } catch {
     return null;
   }

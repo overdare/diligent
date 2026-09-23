@@ -13,6 +13,7 @@ import {
   downscaleImageIfNeeded,
   imageDimensionsFromHeader,
   inspectImageAlpha,
+  splitImageGrid,
   withImageDownscaling,
 } from "../../src/llm/image-resize";
 
@@ -46,6 +47,48 @@ beforeAll(async () => {
 });
 
 describe("downscaleImageIfNeeded", () => {
+  test("grid crops cover every pixel once in row-major order and preserve RGBA at uneven boundaries", async () => {
+    const image = solidImage(7, 5);
+    for (let i = 0; i < 35; i++) image.data.set([i, 2 * i, 3 * i, i % 3 === 0 ? 0 : 128], i * 4);
+    const result = await splitImageGrid(await encodePng(image), "image/png", { rows: 2, columns: 3 });
+    expect(result.width).toBe(7);
+    expect(result.height).toBe(5);
+    expect(result.cells).toHaveLength(6);
+    const restored = new Uint8ClampedArray(image.data.length);
+    const visits = new Uint8Array(35);
+    for (const [index, cell] of result.cells.entries()) {
+      expect(cell.row).toBe(Math.floor(index / 3) + 1);
+      expect(cell.column).toBe((index % 3) + 1);
+      const decoded = await decodePng(cell.bytes);
+      expect([decoded.width, decoded.height]).toEqual([cell.width, cell.height]);
+      for (let y = 0; y < cell.height; y++) {
+        for (let x = 0; x < cell.width; x++) {
+          const target = (cell.y + y) * image.width + cell.x + x;
+          visits[target]++;
+          restored.set(decoded.data.subarray((y * cell.width + x) * 4, (y * cell.width + x + 1) * 4), target * 4);
+        }
+      }
+    }
+    expect([...visits].every((count) => count === 1)).toBe(true);
+    expect(restored).toEqual(image.data);
+  });
+
+  test("grid cropping rejects invalid geometry and honors cancellation", async () => {
+    for (const grid of [
+      { rows: 0, columns: 2 },
+      { rows: 1.5, columns: 2 },
+      { rows: 81, columns: 1 },
+    ]) {
+      await expect(splitImageGrid(smallPng, "image/png", grid)).rejects.toThrow();
+    }
+    await expect(splitImageGrid(new ArrayBuffer(0), "image/png", { rows: 1, columns: 1 })).rejects.toThrow();
+    const controller = new AbortController();
+    controller.abort(new Error("cancel grid"));
+    await expect(
+      splitImageGrid(smallPng, "image/png", { rows: 1, columns: 1 }, { signal: controller.signal }),
+    ).rejects.toThrow("cancel grid");
+  });
+
   test("alpha inspection counts real pixel alpha rather than the presence of a channel", async () => {
     const image = solidImage(3, 1);
     image.data[3] = 0;
