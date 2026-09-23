@@ -96,6 +96,25 @@ describe("apply_patch tool", () => {
     expect(await readFile(target, "utf-8")).toBe("new content\n");
   });
 
+  test("in-place updates truncate old bytes and preserve the file mode", async () => {
+    const target = join(tmpDir, "shorter.txt");
+    await writeFile(target, "long old content\n", { mode: 0o640 });
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: shorter.txt",
+      "@@",
+      "-long old content",
+      "+x",
+      "*** End Patch",
+    ].join("\n");
+
+    const result = await tool.execute({ patch }, makeCtx());
+
+    expect(result.metadata?.error).not.toBe(true);
+    expect(await readFile(target, "utf-8")).toBe("x\n");
+    if (process.platform !== "win32") expect((await stat(target)).mode & 0o777).toBe(0o640);
+  });
+
   test("new patch files are owner-only inside the OS temp directory", async () => {
     const result = await tool.execute(
       { patch: "*** Begin Patch\n*** Add File: private.txt\n+secret\n*** End Patch" },

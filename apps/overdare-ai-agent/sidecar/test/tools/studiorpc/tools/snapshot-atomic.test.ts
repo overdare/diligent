@@ -39,6 +39,16 @@ test("snapshot files are owner-only even when the project is inside the OS temp 
   }
 });
 
+test("snapshot copy preserves bytes across multiple read buffers", () => {
+  const cwd = project();
+  const bytes = Buffer.alloc(128 * 1024 + 3, 0x7f);
+  writeFileSync(join(cwd, "world.ovdrjm"), bytes);
+
+  const path = captureSnapshot(cwd, "session", 0);
+
+  expect(readFileSync(path)).toEqual(bytes);
+});
+
 for (const kind of ["manual", "pre-rollback"] satisfies SnapshotKind[]) {
   test(`failed ${kind} metadata publication cannot become the default turn snapshot`, () => {
     const cwd = project();

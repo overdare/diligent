@@ -1,5 +1,5 @@
 // @summary Applies codex-style Begin/End patch envelopes with lenient/strict verification
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { Tool, ToolResult } from "@diligent/core/tool-contract";
 import { z } from "zod";
 import { dirnameCrossPlatform, isAbsolute, relativeCrossPlatform, resolveCrossPlatformPath } from "../util/path";
@@ -413,18 +413,36 @@ async function applyHunks(hunks: PatchHunk[], cwd: string): Promise<FileChange[]
     }
 
     const sourcePath = resolvePatchPath(cwd, hunk.path);
-    const info = await stat(sourcePath).catch(() => null);
-    if (!info || !info.isFile()) {
+    const source = await open(sourcePath, "r+").catch(() => null);
+    if (!source) {
       throw new Error(`Failed to read file to update: ${sourcePath}`);
     }
-    const before = await readFile(sourcePath, "utf-8");
-    const after = deriveNewContent(sourcePath, before, hunk.chunks);
     const targetPath = hunk.movePath ? resolvePatchPath(cwd, hunk.movePath) : sourcePath;
+    let before: string;
+    let after: string;
+    try {
+      const info = await source.stat();
+      if (!info.isFile()) throw new Error(`Failed to read file to update: ${sourcePath}`);
+      before = await source.readFile("utf-8");
+      after = deriveNewContent(sourcePath, before, hunk.chunks);
 
-    await mkdir(dirnameCrossPlatform(targetPath), { recursive: true });
-    await writeFile(targetPath, after, { encoding: "utf-8", mode: 0o600 });
+      if (targetPath === sourcePath) {
+        const bytes = Buffer.from(after, "utf-8");
+        let offset = 0;
+        while (offset < bytes.length) {
+          const { bytesWritten } = await source.write(bytes, offset, bytes.length - offset, offset);
+          if (bytesWritten === 0) throw new Error(`Failed to update file: ${sourcePath}`);
+          offset += bytesWritten;
+        }
+        await source.truncate(bytes.length);
+      }
+    } finally {
+      await source.close();
+    }
 
-    if (hunk.movePath && sourcePath !== targetPath) {
+    if (targetPath !== sourcePath) {
+      await mkdir(dirnameCrossPlatform(targetPath), { recursive: true });
+      await writeFile(targetPath, after, { encoding: "utf-8", mode: 0o600 });
       await rm(sourcePath, { force: true });
     }
 
