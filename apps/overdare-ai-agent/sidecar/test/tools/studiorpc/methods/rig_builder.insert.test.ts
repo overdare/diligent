@@ -191,7 +191,11 @@ describe("studiorpc_rig_builder_insert", () => {
         hook_event_name: "UserPromptSubmit",
         prompt: "insert a rig",
       });
-      const tools = await provider.createTools({ cwd, host: { approve: async () => "once" } });
+      const tools = await provider.createTools({
+        cwd,
+        sessionId: "rig-session",
+        host: { approve: async () => "once" },
+      });
       const tool = tools.find((candidate) => candidate.name === "studiorpc_rig_builder_insert")!;
 
       await tool.execute({}, toolContext());

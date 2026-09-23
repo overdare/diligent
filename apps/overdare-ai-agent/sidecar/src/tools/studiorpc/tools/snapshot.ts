@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { resolvePaths } from "@diligent/runtime";
 import { resolveOvdrjmPathFromUmap } from "./ovdrjm-utils";
 
-export type SnapshotKind = "turn" | "pre-rollback";
+export type SnapshotKind = "turn" | "manual" | "pre-rollback";
+export type SnapshotSummaryStatus = "pending" | "ready" | "failed" | "unavailable";
 
 /** Metadata stored in the `{id}.json` sidecar next to each snapshot. */
 export interface SnapshotMeta {
@@ -17,6 +18,10 @@ export interface SnapshotMeta {
   kind: SnapshotKind;
   /** Session transcript the labeled request came from; enables read-time context lookup. */
   transcriptPath?: string;
+  /** Exact ID of the user message that initiated this request. */
+  userMessageId?: string;
+  stateSummary?: string;
+  summaryStatus?: SnapshotSummaryStatus;
 }
 
 /** A snapshot on disk: sidecar metadata plus the path to the .ovdrjm copy. */
@@ -28,11 +33,13 @@ export interface CaptureOptions {
   label?: string;
   kind?: SnapshotKind;
   transcriptPath?: string;
+  userMessageId?: string;
+  summaryStatus?: SnapshotSummaryStatus;
 }
 
 /**
  * Directory holding rollback snapshots, under the project's storage-namespace
- * dir (`.overdare/snapshots` in prod, `.diligent/snapshots` in dev). Uses
+ * dir (`.overdare/snapshots` in prod, `.diligent/snapshots` by default). Uses
  * resolvePaths so the namespace and dot-prefix follow the project convention.
  */
 export function snapshotsDir(cwd: string): string {
@@ -82,6 +89,8 @@ export function captureSnapshot(cwd: string, sessionId: string, index: number, o
     createdAt: new Date().toISOString(),
     ...(options.label !== undefined ? { label: options.label } : {}),
     ...(options.transcriptPath !== undefined ? { transcriptPath: options.transcriptPath } : {}),
+    ...(options.userMessageId !== undefined ? { userMessageId: options.userMessageId } : {}),
+    ...(options.summaryStatus !== undefined ? { summaryStatus: options.summaryStatus } : {}),
     kind: options.kind ?? "turn",
   };
   writeFileSync(join(dir, `${id}.json`), JSON.stringify(meta));
@@ -133,6 +142,18 @@ export function listSnapshots(cwd: string): SnapshotEntry[] {
       createdAt: meta?.createdAt ?? new Date(mtimeMs).toISOString(),
       ...(meta?.label !== undefined ? { label: meta.label } : {}),
       ...(meta?.transcriptPath !== undefined ? { transcriptPath: meta.transcriptPath } : {}),
+      ...(meta?.userMessageId !== undefined ? { userMessageId: meta.userMessageId } : {}),
+      ...(meta?.stateSummary !== undefined ? { stateSummary: meta.stateSummary } : {}),
+      ...(meta?.summaryStatus !== undefined
+        ? {
+            // A stopped process cannot finish its background task. Expose expired
+            // pending work as failed without turning a read into a filesystem write.
+            summaryStatus:
+              meta.summaryStatus === "pending" && Date.now() - Date.parse(meta.createdAt) > 60_000
+                ? "failed"
+                : meta.summaryStatus,
+          }
+        : {}),
       kind: meta?.kind ?? "turn",
       mtimeMs,
     });
@@ -142,14 +163,14 @@ export function listSnapshots(cwd: string): SnapshotEntry[] {
 }
 
 /**
- * Most recent restorable snapshot: the newest entry whose kind is not
- * "pre-rollback". Pre-rollback safety snapshots are excluded so a
+ * Most recent automatic baseline. Manual and pre-rollback checkpoints remain
+ * reachable by explicit ID and do not replace the default target, so a
  * parameterless rollback stays idempotent (calling it twice restores the same
  * baseline instead of undoing itself); they remain reachable via
  * findSnapshotById. Throws if no snapshot exists.
  */
 export function findLatestSnapshot(cwd: string): SnapshotEntry {
-  const latest = listSnapshots(cwd).find((entry) => entry.kind !== "pre-rollback");
+  const latest = listSnapshots(cwd).find((entry) => entry.kind === "turn");
   if (!latest) {
     throw new Error("No rollback snapshot found. Nothing to roll back.");
   }
@@ -175,14 +196,14 @@ export function restoreSnapshot(cwd: string, snapshotPath: string): void {
 export const MAX_SNAPSHOTS_PER_SESSION = 20;
 
 /**
- * Delete the oldest snapshots (and their metadata sidecars) beyond `keep` for
- * one session. Ordered by index — within a session the index is monotonic, so
+ * Delete the oldest automatic/safety snapshots beyond `keep` for one session.
+ * Manual checkpoints are retained. Ordered by index, so
  * it is a more reliable age signal than mtime.
  */
 export function pruneSnapshots(cwd: string, sessionId: string, keep = MAX_SNAPSHOTS_PER_SESSION): void {
   const dir = snapshotsDir(cwd);
   const sessionEntries = listSnapshots(cwd)
-    .filter((entry) => entry.sessionId === sessionId)
+    .filter((entry) => entry.sessionId === sessionId && entry.kind !== "manual")
     .sort((a, b) => b.index - a.index);
   for (const entry of sessionEntries.slice(keep)) {
     rmSync(entry.path, { force: true });

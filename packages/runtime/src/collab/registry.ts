@@ -18,6 +18,7 @@ import { RuntimeAgent } from "../agent/runtime-agent";
 import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
+import { forkToolForChild } from "../tools/child-fork";
 import { buildDefaultTools } from "../tools/defaults";
 import { COLLAB_TOOL_NAMES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
@@ -45,7 +46,7 @@ export { COLLAB_TOOL_NAMES };
  * Resolves which tools a child agent is allowed to use, given the parent tool set,
  * effective child policy and agent definition policy.
  *
- * Three concerns handled separately:
+ * Four concerns handled separately:
  * 1. Which non-collab tools survive (intersection of parent tools, agent definition, and restored legacy policy).
  * 2. Whether collab tools should be re-created for the child (signalled by nestedCollabEnabled).
  *    Collab tools are unconditionally excluded from childTools even when nestedCollabEnabled=true because
@@ -53,6 +54,7 @@ export { COLLAB_TOOL_NAMES };
  *    would give them stale references pointing to the parent's registry. buildDefaultTools re-creates them.
  * 3. The allowedChildToolNames set is also used as a post-buildDefaultTools filter (caller's responsibility)
  *    so that freshly-created collab tools survive only when nestedCollabEnabled=true.
+ * 4. Surviving inherited tools may opt into a child-boundary fork to freeze provider-owned request state.
  */
 export function resolveChildToolAccess(
   parentTools: Tool[],
@@ -82,9 +84,9 @@ export function resolveChildToolAccess(
 
   // Collab tools are always excluded here — child agents receive fresh collab tools from buildDefaultTools
   // when nestedCollabEnabled=true (bound to the child's own registry, not the parent's).
-  const childTools = parentTools.filter(
-    (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
-  );
+  const childTools = parentTools
+    .filter((tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name))
+    .map(forkToolForChild);
   const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
   return { childTools, nestedCollabEnabled, allowedChildToolNames };
@@ -364,6 +366,7 @@ export class AgentRegistry {
               model: childModel,
               tools: filteredTools,
               parentSessionId: this.deps.getParentSessionId?.(),
+              sessionId: childManager.sessionId,
               logger: logger.child({ scope: "runtime.collab.agent-loop-hooks" }),
             }),
           ) ?? [];

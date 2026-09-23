@@ -10,6 +10,9 @@ export type {
   BundledToolProvider,
   BundledToolProviderContext,
   CollectedBundledHooks,
+  TextGenerationFn,
+  TextGenerationInput,
+  TextGenerationOptions,
 } from "./bundled-provider";
 export { collectBundledHooks, createBundledAgentLoopHooks } from "./bundled-provider";
 export type { RuntimeToolHost } from "./capabilities";
@@ -24,6 +27,8 @@ export type {
   ToolStateReason,
 } from "./catalog";
 export { buildToolCatalog } from "./catalog";
+export type { ChildForkableTool } from "./child-fork";
+export { FORK_TOOL_FOR_CHILD, forkToolForChild } from "./child-fork";
 export type { BuildDefaultToolsResult } from "./defaults";
 export { buildDefaultTools } from "./defaults";
 export { createEditTool, createMultiEditTool } from "./edit";

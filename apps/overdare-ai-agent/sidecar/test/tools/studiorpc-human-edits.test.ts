@@ -459,7 +459,11 @@ describe("human-edits unified loop-hook context injection", () => {
     const result = await p.onUserPromptSubmit(promptInput(cwd));
     expect(result.additionalContext).toBeUndefined();
 
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     expect(hook).toBeDefined();
     hook?.onPromptStart?.({ messages: [] });
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
@@ -482,7 +486,11 @@ describe("human-edits unified loop-hook context injection", () => {
     ]);
     const p = promptProvider();
     await p.onUserPromptSubmit(promptInput(cwd));
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     hook?.onPromptStart?.({ messages: [] });
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
     expect(injections?.[0]?.content).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
@@ -491,7 +499,11 @@ describe("human-edits unified loop-hook context injection", () => {
     writeEditLog(cwd, [
       envelope("SetProperty", [subject("Folder", "f1", "Props", [{ Property: "GroupSize", Before: 1, After: 2 }])]),
     ]);
-    const tools = await p.createTools({ cwd, host: { approve: async () => "once" } });
+    const tools = await p.createTools({
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+      host: { approve: async () => "once" },
+    });
     const tool = tools.find((tool) => tool.name === "studiorpc_human_edits");
     expect(tool).toBeDefined();
     const result = await tool!.execute({} as never, toolCtx());
@@ -505,7 +517,11 @@ describe("human-edits unified loop-hook context injection", () => {
     const cwd = projectDir();
     const p = promptProvider();
     await p.onUserPromptSubmit(promptInput(cwd));
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     hook?.onPromptStart?.({ messages: [] });
     expect(hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false })).toBeUndefined();
   });
@@ -519,9 +535,10 @@ describe("human-edits unified loop-hook context injection", () => {
       },
     });
     const p = provider as typeof provider & { onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit> };
-    await p.onUserPromptSubmit(promptInput(projectDir()));
+    const input = promptInput(projectDir());
+    await p.onUserPromptSubmit(input);
+    await provider.onStop?.({ ...input, hook_event_name: "Stop" });
     expect(calls).toEqual([]);
-    expect(provider.onStop).toBeUndefined();
   });
 
   test("does not register the Studio human-edits loop hook for child agents", () => {
