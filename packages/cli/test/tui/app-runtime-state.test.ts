@@ -1,6 +1,12 @@
 // @summary Tests for extracted app runtime state timing and steering helpers
 import { describe, expect, test } from "bun:test";
-import { AppRuntimeState } from "../../src/tui/app-runtime-state";
+import { AppRuntimeState, shouldInterruptForCancel } from "../../src/tui/app-runtime-state";
+
+test("Ctrl+C interrupts an active goal during the idle gap between runs", () => {
+  expect(shouldInterruptForCancel(false, "active")).toBe(true);
+  expect(shouldInterruptForCancel(false, "paused")).toBe(false);
+  expect(shouldInterruptForCancel(true, null)).toBe(true);
+});
 
 describe("AppRuntimeState", () => {
   test("queues and consumes pending steers", () => {

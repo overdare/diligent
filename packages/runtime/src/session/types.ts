@@ -173,6 +173,17 @@ export interface AppendedEntryInfo {
   userId?: string;
 }
 
+export interface SessionRunOptions {
+  internal?: { source: string };
+  signal?: AbortSignal;
+  userMessageId?: string;
+}
+
+export type SessionRunOutcome =
+  | { status: "completed" }
+  | { status: "interrupted" }
+  | { status: "failed"; error: SerializableError };
+
 export interface SessionManagerConfig {
   cwd: string;
   paths: DiligentPaths;

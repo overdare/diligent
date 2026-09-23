@@ -12,11 +12,13 @@ import type {
   Mode,
   PendingSteer,
   SessionSummary,
+  ThreadGoal,
   ThreadStatus,
   ToolRenderPayload,
   UserInputRequest,
 } from "@diligent/protocol";
 import { applyAgentEvents, DILIGENT_SERVER_NOTIFICATION_METHODS } from "@diligent/protocol";
+import { applyGoalSnapshot } from "@diligent/runtime/client";
 import type { AgentContextItem } from "./agent-native-bridge";
 import { parseContextFromText } from "./agent-native-bridge";
 import {
@@ -188,6 +190,8 @@ export interface ThreadState {
   liveToolInput: string | null;
   liveToolOutput: string;
   overlayStatus: string | null;
+  goal: ThreadGoal | null;
+  goalSequence: number;
 }
 
 // ─── Shared reducer live-field bridge ───────────────────────────────────────
@@ -224,6 +228,8 @@ export const initialThreadState: ThreadState = {
   liveToolInput: null,
   liveToolOutput: "",
   overlayStatus: null,
+  goal: null,
+  goalSequence: 0,
 };
 
 let renderSeq = 0;
@@ -793,6 +799,14 @@ export function reduceServerNotification(
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_INTERRUPTED) {
     return handleTurnInterruptedNotification(stateWithAuthoritativeStatus);
+  }
+
+  if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED) {
+    const next = applyGoalSnapshot(
+      { goal: stateWithAuthoritativeStatus.goal, sequence: stateWithAuthoritativeStatus.goalSequence },
+      notification.params,
+    );
+    return { ...stateWithAuthoritativeStatus, goal: next.goal, goalSequence: next.sequence };
   }
 
   if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_COMPACTION_STARTED) {

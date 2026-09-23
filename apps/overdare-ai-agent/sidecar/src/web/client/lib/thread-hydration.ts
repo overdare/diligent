@@ -111,6 +111,8 @@ function hydrateFromSnapshotItems(state: ThreadState, payload: ThreadReadRespons
     isCompacting: false,
     usage: { ...zeroUsage },
     currentContextTokens: 0,
+    goal: payload.goal ?? null,
+    goalSequence: payload.goalSequence ?? 0,
   };
 
   const applyItem = (method: "item/started" | "item/completed", item: ThreadItem): void => {

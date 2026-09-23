@@ -48,6 +48,11 @@ export async function runToolCalls(
     toolCalls.length > 1 && toolCalls.every((toolCall) => registry.get(toolCall.name)?.supportParallel);
   const itemIds = toolCalls.map(() => generateItemId());
 
+  if (signal?.aborted) {
+    fillAbortedExecutions(toolCalls, itemIds, executions, signal, stream, false);
+    return { executions };
+  }
+
   if (canRunInParallel) {
     for (let index = 0; index < toolCalls.length; index++) {
       stream.emit({

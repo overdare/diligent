@@ -219,6 +219,7 @@ export function useAppBootstrap({
   setEffortState,
   setSkills,
   setRuntimeVersion,
+  setGoalsSupported,
   setConsent,
   setInitialModel,
   applySessionModel,
@@ -233,6 +234,7 @@ export function useAppBootstrap({
   setEffortState: Dispatch<SetStateAction<ThinkingEffort>>;
   setSkills: Dispatch<SetStateAction<SkillInfo[]>>;
   setRuntimeVersion: Dispatch<SetStateAction<string>>;
+  setGoalsSupported: Dispatch<SetStateAction<boolean>>;
   setConsent: (consent: ConsentState | null) => void;
   setInitialModel: (model: ModelRef | undefined, models?: InitializeResponse["availableModels"]) => void;
   applySessionModel: (sessionModel?: ModelRef) => Promise<void>;
@@ -277,6 +279,7 @@ export function useAppBootstrap({
         setEffortState(meta.effort ?? "medium");
         setSkills(meta.skills ?? []);
         setRuntimeVersion(meta.serverVersion ?? "");
+        setGoalsSupported(meta.capabilities.goals === true);
         setConsent(meta.consent ?? null);
         setInitialModel(meta.currentModel, meta.availableModels ?? []);
         rpc.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
@@ -329,6 +332,7 @@ export function useAppBootstrap({
     setEffortState,
     setSkills,
     setRuntimeVersion,
+    setGoalsSupported,
     setConsent,
     setInitialModel,
     applySessionModel,

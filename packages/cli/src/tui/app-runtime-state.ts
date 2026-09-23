@@ -1,6 +1,17 @@
 // @summary Renderer-agnostic runtime state for the CLI TUI orchestration layer
 
-import type { PendingSteer, Mode as ProtocolMode, RequestId, ThinkingEffort } from "@diligent/protocol";
+import type {
+  GoalStatus,
+  PendingSteer,
+  Mode as ProtocolMode,
+  RequestId,
+  ThinkingEffort,
+  ThreadGoalResponse,
+} from "@diligent/protocol";
+
+export function shouldInterruptForCancel(isProcessing: boolean, goalStatus: GoalStatus | null): boolean {
+  return isProcessing || goalStatus === "active";
+}
 
 export interface PendingTurnState {
   resolve: () => void;
@@ -28,6 +39,8 @@ export class AppRuntimeState {
   >();
   pendingSteers: PendingSteer[] = [];
   cancelRequested = false;
+  goalsSupported = false;
+  goalSnapshot: ThreadGoalResponse = { goal: null, sequence: 0 };
 
   constructor(mode: ProtocolMode, effort: ThinkingEffort) {
     this.currentMode = mode;

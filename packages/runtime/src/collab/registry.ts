@@ -19,7 +19,7 @@ import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
 import { buildDefaultTools } from "../tools/defaults";
-import { COLLAB_TOOL_NAMES } from "../tools/tool-metadata";
+import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabResumePolicy, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
@@ -59,7 +59,9 @@ export function resolveChildToolAccess(
   params: { allowNestedAgents?: boolean; allowedTools?: string[] },
   agentDefinition: ResolvedAgentDefinition,
 ): { childTools: Tool[]; nestedCollabEnabled: boolean; allowedChildToolNames: Set<string> } {
-  let allowedChildToolNames = new Set(parentTools.map((tool) => tool.name));
+  let allowedChildToolNames = new Set(
+    parentTools.filter((tool) => !TOOL_CAPABILITIES[tool.name]?.rootOnly).map((tool) => tool.name),
+  );
   const agentAllowedTools = agentDefinition.allowedTools?.length ? agentDefinition.allowedTools : undefined;
   const policyAllowedTools = params.allowedTools?.length ? params.allowedTools : undefined;
 
@@ -251,6 +253,9 @@ export class AgentRegistry {
     }
     const nickname = restoredEntry?.nickname ?? this.pool.reserve();
     const abortController = new AbortController();
+    const goalScope = this.deps.getGoalScope?.();
+    const goalExecutionId = crypto.randomUUID();
+    goalScope?.signal.throwIfAborted();
 
     const parentModel = resolveModel(this.deps.model);
     // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
@@ -335,14 +340,26 @@ export class AgentRegistry {
         : undefined,
       agent: async (): Promise<RuntimeAgent> => {
         const childAsk = this.deps.ask
-          ? (request: import("../tools/user-input-types").UserInputRequest) =>
-              this.deps.ask!({
-                ...request,
-                source: { threadId: childManager.sessionId, nickname },
-              })
+          ? (
+              request: import("../tools/user-input-types").UserInputRequest,
+              options?: import("../tools/capabilities").RuntimeRequestOptions,
+            ) =>
+              this.deps.ask!(
+                {
+                  ...request,
+                  source: { threadId: childManager.sessionId, nickname },
+                },
+                { signal: options?.signal ?? abortController.signal },
+              )
           : undefined;
 
-        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk, depth: this.depth - 1 };
+        const childDeps = {
+          ...this.deps,
+          getGoalScope: () => goalScope,
+          parentTools: childTools,
+          ask: childAsk,
+          depth: this.depth - 1,
+        };
         const result = await buildDefaultTools({
           cwd: this.deps.cwd,
           paths: this.deps.paths,
@@ -453,9 +470,11 @@ export class AgentRegistry {
       let output: string | null = null;
       let turnNumber = 0;
       let fatalError: string | null = null;
+      let coreTurnId = "";
 
       const unsub = childManager.subscribe((event) => {
         if (event.type === "turn_start") {
+          coreTurnId = event.turnId;
           turnNumber++;
           this.emit({
             type: "turn_start",
@@ -464,6 +483,8 @@ export class AgentRegistry {
             nickname,
             turnNumber,
           });
+        } else if (event.type === "usage") {
+          goalScope?.recordUsage({ sessionId: threadId, executionId: goalExecutionId, coreTurnId, ...event.usage });
         } else if (event.type === "message_start") {
           this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "message_discarded") {
@@ -514,7 +535,14 @@ export class AgentRegistry {
       return status;
     });
 
-    entry.promise = promise;
+    const cancelGoal = () => abortController.abort();
+    goalScope?.childStarted(threadId);
+    goalScope?.signal.addEventListener("abort", cancelGoal, { once: true });
+    if (goalScope?.signal.aborted) cancelGoal();
+    entry.promise = promise.finally(() => {
+      goalScope?.signal.removeEventListener("abort", cancelGoal);
+      goalScope?.childFinished(threadId);
+    });
     this.agents.set(threadId, entry);
 
     emitSpawnEnd("running");

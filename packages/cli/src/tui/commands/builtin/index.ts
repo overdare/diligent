@@ -2,6 +2,7 @@ import type { SkillMetadata } from "@diligent/runtime";
 import type { CommandRegistry } from "../registry";
 import { compactCommand } from "./compact";
 import { effortCommand } from "./effort";
+import { goalCommand } from "./goal";
 import { helpCommand } from "./help";
 import { mcpCommand } from "./mcp";
 import { bugCommand, clearCommand, configCommand, costCommand, exitCommand, versionCommand } from "./misc";
@@ -13,9 +14,14 @@ import { deleteCommand, newCommand, resumeCommand, statusCommand } from "./sessi
 import { createSkillInvokeCommand, skillsPickerCommand } from "./skills";
 import { toolsCommand } from "./tools";
 
-export function registerBuiltinCommands(registry: CommandRegistry, skills: SkillMetadata[]): void {
+export function registerBuiltinCommands(
+  registry: CommandRegistry,
+  skills: SkillMetadata[],
+  capabilities: { goals?: boolean } = {},
+): void {
   registry.register(helpCommand);
   registry.register(effortCommand);
+  registry.register({ ...goalCommand, hidden: capabilities.goals !== true });
   for (const command of modeCommands) registry.register(command);
   registry.register(modelCommand);
   registry.register(providerCommand);

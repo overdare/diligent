@@ -92,7 +92,7 @@ export function resolveServerVersionOverride(env: NodeJS.ProcessEnv = process.en
 
 export async function createWebServer(options: CreateServerOptions = {}): Promise<{
   server: Bun.Server<WsData>;
-  stop: () => void;
+  stop: () => Promise<void>;
 }> {
   const cwd = options.cwd ?? process.cwd();
   const port = options.port ?? 7433;
@@ -266,9 +266,10 @@ export async function createWebServer(options: CreateServerOptions = {}): Promis
 
   return {
     server,
-    stop: () => {
+    stop: async () => {
+      await appServer.shutdown();
       threadAppServerLog.cleanup();
-      lastRegistry?.shutdownAll().catch(() => {});
+      await lastRegistry?.shutdownAll();
       server.stop();
     },
   };
