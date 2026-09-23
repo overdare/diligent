@@ -109,7 +109,7 @@ describe("createChatGPTOAuthBinding", () => {
     }
   });
 
-  it("forwards the opt-in GPT-5.6 WebSocket transport option", async () => {
+  it("forwards the opt-in Responses Lite WebSocket transport option", async () => {
     const originalFetch = globalThis.fetch;
     let fetchCalled = false;
     let socketCount = 0;
@@ -122,7 +122,7 @@ describe("createChatGPTOAuthBinding", () => {
       const binding = createChatGPTOAuthBinding({
         initialTokens: { access_token: "token", refresh_token: "refresh" },
         streamOptions: {
-          useWebSocketForGpt56: true,
+          useResponsesLiteWebSocket: true,
           webSocketFactory: () => {
             socketCount += 1;
             return new CompletingWebSocket() as unknown as WebSocket;
