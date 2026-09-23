@@ -4,8 +4,8 @@ import { defineProviderModelClasses } from "../../model-class";
 
 export const CHATGPT_MODEL_CLASSES = defineProviderModelClasses({
   pro: { defaultModelId: "gpt-5.6-sol" },
-  general: { defaultModelId: "gpt-5.6-terra", additionalModelIds: ["gpt-6-sol"] },
-  lite: { defaultModelId: "gpt-5.6-luna", additionalModelIds: ["gpt-6-luna"] },
+  general: { defaultModelId: "gpt-5.6-terra" },
+  lite: { defaultModelId: "gpt-5.6-luna" },
 });
 
 export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
@@ -57,6 +57,12 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     supportsVision: true,
     aliases: ["gpt-6", "astra"],
   },
+]);
+
+// The ChatGPT Codex endpoint rejected these model IDs with HTTP 400 on 2026-09-23.
+// Keep the cards and transport support ready; add them to CHATGPT_MODELS and
+// CHATGPT_MODEL_CLASSES only after ChatGPT OAuth access is confirmed.
+export const CHATGPT_PENDING_MODELS = defineProviderModels("chatgpt", [
   {
     modelId: "gpt-6-sol",
     display: "ChatGPT 6 Sol",

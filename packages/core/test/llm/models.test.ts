@@ -12,10 +12,27 @@ import {
   sameModelRef,
   UnknownModelError,
 } from "../../src/llm/models";
+import { CHATGPT_PENDING_MODELS } from "../../src/llm/provider/chatgpt/models";
 import { getDefaultModelRef } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
-  it("registers GPT-6 Sol and Luna with provider-specific capabilities", () => {
+  it("does not offer GPT-6 Sol and Luna through ChatGPT OAuth", () => {
+    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+      expect(listModels("chatgpt").some((model) => model.modelId === modelId)).toBe(false);
+      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(false);
+      expect(() => resolveModel({ provider: "chatgpt", modelId })).toThrow(UnknownModelError);
+    }
+  });
+
+  it("keeps ChatGPT OAuth GPT-6 Sol and Luna cards ready for later enablement", () => {
+    expect(CHATGPT_PENDING_MODELS.map(({ provider, modelId }) => `${provider}/${modelId}`)).toEqual([
+      "chatgpt/gpt-6-sol",
+      "chatgpt/gpt-6-luna",
+    ]);
+    expect(CHATGPT_PENDING_MODELS.every((model) => model.supportedEfforts?.includes("max"))).toBe(true);
+  });
+
+  it("registers GPT-6 Sol and Luna for the OpenAI API", () => {
     expect(resolveModel({ provider: "openai", modelId: "gpt-6-sol" })).toMatchObject({
       display: "GPT-6 Sol",
       contextWindow: 1_050_000,
@@ -36,22 +53,6 @@ describe("provider-scoped model catalog", () => {
       outputCostPer1M: 0.5,
       cacheReadCostPer1M: 0.01,
       cacheWriteCostPer1M: 0.125,
-      supportsThinking: true,
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      supportsVision: true,
-    });
-    expect(resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" })).toMatchObject({
-      display: "ChatGPT 6 Sol",
-      contextWindow: 272_000,
-      maxOutputTokens: 128_000,
-      supportsThinking: true,
-      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-      supportsVision: true,
-    });
-    expect(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" })).toMatchObject({
-      display: "ChatGPT 6 Luna",
-      contextWindow: 272_000,
-      maxOutputTokens: 128_000,
       supportsThinking: true,
       supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
       supportsVision: true,
@@ -80,8 +81,6 @@ describe("provider-scoped model catalog", () => {
   it("classifies the new models without changing existing defaults", () => {
     expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-sol" }))).toBe("general");
     expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-luna" }))).toBe("lite");
-    expect(getModelClass(resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" }))).toBe("general");
-    expect(getModelClass(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }))).toBe("lite");
     expect(getModelClass(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }))).toBe("pro");
 
     expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-5.6-sol" });

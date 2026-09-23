@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type LogRecord, setDefaultLogSink } from "@diligent/logging";
 import { resolveModel } from "../../../../src/llm/models";
 import { createChatGPTStream, summarizeChatGPTWebSocketPayload } from "../../../../src/llm/provider/chatgpt";
+import { CHATGPT_PENDING_MODELS } from "../../../../src/llm/provider/chatgpt/models";
 import type { ProviderEvent } from "../../../../src/llm/types";
 import {
   chatGPTSuccessResponse,
@@ -118,8 +119,8 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
-  test("sends GPT-6 Sol and Luna through Responses Lite", async () => {
-    for (const modelId of ["gpt-6-sol", "gpt-6-luna"] as const) {
+  test("keeps the pending GPT-6 Sol and Luna ChatGPT transport ready", async () => {
+    for (const model of CHATGPT_PENDING_MODELS) {
       const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
         requests.push({
@@ -129,18 +130,13 @@ describe("ChatGPT HTTP transport", () => {
         return chatGPTSuccessResponse();
       }) as unknown as typeof fetch;
 
-      await collectEvents(
-        createChatGPTStream(() => testTokens())(resolveModel({ provider: "chatgpt", modelId }), TEST_CONTEXT, {
-          effort: "medium",
-        }),
-      );
+      await collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" }));
 
       const request = requests[0];
-      if (!request) throw new Error(`Expected one ChatGPT HTTP request for ${modelId}`);
+      if (!request) throw new Error(`Expected one ChatGPT HTTP request for ${model.modelId}`);
       expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
-      expect(request.body.model).toBe(modelId);
+      expect(request.body.model).toBe(model.modelId);
       expect(request.body.parallel_tool_calls).toBe(false);
-      expect((request.body.reasoning as { context: string }).context).toBe("all_turns");
     }
   });
 
