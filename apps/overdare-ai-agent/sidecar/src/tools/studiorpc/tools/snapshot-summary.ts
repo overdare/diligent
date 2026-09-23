@@ -1,5 +1,6 @@
 // @summary Generates a short, best-effort description from an immutable saved map without delaying editing.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import type { TextGenerationFn } from "@diligent/runtime";
 import { z } from "zod";
@@ -27,7 +28,14 @@ export async function summarizeSnapshot(snapshot: SnapshotEntry, generateText: T
     if (!existsSync(snapshot.path) || !existsSync(metadataPath)) return;
     const meta = JSON.parse(readFileSync(metadataPath, "utf8")) as SnapshotMeta;
     if (meta.createdAt !== snapshot.createdAt || meta.summaryStatus !== "pending") return;
-    writeFileSync(metadataPath, JSON.stringify({ ...meta, ...fields }));
+    const tempPath = `${metadataPath}.${randomUUID()}.metadata-tmp`;
+    try {
+      writeFileSync(tempPath, JSON.stringify({ ...meta, ...fields }));
+      renameSync(tempPath, metadataPath);
+    } catch (error) {
+      rmSync(tempPath, { force: true });
+      throw error;
+    }
   };
   try {
     // Read the immutable copy, never the working map or the prompt's desired future state.

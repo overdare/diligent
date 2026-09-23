@@ -21,13 +21,15 @@ A `manual` snapshot captures the moment the create tool runs, with no input para
 
 Rollback also verifies saving before starting, preserves the discarded state in a `pre-rollback` safety snapshot when possible, and then restores/applies the chosen map. Safety snapshots remain selectable by ID, so a rollback can itself be undone. Snapshot capture and map writes share a project lock within a provider instance; separate sidecar processes are not coordinated by that lock.
 
+Capture prepares temporary files and publishes metadata before exposing the final map copy. Interrupted or failed publication therefore cannot expose a manual or safety checkpoint as an automatic snapshot with missing metadata. Background summaries replace metadata atomically, preserving the previous record if replacement fails.
+
 ## Identity and storage
 
 Project storage contains `sessions/<sessionId>.jsonl` and `snapshots/<sessionId>_<index>.ovdrjm`, with a matching `.json` metadata file. The storage root follows the configured namespace (`.overdare` in production, `.overdare-dev` for the OVERDARE development host, `.diligent` by default).
 
 `userMessageId` is the session JSONL entry's `id` where `type` is `message` and `message.role` is `user`. The runtime allocates it before prompt hooks and uses the same value for live events and persistence, even if a hook augments the prompt. Snapshot metadata stores that ID and `transcriptPath`. With `includeConversation: true`, context lookup opens that transcript and matches the exact ID; a missing match is reported explicitly. Legacy snapshots without a message ID retain their prompt/time lookup.
 
-The snapshot `id` is the filename stem `<sessionId>_<index>` and remains separate from `userMessageId`: one request can own several checkpoints. `index` starts at zero and each capture uses one more than the highest existing snapshot index for that session. It is not a transcript line number. `userMessageId`, `label`, and `stateSummary` live in the matching `.json` metadata, not in the filename. `rollback` and `snapshot_context` select by snapshot ID.
+The snapshot `id` is the filename stem `<sessionId>_<index>` and remains separate from `userMessageId`: one request can own several checkpoints. `index` starts at zero and each capture uses one more than the highest existing map or metadata index for that session. An interrupted capture can leave an unused metadata-only ID, so indexes need not be consecutive. It is not a transcript line number. `userMessageId`, `label`, and `stateSummary` live in the matching `.json` metadata, not in the filename. `rollback` and `snapshot_context` select by snapshot ID.
 
 ## Inspect a saved map
 

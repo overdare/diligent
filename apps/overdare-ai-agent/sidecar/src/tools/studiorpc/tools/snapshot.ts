@@ -1,6 +1,17 @@
 // @summary Rollback snapshot helpers: capture/restore .ovdrjm level snapshots with metadata.
 
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { resolvePaths } from "@diligent/runtime";
 import { resolveOvdrjmPathFromUmap } from "./ovdrjm-utils";
@@ -47,8 +58,10 @@ export function snapshotsDir(cwd: string): string {
 }
 
 /**
- * Next request index for a session, derived by scanning the snapshots dir.
- * Filesystem is the source of truth so the counter survives agent restarts.
+ * Next request index for a session, derived by scanning published maps and
+ * metadata sidecars. Filesystem is the source of truth so the counter survives
+ * agent restarts, including a crash after metadata publication but before the
+ * map commit.
  * Snapshots are named `{sessionId}_{index}.ovdrjm`.
  */
 export function nextRequestIndex(snapshotsDir: string, sessionId: string): number {
@@ -61,8 +74,10 @@ export function nextRequestIndex(snapshotsDir: string, sessionId: string): numbe
   const prefix = `${sessionId}_`;
   let max = -1;
   for (const name of entries) {
-    if (!name.startsWith(prefix) || !name.endsWith(".ovdrjm")) continue;
-    const index = Number(name.slice(prefix.length, -".ovdrjm".length));
+    if (!name.startsWith(prefix)) continue;
+    const extension = name.endsWith(".ovdrjm") ? ".ovdrjm" : name.endsWith(".json") ? ".json" : undefined;
+    if (!extension) continue;
+    const index = Number(name.slice(prefix.length, -extension.length));
     if (Number.isInteger(index) && index > max) max = index;
   }
   return max + 1;
@@ -81,7 +96,10 @@ export function captureSnapshot(cwd: string, sessionId: string, index: number, o
   mkdirSync(dir, { recursive: true });
   const id = `${sessionId}_${index}`;
   const dest = join(dir, `${id}.ovdrjm`);
-  copyFileSync(ovdrjmPath, dest);
+  const metadataPath = join(dir, `${id}.json`);
+  if (existsSync(dest) || existsSync(metadataPath)) {
+    throw new Error(`Snapshot "${id}" already exists.`);
+  }
   const meta: SnapshotMeta = {
     id,
     sessionId,
@@ -93,8 +111,25 @@ export function captureSnapshot(cwd: string, sessionId: string, index: number, o
     ...(options.summaryStatus !== undefined ? { summaryStatus: options.summaryStatus } : {}),
     kind: options.kind ?? "turn",
   };
-  writeFileSync(join(dir, `${id}.json`), JSON.stringify(meta));
-  return dest;
+  const nonce = randomUUID();
+  const snapshotTempPath = join(dir, `.${id}.${nonce}.snapshot-tmp`);
+  const metadataTempPath = join(dir, `.${id}.${nonce}.metadata-tmp`);
+  let metadataPublished = false;
+  try {
+    copyFileSync(ovdrjmPath, snapshotTempPath);
+    writeFileSync(metadataTempPath, JSON.stringify(meta));
+    // The map rename is the visibility/commit point: listSnapshots ignores the
+    // metadata sidecar until the matching .ovdrjm exists.
+    renameSync(metadataTempPath, metadataPath);
+    metadataPublished = true;
+    renameSync(snapshotTempPath, dest);
+    return dest;
+  } catch (error) {
+    rmSync(snapshotTempPath, { force: true });
+    rmSync(metadataTempPath, { force: true });
+    if (metadataPublished) rmSync(metadataPath, { force: true });
+    throw error;
+  }
 }
 
 /** Parse `{sessionId}_{index}` from a snapshot filename; sessionId may itself contain underscores. */
