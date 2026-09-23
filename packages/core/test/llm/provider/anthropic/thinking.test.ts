@@ -8,6 +8,7 @@ const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
 const anthropicCalls: unknown[] = [];
 const anthropicConstructorOptions: unknown[] = [];
+const anthropicRequestOptions: unknown[] = [];
 
 class MockAnthropicStream {
   on() {
@@ -35,8 +36,9 @@ class MockAnthropicClient {
   }
 
   messages = {
-    stream: (params: unknown) => {
+    stream: (params: unknown, options: unknown) => {
       anthropicCalls.push(params);
+      anthropicRequestOptions.push(options);
       return new MockAnthropicStream();
     },
   };
@@ -70,6 +72,7 @@ function baseModel(overrides: Partial<Model>): Model {
 async function collectRequest(model: Model, options: StreamOptions = { effort: "medium" }) {
   anthropicCalls.length = 0;
   anthropicConstructorOptions.length = 0;
+  anthropicRequestOptions.length = 0;
   const stream = createAnthropicStream("test-key")(model, EMPTY_CONTEXT, options);
   await stream.result();
   expect(anthropicCalls).toHaveLength(1);
@@ -127,8 +130,54 @@ describe("createAnthropicStream", () => {
     });
 
     expect(request.model).toBe("claude-opus-5-5");
-    expect(request.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(request.thinking).toEqual({
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
     expect(request.output_config).toEqual({ effort: "medium" });
+  });
+
+  test("drops stale Opus 5.5 thinking blocks when a replayed conversation prefix changes", async () => {
+    const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" });
+    const context: StreamContext = {
+      systemPrompt: [{ label: "system", content: "Updated instructions" }],
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+            { type: "text", text: "Earlier answer" },
+          ],
+          model,
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          stopReason: "end_turn",
+          timestamp: 1,
+        },
+        { role: "user", content: "Continue", timestamp: 2 },
+      ],
+      tools: [],
+    };
+
+    const stream = createAnthropicStream("test-key")(model, context, { effort: "medium" });
+    await stream.result();
+
+    const request = anthropicCalls.at(-1) as Record<string, unknown>;
+    expect(request.messages).toContainEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Earlier reasoning", signature: "signed-block" },
+        { type: "text", text: "Earlier answer" },
+      ],
+    });
+    expect(request.thinking).toEqual({
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
+    expect(anthropicRequestOptions.at(-1)).toMatchObject({
+      headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
+    });
   });
 
   test("preserves xhigh for adaptive models with intrinsic xhigh support", async () => {
