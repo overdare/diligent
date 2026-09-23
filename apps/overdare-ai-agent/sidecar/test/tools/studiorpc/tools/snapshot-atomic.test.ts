@@ -2,7 +2,7 @@
 
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -27,6 +27,16 @@ function project(): string {
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+test("snapshot files are owner-only even when the project is inside the OS temp directory", () => {
+  const cwd = project();
+  const path = captureSnapshot(cwd, "session", 0);
+
+  if (process.platform !== "win32") {
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(statSync(path.replace(/\.ovdrjm$/, ".json")).mode & 0o777).toBe(0o600);
+  }
 });
 
 for (const kind of ["manual", "pre-rollback"] satisfies SnapshotKind[]) {

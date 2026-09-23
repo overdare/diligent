@@ -380,7 +380,7 @@ async function applyHunks(hunks: PatchHunk[], cwd: string): Promise<FileChange[]
       const after = hunk.lines.length === 0 ? "" : `${hunk.lines.join("\n")}\n`;
 
       await mkdir(dirnameCrossPlatform(targetPath), { recursive: true });
-      await writeFile(targetPath, after, "utf-8");
+      await writeFile(targetPath, after, { encoding: "utf-8", mode: 0o600 });
 
       changes.push({
         type: "add",
@@ -422,7 +422,7 @@ async function applyHunks(hunks: PatchHunk[], cwd: string): Promise<FileChange[]
     const targetPath = hunk.movePath ? resolvePatchPath(cwd, hunk.movePath) : sourcePath;
 
     await mkdir(dirnameCrossPlatform(targetPath), { recursive: true });
-    await writeFile(targetPath, after, "utf-8");
+    await writeFile(targetPath, after, { encoding: "utf-8", mode: 0o600 });
 
     if (hunk.movePath && sourcePath !== targetPath) {
       await rm(sourcePath, { force: true });

@@ -2,16 +2,20 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  closeSync,
   copyFileSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   type Stats,
   statSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { join } from "node:path";
 import { resolvePaths } from "@diligent/runtime";
@@ -84,6 +88,30 @@ export function nextRequestIndex(snapshotsDir: string, sessionId: string): numbe
   return max + 1;
 }
 
+function copySnapshotFile(sourcePath: string, targetPath: string): void {
+  const source = openSync(sourcePath, "r");
+  try {
+    const target = openSync(targetPath, "wx", 0o600);
+    try {
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      while (true) {
+        const count = readSync(source, buffer, 0, buffer.length, null);
+        if (count === 0) break;
+        let offset = 0;
+        while (offset < count) {
+          const written = writeSync(target, buffer, offset, count - offset);
+          if (written === 0) throw new Error("Failed to write snapshot file.");
+          offset += written;
+        }
+      }
+    } finally {
+      closeSync(target);
+    }
+  } finally {
+    closeSync(source);
+  }
+}
+
 /**
  * Copy the project's current .ovdrjm into the snapshots dir as
  * `{sessionId}_{index}.ovdrjm` and write a `{sessionId}_{index}.json` metadata
@@ -117,8 +145,8 @@ export function captureSnapshot(cwd: string, sessionId: string, index: number, o
   const metadataTempPath = join(dir, `.${id}.${nonce}.metadata-tmp`);
   let metadataPublished = false;
   try {
-    copyFileSync(ovdrjmPath, snapshotTempPath);
-    writeFileSync(metadataTempPath, JSON.stringify(meta));
+    copySnapshotFile(ovdrjmPath, snapshotTempPath);
+    writeFileSync(metadataTempPath, JSON.stringify(meta), { flag: "wx", mode: 0o600 });
     // The map rename is the visibility/commit point: listSnapshots ignores the
     // metadata sidecar until the matching .ovdrjm exists.
     renameSync(metadataTempPath, metadataPath);

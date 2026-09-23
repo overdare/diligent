@@ -1,6 +1,6 @@
 // @summary Tests for codex-style apply_patch tool semantics
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolContext } from "@diligent/core/tool-contract";
@@ -78,6 +78,9 @@ describe("apply_patch tool", () => {
     expect(result.output).toContain("M renamed/dir/name.txt");
     await expect(readFile(from, "utf-8")).rejects.toThrow();
     expect(await readFile(join(tmpDir, "renamed/dir/name.txt"), "utf-8")).toBe("new content\n");
+    if (process.platform !== "win32") {
+      expect((await stat(join(tmpDir, "renamed/dir/name.txt"))).mode & 0o777).toBe(0o600);
+    }
   });
 
   test("add overwrites existing file", async () => {
@@ -91,6 +94,18 @@ describe("apply_patch tool", () => {
     expect(result.metadata?.error).not.toBe(true);
     expect(result.output).toContain("A duplicate.txt");
     expect(await readFile(target, "utf-8")).toBe("new content\n");
+  });
+
+  test("new patch files are owner-only inside the OS temp directory", async () => {
+    const result = await tool.execute(
+      { patch: "*** Begin Patch\n*** Add File: private.txt\n+secret\n*** End Patch" },
+      makeCtx(),
+    );
+
+    expect(result.metadata?.error).not.toBe(true);
+    if (process.platform !== "win32") {
+      expect((await stat(join(tmpDir, "private.txt"))).mode & 0o777).toBe(0o600);
+    }
   });
 
   test("move overwrites existing destination", async () => {
