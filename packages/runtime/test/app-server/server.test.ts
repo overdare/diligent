@@ -41,6 +41,39 @@ import type { ThreadRuntime } from "../../src/app-server/thread-handlers";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 
+it("keeps scheduled goal work alive while no client request is pending", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-scheduler-liveness-"));
+  const server = new DiligentAppServer({
+    ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+    getGoalsConfig: () => ({ enabled: true }),
+  });
+  const connection = connectTestPeer(server);
+  try {
+    const { threadId } = readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1,
+        method: "thread/start",
+        params: { cwd },
+      }),
+    ) as { threadId: string };
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 2,
+        method: "thread/goal/set",
+        params: { threadId, action: "set", objective: "Finish autonomously" },
+      }),
+    );
+    const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+    expect(runtime.goalTimer?.hasRef()).toBe(true);
+    await runtime.goal?.pause("user");
+    expect(runtime.goalTimer).toBeUndefined();
+  } finally {
+    connection.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 it("host shutdown cancels an ordinary root run before waiting for its cleanup", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "goal-host-shutdown-"));
   const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));

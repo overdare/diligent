@@ -663,11 +663,16 @@ export class DiligentAppServer {
       }
       const store = await openGoalStore(paths.sessions, runtime.id);
       runtime.goal = await GoalController.open(store, runtime.id, {
-        changed: (snapshot) =>
-          this.emit({
+        changed: (snapshot) => {
+          if (snapshot.goal?.status !== "active" && runtime.goalTimer) {
+            clearTimeout(runtime.goalTimer);
+            runtime.goalTimer = undefined;
+          }
+          return this.emit({
             method: DILIGENT_SERVER_NOTIFICATION_METHODS.THREAD_GOAL_UPDATED,
             params: { threadId: runtime.id, ...snapshot },
-          }),
+          });
+        },
         wake: (delay) => this.scheduleGoal(runtime, delay),
       });
       return runtime.goal;
@@ -720,7 +725,6 @@ export class DiligentAppServer {
         });
       });
     }, delayMs);
-    runtime.goalTimer.unref?.();
   }
 
   private async createThreadRuntime(
