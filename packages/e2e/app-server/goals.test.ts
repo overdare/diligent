@@ -15,9 +15,13 @@ const dirs: string[] = [];
 const clients: ProtocolTestClient[] = [];
 const servers: ReturnType<typeof createTestServer>[] = [];
 afterEach(async () => {
+  console.error("[goal-e2e-diagnostic] cleanup: clients");
   for (const client of clients.splice(0)) client.close();
+  console.error("[goal-e2e-diagnostic] cleanup: servers");
   await Promise.all(servers.splice(0).map((server) => server.shutdown()));
+  console.error("[goal-e2e-diagnostic] cleanup: dirs");
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  console.error("[goal-e2e-diagnostic] cleanup: done");
 });
 async function setup(streamFunction?: StreamFunction, enabled = true) {
   const cwd = await mkdtemp(join(tmpdir(), "goal-e2e-"));
@@ -123,6 +127,7 @@ test("Stop pauses the goal between runs and rejects stale client changes", async
 });
 
 test("pausing cancels unanswered questions and persists the paused state", async () => {
+  console.error("[goal-e2e-diagnostic] question: entered");
   const stream = createToolUseStream(
     [
       {
@@ -138,18 +143,24 @@ test("pausing cancels unanswered questions and persists the paused state", async
     "Done",
   );
   const { client, threadId } = await setup(stream);
+  console.error("[goal-e2e-diagnostic] question: setup complete");
   let requested!: () => void;
   const pending = new Promise<void>((resolve) => {
     requested = resolve;
   });
   client.onServerRequest(async () => {
+    console.error("[goal-e2e-diagnostic] question: server request received");
     requested();
     return await new Promise(() => {});
   });
   await setGoal(client, threadId);
+  console.error("[goal-e2e-diagnostic] question: goal set");
   await pending;
+  console.error("[goal-e2e-diagnostic] question: prompt received");
   await client.request("turn/interrupt", { threadId });
+  console.error("[goal-e2e-diagnostic] question: interrupted");
   await client.waitForNotification("server/request/resolved");
+  console.error("[goal-e2e-diagnostic] question: request resolved");
   const result = (await client.request("thread/goal/get", { threadId })) as ThreadGoalResponse;
   expect(result.goal?.status).toBe("paused");
 });
