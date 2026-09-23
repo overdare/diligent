@@ -1,7 +1,7 @@
 // @summary Reports what the human creator changed in Studio, sourced from Studio's EditLogging transaction log.
 
 import { z } from "zod";
-import type { Tool, ToolResult } from "../types";
+import type { Tool, ToolContext, ToolResult } from "../types";
 import {
   deleteConsumed,
   MID_TURN_HEADER,
@@ -68,13 +68,13 @@ function peekHumanEdits(cwd: string): ToolResult {
   }
 }
 
-export function createHumanEditsTool(cwd: string, getCached?: () => ToolResult | undefined): Tool {
+export function createHumanEditsTool(cwd: string, getCached?: (context: ToolContext) => ToolResult | undefined): Tool {
   return {
     name: "studiorpc_human_edits",
     description,
     parameters: params,
-    async execute() {
-      const cached = getCached?.();
+    async execute(_args, context) {
+      const cached = getCached?.(context);
       const live = peekHumanEdits(cwd);
       const parts: string[] = [];
       if (cached?.metadata?.humanEditsDetected === true) parts.push(cached.output);

@@ -16,7 +16,7 @@ import type { RuntimeConfig } from "../../src/config/runtime";
 import { toolOutputStore } from "../../src/infrastructure";
 
 import { writeKnowledge } from "../../src/knowledge/store";
-import type { BundledToolProvider } from "../../src/tools/bundled-provider";
+import type { BundledToolProvider, BundledToolProviderContext } from "../../src/tools/bundled-provider";
 import { makeAssistant, makeStreamFn } from "../helpers/collab";
 
 mock.module("@test/factory-plugin", () => ({
@@ -391,6 +391,106 @@ describe("createAppServerConfig", () => {
     expect(calls).toEqual(["second"]);
   });
 
+  it("assembles a tool-free selected-model text capability scoped to the session", async () => {
+    const controller = new AbortController();
+    let observed:
+      | {
+          model: Model;
+          context: Parameters<RuntimeConfig["streamFunction"]>[1];
+          options: Parameters<RuntimeConfig["streamFunction"]>[2];
+        }
+      | undefined;
+    const responseStream = makeStreamFn([makeAssistant("snapshot summary")]);
+    const runtimeConfig = makeRuntimeConfig({
+      streamFunction: (model, context, options) => {
+        observed = { model, context, options };
+        return responseStream(model, context, options);
+      },
+    });
+    let generateText: BundledToolProviderContext["generateText"];
+    let sessionId: string | undefined;
+    const config = createAppServerConfig({
+      cwd: "/tmp/test",
+      runtimeConfig,
+      bundledToolProviders: [
+        {
+          id: "text-test",
+          createTools: (context) => {
+            generateText = context.generateText;
+            sessionId = context.sessionId;
+            return [];
+          },
+        },
+      ],
+    });
+
+    await config.createAgent({
+      cwd: "/tmp/test",
+      model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
+      approve: async () => "once",
+      ask: async () => null,
+      getSessionId: () => "session-123",
+    });
+
+    expect(sessionId).toBe("session-123");
+    expect(generateText).toBeDefined();
+    expect(
+      await generateText!(
+        { systemPrompt: "Summarize an immutable snapshot.", prompt: "snapshot bytes" },
+        { signal: controller.signal, maxTokens: 77 },
+      ),
+    ).toBe("snapshot summary");
+    expect(observed?.model).toMatchObject({ provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID });
+    expect(observed?.context).toMatchObject({
+      systemPrompt: [{ label: "system", content: "Summarize an immutable snapshot." }],
+      messages: [{ role: "user", content: "snapshot bytes" }],
+      tools: [],
+    });
+    expect(observed?.options).toMatchObject({
+      signal: controller.signal,
+      maxTokens: 77,
+      effort: "low",
+      sessionId: "session-123",
+    });
+  });
+
+  it("rejects an aborted text generation before starting the provider request", async () => {
+    let providerCalls = 0;
+    const runtimeConfig = makeRuntimeConfig({
+      streamFunction: () => {
+        providerCalls++;
+        throw new Error("provider must not start");
+      },
+    });
+    let generateText: BundledToolProviderContext["generateText"];
+    const config = createAppServerConfig({
+      cwd: "/tmp/test",
+      runtimeConfig,
+      bundledToolProviders: [
+        {
+          id: "text-abort-test",
+          createTools: (context) => {
+            generateText = context.generateText;
+            return [];
+          },
+        },
+      ],
+    });
+    await config.createAgent({
+      cwd: "/tmp/test",
+      model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
+      approve: async () => "once",
+      ask: async () => null,
+    });
+    const controller = new AbortController();
+    controller.abort(new Error("summary timeout"));
+
+    await expect(
+      generateText!({ systemPrompt: "Summarize.", prompt: "snapshot" }, { signal: controller.signal }),
+    ).rejects.toThrow("summary timeout");
+    expect(providerCalls).toBe(0);
+  });
+
   it("transforms the final mode-filtered tool list without changing the default path", async () => {
     const runtimeConfig = makeRuntimeConfig();
     const baseline = createAppServerConfig({ cwd: "/tmp/test", runtimeConfig });
@@ -444,6 +544,7 @@ describe("createAppServerConfig", () => {
         createAgentLoopHooks: (context) => {
           factoryCalls++;
           expect(context.agentKind).toBe("main");
+          expect(context.sessionId).toBe("session-loop-hooks");
           return [{ id: "product-hook", onPromptStart: () => hookCalls.push("product") }];
         },
       },
@@ -456,6 +557,7 @@ describe("createAppServerConfig", () => {
       model: { provider: "anthropic", modelId: TEST_ANTHROPIC_MODEL_ID },
       approve: async () => "once",
       ask: async () => null,
+      getSessionId: () => "session-loop-hooks",
     });
 
     await agent.prompt({ role: "user", content: "first", timestamp: Date.now() });

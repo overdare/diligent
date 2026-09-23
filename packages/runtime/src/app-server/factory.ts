@@ -2,6 +2,7 @@
 import { dirname, join } from "node:path";
 import { getModelInfoList, resolveModel } from "@diligent/core/model-registry";
 import type { ProviderName, SystemSection } from "@diligent/core/provider-contract";
+import { resolveMaxTokens } from "@diligent/core/provider-contract";
 import type { Tool, ToolOutputFileStore } from "@diligent/core/tool-contract";
 import { createLogger } from "@diligent/logging";
 import {
@@ -19,7 +20,11 @@ import { getGlobalConfigPath, saveGlobalModel } from "../config/writer";
 import { createLocalImageLoader, type DiligentPaths, ensureDiligentDir, toolOutputStore } from "../infrastructure";
 import { buildKnowledgeSection, readKnowledge } from "../knowledge";
 import { discoverSkills } from "../skills";
-import { type BundledToolProvider, createBundledAgentLoopHooks } from "../tools/bundled-provider";
+import {
+  type BundledToolProvider,
+  createBundledAgentLoopHooks,
+  type TextGenerationFn,
+} from "../tools/bundled-provider";
 import { buildDefaultTools } from "../tools/defaults";
 import { buildMcpNeedsAuthNote, getMcpManager } from "../tools/mcp";
 import type { PluginDiscoveryMode } from "../tools/plugin-loader";
@@ -141,6 +146,32 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
   } = request;
   const paths = await getPaths();
   const model = resolveModel(modelRef);
+  const sessionId = getSessionId?.();
+  const generateText: TextGenerationFn = async (input, options = {}) => {
+    options.signal?.throwIfAborted();
+    const providerStream = runtimeConfig.streamFunction(
+      model,
+      {
+        systemPrompt: [{ label: "system", content: input.systemPrompt }],
+        messages: [{ role: "user", content: input.prompt, timestamp: Date.now() }],
+        tools: [],
+      },
+      {
+        signal: options.signal,
+        effort: "low",
+        maxTokens: options.maxTokens ?? resolveMaxTokens(model),
+        sessionId,
+      },
+    );
+    const result = await providerStream.result();
+    options.signal?.throwIfAborted();
+    return result.message.content
+      .filter(
+        (block): block is Extract<(typeof result.message.content)[number], { type: "text" }> => block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n");
+  };
   const toolsResult = await buildDefaultTools({
     cwd,
     paths,
@@ -166,6 +197,8 @@ async function buildRuntimeAgentTools(args: AgentAssemblyOptions) {
     host: { approve, ask },
     generateImage: (input, options) =>
       runtimeConfig.providerManager.generateImage(model.provider as ProviderName, input, options),
+    generateText,
+    sessionId,
     bundledToolProviders,
     pluginDiscovery,
     disabledToolNames: runtimeConfig.disabledToolNames,
@@ -227,6 +260,7 @@ async function createRuntimeAgent(args: AgentAssemblyOptions): Promise<RuntimeAg
       agentKind: "main",
       model,
       tools,
+      sessionId: request.getSessionId?.(),
       logger: loopHookLogger,
     }),
   ];

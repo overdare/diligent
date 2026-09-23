@@ -109,6 +109,7 @@ Current guides:
 - Packaging: `docs/guide/packaging.md`
 - Tool settings: `docs/guide/tool-settings.md`
 - Tool rendering: `docs/guide/tool-rendering.md`
+- Studio snapshots: `docs/guide/studio-snapshots.md`
 - AgentNativeBridge: `docs/guide/agent-native-bridge.md`
 - Product experiments: `docs/guide/experiments.md`
 - Model-backed eval suites: `docs/guide/evals.md`

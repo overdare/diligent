@@ -5,7 +5,7 @@ import type { ImageGenerationFn, ProviderName } from "@diligent/core/provider-co
 import type { Tool } from "@diligent/core/tool-contract";
 import { COLLAB_TOOL_NAMES } from "../collab";
 import type { DiligentConfig } from "../config/schema";
-import type { BundledToolProvider } from "./bundled-provider";
+import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
 import { isImmutableTool } from "./immutable";
 import { discoverGlobalPlugins, loadPlugin, type PluginDiscoveryMode } from "./plugin-loader";
@@ -70,6 +70,8 @@ export interface BuildToolCatalogOptions {
   bundledProviders?: BundledToolProvider[];
   modelProvider?: ProviderName;
   generateImage?: ImageGenerationFn;
+  generateText?: TextGenerationFn;
+  sessionId?: string;
   disabledToolNames?: ReadonlySet<string>;
   pluginDiscovery?: PluginDiscoveryMode;
 }
@@ -145,7 +147,10 @@ export async function loadBundledBatches(
   cwd: string,
   host: RuntimeToolHost | undefined,
   orderStart: number,
-  options: Pick<BuildToolCatalogOptions, "disabledToolNames" | "modelProvider" | "generateImage"> = {},
+  options: Pick<
+    BuildToolCatalogOptions,
+    "disabledToolNames" | "modelProvider" | "generateImage" | "generateText" | "sessionId"
+  > = {},
 ): Promise<{ batches: ProviderToolBatch[]; errors: PluginLoadError[] }> {
   const batches: ProviderToolBatch[] = [];
   const errors: PluginLoadError[] = [];
@@ -159,6 +164,8 @@ export async function loadBundledBatches(
           host,
           modelProvider: options.modelProvider,
           ...(options.generateImage ? { generateImage: options.generateImage } : {}),
+          ...(options.generateText ? { generateText: options.generateText } : {}),
+          ...(options.sessionId ? { sessionId: options.sessionId } : {}),
         }),
       );
     } catch (err) {

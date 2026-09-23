@@ -15,6 +15,7 @@ import { getBuiltinAgentDefinitions } from "../../src/agent/agent-types";
 import { resolveAgentDefinition, resolveAvailableAgentDefinitions } from "../../src/agent/resolved-agent";
 import type { AgentEvent } from "../../src/agent-event";
 import { resolveChildToolAccess } from "../../src/collab/registry";
+import { type ChildForkableTool, FORK_TOOL_FOR_CHILD } from "../../src/tools/child-fork";
 import {
   makeAssistant,
   makeCollabDeps,
@@ -1183,11 +1184,13 @@ describe("AgentRegistry", () => {
   it("creates distinct bundled loop-hook instances for each child with child context", async () => {
     const instances: object[] = [];
     const kinds: string[] = [];
+    const sessionIds: Array<string | undefined> = [];
     const registry = new AgentRegistry(
       makeCollabDeps({
         agentLoopHookFactories: [
           (context) => {
             kinds.push(context.agentKind);
+            sessionIds.push(context.sessionId);
             const hook = { id: `child-${instances.length}` };
             instances.push(hook);
             return [hook];
@@ -1202,6 +1205,7 @@ describe("AgentRegistry", () => {
     await registry.wait([first.threadId, second.threadId], 5000);
 
     expect(kinds).toEqual(["child", "child"]);
+    expect(sessionIds).toEqual([first.threadId, second.threadId]);
     expect(instances).toHaveLength(2);
     expect(instances[0]).not.toBe(instances[1]);
   });
@@ -1229,6 +1233,61 @@ describe("AgentRegistry", () => {
 // ─── resolveChildToolAccess (pure function) edge-case tests ────────────────────
 
 describe("resolveChildToolAccess", () => {
+  it("passes the fully decorated inherited tool to the child fork", async () => {
+    const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "general");
+    if (!agentDef) throw new Error("general agent definition not found");
+    const base: ChildForkableTool = {
+      ...makeTool("checkpoint"),
+      [FORK_TOOL_FOR_CHILD]: (inheritedTool) => ({ ...inheritedTool }),
+    };
+    let wrapperCalls = 0;
+    const decorated: ChildForkableTool = {
+      ...base,
+      execute: async () => {
+        wrapperCalls++;
+        return { output: "decorated" };
+      },
+    };
+
+    const child = resolveChildToolAccess([decorated], {}, agentDef).childTools[0];
+
+    expect(await child?.execute({}, {} as never)).toEqual({ output: "decorated" });
+    expect(wrapperCalls).toBe(1);
+  });
+
+  it("forks allowed inherited tools at each child boundary", () => {
+    const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "general");
+    if (!agentDef) throw new Error("general agent definition not found");
+    let currentTurn = "turn-a";
+    let forks = 0;
+    const base = makeTool("checkpoint");
+    const frozenTool = (turn: string): ChildForkableTool => ({
+      ...base,
+      description: turn,
+      [FORK_TOOL_FOR_CHILD]: () => {
+        forks++;
+        return frozenTool(turn);
+      },
+    });
+    const parent: ChildForkableTool = {
+      ...base,
+      [FORK_TOOL_FOR_CHILD]: () => {
+        forks++;
+        return frozenTool(currentTurn);
+      },
+    };
+
+    const first = resolveChildToolAccess([parent], {}, agentDef).childTools[0];
+    currentTurn = "turn-b";
+    const nested = resolveChildToolAccess([first], {}, agentDef).childTools[0];
+
+    expect(first).not.toBe(parent);
+    expect(nested).not.toBe(first);
+    expect(first?.description).toBe("turn-a");
+    expect(nested?.description).toBe("turn-a");
+    expect(forks).toBe(2);
+  });
+
   it("readonly (plan-mode) agent definition excludes write tools from child", () => {
     const parentTools = [makeTool("read"), makeTool("bash"), makeTool("edit"), makeTool("grep")];
     const agentDef = resolveAgentDefinition(getBuiltinAgentDefinitions(), "explore");

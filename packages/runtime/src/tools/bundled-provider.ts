@@ -7,6 +7,19 @@ import type { Logger } from "@diligent/logging";
 import type { PluginHookFn } from "../hooks/runner";
 import type { RuntimeToolHost } from "./capabilities";
 
+export interface TextGenerationInput {
+  systemPrompt: string;
+  prompt: string;
+}
+
+export interface TextGenerationOptions {
+  signal?: AbortSignal;
+  maxTokens?: number;
+}
+
+/** Selected-model text generation with provider auth retained by the runtime. */
+export type TextGenerationFn = (input: TextGenerationInput, options?: TextGenerationOptions) => Promise<string>;
+
 export interface BundledToolProviderContext {
   cwd: string;
   host?: RuntimeToolHost;
@@ -14,6 +27,10 @@ export interface BundledToolProviderContext {
   modelProvider?: ProviderName;
   /** Selected-provider image capability. Credentials stay behind the runtime binding. */
   generateImage?: ImageGenerationFn;
+  /** Selected-model text capability. Unset in integrations without an agent/model context. */
+  generateText?: TextGenerationFn;
+  /** Current session when tools are assembled for a runtime agent. */
+  sessionId?: string;
 }
 
 export interface AgentLoopHookFactoryContext {
@@ -22,6 +39,7 @@ export interface AgentLoopHookFactoryContext {
   model: Model;
   tools: readonly Tool[];
   parentSessionId?: string;
+  sessionId?: string;
   logger: Logger;
 }
 

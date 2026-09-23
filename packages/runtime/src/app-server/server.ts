@@ -634,7 +634,7 @@ export class DiligentAppServer {
           }
         } else {
           // Defer catalog/registry updates until the active turn has finished using them.
-          if (lastResolvedModel?.provider !== selectedModel.provider) {
+          if (!sameModelRef(lastResolvedModel, selectedModel)) {
             await this.config.refreshAgentTools?.(agent, request);
           }
           if (!sameModelRef(lastResolvedModel, selectedModel) && !sameModelRef(agent.model, selectedModel)) {
