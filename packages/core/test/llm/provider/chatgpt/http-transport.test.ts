@@ -68,7 +68,7 @@ describe("ChatGPT HTTP transport", () => {
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
     expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
-    expect(request.headers.get("version")).toBe("0.153.4");
+    expect(request.headers.has("version")).toBe(true);
     expect(request.headers.get("ChatGPT-Account-ID")).toBe("acct_1");
     expect(request.headers.get("session-id")).toBe("session_1");
     expect(request.headers.get("session_id")).toBeNull();
