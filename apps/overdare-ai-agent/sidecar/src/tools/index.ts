@@ -3,6 +3,7 @@
 import type { BundledToolProvider } from "@diligent/runtime";
 import { createAnalyticsToolProvider } from "./analytics";
 import { createGatewayToolProvider } from "./gateway";
+import { createAgentReportToolProvider } from "./gateway/agent-report";
 import { createHelloWorldToolProvider, type StudioToolProviderOptions } from "./hello-world";
 import { createImageGenerationToolProvider } from "./image-generation";
 import { createRagToolProvider } from "./rag";
@@ -27,5 +28,6 @@ export function createStudioBundledToolProviders(options: StudioBundledToolProvi
     ...(options.studioDisabled ? [] : [createStudioRpcToolProvider(options.studioRpc)]),
     createAnalyticsToolProvider(),
     createGatewayToolProvider(options),
+    createAgentReportToolProvider(options),
   ];
 }

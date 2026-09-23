@@ -24,4 +24,11 @@ export const OVERDARE_EXPERIMENTS: ExperimentDefinition[] = [
     defaultEnabled: isDevChannel(),
     skillNames: ["session-issue-report"],
   },
+  {
+    id: "agent-report",
+    title: "Agent failure reports",
+    description: "Let the agent file a failure report to the OVERDARE gateway when a repeat-failure signal fires.",
+    defaultEnabled: false,
+    toolNames: ["agent_report_failure"],
+  },
 ];
