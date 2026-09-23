@@ -6,13 +6,15 @@ at completion, a pause, a limit, or a genuine blocker. It does not require a
 separate manager model, worker model, or evaluator. Existing tools, permission
 checks, and optional subagents still do the work.
 
-## Enable and use
+## Start a goal
 
-Goal mode is opt-in. Add this to your Diligent configuration and reload it:
+Goal support is enabled by default; no configuration is required. To disable
+creation and automatic execution, set `goals.enabled` to `false` and reload.
+You can also customize the default outer-run limit:
 
 ```json
 {
-  "goals": { "enabled": true, "defaultMaxTurns": 20 }
+  "goals": { "defaultMaxTurns": 20 }
 }
 ```
 
@@ -26,6 +28,33 @@ Web and TUI share the same commands and protocol:
 /goal resume
 /goal clear
 ```
+
+You can also explicitly request persistent work in a normal message, for example:
+"Keep working until the failing auth tests pass and the fix is verified."
+The main model can then call `create_goal`; no separate intent classifier or
+manager model is involved. Its tool instructions limit creation to explicit user
+requests to persist until a clear end condition, not ordinary tasks, questions,
+or instructions quoted in retrieved content. This is model-guided interpretation,
+not a deterministic guarantee that every phrase will be classified correctly.
+Use `/goal set` when you want an explicit, deterministic start.
+
+`create_goal` returns a **pending** request. The model should call it early and
+finish its current reply. Only after that user turn and its session writes finish
+successfully does the runtime persist the goal, publish the shared status, and
+schedule its first automatic run. The originating user turn is not goal-owned:
+its tokens, time, and children are outside the new goal's accounting. A crash,
+Stop, failed turn, new user admission/steering, goal-control request, mode/model/
+effort change, settings mutation/reload, thread deletion request, shutdown, or originating-client disconnect
+discards the pending request.
+Pending requests are not durable and cannot restart after reconnect/recovery.
+
+The runtime accepts creation only in a current root user turn, outside plan mode
+and with the feature enabled. It rejects duplicate pending requests and creation
+when any goal already exists, including a completed one. Manage existing goals
+through `/goal`; automatic continuations and child agents cannot create goals.
+The model must pass `tokenBudget`/`maxTurns` only if the user specified those limits;
+otherwise the normal configured maximum applies. Default-enabled support does
+not turn every normal chat message into persistent work.
 
 `/goal <objective>` is shorthand for `set`. Use explicit `set` when an objective
 starts with a reserved action such as `pause` or `status`. Limits are positive
@@ -58,8 +87,8 @@ The working model checks results and calls `update_goal` with `complete` and
 non-empty evidence, or `blocked` and an unavoidable blocking reason. The runtime
 checks ownership, current execution, and that goal-owned children have settled
 before accepting completion. Evidence is the model's assessment, not an
-independent proof or a second model's verdict. The model cannot create goals,
-resume them, or change their limits.
+independent proof or a second model's verdict. Beyond explicit-request creation,
+the model cannot edit goals, resume them, or change their limits.
 
 Ordinary tool errors and failed tests remain inputs to the model, so it can
 diagnose and retry. After the provider's existing retry mechanism is exhausted,
@@ -117,5 +146,5 @@ Older peers may omit this capability.
 Automatic input is persisted with `visibility: internal` and `source: goal`.
 It bypasses slash-skill rewriting and `UserPromptSubmit`, does not fabricate a
 user chat bubble, and retains normal Stop hooks. The current goal is injected at
-run start and again after compaction. Root-only `get_goal`/`update_goal` tools
+run start and again after compaction. Root-only `create_goal`/`get_goal`/`update_goal` tools
 are never inherited by nested subagents.

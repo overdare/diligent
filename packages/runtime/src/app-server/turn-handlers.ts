@@ -3,6 +3,7 @@
 import { toSerializableError } from "@diligent/core/agent";
 import { resolveModel, sameModelRef } from "@diligent/core/model-registry";
 import type { GoalController, GoalWorkScope } from "../goals/controller";
+import type { GoalToolHost } from "../goals/tools";
 import { runCombinedHooks } from "../hooks/runner";
 import { resolvePersistedLocalImagePath, toPersistedLocalImagePath } from "../infrastructure/local-image-loader";
 import {
@@ -82,7 +83,10 @@ async function initializeTurnRuntime(
   internal?: GoalTurnOptions,
 ): Promise<{ runtime: ThreadRuntime; turnId: string } | null> {
   const runtime = await ctx.resolveThreadRuntime(params.threadId);
-  if (!internal) runtime.pendingUserStarts = (runtime.pendingUserStarts ?? 0) + 1;
+  if (!internal) {
+    runtime.goalCreation = undefined;
+    runtime.pendingUserStarts = (runtime.pendingUserStarts ?? 0) + 1;
+  }
   try {
     await ctx.ensureGoal?.(runtime);
     if (internal) {
@@ -250,6 +254,19 @@ export async function handleTurnStart(
     });
   };
   const isCurrent = () => runtime.currentTurnId === turnId && !controller.signal.aborted;
+  const createGoal: NonNullable<GoalToolHost["create"]> = async (input, signal) => {
+    signal.throwIfAborted();
+    if (internal || runtime.isChildSession || runtime.goalCreation?.create !== createGoal || !isCurrent())
+      throw new Error("Goal creation requires the current root user turn");
+    if (ctx.getGoalsConfig?.()?.enabled === false) throw new Error("Goal mode is disabled");
+    if (runtime.mode === "plan") throw new Error("Goal execution is unavailable in plan mode");
+    if (!runtime.goal) throw new Error("Goal mode is unavailable");
+    if (creation.pending || runtime.goal.read().goal)
+      throw new Error("A goal already exists or is pending; use /goal to manage it");
+    creation.pending = { ...input };
+    return { status: "pending", ...creation.pending };
+  };
+  const creation: NonNullable<ThreadRuntime["goalCreation"]> = { connectionId, create: createGoal };
   let consuming = false;
   let scope: GoalWorkScope | undefined;
   let unsubscribeUsage = () => {};
@@ -308,6 +325,7 @@ export async function handleTurnStart(
       ? { blocked: false as const, userMessage }
       : await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId);
     if (hookOutcome.blocked || !isCurrent()) return { accepted: true };
+    if (!internal) runtime.goalCreation = creation;
 
     const finalUserMessage = hookOutcome.userMessage;
     const userItemId = generateEntryId();
@@ -322,21 +340,19 @@ export async function handleTurnStart(
         },
       });
     if (!isCurrent()) return { accepted: true, userMessageId: userItemId };
-    const runPromise = internal
-      ? runtime.manager
-          .runWithOutcome(finalUserMessage, {
-            signal: controller.signal,
-            userMessageId: userItemId,
-            internal: { source: "goal" },
-          })
-          .then((result) => {
-            outcome = result;
-            if (result.status === "interrupted") {
-              controller.abort();
-              throw new DOMException("Goal run interrupted", "AbortError");
-            }
-          })
-      : runtime.manager.run(finalUserMessage, { signal: controller.signal, userMessageId: userItemId });
+    const runPromise = runtime.manager
+      .runWithOutcome(finalUserMessage, {
+        signal: controller.signal,
+        userMessageId: userItemId,
+        ...(internal ? { internal: { source: "goal" as const } } : {}),
+      })
+      .then((result) => {
+        outcome = result;
+        if (controller.signal.aborted || (internal && result.status === "interrupted")) {
+          controller.abort();
+          throw new DOMException("Turn interrupted", "AbortError");
+        }
+      });
     consuming = true;
     void ctx
       .consumeTurn(
@@ -351,6 +367,28 @@ export async function handleTurnStart(
       )
       .then(async (cleanupOutcome) => {
         if (scope) await internal!.goal.settle(scope, cleanupOutcome ?? outcome, usedTools);
+        else if (
+          creation.pending &&
+          (cleanupOutcome ?? outcome).status === "completed" &&
+          !controller.signal.aborted &&
+          runtime.goalCreation?.create === createGoal &&
+          runtime.turnWork === work &&
+          !runtime.isRunning &&
+          !runtime.pendingUserStarts
+        ) {
+          // Publish only after the originating run and its session writes succeed. User
+          // admission, Stop and host/config changes revoke this capability synchronously.
+          const config = ctx.getGoalsConfig?.();
+          await runtime.goal!.change(
+            { action: "set", ...creation.pending },
+            {
+              idle: true,
+              enabled: config?.enabled !== false,
+              mode: runtime.mode,
+              defaultMaxTurns: config?.defaultMaxTurns,
+            },
+          );
+        }
       })
       .catch(async (error: unknown) => {
         await internal?.goal.pause("runtime_error").catch(() => {});
@@ -360,6 +398,7 @@ export async function handleTurnStart(
         });
       })
       .finally(() => {
+        if (runtime.goalCreation?.create === createGoal) runtime.goalCreation = undefined;
         unsubscribeUsage();
         unlinkAbort();
         if (runtime.goalScope === scope) runtime.goalScope = undefined;
@@ -371,6 +410,7 @@ export async function handleTurnStart(
     throw error;
   } finally {
     if (!consuming) {
+      if (runtime.goalCreation?.create === createGoal) runtime.goalCreation = undefined;
       unsubscribeUsage();
       unlinkAbort();
       if (runtime.goalScope === scope) runtime.goalScope = undefined;
@@ -391,12 +431,14 @@ export async function handleTurnInterrupt(
   threadId?: string,
 ): Promise<{ interrupted: boolean }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  const hadPendingCreation = !!runtime.goalCreation?.pending;
+  runtime.goalCreation = undefined;
   const wasGoalActive = runtime.goal?.read().goal?.status === "active";
   const controller = runtime.abortController;
   const turnId = runtime.currentTurnId;
   await runtime.goal?.pause("user");
   if (!controller || !turnId || runtime.abortController !== controller || runtime.currentTurnId !== turnId)
-    return { interrupted: wasGoalActive || !!controller };
+    return { interrupted: wasGoalActive || !!controller || hadPendingCreation };
   // Retire first: synchronous abort callbacks and later cleanup cannot revive this turn.
   runtime.currentTurnId = null;
   runtime.abortController = null;
@@ -423,6 +465,7 @@ export async function handleTurnSteer(
   steerId?: string,
 ): Promise<{ queued: true; steerId: string }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  runtime.goalCreation = undefined;
   const normalizedAttachments = attachments?.map((attachment) =>
     normalizeLocalImageAttachment(attachment, runtime.cwd),
   );

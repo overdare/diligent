@@ -7,6 +7,7 @@ import type { RuntimeAgent } from "../agent/runtime-agent";
 import type { DiligentConfig } from "../config/schema";
 import { calculateUsageCost } from "../cost";
 import type { GoalController, GoalWorkScope } from "../goals/controller";
+import type { GoalCreateInput, GoalToolHost } from "../goals/tools";
 import type { DiligentPaths } from "../infrastructure";
 import {
   DILIGENT_SERVER_NOTIFICATION_METHODS,
@@ -34,6 +35,12 @@ export interface ThreadRuntime {
   goalScope?: GoalWorkScope;
   goalTimer?: ReturnType<typeof setTimeout>;
   goalWakeVersion?: number;
+  /** Revocable creation capability belonging only to the current ordinary user turn. */
+  goalCreation?: {
+    connectionId?: string;
+    create: NonNullable<GoalToolHost["create"]>;
+    pending?: GoalCreateInput;
+  };
   id: string;
   cwd: string;
   mode: Mode;
@@ -263,6 +270,7 @@ export async function handleModeSet(
 ): Promise<{ mode: Mode }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
   const goalWasActive = runtime.goal?.read().goal?.status === "active";
+  runtime.goalCreation = undefined;
   if (mode === "plan") await runtime.goal?.pause("plan_mode");
   if (hasGoalOwnedCleanupPending(runtime, goalWasActive)) {
     throw new Error("Wait for goal-owned work cleanup before changing mode");
@@ -279,6 +287,7 @@ export async function handleEffortSet(
   effort: ThinkingEffort,
 ): Promise<{ effort: ThinkingEffort }> {
   const runtime = await ctx.resolveThreadRuntime(threadId);
+  runtime.goalCreation = undefined;
   const modelRef = runtime.manager.getCurrentModel() ?? runtime.model;
   const model = modelRef ? resolveModel(modelRef) : undefined;
   const unsupportedEffort = model?.supportsThinking && !supportsThinkingEffort(model, effort);

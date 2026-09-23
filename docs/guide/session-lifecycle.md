@@ -2,7 +2,7 @@
 
 This guide describes the current runtime-owned session/thread lifecycle in Diligent.
 
-[Goal mode](goals.md) adds opt-in, persistent objectives and automatic continuation
+[Goal mode](goals.md) adds explicit-request persistent objectives and automatic continuation
 to root sessions. Its state ledger is separate from conversation entries.
 
 ## Core model

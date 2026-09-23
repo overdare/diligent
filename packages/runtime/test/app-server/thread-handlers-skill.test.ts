@@ -17,8 +17,9 @@ describe("handleTurnStart slash skill rewriting", () => {
       effort: "medium",
       manager: {
         subscribe: () => () => {},
-        run: async (userMessage: { content: string | unknown[] }) => {
+        runWithOutcome: async (userMessage: { content: string | unknown[] }) => {
           capturedUserMessage = userMessage;
+          return { status: "completed" };
         },
         getCurrentModel: () => undefined,
         appendModelChange: () => {},
@@ -85,8 +86,9 @@ describe("handleTurnStart slash skill rewriting", () => {
       effort: "medium",
       manager: {
         subscribe: () => () => {},
-        run: async (userMessage: { content: string | unknown[] }) => {
+        runWithOutcome: async (userMessage: { content: string | unknown[] }) => {
           capturedUserMessage = userMessage;
+          return { status: "completed" };
         },
         getCurrentModel: () => undefined,
         appendModelChange: () => {},

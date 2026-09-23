@@ -257,9 +257,15 @@ export class DiligentAppServer {
   disconnect(connectionId: string): void {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
+    for (const runtime of this.threads.values()) {
+      if (runtime.goalCreation?.connectionId === connectionId) runtime.goalCreation = undefined;
+    }
     // Revoke goal ownership synchronously before the legacy approval fallback can run.
     if (this.connections.size === 1) {
-      for (const runtime of this.threads.values()) void runtime.goal?.pause("disconnected").catch(() => {});
+      for (const runtime of this.threads.values()) {
+        runtime.goalCreation = undefined;
+        void runtime.goal?.pause("disconnected").catch(() => {});
+      }
     }
 
     // Clean up subscriptions for this connection
@@ -290,6 +296,7 @@ export class DiligentAppServer {
   async shutdown(): Promise<void> {
     this.closing = true;
     for (const runtime of this.threads.values()) {
+      runtime.goalCreation = undefined;
       if (runtime.goalTimer) clearTimeout(runtime.goalTimer);
     }
     await Promise.all(
@@ -687,7 +694,11 @@ export class DiligentAppServer {
           runtime.goal.hasChildren
         )
           return;
-        if (!this.config.getGoalsConfig?.()?.enabled || runtime.mode === "plan" || this.connections.size === 0) {
+        if (
+          this.config.getGoalsConfig?.()?.enabled === false ||
+          runtime.mode === "plan" ||
+          this.connections.size === 0
+        ) {
           await runtime.goal.pause("execution_unavailable");
           return;
         }
@@ -743,7 +754,16 @@ export class DiligentAppServer {
       agent: async () => {
         const selectedModel = runtime.runningModelSnapshot ?? runtime.model;
         const request: CreateAgentArgs = {
-          goalHost: { controller: () => runtime.goal, scope: () => runtime.goalScope },
+          goalHost: {
+            controller: () => runtime.goal,
+            scope: () => runtime.goalScope,
+            create: async (input, signal) => {
+              if (this.closing || this.connections.size === 0)
+                throw new Error("Goal creation requires a connected host");
+              if (!runtime.goalCreation) throw new Error("Goal creation requires an active ordinary user turn");
+              return runtime.goalCreation.create(input, signal);
+            },
+          },
           cwd,
           mode: runtime.mode,
           effort: runtime.runningEffortSnapshot ?? runtime.effort,

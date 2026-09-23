@@ -131,11 +131,21 @@ describe("AgentRegistry", () => {
   it("never inherits root goal closures even when nesting and allow-lists request them", () => {
     const definition = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [])[0]!;
     const result = resolveChildToolAccess(
-      [makeTool("get_goal"), makeTool("update_goal"), makeTool("read"), makeTool("spawn_agent")],
-      { allowNestedAgents: true, allowedTools: ["get_goal", "update_goal", "read", "spawn_agent"] },
+      [
+        makeTool("create_goal"),
+        makeTool("get_goal"),
+        makeTool("update_goal"),
+        makeTool("read"),
+        makeTool("spawn_agent"),
+      ],
+      {
+        allowNestedAgents: true,
+        allowedTools: ["create_goal", "get_goal", "update_goal", "read", "spawn_agent"],
+      },
       { ...definition, readonly: false },
     );
     expect(result.childTools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(result.allowedChildToolNames.has("create_goal")).toBe(false);
     expect(result.allowedChildToolNames.has("get_goal")).toBe(false);
     expect(result.allowedChildToolNames.has("update_goal")).toBe(false);
   });

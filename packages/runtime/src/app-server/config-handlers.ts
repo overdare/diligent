@@ -77,6 +77,7 @@ export async function handleConfigReload(
   reloadConfig: (() => Promise<ConfigReloadResult>) | undefined,
   threads: Map<string, ThreadRuntime>,
 ): Promise<ConfigReloadResult> {
+  for (const runtime of threads.values()) runtime.goalCreation = undefined;
   if (!reloadConfig) {
     throw Object.assign(new Error("Config reload is not supported by this app server."), { code: -32601 });
   }

@@ -30,6 +30,7 @@ export interface ToolCapabilities {
 
 /** Central registry of built-in tool capabilities. */
 export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
+  create_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
   get_goal: { immutable: true, rootOnly: true },
   update_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
   // Core agent tools
