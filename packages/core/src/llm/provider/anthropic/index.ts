@@ -31,8 +31,11 @@ const anthropicLogger = createLogger({ scope: "llm:anthropic" });
 
 type TextBlock = Extract<ContentBlock, { type: "text" }>;
 type TextCitation = NonNullable<TextBlock["citations"]>[number];
-// The installed SDK types do not yet expose the documented thinking.display field.
-type ThinkingConfigWithDisplay = Anthropic.ThinkingConfigParam & { display: "summarized" };
+// The installed SDK types do not yet expose these documented thinking fields.
+type ThinkingConfigWithDisplay = Anthropic.ThinkingConfigParam & {
+  display: "summarized";
+  block_binding?: { prefix_mismatch_behavior: "drop_block" };
+};
 
 export function createAnthropicStream(apiKey?: string, baseUrl?: string): StreamFunction {
   const resolvedApiKey = resolveAnthropicApiKey(apiKey);
@@ -60,6 +63,7 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
       try {
         const maxTokens = options.maxTokens ?? model.maxOutputTokens;
         const effort = options.effort ?? "medium";
+        const usesThinkingBindingControls = model.modelId === "claude-opus-5-5";
 
         let thinkingConfig: Record<string, unknown>;
         if (!model.supportsThinking) {
@@ -67,7 +71,11 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
         } else {
           if (model.supportsAdaptiveThinking) {
             thinkingConfig = {
-              thinking: { type: "adaptive", display: "summarized" } as ThinkingConfigWithDisplay,
+              thinking: {
+                type: "adaptive",
+                display: "summarized",
+                ...(usesThinkingBindingControls && { block_binding: { prefix_mismatch_behavior: "drop_block" } }),
+              } as ThinkingConfigWithDisplay,
               output_config: { effort: effort === "xhigh" && !model.supportsXhighEffort ? "max" : effort },
             };
           } else {
@@ -115,10 +123,12 @@ export function createAnthropicStream(apiKey?: string, baseUrl?: string): Stream
           });
         }
 
-        const sdkStream = client.messages.stream(
-          requestParams,
-          ...(options.signal ? [{ signal: options.signal }] : []),
-        );
+        const sdkStream = client.messages.stream(requestParams, {
+          ...(options.signal && { signal: options.signal }),
+          ...(usesThinkingBindingControls && {
+            headers: { "anthropic-beta": "thinking-binding-controls-2026-08-01" },
+          }),
+        });
 
         stream.push({ type: "start" });
 

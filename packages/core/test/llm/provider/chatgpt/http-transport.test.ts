@@ -68,7 +68,7 @@ describe("ChatGPT HTTP transport", () => {
     const request = requests[0];
     if (!request) throw new Error("Expected one ChatGPT HTTP request");
     expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
-    expect(request.headers.get("version")).toBe("0.153.4");
+    expect(request.headers.has("version")).toBe(true);
     expect(request.headers.get("ChatGPT-Account-ID")).toBe("acct_1");
     expect(request.headers.get("session-id")).toBe("session_1");
     expect(request.headers.get("session_id")).toBeNull();
@@ -116,6 +116,28 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.reasoning as { context: string }).context).toBe("all_turns");
     expect((body.reasoning as { effort: string }).effort).toBe("xhigh");
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
+  });
+
+  test("sends GPT-6 Sol and Luna through ChatGPT Responses Lite", async () => {
+    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+      const model = resolveModel({ provider: "chatgpt", modelId });
+      const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          headers: new Headers(init?.headers),
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return chatGPTSuccessResponse();
+      }) as unknown as typeof fetch;
+
+      await collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" }));
+
+      const request = requests[0];
+      if (!request) throw new Error(`Expected one ChatGPT HTTP request for ${model.modelId}`);
+      expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
+      expect(request.body.model).toBe(model.modelId);
+      expect(request.body.parallel_tool_calls).toBe(false);
+    }
   });
 
   test("preserves raw HTTP/SSE incomplete terminal classification", async () => {

@@ -10,8 +10,8 @@ import {
   testTokens,
 } from "../../../helpers/chatgpt-stream";
 
-const CODEX_MINIMUM_CLIENT_VERSION = "0.153.0";
-const SUBSCRIPTION_MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6-astra" });
+const CODEX_MINIMUM_CLIENT_VERSION = "0.155.0";
+const SUBSCRIPTION_MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" });
 
 function isAtLeast(version: string, minimum: string): boolean {
   const parse = (value: string) => value.split(".").map(Number);
@@ -53,12 +53,15 @@ describe("ChatGPT client version", () => {
     expect(compacted).toBe(streamed as string);
   });
 
-  test("the pinned version meets the minimum the Codex catalog requires", async () => {
-    const streamed = await captureVersionHeader(() =>
-      collectEvents(createChatGPTStream(() => testTokens())(SUBSCRIPTION_MODEL, TEST_CONTEXT, { effort: "medium" })),
-    );
+  test("GPT-6 Sol and Luna send a version meeting their Codex catalog minimum", async () => {
+    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+      const model = resolveModel({ provider: "chatgpt", modelId });
+      const streamed = await captureVersionHeader(() =>
+        collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" })),
+      );
 
-    expect(isAtLeast(streamed as string, CODEX_MINIMUM_CLIENT_VERSION)).toBe(true);
-    expect(isAtLeast("0.144.1", CODEX_MINIMUM_CLIENT_VERSION)).toBe(false);
+      expect(streamed).toBeDefined();
+      expect(isAtLeast(streamed as string, CODEX_MINIMUM_CLIENT_VERSION)).toBe(true);
+    }
   });
 });

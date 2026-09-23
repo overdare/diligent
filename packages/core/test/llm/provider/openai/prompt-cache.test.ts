@@ -12,7 +12,7 @@ async function cacheFields(model: string) {
 
 describe("OpenAI prompt caching", () => {
   test("uses the 30m cache option for GPT-5.6 and later", async () => {
-    for (const model of ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-astra"]) {
+    for (const model of ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
       expect(await cacheFields(model)).toEqual({ options: { ttl: "30m" }, retention: undefined });
     }
   });

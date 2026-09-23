@@ -4,8 +4,8 @@ import { defineProviderModelClasses } from "../../model-class";
 
 export const OPENAI_MODEL_CLASSES = defineProviderModelClasses({
   pro: { defaultModelId: "gpt-5.6-sol" },
-  general: { defaultModelId: "gpt-5.6-terra" },
-  lite: { defaultModelId: "gpt-5.6-luna" },
+  general: { defaultModelId: "gpt-5.6-terra", additionalModelIds: ["gpt-6-sol"] },
+  lite: { defaultModelId: "gpt-5.6-luna", additionalModelIds: ["gpt-6-luna"] },
 });
 
 export const OPENAI_MODELS = defineProviderModels("openai", [
@@ -72,5 +72,31 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
     supportsThinking: true,
     supportsVision: true,
     aliases: ["gpt-6", "astra"],
+  },
+  {
+    modelId: "gpt-6-sol",
+    display: "GPT-6 Sol",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 2,
+    outputCostPer1M: 10,
+    cacheReadCostPer1M: 0.2,
+    cacheWriteCostPer1M: 2.5,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+  },
+  {
+    modelId: "gpt-6-luna",
+    display: "GPT-6 Luna",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 0.1,
+    outputCostPer1M: 0.5,
+    cacheReadCostPer1M: 0.01,
+    cacheWriteCostPer1M: 0.125,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
   },
 ]);

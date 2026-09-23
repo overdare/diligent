@@ -3,12 +3,27 @@ import { defineProviderModels } from "../../model-card";
 import { defineProviderModelClasses } from "../../model-class";
 
 export const ANTHROPIC_MODEL_CLASSES = defineProviderModelClasses({
-  pro: { defaultModelId: "claude-opus-5", additionalModelIds: ["claude-opus-4-8"] },
+  pro: { defaultModelId: "claude-opus-5", additionalModelIds: ["claude-opus-5-5", "claude-opus-4-8"] },
   general: { defaultModelId: "claude-sonnet-5" },
   lite: { defaultModelId: "claude-haiku-4-5-20251001" },
 });
 
 export const ANTHROPIC_MODELS = defineProviderModels("anthropic", [
+  {
+    modelId: "claude-opus-5-5",
+    display: "Claude Opus 5.5",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    inputCostPer1M: 4,
+    outputCostPer1M: 20,
+    cacheReadCostPer1M: 0.2,
+    cacheWriteCostPer1M: 5,
+    supportsThinking: true,
+    supportsVision: true,
+    supportsAdaptiveThinking: true,
+    supportsXhighEffort: true,
+    aliases: ["opus-5-5"],
+  },
   {
     modelId: "claude-opus-5",
     display: "Claude Opus 5",
