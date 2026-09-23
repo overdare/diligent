@@ -136,7 +136,15 @@ export function mapStopReason(status: string | undefined): StopReason {
   }
 }
 
-const RESPONSES_LITE_MODEL_IDS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]);
+const RESPONSES_LITE_MODEL_IDS = new Set([
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+]);
 
 export function usesResponsesLite(modelId: string): boolean {
   return RESPONSES_LITE_MODEL_IDS.has(modelId);

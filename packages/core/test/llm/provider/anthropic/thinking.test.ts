@@ -1,6 +1,7 @@
 // @summary Tests for Anthropic thinking payload assembly across adaptive and budget-based models
 import { describe, expect, mock, test } from "bun:test";
 import { APIError } from "@anthropic-ai/sdk/core/error.mjs";
+import { resolveModel } from "../../../../src/llm/models";
 import type { Model, StreamContext, StreamOptions, ToolDefinition } from "../../../../src/llm/types";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
@@ -118,6 +119,16 @@ describe("createAnthropicStream", () => {
     expect(request.thinking).toEqual({ type: "adaptive", display: "summarized" });
     expect(request.output_config).toEqual({ effort: "high" });
     expect(request.temperature).toBeUndefined();
+  });
+
+  test("uses always-on adaptive thinking for Claude Opus 5.5", async () => {
+    const request = await collectRequest(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }), {
+      effort: "medium",
+    });
+
+    expect(request.model).toBe("claude-opus-5-5");
+    expect(request.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(request.output_config).toEqual({ effort: "medium" });
   });
 
   test("preserves xhigh for adaptive models with intrinsic xhigh support", async () => {

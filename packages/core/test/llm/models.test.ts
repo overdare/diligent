@@ -15,6 +15,80 @@ import {
 import { getDefaultModelRef } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
+  it("registers GPT-6 Sol and Luna with provider-specific capabilities", () => {
+    expect(resolveModel({ provider: "openai", modelId: "gpt-6-sol" })).toMatchObject({
+      display: "GPT-6 Sol",
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+      inputCostPer1M: 2,
+      outputCostPer1M: 10,
+      cacheReadCostPer1M: 0.2,
+      cacheWriteCostPer1M: 2.5,
+      supportsThinking: true,
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      supportsVision: true,
+    });
+    expect(resolveModel({ provider: "openai", modelId: "gpt-6-luna" })).toMatchObject({
+      display: "GPT-6 Luna",
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+      inputCostPer1M: 0.1,
+      outputCostPer1M: 0.5,
+      cacheReadCostPer1M: 0.01,
+      cacheWriteCostPer1M: 0.125,
+      supportsThinking: true,
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      supportsVision: true,
+    });
+    expect(resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" })).toMatchObject({
+      display: "ChatGPT 6 Sol",
+      contextWindow: 272_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      supportsVision: true,
+    });
+    expect(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" })).toMatchObject({
+      display: "ChatGPT 6 Luna",
+      contextWindow: 272_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      supportsVision: true,
+    });
+  });
+
+  it("registers Claude Opus 5.5 with always-on adaptive thinking capabilities", () => {
+    const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" });
+
+    expect(model).toMatchObject({
+      display: "Claude Opus 5.5",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+      inputCostPer1M: 4,
+      outputCostPer1M: 20,
+      cacheReadCostPer1M: 0.2,
+      cacheWriteCostPer1M: 5,
+      supportsThinking: true,
+      supportsVision: true,
+      supportsAdaptiveThinking: true,
+      supportsXhighEffort: true,
+      aliases: ["opus-5-5"],
+    });
+  });
+
+  it("classifies the new models without changing existing defaults", () => {
+    expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-sol" }))).toBe("general");
+    expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-luna" }))).toBe("lite");
+    expect(getModelClass(resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" }))).toBe("general");
+    expect(getModelClass(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }))).toBe("lite");
+    expect(getModelClass(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }))).toBe("pro");
+
+    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-5.6-sol" });
+    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-5.6-sol" });
+    expect(getDefaultModelRef("anthropic")).toEqual({ provider: "anthropic", modelId: "claude-opus-5" });
+  });
+
   it("registers Claude Opus 5 as the Anthropic pro model", () => {
     const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5" });
 
