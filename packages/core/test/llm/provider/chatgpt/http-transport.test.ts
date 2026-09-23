@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type LogRecord, setDefaultLogSink } from "@diligent/logging";
 import { resolveModel } from "../../../../src/llm/models";
 import { createChatGPTStream, summarizeChatGPTWebSocketPayload } from "../../../../src/llm/provider/chatgpt";
-import { CHATGPT_PENDING_MODELS } from "../../../../src/llm/provider/chatgpt/models";
 import type { ProviderEvent } from "../../../../src/llm/types";
 import {
   chatGPTSuccessResponse,
@@ -119,8 +118,9 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
-  test("keeps the pending GPT-6 Sol and Luna ChatGPT transport ready", async () => {
-    for (const model of CHATGPT_PENDING_MODELS) {
+  test("sends GPT-6 Sol and Luna through ChatGPT Responses Lite", async () => {
+    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+      const model = resolveModel({ provider: "chatgpt", modelId });
       const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
         requests.push({

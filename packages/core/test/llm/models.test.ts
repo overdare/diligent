@@ -12,24 +12,15 @@ import {
   sameModelRef,
   UnknownModelError,
 } from "../../src/llm/models";
-import { CHATGPT_PENDING_MODELS } from "../../src/llm/provider/chatgpt/models";
 import { getDefaultModelRef } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
-  it("does not offer GPT-6 Sol and Luna through ChatGPT OAuth", () => {
+  it("offers GPT-6 Sol and Luna in the ChatGPT OAuth model list", () => {
     for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
-      expect(listModels("chatgpt").some((model) => model.modelId === modelId)).toBe(false);
-      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(false);
-      expect(() => resolveModel({ provider: "chatgpt", modelId })).toThrow(UnknownModelError);
+      expect(listModels("chatgpt").some((model) => model.modelId === modelId)).toBe(true);
+      expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(true);
+      expect(resolveModel({ provider: "chatgpt", modelId }).modelId).toBe(modelId);
     }
-  });
-
-  it("keeps ChatGPT OAuth GPT-6 Sol and Luna cards ready for later enablement", () => {
-    expect(CHATGPT_PENDING_MODELS.map(({ provider, modelId }) => `${provider}/${modelId}`)).toEqual([
-      "chatgpt/gpt-6-sol",
-      "chatgpt/gpt-6-luna",
-    ]);
-    expect(CHATGPT_PENDING_MODELS.every((model) => model.supportedEfforts?.includes("max"))).toBe(true);
   });
 
   it("registers GPT-6 Sol and Luna for the OpenAI API", () => {
