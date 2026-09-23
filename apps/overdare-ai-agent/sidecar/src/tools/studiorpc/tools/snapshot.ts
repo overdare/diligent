@@ -9,6 +9,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  type Stats,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -142,6 +143,52 @@ function parseSnapshotName(name: string): { sessionId: string; index: number } |
   return { sessionId: stem.slice(0, sep), index };
 }
 
+/** Loads one committed map's metadata; identity always comes from its filename. */
+function readSnapshotEntry(dir: string, id: string): (SnapshotEntry & { mtimeMs: number }) | undefined {
+  // IDs are single filenames on both Unix and Windows, never paths or streams.
+  if (id.includes("/") || id.includes("\\") || id.includes(":") || id.includes("\0")) return undefined;
+  const parsed = parseSnapshotName(`${id}.ovdrjm`);
+  if (!parsed) return undefined;
+  const path = join(dir, `${id}.ovdrjm`);
+  let mapStat: Stats;
+  try {
+    mapStat = statSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (!mapStat.isFile()) return undefined;
+  const mtimeMs = mapStat.mtimeMs;
+  let meta: SnapshotMeta | undefined;
+  try {
+    meta = JSON.parse(readFileSync(join(dir, `${id}.json`), "utf-8")) as SnapshotMeta;
+  } catch {
+    // Preserve legacy fallback for missing, unreadable, or malformed metadata.
+  }
+  return {
+    id,
+    path,
+    sessionId: parsed.sessionId,
+    index: parsed.index,
+    createdAt: meta?.createdAt ?? new Date(mtimeMs).toISOString(),
+    ...(meta?.label !== undefined ? { label: meta.label } : {}),
+    ...(meta?.transcriptPath !== undefined ? { transcriptPath: meta.transcriptPath } : {}),
+    ...(meta?.userMessageId !== undefined ? { userMessageId: meta.userMessageId } : {}),
+    ...(meta?.stateSummary !== undefined ? { stateSummary: meta.stateSummary } : {}),
+    ...(meta?.summaryStatus !== undefined
+      ? {
+          // Interrupted background work must not remain pending indefinitely.
+          summaryStatus:
+            meta.summaryStatus === "pending" && Date.now() - Date.parse(meta.createdAt) > 60_000
+              ? "failed"
+              : meta.summaryStatus,
+        }
+      : {}),
+    kind: meta?.kind ?? "turn",
+    mtimeMs,
+  };
+}
+
 /**
  * All snapshots in the project, newest first (by file mtime). Snapshots
  * predating the metadata sidecar are listed with kind "turn", no label, and an
@@ -158,40 +205,8 @@ export function listSnapshots(cwd: string): SnapshotEntry[] {
   const entries: Array<SnapshotEntry & { mtimeMs: number }> = [];
   for (const name of names) {
     if (!name.endsWith(".ovdrjm")) continue;
-    const parsed = parseSnapshotName(name);
-    if (!parsed) continue;
-    const path = join(dir, name);
-    const mtimeMs = statSync(path).mtimeMs;
-    const id = name.slice(0, -".ovdrjm".length);
-    let meta: SnapshotMeta | undefined;
-    try {
-      meta = JSON.parse(readFileSync(join(dir, `${id}.json`), "utf-8")) as SnapshotMeta;
-    } catch {
-      // legacy snapshot without metadata sidecar
-    }
-    entries.push({
-      id,
-      path,
-      sessionId: parsed.sessionId,
-      index: parsed.index,
-      createdAt: meta?.createdAt ?? new Date(mtimeMs).toISOString(),
-      ...(meta?.label !== undefined ? { label: meta.label } : {}),
-      ...(meta?.transcriptPath !== undefined ? { transcriptPath: meta.transcriptPath } : {}),
-      ...(meta?.userMessageId !== undefined ? { userMessageId: meta.userMessageId } : {}),
-      ...(meta?.stateSummary !== undefined ? { stateSummary: meta.stateSummary } : {}),
-      ...(meta?.summaryStatus !== undefined
-        ? {
-            // A stopped process cannot finish its background task. Expose expired
-            // pending work as failed without turning a read into a filesystem write.
-            summaryStatus:
-              meta.summaryStatus === "pending" && Date.now() - Date.parse(meta.createdAt) > 60_000
-                ? "failed"
-                : meta.summaryStatus,
-          }
-        : {}),
-      kind: meta?.kind ?? "turn",
-      mtimeMs,
-    });
+    const entry = readSnapshotEntry(dir, name.slice(0, -".ovdrjm".length));
+    if (entry) entries.push(entry);
   }
   entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return entries.map(({ mtimeMs: _mtimeMs, ...entry }) => entry);
@@ -212,13 +227,14 @@ export function findLatestSnapshot(cwd: string): SnapshotEntry {
   return latest;
 }
 
-/** Snapshot with the given id. Throws when it does not exist. */
+/** Reads only the requested snapshot's map stat and metadata, without listing the directory. */
 export function findSnapshotById(cwd: string, id: string): SnapshotEntry {
-  const entry = listSnapshots(cwd).find((candidate) => candidate.id === id);
+  const entry = readSnapshotEntry(snapshotsDir(cwd), id);
   if (!entry) {
     throw new Error(`Snapshot "${id}" not found. Use studiorpc_snapshot_list to see available snapshots.`);
   }
-  return entry;
+  const { mtimeMs: _mtimeMs, ...snapshot } = entry;
+  return snapshot;
 }
 
 /** Overwrite the project's current ovdrjm with the snapshot bytes. */

@@ -31,6 +31,8 @@ Project storage contains `sessions/<sessionId>.jsonl` and `snapshots/<sessionId>
 
 The snapshot `id` is the filename stem `<sessionId>_<index>` and remains separate from `userMessageId`: one request can own several checkpoints. `index` starts at zero and each capture uses one more than the highest existing map or metadata index for that session. An interrupted capture can leave an unused metadata-only ID, so indexes need not be consecutive. It is not a transcript line number. `userMessageId`, `label`, and `stateSummary` live in the matching `.json` metadata, not in the filename. `rollback` and `snapshot_context` select by snapshot ID.
 
+Explicit ID lookup checks only `<snapshotId>.ovdrjm` and reads its matching `.json`, without enumerating the directory or loading the map contents to locate it. IDs must be a single filename; Unix/Windows path separators, drive/stream separators, and NUL are rejected before file access. Metadata without a committed map is unavailable. Legacy metadata fallback and summary status normalization are shared with list results. Listing snapshots and selecting the default rollback baseline still enumerate the directory.
+
 ## Inspect a saved map
 
 `snapshot_context` reads the selected `.ovdrjm` copy directly, without saving, restoring, or contacting Studio. It works when Studio is offline or the live map has changed or been removed. UTF-8 and BOM-prefixed UTF-16 maps are supported. Its JSON result contains `snapshot` metadata (including any state summary), a `data` page, and an optional `conversation` excerpt.
