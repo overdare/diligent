@@ -744,3 +744,78 @@ test.each(["v1", "v2"])("writes tagged ValueBase values for batched creates and 
   if (version === "v2")
     expect(paramsOf("instance.update")).toEqual({ Instances: [{ ActorGuid: nodes[0].ActorGuid, Name: "Renamed" }] });
 });
+
+test.each(["v1", "v2"])("creates ProceduralModel and patches WorldPivot by GUID on %s", async (version) => {
+  process.env.STUDIO_API_VERSION = version;
+  const cwd = makeStudioProject();
+  const tools = await loadTools(cwd);
+  const node: WorldNode = {
+    InstanceType: "ProceduralModel",
+    ActorGuid: "PM1",
+    Name: "Existing",
+    Source: "recipe",
+    AutoRebuild: true,
+    Size: { ObjectType: "Vector3", X: 100, Y: 100, Z: 100 },
+    LuaChildren: [],
+  };
+  world.LuaChildren!.push(node);
+  if (version === "v1") writeFileSync(join(cwd, "Test.ovdrjm"), JSON.stringify({ Root: world }));
+  const properties = { WorldPivot: { Position: { X: 12, Y: 34, Z: 56 }, Orientation: { X: 0, Y: 90, Z: 0 } } };
+  const expected = {
+    ObjectType: "CFrame",
+    Position: { ObjectType: "Vector3", X: 12, Y: 34, Z: 56 },
+    Orientation: { ObjectType: "Vector3", X: 0, Y: 90, Z: 0 },
+  };
+  const patched = await executeTool(
+    tools,
+    {
+      type: "tool_call",
+      id: "pm-pivot",
+      name: "studiorpc_instance_upsert",
+      input: { items: [{ guid: "PM1", properties }] },
+    },
+    toolContext(),
+  );
+  expect(patched.metadata?.error).not.toBe(true);
+  if (version === "v2") {
+    expect(paramsOf("instance.update")).toEqual({ Instances: [{ ActorGuid: "PM1", WorldPivot: expected }] });
+  } else {
+    const updated = findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, "PM1")!;
+    expect(updated.WorldPivot).toEqual(expected);
+    expect(updated.Source).toBe("recipe");
+    expect(updated.AutoRebuild).toBe(true);
+    expect(updated.Size).toEqual(node.Size);
+  }
+  rpcCalls.length = 0;
+  const created = await executeTool(
+    tools,
+    {
+      type: "tool_call",
+      id: "pm-create",
+      name: "studiorpc_instance_upsert",
+      input: {
+        items: [
+          {
+            class: "ProceduralModel",
+            parentGuid: FOLDER_A_GUID,
+            name: "NewRecipe",
+            properties: { ...properties, Size: { X: 150, Y: 75, Z: 90 }, AutoRebuild: false },
+          },
+        ],
+      },
+    },
+    toolContext(),
+  );
+  expect(created.metadata?.error).not.toBe(true);
+  const payload =
+    version === "v2"
+      ? (paramsOf("instance.create")!.Instances as WorldNode[])[0]
+      : findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, FOLDER_A_GUID)!.LuaChildren![0];
+  expect(payload).toMatchObject({
+    InstanceType: "ProceduralModel",
+    Name: "NewRecipe",
+    WorldPivot: expected,
+    Size: { ObjectType: "Vector3", X: 150, Y: 75, Z: 90 },
+    AutoRebuild: false,
+  });
+});
