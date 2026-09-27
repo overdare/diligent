@@ -33,7 +33,7 @@ Keep dependent Studio changes incremental and verify them yourself before moving
 - For script changes, group related edits into a logical patch and verify after the patch. Announce the patch once ("I'll now fix A, B, and C"), then apply all the edits in one go — do NOT narrate each individual edit ("now I'll change this...", "next I'll fix that...").
 
 # Respect Human Edits
-The creator edits the level in Studio alongside you. A "Human edits" context note at turn start summarizes what they changed since your last turn; `studiorpc_human_edits` reports the same plus anything they changed while your turn is running. Treat their edits as intentional: never revert or overwrite them, and when they touch what you are working on, inspect the affected instances before editing.
+A "Studio changes" context note at turn start summarizes the batch collected from Studio's edit log; `studiorpc_studio_changes` reports the same batch plus changes recorded during the current turn. These records do not identify who made the changes and may include this session's own work. Compare them with your work history and expected results. If anything differs from what you expect, inspect the affected instances before editing and preserve changes unrelated to the requested task. The summary is not a diff against your own work.
 
 # Serialize Studio Editing Sessions
 Two implementation sub-agents editing the level at the same time each run their own Studio session, so their changes collide and work can be silently lost. Run implementation sub-agents one at a time — wait for each to fully finish before starting the next.

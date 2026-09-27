@@ -1,4 +1,4 @@
-// @summary Tests EditLogging consumption, summarization, and human-edits context injection.
+// @summary Tests EditLogging consumption, summarization, and studio-changes context injection.
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStudioRpcToolProvider } from "../../src/tools/studiorpc";
 import { rotateAndReadEditLogs, SECTION_TITLES, summarizeEditLog } from "../../src/tools/studiorpc/tools/edit-log";
-import { consumeHumanEdits, createHumanEditsTool } from "../../src/tools/studiorpc/tools/human-edits-tool";
-import { COUNT_SECTIONS } from "../../src/web/client/components/HumanEditsNotice";
+import { consumeStudioChanges, createStudioChangesTool } from "../../src/tools/studiorpc/tools/studio-changes-tool";
+import { COUNT_SECTIONS } from "../../src/web/client/components/StudioChangesNotice";
 
-const NO_EDITS = "No human edits detected since the agent's last completed turn.";
+const NO_EDITS = "No Studio changes recorded in the collected edit log.";
 
 function projectDir(): string {
   const cwd = mkdtempSync(join(tmpdir(), "proj-"));
@@ -28,7 +28,7 @@ function writeEditLog(cwd: string, envelopes: unknown[], file = "Edit.Log"): voi
   writeFileSync(join(cwd, file), text.replace(/\n/g, "\r\n"));
 }
 
-/** Envelope keys are PascalCase, and `ActorGuids` alone marks the human's subjects. */
+/** Envelope keys are PascalCase, and `ActorGuids` alone marks the transaction's subjects. */
 function envelope(
   action: string,
   objects: Array<Record<string, unknown>>,
@@ -87,7 +87,7 @@ function promptInput(cwd: string) {
 
 describe("summary section titles", () => {
   test("the web notice looks for exactly the headings the summarizer writes", () => {
-    // HumanEditsNotice has no import path into server code, so it carries its own
+    // StudioChangesNotice has no import path into server code, so it carries its own
     // copy of these strings and regex-parses the rendered summary for a change
     // count. Renaming a heading on one side alone makes that count silently wrong.
     expect([...COUNT_SECTIONS]).toEqual(Object.values(SECTION_TITLES));
@@ -140,7 +140,7 @@ describe("summarizeEditLog", () => {
     expect(output).toContain('> Model "Tree" (m1): parent Workspace -> Props');
     expect(output).toContain('~ Part "Floor" (p1)');
     expect(output).toContain("  Size: (4,1,4) -> (12,1,4)");
-    expect(output).not.toContain('"Props" (f1)'); // auxiliary records carry no human intent
+    expect(output).not.toContain('"Props" (f1)'); // auxiliary records carry no direct transaction intent
   });
 
   test("collapses repeated edits of the same property to first-before -> last-after", () => {
@@ -204,7 +204,7 @@ describe("summarizeEditLog", () => {
 
   test("reports only the envelope's ActorGuids, dropping collateral objects", () => {
     // Studio lists the edit's fallout alongside its subject: creating a script
-    // also logs the parent's LuaChildren change. Only ActorGuids is human intent.
+    // also logs the parent's LuaChildren change. Only ActorGuids marks direct transaction subjects.
     const envelopes = [
       envelope(
         "Create",
@@ -321,11 +321,11 @@ describe("real Studio Edit.Log format", () => {
     const cwd = projectDir();
     writeFileSync(join(cwd, "Edit.Log"), REAL_LOG);
 
-    const capture = consumeHumanEdits(cwd);
-    expect(capture.result.metadata?.humanEditsDetected).toBe(true);
+    const capture = consumeStudioChanges(cwd);
+    expect(capture.result.metadata?.studioChangesDetected).toBe(true);
     expect(capture.result.metadata?.transactions).toBe(2);
     // Only the envelope subject (ActorGuids) counts; auxiliary creations and
-    // the Workspace LuaChildren fallout are not the human's direct intent.
+    // the Workspace LuaChildren fallout are not the transaction's direct subjects.
     expect(capture.result.output).toContain('+ Model "Campfire" (00A01E0A47D96274567636A74BCA5513)');
     expect(capture.result.output).not.toContain("PointLight");
     expect(capture.result.output).not.toContain("Workspace");
@@ -344,26 +344,26 @@ describe("real Studio Edit.Log format", () => {
     writeFileSync(join(cwd, "Play.log"), "not an edit log");
     writeFileSync(join(cwd, "Edit.Log"), `${REAL_LOG}\r\n{\r\n\t"Timestamp": "2026-08-26T12:`);
 
-    const { result } = consumeHumanEdits(cwd);
-    expect(result.metadata?.humanEditsDetected).toBe(true);
+    const { result } = consumeStudioChanges(cwd);
+    expect(result.metadata?.studioChangesDetected).toBe(true);
     expect(result.metadata?.transactions).toBe(2); // truncated tail dropped, not fatal
     expect(readdirSync(cwd)).toContain("Play.log"); // untouched
   });
 });
 
-describe("consumeHumanEdits", () => {
+describe("consumeStudioChanges", () => {
   test("returns no-edits when the EditLogging directory does not exist", () => {
-    const { result } = consumeHumanEdits(projectDir());
+    const { result } = consumeStudioChanges(projectDir());
     expect(result.output).toBe(NO_EDITS);
-    expect(result.metadata?.humanEditsDetected).toBe(false);
+    expect(result.metadata?.studioChangesDetected).toBe(false);
   });
 
   test("rotates log files immediately and deletes them only on finalize", () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Ramp")])]);
 
-    const capture = consumeHumanEdits(cwd);
-    expect(capture.result.metadata?.humanEditsDetected).toBe(true);
+    const capture = consumeStudioChanges(cwd);
+    expect(capture.result.metadata?.studioChangesDetected).toBe(true);
     const afterConsume = logFiles(cwd);
     expect(afterConsume.some((name) => name.endsWith(".consuming"))).toBe(true);
     expect(afterConsume).not.toContain("Edit.Log");
@@ -380,7 +380,7 @@ describe("consumeHumanEdits", () => {
     );
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "New")])]);
 
-    const { result } = consumeHumanEdits(cwd);
+    const { result } = consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Old" (p1)');
     expect(result.output).toContain('+ Part "New" (p2)');
   });
@@ -394,7 +394,7 @@ describe("consumeHumanEdits", () => {
       `${JSON.stringify(envelope("Create", [subject("Part", "p2", "Ramp")]))}\n{"bad": }\n{"truncated`,
     );
 
-    const { result } = consumeHumanEdits(cwd);
+    const { result } = consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Ramp" (p2)');
     expect(result.output).toContain("1 log entries could not be parsed");
   });
@@ -403,32 +403,32 @@ describe("consumeHumanEdits", () => {
     const cwd = projectDir();
     writeFileSync(join(cwd, "Edit.Log"), JSON.stringify([envelope("Create", [subject("Part", "p2", "Ramp")])]));
 
-    const { result } = consumeHumanEdits(cwd);
+    const { result } = consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Ramp" (p2)');
   });
 });
 
-describe("createHumanEditsTool", () => {
+describe("createStudioChangesTool", () => {
   test("serves the turn-start cache and reports edits made during the turn", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Ramp")])]);
-    const capture = consumeHumanEdits(cwd);
+    const capture = consumeStudioChanges(cwd);
     capture.finalize();
 
-    // Human keeps editing while the agent works.
+    // Studio records more edits while the agent works.
     writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
 
-    const tool = createHumanEditsTool(cwd, () => capture.result);
+    const tool = createStudioChangesTool(cwd, () => capture.result);
     const result = await tool.execute({} as never, toolCtx());
     expect(result.output).toContain('+ Part "Ramp" (p2)');
-    expect(result.output).toContain("while this turn was in progress");
+    expect(result.output).toContain("recorded during this turn");
     expect(result.output).toContain('- Part "Crate" (p9)');
     // Peek must not consume: the mid-turn log stays for the next turn.
     expect(logFiles(cwd)).toContain("Edit.Log");
   });
 
   test("returns the no-edits message when nothing is pending or cached", async () => {
-    const result = await createHumanEditsTool(projectDir()).execute({} as never, toolCtx());
+    const result = await createStudioChangesTool(projectDir()).execute({} as never, toolCtx());
     expect(result.output).toBe(NO_EDITS);
     expect(result.metadata?.error).toBeUndefined();
   });
@@ -439,11 +439,11 @@ describe("createHumanEditsTool", () => {
       cwd: "/tmp/project",
       host: { approve: async () => "once" },
     });
-    expect(tools.map((tool) => tool.name)).toContain("studiorpc_human_edits");
+    expect(tools.map((tool) => tool.name)).toContain("studiorpc_studio_changes");
   });
 });
 
-describe("human-edits unified loop-hook context injection", () => {
+describe("studio-changes unified loop-hook context injection", () => {
   function promptProvider() {
     const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
     return provider as typeof provider & {
@@ -465,9 +465,9 @@ describe("human-edits unified loop-hook context injection", () => {
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
     expect(injections).toHaveLength(1);
     expect(injections?.[0]).toMatchObject({
-      source: "studiorpc-human-edits",
+      source: "studiorpc-studio-changes",
       metadata: {
-        presentation: { kind: "human-edits", title: "Human edits detected" },
+        presentation: { kind: "studio-changes", title: "Studio changes detected" },
       },
     });
     expect(injections?.[0]?.content).toContain('+ Part "Ramp" (p2)');
@@ -492,7 +492,7 @@ describe("human-edits unified loop-hook context injection", () => {
       envelope("SetProperty", [subject("Folder", "f1", "Props", [{ Property: "GroupSize", Before: 1, After: 2 }])]),
     ]);
     const tools = await p.createTools({ cwd, host: { approve: async () => "once" } });
-    const tool = tools.find((tool) => tool.name === "studiorpc_human_edits");
+    const tool = tools.find((tool) => tool.name === "studiorpc_studio_changes");
     expect(tool).toBeDefined();
     const result = await tool!.execute({} as never, toolCtx());
     expect(result.output).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
@@ -524,8 +524,29 @@ describe("human-edits unified loop-hook context injection", () => {
     expect(provider.onStop).toBeUndefined();
   });
 
-  test("does not register the Studio human-edits loop hook for child agents", () => {
+  test("does not register the Studio changes loop hook for child agents", () => {
     const p = promptProvider();
     expect(p.createAgentLoopHooks?.({ agentKind: "child" } as never)).toEqual([]);
   });
+});
+
+test("Studio change summaries explain attribution and verification without claiming an agent-relative diff", async () => {
+  const cwd = projectDir();
+  writeEditLog(cwd, [
+    envelope("Modify", [
+      { ActorGuid: "p1", Name: "Part", Changes: [{ Property: "Name", Before: "Old", After: "New" }] },
+    ]),
+  ]);
+  const capture = consumeStudioChanges(cwd);
+  expect(capture.result.output).toContain("Studio changes collected at turn start:");
+  expect(capture.result.output).toContain("may include this session's own work");
+  expect(capture.result.output).toContain("Compare these changes with your own work");
+  expect(capture.result.output).toContain("inspect the affected instances");
+  expect(capture.result.output).not.toContain("Human edits");
+  expect(capture.result.output).not.toContain("creator's own edits");
+  const tool = createStudioChangesTool(cwd);
+  expect(tool.description).toContain("does not identify who made them");
+  writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
+  const live = await tool.execute({} as never, toolCtx());
+  expect(live.output).toContain("Studio changes recorded during this turn:");
 });

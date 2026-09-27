@@ -109,16 +109,16 @@ describe("ThreadStore", () => {
 
     store.handleEvent({
       type: "context_notice",
-      source: "studiorpc-human-edits",
+      source: "studiorpc-studio-changes",
       presentation: {
-        kind: "human-edits",
-        title: "Human edits detected",
+        kind: "studio-changes",
+        title: "Studio changes detected",
         content: "Added (1):\n+ Part Ramp",
       },
     });
 
     const rendered = renderCommittedTranscriptItems(store.getItems(), 100).map(stripAnsi).join("\n");
-    expect(rendered).toContain("Human edits detected");
+    expect(rendered).toContain("Studio changes detected");
     expect(rendered).toContain("Added (1):");
     expect(rendered).toContain("+ Part Ramp");
   });

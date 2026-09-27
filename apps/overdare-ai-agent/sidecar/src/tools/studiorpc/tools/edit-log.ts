@@ -1,12 +1,12 @@
-// @summary Reads, rotates, and summarizes Studio's EditLogging transaction files (human edits).
+// @summary Reads, rotates, and summarizes Studio's EditLogging transaction files.
 
 import { readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
 
 /**
- * Studio appends one JSON envelope per finalized human edit transaction.
- * Agent edits are never logged, so everything here is a genuine creator edit.
+ * Studio appends one JSON envelope per finalized edit transaction.
+ * These records do not establish who made the changes.
  * Studio recreates the file when it is missing, which is what makes the
  * rotate-and-delete consumption model safe.
  *
@@ -44,7 +44,7 @@ const MAX_SECTION_ENTRIES = 30;
 /**
  * Section headings of the rendered summary. The web notice re-parses these out of
  * the text to show a change count, so renaming one here silently breaks that count
- * — `studiorpc-human-edits.test.ts` asserts the two lists stay in step.
+ * — `studiorpc-studio-changes.test.ts` asserts the two lists stay in step.
  */
 export const SECTION_TITLES = {
   added: "Added",
@@ -55,9 +55,9 @@ export const SECTION_TITLES = {
   sourceChanged: "Script source changed",
 } as const;
 
-export const TURN_START_HEADER = "Human edits since the agent's last completed turn:";
-export const MID_TURN_HEADER = "Human edits made while this turn was in progress:";
-export const NO_EDITS_MESSAGE = "No human edits detected since the agent's last completed turn.";
+export const TURN_START_HEADER = "Studio changes collected at turn start:";
+export const MID_TURN_HEADER = "Studio changes recorded during this turn:";
+export const NO_EDITS_MESSAGE = "No Studio changes recorded in the collected edit log.";
 
 interface EditLogChange {
   property: string;
@@ -330,7 +330,7 @@ const CREATE_ACTION = /create/i;
 const REMOVE_ACTION = /delete|remove|destroy/i;
 
 /**
- * True for the records that carry the human's direct intent. Older logs have
+ * True for the records that carry the transaction's direct subjects. Older logs have
  * no `role`; there, an envelope-level subject list is the fallback filter.
  */
 function isSubject(object: EditLogObject, envelope: EditLogEnvelope): boolean {
@@ -450,7 +450,7 @@ export interface EditLogSummary {
 /**
  * Collapse a batch of edit-log envelopes into the compact per-section summary
  * injected into the agent's context. Section headers must stay in sync with
- * the web HumanEditsNotice count parser.
+ * the web StudioChangesNotice count parser.
  */
 export function summarizeEditLog(
   envelopes: EditLogEnvelope[],
@@ -507,10 +507,14 @@ export function summarizeEditLog(
     added.length + addedThenRemoved.length + removed.length + moved.length + modified.length + sourceChanged.length;
   if (editCount === 0) return { output: NO_EDITS_MESSAGE, editCount: 0 };
 
-  const parts = [header, ...sections];
+  const parts = [
+    header,
+    "These records do not identify who made the changes and may include this session's own work. " +
+      "This is a collected log summary, not a diff against your work. " +
+      "Compare these changes with your own work; if anything differs from what you expect, " +
+      "inspect the affected instances before editing.",
+    ...sections,
+  ];
   if (parseFailures > 0) parts.push(`(${parseFailures} log entries could not be parsed and were skipped.)`);
-  parts.push(
-    "These are the creator's own edits. If any overlap with your current task, inspect the affected instances before editing them.",
-  );
   return { output: parts.join("\n\n"), editCount };
 }

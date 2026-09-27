@@ -570,12 +570,12 @@ describe("DiligentAppServer", () => {
                 if (latest?.role !== "user" || latest.content !== "move it up") return;
                 return [
                   {
-                    source: "studiorpc-human-edits",
+                    source: "studiorpc-studio-changes",
                     content: "Added: Ramp",
                     metadata: {
                       presentation: {
-                        kind: "human-edits",
-                        title: "Human edits detected",
+                        kind: "studio-changes",
+                        title: "Studio changes detected",
                         content: "Added: Ramp",
                       },
                     },

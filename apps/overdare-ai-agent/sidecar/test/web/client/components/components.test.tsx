@@ -21,7 +21,6 @@ import { ContextMessage } from "../../../../src/web/client/components/ContextMes
 import { EmptyState } from "../../../../src/web/client/components/EmptyState";
 import { ErrorBanner } from "../../../../src/web/client/components/ErrorBanner";
 import { FeedbackReportModal } from "../../../../src/web/client/components/FeedbackReportModal";
-import { HumanEditsNotice } from "../../../../src/web/client/components/HumanEditsNotice";
 import { Input } from "../../../../src/web/client/components/Input";
 import {
   extractPastedImageFiles,
@@ -41,6 +40,7 @@ import { ResponsiveSidebar } from "../../../../src/web/client/components/Respons
 import { Sidebar } from "../../../../src/web/client/components/Sidebar";
 import { SlashMenu } from "../../../../src/web/client/components/SlashMenu";
 import { SteeringQueuePanel } from "../../../../src/web/client/components/SteeringQueuePanel";
+import { StudioChangesNotice } from "../../../../src/web/client/components/StudioChangesNotice";
 import { ThinkingBlock } from "../../../../src/web/client/components/ThinkingBlock";
 import { Toast } from "../../../../src/web/client/components/Toast";
 import { ToolActivityGroup } from "../../../../src/web/client/components/ToolActivityGroup";
@@ -1305,10 +1305,10 @@ test("context message renders a subtle collapsed compaction divider", () => {
   expect(html).not.toContain("Ship transcript-aware compaction UI");
 });
 
-test("human edits notice renders a visible banner with counts and collapsed diff", () => {
+test("Studio changes notice renders a visible banner with counts and collapsed diff", () => {
   const summary = [
     "```",
-    "Human edits since the agent's last completed turn:",
+    "Studio changes collected at turn start:",
     "",
     "Added (1):",
     '+ Part "Ramp" (p2) under "Workspace" (ws-0)',
@@ -1318,11 +1318,11 @@ test("human edits notice renders a visible banner with counts and collapsed diff
     '- PointLight "Lamp" (l1) was under "Workspace" (ws-0)',
     "```",
   ].join("\n");
-  const html = renderToStaticMarkup(<HumanEditsNotice summary={summary} />);
+  const html = renderToStaticMarkup(<StudioChangesNotice summary={summary} />);
 
-  expect(html).toContain("Continuing from your edits");
+  expect(html).toContain("Studio changes detected");
   expect(html).toContain("3 changes");
-  expect(html).toContain("will keep your edits in mind");
+  expect(html).toContain("compare these changes with its own work");
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain("Ramp"); // diff details collapsed by default
 });

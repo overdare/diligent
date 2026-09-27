@@ -353,10 +353,10 @@ describe("buildSessionContext", () => {
     const internal = {
       ...makeMsg("a2", "a1", "user", "human edit model context"),
       visibility: "internal" as const,
-      source: "studiorpc-human-edits",
+      source: "studiorpc-studio-changes",
       presentation: {
-        kind: "human-edits",
-        title: "Human edits detected",
+        kind: "studio-changes",
+        title: "Studio changes detected",
         content: "Added: Ramp",
       },
     };
@@ -369,7 +369,7 @@ describe("buildSessionContext", () => {
       expect.objectContaining({ type: "message" }),
       expect.objectContaining({
         type: "context",
-        source: "studiorpc-human-edits",
+        source: "studiorpc-studio-changes",
         presentation: internal.presentation,
       }),
     ]);

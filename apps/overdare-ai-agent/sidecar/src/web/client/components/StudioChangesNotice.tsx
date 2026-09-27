@@ -1,11 +1,11 @@
-// @summary Prominent notice that the creator's Studio edits were detected and handed to the agent
+// @summary Prominent notice that recorded Studio changes were handed to the agent
 
 import { useState } from "react";
 import { ChevronDown, Pencil } from "./icons";
 import { MarkdownContent } from "./MarkdownContent";
 import { detailPanelClasses, focusRingClasses } from "./ui-styles";
 
-interface HumanEditsNoticeProps {
+interface StudioChangesNoticeProps {
   summary: string;
 }
 
@@ -30,7 +30,7 @@ function countLabel(summary: string): string {
   return total === 1 ? "1 change" : `${total} changes`;
 }
 
-export function HumanEditsNotice({ summary }: HumanEditsNoticeProps) {
+export function StudioChangesNotice({ summary }: StudioChangesNoticeProps) {
   const [open, setOpen] = useState(false);
   const counts = countLabel(summary);
 
@@ -44,7 +44,7 @@ export function HumanEditsNotice({ summary }: HumanEditsNoticeProps) {
           onClick={() => setOpen((value) => !value)}
         >
           <Pencil aria-hidden="true" className="h-4 w-4 shrink-0 text-muted/80" strokeWidth={1.8} />
-          <span className="text-xs font-medium leading-5 text-text">Continuing from your edits</span>
+          <span className="text-xs font-medium leading-5 text-text">Studio changes detected</span>
           {counts ? <span className="text-xs leading-5 text-muted">{counts}</span> : null}
           <ChevronDown
             aria-hidden="true"
@@ -53,7 +53,7 @@ export function HumanEditsNotice({ summary }: HumanEditsNoticeProps) {
           />
         </button>
         <p className="mt-1 text-xs leading-5 text-muted">
-          The agent noticed what you changed in Studio and will keep your edits in mind as it continues.
+          The agent will compare these changes with its own work. They may include changes made by this session.
         </p>
         {open ? (
           <div className="mt-2">

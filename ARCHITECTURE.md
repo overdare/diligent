@@ -358,7 +358,7 @@ Diligent has two intentionally separate hook tiers:
 Core does not know runtime tool names, persisted visibility rules, bundled-provider types, or
 client behavior. The raw core `context_injected` event is consumed by runtime and never added to
 the shared protocol. Runtime may validate opaque injection metadata and emit a separate structured
-`context_notice`; this is the common path used by Studio human-edit detection in Web, TUI, and
+`context_notice`; this is the common path used by Studio change-log summaries in Web, TUI, and
 non-interactive clients.
 
 ## Prompt Construction

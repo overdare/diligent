@@ -15,7 +15,6 @@ import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
 import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
-import { consumeHumanEdits, createHumanEditsTool, type HumanEditsCapture } from "./tools/human-edits-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -30,6 +29,7 @@ import { createScriptReadTool } from "./tools/script-read-tool";
 import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
+import { consumeStudioChanges, createStudioChangesTool, type StudioChangesCapture } from "./tools/studio-changes-tool";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock } from "./write-lock";
 
@@ -46,11 +46,11 @@ interface TurnSnapshotState {
   sessionId: string | undefined;
   taken: boolean;
   /**
-   * Human edits consumed from Studio's EditLogging at turn start. Holds the
-   * frozen summary (served by the human-edits tool as the turn cache) and the
+   * Studio changes consumed from Studio's EditLogging at turn start. Holds the
+   * frozen summary (served by the studio-changes tool as the turn cache) and the
    * deferred deletion of the consumed log files.
    */
-  humanEdits?: HumanEditsCapture;
+  studioChanges?: StudioChangesCapture;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -59,31 +59,31 @@ interface TurnSnapshotState {
   transcriptPath?: string;
 }
 
-function createHumanEditsLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
-  let pendingHumanEdits: HumanEditsCapture | undefined;
+function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
+  let pendingStudioChanges: StudioChangesCapture | undefined;
 
   return {
-    id: "studiorpc-human-edits",
+    id: "studiorpc-studio-changes",
     onPromptStart() {
-      pendingHumanEdits = turnState.humanEdits;
+      pendingStudioChanges = turnState.studioChanges;
     },
     beforeTurn() {
-      const humanEdits = pendingHumanEdits;
-      pendingHumanEdits = undefined;
-      if (!humanEdits) return;
+      const studioChanges = pendingStudioChanges;
+      pendingStudioChanges = undefined;
+      if (!studioChanges) return;
       // The summary is now part of the turn (injected below or empty), so the
       // consumed log files can be dropped. If this never runs, the rotated
       // files are re-read next turn — a duplicate report, never a loss.
-      humanEdits.finalize();
-      if (humanEdits.result.metadata?.humanEditsDetected !== true) return;
+      studioChanges.finalize();
+      if (studioChanges.result.metadata?.studioChangesDetected !== true) return;
       return [
         createPresentableContextInjection({
-          source: "studiorpc-human-edits",
-          content: humanEdits.result.output,
+          source: "studiorpc-studio-changes",
+          content: studioChanges.result.output,
           presentation: {
-            kind: "human-edits",
-            title: "Human edits detected",
-            content: humanEdits.result.output,
+            kind: "studio-changes",
+            title: "Studio changes detected",
+            content: studioChanges.result.output,
           },
         }),
       ];
@@ -102,8 +102,8 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
 
   // Start of each user request: consume Studio's edit log and arm a fresh
   // snapshot for the upcoming turn. The actual capture happens lazily on the
-  // first edit tool. Studio logs only human edits (never the agent's), and
-  // saves the level itself on Send, so no turn-boundary save RPC is needed.
+  // first edit tool. Studio saves the level itself on Send, so no
+  // turn-boundary save RPC is needed. Log entries do not establish authorship.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
     turnState.sessionId = input.session_id;
     turnState.taken = false;
@@ -112,7 +112,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.humanEdits = consumeHumanEdits(input.cwd);
+    turnState.studioChanges = consumeStudioChanges(input.cwd);
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -124,7 +124,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     createTools: async ({ cwd, host }) =>
       createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
     onUserPromptSubmit: beginTurn,
-    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createHumanEditsLoopHook(turnState)] : []),
+    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(turnState)] : []),
   };
 }
 
@@ -303,7 +303,7 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createHumanEditsTool(ctx.cwd, () => ctx.turnState?.humanEdits?.result),
+      createStudioChangesTool(ctx.cwd, () => ctx.turnState?.studioChanges?.result),
       ctx.host,
     ),
     createHubWorldLookupTool(),

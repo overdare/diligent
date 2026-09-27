@@ -190,10 +190,10 @@ describe("AppSessionLifecycle", () => {
         {
           type: "contextMessage",
           itemId: "ctx-1",
-          source: "studiorpc-human-edits",
+          source: "studiorpc-studio-changes",
           presentation: {
-            kind: "human-edits",
-            title: "Human edits detected",
+            kind: "studio-changes",
+            title: "Studio changes detected",
             content: "Added: Ramp",
           },
           timestamp: 1,
@@ -203,7 +203,7 @@ describe("AppSessionLifecycle", () => {
 
     await (lifecycle as never).hydrateThreadHistory();
 
-    expect(addLines.mock.calls.flat(2).join("\n")).toContain("Human edits detected");
+    expect(addLines.mock.calls.flat(2).join("\n")).toContain("Studio changes detected");
     expect(addLines.mock.calls.flat(2).join("\n")).toContain("Added: Ramp");
   });
 

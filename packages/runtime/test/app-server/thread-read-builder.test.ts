@@ -10,8 +10,8 @@ describe("buildThreadReadItems", () => {
         type: "context",
         id: "ctx-1",
         timestamp: "2026-07-16T00:00:00.000Z",
-        source: "studiorpc-human-edits",
-        presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+        source: "studiorpc-studio-changes",
+        presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
       },
     ]);
 
@@ -19,8 +19,8 @@ describe("buildThreadReadItems", () => {
       {
         type: "contextMessage",
         itemId: "ctx-1",
-        source: "studiorpc-human-edits",
-        presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+        source: "studiorpc-studio-changes",
+        presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
         timestamp: Date.parse("2026-07-16T00:00:00.000Z"),
       },
     ]);

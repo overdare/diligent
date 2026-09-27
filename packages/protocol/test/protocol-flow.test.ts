@@ -28,8 +28,8 @@ const TEST_MODEL_ID = "claude-sonnet-5";
 describe("protocol/flow", () => {
   it("accepts structured context notices for live events and thread snapshots", () => {
     const presentation = {
-      kind: "human-edits",
-      title: "Human edits detected",
+      kind: "studio-changes",
+      title: "Studio changes detected",
       content: "Added: Ramp",
     };
     expect(
@@ -38,7 +38,7 @@ describe("protocol/flow", () => {
         params: {
           threadId: "th-1",
           turnId: "turn-1",
-          event: { type: "context_notice", source: "studiorpc-human-edits", presentation },
+          event: { type: "context_notice", source: "studiorpc-studio-changes", presentation },
         },
       }).success,
     ).toBe(true);
@@ -46,7 +46,7 @@ describe("protocol/flow", () => {
       ThreadItemSchema.safeParse({
         type: "contextMessage",
         itemId: "ctx-1",
-        source: "studiorpc-human-edits",
+        source: "studiorpc-studio-changes",
         presentation,
         timestamp: 1,
       }).success,

@@ -1,4 +1,4 @@
-// @summary Reports what the human creator changed in Studio, sourced from Studio's EditLogging transaction log.
+// @summary Reports recorded Studio changes without attributing them to a particular editor.
 
 import { z } from "zod";
 import type { Tool, ToolResult } from "../types";
@@ -14,13 +14,14 @@ import {
 const params = z.object({});
 
 const description =
-  "Summarize what the human creator changed in Studio, from Studio's edit-transaction log (added/removed/" +
-  "moved instances, property changes, script edits). Covers edits since the agent's last completed turn plus " +
-  "any made while this turn is running. Agent edits are never logged, so everything reported is a genuine " +
-  "human edit. Read-only.";
+  "Summarize changes recorded in Studio's edit-transaction log (added/removed/moved instances, " +
+  "property changes, script edits). Includes the batch collected at turn start and changes recorded " +
+  "during this turn. The log does not identify who made them and may include this session's own work. " +
+  "Compare these changes with your own work; inspect the affected instances before editing if " +
+  "anything differs from what you expect. Read-only.";
 
 /** Turn-start capture: the frozen summary plus a callback that deletes the consumed log files. */
-export interface HumanEditsCapture {
+export interface StudioChangesCapture {
   result: ToolResult;
   /** Delete the rotated log files. Call once the summary has been delivered into the turn. */
   finalize: () => void;
@@ -29,17 +30,17 @@ export interface HumanEditsCapture {
 /**
  * Consume all pending edit-log transactions: rotate the files out of Studio's
  * way, summarize them, and hand back a deferred deletion. Called at turn start
- * so the report never mixes with this turn's agent edits (which are not logged
- * anyway, but the boundary keeps "since your last turn" semantics exact).
+ * to separate the collected batch from changes recorded during this turn.
+ * The log does not establish which session or editor made a change.
  */
-export function consumeHumanEdits(cwd: string): HumanEditsCapture {
+export function consumeStudioChanges(cwd: string): StudioChangesCapture {
   try {
     const { envelopes, parseFailures, consumedPaths } = rotateAndReadEditLogs(cwd);
     const { output, editCount } = summarizeEditLog(envelopes, parseFailures);
     return {
       result: {
         output,
-        metadata: { method: "human_edits", humanEditsDetected: editCount > 0, transactions: envelopes.length },
+        metadata: { method: "studio_changes", studioChangesDetected: editCount > 0, transactions: envelopes.length },
       },
       finalize: () => deleteConsumed(consumedPaths),
     };
@@ -47,7 +48,7 @@ export function consumeHumanEdits(cwd: string): HumanEditsCapture {
     return {
       result: {
         output: `Error: ${error instanceof Error ? error.message : String(error)}`,
-        metadata: { error: true, method: "human_edits" },
+        metadata: { error: true, method: "studio_changes" },
       },
       finalize: () => {},
     };
@@ -55,34 +56,34 @@ export function consumeHumanEdits(cwd: string): HumanEditsCapture {
 }
 
 /** Non-destructive summary of edits logged after turn start (edits made during this turn). */
-function peekHumanEdits(cwd: string): ToolResult {
+function peekStudioChanges(cwd: string): ToolResult {
   try {
     const { envelopes, parseFailures } = peekEditLogs(cwd);
     const { output, editCount } = summarizeEditLog(envelopes, parseFailures, MID_TURN_HEADER);
-    return { output, metadata: { method: "human_edits", humanEditsDetected: editCount > 0 } };
+    return { output, metadata: { method: "studio_changes", studioChangesDetected: editCount > 0 } };
   } catch (error) {
     return {
       output: `Error: ${error instanceof Error ? error.message : String(error)}`,
-      metadata: { error: true, method: "human_edits" },
+      metadata: { error: true, method: "studio_changes" },
     };
   }
 }
 
-export function createHumanEditsTool(cwd: string, getCached?: () => ToolResult | undefined): Tool {
+export function createStudioChangesTool(cwd: string, getCached?: () => ToolResult | undefined): Tool {
   return {
-    name: "studiorpc_human_edits",
+    name: "studiorpc_studio_changes",
     description,
     parameters: params,
     async execute() {
       const cached = getCached?.();
-      const live = peekHumanEdits(cwd);
+      const live = peekStudioChanges(cwd);
       const parts: string[] = [];
-      if (cached?.metadata?.humanEditsDetected === true) parts.push(cached.output);
-      if (live.metadata?.humanEditsDetected === true) parts.push(live.output);
-      if (parts.length === 0) return cached ?? { output: NO_EDITS_MESSAGE, metadata: { method: "human_edits" } };
+      if (cached?.metadata?.studioChangesDetected === true) parts.push(cached.output);
+      if (live.metadata?.studioChangesDetected === true) parts.push(live.output);
+      if (parts.length === 0) return cached ?? { output: NO_EDITS_MESSAGE, metadata: { method: "studio_changes" } };
       return {
         output: parts.join("\n\n"),
-        metadata: { method: "human_edits", humanEditsDetected: true },
+        metadata: { method: "studio_changes", studioChangesDetected: true },
       };
     },
   };

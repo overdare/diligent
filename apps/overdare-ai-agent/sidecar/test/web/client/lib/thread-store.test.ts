@@ -2886,7 +2886,7 @@ test("hydrateFromThreadRead keeps sub-agent running when truncated wait summary 
   expect(collabWait && collabWait.kind === "collab" ? collabWait.status : "").toBe("running");
 });
 
-test("context_notice renders a structured human-edits card without replacing the optimistic user message", () => {
+test("context_notice renders a structured studio-changes card without replacing the optimistic user message", () => {
   resetAdapter();
   const seeded = {
     ...initialThreadState,
@@ -2894,10 +2894,10 @@ test("context_notice renders a structured human-edits card without replacing the
   };
   const event = {
     type: "context_notice",
-    source: "studiorpc-human-edits",
+    source: "studiorpc-studio-changes",
     presentation: {
-      kind: "human-edits",
-      title: "Human edits detected",
+      kind: "studio-changes",
+      title: "Studio changes detected",
       content: 'Added (1):\n+ Part "Ramp" (p2) under "Workspace" (ws-0)',
     },
   } as const;
@@ -2912,7 +2912,7 @@ test("context_notice renders a structured human-edits card without replacing the
   expect(contextCards).toHaveLength(1);
   const card = contextCards[0];
   if (!card || card.kind !== "context") throw new Error("expected context item");
-  expect(card.variant).toBe("human-edits");
+  expect(card.variant).toBe("studio-changes");
   expect(card.summary).toContain('+ Part "Ramp" (p2)');
 
   const users = next.items.filter((item) => item.kind === "user");
@@ -2928,8 +2928,8 @@ test("hydrateFromThreadRead restores structured context notices", () => {
       {
         type: "contextMessage",
         itemId: "ctx-1",
-        source: "studiorpc-human-edits",
-        presentation: { kind: "human-edits", title: "Human edits detected", content: "Added: Ramp" },
+        source: "studiorpc-studio-changes",
+        presentation: { kind: "studio-changes", title: "Studio changes detected", content: "Added: Ramp" },
         timestamp: 2,
       },
     ],
@@ -2941,7 +2941,7 @@ test("hydrateFromThreadRead restores structured context notices", () => {
   expect(hydrated.items).toEqual([
     expect.objectContaining({
       kind: "context",
-      variant: "human-edits",
+      variant: "studio-changes",
       summary: expect.stringContaining("Added: Ramp"),
     }),
   ]);
