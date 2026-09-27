@@ -356,3 +356,27 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 });
+
+test("MCP bootstrap distinguishes an agent prompt from a host spawn role and provides direct Studio exploration", async () => {
+  const bootstrapDir = join(import.meta.dir, "../../bootstrap");
+  const registries = await buildRegistries({
+    cwd: process.cwd(),
+    bootstrapDir,
+    systemPromptPath: join(bootstrapDir, "system-prompt.txt"),
+  });
+  expect(registries.prompts.has("agent-studio-explorer")).toBe(true);
+  expect(registries.tools.has("spawn_agent")).toBe(false);
+  for (const name of ["studiorpc_level_browse", "studiorpc_instance_read", "studiorpc_script_read"]) {
+    expect(registries.tools.has(name)).toBe(true);
+  }
+  const result = await registries.tools.get("ensure_system_prompt")!.execute(
+    {},
+    {
+      toolCallId: "host-role-contract",
+      signal: new AbortController().signal,
+      abort() {},
+    },
+  );
+  expect(result.output).toContain("MCP agent prompts do not register agent types in the host");
+  expect(result.output).toContain("inspect the level directly in the current session");
+});

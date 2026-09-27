@@ -67,3 +67,13 @@ describe("OVERDARE bootstrap config", () => {
     expect(prompt).toContain("image could not be inspected");
   });
 });
+
+test("session-start exploration checks host role availability and falls back to direct Studio reads", async () => {
+  const prompt = await readFile(join(import.meta.dir, "../../bootstrap/system-prompt.txt"), "utf-8");
+  expect(prompt).toContain("only if the current host's spawn tool explicitly lists that role as available");
+  expect(prompt).toContain("MCP agent prompts do not register agent types in the host");
+  expect(prompt).toContain("Do not substitute the codebase-only `explore` role");
+  expect(prompt).toContain("inspect the level directly in the current session");
+  expect(prompt).toContain("`studiorpc_level_browse`, `studiorpc_instance_read`, and `studiorpc_script_read`");
+  expect(prompt).toContain("Do not retry an unavailable role");
+});
