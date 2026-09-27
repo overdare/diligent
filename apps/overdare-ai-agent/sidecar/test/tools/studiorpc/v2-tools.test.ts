@@ -445,7 +445,11 @@ describe("v2 level.save.file", () => {
   ];
 
   for (const [name, args] of writes) {
-    test(`${name} saves the level after the write succeeds`, async () => {
+    const savesAfterWrite = name !== "studiorpc_script_edit";
+    const behavior = savesAfterWrite
+      ? "saves the level after the write succeeds"
+      : "edits without automatically saving the level";
+    test(`${name} ${behavior}`, async () => {
       const tools = await loadTools(makeStudioProject());
       const result = await tools.get(name)!.execute(args, toolContext());
       expect(result.metadata?.error).toBeUndefined();
@@ -454,9 +458,11 @@ describe("v2 level.save.file", () => {
         ["instance.create", "instance.update", "instance.move", "instance.delete"].includes(method),
       );
       expect(writeIndex).toBeGreaterThanOrEqual(0);
-      expect(methods.filter((method) => method === "level.save.file")).toHaveLength(1);
-      // Read-only validation may follow the save; the write must precede it.
-      expect(methods.indexOf("level.save.file")).toBeGreaterThan(writeIndex);
+      expect(methods.filter((method) => method === "level.save.file")).toHaveLength(savesAfterWrite ? 1 : 0);
+      if (savesAfterWrite) {
+        // Read-only validation may follow the save; the write must precede it.
+        expect(methods.indexOf("level.save.file")).toBeGreaterThan(writeIndex);
+      }
     });
   }
 
@@ -620,7 +626,7 @@ describe("v2 validation", () => {
       expect(paramsOf("instance.update")).toEqual({
         Instances: [{ ActorGuid: "RECIPE", Source: expectedSource }],
       });
-      expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update", "level.save.file"]);
+      expect(methodsCalled()).toEqual(["instance.read", "instance.read", "instance.update"]);
     } else {
       const saved = JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8"));
       expect(findWorldNode(saved.Root, "RECIPE")?.Source).toBe(expectedSource);
