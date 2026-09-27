@@ -1,6 +1,6 @@
 // @summary Tests provider-scoped pro, general, and lite model routing policy
 import { describe, expect, it } from "bun:test";
-import { getModelClass, MODEL_CLASSES, resolveModelForClass } from "../../src/llm/model-class-policy";
+import { getDefaultEffortForClass, MODEL_CLASSES, resolveModelForClass } from "../../src/llm/model-class-policy";
 import { findModel, listModels, resolveModel } from "../../src/llm/models";
 import { ANTHROPIC_MODEL_CLASSES } from "../../src/llm/provider/anthropic/models";
 import { CHATGPT_MODEL_CLASSES } from "../../src/llm/provider/chatgpt/models";
@@ -11,6 +11,10 @@ import { ZAI_CODING_PLAN_MODEL_CLASSES } from "../../src/llm/provider/zai-coding
 import type { ProviderName } from "../../src/llm/types";
 
 describe("model class policy", () => {
+  it("uses xhigh effort for pro class selection", () => {
+    expect(getDefaultEffortForClass("pro")).toBe("xhigh");
+  });
+
   it("keeps class policy separate from provider-owned model cards", () => {
     for (const model of listModels()) {
       expect("modelClass" in model).toBe(false);
@@ -36,7 +40,7 @@ describe("model class policy", () => {
     }
   });
 
-  it("routes and classifies provider definitions without hard-coding model IDs", () => {
+  it("routes classes to provider models without hard-coding model IDs", () => {
     for (const modelClass of MODEL_CLASSES) {
       for (const [providerName, defaultModelId] of Object.entries(modelClass.defaultModelIds)) {
         const provider = providerName as ProviderName;
@@ -45,20 +49,6 @@ describe("model class policy", () => {
         if (!current || !defaultModelId)
           throw new Error(`Missing model-class fixture for ${provider}/${modelClass.id}`);
         expect(resolveModelForClass(current, modelClass.id)).toMatchObject({ provider, modelId: defaultModelId });
-        const memberships = MODEL_CLASSES.filter(
-          (candidate) =>
-            candidate.defaultModelIds[provider] === defaultModelId ||
-            candidate.additionalModelIds?.[provider]?.includes(defaultModelId),
-        );
-        if (memberships.length === 1) {
-          expect(getModelClass(resolveModel({ provider, modelId: defaultModelId }))).toBe(modelClass.id);
-        }
-      }
-      for (const [providerName, modelIds] of Object.entries(modelClass.additionalModelIds ?? {})) {
-        const provider = providerName as ProviderName;
-        for (const modelId of modelIds ?? []) {
-          expect(getModelClass(resolveModel({ provider, modelId }))).toBe(modelClass.id);
-        }
       }
     }
   });
@@ -74,6 +64,5 @@ describe("model class policy", () => {
     expect(resolveModelForClass(flash, "pro").modelId).toBe("gemini-3.6-flash");
     expect(resolveModelForClass(flash, "general").modelId).toBe("gemini-3.6-flash");
     expect(resolveModelForClass(flash, "lite").modelId).toBe("gemini-3.5-flash-lite");
-    expect(getModelClass(flash)).toBe("general");
   });
 });

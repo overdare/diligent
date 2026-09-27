@@ -1159,7 +1159,7 @@ describe("DiligentAppServer", () => {
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-5.6-sol" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
       }),
     );
 
@@ -1186,12 +1186,12 @@ describe("DiligentAppServer", () => {
     expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("xhigh");
   });
 
-  it("accepts xhigh effort for GPT-5.5", async () => {
+  it("accepts xhigh and max effort for GPT-6 Sol", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-5.5" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
       }),
     );
 
@@ -1210,14 +1210,12 @@ describe("DiligentAppServer", () => {
     });
     expect(readResult(changed)).toEqual({ effort: "xhigh" });
 
-    const rejected = await server.handleRequest(TEST_CONNECTION_ID, {
+    const maxChanged = await server.handleRequest(TEST_CONNECTION_ID, {
       id: 1532,
       method: "effort/set",
       params: { threadId, effort: "max" },
     });
-    expect(rejected).toMatchObject({
-      error: { code: -32602, message: 'Thinking effort "max" is not supported for this model.' },
-    });
+    expect(readResult(maxChanged)).toEqual({ effort: "max" });
   });
 
   it("preserves existing effort/set behavior for non-thinking models", async () => {
@@ -1251,7 +1249,7 @@ describe("DiligentAppServer", () => {
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-5.6-sol" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
       }),
     );
 
@@ -1270,7 +1268,7 @@ describe("DiligentAppServer", () => {
     await server.handleRequest(TEST_CONNECTION_ID, {
       id: 1542,
       method: "config/set",
-      params: { threadId, model: { provider: "openai", modelId: "gpt-5.5" } },
+      params: { threadId, model: { provider: "openai", modelId: "gpt-6-sol" } },
     });
 
     const read = await server.handleRequest(TEST_CONNECTION_ID, {

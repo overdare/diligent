@@ -2,7 +2,7 @@
 
 import type { TextBlock } from "@diligent/core/message-contract";
 import {
-  getModelClass,
+  getDefaultEffortForClass,
   type ModelClass,
   resolveModel,
   resolveModelForClass,
@@ -256,12 +256,11 @@ export class AgentRegistry {
     // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
     // one; otherwise it inherits the parent's model and effort. A spawn-time `params.modelClass` is ignored on
     // purpose — only a resume keeps its original class.
-    const targetClass: ModelClass =
-      restoredPolicy?.modelClass ?? agentDefinition.defaultModelClass ?? getModelClass(parentModel);
+    const targetClass = restoredPolicy ? restoredPolicy.modelClass : agentDefinition.defaultModelClass;
     const effectiveAllowedTools = normalizeToolAllowlist(restoredPolicy?.allowedTools);
     const effectivePolicy: CollabResumePolicy = {
       agentType,
-      modelClass: targetClass,
+      ...(targetClass !== undefined && { modelClass: targetClass }),
       ...(effectiveAllowedTools ? { allowedTools: effectiveAllowedTools } : {}),
       allowNestedAgents: restoredPolicy?.allowNestedAgents ?? params.allowNestedAgents === true,
     };
@@ -304,10 +303,9 @@ export class AgentRegistry {
       },
     ];
 
-    // Resume uses the original model class; a new child uses the requested or role-default class.
-    const childModel = resolveModelForClass(parentModel, targetClass);
-    const useClassDefaultEffort = restoredPolicy !== undefined || agentDefinition.defaultModelClass !== undefined;
-    const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel, useClassDefaultEffort);
+    // Only an explicit class selects another model; classless children inherit the parent directly.
+    const childModel = targetClass === undefined ? parentModel : resolveModelForClass(parentModel, targetClass);
+    const childEffort = resolveChildEffort(this.deps.effort, targetClass, childModel);
 
     const factory = this.deps.sessionManagerFactory ?? ((cfg) => new SessionManager(cfg));
 
@@ -728,19 +726,12 @@ export class AgentRegistry {
    * Used on session resume to re-populate the in-memory registry
    * so that thread IDs from a prior server lifetime remain valid.
    */
-  restoreAgent(
-    threadId: string,
-    nickname: string,
-    policy?: Omit<CollabResumePolicy, "modelClass"> & { modelClass?: ModelClass },
-  ): void {
+  restoreAgent(threadId: string, nickname: string, policy?: CollabResumePolicy): void {
     if (this.agents.has(threadId)) return; // already known
-    const agentDefinition = policy ? resolveAgentDefinition(this.deps.agentDefinitions, policy.agentType) : undefined;
-    const parentModel = resolveModel(this.deps.model);
     const normalizedPolicyAllowedTools = normalizeToolAllowlist(policy?.allowedTools);
     const resumePolicy = policy
       ? {
           ...policy,
-          modelClass: policy.modelClass ?? agentDefinition?.defaultModelClass ?? getModelClass(parentModel),
           ...(normalizedPolicyAllowedTools ? { allowedTools: normalizedPolicyAllowedTools } : {}),
         }
       : undefined;
@@ -794,23 +785,15 @@ function normalizeToolAllowlist(tools: string[] | undefined): string[] | undefin
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function defaultEffortForModelClass(modelClass: ModelClass): ThinkingEffort {
-  if (modelClass === "lite") return "low";
-  if (modelClass === "pro") return "high";
-  return "medium";
-}
-
 function resolveChildEffort(
   parentEffort: ThinkingEffort,
-  modelClass: ModelClass,
+  modelClass: ModelClass | undefined,
   childModel: ReturnType<typeof resolveModelForClass>,
-  useClassDefaultEffort: boolean,
 ): ThinkingEffort {
-  if (useClassDefaultEffort) {
-    const defaultEffort = defaultEffortForModelClass(modelClass);
-    if (supportsThinkingEffort(childModel, defaultEffort)) {
-      return defaultEffort;
-    }
+  if (modelClass === undefined) return parentEffort;
+  const defaultEffort = getDefaultEffortForClass(modelClass);
+  if (supportsThinkingEffort(childModel, defaultEffort)) {
+    return defaultEffort;
   }
   if (!childModel.supportsThinking) {
     return parentEffort;

@@ -19,7 +19,7 @@ describe("GPT-5.6 Responses API compatibility", () => {
 
   test("uses GPT-5.6 reasoning and prompt cache request fields", async () => {
     const body = await buildResponsesRequestBody({
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       messages: [],
       useReasoning: true,
       effort: "max",

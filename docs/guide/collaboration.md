@@ -44,7 +44,7 @@ Important current behavior:
 - The runtime emits `collab_spawn_begin`, then an early `collab_spawn_end` with status `running` once the child has been registered.
 - The child may later finish successfully or fail independently of the initial spawn result.
 - Nested delegation is disabled by default unless explicitly enabled for the spawned child.
-- The parent cannot override the child model class per spawn. A custom role's configured `model_class` wins; otherwise the child inherits the parent model class.
+- The parent cannot override the child model class per spawn. A custom role's configured `model_class` wins; otherwise the child uses the exact parent model and effort without inferring a class. On resume, a saved class is reused; when no class was saved, the child uses the current parent model and effort.
 - The parent cannot override child tools per spawn. Configure a custom role's `tools` list to narrow its inherited parent-visible tools.
 - Child tool access is filtered from the parent-visible tool set; nested collaboration tools remain excluded unless nested delegation was explicitly enabled.
 

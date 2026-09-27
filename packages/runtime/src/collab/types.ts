@@ -50,7 +50,7 @@ export interface AgentEntry {
 /** Security-relevant child policy that must not broaden when a persisted child is resumed. */
 export interface CollabResumePolicy {
   agentType: string;
-  modelClass: ModelClass;
+  modelClass?: ModelClass;
   allowedTools?: string[];
   allowNestedAgents: boolean;
 }

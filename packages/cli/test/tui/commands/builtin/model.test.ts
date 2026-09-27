@@ -12,7 +12,7 @@ const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
 function makeConfig(modelId: string, providerManager: AppConfig["providerManager"]): AppConfig {
   const ref =
     modelId === "gpt-4o"
-      ? { provider: "openai" as const, modelId: "gpt-5.6-sol" }
+      ? { provider: "openai" as const, modelId: "gpt-6-sol" }
       : modelId.startsWith("gpt-")
         ? { provider: "openai" as const, modelId }
         : { provider: "anthropic" as const, modelId };
@@ -163,15 +163,16 @@ describe("modelCommand picker", () => {
     };
     const setEffort = mock(async () => {});
     const onEffortChanged = mock(() => {});
-    const config = makeConfig("gpt-5.6-sol", providerManager as unknown as AppConfig["providerManager"]);
+    const config = makeConfig("gpt-6-sol", providerManager as unknown as AppConfig["providerManager"]);
     const ctx = makeContext(config, {
       currentEffort: "xhigh",
       setEffort,
       onEffortChanged,
     });
 
-    await modelCommand.handler("gpt-5.5", ctx);
+    await modelCommand.handler("openai/gpt-6-astra", ctx);
 
+    expect(config.model.modelId).toBe("gpt-6-astra");
     expect(setEffort).not.toHaveBeenCalled();
     expect(onEffortChanged).not.toHaveBeenCalled();
   });

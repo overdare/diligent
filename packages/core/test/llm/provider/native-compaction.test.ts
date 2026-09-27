@@ -57,7 +57,7 @@ function responsesLiteReplacementHistoryPayload() {
 }
 
 const OPENAI_MODEL: Model = {
-  modelId: "gpt-5.6-sol",
+  modelId: "gpt-6-sol",
   provider: "openai",
   contextWindow: 200_000,
   maxOutputTokens: 16_000,
@@ -99,7 +99,7 @@ describe("native compaction adapters", () => {
 
     expect(capturedUrl).toBe("https://api.openai.com/v1/responses/compact");
     expect(capturedHeaders.Authorization).toBe("Bearer sk-openai");
-    expect(capturedBody.model).toBe("gpt-5.6-sol");
+    expect(capturedBody.model).toBe("gpt-6-sol");
     expect(capturedBody.input).toBeArray();
     expect(result.status).toBe("ok");
   });
@@ -345,7 +345,7 @@ describe("native compaction adapters", () => {
 
   test("request body prepends compaction summary before converted follow-up messages", async () => {
     const body = await buildResponsesRequestBody({
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       messages: [{ role: "user", content: "follow up", timestamp: Date.now() }],
       compactionSummary: {
         type: "compaction",
@@ -366,7 +366,7 @@ describe("native compaction adapters", () => {
   test("request body expands replacement history before converted follow-up messages", async () => {
     const replacementHistory = replacementHistoryPayload().output;
     const body = await buildResponsesRequestBody({
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       messages: [{ role: "user", content: "follow up", timestamp: Date.now() }],
       compactionSummary: {
         type: "diligent_openai_compaction_state",
@@ -505,14 +505,14 @@ describe("native compaction adapters", () => {
     }));
 
     await adapter({
-      model: { ...OPENAI_MODEL, modelId: "gpt-5.6-luna", provider: "chatgpt" },
+      model: { ...OPENAI_MODEL, modelId: "gpt-6-luna", provider: "chatgpt" },
       systemPrompt: [{ label: "base", content: "System instructions" }],
       messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
       sessionId: "session-1",
     });
 
     expect(capturedHeaders["x-openai-internal-codex-responses-lite"]).toBe("true");
-    expect(capturedBody.model).toBe("gpt-5.6-luna");
+    expect(capturedBody.model).toBe("gpt-6-luna");
     expect(capturedBody.instructions).toBeUndefined();
     expect(capturedBody.tools).toBeUndefined();
     expect(capturedBody.parallel_tool_calls).toBe(false);

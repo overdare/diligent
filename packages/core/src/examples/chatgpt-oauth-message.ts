@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     },
   });
   const agent = new Agent(
-    resolveModel({ provider: "chatgpt", modelId: "gpt-5.5" }),
+    resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" }),
     [{ label: "system", content: "You are a concise assistant." }],
     [],
     {

@@ -140,7 +140,7 @@ describe("buildSessionContext", () => {
         parentId: "a1",
         timestamp: "2026-07-10T10:00:01.000Z",
         provider: "openai",
-        modelId: "gpt-5.6-sol",
+        modelId: "gpt-6-sol",
       },
       {
         type: "effort_change",
@@ -153,7 +153,7 @@ describe("buildSessionContext", () => {
     ];
 
     const ctx = buildSessionContext(entries);
-    expect(ctx.currentModel?.modelId).toBe("gpt-5.6-sol");
+    expect(ctx.currentModel?.modelId).toBe("gpt-6-sol");
     expect(ctx.currentEffort).toBe("xhigh");
   });
 

@@ -98,10 +98,10 @@ describe("AppSessionLifecycle", () => {
 
     expect(setupWizardRun).not.toHaveBeenCalled();
     expect((lifecycle as never).deps.config.model.provider).toBe("openai");
-    expect((lifecycle as never).deps.config.model.modelId).toBe("gpt-5.6-sol");
+    expect((lifecycle as never).deps.config.model.modelId).toBe("gpt-6-sol");
     expect(statusBarUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "openai/gpt-5.6-sol",
+        model: "openai/gpt-6-sol",
       }),
     );
   });

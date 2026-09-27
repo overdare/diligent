@@ -10,7 +10,6 @@ export type {
 export { compact, compactMessages, generateSummary, resolveCompaction } from "./compaction";
 export type { ModelClass, ModelClassDefinition } from "./model-class-policy";
 export {
-  getModelClass,
   MODEL_CLASSES,
   resolveModelForClass,
 } from "./model-class-policy";

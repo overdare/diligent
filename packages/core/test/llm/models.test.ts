@@ -1,6 +1,5 @@
 // @summary Tests provider-scoped model catalog identity and strict resolution
 import { describe, expect, it } from "bun:test";
-import { getModelClass, MODEL_CLASSES } from "../../src/llm/model-class-policy";
 import {
   AmbiguousModelError,
   findModel,
@@ -26,7 +25,7 @@ describe("provider-scoped model catalog", () => {
   it("registers GPT-6 Sol and Luna for the OpenAI API", () => {
     expect(resolveModel({ provider: "openai", modelId: "gpt-6-sol" })).toMatchObject({
       display: "GPT-6 Sol",
-      contextWindow: 1_050_000,
+      contextWindow: 500_000,
       maxOutputTokens: 128_000,
       inputCostPer1M: 2,
       outputCostPer1M: 10,
@@ -38,7 +37,7 @@ describe("provider-scoped model catalog", () => {
     });
     expect(resolveModel({ provider: "openai", modelId: "gpt-6-luna" })).toMatchObject({
       display: "GPT-6 Luna",
-      contextWindow: 1_050_000,
+      contextWindow: 500_000,
       maxOutputTokens: 128_000,
       inputCostPer1M: 0.1,
       outputCostPer1M: 0.5,
@@ -55,7 +54,7 @@ describe("provider-scoped model catalog", () => {
 
     expect(model).toMatchObject({
       display: "Claude Opus 5.5",
-      contextWindow: 1_000_000,
+      contextWindow: 500_000,
       maxOutputTokens: 128_000,
       inputCostPer1M: 4,
       outputCostPer1M: 20,
@@ -65,50 +64,33 @@ describe("provider-scoped model catalog", () => {
       supportsVision: true,
       supportsAdaptiveThinking: true,
       supportsXhighEffort: true,
-      aliases: ["opus-5-5"],
+      aliases: ["claude-opus", "opus", "opus-5-5"],
     });
   });
 
-  it("classifies the new models without changing existing defaults", () => {
-    expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-sol" }))).toBe("general");
-    expect(getModelClass(resolveModel({ provider: "openai", modelId: "gpt-6-luna" }))).toBe("lite");
-    expect(getModelClass(resolveModel({ provider: "anthropic", modelId: "claude-opus-5-5" }))).toBe("pro");
-
-    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-5.6-sol" });
-    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-5.6-sol" });
-    expect(getDefaultModelRef("anthropic")).toEqual({ provider: "anthropic", modelId: "claude-opus-5" });
+  it("selects current replacement defaults", () => {
+    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-6-sol" });
+    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-6-sol" });
+    expect(getDefaultModelRef("anthropic")).toEqual({ provider: "anthropic", modelId: "claude-opus-5-5" });
   });
 
-  it("registers Claude Opus 5 as the Anthropic pro model", () => {
-    const model = resolveModel({ provider: "anthropic", modelId: "claude-opus-5" });
-
-    expect(model).toMatchObject({
-      display: "Claude Opus 5",
-      contextWindow: 1_000_000,
-      maxOutputTokens: 128_000,
-      inputCostPer1M: 5,
-      outputCostPer1M: 25,
-      cacheReadCostPer1M: 0.5,
-      cacheWriteCostPer1M: 6.25,
-      supportsThinking: true,
-      supportsVision: true,
-      supportsAdaptiveThinking: true,
-      supportsXhighEffort: true,
-      aliases: ["opus-5"],
-    });
-
-    expect(getModelClass(model)).toBe("pro");
-  });
-
-  it("falls back to the general class for catalog models outside the class table", () => {
-    const model = resolveModel({ provider: "anthropic", modelId: "claude-fable-5-1" });
-    const explicitlyClassifiedModelIds = MODEL_CLASSES.flatMap(({ defaultModelIds, additionalModelIds }) => [
-      ...Object.values(defaultModelIds),
-      ...Object.values(additionalModelIds ?? {}).flat(),
-    ]);
-
-    expect(explicitlyClassifiedModelIds).not.toContain(model.modelId);
-    expect(getModelClass(model)).toBe("general");
+  it("rejects retired model IDs and version aliases in selection and protocol lists", () => {
+    const retired = [
+      ...(["openai", "chatgpt"] as const).flatMap((provider) =>
+        ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({ provider, modelId })),
+      ),
+      ...["claude-opus-5", "claude-opus-4-8", "claude-fable-5", "opus-5", "opus-4-8", "fable-5"].map((modelId) => ({
+        provider: "anthropic" as const,
+        modelId,
+      })),
+    ];
+    for (const ref of retired) {
+      expect(findModel(ref)).toBeUndefined();
+      expect(() => resolveModel(ref)).toThrow(UnknownModelError);
+      expect(getModelInfoList().some((model) => model.provider === ref.provider && model.modelId === ref.modelId)).toBe(
+        false,
+      );
+    }
   });
 
   it("resolves every newly added model by its provider-scoped ref", () => {
@@ -125,17 +107,15 @@ describe("provider-scoped model catalog", () => {
     }
   });
 
-  it("leaves bare aliases on the models that already held them", () => {
-    expect(resolveModelSelector("opus").modelId).toBe("claude-opus-4-8");
-    expect(resolveModelSelector("claude-opus").modelId).toBe("claude-opus-4-8");
-    expect(resolveModelSelector("fable").modelId).toBe("claude-fable-5");
+  it("routes bare aliases to the remaining latest family models", () => {
+    expect(resolveModelSelector("opus").modelId).toBe("claude-opus-5-5");
+    expect(resolveModelSelector("claude-opus").modelId).toBe("claude-opus-5-5");
+    expect(resolveModelSelector("fable").modelId).toBe("claude-fable-5-1");
   });
 
   it("resolves version-bearing aliases to their own model", () => {
-    expect(resolveModelSelector("opus-5").modelId).toBe("claude-opus-5");
-    expect(resolveModelSelector("opus-4-8").modelId).toBe("claude-opus-4-8");
+    expect(resolveModelSelector("opus-5-5").modelId).toBe("claude-opus-5-5");
     expect(resolveModelSelector("fable-5-1").modelId).toBe("claude-fable-5-1");
-    expect(resolveModelSelector("fable-5").modelId).toBe("claude-fable-5");
   });
 
   it("leaves the bare Gemini alias on Gemini 3.6 Flash", () => {

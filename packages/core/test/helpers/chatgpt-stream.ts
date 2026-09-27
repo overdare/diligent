@@ -171,7 +171,7 @@ export async function collectScopedChatGPTEvents(
   const scope = createStreamTurnScope();
   try {
     return await collectEvents(
-      stream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      stream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
         turnScope: scope,
         ...options,

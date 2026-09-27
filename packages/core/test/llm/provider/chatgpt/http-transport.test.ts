@@ -19,10 +19,10 @@ describe("ChatGPT HTTP transport", () => {
     expect(
       summarizeChatGPTWebSocketPayload({
         type: "response.create",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         input: [{ type: "message" }, { type: "message" }],
       }),
-    ).toBe("response.create model=gpt-5.6-luna inputItems=2");
+    ).toBe("response.create model=gpt-6-luna inputItems=2");
     expect(
       summarizeChatGPTWebSocketPayload({
         type: "response.output_text.delta",
@@ -56,7 +56,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
         sessionId: "session_1",
       }),
@@ -75,7 +75,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const body = request.body;
     expect(body.type).toBeUndefined();
-    expect(body.model).toBe("gpt-5.6-luna");
+    expect(body.model).toBe("gpt-6-luna");
     expect((body.reasoning as { effort: string }).effort).toBe("medium");
     expect(body.instructions).toBeUndefined();
     expect(body.tools).toBeUndefined();
@@ -149,7 +149,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const events = await collectEvents(
       createChatGPTStream(() => testTokens())(
-        resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }),
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
           effort: "medium",
@@ -170,7 +170,7 @@ describe("ChatGPT HTTP transport", () => {
 
     const events = await collectEvents(
       createChatGPTStream(() => testTokens())(
-        resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }),
+        resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }),
         TEST_CONTEXT,
         {
           effort: "medium",
@@ -207,7 +207,7 @@ describe("ChatGPT HTTP transport", () => {
     const chatgptStream = createChatGPTStream(() => testTokens());
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
         sessionId: "session-http-debug",
       }),
@@ -219,7 +219,7 @@ describe("ChatGPT HTTP transport", () => {
     expect(outgoingLogs).toHaveLength(2);
     expect(outgoingLogs[0]).toContain(`state=sending bytes=${requestBytes}`);
     expect(outgoingLogs[1]).toContain(`state=sent bytes=${requestBytes} status=200`);
-    expect(outgoingLogs.every((line) => line.includes("response.create model=gpt-5.6-luna"))).toBe(true);
+    expect(outgoingLogs.every((line) => line.includes("response.create model=gpt-6-luna"))).toBe(true);
     expect(outgoingLogs.every((line) => !line.includes("sensitive text"))).toBe(true);
     expect(
       transportLogs.some(
@@ -258,7 +258,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
       }),
     );
@@ -293,7 +293,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, {
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, {
         effort: "medium",
       }),
     );
@@ -319,7 +319,7 @@ describe("ChatGPT HTTP transport", () => {
     });
 
     const events = await collectEvents(
-      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-5.6-luna" }), TEST_CONTEXT, { effort: "medium" }),
+      chatgptStream(resolveModel({ provider: "chatgpt", modelId: "gpt-6-luna" }), TEST_CONTEXT, { effort: "medium" }),
     );
     const error = events.find((event): event is Extract<ProviderEvent, { type: "error" }> => event.type === "error");
 

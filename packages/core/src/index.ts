@@ -83,7 +83,6 @@ export {
   flattenSections,
   formatModelRef,
   getDefaultModelRef,
-  getModelClass,
   getModelInfoList,
   getThinkingEffortOptions,
   getThinkingEffortUsage,

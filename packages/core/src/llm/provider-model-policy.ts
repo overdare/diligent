@@ -6,9 +6,9 @@ export interface ProviderModelPolicy {
 }
 
 export const PROVIDER_MODEL_POLICIES: Readonly<Record<ProviderName, ProviderModelPolicy>> = {
-  anthropic: { defaultModel: "claude-opus-5" },
-  openai: { defaultModel: "gpt-5.6-sol" },
-  chatgpt: { defaultModel: "gpt-5.6-sol" },
+  anthropic: { defaultModel: "claude-opus-5-5" },
+  openai: { defaultModel: "gpt-6-sol" },
+  chatgpt: { defaultModel: "gpt-6-sol" },
   gemini: { defaultModel: "gemini-3.6-flash" },
   vertex: { defaultModel: "vertex-gemma-4-26b-it" },
   "zai-coding-plan": { defaultModel: "glm-5.2" },
