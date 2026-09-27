@@ -1,11 +1,17 @@
 // @summary Tests EditLogging consumption, summarization, and studio-changes context injection.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolvePaths } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../src/tools/studiorpc";
-import { rotateAndReadEditLogs, SECTION_TITLES, summarizeEditLog } from "../../src/tools/studiorpc/tools/edit-log";
+import {
+  rotateAndReadEditLogs,
+  SECTION_TITLES,
+  STUDIO_CHANGES_LIMITS,
+  summarizeEditLog,
+} from "../../src/tools/studiorpc/tools/edit-log";
 import { consumeStudioChanges, createStudioChangesTool } from "../../src/tools/studiorpc/tools/studio-changes-tool";
 import { COUNT_SECTIONS } from "../../src/web/client/components/StudioChangesNotice";
 
@@ -161,7 +167,9 @@ describe("summarizeEditLog", () => {
     ];
 
     const { output } = summarizeEditLog(envelopes.map(parse));
-    expect(output).toContain('Added then removed (1):\n± Tool "Weapon" (w1)');
+    expect(output).toContain("Added then removed (1):");
+    expect(output).toContain("Tool: 1");
+    expect(output).not.toContain("(w1)");
     expect(output).not.toContain("Added (1)");
     expect(output).not.toContain("Removed (1)");
   });
@@ -246,7 +254,7 @@ describe("summarizeEditLog", () => {
     ];
 
     const { output } = summarizeEditLog(envelopes.map(parse));
-    expect(output).toContain('± LocalScript "abab" (s1)');
+    expect(output).toContain("Added then removed (1):");
     expect(output).not.toContain("source edited");
   });
 
@@ -409,7 +417,148 @@ describe("consumeStudioChanges", () => {
 });
 
 describe("createStudioChangesTool", () => {
-  test("serves the turn-start cache and reports edits made during the turn", async () => {
+  test("archives omitted details before removing the log and retrieves them after recreation", async () => {
+    const cwd = projectDir();
+    const objects = Array.from({ length: 80 }, (_, i) =>
+      subject("Part", `part-${i}`, `Part${i}`, [{ Property: "Name", Before: `Old${i}`, After: `Part${i}` }]),
+    );
+    writeEditLog(cwd, [envelope("SetProperty", objects)]);
+    const capture = consumeStudioChanges(cwd);
+    expect(capture.result.output).not.toContain("(part-79)");
+    const archivePath = capture.result.metadata?.archivePath as string;
+    const archived = JSON.parse(readFileSync(archivePath, "utf8"));
+    expect(archived.envelopes[0].objects).toHaveLength(80);
+    capture.finalize();
+    expect(logFiles(cwd)).toEqual([]);
+    const tool = createStudioChangesTool(cwd);
+    const details = await tool.execute({ view: "details", batchId: capture.id, guid: "part-79" } as never, toolCtx());
+    expect(details.output).toContain("Name: Old79 -> Part79");
+    expect(details.metadata?.total).toBe(1);
+  });
+
+  test("does not delete a rotated log when archival fails", () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [envelope("Create", [subject("Part", "p1", "Keep")])]);
+    const capture = consumeStudioChanges(cwd);
+    // An archive is durable before finalize. A failed capture must leave its
+    // rotated input recoverable, including when its storage root is blocked.
+    const blocked = projectDir();
+    writeFileSync(resolvePaths(blocked).root, "not a directory");
+    writeEditLog(blocked, [envelope("Create", [subject("Part", "p1", "Keep")])]);
+    const failed = consumeStudioChanges(blocked);
+    expect(failed.result.metadata?.error).toBe(true);
+    failed.finalize();
+    expect(logFiles(blocked).some((name) => name.endsWith(".consuming"))).toBe(true);
+    capture.finalize();
+  });
+
+  test("default queries report each live transaction once, including identical edits appended later", async () => {
+    const cwd = projectDir();
+    const edit = envelope("SetProperty", [subject("Part", "p1", "Door", [{ Property: "Size", Before: 1, After: 2 }])]);
+    writeEditLog(cwd, [edit]);
+    const tool = createStudioChangesTool(cwd);
+    expect((await tool.execute({} as never, toolCtx())).output).toContain("Size: 1 -> 2");
+    expect((await tool.execute({} as never, toolCtx())).output).toBe(NO_EDITS);
+    writeEditLog(cwd, [edit, edit]);
+    const appended = await tool.execute({} as never, toolCtx());
+    expect(appended.output).toContain("Size: 1 -> 2");
+    expect(appended.output).not.toContain("(2 edits)");
+    expect(logFiles(cwd)).toContain("Edit.Log");
+  });
+
+  test("pages archived detail rows and filters by change kind without losing later properties", async () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [
+      envelope("Create", [subject("Part", "added", "Added")]),
+      envelope("SetProperty", [
+        subject(
+          "Part",
+          "p1",
+          "Door",
+          Array.from({ length: 12 }, (_, i) => ({ Property: `Prop${i}`, Before: 0, After: i + 1 })),
+        ),
+        subject("Script", "s1", "Controller", [{ Property: "Source" }]),
+      ]),
+    ]);
+    const capture = consumeStudioChanges(cwd);
+    capture.finalize();
+    const tool = createStudioChangesTool(cwd);
+    const page = await tool.execute(
+      { view: "details", batchId: capture.id, guid: "p1", changeType: "modified", limit: 3 } as never,
+      toolCtx(),
+    );
+    expect(page.metadata?.total).toBe(12);
+    expect(page.metadata?.nextOffset).toBe(3);
+    expect(page.output).toContain("Prop2: 0 -> 3");
+    expect(page.output).not.toContain("Prop3:");
+    const next = await tool.execute(
+      { view: "details", batchId: capture.id, guid: "p1", offset: 9, limit: 3 } as never,
+      toolCtx(),
+    );
+    expect(next.output).toContain("Prop11: 0 -> 12");
+    expect(next.metadata?.nextOffset).toBeUndefined();
+    const source = await tool.execute(
+      { view: "details", batchId: capture.id, changeType: "sourceChanged" } as never,
+      toolCtx(),
+    );
+    expect(source.output).toContain("source edited");
+    expect(source.output).not.toContain("Prop0");
+    const invalid = await tool.execute({ view: "details", batchId: "../../Edit.Log" } as never, toolCtx());
+    expect(invalid.metadata?.error).toBe(true);
+  });
+
+  test("new queries reset their cursor when Studio recreates its log", async () => {
+    const cwd = projectDir();
+    const edit = envelope("Create", [subject("Part", "p1", "Door")]);
+    writeEditLog(cwd, [edit]);
+    const tool = createStudioChangesTool(cwd);
+    expect((await tool.execute({} as never, toolCtx())).output).toContain("(p1)");
+    rmSync(join(cwd, "Edit.Log"));
+    writeEditLog(cwd, [edit]);
+    expect((await tool.execute({} as never, toolCtx())).output).toContain("(p1)");
+  });
+
+  test("bounds detail pages across large lists and continues at the first undisplayed row", async () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [
+      envelope("SetProperty", [
+        subject("Part", "p1", "Name".repeat(100), [
+          { Property: "Tag", Added: Array.from({ length: 100 }, (_, i) => `${i}:${"긴값".repeat(100)}`) },
+        ]),
+      ]),
+    ]);
+    const capture = consumeStudioChanges(cwd);
+    const tool = createStudioChangesTool(cwd);
+    let offset = 0;
+    const outputs: string[] = [];
+    do {
+      const page = await tool.execute({ view: "details", batchId: capture.id, offset, limit: 20 } as never, toolCtx());
+      expect(Buffer.byteLength(page.output, "utf8")).toBeLessThanOrEqual(STUDIO_CHANGES_LIMITS.maxBytes);
+      expect(page.metadata?.total).toBe(100);
+      outputs.push(page.output);
+      const next = page.metadata?.nextOffset as number | undefined;
+      if (next === undefined) break;
+      expect(next).toBeGreaterThan(offset);
+      offset = next;
+    } while (offset < 100);
+    const all = outputs.join("\n");
+    for (let i = 0; i < 100; i++) expect(all.split(`Tag: added ${i}:`)).toHaveLength(2);
+  });
+
+  test("detail filters can snapshot the live log without consuming or acknowledging it", async () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [
+      envelope("SetProperty", [subject("Part", "p1", "Door", [{ Property: "Name", Before: "Old", After: "Door" }])]),
+    ]);
+    const tool = createStudioChangesTool(cwd);
+    const page = await tool.execute({ guid: "p1" } as never, toolCtx());
+    expect(page.output).toContain("Name: Old -> Door");
+    expect(page.output).toContain("Full values:");
+    expect((await tool.execute({} as never, toolCtx())).output).toContain("Name: Old -> Door");
+    expect(logFiles(cwd)).toContain("Edit.Log");
+  });
+
+  test("reports new edits without repeating the delivered turn-start summary", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Ramp")])]);
     const capture = consumeStudioChanges(cwd);
@@ -418,9 +567,9 @@ describe("createStudioChangesTool", () => {
     // Studio records more edits while the agent works.
     writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
 
-    const tool = createStudioChangesTool(cwd, () => capture.result);
+    const tool = createStudioChangesTool(cwd, () => capture);
     const result = await tool.execute({} as never, toolCtx());
-    expect(result.output).toContain('+ Part "Ramp" (p2)');
+    expect(result.output).not.toContain('+ Part "Ramp" (p2)');
     expect(result.output).toContain("recorded during this turn");
     expect(result.output).toContain('- Part "Crate" (p9)');
     // Peek must not consume: the mid-turn log stays for the next turn.
@@ -440,6 +589,99 @@ describe("createStudioChangesTool", () => {
       host: { approve: async () => "once" },
     });
     expect(tools.map((tool) => tool.name)).toContain("studiorpc_studio_changes");
+  });
+});
+
+describe("bounded Studio change summaries", () => {
+  test("limits objects across sections and caps each object's properties and list items", () => {
+    const logs = [
+      envelope(
+        "Create",
+        Array.from({ length: 40 }, (_, i) => subject("Part", `p-${i}`, `Part${i}`)),
+      ),
+      envelope("SetProperty", [
+        subject("Part", "changed", "Changed", [
+          { Property: "Tag", Added: ["first", "second", "third", "fourth", "fifth"] },
+          ...Array.from({ length: 7 }, (_, i) => ({ Property: `Prop${i}`, Before: 0, After: 1 })),
+        ]),
+      ]),
+    ].map(parse);
+    const result = summarizeEditLog(logs);
+    expect(result.shownTargets).toBe(STUDIO_CHANGES_LIMITS.maxTargets);
+    expect(result.omittedTargets).toBe(41 - STUDIO_CHANGES_LIMITS.maxTargets);
+    expect(result.output).toContain("Modified (1):");
+    expect(result.output).toContain("Tag: added first, second, third");
+    expect(result.output).toContain("2 list items omitted");
+    expect(result.output).toContain("4 properties omitted");
+    expect(result.output).not.toContain("fourth");
+    expect(result.output).not.toContain("Prop3:");
+  });
+
+  test("bounds the entire multilingual summary, keeps counts and prioritizes late critical changes", () => {
+    const parts = Array.from({ length: 100 }, (_, i) =>
+      subject("Part", `p-${i}`, "긴이름".repeat(100), [
+        ...Array.from({ length: 30 }, (_, j) => ({
+          Property: `P${j}`,
+          Before: "a".repeat(500),
+          After: "나".repeat(500),
+        })),
+        { Property: "Tag", Added: Array.from({ length: 200 }, (_, j) => `tag-${j}`) },
+      ]),
+    );
+    const logs = [
+      envelope("Create", parts),
+      envelope("Delete", [subject("Part", "deleted", "Deleted")]),
+      envelope("Reparent", [subject("Part", "moved", "Moved", [{ Property: "Parent", Before: "A", After: "B" }])]),
+      envelope("SetProperty", [subject("Script", "script", "Controller", [{ Property: "Source" }])]),
+    ].map(parse);
+    const result = summarizeEditLog(logs);
+    expect(Buffer.byteLength(result.output, "utf8")).toBeLessThanOrEqual(STUDIO_CHANGES_LIMITS.maxBytes);
+    expect(result.output).toContain("Added (100):");
+    expect(result.output).toContain("Removed (1):");
+    expect(result.output).toContain("(deleted)");
+    expect(result.output).toContain("(moved)");
+    expect(result.output).toContain("(script)");
+    expect(result.output).toContain("omitted");
+    expect(result.output).toContain("studiorpc_studio_changes");
+    expect(result.output).not.toContain("P4:");
+    expect(result.output).not.toContain("tag-3,");
+    expect(result.editCount).toBe(103);
+    expect(result.shownTargets).toBeLessThanOrEqual(STUDIO_CHANGES_LIMITS.maxTargets);
+  });
+
+  test("does not mistake different long values for a reverted edit", () => {
+    const prefix = "x".repeat(200);
+    const result = summarizeEditLog([
+      parse(
+        envelope("SetProperty", [
+          subject("Part", "p1", "Part", [{ Property: "Value", Before: `${prefix}a`, After: `${prefix}b` }]),
+        ]),
+      ),
+    ]);
+    expect(result.editCount).toBe(1);
+    expect(result.output).toContain("Value:");
+  });
+
+  test("omits reverted scalar and parent changes without hiding script edits", () => {
+    const logs = [
+      envelope("SetProperty", [
+        subject("Part", "p1", "Part", [
+          { Property: "Size", Before: 1, After: 2 },
+          { Property: "Parent", Before: "A", After: "B" },
+        ]),
+      ]),
+      envelope("SetProperty", [
+        subject("Part", "p1", "Part", [
+          { Property: "Size", Before: 2, After: 1 },
+          { Property: "Parent", Before: "B", After: "A" },
+        ]),
+      ]),
+      envelope("SetProperty", [subject("Script", "s1", "Controller", [{ Property: "Source" }])]),
+    ].map(parse);
+    const result = summarizeEditLog(logs);
+    expect(result.editCount).toBe(1);
+    expect(result.output).not.toContain("(p1)");
+    expect(result.output).toContain("source edited");
   });
 });
 
@@ -495,7 +737,7 @@ describe("studio-changes unified loop-hook context injection", () => {
     const tool = tools.find((tool) => tool.name === "studiorpc_studio_changes");
     expect(tool).toBeDefined();
     const result = await tool!.execute({} as never, toolCtx());
-    expect(result.output).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
+    expect(result.output).not.toContain('~ Model "Tree" (m1)');
     expect(result.output).toContain('~ Folder "Props" (f1)\n  Size changed via gizmo');
     expect(result.output).not.toMatch(/GroupCFrame|GroupSize|1 -> 2/);
     expect(logFiles(cwd)).toContain("Edit.Log");
@@ -522,6 +764,20 @@ describe("studio-changes unified loop-hook context injection", () => {
     await p.onUserPromptSubmit(promptInput(projectDir()));
     expect(calls).toEqual([]);
     expect(provider.onStop).toBeUndefined();
+  });
+
+  test("injects at most once per user request even when edits arrive between model iterations", async () => {
+    const cwd = projectDir();
+    writeEditLog(cwd, [envelope("Create", [subject("Part", "p1", "Door")])]);
+    const p = promptProvider();
+    await p.onUserPromptSubmit(promptInput(cwd));
+    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    hook?.onPromptStart?.({ messages: [] });
+    const context = { messages: [], turnId: "turn-1", compactedThisTurn: false };
+    expect(hook?.beforeTurn?.(context)).toHaveLength(1);
+    writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Window")])]);
+    expect(hook?.beforeTurn?.({ ...context, turnId: "turn-2" })).toBeUndefined();
+    expect(logFiles(cwd)).toContain("Edit.Log");
   });
 
   test("does not register the Studio changes loop hook for child agents", () => {

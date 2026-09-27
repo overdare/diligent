@@ -72,6 +72,7 @@ function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHoo
       const studioChanges = pendingStudioChanges;
       pendingStudioChanges = undefined;
       if (!studioChanges) return;
+      if (studioChanges.delivered) return;
       // The summary is now part of the turn (injected below or empty), so the
       // consumed log files can be dropped. If this never runs, the rotated
       // files are re-read next turn — a duplicate report, never a loss.
@@ -305,7 +306,7 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createStudioChangesTool(ctx.cwd, () => ctx.turnState?.studioChanges?.result),
+      createStudioChangesTool(ctx.cwd, () => ctx.turnState?.studioChanges),
       ctx.host,
     ),
     createHubWorldLookupTool(),
