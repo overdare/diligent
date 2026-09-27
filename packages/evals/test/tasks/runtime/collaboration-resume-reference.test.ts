@@ -51,7 +51,7 @@ describe("collaboration-resume-reference", () => {
         "lite",
       );
       expect(execution.providerCalls.filter((call) => call.sessionId === id).map((call) => call.model.modelId)).toEqual(
-        [childModel.modelId, childModel.modelId, childModel.modelId, childModel.modelId],
+        [childModel.modelId, childModel.modelId, profile.model, profile.model],
       );
     }
   });
