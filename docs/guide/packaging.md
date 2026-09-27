@@ -141,6 +141,8 @@ At bundle assembly time these assets are staged under `defaults/` for compatibil
 
 First-party executable TypeScript tools should move to bundled providers in `apps/overdare-ai-agent/sidecar/src/tools` instead of being shipped as copied plugin folders. During migration, a bundled provider can declare the legacy package in `supersedesPluginPackages` so stale plugin copies are suppressed. Only remove a plugin from `apps/overdare-ai-agent/plugins/` after the bundled equivalent has been verified.
 
+`bootstrap/skills-manifest.json` lists active `skills` and retired skills in `revoked`. Retired agents are listed separately in `bootstrap/agents-manifest.json` under `revoked`, and initialization journals them in `.bootstrap-agents-state.json`. Keeping agent policy in separate files preserves the skill manifest and state formats accepted by older launchers. Initialization records revocations before removing global installed copies. The current launcher also skips revoked agents during bootstrap copying, including when an older bundle contains them. Unlisted user agents remain untouched. Retired source directories can be removed while their manifest revocations remain.
+
 ## Sidecar build
 
 The OVERDARE sidecar is compiled from `apps/overdare-ai-agent/sidecar/src/server.ts` using `bun build --compile`. Its product entrypoint composes the local Web host from `src/web/server` and injects OVERDARE bundled tool providers without placing product code in `packages/runtime`.

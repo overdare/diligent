@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.05-13.05.28",
     "lastModifyTime": "2026.03.05-13.05.28"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 2.330125093460083,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.330125093460083,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -52,6 +55,8 @@
       "IsEnable": true,
       "StartTime": 1.9485000371932983,
       "EndTime": 2.2499165534973145,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -81,6 +86,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_StraightPunch_0",
@@ -197,6 +203,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.330125093460083,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -226,6 +234,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Portal_1",
@@ -342,6 +351,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.330125093460083,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -371,6 +382,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Muzzle_0",
@@ -487,6 +499,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.330125093460083,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -551,6 +565,8 @@
       "IsEnable": true,
       "StartTime": 2.0077500343322754,
       "EndTime": 2.0077500343322754,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -623,6 +639,8 @@
       "IsEnable": true,
       "StartTime": 2.0077917575836182,
       "EndTime": 2.5077917575836182,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -644,6 +662,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.3278748989105225,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -665,6 +685,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.3289999961853027,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -686,6 +708,8 @@
       "IsEnable": true,
       "StartTime": 2.2513332366943359,
       "EndTime": 2.3282084465026855,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

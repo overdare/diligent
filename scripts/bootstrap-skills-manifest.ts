@@ -2,7 +2,10 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter } from "../packages/runtime/src/skills/frontmatter";
-import { bootstrapSkillManifestSchema } from "../packages/runtime/src/skills/revocation";
+import {
+  bootstrapAgentRevocationsSchema,
+  bootstrapSkillManifestSchema,
+} from "../packages/runtime/src/skills/revocation";
 
 function validateTree(path: string): void {
   const stat = lstatSync(path);
@@ -22,6 +25,18 @@ export function validateBootstrapSkills(bootstrapDir: string) {
       throw new Error(`Duplicate active/revoked skill: ${entry.name}`);
     names.add(entry.name);
     paths.add(entry.entry);
+  }
+  const agentNames = new Set<string>();
+  const agentPaths = new Set<string>();
+  const agentManifestPath = join(bootstrapDir, "agents-manifest.json");
+  const agentManifest = existsSync(agentManifestPath)
+    ? bootstrapAgentRevocationsSchema.parse(JSON.parse(readFileSync(agentManifestPath, "utf8")))
+    : { revoked: [] };
+  for (const entry of agentManifest.revoked) {
+    if (agentNames.has(entry.name) || agentPaths.has(entry.entry))
+      throw new Error(`Duplicate revoked agent: ${entry.name}`);
+    agentNames.add(entry.name);
+    agentPaths.add(entry.entry);
   }
   const skillsDir = join(bootstrapDir, "skills");
   validateTree(skillsDir);

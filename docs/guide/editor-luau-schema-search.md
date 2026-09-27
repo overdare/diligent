@@ -156,11 +156,12 @@ its synchronous report assumptions, and file-to-Source synchronization are adapt
 to the current Editor Luau tools. The geometry-recipe name is unchanged here;
 renaming to procedural-model-builder belongs to the subsequent PR #429.
 
-`procedural-builder` remains a short deprecated compatibility skill/agent. Stable
-names allow the existing applied-update `FullSync` to replace old installed copies
-of either guide. User-created entries with other names remain untouched; project
-world/source files are not migrated or removed. This restoration does not remove
-the compatibility upsert schema or change schema-search behavior.
+The retired `procedural-builder` skill and agent are removed from bootstrap assets.
+The bootstrap manifest revokes both names so initialization removes old installed
+copies and prevents reinstallation, including from older bundles. User-created
+entries with other names remain untouched; project world/source files are not
+migrated or removed. The compatibility upsert schema and schema-search behavior
+remain available.
 
 Ordinary startup uses `MissingOnly` and does not replace existing entries.
 `scripts/dev-cross-studio.sh` also only creates missing links; restarting it is not

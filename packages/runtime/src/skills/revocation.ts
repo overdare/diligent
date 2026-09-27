@@ -17,6 +17,9 @@ export const bootstrapSkillManifestSchema = z
     revoked: z.array(entry),
   })
   .strict();
+export const bootstrapAgentRevocationsSchema = z
+  .object({ schemaVersion: z.literal(1), revoked: z.array(entry) })
+  .strict();
 const stateSchema = z.object({
   schemaVersion: z.literal(1),
   runtimeVersion: z.string(),

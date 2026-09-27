@@ -67,8 +67,8 @@ generated artwork with plain Frames or TextButtons. Missing gameplay code is rep
 There is no bundled genre-image library or template-selection gate. New GUI and full visual redesign
 requests use this image-guided workflow by default; explicit no-generation or existing-assets-only
 requests override it. Focused font, text, layout, or behavior edits load only their relevant references.
-Legacy `ui-generator` and `overdare-ui-templates` entries are disabled upgrade placeholders;
-they are not advertised or invocable by the model.
+Legacy `ui-generator` and `overdare-ui-templates` entries are removed from bootstrap
+assets and remain revoked in the manifest so initialization removes old installed copies.
 
 Before generating the guide, the skill selects typography from the supplied internal Studio
 font catalog. The full family IDs and supported Weight/Style combinations live in its

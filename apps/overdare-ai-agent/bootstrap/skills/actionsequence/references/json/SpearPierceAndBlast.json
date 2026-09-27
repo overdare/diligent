@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.20-12.00.00",
     "lastModifyTime": "2026.03.20-12.00.00"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "Spear_PierceAndBlast crawl eat powerup bowshot",
   "Length": 3.3,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0.0,
       "EndTime": 0.7,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -47,6 +50,8 @@
       "IsEnable": true,
       "StartTime": 0.7,
       "EndTime": 1.5,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -68,6 +73,8 @@
       "IsEnable": true,
       "StartTime": 1.5,
       "EndTime": 2.7,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -89,6 +96,8 @@
       "IsEnable": true,
       "StartTime": 2.7,
       "EndTime": 3.2,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -113,6 +122,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Eat_0",
@@ -160,6 +170,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -184,6 +196,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Cast_0",
@@ -231,6 +244,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -255,6 +270,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Muzzle_0",
@@ -302,6 +318,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -326,6 +344,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaMeshPartData",
         "Name": "Spear_0",
@@ -359,6 +378,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -383,6 +404,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaMeshPartData",
         "Name": "Gun_0",
@@ -416,6 +438,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -448,6 +472,8 @@
       "IsEnable": true,
       "StartTime": 1.6,
       "EndTime": 2.72,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -507,6 +533,8 @@
       "IsEnable": true,
       "StartTime": 2.86,
       "EndTime": 2.86,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -566,6 +594,8 @@
       "IsEnable": true,
       "StartTime": 2.98,
       "EndTime": 2.98,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -587,6 +617,8 @@
       "IsEnable": true,
       "StartTime": 2.82,
       "EndTime": 3.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -608,6 +640,8 @@
       "IsEnable": true,
       "StartTime": 2.95,
       "EndTime": 3.25,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -624,6 +658,8 @@
       "IsEnable": true,
       "StartTime": 0.0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -640,6 +676,8 @@
       "IsEnable": true,
       "StartTime": 0.0,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false
@@ -656,6 +694,8 @@
       "IsEnable": true,
       "StartTime": 1.92,
       "EndTime": 2.05,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": { "a": 0, "b": 0, "c": 0, "d": 0 },
       "ChildTrackIDs": [],
       "IsLock": false

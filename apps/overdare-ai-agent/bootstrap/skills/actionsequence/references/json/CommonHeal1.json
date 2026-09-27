@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.18-20.20.26",
     "lastModifyTime": "2026.03.18-20.20.26"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 1.5196670293807983,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.73333299160003662,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -52,6 +55,8 @@
       "IsEnable": true,
       "StartTime": 0.53587502241134644,
       "EndTime": 1.5196670293807983,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -81,6 +86,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_SoftHeal_0",
@@ -197,6 +203,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5196670293807983,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -230,6 +238,8 @@
       "IsEnable": true,
       "StartTime": 0.52421146631240845,
       "EndTime": 0.52421146631240845,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -251,6 +261,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5196670293807983,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -272,6 +284,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5196670293807983,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -293,6 +307,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5196670293807983,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

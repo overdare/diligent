@@ -2,7 +2,6 @@
 
 import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
-import * as actionSequencerApplyJson from "./methods/action-sequencer-service.apply-json";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import";
 import * as gameCharacterRead from "./methods/game.character.read";
@@ -26,7 +25,6 @@ import * as _scriptDelete from "./methods/script.delete";
 import * as viewportCameraRead from "./methods/viewport.camera.read";
 import * as viewportCameraSet from "./methods/viewport.camera.set";
 import {
-  buildActionSequencerApplyJsonRender,
   buildAssetDrawerImportRender,
   buildAssetManagerImageImportRender,
   buildGamePlayRender,
@@ -73,7 +71,6 @@ export const methodModules: MethodModule[] = [
   instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
-  actionSequencerApplyJson,
   levelBrowse,
   levelSaveFile,
   levelPublish,
@@ -91,7 +88,6 @@ export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,
   assetManagerImageImport.method,
-  actionSequencerApplyJson.method,
   rigBuilderInsert.method,
 ]);
 export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
@@ -100,8 +96,6 @@ export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
   studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
     buildAssetManagerImageImportRender(result, normalizedArgs, output),
-  studiorpc_action_sequencer_service_apply_json: ({ normalizedArgs, output }) =>
-    buildActionSequencerApplyJsonRender(normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),

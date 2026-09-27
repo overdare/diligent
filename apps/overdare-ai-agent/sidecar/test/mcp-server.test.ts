@@ -171,7 +171,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry tools and guidance are active while the old builder stays deprecated", async () => {
+  test("native geometry tools and guidance are active", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -183,41 +183,24 @@ describe("OVERDARE MCP server", () => {
     expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_")).sort()).toEqual(
       ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
     );
-    expect(registries.tools.get("load_skill")?.description).toContain("procedural-builder");
     expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
-    for (const name of ["procedural-builder", "geometry-recipe"]) {
-      const prompt = registries.prompts.get(`agent-${name}`)!;
-      if (name === "geometry-recipe") {
-        expect(prompt.description).not.toContain("Deprecated");
-      } else {
-        expect(prompt.description).toContain("Deprecated");
-      }
-      const body = await prompt.load();
-      expect(body).toContain("ProceduralModel");
-      if (name === "geometry-recipe") {
-        expect(body).toContain("studiorpc_execute_luau");
-        expect(body).toContain("AutoRebuild");
-        expect(body).not.toContain("studiorpc_proceduralmodel_");
-      } else {
-        expect(body).not.toContain("studiorpc_procedural_run");
-        expect(body).not.toContain("studiorpc_proceduralmodel_");
-      }
-      const skill = await registries.tools.get("load_skill")!.execute(
-        { name },
-        {
-          toolCallId: "deprecated-guide",
-          signal: new AbortController().signal,
-          abort() {},
-        },
-      );
-      if (name === "geometry-recipe") {
-        expect(skill.output).not.toContain("# Deprecated");
-        expect(skill.output).toContain("on_generate");
-      } else {
-        expect(skill.output).toContain("Deprecated");
-      }
-      if (name !== "geometry-recipe") expect(skill.output).toContain("studiorpc_execute_luau");
-    }
+    const prompt = registries.prompts.get("agent-geometry-recipe")!;
+    expect(prompt.description).not.toContain("Deprecated");
+    const body = await prompt.load();
+    expect(body).toContain("ProceduralModel");
+    expect(body).toContain("studiorpc_execute_luau");
+    expect(body).toContain("AutoRebuild");
+    expect(body).not.toContain("studiorpc_proceduralmodel_");
+    const skill = await registries.tools.get("load_skill")!.execute(
+      { name: "geometry-recipe" },
+      {
+        toolCallId: "geometry-guide",
+        signal: new AbortController().signal,
+        abort() {},
+      },
+    );
+    expect(skill.output).not.toContain("# Deprecated");
+    expect(skill.output).toContain("on_generate");
   });
 
   test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {

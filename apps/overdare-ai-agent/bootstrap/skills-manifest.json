@@ -8,16 +8,17 @@
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
     { "name": "overdare-camera-templates", "entry": "overdare-camera-templates" },
-    { "name": "overdare-debug-expert", "entry": "overdare-debug-expert" },
-    { "name": "procedural-builder", "entry": "procedural-builder" },
     { "name": "record-project-memory", "entry": "record-project-memory" },
     { "name": "session-issue-report", "entry": "session-issue-report" },
-    { "name": "tpa", "entry": "tpa" },
     { "name": "vfx-recipe", "entry": "vfx-recipe" },
     { "name": "world-publish", "entry": "world-publish" }
   ],
   "revoked": [
+    { "name": "overdare-debug-expert", "entry": "overdare-debug-expert" },
     { "name": "overdare-ui-templates", "entry": "overdare-ui-templates" },
-    { "name": "ui-generator", "entry": "ui-generator" }
+    { "name": "procedural-builder", "entry": "procedural-builder" },
+    { "name": "tpa", "entry": "tpa" },
+    { "name": "ui-generator", "entry": "ui-generator" },
+    { "name": "ui-generator-workspace", "entry": "ui-generator-workspace" }
   ]
 }

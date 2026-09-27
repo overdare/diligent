@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.13-20.04.17",
     "lastModifyTime": "2026.03.13-20.04.17"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 1.3333330154418945,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3333330154418945,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Trail_0",
@@ -171,6 +175,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3333330154418945,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -231,6 +237,8 @@
       "IsEnable": true,
       "StartTime": 0.63879168033599854,
       "EndTime": 0.63879168033599854,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -252,6 +260,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3332500457763672,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -273,6 +283,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3332500457763672,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -294,6 +306,8 @@
       "IsEnable": true,
       "StartTime": 1.2472083568572998,
       "EndTime": 1.3332500457763672,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

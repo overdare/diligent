@@ -10,6 +10,7 @@ import {
 import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
+import { createActionSequencerApplyJsonTool } from "./tools/action-sequencer-apply-json-tool";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
@@ -280,6 +281,7 @@ export async function createStudioRpcTools(ctx: {
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
   const tools: Tool[] = [
+    wrapTool(withSnapshot(createActionSequencerApplyJsonTool(callRpc, writeLock)), ctx.host),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(

@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.03.18-20.20.26",
     "lastModifyTime": "2026.03.18-20.20.26"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 1.3487919569015503,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3487919569015503,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_SoftHeal_0",
@@ -171,6 +175,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3487919569015503,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -204,6 +210,8 @@
       "IsEnable": true,
       "StartTime": 0.25204166769981384,
       "EndTime": 0.304749995470047,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -225,6 +233,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3487919569015503,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -246,6 +256,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.3487919569015503,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -267,6 +279,8 @@
       "IsEnable": true,
       "StartTime": 1.3266667127609253,
       "EndTime": 1.3487917184829712,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

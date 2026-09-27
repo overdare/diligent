@@ -1,6 +1,6 @@
 ---
 name: actionsequence
-description: "Handles Action Sequence asset creation/editing, track layout (Animation/Collision/Trigger/Event), combo setup, CancelWindow configuration, animation catalog lookup, ActionSequence JSON editing, and preset usage. Use this skill for any request involving action sequence assets or track timing. For code module work like SkillDB/CharDB/WeaponDB edits, server logic, or UI changes, use the tpa skill instead."
+description: "Handles Action Sequence asset creation/editing, track layout (Animation/Sound/Collision/Trigger/Event), combo setup, CancelWindow configuration, animation catalog lookup, ActionSequence JSON editing and apply_json diagnostics, and preset usage. Use this skill for any request involving action sequence assets or track timing. For code module work like SkillDB/CharDB/WeaponDB edits, server logic, or UI changes, inspect the project's architecture and gameplay modules instead."
 ---
 
 ## 1. Overview
@@ -104,4 +104,6 @@ Category-based list of Overdare animation assets. Read `references/animations/00
 
 ### JSON Reference — `references/json/`
 
-JSON data of existing Action Sequence assets. When authoring new assets, reference similar existing assets for track composition, timing, and settings to maintain consistency.
+Current-format JSON templates (Header.version 2). When authoring new assets, reference similar existing assets for track composition, timing, and settings to maintain consistency.
+
+Before generating or applying JSON, read [references/json-format.md](references/json-format.md) for the current Studio property requirements, a SoundTrack example, persistence checks, and `apply_json` failure diagnostics. Studio rejects missing properties even when it logs them only as optional-property warnings.

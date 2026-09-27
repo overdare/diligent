@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.01.26-21.08.26",
     "lastModifyTime": "2026.01.26-21.08.26"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 1.5666669607162476,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0.003375000087544322,
       "EndTime": 1.5666669607162476,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_Punch_0",
@@ -171,6 +175,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5666669607162476,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -200,6 +206,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "VFX_GloryExplosion_0",
@@ -316,6 +323,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5666669607162476,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -359,6 +368,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 0.73701363801956177,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -431,6 +442,8 @@
       "IsEnable": true,
       "StartTime": 0.73308330774307251,
       "EndTime": 1.3330833911895752,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -491,6 +504,8 @@
       "IsEnable": true,
       "StartTime": 0.7381974458694458,
       "EndTime": 0.7381974458694458,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -512,6 +527,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5657917261123657,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -533,6 +550,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 1.5664166212081909,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -554,6 +573,8 @@
       "IsEnable": true,
       "StartTime": 1.4029166698455811,
       "EndTime": 1.5663332939147949,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

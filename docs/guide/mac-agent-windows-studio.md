@@ -91,7 +91,7 @@ If specifying env every time is tedious, write it once in the Mac home:
 
 ## Option 2 — symlink bundle skills, then run (skills included, macOS)
 
-Option 1 works, but in dev the bundle skills (`actionsequence`, `tpa`, `ui-generator`, `studio-explorer`, etc.) are not installed automatically. On first run the exe's `init.rs` copies bundle skills into `~/.overdare/skills`, but running the dev source directly skips that step.
+Option 1 works, but in dev the bundle skills (`actionsequence`, `geometry-recipe`, `gui-builder`, etc.) are not installed automatically. On first run the exe's `init.rs` copies bundle skills into `~/.overdare/skills`, but running the dev source directly skips that step.
 
 Skill discovery order is (1) project `<cwd>/.overdare/skills` -> (2) global `~/.overdare/skills` -> (3) config `skills.paths[]` (`packages/runtime/src/skills/discovery.ts:47-55`). On macOS, **symlink the bundle skills into the global location (2)**. (Being symlinks, edits to the repo skills take effect immediately.)
 
@@ -108,7 +108,7 @@ ln -sfn "$PWD/apps/overdare-ai-agent/bootstrap/agents/"* ~/.overdare/agents/
 Verify:
 
 ```bash
-ls -l ~/.overdare/skills/    # OK if actionsequence, tpa, ui-generator ... appear as symlinks
+ls -l ~/.overdare/skills/    # OK if actionsequence, geometry-recipe, gui-builder ... appear as symlinks
 ```
 
 ### 1) Run sidecar + frontend
@@ -178,7 +178,7 @@ When set, the sidecar `--cwd` becomes this path so edit tools modify the live wo
 
 > NOTE: **The symlink (skills) and the mount (world file) are separate things.** Easy to confuse, so to be clear:
 > - **Mount** = access the Windows Studio **project folder** from the Mac to read/write the live `.ovdrjm` **world file**. `--cwd` is this path.
-> - **Symlink** (Option 2 / the script) = link the bundle **skills** (actionsequence, tpa, ui-generator, etc.) into the Mac global `~/.overdare/skills`. Unrelated to cwd (discovery path 2).
+> - **Symlink** (Option 2 / the script) = link the bundle **skills** (actionsequence, geometry-recipe, gui-builder, etc.) into the Mac global `~/.overdare/skills`. Unrelated to cwd (discovery path 2).
 >
 > The mounted project folder does **not** contain the bundle skills — the exe installs skills into **HOME `~/.overdare/skills`**, not the project (`init.rs` -> `global_storage_dir`). So even when you "mount and edit the world", **skills still come from the symlinked Mac global**. You need both.
 

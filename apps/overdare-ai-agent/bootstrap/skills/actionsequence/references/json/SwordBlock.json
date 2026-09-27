@@ -1,13 +1,14 @@
 {
   "Class": "/Script/LuaAPI.ActionSequence",
   "Header": {
-    "version": 1,
+    "version": 2,
     "createTime": "2026.01.26-21.08.26",
     "lastModifyTime": "2026.01.26-21.08.26"
   },
   "ActionSequenceID": "",
   "SequencerDescription": "",
   "Length": 5,
+  "PreviewTarget": {},
   "Tracks": [
     {
       "Class": "/Script/LuaAPI.ActionSequenceAnimationTrack",
@@ -26,6 +27,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 5,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -55,6 +58,7 @@
           "roll": 0
         }
       },
+      "bScaleInheritance": true,
       "ProxyData": {
         "Class": "/Script/LuaAPI.ProxyLuaPartData",
         "Name": "Small_Barrier_0",
@@ -167,6 +171,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 5,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -188,6 +194,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 4.9675002098083496,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -209,6 +217,8 @@
       "IsEnable": true,
       "StartTime": 0,
       "EndTime": 4.9490418434143066,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,
@@ -230,6 +240,8 @@
       "IsEnable": true,
       "StartTime": 4.8958330154418945,
       "EndTime": 4.9958329200744629,
+      "CustomDisplayName": "",
+      "StartOffsetTime": 0,
       "ParentTrackID": {
         "a": 0,
         "b": 0,

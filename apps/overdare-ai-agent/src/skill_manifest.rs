@@ -1,4 +1,4 @@
-// @summary Journals global bootstrap skill deployment and permanent name revocation.
+// @summary Journals bootstrap skill deployment and permanent skill/agent revocations.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 const STATE: &str = ".bootstrap-skills-state.json";
 const MANIFEST: &str = "skills-manifest.json";
+const AGENT_MANIFEST: &str = "agents-manifest.json";
+const AGENT_STATE: &str = ".bootstrap-agents-state.json";
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,6 +29,13 @@ struct Manifest {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentRevocations {
+    schema_version: u32,
+    revoked: BTreeSet<Entry>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct State {
     schema_version: u32,
     runtime_version: String,
@@ -34,6 +43,9 @@ struct State {
     inventory_version: String,
     skills: Vec<Entry>,
     revoked: BTreeSet<Entry>,
+    // Read the short-lived combined format, but never emit it for older launchers.
+    #[serde(default, skip_serializing)]
+    revoked_agents: BTreeSet<Entry>,
     pending: BTreeSet<String>,
     #[serde(default)]
     cleanup: BTreeSet<String>,
@@ -249,6 +261,9 @@ fn read_state(global: &Path) -> Result<Option<State>, String> {
     for entry in &state.revoked {
         validate_entries(std::slice::from_ref(entry))?;
     }
+    for entry in &state.revoked_agents {
+        validate_entries(std::slice::from_ref(entry))?;
+    }
     if state
         .pending
         .iter()
@@ -278,6 +293,40 @@ fn write_state(global: &Path, state: &State) -> Result<(), String> {
     fs::rename(&tmp, global.join(STATE)).map_err(|e| e.to_string())
 }
 
+fn read_agent_revocations(path: &Path) -> Result<AgentRevocations, String> {
+    reject_symlink(path)?;
+    let policy: AgentRevocations = match fs::read_to_string(path) {
+        Ok(json) => serde_json::from_str(&json)
+            .map_err(|error| format!("invalid agent revocations: {error}"))?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(AgentRevocations {
+                schema_version: 1,
+                revoked: BTreeSet::new(),
+            });
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    if policy.schema_version != 1 {
+        return Err("unsupported agent revocations schemaVersion".into());
+    }
+    validate_entries(&policy.revoked.iter().cloned().collect::<Vec<_>>())?;
+    Ok(policy)
+}
+
+fn write_agent_state(global: &Path, state: &AgentRevocations) -> Result<(), String> {
+    let path = global.join(AGENT_STATE);
+    reject_symlink(&path)?;
+    let tmp = global.join(format!("{AGENT_STATE}.{}.tmp", std::process::id()));
+    reject_symlink(&tmp)?;
+    let json = serde_json::to_vec_pretty(state).map_err(|error| error.to_string())?;
+    let mut file = File::create(&tmp).map_err(|error| error.to_string())?;
+    file.write_all(&json)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| error.to_string())?;
+    drop(file);
+    fs::rename(&tmp, path).map_err(|error| error.to_string())
+}
+
 fn remove_entry(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         // Do not recurse through links (including Windows directory symlinks).
@@ -295,6 +344,49 @@ fn remove_entry(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// Check both the managed directory entry and frontmatter name before copying an agent.
+pub(crate) fn is_agent_revoked(global: &Path, source: &Path) -> Result<bool, String> {
+    let state = read_agent_revocations(&global.join(AGENT_STATE))?;
+    let entry = source.file_name().unwrap_or_default().to_string_lossy();
+    let name = skill_name(&source.join("AGENT.md"));
+    Ok(state
+        .revoked
+        .iter()
+        .any(|revoked| revoked.entry == entry || name.as_deref() == Some(revoked.name.as_str())))
+}
+
+fn remove_revoked_agents(global: &Path, revoked: &BTreeSet<Entry>) -> Result<(), String> {
+    if revoked.is_empty() {
+        return Ok(());
+    }
+    let agents = global.join("agents");
+    reject_symlink(&agents)?;
+    for entry in revoked {
+        if let Err(error) = remove_entry(&agents.join(&entry.entry)) {
+            eprintln!(
+                "[init] Failed to remove revoked agent {}: {error}",
+                entry.name
+            );
+        }
+    }
+    if agents.exists() {
+        for child in fs::read_dir(&agents).map_err(|error| error.to_string())? {
+            let path = child.map_err(|error| error.to_string())?.path();
+            if skill_name(&path.join("AGENT.md"))
+                .is_some_and(|name| revoked.iter().any(|entry| entry.name == name))
+            {
+                if let Err(error) = remove_entry(&path) {
+                    eprintln!(
+                        "[init] Failed to remove revoked agent {}: {error}",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn copy_tree(src: &Path, dest: &Path) -> io::Result<()> {
@@ -348,6 +440,8 @@ pub(crate) fn deploy_skills(
     updated: bool,
 ) -> Result<(), String> {
     let (manifest, explicit) = read_manifest(source)?;
+    let agent_manifest = read_agent_revocations(&source.join(AGENT_MANIFEST))?;
+    let mut agent_state = read_agent_revocations(&global.join(AGENT_STATE))?;
     let previous = read_state(global)?;
     let dest = global.join("skills");
     reject_symlink(&dest)?;
@@ -360,6 +454,7 @@ pub(crate) fn deploy_skills(
         inventory_version: runtime_version.into(),
         skills: Vec::new(),
         revoked: BTreeSet::new(),
+        revoked_agents: BTreeSet::new(),
         pending: BTreeSet::new(),
         cleanup: BTreeSet::new(),
     });
@@ -386,6 +481,10 @@ pub(crate) fn deploy_skills(
         }
     }
     state.revoked.extend(manifest.revoked);
+    agent_state.revoked.extend(agent_manifest.revoked);
+    agent_state
+        .revoked
+        .extend(state.revoked_agents.iter().cloned());
     // Revocations survive rollback; active entries cannot take over revoked paths.
     let active: Vec<Entry> = manifest
         .skills
@@ -432,7 +531,9 @@ pub(crate) fn deploy_skills(
     state.runtime_version = runtime_version.into();
     // Persist revocation and retry intent BEFORE touching skill files. A failed
     // delete remains blocked at runtime and will be attempted again next init.
+    write_agent_state(global, &agent_state)?;
     write_state(global, &state)?;
+    remove_revoked_agents(global, &agent_state.revoked)?;
     fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
     for entry in &state.revoked {
         if let Err(e) = remove_entry(&dest.join(&entry.entry)) {
