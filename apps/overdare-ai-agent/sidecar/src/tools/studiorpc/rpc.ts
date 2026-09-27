@@ -9,6 +9,7 @@ const logger = createLogger({ scope: "sidecar/studiorpc", context: { component: 
 export interface StudioRpcCallOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
+  sessionId?: string;
 }
 
 interface JsonRpcResponse {
@@ -69,6 +70,7 @@ export async function call(
       jsonrpc: "2.0",
       id,
       method,
+      ...(options.sessionId && { meta: { sessionId: options.sessionId } }),
       ...(params !== undefined && Object.keys(params).length > 0 && { params }),
     };
     let settled = false;

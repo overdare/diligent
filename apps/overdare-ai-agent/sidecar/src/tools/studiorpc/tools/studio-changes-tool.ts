@@ -45,7 +45,7 @@ const description =
   "Report new changes recorded in Studio's edit log without repeating the delivered turn-start summary or previous queries. " +
   'Automatic summaries are bounded; use view="details" with a batchId, optional guid/changeType, and offset/limit to inspect omitted changes. ' +
   "Details page individual changes, including properties omitted from summaries. " +
-  "The log does not identify who made them and may include this session's own work. " +
+  "Explicit MCP records for this session are excluded. A legacy log does not identify who made them and may include this session's own work. " +
   "Compare with your own work; inspect affected instances before editing if anything differs from expectations. " +
   "Does not edit Studio or consume its live log; stores complete batches locally.";
 
@@ -61,11 +61,18 @@ function footer(id: string): string {
   return `Batch ID: ${id}. Full details saved locally. Use studiorpc_studio_changes with view="details", batchId="${id}", optional guid/changeType and offset/limit.`;
 }
 
-export function consumeStudioChanges(cwd: string): StudioChangesCapture {
+function excludeOwnEdits(envelopes: EditLogEnvelope[], sessionId?: string): EditLogEnvelope[] {
+  return sessionId
+    ? envelopes.filter((entry) => entry.origin?.kind !== "mcp" || entry.origin.sessionId !== sessionId)
+    : envelopes;
+}
+
+export function consumeStudioChanges(cwd: string, sessionId?: string): StudioChangesCapture {
   try {
-    const { envelopes, parseFailures, consumedPaths } = rotateAndReadEditLogs(cwd);
+    const { envelopes: allEnvelopes, parseFailures, consumedPaths } = rotateAndReadEditLogs(cwd);
+    const envelopes = excludeOwnEdits(allEnvelopes, sessionId);
     const archive =
-      envelopes.length || parseFailures ? storeStudioChangeBatch(cwd, envelopes, parseFailures) : undefined;
+      allEnvelopes.length || parseFailures ? storeStudioChangeBatch(cwd, allEnvelopes, parseFailures) : undefined;
     const summary = summarizeEditLog(envelopes, parseFailures, undefined, {
       footer: archive ? footer(archive.id) : undefined,
     });
@@ -107,7 +114,11 @@ function errorResult(error: unknown): ToolResult {
   };
 }
 
-export function createStudioChangesTool(cwd: string, getCached?: () => StudioChangesCapture | undefined): Tool {
+export function createStudioChangesTool(
+  cwd: string,
+  getCached?: () => StudioChangesCapture | undefined,
+  getSessionId?: () => string | undefined,
+): Tool {
   let lastCapture: StudioChangesCapture | undefined;
   let lastBatchId: string | undefined;
   let lastGeneration: string | undefined;
@@ -140,7 +151,7 @@ export function createStudioChangesTool(cwd: string, getCached?: () => StudioCha
           const path = studioChangeArchivePath(cwd, id);
           const fullValues = `Full values: ${Buffer.byteLength(path, "utf8") <= 1_000 ? path : "see archivePath in result metadata"}`;
           const heading = `Studio change details (batch ${id}):`;
-          const page = studioChangeDetails(batch.envelopes, {
+          const page = studioChangeDetails(excludeOwnEdits(batch.envelopes, getSessionId?.()), {
             ...input,
             maxBytes:
               STUDIO_CHANGES_LIMITS.targetBytes - Buffer.byteLength(`${heading}\n\n${fullValues}`, "utf8") - 100,
@@ -162,7 +173,8 @@ export function createStudioChangesTool(cwd: string, getCached?: () => StudioCha
         if (live.generation !== lastGeneration) reported.clear();
         const current = new Map<string, number>();
         const unseen: EditLogEnvelope[] = [];
-        for (const envelope of live.envelopes) {
+        const externalEnvelopes = excludeOwnEdits(live.envelopes, getSessionId?.());
+        for (const envelope of externalEnvelopes) {
           const key = createHash("sha256").update(JSON.stringify(envelope)).digest("hex");
           const occurrence = (current.get(key) ?? 0) + 1;
           current.set(key, occurrence);
@@ -170,7 +182,7 @@ export function createStudioChangesTool(cwd: string, getCached?: () => StudioCha
         }
         const cachedEnvelopes =
           cached && !cached.delivered && cached.id ? readStudioChangeBatch(cwd, cached.id).envelopes : [];
-        unseen.unshift(...cachedEnvelopes);
+        unseen.unshift(...excludeOwnEdits(cachedEnvelopes, getSessionId?.()));
         if (!unseen.length)
           return cached?.result.metadata?.error
             ? cached.result

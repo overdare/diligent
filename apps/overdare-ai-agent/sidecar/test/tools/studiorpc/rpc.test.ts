@@ -22,6 +22,25 @@ afterEach(async () => {
 });
 
 describe("Studio RPC cancellation", () => {
+  test("session metadata remains stable across separate TCP calls", async () => {
+    const sessions: string[] = [];
+    server = createServer((socket) => {
+      accepted = socket;
+      socket.once("data", (bytes) => {
+        const request = JSON.parse(bytes.toString());
+        sessions.push(request.meta.sessionId);
+        socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {} })}\n`);
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no TCP port");
+    process.env.STUDIO_HOST = "127.0.0.1";
+    process.env.STUDIO_PORT = String(address.port);
+    await call("level.browse", {}, { sessionId: "agent-session" });
+    await call("level.browse", {}, { sessionId: "agent-session" });
+    expect(sessions).toEqual(["agent-session", "agent-session"]);
+  });
   test("aborting a tool call closes its pending Studio socket", async () => {
     server = createServer((socket) => {
       accepted = socket;

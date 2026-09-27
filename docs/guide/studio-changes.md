@@ -30,6 +30,15 @@ rather than allocate a fresh budget per loop iteration.
 The records do not establish authorship. They may include this agent's own work
 and are not a diff against an agent-relative baseline.
 
+When the runtime supplies an agent session ID, Studio RPC requests include the
+optional top-level `meta.sessionId` field. If Studio records `Origin.Kind` as
+`mcp` and `Origin.SessionId` matches that ID, automatic summaries and detail
+queries exclude the record. Other sessions, legacy records without origin
+metadata, and `unknown` or `mixed` origins remain visible. Archives retain all
+parsed records, including this agent's own edits. Studio builds that do not
+record origin metadata continue to report changes as before. Direct external
+MCP calls without a supplied agent session ID do not exclude any records.
+
 ## Follow-up reads
 
 `studiorpc_studio_changes({})` reports live transactions not yet returned by this

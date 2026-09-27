@@ -94,7 +94,9 @@ function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHoo
 }
 
 export function createStudioRpcToolProvider(options: StudioRpcToolProviderOptions = {}): BundledToolProvider {
-  const callRpc = options.callRpc ?? call;
+  const transport = options.callRpc ?? call;
+  const callRpc: typeof call = (method, params, rpcOptions = {}) =>
+    transport(method, params, { ...rpcOptions, sessionId: turnState.sessionId });
 
   // Shared across the provider's hooks and its tools. The rollback baseline is
   // captured just before the turn's *first map edit* (not at prompt time), so
@@ -105,7 +107,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
   // Start of each user request: consume Studio's edit log and arm a fresh
   // snapshot for the upcoming turn. The actual capture happens lazily on the
   // first edit tool. Studio saves the level itself on Send, so no
-  // turn-boundary save RPC is needed. Log entries do not establish authorship.
+  // turn-boundary save RPC is needed. Only explicit matching MCP session records are excluded.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
     turnState.sessionId = input.session_id;
     turnState.taken = false;
@@ -114,7 +116,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.studioChanges = consumeStudioChanges(input.cwd);
+    turnState.studioChanges = consumeStudioChanges(input.cwd, input.session_id);
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -306,7 +308,11 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createStudioChangesTool(ctx.cwd, () => ctx.turnState?.studioChanges),
+      createStudioChangesTool(
+        ctx.cwd,
+        () => ctx.turnState?.studioChanges,
+        () => ctx.turnState?.sessionId,
+      ),
       ctx.host,
     ),
     createHubWorldLookupTool(),

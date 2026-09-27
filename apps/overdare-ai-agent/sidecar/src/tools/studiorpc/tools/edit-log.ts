@@ -6,7 +6,7 @@ import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
 
 /**
  * Studio appends one JSON envelope per finalized edit transaction.
- * These records do not establish who made the changes.
+ * Optional Origin metadata attributes MCP sessions; legacy records have unknown authorship.
  * Studio recreates the file when it is missing, which is what makes the
  * rotate-and-delete consumption model safe.
  *
@@ -85,6 +85,7 @@ interface EditLogObject {
 }
 
 export interface EditLogEnvelope {
+  origin?: { kind?: string; sessionId?: string; connectionId?: string; studioInstanceId?: string };
   timestamp: string;
   operation?: string;
   subjectGuids: string[];
@@ -155,6 +156,14 @@ function toEnvelope(value: Record<string, unknown>): EditLogEnvelope | undefined
   if (objects.length === 0) return undefined;
   return {
     timestamp: asString(pick(value, "timestamp", "Timestamp")) ?? "",
+    origin: isRecord(value.Origin)
+      ? {
+          kind: asString(value.Origin.Kind),
+          sessionId: asString(value.Origin.SessionId),
+          connectionId: asString(value.Origin.ConnectionId),
+          studioInstanceId: asString(value.Origin.StudioInstanceId),
+        }
+      : undefined,
     operation: asString(pick(value, "operation", "Operation", "action", "Action")),
     subjectGuids: [
       ...asStringArray(pick(value, "subjectGuids", "SubjectGuids")),
@@ -544,7 +553,8 @@ function eventLine(target: TargetSummary, kind: StudioChangeType): string {
 }
 
 const ATTRIBUTION =
-  "These records do not identify who made the changes and may include this session's own work. " +
+  "Explicit MCP records for this session are excluded when session attribution is available. " +
+  "Legacy or unattributed records do not identify who made the changes and may include this session's own work. " +
   "This is a collected log summary, not a diff against your work. " +
   "Compare these changes with your own work; if anything differs from what you expect, inspect the affected instances before editing.";
 
