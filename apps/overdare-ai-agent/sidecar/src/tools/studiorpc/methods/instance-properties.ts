@@ -53,6 +53,19 @@ function formatIssues(className: string, error: z.ZodError): Error {
   );
 }
 
+/** ValueBase uses FLuaValue tagged JSON in both level files and instance RPCs. */
+function normalizeStudioProperties(className: string, properties: Record<string, unknown>): Record<string, unknown> {
+  if (properties.Value === undefined) return properties;
+  const type = {
+    StringValue: "String",
+    NumberValue: "Number",
+    BoolValue: "Bool",
+    IntValue: "Integer",
+  }[className];
+  if (!type) return properties;
+  return { ...properties, Value: { Type: type, [type]: properties.Value } };
+}
+
 /** Validates a newly-created instance and returns schema defaults. */
 export function parseInstanceCreateProperties(className: string, value: unknown): Record<string, unknown> {
   if (!creatableClasses.has(className)) {
@@ -60,7 +73,7 @@ export function parseInstanceCreateProperties(className: string, value: unknown)
   }
   const result = classSchema(className).safeParse(propertyRecord(value));
   if (!result.success) throw formatIssues(className, result.error);
-  return result.data;
+  return normalizeStudioProperties(className, result.data);
 }
 
 /** Validates only supplied update keys and never injects create defaults. */
@@ -68,5 +81,8 @@ export function parseInstancePatchProperties(className: string, value: unknown):
   const raw = propertyRecord(value);
   const result = classSchema(className).partial().safeParse(raw);
   if (!result.success) throw formatIssues(className, result.error);
-  return Object.fromEntries(Object.keys(raw).map((key) => [key, result.data[key]]));
+  return normalizeStudioProperties(
+    className,
+    Object.fromEntries(Object.keys(raw).map((key) => [key, result.data[key]])),
+  );
 }

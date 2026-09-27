@@ -49,6 +49,7 @@ export const description =
   "Upsert instances in batch. The bundled input schema supplies the compatibility class/property reference, validation, defaults, and JSON conversions. Use its class and property hints when planning Editor Luau; JSON schemas do not define Luau methods. Live schema search is supplementary and does not replace this tool's validation. " +
   "Do not mix adds and updates in a single call — use one call for all adds, another for all updates. " +
   "Start with a small number of items first, then increase up to 100 if needed. " +
+  "For StringValue, NumberValue, BoolValue, and IntValue, supply Value as a plain string, number, boolean, or integer; the tool converts it to Studio tagged JSON automatically. Empty strings, zero, and false are valid values. " +
   "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. " +
   "To create nested hierarchies, add the parent first so its GUID is returned, then add children using that GUID as parentGuid in subsequent items. " +
   "Services (Workspace, Lighting, Atmosphere, Players, StarterPlayer, MaterialService, etc.) are singletons — they cannot be added, only updated by guid. " +

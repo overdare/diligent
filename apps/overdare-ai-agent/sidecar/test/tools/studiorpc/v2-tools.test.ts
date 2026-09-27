@@ -674,3 +674,73 @@ describe("v1 stays on the file path", () => {
     expect(v2.metadata).toEqual(v1.metadata);
   });
 });
+
+test.each(["v1", "v2"])("writes tagged ValueBase values for batched creates and updates on %s", async (version) => {
+  process.env.STUDIO_API_VERSION = version;
+  const cwd = makeStudioProject();
+  const tools = await loadTools(cwd);
+  const cases = [
+    { class: "StringValue", Value: "", tagged: { Type: "String", String: "" } },
+    { class: "StringValue", Value: "", tagged: { Type: "String", String: "" } },
+    { class: "NumberValue", Value: 0, tagged: { Type: "Number", Number: 0 } },
+    { class: "BoolValue", Value: false, tagged: { Type: "Bool", Bool: false } },
+    { class: "IntValue", Value: -2, tagged: { Type: "Integer", Integer: -2 } },
+  ];
+  const tool = tools.get("studiorpc_instance_upsert")!;
+  const created = await executeTool(
+    tools,
+    {
+      type: "tool_call",
+      id: "values",
+      name: tool.name,
+      input: {
+        items: cases.map((entry, i) => ({
+          class: entry.class,
+          parentGuid: FOLDER_A_GUID,
+          name: `State${i}`,
+          properties: { Value: entry.Value },
+        })),
+      },
+    },
+    toolContext(),
+  );
+  expect(created.metadata?.error).not.toBe(true);
+  const payloads =
+    version === "v2"
+      ? (paramsOf("instance.create")!.Instances as WorldNode[])
+      : findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, FOLDER_A_GUID)!.LuaChildren!;
+  expect(payloads.map((node) => node.Value)).toEqual(cases.map((entry) => entry.tagged));
+  const nodes = cases.map((entry, i) => ({
+    InstanceType: entry.class,
+    ActorGuid: `VALUE-${i}`,
+    Name: `State${i}`,
+    Value: entry.tagged,
+  }));
+  world.LuaChildren!.push(...nodes);
+  if (version === "v1") writeFileSync(join(cwd, "Test.ovdrjm"), JSON.stringify({ Root: world }));
+  rpcCalls.length = 0;
+  const patched = await executeTool(
+    tools,
+    {
+      type: "tool_call",
+      id: "patch-values",
+      name: tool.name,
+      input: {
+        items: nodes.map((node, i) => ({ guid: node.ActorGuid, properties: { Value: cases[i].Value } })),
+      },
+    },
+    toolContext(),
+  );
+  expect(patched.metadata?.error).not.toBe(true);
+  const updates =
+    version === "v2"
+      ? (paramsOf("instance.update")!.Instances as WorldNode[])
+      : nodes.map(
+          (node) => findWorldNode(JSON.parse(readFileSync(join(cwd, "Test.ovdrjm"), "utf8")).Root, node.ActorGuid)!,
+        );
+  expect(updates.map((node) => node.Value)).toEqual(cases.map((entry) => entry.tagged));
+  rpcCalls.length = 0;
+  await tool.execute({ items: [{ guid: nodes[0].ActorGuid, name: "Renamed", properties: {} }] }, toolContext());
+  if (version === "v2")
+    expect(paramsOf("instance.update")).toEqual({ Instances: [{ ActorGuid: nodes[0].ActorGuid, Name: "Renamed" }] });
+});

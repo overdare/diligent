@@ -371,3 +371,26 @@ describe("compatibility write boundaries", () => {
     }
   });
 });
+
+const valueCases = [
+  ["StringValue", "", { Type: "String", String: "" }],
+  ["StringValue", "ready", { Type: "String", String: "ready" }],
+  ["NumberValue", 0, { Type: "Number", Number: 0 }],
+  ["NumberValue", -1.5, { Type: "Number", Number: -1.5 }],
+  ["BoolValue", false, { Type: "Bool", Bool: false }],
+  ["BoolValue", true, { Type: "Bool", Bool: true }],
+  ["IntValue", 0, { Type: "Integer", Integer: 0 }],
+  ["IntValue", -2, { Type: "Integer", Integer: -2 }],
+] as const;
+
+test.each(
+  valueCases,
+)("normalizes %s Value=%s to Studio tagged JSON for creates and patches", (className, value, expected) => {
+  const parsed = parseArgs({
+    items: [{ class: className, parentGuid: "workspace", name: "State", properties: { Value: value } }],
+  });
+  expect(parsed.items[0].properties).toEqual({ Value: expected });
+  expect(parseInstancePatchProperties(className, { Value: value })).toEqual({ Value: expected });
+  expect(parseInstancePatchProperties(className, {})).toEqual({});
+  expect(classPropertiesSchemas.get(className)!.parse({ Value: value })).toEqual({ Value: value });
+});
