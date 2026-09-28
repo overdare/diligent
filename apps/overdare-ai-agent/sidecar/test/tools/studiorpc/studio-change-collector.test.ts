@@ -26,6 +26,60 @@ const project = () => {
 };
 const a = { sessionId: "A", rootSessionId: "A", resumed: false };
 const b = { sessionId: "B", rootSessionId: "B", resumed: false };
+
+for (const encoding of ["utf8", "utf16le"] as const) {
+  test(`an open ${encoding} writer can supply its first transaction after a poll`, async () => {
+    const cwd = project();
+    const fd = openSync(join(cwd, "Edit.Log"), "w");
+    const collector = new StudioChangeCollector(cwd);
+    try {
+      if (encoding === "utf16le") writeSync(fd, Buffer.from([0xff, 0xfe]));
+      await collector.refresh();
+      expect(readdirSync(cwd).some((name) => name.startsWith("Edit.Log"))).toBe(true);
+      writeSync(fd, Buffer.from(text("first"), encoding));
+      await collector.refresh();
+      expect(collector.store.read(a).envelopes.map((entry) => entry.objects[0].guid)).toEqual(["first"]);
+      await collector.refresh();
+      expect(collector.store.read(b).envelopes).toHaveLength(1);
+    } finally {
+      closeSync(fd);
+      await collector.stop();
+    }
+  });
+}
+
+for (const operation of ["read", "remove"] as const) {
+  test(`persistent ${operation} failures cannot starve newer sources or duplicate collected prefixes`, async () => {
+    const cwd = project();
+    const older = join(cwd, "Edit.Log.aaa-0.consuming");
+    writeFileSync(older, text("older"));
+    const io = createStudioChangeSourceIo(cwd, 1024);
+    const collector = new StudioChangeCollector(cwd, {
+      limits: { maxFilesPerPoll: 1 },
+      io: {
+        ...io,
+        async read(path) {
+          if (operation === "read" && path === older) throw new Error("persistent failure");
+          return io.read(path);
+        },
+        async remove(path) {
+          if (operation === "remove" && path === older) throw new Error("persistent failure");
+          return io.remove(path);
+        },
+      },
+    });
+    try {
+      await collector.refresh();
+      writeFileSync(join(cwd, "Edit.Log"), text("newer"));
+      for (let index = 0; index < 4; index++) await collector.refresh();
+      const guids = collector.store.read(a).envelopes.map((entry) => entry.objects[0].guid);
+      expect(guids).toEqual(operation === "remove" ? ["older", "newer"] : ["newer"]);
+      expect(existsSync(older)).toBe(true);
+    } finally {
+      await collector.stop();
+    }
+  });
+}
 const text = (guid: string) =>
   JSON.stringify({
     Timestamp: "now",

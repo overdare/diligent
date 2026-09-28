@@ -8,7 +8,7 @@ Branch: `feat/ovdr-15373-studio-change-collector`
 
 Baseline: `main` at `3f4d3ab5`
 
-Status: Implemented and locally verified on 2026-09-28; final review and push pending.
+Status: Implemented and independently reviewed on 2026-09-28; review fixes verified, push pending.
 
 ## Intent and agreed constraints
 

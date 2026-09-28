@@ -93,8 +93,10 @@ markers and identities may be replaced; all-active capacity is rejected.
 The single owner rotates only recognized regular `Edit.Log` files and its
 recognized rotation names, never arbitrary `*.consuming` files or symlinks.
 Complete transaction prefixes are appended once; unfinished UTF-8/UTF-16 tails
-stay on disk for retry. Delete failures retry cleanup without duplicating the
-already-ingested prefix. Oversized sources/backlogs may be deliberately dropped
+and empty newly opened files stay on disk for retry. Failed reads and deletes
+receive fair polling slots so they do not block later files. Delete failures
+retry cleanup without duplicating the already-ingested prefix.
+Oversized sources/backlogs may be deliberately dropped
 with a visible history-gap notice.
 
 RAM-only means process exit, restart, or bounded eviction can lose undelivered

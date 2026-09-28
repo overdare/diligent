@@ -118,6 +118,7 @@ export class StudioChangeCollector {
   private running?: Promise<void>;
   private stopped = false;
   private lastError?: string;
+  private lastAttempt?: string;
 
   constructor(
     private readonly cwd: string,
@@ -179,9 +180,16 @@ export class StudioChangeCollector {
     for (const path of this.retries.keys()) if (!present.has(path)) this.retries.delete(path);
     let backlog = files.reduce((sum, file) => sum + file.bytes, 0);
     let processed = 0;
-    for (let source of files) {
+    // Round-robin attempted sources, including failures: old locked files must
+    // not consume every bounded polling slot forever.
+    const nextIndex = files.findIndex((file) => file.path === this.lastAttempt) + 1;
+    const ordered = [...files.slice(nextIndex), ...files.slice(0, nextIndex)];
+    for (let source of ordered) {
       if (processed >= this.limits.maxFilesPerPoll) break;
       const cached = this.retries.get(source.path);
+      // Opening precedes writing. Leave a newly opened empty live source in
+      // place so its first transaction remains reachable through its handle.
+      if (!cached && source.bytes === 0) continue;
       if (
         cached &&
         !cached.complete &&
@@ -226,7 +234,8 @@ export class StudioChangeCollector {
                 `${parsed.failures} malformed Studio edit records were skipped. Inspect current Studio state.`,
               );
             state.offset += parsed.consumedChars;
-            state.complete = !parsed.incomplete && !utf16Tail;
+            // A BOM or whitespace alone is not a finalized transaction.
+            state.complete = !parsed.incomplete && !utf16Tail && text.trim().length > 0;
             state.bytes = buffer.length;
             state.modifiedMs = source.modifiedMs;
           }
@@ -239,6 +248,8 @@ export class StudioChangeCollector {
         this.lastError = undefined;
       } catch (error) {
         this.report(error);
+      } finally {
+        this.lastAttempt = source.path;
       }
     }
   }

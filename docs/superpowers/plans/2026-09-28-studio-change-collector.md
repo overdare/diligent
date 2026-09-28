@@ -12,7 +12,7 @@
 
 **Ticket/branch:** OVDR-15373 / `feat/ovdr-15373-studio-change-collector`
 
-**Execution status:** Plan and native execution approved on 2026-09-28. All implementation tasks are complete; final whole-branch review and push remain. Local verification: 2,506 package tests, 415 affected sidecar tests, lint, typecheck, and diff checks passed. PR creation remains outside this request.
+**Execution status:** Plan and native execution approved on 2026-09-28. Implementation and independent whole-branch review are complete. Two review findings (empty first writes and failing retry starvation) were reproduced and fixed. Final verification: 2,506 package tests and 482 affected sidecar tests passed; lint, typecheck, and diff checks passed. The branch is ready for its authorized push. PR creation remains outside this request.
 
 ## Global Constraints
 
@@ -364,8 +364,8 @@ bun run typecheck
 git diff --check
 ```
 
-- [ ] Review the entire branch for source-loss, attribution, bounded-state, and acceptance regressions. Repository limit is one subagent at a time; do not spawn a reviewer without the chosen execution workflow's authorization.
-- [ ] Stage only ticket-related files and commit with `feat(overdare): deliver collected Studio changes per session` and `OVDR-15373`. Allow normal lint/typecheck/title hooks to run.
+- [x] Review the entire branch for source-loss, attribution, bounded-state, and acceptance regressions. Repository limit is one subagent at a time; do not spawn a reviewer without the chosen execution workflow's authorization.
+- [x] Stage only ticket-related files and commit with `feat(overdare): deliver collected Studio changes per session` and `OVDR-15373`. Allow normal lint/typecheck/title hooks to run.
 - [ ] Inspect final diff, commit history, upstream target, and clean tracked worktree. Push the explicitly requested branch, never main:
 
 ```sh
