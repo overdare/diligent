@@ -235,7 +235,11 @@ export class SessionManager {
    * Compaction is handled by the Agent internally.
    */
   async run(userMessage: Message, opts?: { signal?: AbortSignal; userMessageId?: string }): Promise<void> {
-    const rootSessionId = await resolveSessionRoot(this.sessionId, this.persistence.parentSession, this.sessionsDir);
+    // Root runs must announce busy synchronously, before the host returns turn/start.
+    // Only child runs need asynchronous persisted ancestry resolution.
+    const rootSessionId = this.persistence.parentSession
+      ? await resolveSessionRoot(this.sessionId, this.persistence.parentSession, this.sessionsDir)
+      : this.sessionId;
     const ambient = getSessionExecutionContext();
     const rootRequest =
       this.persistence.parentSession && ambient?.rootSessionId === rootSessionId

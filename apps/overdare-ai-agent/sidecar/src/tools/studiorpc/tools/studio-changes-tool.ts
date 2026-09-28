@@ -1,212 +1,128 @@
-// @summary Reports bounded Studio change summaries and pages complete local batches without attributing authorship.
-
-import { createHash } from "node:crypto";
+// @summary Bounded per-consumer Studio summaries and temporary RAM detail pages
 import { z } from "zod";
 import type { Tool, ToolResult } from "../types";
 import {
-  deleteConsumed,
-  type EditLogEnvelope,
   MID_TURN_HEADER,
   NO_EDITS_MESSAGE,
-  peekEditLogs,
-  rotateAndReadEditLogs,
   SECTION_TITLES,
   STUDIO_CHANGES_LIMITS,
   type StudioChangeType,
   studioChangeDetails,
   summarizeEditLog,
 } from "./edit-log";
-import {
-  latestStudioChangeBatch,
-  readStudioChangeBatch,
-  storeStudioChangeBatch,
-  studioChangeArchivePath,
-} from "./studio-change-store";
+import type { StudioChangeCollector } from "./studio-change-collector";
+import type { StudioChangeConsumer, StudioChangeRead } from "./studio-change-store";
 
 const params = z.object({
-  view: z
-    .enum(["new", "details"])
-    .default("new")
-    .describe("New changes not yet reported, or paginated archived details."),
-  batchId: z.string().optional().describe("Batch ID from a summary. Details default to the latest captured batch."),
-  guid: z.string().optional().describe("Limit archived details to one instance GUID."),
+  view: z.enum(["new", "details"]).default("new").describe("New changes or paginated temporary RAM details."),
+  batchId: z
+    .string()
+    .max(100)
+    .optional()
+    .describe("Batch ID from a summary; details default to your latest retained batch."),
+  guid: z.string().max(1000).optional().describe("Limit details to one instance GUID."),
   changeType: z.enum(Object.keys(SECTION_TITLES) as [StudioChangeType, ...StudioChangeType[]]).optional(),
-  offset: z.number().int().nonnegative().default(0).describe("Zero-based detail row offset."),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(20)
-    .describe("Maximum detail rows; the output byte budget may return fewer."),
+  offset: z.number().int().nonnegative().default(0),
+  limit: z.number().int().min(1).max(20).default(20),
 });
-
-const description =
-  "Report new changes recorded in Studio's edit log without repeating the delivered turn-start summary or previous queries. " +
-  'Automatic summaries are bounded; use view="details" with a batchId, optional guid/changeType, and offset/limit to inspect omitted changes. ' +
-  "Details page individual changes, including properties omitted from summaries. " +
-  "Explicit MCP records for this session are excluded. A legacy log does not identify who made them and may include this session's own work. " +
-  "Compare with your own work; inspect affected instances before editing if anything differs from expectations. " +
-  "Does not edit Studio or consume its live log; stores complete batches locally.";
 
 export interface StudioChangesCapture {
   result: ToolResult;
   id?: string;
   delivered: boolean;
-  /** Mark the automatic summary delivered, then delete the durably archived rotated files. */
-  finalize: () => void;
+  /** Acknowledge this consumer only; collection owns source cleanup. */
+  finalize(): void;
 }
 
-function footer(id: string): string {
-  return `Batch ID: ${id}. Full details saved locally. Use studiorpc_studio_changes with view="details", batchId="${id}", optional guid/changeType and offset/limit.`;
-}
-
-function excludeOwnEdits(envelopes: EditLogEnvelope[], sessionId?: string): EditLogEnvelope[] {
-  return sessionId
-    ? envelopes.filter((entry) => entry.origin?.kind !== "mcp" || entry.origin.sessionId !== sessionId)
-    : envelopes;
-}
-
-export function consumeStudioChanges(cwd: string, sessionId?: string): StudioChangesCapture {
-  try {
-    const { envelopes: allEnvelopes, parseFailures, consumedPaths } = rotateAndReadEditLogs(cwd);
-    const envelopes = excludeOwnEdits(allEnvelopes, sessionId);
-    const archive =
-      allEnvelopes.length || parseFailures ? storeStudioChangeBatch(cwd, allEnvelopes, parseFailures) : undefined;
-    const summary = summarizeEditLog(envelopes, parseFailures, undefined, {
-      footer: archive ? footer(archive.id) : undefined,
-    });
-    const capture: StudioChangesCapture = {
-      id: archive?.id,
-      delivered: false,
-      result: {
-        output: summary.output,
-        metadata: {
-          method: "studio_changes",
-          studioChangesDetected: summary.editCount > 0,
-          transactions: envelopes.length,
-          batchId: archive?.id,
-          archivePath: archive?.path,
-          shownTargets: summary.shownTargets,
-          omittedTargets: summary.omittedTargets,
-        },
-      },
-      finalize: () => {
-        capture.delivered = true;
-        deleteConsumed(consumedPaths);
-      },
-    };
-    return capture;
-  } catch (error) {
-    return {
-      delivered: false,
-      result: errorResult(error),
-      // Preserve rotated files when archival failed so the next turn can retry.
-      finalize: () => {},
-    };
+export function captureStudioChanges(read: StudioChangeRead, header?: string): StudioChangesCapture {
+  const rawWarnings = read.gaps.slice(0, 3).join(" ");
+  let warningDetails = "";
+  let warningBytes = 0;
+  for (const character of rawWarnings) {
+    const bytes = Buffer.byteLength(character);
+    if (warningBytes + bytes > 1200) break;
+    warningDetails += character;
+    warningBytes += bytes;
   }
-}
-
-function errorResult(error: unknown): ToolResult {
-  return {
-    output: `Error: ${error instanceof Error ? error.message : String(error)}`,
-    metadata: { error: true, method: "studio_changes" },
+  const warnings = read.gaps.length
+    ? `History warning: ${warningDetails} ${read.gaps.length > 3 || warningDetails !== rawWarnings ? "Additional collection gaps omitted. " : ""}History may be incomplete; inspect current Studio state.`
+    : "";
+  const details = read.batchId
+    ? `Batch ID: ${read.batchId}. Details retained temporarily in RAM; use studiorpc_studio_changes with view="details", batchId="${read.batchId}", optional guid/changeType and offset/limit.`
+    : "";
+  const summary = summarizeEditLog(read.envelopes, 0, header, {
+    footer: [warnings, details].filter(Boolean).join("\n") || undefined,
+  });
+  const capture: StudioChangesCapture = {
+    id: read.batchId,
+    delivered: false,
+    result: {
+      output: summary.editCount ? summary.output : warnings || NO_EDITS_MESSAGE,
+      metadata: {
+        method: "studio_changes",
+        studioChangesDetected: summary.editCount > 0,
+        historyGap: read.gaps.length > 0,
+        transactions: read.envelopes.length,
+        batchId: read.batchId,
+        shownTargets: summary.shownTargets,
+        omittedTargets: summary.omittedTargets,
+      },
+    },
+    finalize() {
+      read.acknowledge();
+      capture.delivered = true;
+    },
   };
+  return capture;
 }
 
 export function createStudioChangesTool(
-  cwd: string,
-  getCached?: () => StudioChangesCapture | undefined,
-  getSessionId?: () => string | undefined,
+  collector: StudioChangeCollector,
+  getConsumer: () => StudioChangeConsumer,
 ): Tool {
-  let lastCapture: StudioChangesCapture | undefined;
-  let lastBatchId: string | undefined;
-  let lastGeneration: string | undefined;
-  let reported = new Map<string, number>();
   return {
     name: "studiorpc_studio_changes",
-    description,
+    description:
+      "Report collected Studio changes not yet returned to this session. " +
+      "Explicit MCP edits from this session's main/child group are excluded; other sessions remain visible. " +
+      "A legacy log does not identify who made them and may include this session's own work. " +
+      "Summaries are bounded; use view=details with the batchId and offset/limit for omitted properties. " +
+      "Details are temporary RAM history, not disk archives. Expired history requires inspecting current Studio state. " +
+      "The shared host collector owns source files; a query advances only this session's marker.",
     parameters: params,
     async execute(raw) {
       try {
         const input = params.parse(raw);
-        const cached = getCached?.();
-        if (cached !== lastCapture) {
-          reported.clear();
-          lastBatchId = undefined;
-          lastCapture = cached;
-        }
-        // Explicit filters select archived detail mode even when view is omitted.
+        const consumer = getConsumer();
         if (input.view === "details" || input.batchId || input.guid || input.changeType || input.offset) {
-          let id = input.batchId ?? lastBatchId ?? cached?.id;
-          if (!id) {
-            const live = peekEditLogs(cwd);
-            id = live.envelopes.length
-              ? storeStudioChangeBatch(cwd, live.envelopes, live.parseFailures).id
-              : latestStudioChangeBatch(cwd);
-            lastBatchId = id;
-          }
-          if (!id) return { output: NO_EDITS_MESSAGE, metadata: { method: "studio_changes" } };
-          const batch = readStudioChangeBatch(cwd, id);
-          const path = studioChangeArchivePath(cwd, id);
-          const fullValues = `Full values: ${Buffer.byteLength(path, "utf8") <= 1_000 ? path : "see archivePath in result metadata"}`;
+          const id = input.batchId ?? collector.store.latestBatch(consumer);
+          if (!id)
+            return {
+              output: "No retained Studio change batch for this session. Query new changes first.",
+              metadata: { method: "studio_changes" },
+            };
+          const envelopes = collector.store.readBatch(id, consumer);
           const heading = `Studio change details (batch ${id}):`;
-          const page = studioChangeDetails(excludeOwnEdits(batch.envelopes, getSessionId?.()), {
+          const page = studioChangeDetails(envelopes, {
             ...input,
-            maxBytes:
-              STUDIO_CHANGES_LIMITS.targetBytes - Buffer.byteLength(`${heading}\n\n${fullValues}`, "utf8") - 100,
+            maxBytes: STUDIO_CHANGES_LIMITS.targetBytes - Buffer.byteLength(heading) - 200,
           });
           const continuation =
             page.nextOffset === undefined ? "End of matching details." : `Continue with offset=${page.nextOffset}.`;
           return {
-            output: `${heading}\n${page.output || "No matching changes."}\n\n${continuation}\n${fullValues}`,
-            metadata: {
-              method: "studio_changes",
-              batchId: id,
-              total: page.total,
-              nextOffset: page.nextOffset,
-              archivePath: path,
-            },
+            output: `${heading}\n${page.output || "No matching changes."}\n\n${continuation}\nDetails retained temporarily in RAM.`,
+            metadata: { method: "studio_changes", batchId: id, total: page.total, nextOffset: page.nextOffset },
           };
         }
-        const live = peekEditLogs(cwd);
-        if (live.generation !== lastGeneration) reported.clear();
-        const current = new Map<string, number>();
-        const unseen: EditLogEnvelope[] = [];
-        const externalEnvelopes = excludeOwnEdits(live.envelopes, getSessionId?.());
-        for (const envelope of externalEnvelopes) {
-          const key = createHash("sha256").update(JSON.stringify(envelope)).digest("hex");
-          const occurrence = (current.get(key) ?? 0) + 1;
-          current.set(key, occurrence);
-          if (occurrence > (reported.get(key) ?? 0)) unseen.push(envelope);
-        }
-        const cachedEnvelopes =
-          cached && !cached.delivered && cached.id ? readStudioChangeBatch(cwd, cached.id).envelopes : [];
-        unseen.unshift(...excludeOwnEdits(cachedEnvelopes, getSessionId?.()));
-        if (!unseen.length)
-          return cached?.result.metadata?.error
-            ? cached.result
-            : { output: NO_EDITS_MESSAGE, metadata: { method: "studio_changes" } };
-        // Store the full live batch so pagination is stable even after the log grows.
-        const archive = storeStudioChangeBatch(cwd, [...cachedEnvelopes, ...live.envelopes], live.parseFailures);
-        const summary = summarizeEditLog(unseen, live.parseFailures, MID_TURN_HEADER, { footer: footer(archive.id) });
-        reported = current;
-        lastGeneration = live.generation;
-        lastBatchId = archive.id;
-        if (cached && !cached.delivered) cached.finalize();
-        return {
-          output: summary.output,
-          metadata: {
-            method: "studio_changes",
-            studioChangesDetected: summary.editCount > 0,
-            batchId: archive.id,
-            archivePath: archive.path,
-            shownTargets: summary.shownTargets,
-            omittedTargets: summary.omittedTargets,
-          },
-        };
+        await collector.refresh();
+        const capture = captureStudioChanges(collector.store.read(consumer), MID_TURN_HEADER);
+        capture.finalize();
+        return capture.result;
       } catch (error) {
-        return errorResult(error);
+        return {
+          output: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          metadata: { error: true, method: "studio_changes" },
+        };
       }
     },
   };

@@ -1,6 +1,32 @@
 // @summary Async execution identity remains isolated across concurrent roots and nested children
 import { expect, test } from "bun:test";
-import { getSessionExecutionContext, runWithSessionExecutionContext } from "../../src/session/execution-context";
+import {
+  getSessionExecutionContext,
+  onSessionExecutionEnd,
+  runWithSessionExecutionContext,
+} from "../../src/session/execution-context";
+
+test("scope resources remain active until async work ends and release after failure", async () => {
+  const context = {
+    sessionId: "A",
+    rootSessionId: "A",
+    resumed: false,
+    rootRequest: { sessionId: "A", requestId: "r" },
+  };
+  let active = false;
+  await expect(
+    runWithSessionExecutionContext(context, async () => {
+      active = true;
+      onSessionExecutionEnd(() => {
+        active = false;
+      });
+      await Promise.resolve();
+      expect(active).toBe(true);
+      throw new Error("failed run");
+    }),
+  ).rejects.toThrow("failed run");
+  expect(active).toBe(false);
+});
 
 test("concurrent roots and nested children retain actual identity without leaking outside runs", async () => {
   const rootRequest = { sessionId: "A", requestId: "request-A" };

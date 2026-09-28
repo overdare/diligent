@@ -160,7 +160,11 @@ export {
   SessionWriter,
 } from "./session";
 export type { SessionExecutionContext, SessionExecutionRoot } from "./session/execution-context";
-export { getSessionExecutionContext, runWithSessionExecutionContext } from "./session/execution-context";
+export {
+  getSessionExecutionContext,
+  onSessionExecutionEnd,
+  runWithSessionExecutionContext,
+} from "./session/execution-context";
 export type { DiscoveryOptions, SkillFrontmatter, SkillLoadError, SkillLoadResult, SkillMetadata } from "./skills";
 export { discoverSkills, extractBody, renderSkillsSection } from "./skills";
 export type {

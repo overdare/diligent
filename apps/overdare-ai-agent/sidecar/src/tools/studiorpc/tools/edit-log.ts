@@ -1,8 +1,6 @@
-// @summary Reads, rotates, and summarizes Studio's EditLogging transaction files.
+// @summary Parses complete Studio transactions and renders bounded change summaries.
 
-import { readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
+import { isRecord } from "./ovdrjm-utils";
 
 /**
  * Studio appends one JSON envelope per finalized edit transaction.
@@ -12,7 +10,6 @@ import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
  *
  * Studio writes a single `Edit.Log` in the project root, next to the .umap.
  */
-const ROOT_LOG_NAME = "edit.log";
 
 export function isStudioEditLogSourceName(name: string): boolean {
   return /^edit\.log(?:\.[a-z0-9]+-\d+\.consuming)?$/i.test(name);
@@ -81,30 +78,6 @@ export function parseEditLogText(text: string): ParsedEditLog {
   return result;
 }
 
-/** Pending (and leftover `.consuming`) log files in the project root. */
-function listLogFiles(cwd: string): { pending: string[]; leftovers: string[] } {
-  const pending: string[] = [];
-  const leftovers: string[] = [];
-  const scan = (dir: string, accept: (name: string) => boolean): void => {
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      return;
-    }
-    for (const name of names.sort()) {
-      if (name.endsWith(CONSUMING_SUFFIX)) leftovers.push(join(dir, name));
-      else if (accept(name)) pending.push(join(dir, name));
-    }
-  };
-  // The root holds unrelated files (Play.log, .umap), so only the exact name is accepted.
-  scan(cwd, (name) => name.toLowerCase() === ROOT_LOG_NAME);
-  return { pending, leftovers };
-}
-
-/** Suffix marking a log file rotated out of Studio's way but not yet deleted. */
-const CONSUMING_SUFFIX = ".consuming";
-
 /** Byte budgets conservatively approximate 1,500 / 2,000 tokens; not a tokenizer guarantee. */
 export const STUDIO_CHANGES_LIMITS = {
   targetBytes: 6_000,
@@ -157,13 +130,6 @@ export interface EditLogEnvelope {
   operation?: string;
   subjectGuids: string[];
   objects: EditLogObject[];
-}
-
-export interface EditLogBatch {
-  envelopes: EditLogEnvelope[];
-  parseFailures: number;
-  /** Rotated files awaiting deletion once the summary is delivered. */
-  consumedPaths: string[];
 }
 
 function asString(value: unknown): string | undefined {
@@ -238,138 +204,6 @@ function toEnvelope(value: Record<string, unknown>): EditLogEnvelope | undefined
     ],
     objects,
   };
-}
-
-/**
- * Split concatenated top-level JSON values (Studio appends pretty-printed
- * objects back to back — neither JSONL nor an array). Depth scan that respects
- * strings/escapes; a truncated trailing object is simply not emitted.
- */
-function splitConcatenatedJson(text: string): string[] {
-  const chunks: string[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        chunks.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-  return chunks;
-}
-
-/** Parse a log file's text: JSON array, single object, or concatenated objects (incl. JSONL). */
-function parseEnvelopeText(text: string): { envelopes: EditLogEnvelope[]; failures: number } {
-  const trimmed = text.trim();
-  if (!trimmed) return { envelopes: [], failures: 0 };
-
-  const collect = (values: unknown[]): { envelopes: EditLogEnvelope[]; failures: number } => {
-    const envelopes: EditLogEnvelope[] = [];
-    let failures = 0;
-    for (const value of values) {
-      const envelope = isRecord(value) ? toEnvelope(value) : undefined;
-      if (envelope) envelopes.push(envelope);
-      else failures++;
-    }
-    return { envelopes, failures };
-  };
-
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    return collect(Array.isArray(parsed) ? parsed : [parsed]);
-  } catch {
-    const chunks = splitConcatenatedJson(trimmed);
-    const values: unknown[] = [];
-    let failures = 0;
-    for (const chunk of chunks) {
-      try {
-        values.push(JSON.parse(chunk));
-      } catch {
-        failures++;
-      }
-    }
-    const result = collect(values);
-    return { envelopes: result.envelopes, failures: result.failures + failures };
-  }
-}
-
-function readBatchFiles(paths: string[]): Omit<EditLogBatch, "consumedPaths"> {
-  const envelopes: EditLogEnvelope[] = [];
-  let parseFailures = 0;
-  for (const path of paths) {
-    let text: string;
-    try {
-      text = decodeOvdrjm(readFileSync(path));
-    } catch {
-      continue; // vanished or unreadable; nothing to report
-    }
-    const parsed = parseEnvelopeText(text);
-    envelopes.push(...parsed.envelopes);
-    parseFailures += parsed.failures;
-  }
-  // Stable sort keeps file/append order for equal or missing timestamps.
-  envelopes.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  return { envelopes, parseFailures };
-}
-
-/**
- * Rotate live log files out of Studio's way and read everything pending.
- * Rename is atomic and Studio reopens the log per transaction, so an edit
- * landing after the rotation goes into a fresh file and is picked up next
- * turn — nothing is ever lost or double-consumed. Leftover `.consuming` files
- * from a crashed turn are included again (worst case a duplicate report).
- * Deletion is deferred to `deleteConsumed` so a crash before the summary is
- * delivered keeps the data on disk.
- */
-export function rotateAndReadEditLogs(cwd: string): EditLogBatch {
-  const { pending, leftovers } = listLogFiles(cwd);
-  const consumedPaths = [...leftovers];
-
-  let rotated = 0;
-  for (const path of pending) {
-    // Unique stamp so a leftover from a crashed turn is never clobbered.
-    const dest = `${path}.${Date.now().toString(36)}-${rotated++}${CONSUMING_SUFFIX}`;
-    try {
-      renameSync(path, dest);
-      consumedPaths.push(dest);
-    } catch {
-      // Studio may be mid-write on some platforms; the file stays and is retried next turn.
-    }
-  }
-
-  return { ...readBatchFiles(consumedPaths), consumedPaths };
-}
-
-/** Read pending log files without rotating or deleting — safe mid-turn peek. */
-export function peekEditLogs(cwd: string): Omit<EditLogBatch, "consumedPaths"> & { generation: string } {
-  const paths = listLogFiles(cwd).pending;
-  const generation = paths
-    .map((path) => {
-      const stat = statSync(path);
-      return `${path}:${stat.ino}:${stat.birthtimeMs}`;
-    })
-    .join("|");
-  return { ...readBatchFiles(paths), generation };
-}
-
-export function deleteConsumed(paths: string[]): void {
-  for (const path of paths) rmSync(path, { force: true });
 }
 
 /** Per-instance aggregate accumulated across all envelopes in a batch. */

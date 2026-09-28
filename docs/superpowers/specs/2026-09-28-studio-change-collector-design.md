@@ -8,7 +8,7 @@ Branch: `feat/ovdr-15373-studio-change-collector`
 
 Baseline: `main` at `3f4d3ab5`
 
-Status: Written design awaiting user review; implementation has not started.
+Status: Implemented and locally verified on 2026-09-28; final review and push pending.
 
 ## Intent and agreed constraints
 
@@ -176,8 +176,10 @@ to the next read. Filter only explicit `mcp` records whose known root author is
 the consumer's root. Never label every non-own record as human: unknown, legacy,
 mixed, and other MCP origins are external context with their original origin.
 
-Automatic injection is main-only. Its hook reads the RAM range before a sampling
-round, summarizes within the existing output limits, and prepares a batch ID.
+Automatic injection is main-only, once per user request to preserve the existing
+context budget. Its hook reads the RAM range before the first sampling round,
+summarizes within the existing output limits, and prepares a batch ID. Collection
+continues during the request; explicit queries or the next request deliver later edits.
 It must not advance the marker merely because `beforeTurn` returned an injection.
 
 Use a generic runtime acceptance helper that associates an injection's opaque

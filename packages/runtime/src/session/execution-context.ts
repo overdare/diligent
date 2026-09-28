@@ -17,9 +17,34 @@ export interface SessionExecutionContext {
 }
 
 const storage = new AsyncLocalStorage<SessionExecutionContext>();
+const cleanups = new WeakMap<SessionExecutionContext, Set<() => void>>();
 export const getSessionExecutionContext = (): SessionExecutionContext | undefined => storage.getStore();
-export const runWithSessionExecutionContext = <T>(context: SessionExecutionContext, run: () => T): T =>
-  storage.run(context, run);
+/** Release run-owned resources even when a session fails before its stop hook. */
+export function onSessionExecutionEnd(cleanup: () => void): void {
+  const context = storage.getStore();
+  const callbacks = context && cleanups.get(context);
+  if (!callbacks) throw new Error("No active session execution scope");
+  callbacks.add(cleanup);
+}
+export function runWithSessionExecutionContext<T>(context: SessionExecutionContext, run: () => T): T {
+  const scoped = { ...context };
+  const callbacks = new Set<() => void>();
+  cleanups.set(scoped, callbacks);
+  const release = () => {
+    cleanups.delete(scoped);
+    for (const callback of callbacks) callback();
+    callbacks.clear();
+  };
+  try {
+    const result = storage.run(scoped, run);
+    if (result instanceof Promise) return result.finally(release) as T;
+    release();
+    return result;
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
 
 export async function resolveSessionRoot(sessionId: string, parentSessionId: string | undefined, sessionsDir: string) {
   const seen = new Set([sessionId]);

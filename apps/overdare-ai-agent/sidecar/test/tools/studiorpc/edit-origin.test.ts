@@ -5,8 +5,11 @@ import { join } from "node:path";
 import { runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { snapshotsDir } from "../../../src/tools/studiorpc/tools/snapshot";
-import { readStudioChangeBatch } from "../../../src/tools/studiorpc/tools/studio-change-store";
-import { consumeStudioChanges, createStudioChangesTool } from "../../../src/tools/studiorpc/tools/studio-changes-tool";
+import {
+  getStudioChangeCollector,
+  stopStudioChangeCollector,
+} from "../../../src/tools/studiorpc/tools/studio-change-collector";
+import { captureStudioChanges, createStudioChangesTool } from "../../../src/tools/studiorpc/tools/studio-changes-tool";
 
 test("shared provider RPCs use actual execution identity, never the last main prompt", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "studio-session-"));
@@ -53,6 +56,7 @@ test("shared provider RPCs use actual execution identity, never the last main pr
     );
     expect(seen.every((value) => value === undefined)).toBe(true);
   } finally {
+    await stopStudioChangeCollector(cwd);
     rmSync(cwd, { recursive: true, force: true });
   }
 });
@@ -82,25 +86,27 @@ test("only an explicit matching MCP session is excluded at turn start and mid-tu
       entry("mixed", { Kind: "mixed", SessionId: "self" }),
     ];
     writeFileSync(join(cwd, "Edit.Log"), records.map((v) => JSON.stringify(v, null, 2)).join("\n"));
-    const capture = consumeStudioChanges(cwd, "self");
+    const collector = getStudioChangeCollector(cwd);
+    const consumer = { sessionId: "self", rootSessionId: "self", resumed: false };
+    await collector.refresh();
+    const capture = captureStudioChanges(collector.store.read(consumer));
     expect(capture.result.metadata?.transactions).toBe(4);
-    expect(readStudioChangeBatch(cwd, capture.id!).envelopes.map((v) => v.objects[0].guid)).toEqual([
-      "own",
-      "other",
-      "legacy",
-      "unknown",
-      "mixed",
-    ]);
+    expect(
+      collector.store
+        .read({ sessionId: "observer", rootSessionId: "observer", resumed: false })
+        .envelopes.map((v) => v.objects[0].guid),
+    ).toEqual(["own", "other", "legacy", "unknown", "mixed"]);
     capture.finalize();
     writeFileSync(join(cwd, "Edit.Log"), records.map((v) => JSON.stringify(v)).join("\n"));
-    const tool = createStudioChangesTool(cwd, undefined, () => "self");
+    const tool = createStudioChangesTool(collector, () => consumer);
     const result = await tool.execute({ view: "new" }, {} as never);
-    const batch = readStudioChangeBatch(cwd, result.metadata!.batchId as string);
-    expect(batch.envelopes.map((v) => v.objects[0].guid)).toEqual(["own", "other", "legacy", "unknown", "mixed"]);
+    const batch = collector.store.readBatch(result.metadata!.batchId as string, consumer);
+    expect(batch.map((v) => v.objects[0].guid)).toEqual(["other", "legacy", "unknown", "mixed"]);
     const details = await tool.execute({ view: "details", batchId: result.metadata!.batchId }, {} as never);
     expect(details.output).not.toContain("(own)");
     expect(details.output).toContain("(other)");
   } finally {
+    await stopStudioChangeCollector(cwd);
     rmSync(cwd, { recursive: true, force: true });
   }
 });
@@ -147,6 +153,7 @@ test("interleaved roots keep separate rollback baselines and children share only
     expect(JSON.parse(readFileSync(join(snapshotsDir(cwd), "A_0.json"), "utf8")).label).toBe("edit A");
     expect(JSON.parse(readFileSync(join(snapshotsDir(cwd), "B_0.json"), "utf8")).label).toBe("edit B");
   } finally {
+    await stopStudioChangeCollector(cwd);
     rmSync(cwd, { recursive: true, force: true });
   }
 });

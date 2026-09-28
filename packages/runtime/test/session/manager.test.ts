@@ -107,6 +107,19 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManage
   };
 }
 
+test("a root run announces busy synchronously before yielding to turn-start dispatch", async () => {
+  const dir = await setupDir();
+  const manager = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+  await manager.create();
+  const events: AgentEvent[] = [];
+  manager.subscribe((event) => events.push(event));
+  const running = manager.run({ role: "user", content: "work", timestamp: Date.now() });
+  const first = events[0];
+  await running;
+  await manager.waitForWrites();
+  expect(first).toMatchObject({ type: "status_change", status: "busy" });
+});
+
 /** Collect events via subscribe, run, return events. */
 async function runCollecting(mgr: SessionManager, userMsg: Message): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];

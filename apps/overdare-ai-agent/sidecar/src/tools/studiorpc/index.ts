@@ -1,10 +1,12 @@
 import type { AgentLoopHook } from "@diligent/core/agent";
 import type { Tool as CoreTool, ToolContext as CoreToolContext } from "@diligent/core/tool-contract";
 import {
+  acknowledgeContextInjection,
   type BundledToolProvider,
   createPresentableContextInjection,
   getSessionExecutionContext,
   type HookInput,
+  onSessionExecutionEnd,
   type PluginHookFn,
   type RuntimeToolHost,
 } from "@diligent/runtime";
@@ -31,7 +33,9 @@ import { createScriptReadTool } from "./tools/script-read-tool";
 import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from "./tools/snapshot";
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
-import { consumeStudioChanges, createStudioChangesTool, type StudioChangesCapture } from "./tools/studio-changes-tool";
+import { getStudioChangeCollector } from "./tools/studio-change-collector";
+import type { StudioChangeConsumer } from "./tools/studio-change-store";
+import { captureStudioChanges, createStudioChangesTool } from "./tools/studio-changes-tool";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock } from "./write-lock";
 
@@ -47,12 +51,6 @@ export interface StudioRpcToolProviderOptions {
 interface TurnSnapshotState {
   sessionId: string | undefined;
   taken: boolean;
-  /**
-   * Studio changes consumed from Studio's EditLogging at turn start. Holds the
-   * frozen summary (served by the studio-changes tool as the turn cache) and the
-   * deferred deletion of the consumed log files.
-   */
-  studioChanges?: StudioChangesCapture;
   /** Truncated user prompt; becomes the snapshot's label (its rollback-point summary). */
   promptLabel?: string;
   /** First capture failure this turn; set so the warning is reported only once. */
@@ -61,34 +59,50 @@ interface TurnSnapshotState {
   transcriptPath?: string;
 }
 
-function createStudioChangesLoopHook(getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
-  let pendingStudioChanges: StudioChangesCapture | undefined;
+function executionConsumer(): StudioChangeConsumer | undefined {
+  const execution = getSessionExecutionContext();
+  return execution
+    ? { sessionId: execution.sessionId, rootSessionId: execution.rootSessionId, resumed: execution.resumed }
+    : undefined;
+}
+
+function createStudioChangesLoopHook(cwd: string, getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
+  let pending = false;
 
   return {
     id: "studiorpc-studio-changes",
     onPromptStart() {
-      pendingStudioChanges = getTurnState()?.studioChanges;
+      getTurnState();
+      const consumer = executionConsumer();
+      if (consumer) onSessionExecutionEnd(getStudioChangeCollector(cwd).store.registerSession(consumer));
+      pending = true;
     },
     beforeTurn() {
-      const studioChanges = pendingStudioChanges;
-      pendingStudioChanges = undefined;
-      if (!studioChanges) return;
-      if (studioChanges.delivered) return;
-      // The summary is now part of the turn (injected below or empty), so the
-      // consumed log files can be dropped. If this never runs, the rotated
-      // files are re-read next turn — a duplicate report, never a loss.
-      studioChanges.finalize();
-      if (studioChanges.result.metadata?.studioChangesDetected !== true) return;
+      if (!pending) return;
+      pending = false;
+      const consumer = executionConsumer();
+      if (!consumer) return;
+      const studioChanges = captureStudioChanges(getStudioChangeCollector(cwd).store.read(consumer));
+      if (
+        studioChanges.result.metadata?.studioChangesDetected !== true &&
+        studioChanges.result.metadata?.historyGap !== true
+      ) {
+        studioChanges.finalize();
+        return;
+      }
       return [
-        createPresentableContextInjection({
-          source: "studiorpc-studio-changes",
-          content: studioChanges.result.output,
-          presentation: {
-            kind: "studio-changes",
-            title: "Studio changes detected",
+        acknowledgeContextInjection(
+          createPresentableContextInjection({
+            source: "studiorpc-studio-changes",
             content: studioChanges.result.output,
-          },
-        }),
+            presentation: {
+              kind: "studio-changes",
+              title: "Studio changes detected",
+              content: studioChanges.result.output,
+            },
+          }),
+          () => studioChanges.finalize(),
+        ),
       ];
     },
   };
@@ -117,7 +131,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     return state;
   };
 
-  // Start of each user request: consume Studio's edit log and arm a fresh
+  // Start of each user request: refresh the shared journal and arm a fresh
   // snapshot for the upcoming turn. The actual capture happens lazily on the
   // first edit tool. Studio saves the level itself on Send, so no
   // turn-boundary save RPC is needed. Only explicit matching MCP session records are excluded.
@@ -130,11 +144,11 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.promptLabel = typeof input.prompt === "string" ? input.prompt.slice(0, 2000) : undefined;
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
-    turnState.studioChanges = consumeStudioChanges(input.cwd, input.session_id);
     if (pending.size >= 4096 && !pending.has(input.session_id)) {
       return { blocked: true, reason: "Studio pending request capacity reached" };
     }
     pending.set(input.session_id, turnState);
+    await getStudioChangeCollector(input.cwd).refresh();
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -143,14 +157,28 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     id: "@overdare/studiorpc-tools",
     displayName: "OVERDARE Studio RPC Tools",
     supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
-    createTools: async ({ cwd, host }) =>
-      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, getTurnState })),
+    createTools: async ({ cwd, host }) => {
+      const tools = createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, getTurnState }));
+      return tools.map((tool) => ({
+        ...tool,
+        async execute(args, context) {
+          const consumer = executionConsumer();
+          const release = consumer ? getStudioChangeCollector(cwd).store.registerSession(consumer) : undefined;
+          try {
+            return await tool.execute(args, context);
+          } finally {
+            release?.();
+          }
+        },
+      }));
+    },
     onUserPromptSubmit: beginTurn,
     onStop: async (input) => {
       pending.delete(input.session_id);
       return { blocked: false };
     },
-    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(getTurnState)] : []),
+    createAgentLoopHooks: ({ agentKind, cwd }) =>
+      agentKind === "main" ? [createStudioChangesLoopHook(cwd, getTurnState)] : [],
   };
 }
 
@@ -228,6 +256,7 @@ export async function createStudioRpcTools(ctx: {
   turnState?: TurnSnapshotState;
   getTurnState?: () => TurnSnapshotState | undefined;
 }): Promise<Tool[]> {
+  const externalConsumer = { sessionId: `external:${crypto.randomUUID()}`, rootSessionId: "", resumed: false };
   const writeLock = createWriteLock();
   const callRpc = ctx.callRpc ?? call;
   const applyLevelChanges = () => callRpc("level.apply", {});
@@ -332,11 +361,7 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(createSnapshotListTool(ctx.cwd), ctx.host),
     wrapTool(createSnapshotContextTool(ctx.cwd), ctx.host),
     wrapTool(
-      createStudioChangesTool(
-        ctx.cwd,
-        () => (ctx.getTurnState?.() ?? ctx.turnState)?.studioChanges,
-        () => getSessionExecutionContext()?.sessionId,
-      ),
+      createStudioChangesTool(getStudioChangeCollector(ctx.cwd), () => executionConsumer() ?? externalConsumer),
       ctx.host,
     ),
     createHubWorldLookupTool(),
