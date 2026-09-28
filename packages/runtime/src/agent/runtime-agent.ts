@@ -6,6 +6,7 @@ import type { Model, SystemSection } from "@diligent/core/provider-contract";
 import type { Tool } from "@diligent/core/tool-contract";
 // type-only import to avoid circular dependency: collab/registry → agent/runtime-agent → collab/registry
 import type { AgentRegistry } from "../collab/registry";
+import { acceptContextInjectionMetadata } from "./context-acceptance";
 
 export class RuntimeAgent extends Agent {
   readonly registry?: AgentRegistry;
@@ -19,5 +20,9 @@ export class RuntimeAgent extends Agent {
   ) {
     super(model, systemPrompt, tools, opts);
     this.registry = registry;
+    this.subscribe((event) => {
+      if (event.type !== "context_injected") return;
+      for (const injection of event.injections) acceptContextInjectionMetadata(injection.metadata);
+    });
   }
 }

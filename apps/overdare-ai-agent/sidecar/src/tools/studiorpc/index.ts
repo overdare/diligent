@@ -3,6 +3,7 @@ import type { Tool as CoreTool, ToolContext as CoreToolContext } from "@diligent
 import {
   type BundledToolProvider,
   createPresentableContextInjection,
+  getSessionExecutionContext,
   type HookInput,
   type PluginHookFn,
   type RuntimeToolHost,
@@ -60,13 +61,13 @@ interface TurnSnapshotState {
   transcriptPath?: string;
 }
 
-function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHook {
+function createStudioChangesLoopHook(getTurnState: () => TurnSnapshotState | undefined): AgentLoopHook {
   let pendingStudioChanges: StudioChangesCapture | undefined;
 
   return {
     id: "studiorpc-studio-changes",
     onPromptStart() {
-      pendingStudioChanges = turnState.studioChanges;
+      pendingStudioChanges = getTurnState()?.studioChanges;
     },
     beforeTurn() {
       const studioChanges = pendingStudioChanges;
@@ -96,19 +97,32 @@ function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHoo
 export function createStudioRpcToolProvider(options: StudioRpcToolProviderOptions = {}): BundledToolProvider {
   const transport = options.callRpc ?? call;
   const callRpc: typeof call = (method, params, rpcOptions = {}) =>
-    transport(method, params, { ...rpcOptions, sessionId: turnState.sessionId });
+    transport(method, params, { ...rpcOptions, sessionId: getSessionExecutionContext()?.sessionId });
 
   // Shared across the provider's hooks and its tools. The rollback baseline is
   // captured just before the turn's *first map edit* (not at prompt time), so
   // turns that don't edit the map — rollback requests, questions — leave no
   // snapshot and never shadow the real baseline. `taken` enforces once-per-turn.
-  const turnState: TurnSnapshotState = { sessionId: undefined, taken: false };
+  const requests = new WeakMap<object, TurnSnapshotState>();
+  const pending = new Map<string, TurnSnapshotState>();
+  const getTurnState = (): TurnSnapshotState | undefined => {
+    const execution = getSessionExecutionContext();
+    if (!execution) return;
+    let state = requests.get(execution.rootRequest);
+    if (!state) {
+      state = pending.get(execution.rootSessionId) ?? { sessionId: execution.rootSessionId, taken: false };
+      pending.delete(execution.rootSessionId);
+      requests.set(execution.rootRequest, state);
+    }
+    return state;
+  };
 
   // Start of each user request: consume Studio's edit log and arm a fresh
   // snapshot for the upcoming turn. The actual capture happens lazily on the
   // first edit tool. Studio saves the level itself on Send, so no
   // turn-boundary save RPC is needed. Only explicit matching MCP session records are excluded.
   const beginTurn: PluginHookFn = async (input: HookInput) => {
+    const turnState: TurnSnapshotState = { sessionId: input.session_id, taken: false };
     turnState.sessionId = input.session_id;
     turnState.taken = false;
     // Store generously (2000 chars); display sites truncate to 120. Keeping the
@@ -117,6 +131,10 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     turnState.captureError = undefined;
     turnState.transcriptPath = typeof input.transcript_path === "string" ? input.transcript_path : undefined;
     turnState.studioChanges = consumeStudioChanges(input.cwd, input.session_id);
+    if (pending.size >= 4096 && !pending.has(input.session_id)) {
+      return { blocked: true, reason: "Studio pending request capacity reached" };
+    }
+    pending.set(input.session_id, turnState);
     return { blocked: false };
   };
   beginTurn.mode = "sync";
@@ -126,9 +144,13 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     displayName: "OVERDARE Studio RPC Tools",
     supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
     createTools: async ({ cwd, host }) =>
-      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
+      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, getTurnState })),
     onUserPromptSubmit: beginTurn,
-    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(turnState)] : []),
+    onStop: async (input) => {
+      pending.delete(input.session_id);
+      return { blocked: false };
+    },
+    createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(getTurnState)] : []),
   };
 }
 
@@ -204,6 +226,7 @@ export async function createStudioRpcTools(ctx: {
   host?: RuntimeToolHost;
   callRpc?: typeof call;
   turnState?: TurnSnapshotState;
+  getTurnState?: () => TurnSnapshotState | undefined;
 }): Promise<Tool[]> {
   const writeLock = createWriteLock();
   const callRpc = ctx.callRpc ?? call;
@@ -214,7 +237,7 @@ export async function createStudioRpcTools(ctx: {
   // tool to surface — a silently missing baseline would make a later rollback
   // restore an older snapshot than the user expects.
   const ensureSnapshot = (): string | undefined => {
-    const ts = ctx.turnState;
+    const ts = ctx.getTurnState?.() ?? ctx.turnState;
     if (!ts || ts.taken || !ts.sessionId) return undefined;
     try {
       const index = nextRequestIndex(snapshotsDir(ctx.cwd), ts.sessionId);
@@ -248,7 +271,8 @@ export async function createStudioRpcTools(ctx: {
         // The warning was generated but never delivered (execute threw before
         // returning). Un-mark it as reported so the next edit tool regenerates
         // and delivers it, instead of the failure permanently swallowing it.
-        if (warning && ctx.turnState) ctx.turnState.captureError = undefined;
+        const state = ctx.getTurnState?.() ?? ctx.turnState;
+        if (warning && state) state.captureError = undefined;
         throw error;
       }
       return warning ? { ...result, output: `${warning}\n${result.output}` } : result;
@@ -310,8 +334,8 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(
       createStudioChangesTool(
         ctx.cwd,
-        () => ctx.turnState?.studioChanges,
-        () => ctx.turnState?.sessionId,
+        () => (ctx.getTurnState?.() ?? ctx.turnState)?.studioChanges,
+        () => getSessionExecutionContext()?.sessionId,
       ),
       ctx.host,
     ),
@@ -391,7 +415,8 @@ export async function createStudioRpcTools(ctx: {
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but
             // lost to a thrown error must be regenerated on the next edit tool.
-            if (warning && ctx.turnState) ctx.turnState.captureError = undefined;
+            const state = ctx.getTurnState?.() ?? ctx.turnState;
+            if (warning && state) state.captureError = undefined;
             throw error;
           }
         } finally {

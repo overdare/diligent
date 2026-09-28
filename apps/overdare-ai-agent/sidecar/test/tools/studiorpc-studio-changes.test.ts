@@ -14,6 +14,7 @@ import {
 } from "../../src/tools/studiorpc/tools/edit-log";
 import { consumeStudioChanges, createStudioChangesTool } from "../../src/tools/studiorpc/tools/studio-changes-tool";
 import { COUNT_SECTIONS } from "../../src/web/client/components/StudioChangesNotice";
+import { bindStudioTestSession } from "../helpers/studio-session";
 
 const NO_EDITS = "No Studio changes recorded in the collected edit log.";
 
@@ -687,7 +688,7 @@ describe("bounded Studio change summaries", () => {
 
 describe("studio-changes unified loop-hook context injection", () => {
   function promptProvider() {
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+    const provider = bindStudioTestSession(createStudioRpcToolProvider({ callRpc: async () => ({}) }));
     return provider as typeof provider & {
       onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit>;
     };
@@ -763,7 +764,7 @@ describe("studio-changes unified loop-hook context injection", () => {
     const p = provider as typeof provider & { onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit> };
     await p.onUserPromptSubmit(promptInput(projectDir()));
     expect(calls).toEqual([]);
-    expect(provider.onStop).toBeUndefined();
+    expect(provider.onStop).toBeDefined();
   });
 
   test("injects at most once per user request even when edits arrive between model iterations", async () => {

@@ -34,6 +34,7 @@ export { createGeminiStream } from "@diligent/core/providers/gemini";
 export { createOpenAIStream } from "@diligent/core/providers/openai";
 export type { Tool, ToolContext, ToolRegistry, ToolResult } from "@diligent/core/tool-contract";
 export { getBuiltinAgentDefinitions } from "./agent/agent-types";
+export { acceptContextInjectionMetadata, acknowledgeContextInjection } from "./agent/context-acceptance";
 export type { ContextPresentation } from "./agent/context-presentation";
 export { createPresentableContextInjection, readContextPresentation } from "./agent/context-presentation";
 export type { Mode } from "./agent/mode";
