@@ -13,10 +13,20 @@ These are conservative approximations of 1,500 and 2,000 tokens, not tokenizer
 guarantees. A future mid-request injection must share this request's budget,
 rather than allocate a fresh budget per loop iteration.
 
-- At most 20 objects receive details across all sections.
+- At most 20 object/session entries receive details across all sections.
 - Each object shows at most four changed properties. Each list property shows
   at most three changed items across additions, removals, and modifications.
-- Names, property names, and displayed values are limited to 80 characters.
+- Names, property names, displayed values, and session headings are limited to 80 characters.
+- Changes are grouped under `Session: <ID>`, followed by change-kind sections
+  such as Added, Modified, and Removed. Missing IDs, legacy records, and ambiguous
+  non-MCP origins are collected under `Session: unknown`.
+- Aggregation is scoped to both session and object. A create in one session and
+  a delete in another remain separate, as do opposite property edits by different
+  sessions. Each session's counts include all its collected changes.
+- At most three session groups are displayed, ranked by their most critical
+  change. Omitted groups are counted and remain available through archived details.
+  `Total changes` and `Totals` cover every session, including omitted groups. Web
+  uses the complete total for its badge; TUI receives the same summary text.
 - Script source edits, deletions, parent moves, and identity/reference edits take
   precedence over bulk additions and ordinary property changes.
 - Repeated scalar edits collapse to the first value and final value. Reverted
@@ -27,24 +37,33 @@ rather than allocate a fresh budget per loop iteration.
   details are omitted, preserving the Web notice's count contract.
 - Output stops at object boundaries and reports omission counts.
 
-The records do not establish authorship. They may include this agent's own work
-and are not a diff against an agent-relative baseline.
+Only explicit origin metadata identifies a session. Legacy records may include
+this agent's own work and are not a diff against an agent-relative baseline.
 
-When the runtime supplies an agent session ID, Studio RPC requests include the
-optional top-level `meta.sessionId` field. If Studio records `Origin.Kind` as
+Every Studio RPC request includes the top-level `meta.sessionId` field. The
+executing agent supplies its session ID through `ToolContext`, including child
+agents that share their parent's tools. An asynchronous execution context carries
+the ID through nested helpers, awaits, and write-lock waits. Standalone MCP and
+background calls without an agent ID use a stable `sidecar-...` process identity.
+Separate sidecar processes receive separate identities. If Studio records `Origin.Kind` as
 `mcp` and `Origin.SessionId` matches that ID, automatic summaries and detail
 queries exclude the record. Other sessions, legacy records without origin
 metadata, and `unknown` or `mixed` origins remain visible. Archives retain all
 parsed records, including this agent's own edits. Studio builds that do not
-record origin metadata continue to report changes as before. Direct external
-MCP calls without a supplied agent session ID do not exclude any records.
+record origin metadata continue to report changes as before. External MCP calls
+use their sidecar identity for filtering; it does not identify an external
+client's individual agent transcript. Both summaries and archived detail pages
+identify the remaining records' session groups. Full IDs remain in the raw archive
+when display labels are truncated or omitted.
 
 ## Follow-up reads
 
 `studiorpc_studio_changes({})` reports live transactions not yet returned by this
 tool, excluding the delivered turn-start summary. Repeated calls without edits
 return the no-changes message. Identical transactions appended later still count
-as new occurrences. A new user request or recreated live log resets the cursor.
+as new occurrences. Cursors and automatic turn caches are scoped to the executing
+session, so a child query cannot suppress a parent's report. A new user request
+or recreated live log resets that session's cursor.
 Queries do not rotate or delete Studio's live log, so the next request can still
 collect that batch.
 

@@ -9,6 +9,7 @@ import {
 } from "@diligent/runtime";
 import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
+import { studioRpcCallOptions, studioRpcSessionId, withStudioRpcContext } from "./rpc-context";
 import { methodModules, mutatingMethods, renderBuilders, savingMethods } from "./tool-registry";
 import { createActionSequencerApplyJsonTool } from "./tools/action-sequencer-apply-json-tool";
 import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bulk-tool";
@@ -94,10 +95,6 @@ function createStudioChangesLoopHook(turnState: TurnSnapshotState): AgentLoopHoo
 }
 
 export function createStudioRpcToolProvider(options: StudioRpcToolProviderOptions = {}): BundledToolProvider {
-  const transport = options.callRpc ?? call;
-  const callRpc: typeof call = (method, params, rpcOptions = {}) =>
-    transport(method, params, { ...rpcOptions, sessionId: turnState.sessionId });
-
   // Shared across the provider's hooks and its tools. The rollback baseline is
   // captured just before the turn's *first map edit* (not at prompt time), so
   // turns that don't edit the map — rollback requests, questions — leave no
@@ -126,7 +123,7 @@ export function createStudioRpcToolProvider(options: StudioRpcToolProviderOption
     displayName: "OVERDARE Studio RPC Tools",
     supersedesPluginPackages: ["@overdare/plugin-studiorpc"],
     createTools: async ({ cwd, host }) =>
-      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc, turnState })),
+      createCoreTools(await createStudioRpcTools({ cwd, host, callRpc: options.callRpc, turnState })),
     onUserPromptSubmit: beginTurn,
     createAgentLoopHooks: ({ agentKind }) => (agentKind === "main" ? [createStudioChangesLoopHook(turnState)] : []),
   };
@@ -206,7 +203,8 @@ export async function createStudioRpcTools(ctx: {
   turnState?: TurnSnapshotState;
 }): Promise<Tool[]> {
   const writeLock = createWriteLock();
-  const callRpc = ctx.callRpc ?? call;
+  const transport = ctx.callRpc ?? call;
+  const callRpc: typeof call = (method, params, options) => transport(method, params, studioRpcCallOptions(options));
   const applyLevelChanges = () => callRpc("level.apply", {});
 
   // Capture the pre-edit rollback baseline once per turn, lazily on the first
@@ -310,8 +308,8 @@ export async function createStudioRpcTools(ctx: {
     wrapTool(
       createStudioChangesTool(
         ctx.cwd,
-        () => ctx.turnState?.studioChanges,
-        () => ctx.turnState?.sessionId,
+        () => (studioRpcSessionId() === ctx.turnState?.sessionId ? ctx.turnState?.studioChanges : undefined),
+        studioRpcSessionId,
       ),
       ctx.host,
     ),
@@ -401,7 +399,13 @@ export async function createStudioRpcTools(ctx: {
     });
   }
 
-  return tools;
+  // All tool implementations, including v1/v2 helpers that import call directly,
+  // inherit the executing agent's identity through awaits and write-lock waits.
+  return tools.map((tool) => ({
+    ...tool,
+    execute: (args, toolCtx) =>
+      withStudioRpcContext({ sessionId: toolCtx.sessionId, signal: toolCtx.signal }, () => tool.execute(args, toolCtx)),
+  }));
 }
 
 function wrapTool(tool: Tool, host?: RuntimeToolHost): Tool {

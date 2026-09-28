@@ -45,6 +45,7 @@ export const STUDIO_CHANGES_LIMITS = {
   maxTargets: 20,
   maxProperties: 4,
   maxListItems: 3,
+  maxSessions: 3,
   maxValueChars: 80,
 } as const;
 
@@ -305,9 +306,10 @@ export function deleteConsumed(paths: string[]): void {
   for (const path of paths) rmSync(path, { force: true });
 }
 
-/** Per-instance aggregate accumulated across all envelopes in a batch. */
+/** Per-instance aggregate accumulated within one attributable session. */
 interface TargetSummary {
   guid: string;
+  sessionId?: string;
   name?: string;
   type?: string;
   created: boolean;
@@ -419,12 +421,15 @@ function applyChange(target: TargetSummary, change: EditLogChange): void {
 function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
   const targets = new Map<string, TargetSummary>();
   for (const envelope of envelopes) {
+    const sessionId = envelope.origin?.kind === "mcp" ? envelope.origin.sessionId || undefined : undefined;
     for (const object of envelope.objects) {
       if (!isSubject(object, envelope)) continue;
-      let target = targets.get(object.guid);
+      const key = JSON.stringify([sessionId ?? null, object.guid]);
+      let target = targets.get(key);
       if (!target) {
         target = {
           guid: object.guid,
+          sessionId,
           created: false,
           removed: false,
           props: new Map(),
@@ -432,7 +437,7 @@ function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
           gizmoChanges: new Map(),
           sourceEdits: 0,
         };
-        targets.set(object.guid, target);
+        targets.set(key, target);
       }
       target.name = object.name ?? target.name;
       target.type = object.type ?? target.type;
@@ -552,6 +557,19 @@ function eventLine(target: TargetSummary, kind: StudioChangeType): string {
   }
 }
 
+function sessionHeading(sessionId?: string): string {
+  return `Session: ${short(sessionId ?? "unknown").replace(/[\r\n\t]/g, " ")}`;
+}
+
+function changeCounts(targets: TargetSummary[]): Record<StudioChangeType, number> {
+  const counts = Object.fromEntries(Object.keys(SECTION_TITLES).map((key) => [key, 0])) as Record<
+    StudioChangeType,
+    number
+  >;
+  for (const target of targets) for (const kind of kinds(target)) counts[kind]++;
+  return counts;
+}
+
 const ATTRIBUTION =
   "Explicit MCP records for this session are excluded when session attribution is available. " +
   "Legacy or unattributed records do not identify who made the changes and may include this session's own work. " +
@@ -577,64 +595,80 @@ export function summarizeEditLog(
   options: EditLogSummaryOptions = {},
 ): EditLogSummary {
   const targets = [...aggregate(envelopes).values()].filter((target) => kinds(target).length);
-  const counts = Object.fromEntries(Object.keys(SECTION_TITLES).map((key) => [key, 0])) as Record<
-    StudioChangeType,
-    number
-  >;
-  for (const target of targets) for (const kind of kinds(target)) counts[kind]++;
+  const counts = changeCounts(targets);
   const editCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
   if (!editCount) return { output: NO_EDITS_MESSAGE, editCount: 0, shownTargets: 0, omittedTargets: 0 };
 
   const selected: TargetSummary[] = [];
   const footer = options.footer ?? 'Use studiorpc_studio_changes with view="details" to inspect omitted changes.';
-  const transientTypes = new Map<string, number>();
-  for (const target of targets.filter((t) => kinds(t).includes("addedThenRemoved"))) {
-    const type = target.type ?? "Instance";
-    transientTypes.set(type, (transientTypes.get(type) ?? 0) + 1);
+  const groups = new Map<string | undefined, TargetSummary[]>();
+  for (const target of targets) {
+    const group = groups.get(target.sessionId) ?? [];
+    group.push(target);
+    groups.set(target.sessionId, group);
   }
+  const groupPriority = (group: TargetSummary[]) => group.reduce((best, target) => Math.min(best, priority(target)), 6);
+  const visibleGroups = [...groups]
+    .sort((a, b) => groupPriority(a[1]) - groupPriority(b[1]))
+    .slice(0, STUDIO_CHANGES_LIMITS.maxSessions);
+  const visibleSessions = new Set(visibleGroups.map(([sessionId]) => sessionId));
   const render = (): string => {
-    const parts = [header, ATTRIBUTION];
+    const totals = (Object.keys(SECTION_TITLES) as StudioChangeType[])
+      .filter((kind) => counts[kind])
+      .map((kind) => `${SECTION_TITLES[kind]}=${counts[kind]}`)
+      .join(", ");
+    const parts = [header, ATTRIBUTION, `Total changes: ${editCount}\nTotals: ${totals}`];
     let omittedProperties = 0;
     let omittedItems = 0;
-    for (const kind of Object.keys(SECTION_TITLES) as StudioChangeType[]) {
-      if (!counts[kind]) continue;
-      const entries: string[] = [];
-      if (kind === "addedThenRemoved") {
-        entries.push(
-          [...transientTypes.entries()]
-            .slice(0, 3)
-            .map(([type, count]) => `${short(type)}: ${count}`)
-            .join(", "),
-        );
-        if (transientTypes.size > 3) entries.push(`(${transientTypes.size - 3} more types)`);
-      } else {
-        for (const target of selected.filter((t) => kinds(t).includes(kind))) {
-          const lines = [eventLine(target, kind)];
-          if (kind === "added" || kind === "modified") {
-            const all = details(target);
-            const shown = all.slice(0, STUDIO_CHANGES_LIMITS.maxProperties);
-            lines.push(...shown.flatMap((detail) => detail.lines));
-            const omitted = all.length - shown.length;
-            omittedProperties += omitted;
-            omittedItems += all.reduce((sum, detail) => sum + detail.omittedItems, 0);
-            if (omitted) lines.push(`  ${omitted} properties omitted`);
+    for (const [sessionId, group] of visibleGroups) {
+      parts.push(sessionHeading(sessionId));
+      const groupCounts = changeCounts(group);
+      for (const kind of Object.keys(SECTION_TITLES) as StudioChangeType[]) {
+        if (!groupCounts[kind]) continue;
+        const entries: string[] = [];
+        if (kind === "addedThenRemoved") {
+          const transientTypes = new Map<string, number>();
+          for (const target of group.filter((target) => kinds(target).includes(kind))) {
+            const type = target.type ?? "Instance";
+            transientTypes.set(type, (transientTypes.get(type) ?? 0) + 1);
           }
-          entries.push(lines.join("\n"));
+          entries.push(
+            [...transientTypes.entries()]
+              .slice(0, 3)
+              .map(([type, count]) => `${short(type)}: ${count}`)
+              .join(", "),
+          );
+          if (transientTypes.size > 3) entries.push(`(${transientTypes.size - 3} more types)`);
+        } else {
+          for (const target of selected.filter((t) => t.sessionId === sessionId && kinds(t).includes(kind))) {
+            const lines = [eventLine(target, kind)];
+            if (kind === "added" || kind === "modified") {
+              const all = details(target);
+              const shown = all.slice(0, STUDIO_CHANGES_LIMITS.maxProperties);
+              lines.push(...shown.flatMap((detail) => detail.lines));
+              const omitted = all.length - shown.length;
+              omittedProperties += omitted;
+              omittedItems += all.reduce((sum, detail) => sum + detail.omittedItems, 0);
+              if (omitted) lines.push(`  ${omitted} properties omitted`);
+            }
+            entries.push(lines.join("\n"));
+          }
+          const omitted = groupCounts[kind] - entries.length;
+          if (omitted) entries.push(`(${omitted} entries omitted)`);
         }
-        const omitted = counts[kind] - entries.length;
-        if (omitted) entries.push(`(${omitted} entries omitted)`);
+        parts.push(`${SECTION_TITLES[kind]} (${groupCounts[kind]}):\n${entries.join("\n")}`);
       }
-      parts.push(`${SECTION_TITLES[kind]} (${counts[kind]}):\n${entries.join("\n")}`);
     }
+    if (groups.size > visibleGroups.length) parts.push(`${groups.size - visibleGroups.length} session groups omitted.`);
     parts.push(
-      `${selected.length} of ${targets.length} objects detailed; ${targets.length - selected.length} objects, ${omittedProperties} properties and ${omittedItems} list items omitted from detail.`,
+      `${selected.length} of ${targets.length} object/session entries detailed; ${targets.length - selected.length} entries, ${omittedProperties} properties and ${omittedItems} list items omitted from detail.`,
     );
     if (parseFailures) parts.push(`(${parseFailures} log entries could not be parsed and were skipped.)`);
     parts.push(footer);
     return parts.join("\n\n");
   };
   for (const target of targets
-    .filter((t) => !kinds(t).includes("addedThenRemoved"))
+    .filter((t) => visibleSessions.has(t.sessionId) && !kinds(t).includes("addedThenRemoved"))
     .sort((a, b) => priority(a) - priority(b))) {
     if (selected.length >= STUDIO_CHANGES_LIMITS.maxTargets) break;
     selected.push(target);
@@ -664,11 +698,12 @@ export function studioChangeDetails(envelopes: EditLogEnvelope[], options: Studi
     if (options.guid && target.guid !== options.guid) continue;
     for (const kind of kinds(target)) {
       if (options.changeType && kind !== options.changeType) continue;
+      const event = `${sessionHeading(target.sessionId)}\n${eventLine(target, kind)}`;
       if (kind === "modified" || kind === "added") {
         const changes = details(target, true).flatMap((detail) => detail.lines);
-        if (changes.length) for (const line of changes) rows.push(`${eventLine(target, kind)}\n${line}`);
-        else rows.push(eventLine(target, kind));
-      } else rows.push(eventLine(target, kind));
+        if (changes.length) for (const line of changes) rows.push(`${event}\n${line}`);
+        else rows.push(event);
+      } else rows.push(event);
     }
   }
   const offset = options.offset ?? 0;

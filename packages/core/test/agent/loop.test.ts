@@ -170,6 +170,54 @@ async function runAgent(
 }
 
 describe("Agent loop", () => {
+  test.each([
+    false,
+    true,
+  ])("shared tools receive the executing session in parallel=%s batches", async (supportParallel) => {
+    const seen = new Map<string, string | undefined>();
+    const tool: Tool = {
+      name: "session_probe",
+      description: "Report the executing session",
+      parameters: z.object({}),
+      supportParallel,
+      async execute(_args, context) {
+        await Promise.resolve();
+        seen.set(context.toolCallId, context.sessionId);
+        return { output: context.sessionId ?? "unattributed" };
+      },
+    };
+    const agents = ["parent", "child"].map((sessionId) => {
+      const streamFn = createMockStreamFunction([
+        makeAssistant(
+          [0, 1].map((index) => ({
+            type: "tool_call" as const,
+            id: `${sessionId}-${index}`,
+            name: tool.name,
+            input: {},
+          })),
+          "tool_use",
+        ),
+        makeAssistant([{ type: "text", text: "done" }]),
+      ]);
+      const agent = new Agent(TEST_MODEL, [], [tool], { llmMsgStreamFn: streamFn, sessionId: "initial" });
+      agent.setSessionId(sessionId);
+      return agent;
+    });
+    const results = await Promise.all(
+      agents.map((agent) => runAgent(agent, { role: "user", content: "probe", timestamp: Date.now() })),
+    );
+    expect(Object.fromEntries(seen)).toEqual({
+      "parent-0": "parent",
+      "parent-1": "parent",
+      "child-0": "child",
+      "child-1": "child",
+    });
+    for (const [index, sessionId] of ["parent", "child"].entries()) {
+      const outputs = results[index].events.filter((event) => event.type === "tool_end").map((event) => event.output);
+      expect(outputs).toEqual([sessionId, sessionId]);
+    }
+  });
+
   test("text-only response: single turn", async () => {
     const msg = makeAssistant([{ type: "text", text: "Hello!" }]);
     const streamFn = createMockStreamFunction([msg]);

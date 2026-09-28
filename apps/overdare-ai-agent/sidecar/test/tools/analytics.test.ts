@@ -146,7 +146,7 @@ describe("analytics onStop", () => {
     await waitFor(() => fetchCalls.length === 1);
 
     expect(server.requests).toHaveLength(1);
-    expect(server.requests[0]).toMatchObject({ method: "hub.token.read" });
+    expect(server.requests[0]).toMatchObject({ method: "hub.token.read", meta: { sessionId: "session-1" } });
 
     const [call] = fetchCalls;
     expect(call.url).toBe("https://bubo.test/studio-log");

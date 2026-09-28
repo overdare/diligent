@@ -17,6 +17,7 @@ import { checkResult } from "../../../src/tools/studiorpc/tools/v2/result";
 interface RpcCall {
   method: string;
   params?: Record<string, unknown>;
+  meta?: { sessionId: string };
 }
 
 type Responder = (method: string, params?: Record<string, unknown>) => unknown;
@@ -109,8 +110,8 @@ beforeAll(async () => {
   server = net.createServer((socket) => {
     const lines = readline.createInterface({ input: socket });
     lines.on("line", (line) => {
-      const request = JSON.parse(line) as { id: number; method: string; params?: Record<string, unknown> };
-      rpcCalls.push({ method: request.method, params: request.params });
+      const request = JSON.parse(line) as RpcCall & { id: number };
+      rpcCalls.push({ method: request.method, params: request.params, meta: request.meta });
       const result = respond(request.method, request.params);
       socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
     });
@@ -143,8 +144,8 @@ async function loadTools(cwd: string): Promise<Map<string, Tool>> {
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
-function toolContext() {
-  return { toolCallId: "test", signal: new AbortController().signal, abort: () => {} };
+function toolContext(sessionId?: string) {
+  return { toolCallId: "test", sessionId, signal: new AbortController().signal, abort: () => {} };
 }
 
 function methodsCalled(): string[] {
@@ -167,6 +168,83 @@ beforeEach(() => {
 afterEach(() => {
   restoreEnv("STUDIO_API_VERSION");
   for (const dir of createdDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("Studio session attribution on the wire", () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    [
+      "studiorpc_instance_upsert",
+      { items: [{ class: "Folder", parentGuid: FOLDER_A_GUID, name: "New", properties: {} }] },
+    ],
+    ["studiorpc_instance_upsert", { items: [{ guid: PART_GUID, name: "Renamed", properties: {} }] }],
+    ["studiorpc_instance_move", { items: [{ guid: PART_GUID, parentGuid: FOLDER_A_GUID }] }],
+    ["studiorpc_instance_delete", { items: [{ guid: PART_GUID }] }],
+    ["studiorpc_script_add", { class: "Script", parentGuid: FOLDER_A_GUID, name: "NewScript", source: "print(1)" }],
+    ["studiorpc_script_edit", { guid: SCRIPT_GUID, old_string: "print(1)", new_string: "print(9)" }],
+    ["studiorpc_script_delete", { guid: SCRIPT_GUID }],
+    ["studiorpc_execute_luau", { target: "Editor", code: "return 1" }],
+    ["studiorpc_level_browse", {}],
+    ["studiorpc_level_save_file", {}],
+  ];
+  test.each([
+    "v1",
+    "v2",
+  ])("all %s RPCs, including reads, saves and validation, carry the caller session", async (version) => {
+    process.env.STUDIO_API_VERSION = version;
+    for (const [name, args] of cases) {
+      rpcCalls.length = 0;
+      const tools = await loadTools(makeStudioProject());
+      const result = await tools.get(name)!.execute(args, toolContext("session-on-wire"));
+      expect(result.metadata?.error).not.toBe(true);
+      expect(rpcCalls.length).toBeGreaterThan(0);
+      expect(rpcCalls.map((entry) => entry.meta?.sessionId)).toEqual(rpcCalls.map(() => "session-on-wire"));
+    }
+  });
+
+  test("shared tools keep parent and child sessions separate across overlapping calls", async () => {
+    const cwd = makeStudioProject();
+    const provider = createStudioRpcToolProvider();
+    await provider.onUserPromptSubmit!({
+      session_id: "parent",
+      transcript_path: "",
+      cwd,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "inspect",
+    });
+    const tools = new Map((await provider.createTools({ cwd })).map((tool) => [tool.name, tool]));
+    await Promise.all([
+      tools
+        .get("studiorpc_execute_luau")!
+        .execute({ target: "Editor", code: "return 'parent'" }, toolContext("parent")),
+      tools.get("studiorpc_execute_luau")!.execute({ target: "Editor", code: "return 'child'" }, toolContext("child")),
+      tools.get("studiorpc_instance_read")!.execute({ guid: PART_GUID, recursive: false }, toolContext("parent")),
+      tools.get("studiorpc_instance_read")!.execute({ guid: SCRIPT_GUID, recursive: false }, toolContext("child")),
+    ]);
+    expect(
+      rpcCalls.filter((entry) => entry.params?.code === "return 'parent'").map((entry) => entry.meta?.sessionId),
+    ).toEqual(["parent"]);
+    expect(
+      rpcCalls.filter((entry) => entry.params?.code === "return 'child'").map((entry) => entry.meta?.sessionId),
+    ).toEqual(["child"]);
+    expect(
+      rpcCalls.filter((entry) => entry.params?.ActorGuid === PART_GUID).map((entry) => entry.meta?.sessionId),
+    ).toEqual(["parent"]);
+    expect(
+      rpcCalls.filter((entry) => entry.params?.ActorGuid === SCRIPT_GUID).map((entry) => entry.meta?.sessionId),
+    ).toEqual(["child"]);
+  });
+
+  test("calls outside an agent have a stable process identity and do not borrow the parent session", async () => {
+    const tools = await loadTools(makeStudioProject());
+    await tools.get("studiorpc_level_browse")!.execute({}, toolContext("parent"));
+    await tools.get("studiorpc_level_browse")!.execute({}, toolContext());
+    await tools.get("studiorpc_level_browse")!.execute({}, toolContext());
+    const sessions = rpcCalls.map((entry) => entry.meta?.sessionId);
+    expect(sessions[0]).toBe("parent");
+    expect(sessions[1]).toBeTruthy();
+    expect(sessions[1]).not.toBe("parent");
+    expect(sessions[2]).toBe(sessions[1]);
+  });
 });
 
 describe("checkResult", () => {
@@ -198,10 +276,10 @@ describe("v2 argument conversion", () => {
     const read = tools.get("studiorpc_instance_read")!;
 
     await read.execute({ guid: PART_GUID, recursive: true }, toolContext());
-    expect(rpcCalls.at(-1)).toEqual({ method: "instance.read", params: { ActorGuid: PART_GUID, Depth: -1 } });
+    expect(rpcCalls.at(-1)).toMatchObject({ method: "instance.read", params: { ActorGuid: PART_GUID, Depth: -1 } });
 
     await read.execute({ guid: PART_GUID, recursive: false }, toolContext());
-    expect(rpcCalls.at(-1)).toEqual({ method: "instance.read", params: { ActorGuid: PART_GUID, Depth: 0 } });
+    expect(rpcCalls.at(-1)).toMatchObject({ method: "instance.read", params: { ActorGuid: PART_GUID, Depth: 0 } });
   });
 
   test("groups instance_move items sharing a parent into one entry", async () => {

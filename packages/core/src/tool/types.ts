@@ -26,6 +26,8 @@ export interface Tool<TParams extends z.ZodType = any> {
 
 export interface ToolContext {
   toolCallId: string;
+  /** The session executing this call, including when tools are shared with child agents. */
+  sessionId?: string;
   signal: AbortSignal;
   abort: () => void;
   onUpdate?: (partialResult: string) => void;

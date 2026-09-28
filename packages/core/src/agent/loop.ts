@@ -184,6 +184,7 @@ export async function runAgentLoop(
         nextItemId,
         () => toolAbortController.abort(),
         runtime.toolOutputStore,
+        runtime.sessionId,
       );
 
       // Always record tool results — including when the turn was aborted. Every

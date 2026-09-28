@@ -75,6 +75,7 @@ function collateral(type: string, guid: string, name: string, changes: unknown[]
 function toolCtx() {
   return {
     toolCallId: "t",
+    sessionId: "sess",
     signal: new AbortController().signal,
     abort: () => {},
     approve: async () => "once" as const,

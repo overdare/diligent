@@ -14,6 +14,7 @@ export async function runToolCalls(
   generateItemId: () => string,
   onToolAbort: () => void,
   outputStore?: ToolOutputFileStore,
+  sessionId?: string,
 ): Promise<{
   executions: Array<{
     toolCall: ToolCallBlock;
@@ -31,6 +32,7 @@ export async function runToolCalls(
 
   const buildToolContext = (toolCall: ToolCallBlock, toolItemId: string): ToolContext => ({
     toolCallId: toolCall.id,
+    sessionId,
     signal: signal ?? new AbortController().signal,
     abort: onToolAbort,
     onUpdate: (partial) => {

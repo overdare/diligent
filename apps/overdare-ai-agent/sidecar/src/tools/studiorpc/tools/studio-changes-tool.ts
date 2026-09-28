@@ -119,39 +119,50 @@ export function createStudioChangesTool(
   getCached?: () => StudioChangesCapture | undefined,
   getSessionId?: () => string | undefined,
 ): Tool {
-  let lastCapture: StudioChangesCapture | undefined;
-  let lastBatchId: string | undefined;
-  let lastGeneration: string | undefined;
-  let reported = new Map<string, number>();
+  const cursors = new Map<
+    string | undefined,
+    {
+      lastCapture?: StudioChangesCapture;
+      lastBatchId?: string;
+      lastGeneration?: string;
+      reported: Map<string, number>;
+    }
+  >();
   return {
     name: "studiorpc_studio_changes",
     description,
     parameters: params,
-    async execute(raw) {
+    async execute(raw, toolCtx) {
       try {
+        const sessionId = toolCtx.sessionId ?? getSessionId?.();
+        let cursor = cursors.get(sessionId);
+        if (!cursor) {
+          cursor = { reported: new Map() };
+          cursors.set(sessionId, cursor);
+        }
         const input = params.parse(raw);
         const cached = getCached?.();
-        if (cached !== lastCapture) {
-          reported.clear();
-          lastBatchId = undefined;
-          lastCapture = cached;
+        if (cached !== cursor.lastCapture) {
+          cursor.reported.clear();
+          cursor.lastBatchId = undefined;
+          cursor.lastCapture = cached;
         }
         // Explicit filters select archived detail mode even when view is omitted.
         if (input.view === "details" || input.batchId || input.guid || input.changeType || input.offset) {
-          let id = input.batchId ?? lastBatchId ?? cached?.id;
+          let id = input.batchId ?? cursor.lastBatchId ?? cached?.id;
           if (!id) {
             const live = peekEditLogs(cwd);
             id = live.envelopes.length
               ? storeStudioChangeBatch(cwd, live.envelopes, live.parseFailures).id
               : latestStudioChangeBatch(cwd);
-            lastBatchId = id;
+            cursor.lastBatchId = id;
           }
           if (!id) return { output: NO_EDITS_MESSAGE, metadata: { method: "studio_changes" } };
           const batch = readStudioChangeBatch(cwd, id);
           const path = studioChangeArchivePath(cwd, id);
           const fullValues = `Full values: ${Buffer.byteLength(path, "utf8") <= 1_000 ? path : "see archivePath in result metadata"}`;
           const heading = `Studio change details (batch ${id}):`;
-          const page = studioChangeDetails(excludeOwnEdits(batch.envelopes, getSessionId?.()), {
+          const page = studioChangeDetails(excludeOwnEdits(batch.envelopes, sessionId), {
             ...input,
             maxBytes:
               STUDIO_CHANGES_LIMITS.targetBytes - Buffer.byteLength(`${heading}\n\n${fullValues}`, "utf8") - 100,
@@ -170,19 +181,19 @@ export function createStudioChangesTool(
           };
         }
         const live = peekEditLogs(cwd);
-        if (live.generation !== lastGeneration) reported.clear();
+        if (live.generation !== cursor.lastGeneration) cursor.reported.clear();
         const current = new Map<string, number>();
         const unseen: EditLogEnvelope[] = [];
-        const externalEnvelopes = excludeOwnEdits(live.envelopes, getSessionId?.());
+        const externalEnvelopes = excludeOwnEdits(live.envelopes, sessionId);
         for (const envelope of externalEnvelopes) {
           const key = createHash("sha256").update(JSON.stringify(envelope)).digest("hex");
           const occurrence = (current.get(key) ?? 0) + 1;
           current.set(key, occurrence);
-          if (occurrence > (reported.get(key) ?? 0)) unseen.push(envelope);
+          if (occurrence > (cursor.reported.get(key) ?? 0)) unseen.push(envelope);
         }
         const cachedEnvelopes =
           cached && !cached.delivered && cached.id ? readStudioChangeBatch(cwd, cached.id).envelopes : [];
-        unseen.unshift(...excludeOwnEdits(cachedEnvelopes, getSessionId?.()));
+        unseen.unshift(...excludeOwnEdits(cachedEnvelopes, sessionId));
         if (!unseen.length)
           return cached?.result.metadata?.error
             ? cached.result
@@ -190,9 +201,9 @@ export function createStudioChangesTool(
         // Store the full live batch so pagination is stable even after the log grows.
         const archive = storeStudioChangeBatch(cwd, [...cachedEnvelopes, ...live.envelopes], live.parseFailures);
         const summary = summarizeEditLog(unseen, live.parseFailures, MID_TURN_HEADER, { footer: footer(archive.id) });
-        reported = current;
-        lastGeneration = live.generation;
-        lastBatchId = archive.id;
+        cursor.reported = current;
+        cursor.lastGeneration = live.generation;
+        cursor.lastBatchId = archive.id;
         if (cached && !cached.delivered) cached.finalize();
         return {
           output: summary.output,
