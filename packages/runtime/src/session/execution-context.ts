@@ -1,6 +1,5 @@
 // @summary Async-local actual/root session identity and bounded persisted ancestry resolution
 import { AsyncLocalStorage } from "node:async_hooks";
-import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { isSafeSessionId } from "./types";
 
@@ -55,18 +54,13 @@ export async function resolveSessionRoot(sessionId: string, parentSessionId: str
       throw new Error("Invalid or cyclic session ancestry");
     }
     seen.add(parent);
-    const file = await open(join(sessionsDir, `${parent}.jsonl`), "r");
-    let header: { type?: unknown; id?: unknown; parentSession?: unknown };
-    try {
-      const buffer = Buffer.alloc(65_536);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      const text = buffer.subarray(0, bytesRead).toString("utf8");
-      const end = text.indexOf("\n");
-      if (end < 0) throw new Error("Session ancestry header exceeds the read limit or is incomplete");
-      header = JSON.parse(text.slice(0, end));
-    } finally {
-      await file.close();
-    }
+    const bytes = await Bun.file(join(sessionsDir, `${parent}.jsonl`))
+      .slice(0, 65_536)
+      .arrayBuffer();
+    const text = Buffer.from(bytes).toString("utf8");
+    const end = text.indexOf("\n");
+    if (end < 0) throw new Error("Session ancestry header exceeds the read limit or is incomplete");
+    const header = JSON.parse(text.slice(0, end)) as { type?: unknown; id?: unknown; parentSession?: unknown };
     if (
       header.type !== "session" ||
       header.id !== parent ||
