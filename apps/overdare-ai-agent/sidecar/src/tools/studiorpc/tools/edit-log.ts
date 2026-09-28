@@ -14,6 +14,73 @@ import { decodeOvdrjm, isRecord } from "./ovdrjm-utils";
  */
 const ROOT_LOG_NAME = "edit.log";
 
+export function isStudioEditLogSourceName(name: string): boolean {
+  return /^edit\.log(?:\.[a-z0-9]+-\d+\.consuming)?$/i.test(name);
+}
+
+export interface ParsedEditLog {
+  envelopes: EditLogEnvelope[];
+  failures: number;
+  incomplete: boolean;
+  consumedChars: number;
+}
+
+/** Complete value boundaries are retained so a rotated writer can finish a tail later. */
+export function parseEditLogText(text: string): ParsedEditLog {
+  const result: ParsedEditLog = { envelopes: [], failures: 0, incomplete: false, consumedChars: 0 };
+  let index = 0;
+  while (index < text.length) {
+    if (/\s/.test(text[index])) {
+      result.consumedChars = ++index;
+      continue;
+    }
+    if (text[index] !== "{" && text[index] !== "[") {
+      result.failures++;
+      do {
+        index++;
+      } while (index < text.length && text[index] !== "{" && text[index] !== "[");
+      result.consumedChars = index;
+      continue;
+    }
+    const start = index;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (; index < text.length; index++) {
+      const ch = text[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') quoted = false;
+      } else if (ch === '"') quoted = true;
+      else if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") {
+        depth--;
+        if (depth === 0) {
+          index++;
+          break;
+        }
+      }
+    }
+    if (depth !== 0 || quoted) {
+      result.incomplete = true;
+      break;
+    }
+    try {
+      const parsed: unknown = JSON.parse(text.slice(start, index));
+      for (const value of Array.isArray(parsed) ? parsed : [parsed]) {
+        const envelope = isRecord(value) ? toEnvelope(value) : undefined;
+        if (envelope) result.envelopes.push(envelope);
+        else result.failures++;
+      }
+    } catch {
+      result.failures++;
+    }
+    result.consumedChars = index;
+  }
+  return result;
+}
+
 /** Pending (and leftover `.consuming`) log files in the project root. */
 function listLogFiles(cwd: string): { pending: string[]; leftovers: string[] } {
   const pending: string[] = [];
