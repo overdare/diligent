@@ -10,7 +10,7 @@ const record = (guid: string) => ({
 
 test("concatenated records retain a consumed boundary before an unfinished tail", () => {
   const first = JSON.stringify(record("first"), null, 2);
-  const parsed = parseEditLogText(first + '\n{"Timestamp":');
+  const parsed = parseEditLogText(`${first}\n{"Timestamp":`);
   expect(parsed.envelopes.map((entry) => entry.objects[0].guid)).toEqual(["first"]);
   expect(parsed.incomplete).toBe(true);
   expect(parsed.consumedChars).toBe(first.length + 1);
@@ -30,7 +30,7 @@ test("arrays, adjacent envelopes and JSONL preserve transaction occurrences", ()
 test("balanced malformed values and non-JSON garbage are failures, not empty success", () => {
   expect(parseEditLogText('{"broken":}').failures).toBe(1);
   expect(parseEditLogText("garbage").failures).toBe(1);
-  expect(parseEditLogText(JSON.stringify(record("good")) + "garbage").failures).toBe(1);
+  expect(parseEditLogText(`${JSON.stringify(record("good"))}garbage`).failures).toBe(1);
   expect(parseEditLogText("{}").failures).toBe(1);
 });
 
