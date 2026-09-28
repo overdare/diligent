@@ -221,8 +221,9 @@ The script itself is `scripts/dev-cross-studio.sh`. To understand how it works, 
 
 ## Image import during cross-machine development
 
-Studio reads imported images on the Windows host. Configure both shared-directory roots so the
-dev sidecar can translate an agent-local path for `studiorpc_asset_manager_image_import`:
+Studio reads imported files on the Windows host. Configure both shared-directory roots so the
+dev sidecar can translate an agent-local path for `studiorpc_asset_manager_image_import` or the unified
+`studiorpc_asset_manager_import` tool, which also supports 3D models:
 
 ```sh
 STUDIO_LOCAL_FILE_ROOT=/Volumes/StudioProject

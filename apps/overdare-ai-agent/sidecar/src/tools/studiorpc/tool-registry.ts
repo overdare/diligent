@@ -4,6 +4,7 @@ import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import";
+import * as assetManagerImport from "./methods/asset-manager.import";
 import * as gameCharacterRead from "./methods/game.character.read";
 import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
@@ -27,6 +28,7 @@ import * as viewportCameraSet from "./methods/viewport.camera.set";
 import {
   buildAssetDrawerImportRender,
   buildAssetManagerImageImportRender,
+  buildAssetManagerImportRender,
   buildGamePlayRender,
   buildGameScreenshotRender,
   buildGameStopRender,
@@ -71,6 +73,7 @@ export const methodModules: MethodModule[] = [
   instanceSchemaSearch,
   assetDrawerImport,
   assetManagerImageImport,
+  assetManagerImport,
   levelBrowse,
   levelSaveFile,
   levelPublish,
@@ -88,14 +91,21 @@ export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,
   assetManagerImageImport.method,
+  assetManagerImport.method,
   rigBuilderInsert.method,
 ]);
-export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
+export const savingMethods = new Set([
+  assetDrawerImport.method,
+  assetManagerImageImport.method,
+  assetManagerImport.method,
+]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
   studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
     buildAssetManagerImageImportRender(result, normalizedArgs, output),
+  studiorpc_asset_manager_import: ({ normalizedArgs, output, result }) =>
+    buildAssetManagerImportRender(result, normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),

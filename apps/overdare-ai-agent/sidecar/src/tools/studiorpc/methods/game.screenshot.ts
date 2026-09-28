@@ -18,7 +18,8 @@ export const method = "game.screenshot";
 export const description =
   "Capture the active OVERDARE Studio viewport and return the PNG with its file path, captured size, and " +
   "camera. UI is included by default. Use screenshots for rendered layout, clipping, overlap, and visual " +
-  "quality; use game.observe for live property values such as colors and contrast. `locate` projects world " +
+  "quality. Pass pieSessionId and clientId together to capture a specific play-test client. " +
+  "Use game.observe for live property values such as colors and contrast. `locate` projects world " +
   "positions or instance names/paths into the same normalized 0..1 coordinates used by input injection. " +
   "`screen` is the unclamped projected bounds and `onScreen` means inside the camera frustum, not visible " +
   "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits. " +
@@ -34,6 +35,16 @@ const worldPoint = z.object({
 
 export const params = z
   .object({
+    pieSessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Play-test session ID from game.pie.status. Supply with clientId to capture that client."),
+    clientId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Play-test client ID from game.pie.status. Supply with pieSessionId to capture that client."),
     includeGui: z
       .boolean()
       .optional()
@@ -235,7 +246,12 @@ export async function postProcess(result: unknown, args: Record<string, unknown>
   const ambiguous: string[] = [];
   let failureDetail = "";
   let levelBrowse: Promise<unknown> | undefined;
+  const target = {
+    ...(typeof args.pieSessionId === "string" ? { pieSessionId: args.pieSessionId } : {}),
+    ...(typeof args.clientId === "string" ? { clientId: args.clientId } : {}),
+  };
   const cachedCallRpc: CallRpc = (method, params, options) => {
+    if (method === "game.instance.read") return callRpc(method, { ...params, ...target }, options);
     if (method === "level.browse" && Object.keys(params).length === 0) {
       levelBrowse ??= callRpc(method, params, options);
       return levelBrowse;
@@ -257,7 +273,7 @@ export async function postProcess(result: unknown, args: Record<string, unknown>
       absent.push(name);
     }
   }
-  const nearby = absent.length > 0 ? await listRunningInstanceNames(callRpc) : [];
+  const nearby = absent.length > 0 ? await listRunningInstanceNames(cachedCallRpc) : [];
   if (absent.length > 0) {
     out.locateNotFound = absent;
     out.locateNote =

@@ -263,25 +263,44 @@ export function buildAssetManagerImageImportRender(
   args: Record<string, unknown>,
   output: string,
 ): ToolRenderPayload {
+  return assetManagerImportRender(result, args, output, true);
+}
+
+export function buildAssetManagerImportRender(
+  result: unknown,
+  args: Record<string, unknown>,
+  output: string,
+): ToolRenderPayload {
+  return assetManagerImportRender(result, args, output, false);
+}
+
+function assetManagerImportRender(
+  result: unknown,
+  args: Record<string, unknown>,
+  output: string,
+  imageOnly: boolean,
+): ToolRenderPayload {
   const file = readString(args.file) ?? "";
   const asset = isRecord(result) && isRecord(result.asset) ? result.asset : undefined;
   const returnedAssetId = asset ? readString(asset.assetid) : undefined;
   const returnedFile = asset ? readString(asset.file) : undefined;
+  const fallback = imageOnly ? "Image imported." : "Asset imported.";
   return {
-    inputSummary: clip(file || "image file"),
-    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
+    inputSummary: clip(file || (imageOnly ? "image file" : "asset file")),
+    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : fallback),
     blocks: [
       {
         type: "key_value",
-        title: "Asset manager image import",
+        title: imageOnly ? "Asset manager image import" : "Asset manager import",
         items: [
           { key: "file", value: returnedFile ?? file },
+          { key: "assetName", value: readString(args.assetName) ?? "" },
           { key: "assetid", value: returnedAssetId ?? "" },
         ].filter((item) => item.value.length > 0),
       },
       {
         type: "summary",
-        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
+        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : fallback),
         tone: "success",
       },
     ],
@@ -525,6 +544,10 @@ export function buildGameScreenshotRender(
   const source = isRecord(result) ? readString(result.source) : undefined;
 
   const items: { key: string; value: string }[] = [{ key: "captureType", value: captureType }];
+  for (const key of ["pieSessionId", "clientId"] as const) {
+    const value = readString(args[key]);
+    if (value) items.push({ key, value });
+  }
   if (typeof args.includeGui === "boolean") {
     items.push({ key: "includeGui", value: String(args.includeGui) });
   }
