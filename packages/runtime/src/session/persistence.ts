@@ -213,16 +213,19 @@ export interface SessionReconcileResult {
 }
 
 export class SessionPersistence {
+  private parentSessionId: string | undefined;
   private writer: SessionWriter;
   private writeQueue: Promise<void> = Promise.resolve();
   /** Monotonic per-session line counter; seeded from existing entries on resume. */
   private seq = 0;
 
   constructor(private readonly config: SessionPersistenceConfig) {
+    this.parentSessionId = config.parentSession;
     this.writer = this.createWriter(config.sessionId);
   }
 
   resetForCreate(): void {
+    this.parentSessionId = this.config.parentSession;
     this.writeQueue = Promise.resolve();
     this.seq = 0;
     this.writer = this.createWriter(this.config.sessionId ?? this.writer.id);
@@ -246,7 +249,8 @@ export class SessionPersistence {
 
     if (!sessionPath) return null;
 
-    const { entries } = await readSessionFile(sessionPath);
+    const { header, entries } = await readSessionFile(sessionPath);
+    this.parentSessionId = header.parentSession;
     this.writeQueue = Promise.resolve();
     // Seed seq from existing lines so resumed sessions keep (session_id, seq) unique.
     this.seq = entries.length;
@@ -407,6 +411,10 @@ export class SessionPersistence {
 
   get sessionId(): string {
     return this.writer.id;
+  }
+
+  get parentSession(): string | undefined {
+    return this.parentSessionId;
   }
 
   private createWriter(sessionId?: string): SessionWriter {

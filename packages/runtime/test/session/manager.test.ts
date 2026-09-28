@@ -16,6 +16,7 @@ import type { SessionManagerConfig } from "@diligent/runtime/session";
 import { readSessionFile, SessionManager } from "@diligent/runtime/session";
 import { z } from "zod";
 import type { AgentEvent } from "../../src/agent-event";
+import { getSessionExecutionContext, runWithSessionExecutionContext } from "../../src/session/execution-context";
 
 const TEST_ROOT = join(tmpdir(), `diligent-sm-test-${Date.now()}`);
 const COMPACTION_MIN_INPUT_TOKENS = 50_000;
@@ -106,6 +107,19 @@ function makeManagerConfig(dir: string, streamFn: StreamFunction): SessionManage
   };
 }
 
+test("a root run announces busy synchronously before yielding to turn-start dispatch", async () => {
+  const dir = await setupDir();
+  const manager = new SessionManager(makeManagerConfig(dir, createMockStreamFn([makeAssistant()])));
+  await manager.create();
+  const events: AgentEvent[] = [];
+  manager.subscribe((event) => events.push(event));
+  const running = manager.run({ role: "user", content: "work", timestamp: Date.now() });
+  const first = events[0];
+  await running;
+  await manager.waitForWrites();
+  expect(first).toMatchObject({ type: "status_change", status: "busy" });
+});
+
 /** Collect events via subscribe, run, return events. */
 async function runCollecting(mgr: SessionManager, userMsg: Message): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
@@ -123,6 +137,50 @@ afterEach(async () => {
 });
 
 describe("SessionManager", () => {
+  test("shared tools execute with actual identity and resumed children resolve persisted ancestry", async () => {
+    const dir = await setupDir();
+    const observed: Array<{ sessionId: string; rootSessionId: string; resumed: boolean }> = [];
+    const tool: Tool = {
+      name: "observe_identity",
+      description: "Observe execution identity",
+      parameters: z.object({}),
+      async execute() {
+        const scope = getSessionExecutionContext()!;
+        observed.push({ sessionId: scope.sessionId, rootSessionId: scope.rootSessionId, resumed: scope.resumed });
+        return { output: "observed" };
+      },
+    };
+    const build = (parentSession?: string) => ({
+      cwd: dir,
+      paths: resolvePaths(dir),
+      parentSession,
+      agent: new Agent(TEST_MODEL, [], [tool], {
+        llmMsgStreamFn: createMockStreamFn([
+          makeAssistantMessage([{ type: "tool_call", id: "identity", name: tool.name, input: {} }], "tool_use"),
+          makeAssistant(),
+        ]),
+      }),
+    });
+    const parent = new SessionManager(build());
+    await parent.create();
+    const child = new SessionManager(build(parent.sessionId));
+    await child.create();
+    await child.waitForWrites();
+    const resumed = new SessionManager(build());
+    expect(await resumed.resume({ sessionId: child.sessionId })).toBe(true);
+    await runWithSessionExecutionContext(
+      {
+        sessionId: "unrelated",
+        rootSessionId: "unrelated",
+        resumed: false,
+        rootRequest: { sessionId: "unrelated", requestId: "unrelated" },
+      },
+      () => resumed.run({ role: "user", content: "observe", timestamp: Date.now() }),
+    );
+    expect(observed).toEqual([{ sessionId: child.sessionId, rootSessionId: parent.sessionId, resumed: true }]);
+    await resumed.waitForWrites();
+  });
+
   test("create() starts with empty session", async () => {
     const dir = await setupDir();
     const mgr = new SessionManager(makeManagerConfig(dir, createMockStreamFn([])));

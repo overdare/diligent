@@ -1,24 +1,52 @@
 // @summary Tests EditLogging consumption, summarization, and studio-changes context injection.
 
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolvePaths } from "@diligent/runtime";
+import { acceptContextInjectionMetadata, resolvePaths } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../src/tools/studiorpc";
 import {
-  rotateAndReadEditLogs,
+  parseEditLogText,
   SECTION_TITLES,
   STUDIO_CHANGES_LIMITS,
   summarizeEditLog,
 } from "../../src/tools/studiorpc/tools/edit-log";
-import { consumeStudioChanges, createStudioChangesTool } from "../../src/tools/studiorpc/tools/studio-changes-tool";
+import {
+  getStudioChangeCollector,
+  stopStudioChangeCollector,
+} from "../../src/tools/studiorpc/tools/studio-change-collector";
+import {
+  captureStudioChanges,
+  createStudioChangesTool as createRamStudioChangesTool,
+} from "../../src/tools/studiorpc/tools/studio-changes-tool";
 import { COUNT_SECTIONS } from "../../src/web/client/components/StudioChangesNotice";
+import { bindStudioTestSession } from "../helpers/studio-session";
 
+const projectDirs: string[] = [];
+afterEach(async () => {
+  for (const cwd of projectDirs.splice(0)) {
+    await stopStudioChangeCollector(cwd);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+async function consumeStudioChanges(cwd: string, sessionId = "sess") {
+  const collector = getStudioChangeCollector(cwd);
+  await collector.refresh();
+  return captureStudioChanges(collector.store.read({ sessionId, rootSessionId: sessionId, resumed: false }));
+}
+function createStudioChangesTool(cwd: string) {
+  return createRamStudioChangesTool(getStudioChangeCollector(cwd), () => ({
+    sessionId: "sess",
+    rootSessionId: "sess",
+    resumed: false,
+  }));
+}
 const NO_EDITS = "No Studio changes recorded in the collected edit log.";
 
 function projectDir(): string {
   const cwd = mkdtempSync(join(tmpdir(), "proj-"));
+  projectDirs.push(cwd);
   writeFileSync(join(cwd, "world.umap"), "umap");
   writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{}}');
   return cwd;
@@ -263,11 +291,9 @@ describe("summarizeEditLog", () => {
   });
 });
 
-/** Round-trip a raw envelope through the real file parser so tests exercise it too. */
+/** Normalize synthetic records through the production parser. */
 function parse(raw: Record<string, unknown>) {
-  const cwd = projectDir();
-  writeEditLog(cwd, [raw]);
-  const batch = rotateAndReadEditLogs(cwd);
+  const batch = parseEditLogText(JSON.stringify(raw));
   if (batch.envelopes.length !== 1) throw new Error("test envelope failed to parse");
   return batch.envelopes[0];
 }
@@ -325,11 +351,11 @@ describe("real Studio Edit.Log format", () => {
     .join("\n")
     .replace(/\n/g, "\r\n");
 
-  test("consumes a root Edit.Log with PascalCase concatenated envelopes", () => {
+  test("consumes a root Edit.Log with PascalCase concatenated envelopes", async () => {
     const cwd = projectDir();
     writeFileSync(join(cwd, "Edit.Log"), REAL_LOG);
 
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     expect(capture.result.metadata?.studioChangesDetected).toBe(true);
     expect(capture.result.metadata?.transactions).toBe(2);
     // Only the envelope subject (ActorGuids) counts; auxiliary creations and
@@ -342,92 +368,96 @@ describe("real Studio Edit.Log format", () => {
     // Rotation happens at the root, and finalize clears it.
     const rootNames = readdirSync(cwd);
     expect(rootNames).not.toContain("Edit.Log");
-    expect(rootNames.some((name) => name.endsWith(".consuming"))).toBe(true);
+    expect(rootNames.some((name) => name.endsWith(".consuming"))).toBe(false);
     capture.finalize();
     expect(readdirSync(cwd).some((name) => name.endsWith(".consuming"))).toBe(false);
   });
 
-  test("ignores unrelated root files and a truncated trailing envelope", () => {
+  test("ignores unrelated root files and a truncated trailing envelope", async () => {
     const cwd = projectDir();
     writeFileSync(join(cwd, "Play.log"), "not an edit log");
     writeFileSync(join(cwd, "Edit.Log"), `${REAL_LOG}\r\n{\r\n\t"Timestamp": "2026-08-26T12:`);
 
-    const { result } = consumeStudioChanges(cwd);
+    const { result } = await consumeStudioChanges(cwd);
     expect(result.metadata?.studioChangesDetected).toBe(true);
-    expect(result.metadata?.transactions).toBe(2); // truncated tail dropped, not fatal
+    expect(result.metadata?.transactions).toBe(2); // Complete prefixes are reported; the tail stays pending.
     expect(readdirSync(cwd)).toContain("Play.log"); // untouched
   });
 });
 
 describe("consumeStudioChanges", () => {
-  test("returns no-edits when the EditLogging directory does not exist", () => {
-    const { result } = consumeStudioChanges(projectDir());
+  test("returns no-edits when the EditLogging directory does not exist", async () => {
+    const { result } = await consumeStudioChanges(projectDir());
     expect(result.output).toBe(NO_EDITS);
     expect(result.metadata?.studioChangesDetected).toBe(false);
   });
 
-  test("rotates log files immediately and deletes them only on finalize", () => {
+  test("collection deletes complete sources independently of session acknowledgment", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Ramp")])]);
 
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     expect(capture.result.metadata?.studioChangesDetected).toBe(true);
     const afterConsume = logFiles(cwd);
-    expect(afterConsume.some((name) => name.endsWith(".consuming"))).toBe(true);
+    expect(afterConsume.some((name) => name.endsWith(".consuming"))).toBe(false);
     expect(afterConsume).not.toContain("Edit.Log");
 
     capture.finalize();
     expect(logFiles(cwd)).toEqual([]);
   });
 
-  test("re-reads leftover .consuming files from a crashed turn", () => {
+  test("re-reads leftover .consuming files from a crashed turn", async () => {
     const cwd = projectDir();
     writeFileSync(
-      join(cwd, "Edit.Log.old.consuming"),
+      join(cwd, "Edit.Log.aaa-0.consuming"),
       JSON.stringify(envelope("Create", [subject("Part", "p1", "Old")])),
     );
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "New")])]);
 
-    const { result } = consumeStudioChanges(cwd);
+    const { result } = await consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Old" (p1)');
     expect(result.output).toContain('+ Part "New" (p2)');
   });
 
-  test("counts malformed envelopes but keeps the parsable ones", () => {
+  test("counts malformed envelopes but keeps the parsable ones", async () => {
     const cwd = projectDir();
     // A brace-balanced but invalid chunk is a parse failure; a truncated tail
-    // (mid-append) is silently dropped instead.
+    // (mid-append) remains on disk for the collector's next retry.
     writeFileSync(
       join(cwd, "Edit.Log"),
       `${JSON.stringify(envelope("Create", [subject("Part", "p2", "Ramp")]))}\n{"bad": }\n{"truncated`,
     );
 
-    const { result } = consumeStudioChanges(cwd);
+    const { result } = await consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Ramp" (p2)');
-    expect(result.output).toContain("1 log entries could not be parsed");
+    expect(result.output).toContain("1 malformed Studio edit records");
   });
 
-  test("accepts a whole-file JSON array as well as JSONL", () => {
+  test("accepts a whole-file JSON array as well as JSONL", async () => {
     const cwd = projectDir();
     writeFileSync(join(cwd, "Edit.Log"), JSON.stringify([envelope("Create", [subject("Part", "p2", "Ramp")])]));
 
-    const { result } = consumeStudioChanges(cwd);
+    const { result } = await consumeStudioChanges(cwd);
     expect(result.output).toContain('+ Part "Ramp" (p2)');
   });
 });
 
 describe("createStudioChangesTool", () => {
-  test("archives omitted details before removing the log and retrieves them after recreation", async () => {
+  test("retains omitted details in RAM after collection and tool recreation", async () => {
     const cwd = projectDir();
     const objects = Array.from({ length: 80 }, (_, i) =>
       subject("Part", `part-${i}`, `Part${i}`, [{ Property: "Name", Before: `Old${i}`, After: `Part${i}` }]),
     );
     writeEditLog(cwd, [envelope("SetProperty", objects)]);
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     expect(capture.result.output).not.toContain("(part-79)");
-    const archivePath = capture.result.metadata?.archivePath as string;
-    const archived = JSON.parse(readFileSync(archivePath, "utf8"));
-    expect(archived.envelopes[0].objects).toHaveLength(80);
+    expect(capture.result.metadata?.archivePath).toBeUndefined();
+    const retained = getStudioChangeCollector(cwd).store.readBatch(capture.id!, {
+      sessionId: "sess",
+      rootSessionId: "sess",
+      resumed: false,
+    });
+    expect(retained[0].objects).toHaveLength(80);
     capture.finalize();
     expect(logFiles(cwd)).toEqual([]);
     const tool = createStudioChangesTool(cwd);
@@ -436,19 +466,18 @@ describe("createStudioChangesTool", () => {
     expect(details.metadata?.total).toBe(1);
   });
 
-  test("does not delete a rotated log when archival fails", () => {
+  test("does not depend on disk archive storage being writable", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p1", "Keep")])]);
-    const capture = consumeStudioChanges(cwd);
-    // An archive is durable before finalize. A failed capture must leave its
-    // rotated input recoverable, including when its storage root is blocked.
+    const capture = await consumeStudioChanges(cwd);
+    // RAM collection does not need to create an archive even when storage is blocked.
     const blocked = projectDir();
     writeFileSync(resolvePaths(blocked).root, "not a directory");
     writeEditLog(blocked, [envelope("Create", [subject("Part", "p1", "Keep")])]);
-    const failed = consumeStudioChanges(blocked);
-    expect(failed.result.metadata?.error).toBe(true);
+    const failed = await consumeStudioChanges(blocked);
+    expect(failed.result.metadata?.error).toBeUndefined();
     failed.finalize();
-    expect(logFiles(blocked).some((name) => name.endsWith(".consuming"))).toBe(true);
+    expect(logFiles(blocked)).toEqual([]);
     capture.finalize();
   });
 
@@ -459,14 +488,14 @@ describe("createStudioChangesTool", () => {
     const tool = createStudioChangesTool(cwd);
     expect((await tool.execute({} as never, toolCtx())).output).toContain("Size: 1 -> 2");
     expect((await tool.execute({} as never, toolCtx())).output).toBe(NO_EDITS);
-    writeEditLog(cwd, [edit, edit]);
+    writeEditLog(cwd, [edit]);
     const appended = await tool.execute({} as never, toolCtx());
     expect(appended.output).toContain("Size: 1 -> 2");
     expect(appended.output).not.toContain("(2 edits)");
-    expect(logFiles(cwd)).toContain("Edit.Log");
+    expect(logFiles(cwd)).toEqual([]);
   });
 
-  test("pages archived detail rows and filters by change kind without losing later properties", async () => {
+  test("pages retained RAM detail rows and filters by change kind without losing later properties", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [
       envelope("Create", [subject("Part", "added", "Added")]),
@@ -480,7 +509,7 @@ describe("createStudioChangesTool", () => {
         subject("Script", "s1", "Controller", [{ Property: "Source" }]),
       ]),
     ]);
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     capture.finalize();
     const tool = createStudioChangesTool(cwd);
     const page = await tool.execute(
@@ -507,13 +536,12 @@ describe("createStudioChangesTool", () => {
     expect(invalid.metadata?.error).toBe(true);
   });
 
-  test("new queries reset their cursor when Studio recreates its log", async () => {
+  test("new queries preserve delivery markers across recreated live logs", async () => {
     const cwd = projectDir();
     const edit = envelope("Create", [subject("Part", "p1", "Door")]);
     writeEditLog(cwd, [edit]);
     const tool = createStudioChangesTool(cwd);
     expect((await tool.execute({} as never, toolCtx())).output).toContain("(p1)");
-    rmSync(join(cwd, "Edit.Log"));
     writeEditLog(cwd, [edit]);
     expect((await tool.execute({} as never, toolCtx())).output).toContain("(p1)");
   });
@@ -527,7 +555,7 @@ describe("createStudioChangesTool", () => {
         ]),
       ]),
     ]);
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     const tool = createStudioChangesTool(cwd);
     let offset = 0;
     const outputs: string[] = [];
@@ -545,35 +573,36 @@ describe("createStudioChangesTool", () => {
     for (let i = 0; i < 100; i++) expect(all.split(`Tag: added ${i}:`)).toHaveLength(2);
   });
 
-  test("detail filters can snapshot the live log without consuming or acknowledging it", async () => {
+  test("detail filters use a captured RAM batch without acknowledging it", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [
       envelope("SetProperty", [subject("Part", "p1", "Door", [{ Property: "Name", Before: "Old", After: "Door" }])]),
     ]);
+    await consumeStudioChanges(cwd);
     const tool = createStudioChangesTool(cwd);
     const page = await tool.execute({ guid: "p1" } as never, toolCtx());
     expect(page.output).toContain("Name: Old -> Door");
-    expect(page.output).toContain("Full values:");
+    expect(page.output).toContain("retained temporarily in RAM");
     expect((await tool.execute({} as never, toolCtx())).output).toContain("Name: Old -> Door");
-    expect(logFiles(cwd)).toContain("Edit.Log");
+    expect(logFiles(cwd)).toEqual([]);
   });
 
   test("reports new edits without repeating the delivered turn-start summary", async () => {
     const cwd = projectDir();
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p2", "Ramp")])]);
-    const capture = consumeStudioChanges(cwd);
+    const capture = await consumeStudioChanges(cwd);
     capture.finalize();
 
     // Studio records more edits while the agent works.
     writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
 
-    const tool = createStudioChangesTool(cwd, () => capture);
+    const tool = createStudioChangesTool(cwd);
     const result = await tool.execute({} as never, toolCtx());
     expect(result.output).not.toContain('+ Part "Ramp" (p2)');
     expect(result.output).toContain("recorded during this turn");
     expect(result.output).toContain('- Part "Crate" (p9)');
-    // Peek must not consume: the mid-turn log stays for the next turn.
-    expect(logFiles(cwd)).toContain("Edit.Log");
+    // The collector, not the query's marker, owns source cleanup.
+    expect(logFiles(cwd)).toEqual([]);
   });
 
   test("returns the no-edits message when nothing is pending or cached", async () => {
@@ -687,7 +716,7 @@ describe("bounded Studio change summaries", () => {
 
 describe("studio-changes unified loop-hook context injection", () => {
   function promptProvider() {
-    const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+    const provider = bindStudioTestSession(createStudioRpcToolProvider({ callRpc: async () => ({}) }));
     return provider as typeof provider & {
       onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit>;
     };
@@ -729,6 +758,7 @@ describe("studio-changes unified loop-hook context injection", () => {
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
     expect(injections?.[0]?.content).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
     expect(injections?.[0]?.content).not.toContain("GroupCFrame");
+    acceptContextInjectionMetadata(injections?.[0]?.metadata);
 
     writeEditLog(cwd, [
       envelope("SetProperty", [subject("Folder", "f1", "Props", [{ Property: "GroupSize", Before: 1, After: 2 }])]),
@@ -740,7 +770,7 @@ describe("studio-changes unified loop-hook context injection", () => {
     expect(result.output).not.toContain('~ Model "Tree" (m1)');
     expect(result.output).toContain('~ Folder "Props" (f1)\n  Size changed via gizmo');
     expect(result.output).not.toMatch(/GroupCFrame|GroupSize|1 -> 2/);
-    expect(logFiles(cwd)).toContain("Edit.Log");
+    expect(logFiles(cwd)).toEqual([]);
   });
 
   test("injects nothing when the log is empty", async () => {
@@ -763,7 +793,7 @@ describe("studio-changes unified loop-hook context injection", () => {
     const p = provider as typeof provider & { onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit> };
     await p.onUserPromptSubmit(promptInput(projectDir()));
     expect(calls).toEqual([]);
-    expect(provider.onStop).toBeUndefined();
+    expect(provider.onStop).toBeDefined();
   });
 
   test("injects at most once per user request even when edits arrive between model iterations", async () => {
@@ -793,7 +823,7 @@ test("Studio change summaries explain attribution and verification without claim
       { ActorGuid: "p1", Name: "Part", Changes: [{ Property: "Name", Before: "Old", After: "New" }] },
     ]),
   ]);
-  const capture = consumeStudioChanges(cwd);
+  const capture = await consumeStudioChanges(cwd);
   expect(capture.result.output).toContain("Studio changes collected at turn start:");
   expect(capture.result.output).toContain("may include this session's own work");
   expect(capture.result.output).toContain("Compare these changes with your own work");

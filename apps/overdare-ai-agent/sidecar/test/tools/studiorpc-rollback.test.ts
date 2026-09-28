@@ -18,6 +18,7 @@ import {
 } from "../../src/tools/studiorpc/tools/snapshot";
 import { createSnapshotContextTool } from "../../src/tools/studiorpc/tools/snapshot-context-tool";
 import { createSnapshotListTool } from "../../src/tools/studiorpc/tools/snapshot-list-tool";
+import { bindStudioTestSession } from "../helpers/studio-session";
 
 function projectDir(): string {
   const cwd = mkdtempSync(join(tmpdir(), "proj-"));
@@ -230,7 +231,9 @@ describe("snapshot capture on first edit", () => {
       approve?: () => Promise<"once" | "always" | "reject">;
     } = {},
   ) {
-    const provider = createStudioRpcToolProvider({ callRpc: options.callRpc ?? (async () => ({})) });
+    const provider = bindStudioTestSession(
+      createStudioRpcToolProvider({ callRpc: options.callRpc ?? (async () => ({})) }),
+    );
     const p = provider as typeof provider & {
       onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit>;
     };

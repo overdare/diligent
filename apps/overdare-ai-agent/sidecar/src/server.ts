@@ -17,6 +17,7 @@ import {
 } from "./mcp-server";
 import { createRouterEndpoint } from "./router-endpoint";
 import { flushSentry } from "./sentry";
+import { startStudioChangeHost } from "./studio-change-lifecycle";
 import { createSidecarToken, type StudioRegistration, startStudioRegistration } from "./studio-registry";
 import { createStudioBundledToolProviders } from "./tools";
 import { type ConsentService, createGatewayConsentService } from "./tools/gateway/consent";
@@ -161,33 +162,37 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
   let registration: StudioRegistration | null = null;
 
   try {
-    const { server } = await createWebServer({
-      port: args.port,
-      dev: args.dev,
-      cwd,
-      userId: args.userId,
-      distDir: args.distDir,
-      // AI-data consent is owned by the gateway (`/v1/consent`), not local config.jsonc.
-      // UI-only development has no consent backend or gateway transmission.
-      consentBackend: consentMode.consentBackend,
-      feedbackBackend: { submit: postUserFeedback },
-      bundledToolProviders: createStudioBundledToolProviders({
+    const studioHost = await startStudioChangeHost(cwd, studioDisabled, () =>
+      createWebServer({
+        port: args.port,
+        dev: args.dev,
         cwd,
-        studioRpcPort: parseEnvPort(process.env.STUDIO_PORT),
-        hubDomain: process.env.HUB_DOMAIN,
-        projectId: process.env.OVERDARE_PROJECT_ID,
-        canTransmitRecords: consentMode.canTransmitRecords,
-        // STUDIO_DISABLED=1 → skip the Studio RPC provider entirely (no 13377 connects).
-        studioDisabled,
-        studioRpc,
+        userId: args.userId,
+        distDir: args.distDir,
+        // AI-data consent is owned by the gateway (`/v1/consent`), not local config.jsonc.
+        // UI-only development has no consent backend or gateway transmission.
+        consentBackend: consentMode.consentBackend,
+        feedbackBackend: { submit: postUserFeedback },
+        bundledToolProviders: createStudioBundledToolProviders({
+          cwd,
+          studioRpcPort: parseEnvPort(process.env.STUDIO_PORT),
+          hubDomain: process.env.HUB_DOMAIN,
+          projectId: process.env.OVERDARE_PROJECT_ID,
+          canTransmitRecords: consentMode.canTransmitRecords,
+          // STUDIO_DISABLED=1 → skip the Studio RPC provider entirely (no 13377 connects).
+          studioDisabled,
+          studioRpc,
+        }),
+        experimentDefinitions: OVERDARE_EXPERIMENTS,
+        // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for
+        // the router to route to — skip the endpoint (and the registration below) entirely.
+        ...(studioDisabled ? {} : { extraRoutes: createRouterEndpoint({ token: sidecarToken, registries }) }),
       }),
-      experimentDefinitions: OVERDARE_EXPERIMENTS,
-      // STUDIO_DISABLED=1 is UI-only development with no Studio behind it, so there is nothing for
-      // the router to route to — skip the endpoint (and the registration below) entirely.
-      ...(studioDisabled ? {} : { extraRoutes: createRouterEndpoint({ token: sidecarToken, registries }) }),
-    });
+    );
+    const { server } = studioHost.host;
 
     const cleanup = () => {
+      void studioHost.stop();
       cleanupParentWatchdog?.();
       cleanupLogFile?.();
       // Drop the registry record so the router stops offering a Studio that is going away. The
@@ -198,11 +203,11 @@ export async function startStudioServer(argv: string[] = process.argv.slice(2)):
     process.once("exit", cleanup);
     process.once("SIGTERM", () => {
       cleanup();
-      process.exit(0);
+      void studioHost.stop().finally(() => process.exit(0));
     });
     process.once("SIGINT", () => {
       cleanup();
-      process.exit(0);
+      void studioHost.stop().finally(() => process.exit(0));
     });
 
     // Launcher contract: this exact, undecorated stdout line is machine-parsed by the Rust host.

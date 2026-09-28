@@ -34,6 +34,7 @@ export { createGeminiStream } from "@diligent/core/providers/gemini";
 export { createOpenAIStream } from "@diligent/core/providers/openai";
 export type { Tool, ToolContext, ToolRegistry, ToolResult } from "@diligent/core/tool-contract";
 export { getBuiltinAgentDefinitions } from "./agent/agent-types";
+export { acceptContextInjectionMetadata, acknowledgeContextInjection } from "./agent/context-acceptance";
 export type { ContextPresentation } from "./agent/context-presentation";
 export { createPresentableContextInjection, readContextPresentation } from "./agent/context-presentation";
 export type { Mode } from "./agent/mode";
@@ -158,6 +159,12 @@ export {
   SessionManager,
   SessionWriter,
 } from "./session";
+export type { SessionExecutionContext, SessionExecutionRoot } from "./session/execution-context";
+export {
+  getSessionExecutionContext,
+  onSessionExecutionEnd,
+  runWithSessionExecutionContext,
+} from "./session/execution-context";
 export type { DiscoveryOptions, SkillFrontmatter, SkillLoadError, SkillLoadResult, SkillMetadata } from "./skills";
 export { discoverSkills, extractBody, renderSkillsSection } from "./skills";
 export type {

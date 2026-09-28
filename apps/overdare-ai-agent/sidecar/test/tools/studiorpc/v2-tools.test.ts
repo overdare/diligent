@@ -11,12 +11,14 @@ import { EOL, tmpdir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
 import { executeTool, type Tool } from "@diligent/core/tool-contract";
+import { runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { checkResult } from "../../../src/tools/studiorpc/tools/v2/result";
 
 interface RpcCall {
   method: string;
   params?: Record<string, unknown>;
+  meta?: { sessionId: string };
 }
 
 type Responder = (method: string, params?: Record<string, unknown>) => unknown;
@@ -109,8 +111,8 @@ beforeAll(async () => {
   server = net.createServer((socket) => {
     const lines = readline.createInterface({ input: socket });
     lines.on("line", (line) => {
-      const request = JSON.parse(line) as { id: number; method: string; params?: Record<string, unknown> };
-      rpcCalls.push({ method: request.method, params: request.params });
+      const request = JSON.parse(line) as RpcCall & { id: number };
+      rpcCalls.push({ method: request.method, params: request.params, ...(request.meta && { meta: request.meta }) });
       const result = respond(request.method, request.params);
       socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
     });
@@ -445,6 +447,23 @@ describe("v2 level.save.file", () => {
   ];
 
   for (const [name, args] of writes) {
+    test.each(["v1", "v2"])(`${name} attributes every RPC to the executing child on %s`, async (version) => {
+      process.env.STUDIO_API_VERSION = version;
+      const tools = await loadTools(makeStudioProject());
+      const result = await runWithSessionExecutionContext(
+        {
+          sessionId: "child-A",
+          rootSessionId: "A",
+          resumed: false,
+          rootRequest: { sessionId: "A", requestId: "request-A" },
+        },
+        () => tools.get(name)!.execute(args, toolContext()),
+      );
+      expect(result.metadata?.error).toBeUndefined();
+      expect(rpcCalls.length).toBeGreaterThan(0);
+      for (const request of rpcCalls) expect(request.meta).toEqual({ sessionId: "child-A" });
+    });
+
     const savesAfterWrite = name !== "studiorpc_script_edit";
     const behavior = savesAfterWrite
       ? "saves the level after the write succeeds"
