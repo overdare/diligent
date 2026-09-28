@@ -2,6 +2,8 @@
 
 import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
+import * as animationRead from "./methods/animation.read";
+import * as animationWrite from "./methods/animation.write";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
 import * as assetManagerImageImport from "./methods/asset-manager.image.import";
 import * as assetManagerImport from "./methods/asset-manager.import";
@@ -86,7 +88,11 @@ export const methodModules: MethodModule[] = [
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
+  animationRead,
+  animationWrite,
 ];
+// animation.write is in neither set on purpose: it edits and saves its own .uasset, not the level, so a
+// level rollback snapshot would not cover it and a level.save.file afterwards would save unrelated edits.
 export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,
