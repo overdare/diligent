@@ -19,6 +19,11 @@ description: "Handles Action Sequence asset creation/editing, track layout (Anim
 CollisionTrack detects hit targets via area overlap; callbacks fire individually per target (not as an array).
 TriggerTrack operates as "apply → restore" pairs. On sequence replacement, the previous sequence's End fires before the new sequence's Start.
 
+Track and event names are chosen by the author; the engine gives no name built-in meaning such as movement lock, combo, or cancel. It only fires events under those names, and game code implements the rules:
+- CollisionTrack reports detection only; game code decides who takes how much damage and prevents repeat hits.
+- `ActionRunner.Ended` / `Stopped` report that a sequence finished or was stopped; returning to idle, unlocking movement, and choosing the next combo step are game code.
+- A script's event names must match the track names in the asset exactly.
+
 See `references/guide.md` for API usage and code examples.
 
 ## 3. Sequence Naming Rules
