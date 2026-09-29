@@ -117,6 +117,14 @@ describe("animation params", () => {
     ).toBe(false);
   });
 
+  test("read opens a clip by assetPath or an animation by assetId", () => {
+    expect(animationRead.params.parse({ assetId: "ovdrassetid://42", preview: true })).toEqual({
+      assetId: "ovdrassetid://42",
+      preview: true,
+    });
+    expect(animationRead.normalizeArgs({ assetId: " ", assetPath: ASSET })).toEqual({ assetPath: ASSET });
+  });
+
   test("blank optional strings from strict-schema models read as not given", () => {
     expect(animationRead.normalizeArgs({ assetPath: " \u200b", preview: false })).toEqual({ preview: false });
     expect(
