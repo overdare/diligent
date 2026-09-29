@@ -15,6 +15,13 @@ const animationKey = z
     frame: z.number().int().min(0).describe("Integer frame, 0..durationFrames. Strictly ascending within a track."),
     rotation: vec3("[roll, pitch, yaw] degrees, delta from the bone reference pose. Default [0,0,0].").optional(),
     translation: vec3("[x, y, z] cm, delta in the bone reference local axes. Default [0,0,0].").optional(),
+    interp: z
+      .enum(["linear", "cubic", "constant"])
+      .optional()
+      .describe(
+        "How the motion leaves this key toward the next one. linear (default), cubic = smooth ease with automatic " +
+          "tangents (what the AnimationEditor's Cubic key menu sets), constant = hold until the next key.",
+      ),
   })
   .strict();
 
@@ -42,7 +49,7 @@ const previewOptions = z
   .object({
     frames: z
       .array(z.number().int().min(0))
-      .max(8)
+      .max(12)
       .optional()
       .describe("Frames to render, one column each, in this order. Default 0, N/4, N/2, 3N/4, N."),
     views: z
@@ -50,8 +57,45 @@ const previewOptions = z
       .max(2)
       .optional()
       .describe("Rows to render. Default both."),
+    motion: z
+      .boolean()
+      .optional()
+      .describe(
+        "Default true: one more MOTION column per view with the whole clip onion-skinned and the paths of the hands " +
+          "(right red, left blue), feet (right orange, left cyan) and head (yellow).",
+      ),
   })
   .strict();
+
+/**
+ * Pins keep a hand or foot at one component-space point over a frame range (a planted foot, a hand on the
+ * floor while the body turns). Studio bakes them into keys on the limb's upper, lower and end bones.
+ */
+export const pinsSchema = z
+  .array(
+    z
+      .object({
+        bone: z.enum(["RightHand", "LeftHand", "RightFoot", "LeftFoot"]),
+        frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
+        position: vec3("[x, y, z] component cm. Omit to hold the point where the effector is at `from`.").optional(),
+      })
+      .strict(),
+  )
+  .max(8);
+
+/** Whitespace and invisible characters some models put in optional strings they were forced to fill. */
+export function isBlank(value: unknown): boolean {
+  return typeof value === "string" && value.replace(/\s|\u200b|\u200c|\u200d|\ufeff|\u00a0/g, "") === "";
+}
+
+/** Drops blank optional strings so they read as "not given". */
+export function dropBlank(args: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const out = { ...args };
+  for (const key of keys) {
+    if (isBlank(out[key])) delete out[key];
+  }
+  return out;
+}
 
 /**
  * `true` is a wrapper-side alias for the contract's `{}` (default capture). It exists because

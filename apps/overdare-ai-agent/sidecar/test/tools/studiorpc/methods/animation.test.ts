@@ -82,12 +82,45 @@ describe("animation params", () => {
     expect(
       animationWrite.params.safeParse({
         animation: CONTRACT_ANIMATION,
-        preview: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8] },
+        preview: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
       }).success,
     ).toBe(false);
     expect(
       animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, preview: { views: ["top"] } }).success,
     ).toBe(false);
+  });
+
+  test("accept interp, pins and the motion column", () => {
+    const withKey = (key: Record<string, unknown>) => ({
+      animation: { ...CONTRACT_ANIMATION, tracks: { RightLowerArm: [{ frame: 0, ...key }] } },
+    });
+    const cubic = withKey({ interp: "cubic" });
+    expect(animationWrite.params.safeParse(cubic).success).toBe(true);
+    expect(animationWrite.params.safeParse(withKey({ interp: "bezier" })).success).toBe(false);
+    const pinned = {
+      animation: CONTRACT_ANIMATION,
+      pins: [
+        { bone: "RightHand", frames: [0, 10] },
+        { bone: "LeftFoot", frames: [5, 20], position: [10, 0, 0] },
+      ],
+      preview: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], motion: false },
+    };
+    expect(animationWrite.params.safeParse(pinned).success).toBe(true);
+    expect(
+      animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, pins: [{ bone: "Head", frames: [0, 1] }] })
+        .success,
+    ).toBe(false);
+    expect(
+      animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, pins: [{ bone: "RightHand", frames: [0] }] })
+        .success,
+    ).toBe(false);
+  });
+
+  test("blank optional strings from strict-schema models read as not given", () => {
+    expect(animationRead.normalizeArgs({ assetPath: " \u200b", preview: false })).toEqual({ preview: false });
+    expect(
+      animationWrite.normalizeArgs({ animation: CONTRACT_ANIMATION, assetPath: "", revision: " ", pins: [] }),
+    ).toEqual({ animation: CONTRACT_ANIMATION });
   });
 
   test("preview true reaches Studio as the default-capture object", () => {
