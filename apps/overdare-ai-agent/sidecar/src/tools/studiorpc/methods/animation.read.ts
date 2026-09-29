@@ -28,7 +28,13 @@ export const description =
   "With assetPath: returns { assetPath, filePath, revision, animation, preview? }. `animation` is in the " +
   "studiorpc_animation_write format; send it back edited, with this `revision` unchanged. Use this to see the " +
   "clip's current state (a person may have edited it in the AnimationEditor) and after REVISION_CONFLICT.\n" +
-  "No image unless you pass `preview` with assetPath: true = default frames (0, N/4, N/2, 3N/4, N), both views " +
+  "With assetId (ovdrassetid://N, e.g. from an Action Sequence AnimationTrack) instead of assetPath: opens that " +
+  "animation for editing and adds `source` { assetId, openedFrom, note }. An id published from this project opens " +
+  'the clip it was published from (openedFrom "published clip"); any other id is downloaded once into an editable ' +
+  'copy /Temp/AnimationAssets/Asset_<id> (openedFrom "copy", keys baked per frame where the motion needs them). ' +
+  "Edit it with studiorpc_animation_write and the returned assetPath; the id keeps pointing at the old version " +
+  "until you publish again and put the new id where the old one was used.\n" +
+  "No image unless you pass `preview` with assetPath or assetId: true = default frames (0, N/4, N/2, 3N/4, N), both views " +
   'and a MOTION column; or { frames: [up to 12 integer frames], views: ["front", "side"], motion: false } to ' +
   "look closely at specific frames. Leave optional fields out when you do not use them (blank strings and " +
   "preview false count as not given). The PNG comes back as an image: rows = views (front first, then side), " +
@@ -45,16 +51,20 @@ export const params = z
       .string()
       .optional()
       .describe("Clip to read, as returned by studiorpc_animation_write. Omit to get the rig and a template."),
+    assetId: z
+      .string()
+      .optional()
+      .describe("Instead of assetPath: an animation id, ovdrassetid://N, to open for editing."),
     preview: previewSchema
       .optional()
       .describe(
-        "Only with assetPath. true for the default contact sheet, or { frames, views, motion }. Omit or false for none.",
+        "Only with assetPath or assetId. true for the default contact sheet, or { frames, views, motion }. Omit or false for none.",
       ),
   })
   .strict();
 
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return normalizePreview(dropBlank(args, ["assetPath"]));
+  return normalizePreview(dropBlank(args, ["assetPath", "assetId"]));
 }
 
 export async function recover(error: unknown): Promise<unknown> {
