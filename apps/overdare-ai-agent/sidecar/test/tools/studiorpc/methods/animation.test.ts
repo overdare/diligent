@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dropEmptyOptionals } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
+import * as animationPublish from "../../../../src/tools/studiorpc/methods/animation.publish";
 import * as animationRead from "../../../../src/tools/studiorpc/methods/animation.read";
 import * as animationWrite from "../../../../src/tools/studiorpc/methods/animation.write";
 import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
@@ -236,6 +237,38 @@ describe("animation tools over the generic Studio RPC path", () => {
       .catch((e: unknown) => e)) as Error;
     expect(error.message).toContain("Studio RPC timed out");
     expect(error.message).toContain("Do not repeat it blindly");
+  });
+
+  test("publish sends the clip and revision, returns the id, and warns against a second upload", async () => {
+    const seen: Array<{ method: string; params: unknown; timeoutMs?: number }> = [];
+    const result = { assetPath: ASSET, revision: "rev-2", assetId: "ovdrassetid://42", worldAssetId: "42" };
+    const tool = await toolFor("studiorpc_animation_publish", async (method, params, options) => {
+      seen.push({ method, params, timeoutMs: options?.timeoutMs });
+      return result;
+    });
+    const out = await tool.execute(tool.parameters.parse({ assetPath: ASSET, revision: "rev-2" }), toolContext());
+    expect(seen).toEqual([
+      { method: "animation.publish", params: { assetPath: ASSET, revision: "rev-2" }, timeoutMs: 180_000 },
+    ]);
+    expect(JSON.parse(out.output)).toEqual(result);
+
+    const timedOut = await toolFor("studiorpc_animation_publish", async () => {
+      throw new Error("Studio RPC timed out (animation.publish).");
+    });
+    const error = (await timedOut
+      .execute(timedOut.parameters.parse({ assetPath: ASSET }), toolContext())
+      .catch((e: unknown) => e)) as Error;
+    expect(error.message).toContain("Publishing again creates a second asset");
+  });
+});
+
+describe("animation.publish params", () => {
+  test("need an assetPath, take an optional revision, and touch neither the level nor its save", () => {
+    expect(animationPublish.params.safeParse({}).success).toBe(false);
+    expect(animationPublish.params.safeParse({ assetPath: ASSET, public: true }).success).toBe(false);
+    expect(animationPublish.normalizeArgs({ assetPath: ASSET, revision: " " })).toEqual({ assetPath: ASSET });
+    expect(mutatingMethods.has(animationPublish.method)).toBe(false);
+    expect(savingMethods.has(animationPublish.method)).toBe(false);
   });
 });
 

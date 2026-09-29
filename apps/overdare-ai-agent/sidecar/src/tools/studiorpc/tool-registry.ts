@@ -2,6 +2,7 @@
 
 import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
+import * as animationPublish from "./methods/animation.publish";
 import * as animationRead from "./methods/animation.read";
 import * as animationWrite from "./methods/animation.write";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
@@ -90,9 +91,11 @@ export const methodModules: MethodModule[] = [
   hubTokenRead,
   animationRead,
   animationWrite,
+  animationPublish,
 ];
-// animation.write is in neither set on purpose: it edits and saves its own .uasset, not the level, so a
-// level rollback snapshot would not cover it and a level.save.file afterwards would save unrelated edits.
+// animation.write and animation.publish are in neither set on purpose: they save the clip's own .uasset (publish
+// also uploads a copy), not the level, so a level rollback snapshot would not cover them and a level.save.file
+// afterwards would save unrelated edits.
 export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,

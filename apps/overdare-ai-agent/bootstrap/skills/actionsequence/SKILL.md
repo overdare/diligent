@@ -102,6 +102,8 @@ Read this first when authoring assets. Contains production workflow, layout/dire
 
 Category-based list of Overdare animation assets. Read `references/animations/00_INDEX.md` first, then only the category files relevant to your task. Do not read all at once.
 
+When no catalog animation fits, author a clip with `studiorpc_animation_write` and get its id with `studiorpc_animation_publish` (private, not listed on the store). Put the returned `ovdrassetid://N` in the AnimationTrack's `OvdrAssetId`. A local `/Temp/AnimationAssets/...` path does not work in a track.
+
 ### JSON Reference — `references/json/`
 
 Current-format JSON templates (Header.version 2). When authoring new assets, reference similar existing assets for track composition, timing, and settings to maintain consistency.
