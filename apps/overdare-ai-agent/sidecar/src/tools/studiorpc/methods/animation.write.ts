@@ -41,12 +41,15 @@ export const description =
   "least one key. Limits: 64 tracks, 4096 keys total. name matches [A-Za-z][A-Za-z0-9_]{0,63} and cannot " +
   "change on replace. Unknown fields, wrong array lengths and non-numbers are rejected; nothing is clamped " +
   "or re-sorted.\n" +
-  "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z] }] keep " +
+  "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z], flat? }] keep " +
   "that hand or foot fixed at one component-space point (cm; default: where it is at `from`) while the rest of " +
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
   "and the hand/foot on every frame of the range (keeping the elbow/knee bend side), writes those as keys, and " +
   "keeps the pose you keyed just outside the range. The saved clip contains only keys; to change a pinned range " +
-  "later, send the pins again. result.pins reports maxErrorCm and outOfReachFrames per pin.\n" +
+  "later, send the pins again. result.pins reports maxErrorCm and outOfReachFrames per pin. flat: true (feet " +
+  "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
+  "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
+  "preview.floor (raise it by the reported maxDepthCm when the hand sinks).\n" +
   "preview: omitted or true = default contact sheet (frames 0, N/4, N/2, 3N/4, N; both views; MOTION column), " +
   'false = none, { frames: [up to 12], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
   "back as an image: rows = views (front first, then side), columns = frames in order, then MOTION (the clip " +

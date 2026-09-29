@@ -78,6 +78,10 @@ export const pinsSchema = z
         bone: z.enum(["RightHand", "LeftHand", "RightFoot", "LeftFoot"]),
         frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
         position: vec3("[x, y, z] component cm. Omit to hold the point where the effector is at `from`.").optional(),
+        flat: z
+          .boolean()
+          .optional()
+          .describe("Feet only: the foot lies flat on the floor (sole at z = 0) keeping its heading at `from`."),
       })
       .strict(),
   )
