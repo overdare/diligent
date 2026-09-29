@@ -238,3 +238,45 @@ describe("animation tools over the generic Studio RPC path", () => {
     expect(error.message).toContain("Do not repeat it blindly");
   });
 });
+
+describe("animation result text", () => {
+  test("keeps a pinned write with a full preview small, short fields first, and still valid JSON", async () => {
+    const bones = Array.from({ length: 14 }, (_, i) => `Bone${i}`);
+    const poseSamples = Array.from({ length: 12 }, (_, frame) => ({
+      frame,
+      bones: Object.fromEntries(
+        bones.map((bone) => [
+          bone,
+          { componentTranslationCm: [21.234, 0.125, 99.241], rotationQuat: [0.443, 0.1, 0.2, 0.87] },
+        ]),
+      ),
+      lowestCm: 0.5,
+      touchingFloor: ["LeftFoot"],
+    }));
+    const baked = Array.from({ length: 76 }, (_, frame) => ({
+      frame,
+      rotation: [1.25, -12.5, 33.75],
+      interp: "cubic",
+    }));
+    const png = join(dir, "sheet.png");
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const result = {
+      assetPath: ASSET,
+      revision: "r1-x",
+      animation: { ...CONTRACT_ANIMATION, tracks: { LeftUpperLeg: baked, LeftLowerLeg: baked, LeftFoot: baked } },
+      saved: true,
+      pins: [{ bone: "LeftFoot", frames: [0, 75], maxErrorCm: 0, outOfReachFrames: 0 }],
+      preview: { status: "completed", imagePath: png, poseSamples, floor: { status: "completed", belowFloor: [] } },
+    };
+    const text = animationWrite.postProcess(result) as string;
+    expect(typeof text).toBe("string");
+    expect(JSON.parse(text)).toEqual(result);
+    expect(text.length).toBeLessThan(JSON.stringify(result, null, 2).length * 0.4);
+    expect(text.indexOf('"floor"')).toBeLessThan(text.indexOf('"poseSamples"'));
+    expect(text.indexOf('"poseSamples"')).toBeLessThan(text.indexOf('"animation"'));
+    expect(await animationWrite.attachImages(text)).toHaveLength(1);
+    const noisy = { preview: { status: "skipped", poseSamples: [{ frame: 0, lowestCm: 1.23456789e-13 }] } };
+    expect(JSON.parse(animationWrite.postProcess(noisy) as string).preview.poseSamples[0].lowestCm).toBe(0);
+    expect(animationRead.postProcess({ rig: { bones: [] } })).toBe(JSON.stringify({ rig: { bones: [] } }, null, 2));
+  });
+});

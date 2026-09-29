@@ -6,6 +6,7 @@ import {
   animationSchema,
   attachPreviewImage,
   dropBlank,
+  formatAnimationResult,
   isBlank,
   normalizePreview,
   pinsSchema,
@@ -101,4 +102,8 @@ export async function recover(error: unknown, args: Record<string, unknown>): Pr
 
 export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
   return attachPreviewImage(result);
+}
+
+export function postProcess(result: unknown): unknown {
+  return formatAnimationResult(result);
 }
