@@ -323,6 +323,29 @@ describe("animation result text", () => {
     expect(JSON.parse(animationWrite.postProcess(noisy) as string).preview.poseSamples[0].lowestCm).toBe(0);
   });
 
+  test("drops the capture cameras and a small compression error, keeps a large or failed one", () => {
+    const preview = (compression: Record<string, unknown>) => ({
+      preview: {
+        status: "completed",
+        cameras: [{ view: "front", componentPosition: [0, 500, 90] }],
+        compression,
+        clearance: { status: "completed", penetrations: [] },
+      },
+    });
+    const small = { status: "completed", maxTranslationErrorCm: 0.02, maxRotationErrorDeg: 0.3 };
+    const large = { status: "completed", maxTranslationErrorCm: 0.02, maxRotationErrorDeg: 4 };
+    const failed = { status: "failed", reason: "no compressed data" };
+    const shown = (compression: Record<string, unknown>) =>
+      JSON.parse(animationRead.postProcess(preview(compression)) as string).preview;
+    expect(shown(small)).toEqual({
+      status: "completed",
+      clearance: { status: "completed", penetrations: [] },
+    });
+    expect(shown(large).compression).toEqual(large);
+    expect(shown(failed).compression).toEqual(failed);
+    expect(shown(large).cameras).toBeUndefined();
+  });
+
   test("a read with assetPath keeps the whole animation", () => {
     const result = { assetPath: ASSET, revision: "r1-x", animation: CONTRACT_ANIMATION };
     expect(JSON.parse(animationRead.postProcess(result) as string)).toEqual(result);

@@ -42,7 +42,10 @@ export const description =
   "columns = frames in order (each labeled), then MOTION: the clip onion-skinned (earlier = fainter) with the " +
   "paths of right hand (red), left hand (blue), right foot (orange), left foot (cyan), head (yellow). " +
   "preview.floor checks the skinned mesh against the floor (z = 0) on every frame: belowFloor ranges (sinking), " +
-  "airborne ranges, and contacts = which bones touch the floor on which frames. preview.poseSamples lists, per " +
+  "airborne ranges, and contacts = which bones touch the floor on which frames. " +
+  "preview.clearance lists frame ranges where a hand, forearm, shin or foot sinks into the head, torso or a " +
+  "thigh (part, into, maxDepthCm, deepestFrame; a shin or foot is not checked against its own thigh). " +
+  "preview.poseSamples lists, per " +
   "sampled frame, animated bones' componentTranslationCm, rotationQuat [x,y,z,w], lowestCm and touchingFloor. " +
   "preview.status is completed, skipped or failed (see preview.diagnostic).";
 

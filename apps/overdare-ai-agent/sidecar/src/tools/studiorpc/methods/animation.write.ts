@@ -22,9 +22,9 @@ export const description =
   "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
   "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath.\n" +
   "Workflow: write without assetPath to create a clip under /Temp/AnimationAssets/<name> (a suffix is added if " +
-  "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor and " +
-  "preview.poseSamples, edit the JSON, then write again with assetPath and the revision from your last " +
-  "read/write. A replace rewrites the whole clip: tracks and keys you leave out are removed. revision is " +
+  "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor, " +
+  "preview.clearance and preview.poseSamples, edit the JSON, then write again with assetPath and the revision " +
+  "from your last read/write. A replace rewrites the whole clip: tracks and keys you leave out are removed. revision is " +
   "required on replace; REVISION_CONFLICT means the clip changed since you read it — call studiorpc_animation_read, " +
   "reapply your edit to the returned animation, and write with the new revision. After a timeout, do not repeat " +
   "a create: it may have succeeded. Leave optional params out when you do not use them.\n" +
@@ -47,7 +47,10 @@ export const description =
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
   "and the hand/foot on every frame of the range (keeping the elbow/knee bend side), writes those as keys, and " +
   "keeps the pose you keyed just outside the range. The saved clip contains only keys; on a replace, send your own " +
-  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm and outOfReachFrames per pin. flat: true (feet " +
+  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm and outOfReachFrames per pin, " +
+  "and entryJumpDeg / exitJumpDeg: how far the limb's joints turn in the one frame where the pin takes over from " +
+  "your keys and hands back to them. More than about 15 is a visible pop; key the limb near the pinned pose on the " +
+  "frames just outside the range, or start and end the pin where the limb already is. flat: true (feet " +
   "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
   "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
   "preview.floor (raise it by the reported maxDepthCm when the hand sinks).\n" +
@@ -57,6 +60,8 @@ export const description =
   "onion-skinned, earlier = fainter, with paths: right hand red, left hand blue, right foot orange, left foot " +
   "cyan, head yellow). preview.floor checks the skinned mesh against the floor (z = 0) on every frame: " +
   "belowFloor (sinking, with depth and bone), airborne, contacts (bone -> frame ranges on the floor). " +
+  "preview.clearance lists frame ranges where a hand, forearm, shin or foot sinks into the head, torso or a " +
+  "thigh (part, into, maxDepthCm, deepestFrame; a shin or foot is not checked against its own thigh). " +
   "preview.poseSamples gives animated bones' component-space translation (cm), rotationQuat [x,y,z,w], lowestCm " +
   "and touchingFloor per sampled frame. A failed preview does not undo the save; re-capture with " +
   "studiorpc_animation_read.\n" +
