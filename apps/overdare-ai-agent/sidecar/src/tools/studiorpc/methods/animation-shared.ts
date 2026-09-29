@@ -146,6 +146,67 @@ export function formatAnimationResult(result: unknown): unknown {
   return text;
 }
 
+/**
+ * A write saves the keys the agent sent plus a key per frame for every limb bone a pin baked, and echoing them
+ * back pushed results past the host's 25k-token output limit. The agent sends its own keys and the same pins on
+ * the next replace, so the write result carries only counts; studiorpc_animation_read returns the saved keys.
+ */
+export function formatWriteResult(result: unknown): unknown {
+  if (!isRecord(result) || !isRecord(result.animation) || !isRecord(result.animation.tracks)) {
+    return formatAnimationResult(result);
+  }
+  const { tracks, ...header } = result.animation;
+  const keys = Object.values(tracks).reduce<number>((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+  const summary = {
+    ...header,
+    tracks: Object.keys(tracks).length,
+    keys,
+    note: "Saved keys are not repeated here. On a replace send your own keys and the same pins; they are baked again. studiorpc_animation_read with assetPath returns the saved keys.",
+  };
+  return formatAnimationResult({ ...result, animation: summary });
+}
+
+/**
+ * The rig lists every bone with its full reference transform, pretty-printed: about 33 KB, most of it IK, camera
+ * and item bones that cannot be animated and quaternions nobody reads. The result keeps the animatable bones one
+ * line each (parent, reference translations, local axes in component space, 0.01 precision) and only the names
+ * of the others.
+ */
+export function formatRigResult(result: unknown): unknown {
+  if (!isRecord(result) || !isRecord(result.rig) || !Array.isArray(result.rig.bones)) {
+    return formatAnimationResult(result);
+  }
+  const { bones, ...rig } = result.rig;
+  const animatable = bones.filter((bone) => isRecord(bone) && bone.editable === true);
+  const notAnimatable = bones.filter((bone) => isRecord(bone) && bone.editable !== true).map((bone) => bone.name);
+  const placeholder = "__ANIMATION_RIG_BONES__";
+  const text = JSON.stringify({ ...result, rig: { ...rig, bones: placeholder, notAnimatable } }, null, 2);
+  const lines = animatable.map(
+    (bone) => `      ${JSON.stringify(compactBone(bone as Record<string, unknown>), roundToHundredth)}`,
+  );
+  return text.replace(`"${placeholder}"`, () => (lines.length ? `[\n${lines.join(",\n")}\n    ]` : "[]"));
+}
+
+function compactBone(bone: Record<string, unknown>): Record<string, unknown> {
+  const local = isRecord(bone.refLocal) ? bone.refLocal : {};
+  const component = isRecord(bone.refComponent) ? bone.refComponent : {};
+  return {
+    name: bone.name,
+    parent: bone.parent,
+    refLocal: { translation: local.translation },
+    refComponent: {
+      translation: component.translation,
+      axisX: component.axisX,
+      axisY: component.axisY,
+      axisZ: component.axisZ,
+    },
+  };
+}
+
+function roundToHundredth(_key: string, value: unknown): unknown {
+  return typeof value === "number" ? Math.round(value * 100) / 100 || 0 : value;
+}
+
 /** poseSamples are for reading a pose, not authoring values: 0.001 cm / 0.001 of a quaternion is plenty. */
 function roundForReading(_key: string, value: unknown): unknown {
   return typeof value === "number" ? Math.round(value * 1000) / 1000 : value;

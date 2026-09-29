@@ -5,7 +5,7 @@ import {
   ANIMATION_TIMEOUT_MS,
   attachPreviewImage,
   dropBlank,
-  formatAnimationResult,
+  formatRigResult,
   normalizePreview,
   previewSchema,
   withErrorData,
@@ -20,8 +20,9 @@ export const timeoutMs = ANIMATION_TIMEOUT_MS;
 export const description =
   "Read the character rig, or an animation clip as editable JSON. Nothing is created or changed.\n" +
   "Without assetPath (start here): returns `rig`, `template`, `limits` and `animations` (asset paths of the " +
-  "clips that already exist). `rig.bones[]` has name, parent, editable, refLocal (reference local transform) and " +
-  "refComponent, whose axisX/axisY/axisZ are the bone's own axes in component space. Use bone names exactly as " +
+  "clips that already exist). `rig.bones[]` lists the bones you can animate: name, parent, refLocal.translation " +
+  "and refComponent (translation, and axisX/axisY/axisZ = the bone's own axes in component space); " +
+  "`rig.notAnimatable` names the IK, camera and item bones. Use bone names exactly as " +
   "listed, and check a bone's axes before deciding which rotation component bends it the way you want. " +
   "`template` is a valid empty animation to start from. You do not need an asset name to create a clip: " +
   "studiorpc_animation_write without assetPath creates one.\n" +
@@ -76,5 +77,5 @@ export async function attachImages(result: unknown): Promise<ImageBlock[] | unde
 }
 
 export function postProcess(result: unknown): unknown {
-  return formatAnimationResult(result);
+  return formatRigResult(result);
 }

@@ -6,7 +6,7 @@ import {
   animationSchema,
   attachPreviewImage,
   dropBlank,
-  formatAnimationResult,
+  formatWriteResult,
   isBlank,
   normalizePreview,
   pinsSchema,
@@ -46,8 +46,8 @@ export const description =
   "that hand or foot fixed at one component-space point (cm; default: where it is at `from`) while the rest of " +
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
   "and the hand/foot on every frame of the range (keeping the elbow/knee bend side), writes those as keys, and " +
-  "keeps the pose you keyed just outside the range. The saved clip contains only keys; to change a pinned range " +
-  "later, send the pins again. result.pins reports maxErrorCm and outOfReachFrames per pin. flat: true (feet " +
+  "keeps the pose you keyed just outside the range. The saved clip contains only keys; on a replace, send your own " +
+  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm and outOfReachFrames per pin. flat: true (feet " +
   "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
   "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
   "preview.floor (raise it by the reported maxDepthCm when the hand sinks).\n" +
@@ -60,7 +60,8 @@ export const description =
   "preview.poseSamples gives animated bones' component-space translation (cm), rotationQuat [x,y,z,w], lowestCm " +
   "and touchingFloor per sampled frame. A failed preview does not undo the save; re-capture with " +
   "studiorpc_animation_read.\n" +
-  "Result: { assetPath, filePath, revision, animation (canonical), applied, saved, created, pins?, preview, " +
+  "Result: { assetPath, filePath, revision, animation (name, fps, durationFrames and track/key counts; the " +
+  "saved keys come from studiorpc_animation_read), applied, saved, created, pins?, preview, " +
   "warnings }. Errors carry data.kind (INVALID_ANIMATION, INVALID_PARAMS, REVISION_CONFLICT, " +
   "UNSUPPORTED_REPRESENTATION, ASSET_NOT_FOUND, SAVE_FAILED, APPLY_FAILED) and data.errors[] with path, bone, " +
   "frame and message. Invalid input and conflicts leave the asset unchanged; SAVE_FAILED reports applied and " +
@@ -105,5 +106,5 @@ export async function attachImages(result: unknown): Promise<ImageBlock[] | unde
 }
 
 export function postProcess(result: unknown): unknown {
-  return formatAnimationResult(result);
+  return formatWriteResult(result);
 }

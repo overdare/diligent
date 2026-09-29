@@ -281,7 +281,7 @@ describe("animation.publish params", () => {
 });
 
 describe("animation result text", () => {
-  test("keeps a pinned write with a full preview small, short fields first, and still valid JSON", async () => {
+  test("keeps a pinned write small: counts instead of the baked keys, short fields first, still valid JSON", async () => {
     const bones = Array.from({ length: 14 }, (_, i) => `Bone${i}`);
     const poseSamples = Array.from({ length: 12 }, (_, frame) => ({
       frame,
@@ -311,13 +311,58 @@ describe("animation result text", () => {
     };
     const text = animationWrite.postProcess(result) as string;
     expect(typeof text).toBe("string");
-    expect(JSON.parse(text)).toEqual(result);
-    expect(text.length).toBeLessThan(JSON.stringify(result, null, 2).length * 0.4);
+    const { animation, ...rest } = JSON.parse(text);
+    const { animation: _sent, ...resultRest } = result;
+    expect(rest).toEqual(resultRest);
+    expect(animation).toMatchObject({ name: CONTRACT_ANIMATION.name, tracks: 3, keys: 228 });
+    expect(text).not.toContain("33.75");
     expect(text.indexOf('"floor"')).toBeLessThan(text.indexOf('"poseSamples"'));
     expect(text.indexOf('"poseSamples"')).toBeLessThan(text.indexOf('"animation"'));
     expect(await animationWrite.attachImages(text)).toHaveLength(1);
     const noisy = { preview: { status: "skipped", poseSamples: [{ frame: 0, lowestCm: 1.23456789e-13 }] } };
     expect(JSON.parse(animationWrite.postProcess(noisy) as string).preview.poseSamples[0].lowestCm).toBe(0);
-    expect(animationRead.postProcess({ rig: { bones: [] } })).toBe(JSON.stringify({ rig: { bones: [] } }, null, 2));
+  });
+
+  test("a read with assetPath keeps the whole animation", () => {
+    const result = { assetPath: ASSET, revision: "r1-x", animation: CONTRACT_ANIMATION };
+    expect(JSON.parse(animationRead.postProcess(result) as string)).toEqual(result);
+  });
+
+  test("the rig keeps animatable bones one line each and names the others", () => {
+    const transform = (x: number) => ({
+      refLocal: { translation: [x, 0.123456, 0], rotation: [0, 0, 0], rotationQuat: [0, 0, 0, 1] },
+      refComponent: {
+        translation: [x, 0, 1e-9],
+        rotationQuat: [0, 0, 0, 1],
+        axisX: [1, 0, 0],
+        axisY: [0, 1, 0],
+        axisZ: [0, 0, 1],
+      },
+    });
+    const result = {
+      rig: {
+        boneCount: 3,
+        bones: [
+          { name: "Root", index: 0, parent: null, editable: true, inPreviewMesh: true, ...transform(0) },
+          { name: "IKFootRoot", index: 1, parent: "Root", editable: false, inPreviewMesh: true, ...transform(1) },
+          { name: "LowerTorso", index: 2, parent: "Root", editable: true, inPreviewMesh: true, ...transform(2) },
+        ],
+      },
+      template: { version: 1 },
+    };
+    const text = animationRead.postProcess(result) as string;
+    const rig = JSON.parse(text).rig;
+    expect(rig.notAnimatable).toEqual(["IKFootRoot"]);
+    expect(rig.bones.map((bone: { name: string }) => bone.name)).toEqual(["Root", "LowerTorso"]);
+    expect(rig.bones[1]).toEqual({
+      name: "LowerTorso",
+      parent: "Root",
+      refLocal: { translation: [2, 0.12, 0] },
+      refComponent: { translation: [2, 0, 0], axisX: [1, 0, 0], axisY: [0, 1, 0], axisZ: [0, 0, 1] },
+    });
+    expect(text).toContain('\n      {"name":"LowerTorso"');
+    expect(JSON.parse(animationRead.postProcess({ rig: { bones: [] } }) as string)).toEqual({
+      rig: { bones: [], notAnimatable: [] },
+    });
   });
 });
