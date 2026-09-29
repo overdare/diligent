@@ -113,7 +113,62 @@ export function normalizePreview(args: Record<string, unknown>): Record<string, 
   return { ...args, preview: {} };
 }
 
+/**
+ * Output text for a read/write result. The generic 2-space JSON puts every number on its own line, and a write
+ * with pins bakes a key per frame, so a result reached ~100 KB: the host truncated it, dropped the contact sheet
+ * and cut off preview.floor. Here the short fields come first, then poseSamples one line per frame (numbers
+ * rounded to 0.001), then the
+ * animation one line per track. Still valid JSON (attachPreviewImage parses it back).
+ */
+export function formatAnimationResult(result: unknown): unknown {
+  if (!isRecord(result)) return result;
+  const { animation, preview, ...rest } = result;
+  const posePlaceholder = "__ANIMATION_POSE_SAMPLES__";
+  const animationPlaceholder = "__ANIMATION_DOCUMENT__";
+  let poseSamples: unknown[] | undefined;
+  let previewOut: unknown = preview;
+  if (isRecord(preview) && Array.isArray(preview.poseSamples)) {
+    const { poseSamples: samples, ...shortPreview } = preview;
+    poseSamples = samples as unknown[];
+    previewOut = { ...shortPreview, poseSamples: posePlaceholder };
+  }
+  const ordered: Record<string, unknown> = { ...rest };
+  if (previewOut !== undefined) ordered.preview = previewOut;
+  if (animation !== undefined) ordered.animation = animationPlaceholder;
+  let text = JSON.stringify(ordered, null, 2);
+  if (poseSamples) {
+    const lines = poseSamples.map((sample) => `      ${JSON.stringify(sample, roundForReading)}`).join(",\n");
+    text = text.replace(`"${posePlaceholder}"`, () => `[\n${lines}\n    ]`);
+  }
+  if (animation !== undefined) {
+    text = text.replace(`"${animationPlaceholder}"`, () => compactAnimation(animation));
+  }
+  return text;
+}
+
+/** poseSamples are for reading a pose, not authoring values: 0.001 cm / 0.001 of a quaternion is plenty. */
+function roundForReading(_key: string, value: unknown): unknown {
+  return typeof value === "number" ? Math.round(value * 1000) / 1000 : value;
+}
+
+function compactAnimation(animation: unknown): string {
+  if (!isRecord(animation) || !isRecord(animation.tracks)) return JSON.stringify(animation);
+  const { tracks, ...header } = animation;
+  const trackLines = Object.entries(tracks).map(
+    ([bone, keys]) => `      ${JSON.stringify(bone)}: ${JSON.stringify(keys)}`,
+  );
+  const headerText = JSON.stringify(header).slice(1, -1);
+  return `{${headerText}${headerText ? "," : ""}\n    "tracks": {\n${trackLines.join(",\n")}\n    }}`;
+}
+
 export async function attachPreviewImage(result: unknown): Promise<ImageBlock[] | undefined> {
+  if (typeof result === "string") {
+    try {
+      result = JSON.parse(result);
+    } catch {
+      return undefined;
+    }
+  }
   const preview = isRecord(result) && isRecord(result.preview) ? result.preview : undefined;
   if (preview?.status !== "completed" || typeof preview.imagePath !== "string") return undefined;
   try {

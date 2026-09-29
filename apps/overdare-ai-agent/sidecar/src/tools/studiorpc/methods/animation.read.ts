@@ -5,6 +5,7 @@ import {
   ANIMATION_TIMEOUT_MS,
   attachPreviewImage,
   dropBlank,
+  formatAnimationResult,
   normalizePreview,
   previewSchema,
   withErrorData,
@@ -62,4 +63,8 @@ export async function recover(error: unknown): Promise<unknown> {
 
 export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
   return attachPreviewImage(result);
+}
+
+export function postProcess(result: unknown): unknown {
+  return formatAnimationResult(result);
 }
