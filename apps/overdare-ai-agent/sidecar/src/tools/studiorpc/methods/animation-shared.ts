@@ -126,9 +126,9 @@ export function formatAnimationResult(result: unknown): unknown {
   const posePlaceholder = "__ANIMATION_POSE_SAMPLES__";
   const animationPlaceholder = "__ANIMATION_DOCUMENT__";
   let poseSamples: unknown[] | undefined;
-  let previewOut: unknown = preview;
-  if (isRecord(preview) && Array.isArray(preview.poseSamples)) {
-    const { poseSamples: samples, ...shortPreview } = preview;
+  let previewOut: unknown = isRecord(preview) ? trimPreview(preview) : preview;
+  if (isRecord(previewOut) && Array.isArray(previewOut.poseSamples)) {
+    const { poseSamples: samples, ...shortPreview } = previewOut;
     poseSamples = samples as unknown[];
     previewOut = { ...shortPreview, poseSamples: posePlaceholder };
   }
@@ -144,6 +144,26 @@ export function formatAnimationResult(result: unknown): unknown {
     text = text.replace(`"${animationPlaceholder}"`, () => compactAnimation(animation));
   }
   return text;
+}
+
+/** Compression error the runtime playback can show; below it the comparison only costs the agent tokens. */
+const COMPRESSION_NOTICE_CM = 0.5;
+const COMPRESSION_NOTICE_DEG = 1;
+
+/**
+ * The capture cameras are for debugging the sheet, and a completed compression check within a fraction of a cm
+ * and a degree says nothing the agent acts on. Both are dropped; compression stays when it failed or is large.
+ */
+function trimPreview(preview: Record<string, unknown>): Record<string, unknown> {
+  const { cameras: _cameras, compression, ...rest } = preview;
+  const quiet =
+    isRecord(compression) &&
+    compression.status === "completed" &&
+    typeof compression.maxTranslationErrorCm === "number" &&
+    typeof compression.maxRotationErrorDeg === "number" &&
+    compression.maxTranslationErrorCm <= COMPRESSION_NOTICE_CM &&
+    compression.maxRotationErrorDeg <= COMPRESSION_NOTICE_DEG;
+  return compression === undefined || quiet ? rest : { ...rest, compression };
 }
 
 /**
