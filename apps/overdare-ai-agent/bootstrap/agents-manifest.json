@@ -1,4 +1,7 @@
 {
   "schemaVersion": 1,
-  "revoked": [{ "name": "procedural-builder", "entry": "procedural-builder" }]
+  "revoked": [
+    { "name": "geometry-recipe", "entry": "geometry-recipe" },
+    { "name": "procedural-builder", "entry": "procedural-builder" }
+  ]
 }

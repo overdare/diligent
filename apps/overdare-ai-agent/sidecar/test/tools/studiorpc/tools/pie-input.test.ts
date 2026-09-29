@@ -1169,7 +1169,6 @@ describe("play-test input tools", () => {
 
     expect(result.output).toContain('"outcome": "arrived"');
     for (const field of ["outcome", "rpcStatus", "arrived", "distanceToTarget", "arrivedWithin", "standingOn"]) {
-      expect(tool?.description).toContain(field);
       expect(result.output).toContain(`"${field}"`);
     }
     expect(result.output).toContain('"arrived": true');

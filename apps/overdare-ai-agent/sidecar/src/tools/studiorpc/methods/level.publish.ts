@@ -5,8 +5,10 @@ export const method = "level.publish";
 export const timeoutMs = 300_000;
 
 export const description =
-  "Publish the world currently being edited to the OVERDARE platform. On success, Studio always returns a structured " +
-  "publish result containing uploaded build/source/thumbnail/screenshot URLs and world/place identifiers. " +
+  "Publish the world currently being edited to the OVERDARE platform. On success, Studio returns " +
+  '{ success: true, hubEndpoint, publishResult: { mode: "CREATE" | "UPDATE", worldId, mainPlaceId, version, worldName, ' +
+  "buildFileUrl, sourceFileUrl, mainThumbnailUrl, screenshotUrls } }; mode CREATE means a new world, UPDATE a new version " +
+  "of an existing one. " +
   "By default, Studio also opens the web approval page in a browser. " +
   "This can take longer than ordinary Studio RPC calls because the user may need to review the browser/Studio UI " +
   "and click confirmation buttons before Studio returns the publish result. " +
@@ -25,7 +27,7 @@ export const params = z.object({
     .array(z.string())
     .max(3)
     .optional()
-    .describe("Up to 3 category tags (e.g. TPS, TPA, Action). Only applied on the first publish."),
+    .describe("Up to 3 exact category labels from hub_world_categories_list. Only applied on the first publish."),
   keyword: z
     .array(z.string())
     .max(5)

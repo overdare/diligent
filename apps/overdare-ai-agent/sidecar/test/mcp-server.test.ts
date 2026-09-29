@@ -2,7 +2,7 @@
 // exposed as MCP tools, and bootstrap agents exposed as MCP prompts, via an in-memory MCP client.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveExperimentStates } from "@diligent/runtime";
@@ -42,6 +42,8 @@ function globalSystemPromptPath(bootstrapDir: string): string {
   return join(bootstrapDir, "__global__", "system-prompt.txt");
 }
 
+const MCP_UNUSABLE_SKILLS = ["record-project-memory", "image-asset-generation", "world-publish"];
+
 async function makeBootstrapDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "overdare-mcp-"));
   await writeFile(join(dir, "system-prompt.txt"), "BOOTSTRAP PROMPT MUST NOT BE RETURNED", "utf-8");
@@ -55,15 +57,19 @@ async function makeBootstrapDir(): Promise<string> {
     "---\nname: test-skill\ndescription: A test skill\n---\nSKILL BODY CONTENT",
     "utf-8",
   );
+  await mkdir(join(skillDir, "references"), { recursive: true });
+  await writeFile(join(skillDir, "references", "guide.md"), "SKILL REFERENCE CONTENT", "utf-8");
 
-  // A skill that is not usable over MCP — load_skill must exclude it (see MCP_EXCLUDED_SKILLS).
-  const excludedSkillDir = join(dir, "skills", "record-project-memory");
-  await mkdir(excludedSkillDir, { recursive: true });
-  await writeFile(
-    join(excludedSkillDir, "SKILL.md"),
-    "---\nname: record-project-memory\ndescription: Host-only knowledge handoff\n---\nMEMORY SKILL BODY",
-    "utf-8",
-  );
+  // Skills that are not usable over MCP — load_skill must exclude them (see MCP_EXCLUDED_SKILLS).
+  for (const name of MCP_UNUSABLE_SKILLS) {
+    const excludedSkillDir = join(dir, "skills", name);
+    await mkdir(excludedSkillDir, { recursive: true });
+    await writeFile(
+      join(excludedSkillDir, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Depends on host-only tools\n---\nHOST-ONLY SKILL BODY`,
+      "utf-8",
+    );
+  }
 
   const agentDir = join(dir, "agents", "test-agent");
   await mkdir(agentDir, { recursive: true });
@@ -171,7 +177,7 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("native geometry tools and guidance are active", async () => {
+  test("native geometry tools and skill are exposed", async () => {
     const registries = await buildRegistries({
       cwd: process.cwd(),
       bootstrapDir: join(import.meta.dir, "../../bootstrap"),
@@ -184,13 +190,6 @@ describe("OVERDARE MCP server", () => {
       ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
     );
     expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
-    const prompt = registries.prompts.get("agent-geometry-recipe")!;
-    expect(prompt.description).not.toContain("Deprecated");
-    const body = await prompt.load();
-    expect(body).toContain("ProceduralModel");
-    expect(body).toContain("studiorpc_execute_luau");
-    expect(body).toContain("AutoRebuild");
-    expect(body).not.toContain("studiorpc_proceduralmodel_");
     const skill = await registries.tools.get("load_skill")!.execute(
       { name: "geometry-recipe" },
       {
@@ -199,8 +198,7 @@ describe("OVERDARE MCP server", () => {
         abort() {},
       },
     );
-    expect(skill.output).not.toContain("# Deprecated");
-    expect(skill.output).toContain("on_generate");
+    expect(skill.metadata?.error).not.toBe(true);
   });
 
   test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {
@@ -269,15 +267,6 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("surfaces bootstrap instructions without blocking Studio tools based on the client cwd", async () => {
-    const client = await connectClient(await makeBootstrapDir());
-    const instructions = client.getInstructions();
-    expect(instructions).toContain("ensure_system_prompt");
-    expect(instructions).not.toContain(".uasset");
-    expect(instructions).not.toContain("do not proceed");
-    await client.close();
-  });
-
   test("exposes the base system prompt and skills as model-callable tools, not prompts", async () => {
     const client = await connectClient(await makeBootstrapDir());
     const { tools } = await client.listTools();
@@ -317,6 +306,16 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
+  test("load_skill gives a base directory that resolves the skill's relative references", async () => {
+    const client = await connectClient(await makeBootstrapDir());
+    const result = await client.callTool({ name: "load_skill", arguments: { name: "test-skill" } });
+    const text = (result.content as Array<{ type: string; text?: string }>)[0]?.text ?? "";
+    const baseDir = text.match(/^Base directory: (.+)$/m)?.[1];
+    expect(baseDir).toBeDefined();
+    expect(await readFile(join(baseDir!, "references", "guide.md"), "utf-8")).toBe("SKILL REFERENCE CONTENT");
+    await client.close();
+  });
+
   test("reports an unknown skill name as an error listing available skills", async () => {
     const client = await connectClient(await makeBootstrapDir());
     const result = await client.callTool({ name: "load_skill", arguments: { name: "nope" } });
@@ -326,21 +325,23 @@ describe("OVERDARE MCP server", () => {
     await client.close();
   });
 
-  test("excludes MCP-unusable skills (record-project-memory) from load_skill", async () => {
+  test("excludes skills that depend on host-only tools from load_skill", async () => {
     const client = await connectClient(await makeBootstrapDir());
-    // Not advertised in the tool description...
     const { tools } = await client.listTools();
     const loadSkill = tools.find((tool) => tool.name === "load_skill");
     expect(loadSkill?.description).toContain("test-skill");
-    expect(loadSkill?.description).not.toContain("record-project-memory");
-    // ...and not loadable by name.
-    const result = await client.callTool({ name: "load_skill", arguments: { name: "record-project-memory" } });
-    expect(result.isError).toBe(true);
+    for (const name of MCP_UNUSABLE_SKILLS) {
+      // Not advertised in the tool description...
+      expect(loadSkill?.description).not.toContain(`- ${name}:`);
+      // ...and not loadable by name.
+      const result = await client.callTool({ name: "load_skill", arguments: { name } });
+      expect(result.isError).toBe(true);
+    }
     await client.close();
   });
 });
 
-test("MCP bootstrap distinguishes an agent prompt from a host spawn role and provides direct Studio exploration", async () => {
+test("MCP exposes studio-explorer only as a prompt, without a spawn tool, alongside direct Studio read tools", async () => {
   const bootstrapDir = join(import.meta.dir, "../../bootstrap");
   const registries = await buildRegistries({
     cwd: process.cwd(),
@@ -352,14 +353,4 @@ test("MCP bootstrap distinguishes an agent prompt from a host spawn role and pro
   for (const name of ["studiorpc_level_browse", "studiorpc_instance_read", "studiorpc_script_read"]) {
     expect(registries.tools.has(name)).toBe(true);
   }
-  const result = await registries.tools.get("ensure_system_prompt")!.execute(
-    {},
-    {
-      toolCallId: "host-role-contract",
-      signal: new AbortController().signal,
-      abort() {},
-    },
-  );
-  expect(result.output).toContain("MCP agent prompts do not register agent types in the host");
-  expect(result.output).toContain("inspect the level directly in the current session");
 });

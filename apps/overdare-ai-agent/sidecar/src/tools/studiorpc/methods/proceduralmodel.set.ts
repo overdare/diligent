@@ -18,8 +18,7 @@ export const description =
   "numbers the Transform panel shows; changing it re-runs the recipe at the new footprint. `attributes` sets " +
   "the recipe's declared parameters by name. `rebuild: true` bakes now; the reply then carries the whole run — " +
   "`parts` (with triangles, boundsCm, tint, tier), `modelBoundsCm`, `warnings`, `stdout`, and on failure " +
-  "`error` — so judge on the numbers first, then photograph the model with game.screenshot(instanceId=<guid>) " +
-  "to see it. A recipe that breaks the contract is refused before a line of it runs, with the expected shape in " +
+  "`error`. A recipe that breaks the contract is refused before a line of it runs, with the expected shape in " +
   "the message.";
 
 const attributeValue = z.union([

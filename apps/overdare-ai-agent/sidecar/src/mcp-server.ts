@@ -54,7 +54,10 @@ export const SERVER_INSTRUCTIONS =
   "This server exposes OVERDARE Studio tools. Before doing anything else, call the " +
   '"ensure_system_prompt" tool and follow what it returns — it establishes how to work with ' +
   'OVERDARE. Use the "load_skill" tool to pull in an OVERDARE skill when a task matches one ' +
-  "(its available skills are listed in that tool's description).";
+  "(its available skills are listed in that tool's description). Some things the system prompt names are " +
+  "not available through this server: agent roles such as studio-explorer (do that work directly with the " +
+  "Studio tools), request_user_input (ask the user with your own tools or in chat), the Knowledge handoff cards " +
+  "and the record-project-memory skill (skip project-memory steps), and image generation.";
 
 export interface McpServerOptions {
   /** Working directory tools resolve project paths against. */
@@ -150,11 +153,11 @@ async function buildPromptRegistry(
 }
 
 /**
- * Skills that are not usable through the MCP surface — they depend on host-only features (e.g. the
- * Knowledge store / record-project-memory handoff) that this server does not expose — so they must
- * not be offered via load_skill.
+ * Skills that are not usable through the MCP surface — they depend on host-only features this server
+ * does not expose (the Knowledge store, update_knowledge, generate_image) — so they must not be
+ * offered via load_skill.
  */
-const MCP_EXCLUDED_SKILLS = new Set(["record-project-memory"]);
+const MCP_EXCLUDED_SKILLS = new Set(["record-project-memory", "image-asset-generation", "world-publish"]);
 
 /**
  * Model-callable instruction tools. `ensure_system_prompt` reads the product-managed global prompt
@@ -219,7 +222,15 @@ async function buildModelCallableTools(
       }
       try {
         await assertSkillNotRevoked(skill.name, skill.revocationStatePath);
-        return { output: extractBody(await readFile(skill.path, "utf-8")) };
+        const body = extractBody(await readFile(skill.path, "utf-8"));
+        return {
+          output: [
+            body,
+            "",
+            `Base directory: ${skill.baseDir}`,
+            "Resolve relative paths in this skill against the base directory.",
+          ].join("\n"),
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { output: `Failed to load skill "${name}": ${message}`, metadata: { error: true } };

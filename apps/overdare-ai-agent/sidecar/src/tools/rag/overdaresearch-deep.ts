@@ -28,18 +28,14 @@ one actions is available for now:
 
   - "origin-file": Fetch the full content of up to 10 original files by their GCS URLs.
     Use when you need the complete document content.
-    Only URLs from lua-script-bucket or ovdr-docs-bucket are allowed.
+    Only URLs from ovdr-docs-bucket are allowed.
 
 When to use:
-  - After overdaresearch returns results with fileUrl fields, use "origin-file" to fetch full file contents`;
+  - After overdaresearch returns results with originFileUrl fields, use "origin-file" to fetch full file contents`;
 
 export const parameters = z.object({
   action: z.enum(["origin-file"]).describe("origin-file = fetch full content of original files by GCS URL."),
-  urls: z
-    .array(z.string())
-    .min(1)
-    .max(10)
-    .describe("For origin-file: 1-10 GCS file URLs (lua-script-bucket or ovdr-docs-bucket)."),
+  urls: z.array(z.string()).min(1).max(10).describe("For origin-file: 1-10 GCS file URLs from ovdr-docs-bucket."),
 });
 
 type Params = z.infer<typeof parameters>;

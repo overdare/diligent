@@ -574,7 +574,8 @@ const ATTRIBUTION =
   "Explicit MCP records for this session are excluded when session attribution is available. " +
   "Legacy or unattributed records do not identify who made the changes and may include this session's own work. " +
   "This is a collected log summary, not a diff against your work. " +
-  "Compare these changes with your own work; if anything differs from what you expect, inspect the affected instances before editing.";
+  "Compare these changes with your own work; if anything differs from what you expect, inspect the affected instances before editing. " +
+  "Preserve changes unrelated to the request.";
 
 export interface EditLogSummary {
   output: string;
