@@ -18,7 +18,7 @@ export const method = "game.screenshot";
 export const description =
   "Capture the active OVERDARE Studio viewport and return the PNG with its file path, captured size, and " +
   "camera. UI is included by default. Use screenshots for rendered layout, clipping, overlap, and visual " +
-  "quality; use game.observe for live property values such as colors and contrast. `locate` projects world " +
+  "quality; use studiorpc_game_observe for live property values such as colors and contrast. `locate` projects world " +
   "positions or instance names/paths into the same normalized 0..1 coordinates used by input injection. " +
   "`screen` is the unclamped projected bounds and `onScreen` means inside the camera frustum, not visible " +
   "through occluders. Camera axes include horizontal groundForward and groundRight for view-relative edits. " +

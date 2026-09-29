@@ -156,6 +156,10 @@ its synchronous report assumptions, and file-to-Source synchronization are adapt
 to the current Editor Luau tools. The geometry-recipe name is unchanged here;
 renaming to procedural-model-builder belongs to the subsequent PR #429.
 
+The `geometry-recipe` agent was later removed: it had no tool or model settings of its
+own, so the system prompt now delegates new props to a `general` sub-agent that loads
+the `geometry-recipe` skill. The agents manifest revokes the old installed copy.
+
 The retired `procedural-builder` skill and agent are removed from bootstrap assets.
 The bootstrap manifest revokes both names so initialization removes old installed
 copies and prevents reinstallation, including from older bundles. User-created

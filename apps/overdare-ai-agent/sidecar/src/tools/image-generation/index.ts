@@ -29,6 +29,7 @@ const IMAGE_TOOL_DESCRIPTION =
   "Both models generate and edit images from text and referenceImages. " +
   "gpt-image-2.5-flare emphasizes speed and high-quality everyday generation: prefer it for new icons, illustrations, mockups, and asset batches when fast iteration matters. " +
   "gpt-image-2.5-sunburst emphasizes editing precision: prefer it for targeted changes to existing artwork, background repairs, and revisions that must preserve composition, geometry, or fine details. " +
+  "A style reference alone does not call for sunburst; the question is whether an existing image must be preserved. " +
   "Choose grid when several isolated assets share a style and can use the same cell proportions; use separate calls for different aspect ratios, assets needing more individual detail, or targeted repairs. " +
   "Set grid rows, columns, and row-major items (null for blank cells). " +
   "Grid mode generates one sheet, adds layout/padding instructions, and returns the original plus occupied cells as lossless PNGs. Intentional blanks and fully transparent crops are omitted; skippedCells retains their diagnostics. " +

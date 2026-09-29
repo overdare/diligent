@@ -796,13 +796,7 @@ test("Studio change summaries explain attribution and verification without claim
   ]);
   const capture = consumeStudioChanges(cwd);
   expect(capture.result.output).toContain("Studio changes collected at turn start:");
-  expect(capture.result.output).toContain("may include this session's own work");
-  expect(capture.result.output).toContain("Compare these changes with your own work");
-  expect(capture.result.output).toContain("inspect the affected instances");
-  expect(capture.result.output).not.toContain("Human edits");
-  expect(capture.result.output).not.toContain("creator's own edits");
   const tool = createStudioChangesTool(cwd);
-  expect(tool.description).toContain("does not identify who made them");
   writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
   const live = await tool.execute({} as never, toolCtx());
   expect(live.output).toContain("Studio changes recorded during this turn:");

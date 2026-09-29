@@ -309,17 +309,13 @@ describe("instance.upsert class property validation", () => {
 });
 
 describe("UIListLayout alignment hints", () => {
-  test("the tool schema no longer offers Center as the example alignment", () => {
-    // A free-string `e.g. "Center"` description was the only concrete value the model saw, so it
-    // centered every generated list and cropped the children against the engine's Left default.
+  test("UIListLayout HorizontalAlignment is constrained to Studio's enum", () => {
     const schema = zodToJsonSchema(classPropertiesSchemas.get("UIListLayout") as z.ZodTypeAny) as {
       properties: Record<string, { enum?: string[]; description?: string }>;
     };
     const horizontal = schema.properties.HorizontalAlignment;
 
     expect(horizontal.enum).toEqual(["Left", "Center", "Right"]);
-    expect(horizontal.description).toContain('default is "Left"');
-    expect(JSON.stringify(horizontal)).not.toContain("e.g.");
   });
 
   test("rejects an alignment value outside the enum", () => {

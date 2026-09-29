@@ -1,6 +1,6 @@
 ---
 name: overdare-camera-templates
-description: When handling camera-related requests, first assess camera template fit. If confirmation questions are needed, always use user_confirmed_spec. Present the optimal template asset ID with selection rationale and alternatives.
+description: Pick a verified OVERDARE camera controller template (top-view, quarter-view, FPS, TPS, shoulder, platformer, side-view, lock-on). Use when a request sets up or changes the game's camera viewpoint or camera controls.
 ---
 
 # OVERDARE Camera Template Skill
@@ -42,11 +42,11 @@ When receiving a camera-related request, interpret it in the following order.
 - Classify fit into three tiers: `High` / `Medium` / `Low`.
 
 ## Question Rules
-- Spec confirmation questions must always use `user_confirmed_spec`.
+- Ask spec confirmation questions with `request_user_input`.
 - Do not request confirmation via free-form descriptive questions.
 - Limit questions to 1–2 at most, asking only what is needed for viewpoint/control decisions.
 - **`LockOnCameraController` mandatory rules** (applies to recommendations, confirmations, and primary picks):
-  - Always confirm the lock-on target (`TargetInstance`: boss / nearest enemy / aim target / designated object, etc.) via `user_confirmed_spec`.
+  - Always confirm the lock-on target (`TargetInstance`: boss / nearest enemy / aim target / designated object, etc.) via `request_user_input`.
   - If the request requires lock-on, place candidates other than `LockOnCameraController` only as alternatives.
   - Do not finalize the recommendation if `TargetInstance` is undetermined.
 
@@ -61,7 +61,7 @@ When receiving a camera-related request, interpret it in the following order.
 - **`3DPlatformerCameraController` vs `SideViewCameraController` branching** (both are easily confused with platformers):
   - If the camera **rotates with character movement direction**, or forward-direction tracking is core → prioritize `3DPlatformerCameraController`.
   - If it is **side-view / side-scroll** based with a fixed camera axis and **left-right (X-axis) progression only** in 2.5D → prioritize `SideViewCameraController`.
-  - If only "platformer" is given and the above criteria are mixed, confirm exactly one of movement-direction rotation vs side-scroll fixed via `user_confirmed_spec`.
+  - If only "platformer" is given and the above criteria are mixed, confirm exactly one of movement-direction rotation vs side-scroll fixed via `request_user_input`.
 
 ## CamScripts-Based Features / Parameters / Fit / Misfit by Template
 Top-view, bird's-eye, and quarter-view share the same Scriptable CONFIG structure. Units are cm.
@@ -123,16 +123,19 @@ Top-view, bird's-eye, and quarter-view share the same Scriptable CONFIG structur
 ## Fit / Misfit Judgment Rules (Mandatory)
 - If the request strongly includes even one misfit condition for a template, cap that template's highest rating at `Medium`.
 - Promote to priority candidate when 2+ fit conditions and 0 misfit conditions.
-- If fit and misfit are mixed, confirm exactly one priority via `user_confirmed_spec`, then finalize.
+- If fit and misfit are mixed, confirm exactly one priority via `request_user_input`, then finalize.
 - If "field-of-view clarity" and "precision aiming" appear together, compare one each from `FPS/TPS family` and `Top/Quarter family`.
-- For "platformer" requests where **movement-direction camera rotation** and **fixed side-scroll** are both ambiguous, compare one each of `3DPlatformerCameraController` and `SideViewCameraController`, then confirm exactly one via `user_confirmed_spec`.
+- For "platformer" requests where **movement-direction camera rotation** and **fixed side-scroll** are both ambiguous, compare one each of `3DPlatformerCameraController` and `SideViewCameraController`, then confirm exactly one via `request_user_input`.
 
 ## Response Stages
 Camera request handling is split into **template selection** and **final response** stages.
 
 ### Template Selection
-- Responses where primary pick is not yet finalized or user confirmation is needed: recommendations, alternatives, `user_confirmed_spec` confirmation, etc.
+- Responses where primary pick is not yet finalized or user confirmation is needed: recommendations, alternatives, `request_user_input` confirmation, etc.
 - Write only `[Camera Analysis]` and `[Recommendation]`.
+
+### Applying the Template
+- When the user wants the camera set up, not only recommended, import the finalized template with `studiorpc_asset_drawer_import` (`assetType: "MODEL"`), inspect the imported hierarchy, and wire it up as its contents require before the final response.
 
 ### Final Response
 - Completion response with primary template finalized. Follow the full **Final Response Format** below.
@@ -190,7 +193,7 @@ Camera request handling is split into **template selection** and **final respons
 
 ## Handling Ambiguous Requests
 - If viewpoint information is missing, temporarily recommend `QuarterViewCameraController` as default and ask only 1–2 confirmation questions as needed.
-- `user_confirmed_spec` spec item examples (do not send the sentences below verbatim to the user; compose them as spec options):
+- `request_user_input` option examples (do not send the sentences below verbatim to the user; compose them as spec options):
   - Viewpoint priority: aim precision (FPS/TPS) vs character/terrain visibility (quarter/top-view)
   - Platformer camera: camera rotation with movement direction (3D) vs fixed side-scroll side-view (2.5D)
   - Lock-on needed: automatic target lock required / not required

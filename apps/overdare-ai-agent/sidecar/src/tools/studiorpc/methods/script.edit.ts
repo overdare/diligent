@@ -14,7 +14,7 @@ Provide more surrounding context to make it unique, or set replace_all to true.
 Use replace_all only when the same old_string should be replaced at every occurrence, such as renaming a variable
 or replacing an identical repeated pattern across the script.
 
-If an edit fails, call script_read to check the current source before retrying.
+If an edit fails, call studiorpc_script_read to check the current source before retrying.
 
 For multiple non-contiguous edits in one script, call studiorpc_script_edit once per edited region.
 You may batch independent, non-overlapping edits as parallel tool calls.

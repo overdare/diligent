@@ -1,12 +1,10 @@
 # Studio UI Implementation
 
-Use the available Studio tool schemas and `overdaresearch` for unfamiliar APIs; do not infer unsupported properties from Roblox. OVERDARE does not have `UICorner`, `UIGradient`, or `ViewportFrame`.
-
 ## Ownership and tools
 
 - Browse the relevant hierarchy with `studiorpc_level_browse` and read target GUIDs with `studiorpc_instance_read`: `StarterGui` for authored screen UI, or the world target and existing owner for attached GUI. Inspect runtime `PlayerGui` and controller-created instances when relevant. Preserve unrelated GUI and the existing controller's responsibilities. Use [gui-types.md](gui-types.md) to select the root and attachment behavior.
-- Build static UI with `studiorpc_instance_upsert`, not a script that recreates the entire GUI at runtime. Reuse or create the appropriate `ScreenGui`, `BillboardGui`, or `SurfaceGui`, then containers, then sibling controls. Preserve controller-owned spawning when the target is a dynamic character or object. Use returned parent GUIDs; do not mix adds and updates in one call.
-- Change existing `Position`/`Size` through `studiorpc_instance_upsert`; use `studiorpc_instance_move` only to change parent hierarchy. Delete only an explicitly replaced target or your own temporary objects.
+- Build static UI in the Editor, not with a script that recreates the entire GUI at runtime. Reuse or create the appropriate `ScreenGui`, `BillboardGui`, or `SurfaceGui`, then containers, then sibling controls. Preserve controller-owned spawning when the target is a dynamic character or object. Use returned parent GUIDs.
+- `studiorpc_instance_move` only changes parent hierarchy. Delete only an explicitly replaced target or your own temporary objects.
 - For a local image not yet imported, pass its verified absolute path to `studiorpc_asset_manager_image_import` and use the returned `asset.assetid`. Import each reusable image once. In cross-host dev setups, let the existing import bridge map the path.
 - Bind verified image asset IDs to Image properties, not local file paths. Reuse the same frame asset across sibling buttons, with separate glyph images where appropriate. A resizing panel/frame should use `ScaleType = "Slice"` and a `SliceCenter` measured in source-image pixels when its artwork supports nine-slicing.
 - Use `ImageButton` for a clickable generated image or a native hit target with `ImageLabel`/text children. `TextButton` is for text controls; it is not a replacement for planned button artwork. Keep parent-relative placement separate from viewport-relative observation rectangles.
@@ -24,7 +22,7 @@ Use reachable thumb zones and plan simultaneous movement, aiming, and firing. Ke
 
 Plan against the actual mobile viewport, including system controls, before generating a HUD guide or placing panels. An empty `StarterGui` does not mean the screen is empty: runtime CoreGui still supplies movement, jump, and system-menu controls.
 
-For inventory or equipment HUDs, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first. Tools in the player's Backpack already have a native bottom-of-screen selector. Inspect that selector with representative equipment before adding duplicate slots or placing panels in its touch area. Confirm OVERDARE visibility-control support instead of assuming Roblox APIs apply; an unsupported enum does not prove the corresponding native widget is absent.
+For inventory or equipment HUDs, read [core-gui.md](core-gui.md) and [backpack.md](backpack.md) first. Tools in the player's Backpack already have a native bottom-of-screen selector. Inspect that selector with representative equipment before adding duplicate slots or placing panels in its touch area. An unsupported visibility-control enum does not prove the corresponding native widget is absent.
 
 For a new or rearranged mobile gameplay HUD, open the bundled [default mobile controls reference](default-mobile-controls.png) with `read_image`. Resolve its path from this skill's base directory: `references/default-mobile-controls.png`. This viewport-focused edit of the supplied screenshot shows the top-left system controls, lower-left movement input, and lower-right default jump without the phone frame or editor chrome. Gameplay screenshots and UI observations can omit these controls; their absence in a capture does not establish that they are disabled.
 

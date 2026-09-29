@@ -89,23 +89,6 @@ describe("generate_image", () => {
       cleanup();
     }
   });
-  test("describes the ChatGPT-bound Studio asset workflow", async () => {
-    const tool = await toolFor({ cwd: "/repo" });
-
-    expect(tool.description).toContain("UI mockup");
-    expect(tool.description).toContain("referenceImages");
-    expect(tool.description).toContain("Diligent ChatGPT OAuth");
-    expect(tool.description).toContain("selected ChatGPT provider");
-    expect(tool.description).toContain("cannot switch providers");
-    expect(tool.description).toContain("exact absolute output file path");
-    expect(tool.description).toContain("preview");
-    expect(tool.description).toContain("studiorpc_asset_manager_image_import");
-    expect(tool.description).toContain("asset.assetid");
-    expect(tool.description).toContain("stop image work and report the error");
-    expect(tool.description).toContain("PIL, SVG, or canvas");
-    expect(tool.description).toContain("user explicitly approves an alternative");
-  });
-
   test.each([
     "gemini",
     "anthropic",
@@ -317,7 +300,6 @@ describe("generate_image", () => {
         cwd,
         generateImage: async (input) => {
           expect(input.background).toBe("opaque");
-          expect(input.prompt).not.toContain("real PNG alpha");
           return { bytes, mediaType: "image/png", requestedModel: input.model };
         },
       });

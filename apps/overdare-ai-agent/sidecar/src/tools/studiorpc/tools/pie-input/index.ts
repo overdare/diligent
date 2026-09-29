@@ -348,8 +348,8 @@ function createPieStatusTool(callRpc: CallRpc): Tool {
     name: "studiorpc_game_pie_status",
     description:
       "Report PIE session state, pieSessionId, and clients. targeted marks the default client. " +
-      "Input, move, and character.read accept another injectable clientId; UI, screenshots, camera, and " +
-      "game.observe use the targeted client.",
+      "Input, move, and studiorpc_game_character_read accept another injectable clientId; UI, screenshots, camera, and " +
+      "studiorpc_game_observe use the targeted client.",
     parameters: z.object({}),
     supportParallel: true,
     async execute(_args, ctx): Promise<ToolResult> {
@@ -371,7 +371,7 @@ function createInputInjectTool(callRpc: CallRpc): Tool {
       "ids resolve automatically. The expanded batch is limited to 64 events and 60 seconds; every down must " +
       "have an up. Physical input in the targeted viewport cancels the batch and releases held state. On " +
       "failure, earlier events remain applied and failedEventIndex marks the stop. Verify game effects with " +
-      "game.observe. characterTrack and fellAtEvent appear when the batch moved or dropped the character.",
+      "studiorpc_game_observe. characterTrack and fellAtEvent appear when the batch moved or dropped the character.",
     parameters: injectParams,
     async execute(args: InjectParams, ctx): Promise<ToolResult> {
       const toolCallRpc = withSignal(callRpc, ctx.signal);

@@ -16,7 +16,6 @@ import { createAssetDrawerImportBulkTool } from "./tools/asset-drawer-import-bul
 import { createCollisionProfileTools } from "./tools/collision-profile-tool";
 import { createExecuteLuauTool } from "./tools/execute-luau-tool";
 import { createHubWorldCategoriesListTool } from "./tools/hub-world-categories-list-tool";
-import { createHubWorldLookupTool } from "./tools/hub-world-lookup-tool";
 import { createInstanceDeleteTool } from "./tools/instance-delete-tool";
 import { createInstanceMoveTool } from "./tools/instance-move-tool";
 import { createInstanceReadTool } from "./tools/instance-read-tool";
@@ -313,7 +312,6 @@ export async function createStudioRpcTools(ctx: {
       ),
       ctx.host,
     ),
-    createHubWorldLookupTool(),
     createHubWorldCategoriesListTool(),
     // Play-test input drives a running PIE session, not the map, so it takes no
     // write lock and no rollback snapshot.

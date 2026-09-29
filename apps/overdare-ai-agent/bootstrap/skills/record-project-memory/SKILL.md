@@ -1,6 +1,6 @@
 ---
 name: record-project-memory
-description: "Use to RECORD durable OVERDARE Studio project memory — when the user confirms a decision, plan, preference, or milestone worth carrying to a future session, or explicitly asks to remember something. Do NOT use it to look things up, to resume or understand a project, or for single-shot fixes, debugging, UI tweaks, or balance changes that are solvable from the current code/world."
+description: "Use to RECORD durable OVERDARE Studio project memory — before the final response of meaningful project work when the project brief, plan, decisions, implementation map, docs index, or durable user preferences changed, and whenever the user asks to remember something. Do NOT use it to look things up, to resume or understand a project, or for single-shot fixes, debugging, UI tweaks, or balance changes that are solvable from the current code/world."
 ---
 
 # Record Project Memory Skill
