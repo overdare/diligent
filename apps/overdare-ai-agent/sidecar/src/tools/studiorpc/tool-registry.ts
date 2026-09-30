@@ -2,6 +2,7 @@
 
 import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
+import * as animationCheck from "./methods/animation.check";
 import * as animationPublish from "./methods/animation.publish";
 import * as animationRead from "./methods/animation.read";
 import * as animationWrite from "./methods/animation.write";
@@ -91,6 +92,7 @@ export const methodModules: MethodModule[] = [
   hubTokenRead,
   animationRead,
   animationWrite,
+  animationCheck,
   animationPublish,
 ];
 // animation.write and animation.publish are in neither set on purpose: they save the clip's own .uasset (publish
