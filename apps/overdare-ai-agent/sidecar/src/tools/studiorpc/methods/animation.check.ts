@@ -15,15 +15,16 @@ export const timeoutMs = ANIMATION_TIMEOUT_MS;
 export const description =
   "Evaluate a clip without saving it or rendering an image: seconds instead of a full write. Send the same " +
   "animation JSON and pins as studiorpc_animation_write. Use it while you work out a pose, then write once it checks out.\n" +
-  "Per frame (frames: up to 24; default: the keyed frames and pin edges): joints = every animatable bone's position; " +
+  "Per frame (frames: up to 24; default: up to 12 of the keyed frames and pin edges; ask for the few frames you are " +
+  "working on): joints = hips (LowerTorso), head, elbows (LowerArm), hands, knees (LowerLeg) and feet; " +
   "lowestPointCm = the lowest skin point of each hand, foot, LowerTorso and thigh (where the sole, toe or heel, the " +
-  "fist and the seat really are, not the bone); penetrations = a hand, forearm, shin or foot sunk into the head, " +
-  "torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move that gets that point out). " +
-  "Positions are component space in cm: x = the character's left, y = forward, z = up, floor at z = 0. For the " +
-  "whole clip: floor and clearance, as in the write preview.\n" +
-  "pins work as in studiorpc_animation_write and each report adds keys: the solved rotations of the limb's three " +
-  "bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
-  "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, keeping the elbow or knee on its side, " +
+  "fist and the seat really are, not the bone); penetrations = up to 3 deepest places where a hand, forearm, shin " +
+  "or foot sinks into the head, torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move " +
+  "that gets that point out). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
+  "floor at z = 0. For the whole clip: floor and clearance, as in the write preview.\n" +
+  "pins work as in studiorpc_animation_write. A pin of up to 5 frames also reports keys: the solved rotations of " +
+  "the limb's three bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
+  "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, bending the elbow or knee only the way it hinges, " +
   "which you can copy into your own keys. reachMarginCm says how much further the limb could stretch; negative " +
   "means the target is that far out of reach (outOfReachFrames counts those frames).\n" +
   "Nothing is created or changed. Errors carry data.kind (INVALID_ANIMATION, INVALID_PARAMS) and data.errors[].";
@@ -31,13 +32,15 @@ export const description =
 export const params = z
   .object({
     animation: animationSchema.describe("The whole clip in the studiorpc_animation_write format. Not saved."),
-    pins: pinsSchema.optional().describe("As in studiorpc_animation_write; the result adds the solved keys per pin."),
+    pins: pinsSchema
+      .optional()
+      .describe("As in studiorpc_animation_write; pins of up to 5 frames report their solved keys."),
     frames: z
       .array(z.number().int().min(0))
       .min(1)
       .max(24)
       .optional()
-      .describe("Frames to report poses for. Omit for the keyed frames and pin edges."),
+      .describe("Frames to report poses for. Omit for up to 12 of the keyed frames and pin edges."),
   })
   .strict();
 
