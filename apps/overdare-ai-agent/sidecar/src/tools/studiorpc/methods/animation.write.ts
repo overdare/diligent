@@ -7,6 +7,7 @@ import {
   attachPreviewImage,
   dropBlank,
   formatWriteResult,
+  groundSchema,
   isBlank,
   normalizePreview,
   pinsSchema,
@@ -64,6 +65,12 @@ export const description =
   'pivot: "toe" (feet only, not with flat) holds the front edge of the sole instead of the ankle, and the foot ' +
   "turns about it as you key Foot Z (+ lifts the heel): a push-off, a tiptoe. A pin that starts on the frame " +
   "after another pin of the same bone ends continues from where that one left it (flat, then toe, then flat).\n" +
+  "ground: [{ frames: [from, to] }] keeps the body on the floor on every frame of the range: Studio raises or lowers " +
+  "LowerTorso until the lowest skin point meets the floor as a standing pose does, so a roll, a fall, sitting or lying " +
+  "neither floats nor sinks while you key only the rotations. It is applied before the pins. result.ground reports " +
+  "maxShiftCm, entryShiftCm / exitShiftCm (how far the hips move in the one frame where the range takes over from your " +
+  "keys and hands back; key the hips near that height just outside the range) and contacts: which body part touches " +
+  "the floor on which frames, in order.\n" +
   "preview: omitted or true = default contact sheet (frames 0, N/4, N/2, 3N/4, N; both views; MOTION column), " +
   'false = none, { frames: [up to 12], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
   "back as an image: rows = views (front first, then side), columns = frames in order, then MOTION (the clip " +
@@ -96,12 +103,18 @@ export const params = z
     pins: pinsSchema
       .optional()
       .describe("Hands/feet held at a fixed point over a frame range; baked into keys. Omit for none."),
+    ground: groundSchema
+      .optional()
+      .describe(
+        "Frame ranges where the body's lowest point stays on the floor; baked into LowerTorso keys. Omit for none.",
+      ),
   })
   .strict();
 
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out = normalizePreview(dropBlank(args, ["assetPath", "revision"]));
   if (Array.isArray(out.pins) && out.pins.length === 0) delete out.pins;
+  if (Array.isArray(out.ground) && out.ground.length === 0) delete out.ground;
   return out;
 }
 

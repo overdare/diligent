@@ -125,6 +125,12 @@ describe("animation params", () => {
     };
     expect(animationWrite.params.safeParse(solved).success).toBe(true);
     expect(
+      animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [10, 40] }] }).success,
+    ).toBe(true);
+    expect(animationCheck.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [10] }] }).success).toBe(
+      false,
+    );
+    expect(
       animationWrite.params.safeParse({
         animation: CONTRACT_ANIMATION,
         pins: [{ bone: "RightFoot", frames: [0, 4], pivot: "heel" }],

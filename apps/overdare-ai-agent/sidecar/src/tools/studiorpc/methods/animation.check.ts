@@ -4,6 +4,7 @@ import {
   ANIMATION_TIMEOUT_MS,
   animationSchema,
   formatCheckResult,
+  groundSchema,
   pinsSchema,
   withErrorData,
 } from "./animation-shared";
@@ -30,6 +31,8 @@ export const description =
   "which you can copy into your own keys; add a pole to choose where the elbow or knee goes. A pin with a path " +
   "of up to 5 frames solves several targets at once. reachMarginCm says how much further the limb could stretch; negative " +
   "means the target is that far out of reach (outOfReachFrames counts those frames).\n" +
+  "ground works as in studiorpc_animation_write; result.ground lists which body part touches the floor on which " +
+  "frames, the contact order of a roll or fall.\n" +
   "Nothing is created or changed. Errors carry data.kind (INVALID_ANIMATION, INVALID_PARAMS) and data.errors[].";
 
 export const params = z
@@ -38,6 +41,7 @@ export const params = z
     pins: pinsSchema
       .optional()
       .describe("As in studiorpc_animation_write; pins of up to 5 frames report their solved keys."),
+    ground: groundSchema.optional().describe("As in studiorpc_animation_write."),
     frames: z
       .array(z.number().int().min(0))
       .min(1)
@@ -51,6 +55,7 @@ export function normalizeArgs(args: Record<string, unknown>): Record<string, unk
   const out = { ...args };
   if (Array.isArray(out.pins) && out.pins.length === 0) delete out.pins;
   if (Array.isArray(out.frames) && out.frames.length === 0) delete out.frames;
+  if (Array.isArray(out.ground) && out.ground.length === 0) delete out.ground;
   return out;
 }
 
