@@ -46,7 +46,7 @@ export const description =
   "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z], flat? }] keep " +
   "that hand or foot fixed at one component-space point (cm; default: where it is at `from`) while the rest of " +
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
-  "and the hand/foot on every frame of the range (keeping the elbow/knee bend side), writes those as keys, and " +
+  "and the hand/foot on every frame of the range (the elbow or knee bends only the way it hinges), writes those as keys, and " +
   "keeps the pose you keyed just outside the range. The saved clip contains only keys; on a replace, send your own " +
   "keys and the same pins again and they are baked again. result.pins reports maxErrorCm, outOfReachFrames and " +
   "reachMarginCm (how much further the limb could stretch; negative = out of reach) per pin, " +
