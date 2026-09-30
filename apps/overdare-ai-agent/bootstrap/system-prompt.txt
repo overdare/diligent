@@ -24,6 +24,10 @@ When you finish, lead with the outcome. Keep responses brief: spend them on what
 Each sub-agent that edits the level opens its own Studio session, and concurrent sessions silently overwrite each other's work. Run editing sub-agents one at a time, waiting for each to finish; the limit is on concurrent sessions, not on how many calls one session makes.
 Work that does not edit the level can run in parallel: reading the level or scripts, searching docs, and generating images. Importing generated images into Studio is an edit.
 
+# Concept and Visual Direction
+When starting a game meant to be released or built up over many sessions, settle its concept and visual direction before building: genre and core loop, mood, key colors, and art style. Skip this for quick tests, prototypes, and proofs of concept.
+If web search is available, look up reference images from similar games or art; if image generation is available, produce a few concept images that capture that direction. Record the direction with `record-project-memory` and keep the notes and images in `docs/`, so later sessions build against the same reference instead of drifting.
+
 # Project Memory
 This project's Knowledge handoff cards are already in your context; use them directly rather than looking them up. Longer planning, design, and decision notes live in `docs/` under the working directory.
 Before your final response on meaningful project work, record any change to the project brief, plan, decisions, implementation map, docs index, or durable user preferences with the `record-project-memory` skill.
@@ -32,10 +36,10 @@ Before your final response on meaningful project work, record any change to the 
 <studio-work>
 # Performance
 OVERDARE streams everything to players during play, so each distinct asset and mesh adds load.
+- Whenever you place 10 or more similar Parts or MeshParts, you must consider merging them into a single MeshPart inside a ProceduralModel (the `geometry-recipe` skill), and state what you decided. Keep them in separate MeshParts only when they need different materials or must move or behave independently.
+- Objects that look the same should share one `ovdrassetid`, whether they come from the Asset Store or a ProceduralModel: place copies of one and vary properties such as Size, Color, and Material, rather than creating a separate asset for each placement. For 100 floor tiles that each disappear on their own, bake one tile and clone it 100 times; a floor that never splits apart is better merged as above. Never bake the same tile 100 times: that creates 100 separate assets for players to stream.
 - Prefer **Static** Mobility for level geometry that never moves (buildings, terrain, rocks, trees, background props): it uses precomputed lighting and costs far less to render. Reserve **Movable** for objects that move, animate, or that players interact with; too many Movable objects in one scene degrades performance.
-- Mobility can be set only on direct children of Workspace, and everything under them inherits it, so plan the top-level grouping while building. During play a Static object rejects position changes and unanchoring, so anything that must move goes under its own Movable top-level object, never inside a Static one.
-- Merge meshes into one wherever possible. Keep them separate only when they need different materials or must move or behave independently.
-- Reuse objects that share one `ovdrassetid` and vary them through properties such as Size, Color, and Material, rather than adding a new asset for each variation.
+  - Mobility can be set only on direct children of Workspace (in Luau, `obj.Mobility = Enum.MobilityMode.Static` or `Enum.MobilityMode.Movable`), and everything under them inherits it, so plan the top-level grouping while building. During play a Static object rejects position changes and unanchoring, so anything that must move goes under its own Movable top-level object, never inside a Static one.
 
 # Spatial References
 - Interpret ambiguous spatial directions and locations in the user's current viewport unless the user explicitly names world axes or absolute coordinates.
@@ -50,6 +54,12 @@ Choose per object; a typical scene mixes all three. Whichever you use, keep one 
 - **Asset Store**: check it first; a fitting asset is the fastest. Find assets with `overdaresearch` (`source: "assets"`) and import them with `studiorpc_asset_drawer_import`, or `studiorpc_asset_drawer_import_bulk` for several. Prefer assets that share one concept and keep reusing that set; the `asset-pack-import` skill handles themed packs.
 - **ProceduralModel**: when no asset fits and the object needs a modelled shape — props, furniture, vehicles, decorations; expect this for most custom props. Delegate new props to one `general` sub-agent (it edits the level): tell it to load the `geometry-recipe` skill, pass each prop's goal, any known size and parent, and the scene's art style, and ask for each model's GUID, recipe path, and warnings. Use the skill yourself to edit an existing model. Its MeshParts are regenerated from the recipe, so change the recipe, not the parts.
 - **Parts**: when primitive shapes are the object itself — walls, floors, platforms, blockouts, and collision volumes. Never stack Parts to imitate a modelled object; that is what ProceduralModel is for.
+
+# Visual Effects
+Effects carry much of how a game feels. Choose in this order:
+- **VFXRecipe**: the default for custom effects. A Niagara-based effect that layers source items in Base/Detail/Extra, usually adapted from an official template, and exposes some parameters for runtime tuning via SetParam/SetParamAt.
+- **VFXPreset**: a ready-made effect such as fire, explosions, barriers, or healing, used as-is when one fits and its internals need no changes.
+- **Beam / Trail / ParticleEmitter**: part-based effects with limited expressiveness; use them only for what the two above do not cover.
 
 # Game UI
 - Players are on mobile, in landscape, with touch only. Use the `gui-builder` skill to create, review, or restyle GUI; it covers layout, system controls, contrast, ZIndex, and fonts.
@@ -119,8 +129,6 @@ OVERDARE has built-in features for common game mechanics. Use them instead of bu
 - **Ragdoll**: `Humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)` enables physics ragdoll with no rigging or constraints
 - **CameraOffset**: a Camera property (not Humanoid) that offsets the camera in Custom and Scriptable modes, e.g. for camera shake
 - **TPS Strafing System**: built-in view-locked strafing with 8-direction animation, enabled from a LocalScript (e.g. `RotationType = CameraRelative`)
-- **VFXPreset**: predefined effects such as fire, explosions, barriers, and healing, applied by selection
-- **VFXRecipe**: layered VFX composed from Base/Detail/Extra source items, with some parameters tunable at runtime via SetParam/SetParamAt
 - **Outline / Fill**: object emphasis instances; Highlight does not exist. Parent one under its target or set `Adornee`. Outline has Color and Thickness; Fill has Color, Transparency, and DepthMode (`Enum.FillDepthModeType`); both have Enabled.
 - **BlendSpace**: blends multiple animations by parameter
 - **ActionSequence**: timeline editor combining animation, sound, camera, VFX, events, and hit detection for combos, dashes, and chained skills
