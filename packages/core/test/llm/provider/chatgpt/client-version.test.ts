@@ -13,7 +13,7 @@ import {
 } from "../../../helpers/chatgpt-stream";
 
 const CODEX_MINIMUM_CLIENT_VERSION = "0.155.0";
-const SUBSCRIPTION_MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" });
+const SUBSCRIPTION_MODEL = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
 
 function isAtLeast(version: string, minimum: string): boolean {
   const parse = (value: string) => value.split(".").map(Number);
@@ -84,8 +84,8 @@ describe("ChatGPT client version", () => {
     expect(compacted).toBe(streamed as string);
   });
 
-  test("GPT-6 Sol and Luna send a version meeting their Codex catalog minimum", async () => {
-    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+  test("GPT-6 Luna sends a version meeting its Codex catalog minimum", async () => {
+    for (const modelId of ["gpt-6-luna"]) {
       const model = resolveModel({ provider: "chatgpt", modelId });
       const streamed = await captureVersionHeader(() =>
         collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "medium" })),

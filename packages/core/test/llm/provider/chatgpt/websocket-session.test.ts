@@ -451,7 +451,7 @@ describe("ChatGPT WebSocket session", () => {
 
     const events = await collectEvents(
       chatgptStream(
-        { ...resolveModel({ provider: "chatgpt", modelId: "gpt-6-sol" }), modelId: "legacy-test-model" },
+        { ...resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" }), modelId: "legacy-test-model" },
         TEST_CONTEXT,
         {
           effort: "medium",

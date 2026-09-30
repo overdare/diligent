@@ -3,7 +3,7 @@ import { defineProviderModels } from "../../model-card";
 import { defineProviderModelClasses } from "../../model-class";
 
 export const OPENAI_MODEL_CLASSES = defineProviderModelClasses({
-  pro: { defaultModelId: "gpt-6-sol" },
+  pro: { defaultModelId: "gpt-6.1-sol" },
   general: { defaultModelId: "gpt-5.6-terra" },
   lite: { defaultModelId: "gpt-6-luna" },
 });
@@ -54,19 +54,6 @@ export const OPENAI_MODELS = defineProviderModels("openai", [
       sourceUrl: "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
       updatedAt: "2026-09-30",
     },
-  },
-  {
-    modelId: "gpt-6-sol",
-    display: "GPT-6 Sol",
-    contextWindow: 500_000,
-    maxOutputTokens: 128_000,
-    inputCostPer1M: 2,
-    outputCostPer1M: 10,
-    cacheReadCostPer1M: 0.2,
-    cacheWriteCostPer1M: 2.5,
-    supportsThinking: true,
-    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
-    supportsVision: true,
   },
   {
     modelId: "gpt-6-luna",
