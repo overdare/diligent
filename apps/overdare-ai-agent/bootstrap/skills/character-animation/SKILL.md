@@ -28,7 +28,7 @@ Left and right limbs share these descriptions ("inward" means toward the body on
 
 A channel means what the table says only near the reference pose. Once UpperArm Y is past about 100 (the arm above shoulder height), Z+ swings the raised arm back and Z− swings it forward. The head is large, so a raised arm meets it early. Straight up (Y 155, Z 0) already puts the forearm 5–6 cm into the head. Overhead poses stay clear at Y 140 or less with Z 0 or less, or at Y 155 with Z about −30 (slightly forward). Z+ with a bent elbow brings the hand into the head. Leaning the torso does not change this, because the head leans with it.
 
-A boxing guard clears the head with UpperArm Y 0–45 and Z 40–55, and LowerArm Z 80–100. That puts the fist 15–25 cm in front of the face at 112–128 cm. A tighter elbow (115 or more) or UpperArm Z 70 or more puts the fist 8–13 cm inside the head.
+A boxing guard clears the head with UpperArm Y 0–30 and Z 40–45, and LowerArm Z 80–90. That puts the fist 15–25 cm in front of the face. Measured with the torso and head at rest: a head turn or hip twist brings the head toward a fist, so check the guard frames with studiorpc_animation_check. A tighter elbow (115 or more) or UpperArm Z 70 or more puts the fist 8–13 cm inside the head.
 
 Hand X and LowerArm X twist about the forearm while the wrist is straight; once the wrist is bent (Hand Y), Hand X turns the hand about its own length instead. That twist is how you turn the palm. The hand has no finger bones and its shape never changes, so check the palm's direction in the contact sheet. The fist reaches 18–21 cm past the hand bone along the forearm, so a hand on the floor keeps its bone that high above it.
 
