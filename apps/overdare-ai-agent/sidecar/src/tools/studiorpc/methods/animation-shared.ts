@@ -110,6 +110,20 @@ export const pinsSchema = z
   )
   .max(8);
 
+/**
+ * Ground ranges keep the lowest point of the body on the floor on every frame (rolls, falls, sitting, lying): Studio
+ * moves LowerTorso straight up or down and bakes it into keys, before the pins.
+ */
+export const groundSchema = z
+  .array(
+    z
+      .object({
+        frames: z.array(z.number().int().min(0)).length(2).describe("[from, to], inclusive."),
+      })
+      .strict(),
+  )
+  .max(8);
+
 /** Whitespace and invisible characters some models put in optional strings they were forced to fill. */
 export function isBlank(value: unknown): boolean {
   return typeof value === "string" && value.replace(/\s|\u200b|\u200c|\u200d|\ufeff|\u00a0/g, "") === "";
