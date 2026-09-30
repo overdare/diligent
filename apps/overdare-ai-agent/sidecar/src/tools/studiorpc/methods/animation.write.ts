@@ -20,7 +20,8 @@ export const timeoutMs = ANIMATION_TIMEOUT_MS;
 
 export const description =
   "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
-  "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath.\n" +
+  "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
+  "without saving or rendering (joint positions, penetrations, IK solves), use studiorpc_animation_check.\n" +
   "Workflow: write without assetPath to create a clip under /Temp/AnimationAssets/<name> (a suffix is added if " +
   "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor, " +
   "preview.clearance and preview.poseSamples, edit the JSON, then write again with assetPath and the revision " +
@@ -47,7 +48,8 @@ export const description =
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
   "and the hand/foot on every frame of the range (keeping the elbow/knee bend side), writes those as keys, and " +
   "keeps the pose you keyed just outside the range. The saved clip contains only keys; on a replace, send your own " +
-  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm and outOfReachFrames per pin, " +
+  "keys and the same pins again and they are baked again. result.pins reports maxErrorCm, outOfReachFrames and " +
+  "reachMarginCm (how much further the limb could stretch; negative = out of reach) per pin, " +
   "and entryJumpDeg / exitJumpDeg: how far the limb's joints turn in the one frame where the pin takes over from " +
   "your keys and hands back to them. More than about 15 is a visible pop; key the limb near the pinned pose on the " +
   "frames just outside the range, or start and end the pin where the limb already is. flat: true (feet " +

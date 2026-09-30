@@ -187,6 +187,23 @@ export function formatWriteResult(result: unknown): unknown {
 }
 
 /**
+ * animation.check answers with a pose per frame (every joint, the lowest skin points, penetrations). Pretty-printed
+ * that is one number per line; here each frame is one line (0.1 cm), after the clip-wide floor, clearance and pins.
+ */
+export function formatCheckResult(result: unknown): unknown {
+  if (!isRecord(result) || !Array.isArray(result.frames)) return result;
+  const { frames, ...rest } = result;
+  const placeholder = "__ANIMATION_CHECK_FRAMES__";
+  const text = JSON.stringify({ ...rest, frames: placeholder }, null, 2);
+  const lines = frames.map((frame) => `    ${JSON.stringify(frame, roundToTenth)}`);
+  return text.replace(`"${placeholder}"`, () => (lines.length ? `[\n${lines.join(",\n")}\n  ]` : "[]"));
+}
+
+function roundToTenth(_key: string, value: unknown): unknown {
+  return typeof value === "number" ? Math.round(value * 10) / 10 || 0 : value;
+}
+
+/**
  * The rig lists every bone with its full reference transform, pretty-printed: about 33 KB, most of it IK, camera
  * and item bones that cannot be animated and quaternions nobody reads. The result keeps the animatable bones one
  * line each (parent, reference translations, local axes in component space, 0.01 precision) and only the names
