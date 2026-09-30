@@ -116,6 +116,26 @@ describe("animation params", () => {
       animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, pins: [{ bone: "RightHand", frames: [0] }] })
         .success,
     ).toBe(false);
+    const solved = {
+      animation: CONTRACT_ANIMATION,
+      pins: [
+        { bone: "RightHand", frames: [0, 4], pole: [-40, -10, 90], path: [{ frame: 0, position: [-20, 25, 120] }] },
+        { bone: "RightFoot", frames: [5, 9], pivot: "toe" },
+      ],
+    };
+    expect(animationWrite.params.safeParse(solved).success).toBe(true);
+    expect(
+      animationWrite.params.safeParse({
+        animation: CONTRACT_ANIMATION,
+        pins: [{ bone: "RightFoot", frames: [0, 4], pivot: "heel" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      animationWrite.params.safeParse({
+        animation: CONTRACT_ANIMATION,
+        pins: [{ bone: "RightHand", frames: [0, 4], path: [{ frame: 0, position: [0, 0, 0], rotation: [0, 0, 0] }] }],
+      }).success,
+    ).toBe(false);
   });
 
   test("read opens a clip by assetPath or an animation by assetId", () => {

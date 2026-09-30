@@ -20,12 +20,15 @@ export const description =
   "lowestPointCm = the lowest skin point of each hand, foot, LowerTorso and thigh (where the sole, toe or heel, the " +
   "fist and the seat really are, not the bone); penetrations = up to 3 deepest places where a hand, forearm, shin " +
   "or foot sinks into the head, torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move " +
-  "that gets that point out). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
+  "that gets that point out); directions = unit vectors of each hand (fingers: wrist toward fist; palm: the side " +
+  "that faces the thigh when standing) and foot (toes: heel toward toes; sole: out of the sole, [0, 0, -1] when " +
+  "flat). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
   "floor at z = 0. For the whole clip: floor and clearance, as in the write preview.\n" +
   "pins work as in studiorpc_animation_write. A pin of up to 5 frames also reports keys: the solved rotations of " +
   "the limb's three bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
   "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, bending the elbow or knee only the way it hinges, " +
-  "which you can copy into your own keys. reachMarginCm says how much further the limb could stretch; negative " +
+  "which you can copy into your own keys; add a pole to choose where the elbow or knee goes. A pin with a path " +
+  "of up to 5 frames solves several targets at once. reachMarginCm says how much further the limb could stretch; negative " +
   "means the target is that far out of reach (outOfReachFrames counts those frames).\n" +
   "Nothing is created or changed. Errors carry data.kind (INVALID_ANIMATION, INVALID_PARAMS) and data.errors[].";
 

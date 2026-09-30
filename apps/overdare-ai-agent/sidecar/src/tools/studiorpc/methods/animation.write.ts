@@ -43,7 +43,8 @@ export const description =
   "least one key. Limits: 64 tracks, 4096 keys total. name matches [A-Za-z][A-Za-z0-9_]{0,63} and cannot " +
   "change on replace. Unknown fields, wrong array lengths and non-numbers are rejected; nothing is clamped " +
   "or re-sorted.\n" +
-  "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z], flat? }] keep " +
+  "pins: [{ bone: RightHand | LeftHand | RightFoot | LeftFoot, frames: [from, to], position?: [x, y, z], flat?, pole?, " +
+  "path?, pivot? }] keep " +
   "that hand or foot fixed at one component-space point (cm; default: where it is at `from`) while the rest of " +
   "the body moves: a planted foot, a hand supporting the body on the floor. Studio solves the upper/lower limb " +
   "and the hand/foot on every frame of the range (the elbow or knee bends only the way it hinges), writes those as keys, and " +
@@ -55,7 +56,14 @@ export const description =
   "frames just outside the range, or start and end the pin where the limb already is. flat: true (feet " +
   "only) plants the foot flat with the sole on the floor at its heading on `from` (walking, standing, squats); " +
   "without it the foot keeps the tilt and height it has at `from`. For a hand on the floor, set position z from " +
-  "preview.floor (raise it by the reported maxDepthCm when the hand sinks).\n" +
+  "preview.floor (raise it by the reported maxDepthCm when the hand sinks). " +
+  "pole: [x, y, z] bends the elbow or knee toward that point instead of the way it hinges (a guard with the elbows " +
+  "down, a knee turned out); againstHingeFrames counts frames where that bends the joint backwards. " +
+  "path: [{ frame, position }] instead of position moves the hand or foot through those points (eased between " +
+  "them, held before the first and after the last); it keeps the rotation your keys give it. " +
+  'pivot: "toe" (feet only, not with flat) holds the front edge of the sole instead of the ankle, and the foot ' +
+  "turns about it as you key Foot Z (+ lifts the heel): a push-off, a tiptoe. A pin that starts on the frame " +
+  "after another pin of the same bone ends continues from where that one left it (flat, then toe, then flat).\n" +
   "preview: omitted or true = default contact sheet (frames 0, N/4, N/2, 3N/4, N; both views; MOTION column), " +
   'false = none, { frames: [up to 12], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
   "back as an image: rows = views (front first, then side), columns = frames in order, then MOTION (the clip " +
