@@ -69,7 +69,8 @@ const previewOptions = z
 
 /**
  * Pins keep a hand or foot at one component-space point over a frame range (a planted foot, a hand on the
- * floor while the body turns). Studio bakes them into keys on the limb's upper, lower and end bones.
+ * floor while the body turns), or move it along a path. Studio bakes them into keys on the limb's upper, lower
+ * and end bones.
  */
 export const pinsSchema = z
   .array(
@@ -82,6 +83,28 @@ export const pinsSchema = z
           .boolean()
           .optional()
           .describe("Feet only: the foot lies flat on the floor (sole at z = 0) keeping its heading at `from`."),
+        pole: vec3(
+          "[x, y, z] component cm: a point the elbow or knee bends toward. Omit to bend the way it hinges.",
+        ).optional(),
+        path: z
+          .array(
+            z
+              .object({
+                frame: z.number().int().min(0),
+                position: vec3("[x, y, z] component cm."),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(64)
+          .optional()
+          .describe("Instead of position: targets on frames inside `frames`, ascending; eased between, held outside."),
+        pivot: z
+          .literal("toe")
+          .optional()
+          .describe(
+            "Feet only, not with flat: hold the front edge of the sole; the keyed foot rotation lifts the heel.",
+          ),
       })
       .strict(),
   )
