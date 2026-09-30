@@ -29,6 +29,15 @@ export const CHATGPT_MODELS = defineProviderModels("chatgpt", [
     aliases: ["gpt-6", "astra"],
   },
   {
+    modelId: "gpt-6.1-sol",
+    display: "ChatGPT 6.1 Sol",
+    contextWindow: 500_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+    supportsVision: true,
+  },
+  {
     modelId: "gpt-6-sol",
     display: "ChatGPT 6 Sol",
     contextWindow: 500_000,
