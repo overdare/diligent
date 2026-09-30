@@ -5,6 +5,8 @@ import { createChatGPTNativeCompaction, createChatGPTStream } from "../../../../
 import {
   chatGPTSuccessResponse,
   collectEvents,
+  completeWebSocketResponse,
+  createWebSocketHarness,
   restoreChatGPTStreamTestState,
   TEST_CONTEXT,
   testTokens,
@@ -37,6 +39,35 @@ async function captureVersionHeader(run: () => Promise<unknown>): Promise<string
 afterEach(restoreChatGPTStreamTestState);
 
 describe("ChatGPT client version", () => {
+  test("GPT-6.1 Sol sends a verified compatible version over HTTP, WebSocket, and compaction", async () => {
+    // Live requests with 0.155.0 reject this model; 0.159.0 returns a successful response.
+    const compatibleVersion = "0.159.0";
+    const model = resolveModel({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
+    const streamed = await captureVersionHeader(() =>
+      collectEvents(createChatGPTStream(() => testTokens())(model, TEST_CONTEXT, { effort: "low" })),
+    );
+    const compacted = await captureVersionHeader(() =>
+      createChatGPTNativeCompaction(() => testTokens())({
+        model,
+        systemPrompt: [],
+        messages: TEST_CONTEXT.messages,
+      }),
+    );
+    const harness = createWebSocketHarness((_body, socket) => completeWebSocketResponse(socket));
+    await collectEvents(
+      createChatGPTStream(() => testTokens(), {
+        useWebSocketForGpt56: true,
+        webSocketFactory: harness.factory,
+      })(model, TEST_CONTEXT, { effort: "low" }),
+    );
+
+    expect(streamed).toBeDefined();
+    expect(isAtLeast(streamed as string, compatibleVersion)).toBe(true);
+    expect(compacted).toBe(streamed as string);
+    expect(harness.requests).toHaveLength(1);
+    expect(harness.requests[0]?.headers.version).toBe(streamed as string);
+  });
+
   test("streaming and compaction pin the same version", async () => {
     const streamed = await captureVersionHeader(() =>
       collectEvents(createChatGPTStream(() => testTokens())(SUBSCRIPTION_MODEL, TEST_CONTEXT, { effort: "medium" })),
