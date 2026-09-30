@@ -57,7 +57,7 @@ function responsesLiteReplacementHistoryPayload() {
 }
 
 const OPENAI_MODEL: Model = {
-  modelId: "gpt-6-sol",
+  modelId: "gpt-6.1-sol",
   provider: "openai",
   contextWindow: 200_000,
   maxOutputTokens: 16_000,
@@ -99,7 +99,7 @@ describe("native compaction adapters", () => {
 
     expect(capturedUrl).toBe("https://api.openai.com/v1/responses/compact");
     expect(capturedHeaders.Authorization).toBe("Bearer sk-openai");
-    expect(capturedBody.model).toBe("gpt-6-sol");
+    expect(capturedBody.model).toBe("gpt-6.1-sol");
     expect(capturedBody.input).toBeArray();
     expect(result.status).toBe("ok");
   });
@@ -345,7 +345,7 @@ describe("native compaction adapters", () => {
 
   test("request body prepends compaction summary before converted follow-up messages", async () => {
     const body = await buildResponsesRequestBody({
-      model: "gpt-6-sol",
+      model: "gpt-6.1-sol",
       messages: [{ role: "user", content: "follow up", timestamp: Date.now() }],
       compactionSummary: {
         type: "compaction",
@@ -366,7 +366,7 @@ describe("native compaction adapters", () => {
   test("request body expands replacement history before converted follow-up messages", async () => {
     const replacementHistory = replacementHistoryPayload().output;
     const body = await buildResponsesRequestBody({
-      model: "gpt-6-sol",
+      model: "gpt-6.1-sol",
       messages: [{ role: "user", content: "follow up", timestamp: Date.now() }],
       compactionSummary: {
         type: "diligent_openai_compaction_state",

@@ -564,7 +564,7 @@ describe("AgentRegistry", () => {
     });
     const registry = new AgentRegistry(
       makeCollabDeps({
-        model: { provider: "openai", modelId: "gpt-6-sol" },
+        model: { provider: "openai", modelId: "gpt-6.1-sol" },
         parentTools: [makeTool("read"), makeTool("edit"), makeTool("spawn_agent")],
         onCollabEvent: (event) => events.push(event),
         sessionManagerFactory: (config) =>
@@ -1229,7 +1229,7 @@ describe("AgentRegistry", () => {
     const observedModels: string[] = [];
     const observedEfforts: string[] = [];
     const initialModel = { provider: "anthropic", modelId: "claude-opus-5-5" } as const;
-    const latestModel = { provider: "openai", modelId: "gpt-6-sol" } as const;
+    const latestModel = { provider: "openai", modelId: "gpt-6.1-sol" } as const;
     const latestEffort = "high" as const;
     const registry = new AgentRegistry(
       makeCollabDeps({
