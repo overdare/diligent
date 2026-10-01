@@ -32,6 +32,7 @@ import type { RenderItem } from "./lib/thread-store";
 import { hasPendingUserInputTool } from "./lib/thread-utils";
 import { useAgentNativeBridge } from "./lib/use-agent-native-bridge";
 import { useAppState } from "./lib/use-app-state";
+import { useChatFileDrop } from "./lib/use-chat-file-drop";
 import { useProviderManager } from "./lib/use-provider-manager";
 import { useRpcClient } from "./lib/use-rpc";
 
@@ -155,6 +156,22 @@ export function App() {
   const mainContentIsInert = sidebarOpen && sidebarIsOverlay;
   const sidebarTriggerRef = useRef<HTMLElement | null>(null);
   const [feedbackReport, setFeedbackReport] = useState<FeedbackReportSelection | null>(null);
+  const handleChatFileDrop = useChatFileDrop({
+    enabled:
+      providerMgr.hasProvider &&
+      connection === "connected" &&
+      !isUploadingImages &&
+      !mainContentIsInert &&
+      !showProviderModal &&
+      !showToolModal &&
+      !showKnowledgeModal &&
+      !showMcpModal &&
+      !showConnectionModal &&
+      !threadMgr.pendingDeleteThreadId &&
+      !feedbackReport &&
+      !(consent && !consent.noticeAcknowledged),
+    onAddImages: handleAddImagesToDock,
+  });
   const closeSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
   const handleSidebarNewThread = useCallback(() => {
     void startNewThread();
@@ -245,6 +262,7 @@ export function App() {
         </ResponsiveSidebar>
 
         <Panel
+          onDrop={handleChatFileDrop}
           aria-hidden={mainContentIsInert ? true : undefined}
           inert={mainContentIsInert}
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-dark !rounded-none !border-0"
