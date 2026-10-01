@@ -7,5 +7,6 @@ export {
   type ImageGridCell,
   inspectImageAlpha,
   splitImageGrid,
+  validateImage,
   withImageDownscaling,
 } from "../llm/image-resize";
