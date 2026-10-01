@@ -30,6 +30,39 @@ export class StudioRpcError extends Error {
   }
 }
 
+export interface StudioRpcTransportDiagnostics {
+  reason: "timeout" | "socketError" | "connectionClosed" | "invalidResponse";
+  phase: "connecting" | "awaitingResponse";
+  method: string;
+  requestId: number;
+  host: string;
+  port: number;
+  elapsedMs: number;
+  executionOutcome: "notSent" | "unknown";
+  socketCode?: string;
+}
+
+/** Client transport failures cannot establish whether Studio executed a sent request. */
+export class StudioRpcTransportError extends Error {
+  constructor(readonly data: StudioRpcTransportDiagnostics) {
+    const summary =
+      data.reason === "timeout"
+        ? `Studio RPC timed out (${data.method}).`
+        : data.reason === "invalidResponse"
+          ? `Invalid Studio RPC response (${data.method}).`
+          : data.reason === "connectionClosed"
+            ? `Studio RPC connection closed before a response (${data.method}).`
+            : `Could not connect to Studio RPC server (${data.method}).`;
+    super(
+      `${summary}\n${JSON.stringify(data)}\n` +
+        (data.executionOutcome === "notSent"
+          ? "The request was not sent. Check the Studio listener, host, port, and network connection."
+          : "The request was sent; execution outcome is unknown. Do not replay writes or input until the current Studio state is inspected. Check Studio responsiveness and the RPC connection."),
+    );
+    this.name = "StudioRpcTransportError";
+  }
+}
+
 /** Studio's code for a GUID that names no instance. */
 export const RPC_INSTANCE_NOT_FOUND = -32004;
 
@@ -68,6 +101,8 @@ export async function call(
 
   return new Promise((resolve, reject) => {
     const id = nextId++;
+    const startedAt = Date.now();
+    let sent = false;
     const request = {
       jsonrpc: "2.0",
       id,
@@ -88,22 +123,31 @@ export async function call(
       fields: { id, method, bytes: rawRequest.length },
     });
     const socket = net.createConnection({ host: connectHost, port }, () => {
+      sent = true;
       socket.write(`${rawRequest}\n`);
     });
 
     const rl = readline.createInterface({ input: socket });
 
-    const timer = setTimeout(() => {
+    const transportFailure = (reason: StudioRpcTransportDiagnostics["reason"], socketCode?: string) => {
       settle(() => {
         cleanup();
         reject(
-          new Error(
-            `Studio RPC timed out (${method}).\n` +
-              `Make sure OVERDARE Studio is running. If the problem persists, restart the agent.`,
-          ),
+          new StudioRpcTransportError({
+            reason,
+            phase: sent ? "awaitingResponse" : "connecting",
+            method,
+            requestId: id,
+            host,
+            port,
+            elapsedMs: Date.now() - startedAt,
+            executionOutcome: sent ? "unknown" : "notSent",
+            ...(socketCode ? { socketCode } : {}),
+          }),
         );
       });
-    }, timeoutMs);
+    };
+    const timer = setTimeout(() => transportFailure("timeout"), timeoutMs);
 
     const onAbort = () => {
       settle(() => {
@@ -122,42 +166,49 @@ export async function call(
     }
 
     rl.once("line", (line) => {
+      let response: JsonRpcResponse;
+      try {
+        response = JSON.parse(line) as JsonRpcResponse;
+        if (
+          !response ||
+          response.jsonrpc !== "2.0" ||
+          response.id !== id ||
+          "result" in response === "error" in response ||
+          ("error" in response &&
+            (!response.error || !Number.isInteger(response.error.code) || typeof response.error.message !== "string"))
+        ) {
+          transportFailure("invalidResponse");
+          return;
+        }
+      } catch {
+        transportFailure("invalidResponse");
+        return;
+      }
       settle(() => {
         cleanup();
-        try {
-          const response = JSON.parse(line) as JsonRpcResponse;
-          logger.debug("response.received", {
-            message: `[RPC ←] ${method} (${line.length} bytes)`,
-            fields: { id, method, bytes: line.length },
-          });
-          if (response.error) {
-            let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;
-            errorMsg += renderReason(response.error.data);
-            errorMsg += renderMeasurements(response.error.data);
-            errorMsg += `\n\nRequest method: ${method} (id ${id})`;
-            if (response.error.message?.toLowerCase().includes("guid")) {
-              errorMsg += `\n\nTip: Use studiorpc_level_browse first to get valid GUIDs.`;
-            }
-            reject(new StudioRpcError(errorMsg, response.error.code, response.error.data));
-          } else {
-            resolve(response.result);
+        logger.debug("response.received", {
+          message: `[RPC ←] ${method} (${line.length} bytes)`,
+          fields: { id, method, bytes: line.length },
+        });
+        if (response.error) {
+          let errorMsg = `Studio RPC error [${response.error.code}]: ${response.error.message}`;
+          errorMsg += renderReason(response.error.data);
+          errorMsg += renderMeasurements(response.error.data);
+          errorMsg += `\n\nRequest method: ${method} (id ${id})`;
+          if (response.error.message?.toLowerCase().includes("guid")) {
+            errorMsg += `\n\nTip: Use studiorpc_level_browse first to get valid GUIDs.`;
           }
-        } catch {
-          reject(new Error(`Failed to parse Studio RPC response.\nReceived: ${line.substring(0, 200)}`));
+          reject(new StudioRpcError(errorMsg, response.error.code, response.error.data));
+        } else {
+          resolve(response.result);
         }
       });
     });
 
-    socket.on("error", () => {
-      settle(() => {
-        cleanup();
-        reject(
-          new Error(
-            `Could not connect to Studio RPC server.\n` +
-              `Make sure OVERDARE Studio is running. If the problem persists, restart the agent.`,
-          ),
-        );
-      });
-    });
+    // readline forwards input errors; handle both surfaces without an unhandled interface error.
+    rl.on("error", (error: NodeJS.ErrnoException) => transportFailure("socketError", error.code));
+    socket.on("error", (error: NodeJS.ErrnoException) => transportFailure("socketError", error.code));
+    socket.on("end", () => transportFailure("connectionClosed"));
+    socket.on("close", () => transportFailure("connectionClosed"));
   });
 }

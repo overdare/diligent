@@ -1,13 +1,13 @@
 // @summary Runs an Editor command and saves its changes, retaining phase-specific failure diagnostics.
 import * as executeLuau from "../methods/execute.luau";
-import { type call, StudioRpcError } from "../rpc";
+import { type call, StudioRpcError, StudioRpcTransportError } from "../rpc";
 import type { Tool, ToolResult } from "../types";
 import type { WriteLock } from "../write-lock";
 
 const TOOL_NAME = "studiorpc_execute_luau";
 
 function failureResult(error: unknown, phase: "execute" | "save", result?: unknown): ToolResult {
-  const data = error instanceof StudioRpcError ? error.data : undefined;
+  const data = error instanceof StudioRpcError || error instanceof StudioRpcTransportError ? error.data : undefined;
   const mutationAttempted =
     data && typeof data === "object" && "mutation_attempted" in data ? data.mutation_attempted : undefined;
   const lines = [
