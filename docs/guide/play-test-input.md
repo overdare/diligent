@@ -13,9 +13,10 @@ walk the character — instead of asking the user to do it by hand and report ba
 |------|---------|
 | `studiorpc_game_pie_status` | Whether a play test runs, its `pieSessionId`, and which clients accept input |
 | `studiorpc_game_input_inject` | Play an ordered batch of key / pointer events into the running play test |
-| `studiorpc_game_character_move_to` | Walk the character to a world position using its navigation |
-| `studiorpc_game_character_move_status` | Outcome of a `move_to` request |
-| `studiorpc_game_ui_browse` | List the UI on screen with the rectangle each element occupies |
+| `studiorpc_game_character_move_to` | Navigate a route or arrange one test position with teleport, returning measured results |
+| `studiorpc_game_character_read` | Read the selected character's live position and movement state |
+| `studiorpc_game_observe` | Read UI rectangles, character state, and live instances |
+| `studiorpc_game_stop` | Request stop and confirm that PIE is no longer running |
 | `studiorpc_viewport_camera_read` | Where the camera on screen is, how much it covers, and what it is aimed at |
 
 They live in `apps/overdare-ai-agent/sidecar/src/tools/studiorpc/tools/pie-input/` and `…/methods/`, and are
@@ -24,7 +25,7 @@ registered by the Studio RPC provider, so they reach the product agent, the TUI,
 
 ## Aiming without measuring a picture
 
-`game.ui.browse` and `game.screenshot` report positions in the same viewport-normalized `0..1` space that
+`game.observe` UI and `game.screenshot` report positions in the same viewport-normalized `0..1` space that
 `pointerMove` consumes, so clicking a button is: browse, take the centre of its `rect`, move, press. Nothing
 is read off an image, which matters because screenshots are resized on the way to the model — a normalized
 rectangle survives that, an absolute pixel does not.
@@ -59,7 +60,8 @@ crosshair. `source` says whether that camera is the editor viewport or the runni
 test the player camera is what fills the screen, and `game.screenshot` reports the same block for the shot it
 just took, so the two never describe different moments.
 
-`game.screenshot` also accepts `cameraPosition` + `lookAt` to aim one shot; the editor viewport returns to
+`studiorpc_game_screenshot` accepts `camera: {position, lookAt}` to aim one shot; the sidecar translates
+this to Studio's `cameraPosition` and `lookAt`. The editor viewport returns to
 where the user left it as soon as the capture ends, on every path including failure. It is rejected during a
 play test, because moving the editor viewport would not change what the capture shows.
 
@@ -71,8 +73,8 @@ target only (`WITH_MCP_PIE_INPUT`), so an editor-target Studio answers method-no
 
 Studio enforces, and the tools pre-check:
 
-- keys `W A S D Q E R SpaceBar LeftShift LeftControl`, pointer buttons `left` / `right`
-- at most 64 events and 10s of total `wait` per batch
+- keys accepted by the advertised key schema, pointer buttons `left` / `right`
+- at most 64 expanded events and 60s of total `wait` per batch
 - every key and button pressed down must be released inside the same batch
 - `pointerMove` positions are viewport-normalized `0..1`; `mouseDelta` axes are bounded by ±4096 and need a
   captured mouse
@@ -109,18 +111,49 @@ a fresh per-call connection never owns one. `studiorpc_game_stop` is the escape 
 `game.input.inject` answers only once the batch has played out, so the tool raises the RPC timeout by the
 batch's own wait time. `studiorpc_game_character_move_to` polls `game.character.moveStatus` until the move
 reaches a terminal status (`reached`, `interrupted`, `timedOut`, `superseded`, `cancelled`, `failed`,
-`pieEnded`) and reports how long it waited; `wait: false` returns the `requestId` immediately instead.
+`pieEnded`) and reports how long it waited. Its `timeoutMs` bounds the whole route; there is no exposed
+move-status tool or `wait: false` option.
+
+Conditional waits are evaluated by Studio within the input sequence. If a nested instance condition
+reports an absent object, check the exact path separately with `studiorpc_game_observe`, including the
+client and authority worlds when needed. Do not treat a failed wait as proof of absence, or split a
+sequence holding a key across TCP calls to work around a lookup failure.
+
+## Teleport placement and harness verdicts
+
+Use `pathMode: "teleport"` only to arrange state outside the behavior under test. The sidecar compares
+Studio's collision-adjusted `landedAt` with an immediate read of the same PIE client's character.
+`landedAt` in the tool answer is the observed position; `reportedLandedAt` preserves the RPC claim.
+The result distinguishes `teleported`, `teleportMismatch`, `teleportUnverified`, and `teleportFailed`.
+Only a matched readback and an accepted RPC produce `teleported: true`. This verifies immediate placement;
+it does not prove the position persists or an interaction fires. Observe those separately.
+
+A harness must accept a verified teleport result when it is arranging test state. Requiring navigation's
+`outcome: "arrived"` for a teleport skips valid subsequent tests. Conversely, a raw `rpcStatus: "reached"`
+or `rpcTeleported: true` alone cannot override a mismatched or unavailable readback.
+
+## PIE stop and transport failures
+
+`game.stop` acceptance is followed by bounded status checks. A stop still running at the confirmation
+deadline returns `success: false, status: "stopPending"`. Restart checks the initial PIE status, skips
+the stop RPC when already stopped, and refuses to start another session until stop completion is confirmed.
+
+Transport failures include the method, request ID, host/port, phase, elapsed time, and whether the request
+was sent. `notSent` separates connection failure from a sent request with `executionOutcome: "unknown"`.
+Connection closure fails immediately rather than consuming the remaining timeout. These diagnostics do
+not identify a Studio game-thread deadlock; inspect Studio logs and the actual process/connection before
+retrying. A sent write or input must not be replayed until its effects are inspected.
 
 ## Arriving is not touching
 
 `move_to` reports `arrived` by measuring where the character actually stopped, because Studio returns
 `reached` whenever path following succeeds — which a level with no navigation data does without the character
-having moved at all. `arrived` is judged against `arrivalTolerance`, 150 units unless the caller says
+having moved at all. `arrived` is judged against `arrivedWithin`, 150 units for a bare position unless the caller says
 otherwise, and the value used is echoed in the reply.
 
 The default suits travel and is far too loose for contact. A trigger volume is often 40 units across, so a
 move can be `arrived: true` and still nowhere near enough to touch anything, and an agent testing "does
-walking into this coin collect it" gets a pass from a call that proves nothing. Pass an `arrivalTolerance`
+walking into this coin collect it" gets a pass from a call that proves nothing. Pass an `arrivedWithin`
 about the size of the target when arrival is the thing under test.
 
 Even a real overlap is not proof a trigger fired. `game.character.read`'s `standingOn` is a probe straight

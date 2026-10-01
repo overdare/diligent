@@ -111,6 +111,20 @@ into temporary hierarchies. Unconnected new temporary objects are cleaned up.
 PIE transitions/running PIE, another Editor transaction, and collaborative editing
 reject execution. Limits are 256 KiB UTF-8 source, 64 KiB output, 1,024 explicit
 instance creations, and 5 seconds Lua execution; native calls are not preemptible.
+These are ceilings, not recommended batch sizes. Start with a small representative
+batch, verify its subtree and execution cost, then increase only while calls remain
+responsive. Separate expensive native generation from unrelated edits. On a timeout,
+inspect the current world and command Undo evidence before sending more mutations.
+
+Gameplay method documentation does not establish Editor method support. In particular,
+do not delete an existing hierarchy before discovering whether its intended duplication
+method works in the current Editor build. Report an unsupported Clone as a capability
+gap; do not invent a replacement RPC or replay a partially applied command.
+
+Before a bulk hierarchy move, check one representative parent's and child's world
+transforms before and after the move. Property readback on the parent alone does not
+prove descendant movement, and parenting does not change the world-space coordinate
+contract of Position/CFrame.
 Missing strings, unsupported targets and NUL produce `-32602`; execution conditions,
 compile/runtime errors, resource limits and serialization failures produce `-32000`.
 
