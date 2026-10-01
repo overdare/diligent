@@ -1,4 +1,4 @@
-// @summary Product host owns collection startup and awaitable cleanup, including failed startup
+// @summary Idle hosts preserve Studio sources and await collector cleanup on every shutdown path
 import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,6 +50,31 @@ test("failed host startup stops its collector before rejecting", async () => {
     await collector.refresh();
     expect(existsSync(join(cwd, "Edit.Log"))).toBe(true);
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("an idle host leaves Studio logs on disk until an explicit collection trigger", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "studio-idle-host-"));
+  const path = join(cwd, "Edit.Log");
+  const record = JSON.stringify({
+    Action: "Create",
+    ActorGuids: ["idle-edit"],
+    Objects: [{ ActorGuid: "idle-edit", InstanceType: "Part", Name: "idle-edit" }],
+  });
+  writeFileSync(path, record);
+  const owner = await startStudioChangeHost(cwd, false, async () => ({ stop() {} }));
+  try {
+    await Bun.sleep(1200);
+    expect(existsSync(path)).toBe(true);
+    const collector = getStudioChangeCollector(cwd);
+    const consumer = { sessionId: "observer", rootSessionId: "observer", resumed: false };
+    expect(collector.store.read(consumer).envelopes).toEqual([]);
+    await collector.refresh();
+    expect(existsSync(path)).toBe(false);
+    expect(collector.store.read(consumer).envelopes[0].objects[0].guid).toBe("idle-edit");
+  } finally {
+    await owner.stop();
     rmSync(cwd, { recursive: true, force: true });
   }
 });

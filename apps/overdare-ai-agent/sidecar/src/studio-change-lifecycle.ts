@@ -1,12 +1,11 @@
-// @summary Studio product host starts its shared collector and awaits shutdown on every exit path
-import { getStudioChangeCollector, stopStudioChangeCollector } from "./tools/studiorpc/tools/studio-change-collector";
+// @summary Studio host awaits trigger-driven collection cleanup on normal or failed shutdown
+import { stopStudioChangeCollector } from "./tools/studiorpc/tools/studio-change-collector";
 
 export async function startStudioChangeHost<T extends { stop(): void }>(
   cwd: string,
   studioDisabled: boolean,
   startHost: () => Promise<T>,
 ): Promise<{ host: T; stop(): Promise<void> }> {
-  if (!studioDisabled) getStudioChangeCollector(cwd).start();
   try {
     const host = await startHost();
     let stopping: Promise<void> | undefined;

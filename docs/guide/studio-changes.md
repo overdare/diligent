@@ -5,9 +5,11 @@ Direct instance RPC writes do not produce this log. To verify collected change
 summaries against a live Studio, perform edits manually or through
 `studiorpc_execute_luau` with `target: "Editor"`.
 
-The owning OVERDARE sidecar collects project edit logs immediately on startup
-and approximately once per second into a shared, bounded RAM journal. Collection
-continues while models are working, independently of delivery. No database,
+The owning OVERDARE sidecar collects project edit logs into a shared, bounded RAM
+journal when a user request starts or `studiorpc_studio_changes` queries new
+changes. Startup and idle time do not scan or consume logs; there is no polling
+timer. Changes made during a request remain on disk until the next collection
+trigger. Collection is shared across sessions, independently of delivery. No database,
 archive files, or cursor files are created. Existing disk archives are left
 untouched and are not used by the new detail tool.
 
@@ -105,7 +107,7 @@ is not logged: read the current script when source events are reported.
 Default internal limits are 16 MiB encoded journal payload and 10,000 records;
 4,096 consumer markers and identities each; 256 detail descriptors and file
 retry entries; an 8 MiB input read, 64 MiB recognized source backlog, and four
-processed files per poll. Encoded bytes and entry counts bound retained logical
+processed files per refresh. Encoded bytes and entry counts bound retained logical
 data, not exact process RSS; JavaScript objects and transient parsing use more.
 Oldest journal records are evicted regardless of unread markers. Only inactive
 markers and identities may be replaced; all-active capacity is rejected.
@@ -114,7 +116,7 @@ The single owner rotates only recognized regular `Edit.Log` files and its
 recognized rotation names, never arbitrary `*.consuming` files or symlinks.
 Complete transaction prefixes are appended once; unfinished UTF-8/UTF-16 tails
 and empty newly opened files stay on disk for retry. Failed reads and deletes
-receive fair polling slots so they do not block later files. Delete failures
+receive fair collection slots so they do not block later files. Delete failures
 retry cleanup without duplicating the already-ingested prefix.
 Oversized sources/backlogs may be deliberately dropped
 with a visible history-gap notice.
@@ -122,10 +124,11 @@ with a visible history-gap notice.
 RAM-only means process exit, restart, or bounded eviction can lose undelivered
 changes. Resumed sessions and missing/expired history receive a gap warning,
 including when no edit survives. Inspect current Studio state before continuing;
-do not assume remembered state is current. The collector stops its timer and
-awaits an in-flight poll during normal shutdown or failed host startup.
-`STUDIO_DISABLED` hosts do not start it. Standalone MCP tool creation does not
-start a polling timer, although explicit queries refresh the shared collector.
+do not assume remembered state is current. The collector awaits an in-flight
+refresh during normal shutdown or failed host startup. Failed reads, incomplete
+writes, and failed file removals are retried at later collection triggers.
+`STUDIO_DISABLED` hosts do not own collection. Standalone MCP tool creation does
+not collect logs; explicit new-change queries refresh the shared collector.
 
 This supports multiple sessions in one owning process. Independent processes
 against the same project do not share RAM or markers; cross-process broadcasting

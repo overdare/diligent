@@ -1,4 +1,4 @@
-// @summary Real source-file consumption, retry deduplication, input bounds and timer lifecycle
+// @summary Real source-file consumption, retry deduplication, input bounds and refresh lifecycle
 import { afterEach, expect, test } from "bun:test";
 import {
   closeSync,
@@ -203,11 +203,10 @@ test("malformed balanced input records a gap and is removed after ingestion", as
   await collector.stop();
 });
 
-test("scheduled ticks serialize refresh and stop cancels further work", async () => {
+test("concurrent explicit refreshes coalesce and shutdown awaits ingestion", async () => {
   const cwd = project();
   writeFileSync(join(cwd, "Edit.Log"), text("one"));
   const real = createStudioChangeSourceIo(cwd, 1024);
-  let tick!: () => void;
   let release!: () => void;
   let entered!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -218,14 +217,7 @@ test("scheduled ticks serialize refresh and stop cancels further work", async ()
   });
   let active = 0;
   let peak = 0;
-  let canceled = false;
   const collector = new StudioChangeCollector(cwd, {
-    schedule(next) {
-      tick = next;
-      return () => {
-        canceled = true;
-      };
-    },
     io: {
       ...real,
       async read(path) {
@@ -239,17 +231,16 @@ test("scheduled ticks serialize refresh and stop cancels further work", async ()
       },
     },
   });
-  collector.start();
+  const first = collector.refresh();
   await started;
-  tick();
-  tick();
+  expect(collector.refresh()).toBe(first);
+  expect(collector.refresh()).toBe(first);
   const stopped = collector.stop();
-  expect(canceled).toBe(true);
   release();
   await stopped;
   expect(peak).toBe(1);
   writeFileSync(join(cwd, "Edit.Log"), text("after-stop"));
-  tick();
+  await collector.refresh();
   expect(existsSync(join(cwd, "Edit.Log"))).toBe(true);
 });
 

@@ -1,4 +1,4 @@
-// @summary Single-owner project log ingestion into bounded RAM with safe retry and timer cleanup
+// @summary Single-owner project log ingestion into bounded RAM with safe retry and awaitable cleanup
 import { constants, realpathSync } from "node:fs";
 import { lstat, open, readdir, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -28,7 +28,6 @@ export interface StudioChangeCollectorOptions {
   store?: StudioChangeStore;
   limits?: Partial<StudioChangeCollectorLimits>;
   io?: StudioChangeSourceIo;
-  schedule?: (tick: () => void, intervalMs: number) => () => void;
 }
 
 let rotation = 0;
@@ -113,8 +112,6 @@ export class StudioChangeCollector {
   private readonly limits: StudioChangeCollectorLimits;
   private readonly io: StudioChangeSourceIo;
   private readonly retries = new Map<string, RetryState>();
-  private readonly schedule: NonNullable<StudioChangeCollectorOptions["schedule"]>;
-  private cancelTimer?: () => void;
   private running?: Promise<void>;
   private stopped = false;
   private lastError?: string;
@@ -137,21 +134,6 @@ export class StudioChangeCollector {
         throw new Error("Studio collector limits must be positive integers");
     }
     this.io = options.io ?? createStudioChangeSourceIo(cwd, this.limits.maxFileBytes);
-    this.schedule =
-      options.schedule ??
-      ((tick, intervalMs) => {
-        const timer = setInterval(tick, intervalMs);
-        timer.unref?.();
-        return () => clearInterval(timer);
-      });
-  }
-
-  start(): void {
-    if (this.stopped || this.cancelTimer) return;
-    this.cancelTimer = this.schedule(() => {
-      void this.refresh();
-    }, 1000);
-    void this.refresh();
   }
 
   refresh(): Promise<void> {
@@ -256,8 +238,6 @@ export class StudioChangeCollector {
 
   async stop(): Promise<void> {
     this.stopped = true;
-    this.cancelTimer?.();
-    this.cancelTimer = undefined;
     await this.running;
     this.retries.clear();
   }
