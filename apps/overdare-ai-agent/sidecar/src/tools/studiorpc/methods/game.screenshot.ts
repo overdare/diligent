@@ -1,5 +1,6 @@
 // @summary Declares the Studio RPC method for capturing a screenshot of the editor viewport.
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, readFile } from "node:fs/promises";
 import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
 import { type CameraBlock, projectWorldToScreen } from "../camera-projection";
@@ -214,6 +215,19 @@ function aspectNote(read: { camera: CameraBlock; image: { width: number; height:
 }
 
 export async function postProcess(result: unknown, args: Record<string, unknown>, callRpc: CallRpc): Promise<unknown> {
+  if (isRecord(result) && typeof result.path === "string") {
+    try {
+      await access(result.path, constants.R_OK);
+    } catch {
+      result = {
+        ...result,
+        imageDelivery: {
+          status: "unavailable",
+          note: "The capture path cannot be read on the agent host. In dev mode with remote Studio, map the screenshot directory with STUDIO_LOCAL_FILE_ROOT and STUDIO_REMOTE_FILE_ROOT, or use an accessible shared mount. Capture success alone does not establish visual verification.",
+        },
+      };
+    }
+  }
   const requested = Array.isArray(args.locate) ? (args.locate as (string | Point)[]) : [];
   const locate = requested.filter((entry): entry is Point => typeof entry !== "string");
   const locateNames = requested.filter((entry): entry is string => typeof entry === "string");

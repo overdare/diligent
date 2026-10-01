@@ -28,6 +28,24 @@ export function createDevStudioRpc(options: DevStudioRpcOptions, callRpc: typeof
   }
 
   return async (method, params, rpcOptions) => {
+    if (method === "game.screenshot") {
+      const result = await callRpc(method, params, rpcOptions);
+      if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+      const record = result as Record<string, unknown>;
+      const mapBack = (file: string): string => {
+        const remote = pathStyle(remoteRoot);
+        const relative = pathWithinRoot(file, remoteRoot, remote);
+        return relative === undefined ? file : pathStyle(localRoot).join(localRoot, ...relative.split(remote.sep));
+      };
+      const path = typeof record.path === "string" ? mapBack(record.path) : undefined;
+      return {
+        ...record,
+        ...(path !== undefined && path !== record.path ? { path, studioPath: record.path } : {}),
+        ...(Array.isArray(record.paths)
+          ? { paths: record.paths.map((file) => (typeof file === "string" ? mapBack(file) : file)) }
+          : {}),
+      };
+    }
     if (method !== IMAGE_IMPORT || typeof params?.file !== "string") return callRpc(method, params, rpcOptions);
     rpcOptions?.signal?.throwIfAborted();
     const file = mapSharedImagePath(params.file, localRoot, remoteRoot);
