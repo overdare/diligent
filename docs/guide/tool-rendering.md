@@ -60,12 +60,34 @@ That means shared meaning should normally be introduced through runtime and prot
 - `packages/cli/src/tui/components/thread-store-utils.ts`
 - `packages/cli/src/tui/render-blocks.ts`
 
-## Interactive asset selection
+## Asset discovery and optional selection
 
-The `overdaresearch` tool accepts a `selectable` flag (assets source only). When
-set and two or more assets match, the tool asks the user to pick one through the
-`request_user_input` channel and returns the chosen `assetId`; exactly one match
-auto-selects and zero matches returns "No results found." The picker is rendered
-from `UserInputQuestion.display: "asset"`, where each option carries `value`
-(the `assetId`) and `asset` (thumbnail/price) fields. Asset visuals are built
-server-side and never enter the model context.
+`overdaresearch(source="assets")` defaults to `requestUserInput=false`. It returns
+candidate metadata (including `description` and `imageUrl`) and detected packs,
+without selecting the top result or opening a picker. The agent chooses IDs for
+the existing import tools. Single matches and Audio/Animation/Effects/UI assets
+follow the same behavior. A pack-only response still returns its detected packs.
+
+Set `requestUserInput=true` to offer the user an asset or pack choice through the
+shared `request_user_input` channel. The picker uses
+`UserInputQuestion.display: "asset"`; asset options carry a `value` (asset ID) and
+visual `asset` fields, while packs and `None of these are suitable` use text rows.
+Web and TUI submit the same values. The old `selectable` tool parameter has been
+replaced by `requestUserInput`.
+
+The result metadata distinguishes `selectionStatus` values `selected`, `none`,
+`cancelled`, and `custom`. Only an offered asset or pack selection carries a
+selected ID or keyword. Free-text feedback is not an asset ID. Picking a pack
+returns its member palette; it does not import the entire collection.
+
+`overdaresearch_deep(action="asset-pack", packKeyword=...)` reads a pack palette
+without a picker. Each member has a description and optional image URL. The
+agent selects only the members needed for the scene.
+
+A displayed thumbnail does not enter model image context. For visual judgment,
+`overdaresearch_deep(action="asset-preview", urls=[...])` reads one to four
+PNG/JPEG/WebP catalog thumbnails and returns actual `outputImages` with zero-based indices
+mapping each successful URL to its image. Failed URLs have individual errors.
+The reader accepts HTTPS `asset-prod.cdn.overdare.com` URLs, rejects redirects,
+limits downloads to two at a time, and caps source bytes at 5 MiB per image and
+10 MiB per call. Existing `origin-file` deep reads retain their contract.

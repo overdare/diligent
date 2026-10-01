@@ -59,3 +59,32 @@ describe("QuestionInput", () => {
     expect(plain).not.toContain("[ ]");
   });
 });
+
+describe("asset palette choices", () => {
+  test("submits pack and none values and keeps escape as cancellation", () => {
+    for (const [key, expected] of [
+      ["\r", "pack:pack_metro"],
+      ["\u001b[B\r", "none"],
+      ["\u001b", null],
+    ]) {
+      let result: string | string[] | null = "unset";
+      const input = new QuestionInput(
+        {
+          question: "Pick an asset or pack",
+          options: [
+            { label: "Use metro palette", description: "12 assets", value: "pack:pack_metro" },
+            { label: "None of these are suitable", description: "Try another approach", value: "none" },
+          ],
+        },
+        (value) => {
+          result = value;
+        },
+      );
+      if (key === "\u001b[B\r") {
+        input.handleInput("\u001b[B");
+        input.handleInput("\r");
+      } else input.handleInput(key as string);
+      expect(result).toBe(expected);
+    }
+  });
+});
