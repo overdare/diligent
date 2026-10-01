@@ -111,14 +111,26 @@ export async function runAppServerStdio(options: AppServerStdioOptions): Promise
   const peer = createStdioPeer(process.stdin, process.stdout);
   const stop = bindAppServer(appServer, peer);
 
-  const shutdown = (exitCode: number, error?: unknown): never => {
+  let shuttingDown = false;
+  const shutdown = (exitCode: number, error?: unknown): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     stop();
     if (error !== undefined) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`${message}\n`);
-      process.exit(exitCode);
     }
-    process.exit(exitCode);
+    // Abrupt host termination still recovers active ledgers as paused on restart.
+    const deadline = setTimeout(() => process.exit(exitCode), 5000);
+    void appServer
+      .shutdown()
+      .catch((shutdownError: unknown) => {
+        process.stderr.write(`Shutdown persistence failed: ${String(shutdownError)}\n`);
+      })
+      .finally(() => {
+        clearTimeout(deadline);
+        process.exit(exitCode);
+      });
   };
 
   peer.onClose?.((error) => {

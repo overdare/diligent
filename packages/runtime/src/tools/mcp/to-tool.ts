@@ -102,12 +102,16 @@ export async function callMcpToolWithApproval(args: {
   outputLimit?: McpOutputLimit;
 }): Promise<ToolResult> {
   const { manager, host, serverName, toolName, approvalToolName, rawArgs, ctx, outputLimit } = args;
-  const decision = await requestToolApproval(host, {
-    permission: "execute",
-    toolName: approvalToolName,
-    description: `Call MCP tool "${toolName}" on server "${serverName}"`,
-    details: { server: serverName, tool: toolName, args: rawArgs },
-  });
+  const decision = await requestToolApproval(
+    host,
+    {
+      permission: "execute",
+      toolName: approvalToolName,
+      description: `Call MCP tool "${toolName}" on server "${serverName}"`,
+      details: { server: serverName, tool: toolName, args: rawArgs },
+    },
+    { signal: ctx.signal },
+  );
   if (decision === "reject") {
     return { output: "Tool call rejected by user." };
   }

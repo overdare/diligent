@@ -17,7 +17,7 @@ import type { ApprovalRequest } from "../approval/types";
 import type { DiligentConfig } from "../config/schema";
 import type { PluginHookFn } from "../hooks/runner";
 import { resolveProjectDirName } from "../infrastructure/diligent-dir";
-import type { RuntimeToolHost } from "./capabilities";
+import { type RuntimeToolHost, requestToolApproval, requestToolUserInput } from "./capabilities";
 import type { UserInputRequest } from "./user-input-types";
 
 const logger = createLogger({ scope: "runtime.tools.plugin-loader" });
@@ -279,14 +279,8 @@ function wrapPluginTool(tool: PluginTool, packageName: string, host?: RuntimeToo
     parseArgs: tool.parseArgs,
     execute: async (args, ctx) => {
       const pluginContext: PluginToolHostContext = Object.assign({}, ctx, {
-        approve: async (request: ApprovalRequest) => {
-          if (!host?.approve) return "once";
-          return host.approve(request);
-        },
-        ask: async (request: UserInputRequest) => {
-          if (!host?.ask) return null;
-          return host.ask(request);
-        },
+        approve: (request: ApprovalRequest) => requestToolApproval(host, request, { signal: ctx.signal }),
+        ask: (request: UserInputRequest) => requestToolUserInput(host, request, { signal: ctx.signal }),
       });
       const result = await tool.execute(args, pluginContext);
       return {

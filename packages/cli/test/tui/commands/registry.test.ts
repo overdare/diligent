@@ -147,6 +147,15 @@ describe("CommandRegistry", () => {
     expect(registry.complete("z")).toEqual([]);
   });
 
+  it("keeps hidden reserved commands callable but out of completion", () => {
+    const registry = new CommandRegistry();
+    registry.register(makeCommand({ name: "goal", hidden: true }));
+
+    expect(registry.get("goal")).toBeDefined();
+    expect(registry.complete("go")).toEqual([]);
+    expect(registry.completeDetailed("go")).toEqual([]);
+  });
+
   describe("completeDetailed", () => {
     it("returns items with name and description", () => {
       const registry = new CommandRegistry();

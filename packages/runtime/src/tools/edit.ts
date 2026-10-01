@@ -139,12 +139,16 @@ Usage:
           };
         }
 
-        const approval = await requestToolApproval(host, {
-          permission: "write",
-          toolName: "edit",
-          description: `Create ${file_path}`,
-          details: { file_path },
-        });
+        const approval = await requestToolApproval(
+          host,
+          {
+            permission: "write",
+            toolName: "edit",
+            description: `Create ${file_path}`,
+            details: { file_path },
+          },
+          { signal: ctx.signal },
+        );
         if (approval === "reject") {
           ctx.abort();
           return { output: "[Rejected by user]", metadata: { error: true } };
@@ -194,12 +198,16 @@ Usage:
         };
       }
 
-      const approval = await requestToolApproval(host, {
-        permission: "write",
-        toolName: "edit",
-        description: `Edit ${file_path}`,
-        details: { file_path },
-      });
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "write",
+          toolName: "edit",
+          description: `Edit ${file_path}`,
+          details: { file_path },
+        },
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return { output: "[Rejected by user]", metadata: { error: true } };
@@ -298,12 +306,16 @@ When making edits:
         }
       }
 
-      const approval = await requestToolApproval(host, {
-        permission: "write",
-        toolName: "multi_edit",
-        description: `Multi-edit ${file_path} (${edits.length} edits)`,
-        details: { file_path, editCount: edits.length },
-      });
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "write",
+          toolName: "multi_edit",
+          description: `Multi-edit ${file_path} (${edits.length} edits)`,
+          details: { file_path, editCount: edits.length },
+        },
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return { output: "[Rejected by user]", metadata: { error: true } };

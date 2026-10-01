@@ -7,6 +7,8 @@ export const DILIGENT_CLIENT_REQUEST_METHODS = {
   THREAD_RESUME: "thread/resume",
   THREAD_LIST: "thread/list",
   THREAD_READ: "thread/read",
+  THREAD_GOAL_GET: "thread/goal/get",
+  THREAD_GOAL_SET: "thread/goal/set",
   THREAD_COMPACT_START: "thread/compact/start",
   TURN_START: "turn/start",
   TURN_INTERRUPT: "turn/interrupt",
@@ -54,6 +56,7 @@ export type DiligentClientNotificationMethod =
 export const DILIGENT_SERVER_NOTIFICATION_METHODS = {
   AGENT_EVENT: "agent/event",
   THREAD_STARTED: "thread/started",
+  THREAD_GOAL_UPDATED: "thread/goal/updated",
   THREAD_RESUMED: "thread/resumed",
   THREAD_COMPACTED: "thread/compacted",
   THREAD_COMPACTION_STARTED: "thread/compaction/started",

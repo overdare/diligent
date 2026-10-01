@@ -14,6 +14,8 @@ export { COLLAB_TOOL_NAMES, CUSTOM_RENDER_TOOLS };
  * hasCustomRender, update both this registry AND the corresponding set in protocol.
  */
 export interface ToolCapabilities {
+  /** Never inherited by a child, including nested collaboration. */
+  rootOnly?: true;
   /** Cannot be disabled by user config (D027). */
   immutable?: true;
   /** Excluded in plan/read-only mode. External tools are allowed by default unless named here. */
@@ -28,6 +30,9 @@ export interface ToolCapabilities {
 
 /** Central registry of built-in tool capabilities. */
 export const TOOL_CAPABILITIES: Record<string, ToolCapabilities> = {
+  create_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
+  get_goal: { immutable: true, rootOnly: true },
+  update_goal: { immutable: true, rootOnly: true, planModeDisallowed: true },
   // Core agent tools
   request_user_input: { immutable: true, executeModeDisallowed: true, hasCustomRender: true },
   plan: { immutable: true, hasCustomRender: true },

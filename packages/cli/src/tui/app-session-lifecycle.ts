@@ -2,6 +2,7 @@
 
 import { DILIGENT_CLIENT_NOTIFICATION_METHODS, DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
 import { formatModelRef, resolveModel } from "@diligent/runtime";
+import { applyGoalSnapshot } from "@diligent/runtime/client";
 import type { AppConfig } from "../config";
 import { DEFAULT_PROVIDER, getDefaultModelRef, type ProviderName } from "../provider-manager";
 import { buildWelcomeBanner } from "./app-presenter";
@@ -37,6 +38,7 @@ export interface AppSessionLifecycleDeps {
     resumeId?: string;
   };
   pkgVersion: string;
+  setGoalsSupported?: (supported: boolean) => void;
 }
 
 export class AppSessionLifecycle {
@@ -81,11 +83,12 @@ export class AppSessionLifecycle {
       throw new Error("App server failed to start.");
     }
 
-    await rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
+    const initialized = await rpcClient.request(DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE, {
       clientName: "diligent-tui",
       clientVersion: this.deps.pkgVersion,
       protocolVersion: 1,
     });
+    this.deps.setGoalsSupported?.(initialized.capabilities?.goals === true);
     await rpcClient.notify(DILIGENT_CLIENT_NOTIFICATION_METHODS.INITIALIZED, { ready: true });
 
     const resumedId = await this.ensureThread();
@@ -113,10 +116,16 @@ export class AppSessionLifecycle {
   }
 
   async syncActiveThreadState(): Promise<void> {
+    const threadId = this.deps.runtime.currentThreadId;
     const thread = await this.deps.threadManager.readThread();
-    if (!thread) return;
+    if (!thread || threadId !== this.deps.runtime.currentThreadId) return;
 
     this.deps.runtime.currentEffort = thread.currentEffort;
+    this.deps.runtime.goalSnapshot = applyGoalSnapshot(this.deps.runtime.goalSnapshot ?? { goal: null, sequence: 0 }, {
+      goal: thread.goal ?? null,
+      sequence: thread.goalSequence ?? 0,
+    });
+    const goal = this.deps.runtime.goalSnapshot.goal;
 
     let activeModel = this.deps.config.model;
     let modelId = formatModelRef(activeModel);
@@ -138,6 +147,15 @@ export class AppSessionLifecycle {
       contextWindow,
       effort: thread.currentEffort,
       effortLabel: thread.currentEffort,
+      goal: goal
+        ? {
+            status: goal.status,
+            tokensUsed: goal.tokensUsed,
+            tokenBudget: goal.tokenBudget,
+            turnsUsed: goal.turnsUsed,
+            maxTurns: goal.maxTurns,
+          }
+        : undefined,
     });
     this.deps.renderer.requestRender();
   }

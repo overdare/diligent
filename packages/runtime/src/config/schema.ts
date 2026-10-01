@@ -81,6 +81,13 @@ export type McpOAuthConfig = z.infer<typeof McpOAuthConfigSchema>;
 export const DiligentConfigSchema = z
   .object({
     $schema: z.string().optional(),
+    goals: z
+      .object({
+        enabled: z.boolean().optional(),
+        defaultMaxTurns: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      })
+      .strict()
+      .optional(),
 
     // Config schema version — anchor for future breaking-change migrations.
     // Absent means "pre-versioning" (treat as 0). No migration runner exists yet;

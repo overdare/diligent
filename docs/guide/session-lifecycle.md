@@ -2,6 +2,9 @@
 
 This guide describes the current runtime-owned session/thread lifecycle in Diligent.
 
+[Goal mode](goals.md) adds explicit-request persistent objectives and automatic continuation
+to root sessions. Its state ledger is separate from conversation entries.
+
 ## Core model
 
 Sessions are project-local and persist under `.diligent/sessions/` as append-only JSONL.

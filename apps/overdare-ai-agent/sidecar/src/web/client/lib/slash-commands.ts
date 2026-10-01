@@ -60,9 +60,19 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   },
 ];
 
+const GOAL_COMMAND: SlashCommand = {
+  name: "goal",
+  description: "Show or control the thread goal",
+  usage: "/goal [set] <objective> [--tokens N] [--turns N] | pause | resume | clear | edit <objective>",
+};
+
 /** Build the full command list by merging builtins with dynamic skill commands. */
-export function buildCommandList(skills: Array<{ name: string; description: string }>): SlashCommand[] {
-  const builtinNames = new Set(BUILTIN_COMMANDS.map((c) => c.name));
+export function buildCommandList(
+  skills: Array<{ name: string; description: string }>,
+  capabilities: { goals?: boolean } = {},
+): SlashCommand[] {
+  const visibleBuiltins = capabilities.goals === true ? [...BUILTIN_COMMANDS, GOAL_COMMAND] : BUILTIN_COMMANDS;
+  const builtinNames = new Set([...BUILTIN_COMMANDS.map((c) => c.name), GOAL_COMMAND.name]);
   const skillCommands: SlashCommand[] = skills
     .filter((s) => !builtinNames.has(s.name))
     .map((s) => ({
@@ -70,7 +80,7 @@ export function buildCommandList(skills: Array<{ name: string; description: stri
       description: s.description,
       isSkill: true,
     }));
-  return [...BUILTIN_COMMANDS, ...skillCommands];
+  return [...visibleBuiltins, ...skillCommands];
 }
 
 export interface ParsedSlashCommand {

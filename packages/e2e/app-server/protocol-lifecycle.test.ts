@@ -37,6 +37,7 @@ describe("protocol-lifecycle", () => {
       supportsFollowUp: true,
       supportsApprovals: true,
       supportsUserInput: true,
+      goals: true,
     });
   });
 

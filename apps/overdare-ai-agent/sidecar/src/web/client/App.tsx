@@ -8,6 +8,7 @@ import { ErrorBanner } from "./components/ErrorBanner";
 import type { FeedbackReportSubmission } from "./components/FeedbackReportModal";
 import { FeedbackReportModal } from "./components/FeedbackReportModal";
 import { FirstRunNoticeModal } from "./components/FirstRunNoticeModal";
+import { GoalStatus } from "./components/GoalStatus";
 import { InputDock } from "./components/InputDock";
 import { KnowledgeManagerModal } from "./components/KnowledgeManagerModal";
 import { McpServersModal } from "./components/McpServersModal";
@@ -87,6 +88,7 @@ export function App() {
     desktopNotificationsEnabled,
     setDesktopNotificationsEnabled,
     slashCommands,
+    goalsSupported,
     activeInput,
     activeContextItems,
     setActiveInput,
@@ -142,6 +144,9 @@ export function App() {
     handleAddImagesToDock,
     handleRemovePendingImage,
     handleSlashCommand,
+    handleGoalPause,
+    handleGoalResume,
+    handleGoalClear,
   } = actions;
 
   useAgentNativeBridge({ updateContextItems: updateActiveContextItems });
@@ -287,6 +292,15 @@ export function App() {
 
           {state.planState?.steps.some((s) => s.status !== "done") && <PlanPanel planState={state.planState!} />}
 
+          {goalsSupported && state.goal ? (
+            <GoalStatus
+              goal={state.goal}
+              onPause={handleGoalPause}
+              onResume={handleGoalResume}
+              onClear={handleGoalClear}
+            />
+          ) : null}
+
           <SteeringQueuePanel
             pendingSteers={state.pendingSteers}
             onCancelSteer={cancelSteer}
@@ -317,6 +331,7 @@ export function App() {
             canSend={canSend}
             canSteer={canSteer}
             threadStatus={state.threadStatus}
+            goalStatus={goalsSupported ? state.goal?.status : undefined}
             mode={state.mode}
             onModeChange={handleModeChange}
             effort={effort}

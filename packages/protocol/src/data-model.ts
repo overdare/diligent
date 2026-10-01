@@ -190,7 +190,11 @@ export type ContextPresentation = z.infer<typeof ContextPresentationSchema>;
 
 export const AgentEventSchema = z.union([
   z.object({ type: z.literal("agent_start") }),
-  z.object({ type: z.literal("agent_end"), messages: z.array(MessageSchema) }),
+  z.object({
+    type: z.literal("agent_end"),
+    messages: z.array(MessageSchema),
+    stopReason: z.enum(["completed", "interrupted", "failed"]).optional(),
+  }),
   z.object({
     type: z.literal("turn_start"),
     turnId: z.string(),
@@ -580,6 +584,7 @@ export const ProviderAuthStatusSchema = z.object({
 export type ProviderAuthStatus = z.infer<typeof ProviderAuthStatusSchema>;
 
 export const ProtocolCapabilitiesSchema = z.object({
+  goals: z.boolean().optional(),
   supportsFollowUp: z.boolean(),
   supportsApprovals: z.boolean(),
   supportsUserInput: z.boolean(),

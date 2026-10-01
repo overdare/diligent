@@ -68,6 +68,7 @@ export async function handleServerResponseMessage(args: HandleServerResponseArgs
 }
 
 interface BroadcastServerRequestArgs {
+  signal?: AbortSignal;
   method: string;
   params: unknown;
   connections: Map<string, ServerRequestPeer>;
@@ -80,6 +81,7 @@ interface BroadcastServerRequestArgs {
 export async function broadcastServerRequest(
   args: BroadcastServerRequestArgs,
 ): Promise<DiligentServerRequestResponse | null> {
+  args.signal?.throwIfAborted();
   if (args.connections.size === 0) return null;
 
   const id = args.allocateServerRequestId();
@@ -89,7 +91,23 @@ export async function broadcastServerRequest(
   const timeoutMs = args.timeoutMs === undefined ? 5 * 60 * 1000 : args.timeoutMs;
   const durable = timeoutMs === null;
 
-  return new Promise<DiligentServerRequestResponse | null>((resolve) => {
+  return new Promise<DiligentServerRequestResponse | null>((resolve, reject) => {
+    const settle = (response: DiligentServerRequestResponse | null) => {
+      args.signal?.removeEventListener("abort", cancel);
+      resolve(response);
+    };
+    const cancel = () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      args.pendingServerRequests.delete(id);
+      args.signal?.removeEventListener("abort", cancel);
+      for (const connectionId of sentTo) {
+        void args.connections.get(connectionId)?.peer.send({
+          method: DILIGENT_SERVER_NOTIFICATION_METHODS.SERVER_REQUEST_RESOLVED,
+          params: { requestId: id },
+        });
+      }
+      reject(new DOMException("Request aborted", "AbortError"));
+    };
     const timeoutId =
       timeoutMs === null
         ? null
@@ -103,12 +121,12 @@ export async function broadcastServerRequest(
                 params: { requestId: id },
               } as DiligentServerNotification);
             }
-            resolve(null);
+            settle(null);
           }, timeoutMs);
 
     args.pendingServerRequests.set(id, {
       method: args.method,
-      resolve,
+      resolve: settle,
       timeoutId,
       sentTo,
       durable,
@@ -116,6 +134,7 @@ export async function broadcastServerRequest(
       params: args.params,
     });
 
+    args.signal?.addEventListener("abort", cancel, { once: true });
     for (const conn of args.connections.values()) {
       sentTo.add(conn.id);
       void conn.peer.send({ id, method: args.method, params: args.params });
@@ -124,6 +143,9 @@ export async function broadcastServerRequest(
 }
 
 interface RequestApprovalArgs {
+  /** Goal work must never interpret a missing decision as permission. */
+  onUnavailable?: () => Promise<void>;
+  signal?: AbortSignal;
   threadId: string;
   request: ApprovalRequest;
   connections: Map<string, ServerRequestPeer>;
@@ -132,7 +154,13 @@ interface RequestApprovalArgs {
 }
 
 export async function requestApprovalFromConnections(args: RequestApprovalArgs): Promise<ApprovalResponse> {
-  if (args.connections.size === 0) return "once";
+  args.signal?.throwIfAborted();
+  const unavailable = async (): Promise<ApprovalResponse> => {
+    if (!args.onUnavailable) return "once";
+    await args.onUnavailable();
+    return "reject";
+  };
+  if (args.connections.size === 0) return unavailable();
 
   const response = await broadcastServerRequest({
     method: DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST,
@@ -141,8 +169,9 @@ export async function requestApprovalFromConnections(args: RequestApprovalArgs):
     pendingServerRequests: args.pendingServerRequests,
     allocateServerRequestId: args.allocateServerRequestId,
     threadId: args.threadId,
+    signal: args.signal,
   });
-  if (!response) return "once";
+  if (!response) return unavailable();
 
   const parsed = DiligentServerRequestResponseSchema.safeParse(response);
   if (!parsed.success || parsed.data.method !== DILIGENT_SERVER_REQUEST_METHODS.APPROVAL_REQUEST) return "reject";
@@ -150,6 +179,7 @@ export async function requestApprovalFromConnections(args: RequestApprovalArgs):
 }
 
 interface RequestUserInputArgs {
+  signal?: AbortSignal;
   threadId: string;
   request: UserInputRequest;
   connections: Map<string, ServerRequestPeer>;
@@ -158,6 +188,7 @@ interface RequestUserInputArgs {
 }
 
 export async function requestUserInputFromConnections(args: RequestUserInputArgs): Promise<UserInputResponse> {
+  args.signal?.throwIfAborted();
   if (args.connections.size === 0) return { answers: {} };
 
   const response = await broadcastServerRequest({
@@ -167,6 +198,7 @@ export async function requestUserInputFromConnections(args: RequestUserInputArgs
     pendingServerRequests: args.pendingServerRequests,
     allocateServerRequestId: args.allocateServerRequestId,
     timeoutMs: null,
+    signal: args.signal,
     threadId: args.threadId,
   });
   if (!response) return { answers: {} };

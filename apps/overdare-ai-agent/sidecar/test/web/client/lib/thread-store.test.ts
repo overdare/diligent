@@ -10,6 +10,22 @@ import {
 import { USER_FACING_NETWORK_ERROR_MESSAGE } from "../../../../src/web/client/lib/user-facing-errors";
 import { WEB_IMAGE_ROUTE_PREFIX } from "../../../../src/web/shared/image-routes";
 
+const activeGoal = {
+  id: "goal-1",
+  threadId: "t1",
+  revision: 1,
+  objective: "Ship the release",
+  status: "active" as const,
+  maxTurns: 10,
+  turnsUsed: 2,
+  tokensUsed: 400,
+  cacheReadTokens: 50,
+  activeTimeMs: 100,
+  accountingScope: "reported_agent_tokens" as const,
+  createdAt: 1,
+  updatedAt: 2,
+};
+
 function reduce(state: typeof initialThreadState, notification: DiligentServerNotification) {
   const adapter = adapterInstance;
   const events = adapter.toAgentEvents(notification);
@@ -55,6 +71,32 @@ test("thread identity notifications do not switch visible history without hydrat
 
   expect(next.activeThreadId).toBe("thread-old");
   expect(next.items).toBe(seeded.items);
+});
+
+test("older goal notifications cannot overwrite a newer clear snapshot", () => {
+  const cleared = { ...initialThreadState, activeThreadId: "t1", goal: null, goalSequence: 8 };
+  const next = reduce(cleared, {
+    method: "thread/goal/updated",
+    params: { threadId: "t1", goal: activeGoal, sequence: 7 },
+  });
+
+  expect(next.goal).toBeNull();
+  expect(next.goalSequence).toBe(8);
+});
+
+test("thread hydration restores the goal snapshot and clears the previous thread goal", () => {
+  const withGoal = hydrateFromThreadRead(initialThreadState, {
+    threadId: "t1",
+    items: [],
+    goal: activeGoal,
+    goalSequence: 4,
+  });
+  expect(withGoal.goal).toEqual(activeGoal);
+  expect(withGoal.goalSequence).toBe(4);
+
+  const switched = hydrateFromThreadRead(withGoal, { threadId: "t2", items: [] });
+  expect(switched.goal).toBeNull();
+  expect(switched.goalSequence).toBe(0);
 });
 
 test("merges item started/delta/completed into single assistant item", () => {

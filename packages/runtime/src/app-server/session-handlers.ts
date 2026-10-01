@@ -98,7 +98,12 @@ export async function handleThreadList(
 
 export async function handleThreadDelete(ctx: ThreadHandlersContext, threadId: string): Promise<{ deleted: boolean }> {
   const existing = ctx.threads.get(threadId);
+  if (existing) existing.goalCreation = undefined;
   if (existing?.isRunning || existing?.turnWork) throw new Error("Cannot delete a thread that is currently running");
+  await existing?.goal?.pause("deleted");
+  if (existing?.goal?.hasChildren) throw new Error("Wait for goal-owned children to settle before deleting the thread");
+  if (existing?.goalTimer) clearTimeout(existing.goalTimer);
+  await existing?.goal?.close();
 
   const knownInMemory = ctx.threads.has(threadId);
   let deletedFromDisk = false;

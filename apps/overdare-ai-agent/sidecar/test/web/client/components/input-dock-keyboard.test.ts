@@ -1,7 +1,25 @@
 // @summary Tests for InputDock Enter-key action selection and shift+tab mode cycling
 
 import { expect, test } from "bun:test";
-import { getComposerEnterAction, shouldCycleModeOnKey } from "../../../../src/web/client/components/InputDock";
+import {
+  getComposerEnterAction,
+  shouldCycleModeOnKey,
+  shouldShowStopControl,
+  shouldSubmitGoalCommandDuringBusy,
+} from "../../../../src/web/client/components/InputDock";
+
+test("keeps the Stop control visible while an active goal waits between runs", () => {
+  expect(shouldShowStopControl("idle", "active")).toBe(true);
+  expect(shouldShowStopControl("idle", "paused")).toBe(false);
+  expect(shouldShowStopControl("busy", null)).toBe(true);
+});
+
+test("goal pause and clear bypass steering while a task is busy", () => {
+  expect(shouldSubmitGoalCommandDuringBusy("/goal pause", true)).toBe(true);
+  expect(shouldSubmitGoalCommandDuringBusy("/goal clear", true)).toBe(true);
+  expect(shouldSubmitGoalCommandDuringBusy("ordinary steer", true)).toBe(false);
+  expect(shouldSubmitGoalCommandDuringBusy("/goal pause", false)).toBe(false);
+});
 
 test("does not send on Enter when composer cannot send", () => {
   expect(

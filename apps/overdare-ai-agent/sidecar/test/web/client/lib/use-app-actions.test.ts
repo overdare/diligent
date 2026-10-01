@@ -7,6 +7,7 @@ import type { PendingImage } from "../../../../src/web/client/lib/app-state";
 import {
   applyModeChange,
   clearComposerInputAfterSend,
+  executeGoalCommand,
   getModelChangeThreadId,
   normalizeUploadedImageAttachment,
   prepareNewThreadForFirstMessage,
@@ -76,6 +77,79 @@ test("prependContextToMessage serializes mixed context items before typed text",
 test("getModelChangeThreadId scopes model changes to the active thread when present", () => {
   expect(getModelChangeThreadId("thread-1")).toBe("thread-1");
   expect(getModelChangeThreadId(null)).toBeUndefined();
+});
+
+test("executeGoalCommand parses a lifecycle action and emits only goal RPC", async () => {
+  const goal = {
+    id: "goal-1",
+    threadId: "thread-1",
+    revision: 2,
+    objective: "Ship",
+    status: "active" as const,
+    maxTurns: 10,
+    turnsUsed: 1,
+    tokensUsed: 100,
+    cacheReadTokens: 20,
+    activeTimeMs: 50,
+    accountingScope: "reported_agent_tokens" as const,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const request = mock(async (method: string) =>
+    method === "thread/goal/get"
+      ? { goal, sequence: 3 }
+      : { goal: { ...goal, status: "paused" as const, revision: 3 }, sequence: 4 },
+  );
+
+  const result = await executeGoalCommand({ rpc: { request } as never, threadId: "thread-1", args: "pause" });
+
+  expect(request.mock.calls).toEqual([
+    ["thread/goal/get", { threadId: "thread-1" }],
+    [
+      "thread/goal/set",
+      {
+        threadId: "thread-1",
+        action: "pause",
+        expectedGoalId: "goal-1",
+        expectedRevision: 2,
+      },
+    ],
+  ]);
+  expect(result).toEqual({ goal: { ...goal, status: "paused", revision: 3 }, sequence: 4 });
+});
+
+test("executeGoalCommand uses get-only status", async () => {
+  const response = { goal: null, sequence: 0 };
+  const request = mock(async () => response);
+
+  const result = await executeGoalCommand({ rpc: { request } as never, threadId: "thread-1" });
+
+  expect(request.mock.calls).toEqual([["thread/goal/get", { threadId: "thread-1" }]]);
+  expect(result).toEqual(response);
+});
+
+test("executeGoalCommand supports reserved-word objectives with set", async () => {
+  const responses = [
+    { goal: null, sequence: 0 },
+    { goal: null, sequence: 1 },
+  ];
+  const request = mock(async () => responses.shift());
+
+  await executeGoalCommand({
+    rpc: { request } as never,
+    threadId: "thread-1",
+    args: "set pause until the deploy completes --turns 4",
+  });
+
+  expect(request.mock.calls[1]).toEqual([
+    "thread/goal/set",
+    {
+      threadId: "thread-1",
+      action: "set",
+      objective: "pause until the deploy completes",
+      maxTurns: 4,
+    },
+  ]);
 });
 
 test("retryLastUserMessage renders and binds the newly persisted retry request", async () => {

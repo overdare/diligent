@@ -60,6 +60,7 @@ export function useAppState({
   const [effort, setEffortState] = useState<ThinkingEffort>("medium");
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [runtimeVersion, setRuntimeVersion] = useState<string>("");
+  const [goalsSupported, setGoalsSupported] = useState(false);
   const childThreadCacheRef = useRef<Map<string, ThreadReadResponse>>(new Map());
   const threadData = useThreadData({ rpcRef, state, childThreadCacheRef });
 
@@ -68,7 +69,7 @@ export function useAppState({
   const modalState = useModalState({ providerMgr });
   const notificationState = useNotificationState();
 
-  const slashCommands = useMemo(() => buildCommandList(skills), [skills]);
+  const slashCommands = useMemo(() => buildCommandList(skills, { goals: goalsSupported }), [skills, goalsSupported]);
 
   const serverRequests = useServerRequests(
     rpcRef,
@@ -232,6 +233,7 @@ export function useAppState({
     setEffortState,
     setSkills,
     setRuntimeVersion,
+    setGoalsSupported,
     setConsent: consentState.setConsent,
     setInitialModel: providerMgr.setInitialModel,
     applySessionModel: providerMgr.applySessionModel,
@@ -256,6 +258,7 @@ export function useAppState({
     supportsVision,
     effort,
     slashCommands,
+    goalsSupported,
     currentModel: providerMgr.currentModel,
     availableModels: providerMgr.availableModels,
     currentModelRef: providerMgr.currentModelRef,
@@ -328,6 +331,7 @@ export function useAppState({
     desktopNotificationsRef: notificationState.desktopNotificationsRef,
     childThreadCacheRef,
     slashCommands,
+    goalsSupported,
     isBusy,
     activeInputKey,
     activeInput,
