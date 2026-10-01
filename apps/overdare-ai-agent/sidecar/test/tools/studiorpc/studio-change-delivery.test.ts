@@ -183,3 +183,43 @@ test("gap-only summaries inject and expired details never fall back to a new bat
   expect(details.output).not.toContain("second");
   await collector.stop();
 });
+
+test("cascade deletion is delivered to B in automatic context and details while A excludes its own edits", async () => {
+  const cwd = project();
+  const collector = getStudioChangeCollector(cwd);
+  collector.store.registerSession(a)();
+  collector.store.registerSession(b)();
+  const ref = (guid: string, type: string) => ({ ActorGuid: guid, InstanceType: type, Name: guid });
+  const records = [
+    { Action: "Create", ActorGuids: ["folder"], Objects: [ref("folder", "Folder")] },
+    { Action: "Create", ActorGuids: ["part"], Objects: [ref("part", "Part")] },
+    {
+      Action: "Delete",
+      ActorGuids: ["folder"],
+      Objects: [{ ...ref("folder", "Folder"), Changes: [{ Property: "Descendants", Removed: [ref("part", "Part")] }] }],
+    },
+  ].map((record) => ({ ...record, Origin: { Kind: "mcp", SessionId: "A" } }));
+  writeFileSync(join(cwd, "Edit.Log"), JSON.stringify(records));
+  await collector.refresh();
+  const own = await createStudioChangesTool(collector, () => a).execute({}, toolContext());
+  expect(own.output).not.toContain("Added");
+  const provider = createStudioRpcToolProvider({ callRpc: async () => ({}) });
+  await provider.onUserPromptSubmit!(input(cwd, "B"));
+  await runWithSessionExecutionContext(scope(b), async () => {
+    const hook = provider.createAgentLoopHooks!({ cwd, agentKind: "main" } as never)[0];
+    hook.onPromptStart!({ messages: [] });
+    const injection = hook.beforeTurn!({ messages: [], turnId: "cascade", compactedThisTurn: false })![0];
+    expect(injection.content).toContain("Added then removed (2)");
+    expect(injection.content).not.toContain("Added (");
+    expect(injection.metadata?.presentation).toMatchObject({ kind: "studio-changes" });
+  });
+  const tool = createStudioChangesTool(collector, () => b);
+  const summary = await tool.execute({}, toolContext());
+  expect(summary.output).toContain("Added then removed (2)");
+  const details = await tool.execute(
+    { view: "details", batchId: summary.metadata!.batchId, guid: "part", changeType: "addedThenRemoved" },
+    toolContext(),
+  );
+  expect(details.output).toContain('+- Part "part" (part)');
+  expect((await tool.execute({}, toolContext())).output).not.toContain("Added");
+});

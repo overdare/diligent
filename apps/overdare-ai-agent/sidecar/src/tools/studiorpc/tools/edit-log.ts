@@ -319,22 +319,26 @@ function applyChange(target: TargetSummary, change: EditLogChange): void {
 
 function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
   const targets = new Map<string, TargetSummary>();
+  const targetFor = (guid: string): TargetSummary => {
+    let target = targets.get(guid);
+    if (!target) {
+      target = {
+        guid,
+        created: false,
+        removed: false,
+        props: new Map(),
+        lists: new Map(),
+        gizmoChanges: new Map(),
+        sourceEdits: 0,
+      };
+      targets.set(guid, target);
+    }
+    return target;
+  };
   for (const envelope of envelopes) {
     for (const object of envelope.objects) {
       if (!isSubject(object, envelope)) continue;
-      let target = targets.get(object.guid);
-      if (!target) {
-        target = {
-          guid: object.guid,
-          created: false,
-          removed: false,
-          props: new Map(),
-          lists: new Map(),
-          gizmoChanges: new Map(),
-          sourceEdits: 0,
-        };
-        targets.set(object.guid, target);
-      }
+      const target = targetFor(object.guid);
       target.name = object.name ?? target.name;
       target.type = object.type ?? target.type;
       const action = object.action ?? envelope.operation ?? "";
@@ -344,7 +348,21 @@ function aggregate(envelopes: EditLogEnvelope[]): Map<string, TargetSummary> {
       } else if (REMOVE_ACTION.test(action)) {
         target.removed = true;
       }
-      for (const change of object.changes) applyChange(target, change);
+      for (const change of object.changes) {
+        if (REMOVE_ACTION.test(action) && change.property === "Descendants") {
+          // Explicit flattened cascade references are deletions, not selected subjects
+          // or ordinary list changes. LuaChildren removals can also mean reparenting.
+          for (const ref of change.removed ?? []) {
+            if (!isRecord(ref)) continue;
+            const guid = asString(pick(ref, "ActorGuid", "ObjectGuid"));
+            if (!guid || guid === object.guid) continue;
+            const descendant = targetFor(guid);
+            descendant.name = asString(pick(ref, "Name", "name")) ?? descendant.name;
+            descendant.type = asString(pick(ref, "InstanceType", "instanceType")) ?? descendant.type;
+            descendant.removed = true;
+          }
+        } else applyChange(target, change);
+      }
     }
   }
   return targets;

@@ -1,5 +1,10 @@
 # Studio change summaries
 
+Studio records `Edit.Log` for manual Editor edits and Lua Editor commands.
+Direct instance RPC writes do not produce this log. To verify collected change
+summaries against a live Studio, perform edits manually or through
+`studiorpc_execute_luau` with `target: "Editor"`.
+
 The owning OVERDARE sidecar collects project edit logs immediately on startup
 and approximately once per second into a shared, bounded RAM journal. Collection
 continues while models are working, independently of delivery. No database,
@@ -46,6 +51,21 @@ These approximate 1,500 and 2,000 tokens, not tokenizer guarantees.
 - Created-then-removed objects are counted by type. All section counts remain
   complete even when details are omitted.
 - Output stops at object boundaries and reports omission counts.
+
+For a deleted subject, `Changes: [{ "Property": "Descendants", "Removed": [...] }]`
+marks every referenced descendant as deleted, even when it is absent from
+`ActorGuids` or `Objects`. Studio supplies a recursively flattened list of
+`ObjectRef` values (`ActorGuid`, `Name`, `InstanceType`). Each GUID is counted
+once, including overlapping selected roots. A descendant created in the same
+query range becomes "Added then removed"; otherwise it is "Removed". A later
+creation restores its added state. Automatic summaries and explicit details
+use the same aggregation and transaction authorship filtering.
+
+`ActorGuids` still identifies directly selected subjects. Neither incidental
+`Objects` records nor `LuaChildren.Removed` imply cascade deletion. Older Studio
+logs without `Descendants.Removed` cannot identify all cascaded deletions; inspect
+current Studio state when such history is ambiguous. Output limits truncate
+presentation only, not the descendant classification.
 
 These summaries are collected history, not an agent-relative diff. Compare them
 with expected work and inspect affected instances before editing.
