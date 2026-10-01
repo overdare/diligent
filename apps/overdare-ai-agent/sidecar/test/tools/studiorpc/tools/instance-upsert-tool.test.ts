@@ -109,4 +109,39 @@ describe("v1 instance.upsert apply recovery", () => {
     expect(attempts).toBe(0);
     expect(JSON.parse(readFileSync(path, "utf8")).Root.LuaChildren[0].CanCollide).toBe(false);
   });
+
+  test("labels overlap diagnostics as authored estimates rather than runtime observations", async () => {
+    const { cwd, path } = fixture();
+    const frame = (guid: string) => ({
+      InstanceType: "Frame",
+      ActorGuid: guid,
+      Name: guid,
+      Position: { X: { Scale: 0, Offset: 0 }, Y: { Scale: 0, Offset: 0 } },
+      Size: { X: { Scale: 0, Offset: 200 }, Y: { Scale: 0, Offset: 100 } },
+    });
+    writeFileSync(
+      path,
+      JSON.stringify({
+        Root: {
+          InstanceType: "Workspace",
+          ActorGuid: "W",
+          LuaChildren: [
+            {
+              InstanceType: "ScreenGui",
+              ActorGuid: "S",
+              LuaChildren: [frame("F1"), frame("F2")],
+            },
+          ],
+        },
+      }),
+    );
+    const result = await executeInstanceUpsertInner(
+      parseArgs({ items: [{ guid: "F1", properties: { Visible: true } }] }),
+      cwd,
+      { applyAndSaveChanges: false },
+    );
+    expect(result.output).toContain("authored layout estimates");
+    expect(result.output).toContain("studiorpc_game_observe");
+    expect(result.metadata?.uiDiagnostics).toMatchObject({ source: "authoredLayout", runtimeVerified: false });
+  });
 });

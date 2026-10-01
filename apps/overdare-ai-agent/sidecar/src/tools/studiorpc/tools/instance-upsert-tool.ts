@@ -126,6 +126,7 @@ export async function executeInstanceUpsertInner(
     }
   }
   const diag = ovdrjmRoot ? collectUiDiagnostics(ovdrjmRoot) : { warnings: [], info: [] };
+  const hasUiDiagnostics = diag.warnings.length > 0 || diag.info.length > 0;
   diag.info.push(...fileResult.mobilityInfo);
   const addedGuids = fileResult.added.map((item) => item.guid);
   const updatedGuids = parsedArgs.items.flatMap((item) => (instanceUpsert.isUpdateItem(item) ? [item.guid] : []));
@@ -140,6 +141,11 @@ export async function executeInstanceUpsertInner(
       lines.push(`<instance name="${a.name}" class="${a.class}" guid="${a.guid}" />`);
     }
     lines.push("</added-instances>");
+  }
+  if (hasUiDiagnostics) {
+    lines.push(
+      "UI diagnostics are authored layout estimates at the reference viewport, not runtime observations. Scripts, layout constraints, and the live viewport can change these rectangles. Confirm overlap with studiorpc_game_observe and a screenshot before editing the HUD.",
+    );
   }
   if (diag.warnings.length > 0) {
     lines.push("<warnings>", ...diag.warnings, "</warnings>");
@@ -157,6 +163,7 @@ export async function executeInstanceUpsertInner(
       addCount,
       updateCount,
       added: fileResult.added,
+      ...(hasUiDiagnostics && { uiDiagnostics: { source: "authoredLayout", runtimeVerified: false } }),
       ...(diag.warnings.length > 0 && { warnings: diag.warnings }),
       ...(diag.info.length > 0 && { info: diag.info }),
     },
