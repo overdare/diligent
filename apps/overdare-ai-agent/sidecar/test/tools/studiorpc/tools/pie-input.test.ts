@@ -534,6 +534,83 @@ describe("play-test input tools", () => {
     expect(calls.some((call) => call.method === "game.character.moveStatus")).toBe(false);
   });
 
+  test("teleport reports a mismatch when live readback contradicts the reported destination", async () => {
+    const { byName } = toolsFor((call) => {
+      if (call.method === "game.pie.status") return runningStatus();
+      if (call.method === "game.character.moveTo")
+        return {
+          status: "reached",
+          teleported: true,
+          landedAt: { x: 3000, y: 100, z: 0 },
+        };
+      if (call.method === "game.character.read")
+        return {
+          character: { CFrame: { Position: { X: 0, Y: 100, Z: 0 } } },
+        };
+      return {};
+    });
+    const result = await run(byName.get("studiorpc_game_character_move_to"), {
+      target: { x: 3000, y: 100, z: 0 },
+      pathMode: "teleport",
+    });
+    expect(JSON.parse(result.output)).toMatchObject({
+      outcome: "teleportMismatch",
+      teleported: false,
+      rpcTeleported: true,
+      reportedLandedAt: { x: 3000, y: 100, z: 0 },
+      landedAt: { x: 0, y: 100, z: 0 },
+      verification: "mismatch",
+      positionError: 3000,
+    });
+  });
+
+  test("teleport with missing readback remains unverified rather than claiming success", async () => {
+    const { byName } = toolsFor((call) => {
+      if (call.method === "game.pie.status") return runningStatus();
+      if (call.method === "game.character.moveTo")
+        return {
+          status: "reached",
+          teleported: true,
+          landedAt: { x: 30, y: 100, z: 0 },
+        };
+      if (call.method === "game.character.read") throw new Error("read unavailable");
+      return {};
+    });
+    const result = await run(byName.get("studiorpc_game_character_move_to"), {
+      target: { x: 30, y: 100, z: 0 },
+      pathMode: "teleport",
+    });
+    expect(JSON.parse(result.output)).toMatchObject({
+      outcome: "teleportUnverified",
+      teleported: false,
+      rpcTeleported: true,
+      verification: "unavailable",
+      reportedLandedAt: { x: 30, y: 100, z: 0 },
+    });
+    expect(JSON.parse(result.output).landedAt).toBeUndefined();
+  });
+
+  test("teleport does not turn an RPC rejection into a successful placement", async () => {
+    const { byName } = toolsFor((call) => {
+      if (call.method === "game.pie.status") return runningStatus();
+      if (call.method === "game.character.moveTo") return { status: "failed", teleported: false };
+      if (call.method === "game.character.read")
+        return {
+          character: { CFrame: { Position: { X: 30, Y: 100, Z: 0 } } },
+        };
+      return {};
+    });
+    const result = await run(byName.get("studiorpc_game_character_move_to"), {
+      target: { x: 30, y: 100, z: 0 },
+      pathMode: "teleport",
+    });
+    expect(JSON.parse(result.output)).toMatchObject({
+      outcome: "teleportFailed",
+      teleported: false,
+      rpcStatus: "failed",
+    });
+  });
+
   test("move_to keeps measuredSpeed as an observed result", async () => {
     let statusPolls = 0;
     let positionReads = 0;

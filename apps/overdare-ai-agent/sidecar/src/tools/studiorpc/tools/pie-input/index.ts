@@ -735,24 +735,47 @@ function createCharacterMoveToTool(callRpc: CallRpc): Tool {
       )) as MoveToResult;
       if (pathMode === "teleport") {
         const landedState = await readCharacterState(toolCallRpc, target);
-        const landed = started?.landedAt ?? landedState?.position;
+        ctx.signal.throwIfAborted();
+        const landed = landedState?.position;
+        const reported = started?.landedAt;
+        const positionError = landed && reported ? distanceBetween(landed, reported) : undefined;
+        const rpcAccepted = started?.teleported === true && started?.status === "reached";
+        const verification = !rpcAccepted
+          ? "rpcRejected"
+          : positionError === undefined
+            ? "unavailable"
+            : positionError <= MOVED_AT_ALL
+              ? "matched"
+              : "mismatch";
+        const outcome =
+          verification === "matched"
+            ? "teleported"
+            : verification === "mismatch"
+              ? "teleportMismatch"
+              : verification === "rpcRejected"
+                ? "teleportFailed"
+                : "teleportUnverified";
         return {
           output: jsonOutput({
-            outcome: "teleported",
+            outcome,
             pathMode,
             rpcStatus: started?.status,
-            teleported: started?.teleported === true,
+            teleported: verification === "matched",
+            rpcTeleported: started?.teleported === true,
+            verification,
+            ...(reported ? { reportedLandedAt: reported } : {}),
+            ...(positionError === undefined ? {} : { positionError }),
             ...(named?.path ? { target: named.path } : {}),
             landedAt: landed,
             standingOn: landedState?.standingOnName ?? null,
             clientId: target.clientId,
           }),
-          render: buildMoveToRender(target, wantedPosition, started?.requestId ?? "", "teleported", undefined),
+          render: buildMoveToRender(target, wantedPosition, started?.requestId ?? "", outcome, undefined),
           metadata: {
             tool: "studiorpc_game_character_move_to",
             clientId: target.clientId,
             requestId: started?.requestId ?? "",
-            status: "teleported",
+            status: outcome,
           },
         };
       }
