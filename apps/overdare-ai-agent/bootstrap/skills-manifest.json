@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "skills": [
     { "name": "actionsequence", "entry": "actionsequence" },
+    { "name": "actionsequence-review", "entry": "actionsequence-review" },
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
     { "name": "character-animation", "entry": "character-animation" },

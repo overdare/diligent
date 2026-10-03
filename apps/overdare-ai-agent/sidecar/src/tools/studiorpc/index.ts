@@ -7,6 +7,8 @@ import {
   type PluginHookFn,
   type RuntimeToolHost,
 } from "@diligent/runtime";
+import { enrichScriptReferences } from "./methods/action-sequence-script-references";
+import { isRecord as isSequenceRecord } from "./methods/action-sequence-shared";
 import * as luaValidate from "./methods/lua.validate";
 import { call } from "./rpc";
 import { studioRpcCallOptions, studioRpcSessionId, withStudioRpcContext } from "./rpc-context";
@@ -281,8 +283,20 @@ export async function createStudioRpcTools(ctx: {
   });
   const isCollisionEdit = (name: string) => name === "create_collision_profile" || name === "edit_collision_profile";
 
+  const actionSequenceWrite = createActionSequencerApplyJsonTool(callRpc, writeLock, ctx.cwd);
+  const actionSequenceApply = withSnapshot(actionSequenceWrite);
+
   const tools: Tool[] = [
-    wrapTool(withSnapshot(createActionSequencerApplyJsonTool(callRpc, writeLock)), ctx.host),
+    wrapTool(
+      {
+        ...actionSequenceWrite,
+        execute: (args, toolCtx) =>
+          (args as Record<string, unknown>).dryRun === true
+            ? actionSequenceWrite.execute(args, toolCtx)
+            : actionSequenceApply.execute(args, toolCtx),
+      },
+      ctx.host,
+    ),
     wrapTool(createInstanceReadTool(ctx.cwd, callRpc), ctx.host),
     wrapTool(withSnapshot(createExecuteLuauTool(callRpc, writeLock)), ctx.host),
     wrapTool(
@@ -330,12 +344,13 @@ export async function createStudioRpcTools(ctx: {
       description,
       parameters: params,
       async execute(args, toolCtx) {
-        const warning = capturesBeforeRun ? ensureSnapshot() : undefined;
+        const isDryRun = method === "animation.write" && (args as Record<string, unknown>).dryRun === true;
+        const warning = capturesBeforeRun && !isDryRun ? ensureSnapshot() : undefined;
         const bundledToolCtx = withApproval(toolCtx, ctx.host);
         const toolCallRpc = withSignal(callRpc, toolCtx.signal);
         const rpcMethod = mod.resolveMethod ? mod.resolveMethod(args as Record<string, unknown>) : method;
 
-        if (!mod.readOnly) {
+        if (!mod.readOnly && !isDryRun) {
           const approval = await bundledToolCtx.approve({
             permission: "execute",
             toolName,
@@ -351,7 +366,7 @@ export async function createStudioRpcTools(ctx: {
           }
         }
 
-        const isMutating = mutatingMethods.has(method);
+        const isMutating = mutatingMethods.has(method) && !isDryRun;
         const release = isMutating ? await writeLock.acquire() : undefined;
         try {
           try {
@@ -366,11 +381,19 @@ export async function createStudioRpcTools(ctx: {
               if (!mod.recover) throw rpcError;
               result = await mod.recover(rpcError, args as Record<string, unknown>, toolCallRpc);
             }
+            if (method === "action_sequence.read" && isSequenceRecord(result) && Array.isArray(result.timeline)) {
+              result = await enrichScriptReferences(
+                result,
+                String((args as Record<string, unknown>).instanceGuid),
+                ctx.cwd,
+                toolCallRpc,
+              );
+            }
             if (mod.postProcess) {
               result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
             }
             // Persist editor-state changes to file immediately on success.
-            if (savingMethods.has(method)) {
+            if (savingMethods.has(method) && !isDryRun) {
               await toolCallRpc("level.save.file", {});
             }
             const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
