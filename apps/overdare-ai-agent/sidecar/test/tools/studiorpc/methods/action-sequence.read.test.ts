@@ -55,13 +55,21 @@ describe("action_sequence.read", () => {
   });
 
   test("bounds preview times and requires an explicit source", () => {
-    expect(read.params.parse({ instanceGuid: "guid", preview: { times: [0, 0.2] } }).preview?.times).toEqual([0, 0.2]);
+    expect(read.params.parse({ instanceGuid: "guid", preview: { times: [0, 0.2] } }).preview).toEqual({
+      times: [0, 0.2],
+    });
+    expect(read.params.parse({ instanceGuid: "guid", preview: true }).preview).toBe(true);
+    expect(read.params.parse({ instanceGuid: "guid", preview: {} }).preview).toEqual({});
+    expect(
+      read.params.safeParse({ instanceGuid: "guid", preview: { times: Array.from({ length: 22 }, (_, i) => i) } })
+        .success,
+    ).toBe(true);
     for (const preview of [
       { times: [] },
       { times: [-1] },
       { times: [0, 0] },
       { times: [NaN] },
-      { times: Array.from({ length: 13 }, (_, i) => i) },
+      { times: Array.from({ length: 23 }, (_, i) => i) },
       { times: [0], views: ["front"] },
     ]) {
       expect(read.params.safeParse({ instanceGuid: "guid", preview }).success).toBe(false);

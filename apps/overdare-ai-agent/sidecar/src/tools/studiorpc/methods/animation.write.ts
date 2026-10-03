@@ -89,9 +89,9 @@ export const description =
   "maxShiftCm, entryShiftCm / exitShiftCm (how far the hips move in the one frame where the range takes over from your " +
   "keys and hands back; key the hips near that height just outside the range) and contacts: which body part touches " +
   "the floor on which frames, in order.\n" +
-  "preview: omitted or true = default contact sheet (frames 0, N/4, N/2, 3N/4, N; both views; MOTION column), " +
-  'false = none, { frames: [up to 12], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
-  "back as an image: rows = views (front first, then side), columns = frames in order, then MOTION (the clip " +
+  "preview: omitted or true = default contact sheet (frames 0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames; both views; MOTION column), " +
+  'false = none, { frames: [up to 22], views: ["front", "side"], motion: true | false } = those. The PNG comes ' +
+  "back as an image: blocks = up to six frames in order, each with front/side rows; columns = frames in order, then MOTION (the clip " +
   "onion-skinned, earlier = fainter, with paths: right hand red, left hand blue, right foot orange, left foot " +
   "cyan, head yellow). preview.floor checks the skinned mesh against the floor (z = 0) on every frame: " +
   "belowFloor (sinking, with depth and bone), airborne, contacts (bone -> frame ranges on the floor). " +
