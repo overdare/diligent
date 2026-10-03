@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dropEmptyOptionals } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
-import * as animationCheck from "../../../../src/tools/studiorpc/methods/animation.check";
 import * as animationPublish from "../../../../src/tools/studiorpc/methods/animation.publish";
 import * as animationRead from "../../../../src/tools/studiorpc/methods/animation.read";
 import * as animationWrite from "../../../../src/tools/studiorpc/methods/animation.write";
@@ -127,7 +126,7 @@ describe("animation params", () => {
     expect(
       animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [10, 40] }] }).success,
     ).toBe(true);
-    expect(animationCheck.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [10] }] }).success).toBe(
+    expect(animationWrite.params.safeParse({ animation: CONTRACT_ANIMATION, ground: [{ frames: [10] }] }).success).toBe(
       false,
     );
     expect(
@@ -297,19 +296,40 @@ describe("animation tools over the generic Studio RPC path", () => {
   });
 });
 
-describe("animation.check", () => {
-  test("takes the write format and pins, never an asset, and reaches Studio as animation.check", async () => {
+describe("animation.write dryRun", () => {
+  test("never attaches images or offers mutation recovery advice in dryRun", async () => {
+    const png = join(dir, "dryrun.png");
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    expect(
+      await animationWrite.attachImages(
+        JSON.stringify({ dryRun: true, preview: { status: "completed", imagePath: png } }),
+      ),
+    ).toBeUndefined();
+    expect(await animationWrite.attachImages("invalid JSON")).toBeUndefined();
+    try {
+      await animationWrite.recover(new Error("timeout"), { dryRun: true });
+    } catch (error) {
+      expect(String(error)).not.toContain("may still have completed");
+    }
+  });
+  test("evaluates through write without approval and rejects frames on an applied write", async () => {
     const pins = [{ bone: "RightHand", frames: [10, 10], position: [-20, 25, 120] }];
-    expect(animationCheck.params.parse({ animation: CONTRACT_ANIMATION, pins, frames: [0, 10] })).toBeDefined();
-    expect(() => animationCheck.params.parse({ animation: CONTRACT_ANIMATION, assetPath: ASSET })).toThrow();
+    expect(
+      animationWrite.params.parse({ animation: CONTRACT_ANIMATION, dryRun: true, pins, frames: [0, 10] }),
+    ).toBeDefined();
+    expect(() => animationWrite.params.parse({ animation: CONTRACT_ANIMATION, frames: [0] })).toThrow();
     expect(() =>
-      animationCheck.params.parse({ animation: CONTRACT_ANIMATION, frames: Array.from({ length: 25 }, (_, i) => i) }),
+      animationWrite.params.parse({
+        animation: CONTRACT_ANIMATION,
+        dryRun: true,
+        frames: Array.from({ length: 25 }, (_, i) => i),
+      }),
     ).toThrow();
-    expect(animationCheck.normalizeArgs({ animation: CONTRACT_ANIMATION, pins: [], frames: [] })).toEqual({
+    expect(animationWrite.normalizeArgs({ animation: CONTRACT_ANIMATION, pins: [], frames: [] })).toEqual({
       animation: CONTRACT_ANIMATION,
     });
-    expect(mutatingMethods.has(animationCheck.method)).toBe(false);
-    expect(savingMethods.has(animationCheck.method)).toBe(false);
+    expect(mutatingMethods.has(animationWrite.method)).toBe(false);
+    expect(savingMethods.has(animationWrite.method)).toBe(false);
     const seen: string[] = [];
     const tools = await createStudioRpcToolProvider({
       callRpc: async (method) => {
@@ -317,22 +337,28 @@ describe("animation.check", () => {
         return { status: "completed", frames: [] };
       },
     }).createTools({ cwd: tmpdir() });
-    const tool = tools.find((candidate) => candidate.name === "studiorpc_animation_check")!;
-    await tool.execute(tool.parameters.parse({ animation: CONTRACT_ANIMATION }), toolContext());
-    expect(seen).toEqual(["animation.check"]);
+    expect(tools.some((candidate) => candidate.name === "studiorpc_animation_check")).toBe(false);
+    const tool = tools.find((candidate) => candidate.name === "studiorpc_animation_write")!;
+    const context = toolContext();
+    context.approve = async () => {
+      throw new Error("dryRun requested approval");
+    };
+    await tool.execute(tool.parameters.parse({ animation: CONTRACT_ANIMATION, dryRun: true }), context);
+    expect(seen).toEqual(["animation.write"]);
   });
 
   test("puts each frame on one line at 0.1 cm and keeps valid JSON", () => {
     const result = {
       status: "completed",
       saved: false,
+      dryRun: true,
       floor: { status: "completed", belowFloor: [] },
       frames: [
         { frame: 0, joints: { RightHand: [-35.61234, 4.3456, 75.2] }, penetrations: [] },
         { frame: 10, joints: { RightHand: [-20.04, 25.01, 119.96] }, penetrations: [] },
       ],
     };
-    const text = animationCheck.postProcess(result) as string;
+    const text = animationWrite.postProcess(result) as string;
     expect(text.split("\n").filter((line) => line.includes('"joints"'))).toHaveLength(2);
     expect(JSON.parse(text).frames[0].joints.RightHand).toEqual([-35.6, 4.3, 75.2]);
     expect(text.indexOf('"floor"')).toBeLessThan(text.indexOf('"frames"'));

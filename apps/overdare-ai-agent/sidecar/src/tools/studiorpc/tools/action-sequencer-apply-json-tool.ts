@@ -2,6 +2,8 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { enrichScriptReferences } from "../methods/action-sequence-script-references";
+import { enrichClipDurations, formatSequenceResult, isRecord } from "../methods/action-sequence-shared";
 import * as applyJson from "../methods/action-sequencer-service.apply-json";
 import { buildActionSequencerApplyJsonRender } from "../render";
 import { type call, StudioRpcError } from "../rpc";
@@ -9,26 +11,28 @@ import type { Tool } from "../types";
 import type { WriteLock } from "../write-lock";
 import { normalizeActionSequenceJson } from "./action-sequence-json";
 
-const TOOL_NAME = "studiorpc_action_sequencer_service_apply_json";
+const TOOL_NAME = "studiorpc_action_sequence_write";
 
-export function createActionSequencerApplyJsonTool(callRpc: typeof call, writeLock: WriteLock): Tool {
+export function createActionSequencerApplyJsonTool(callRpc: typeof call, writeLock: WriteLock, cwd?: string): Tool {
   return {
     name: TOOL_NAME,
     description: applyJson.description,
     parameters: applyJson.params,
     async execute(args, ctx) {
       const parsed = applyJson.params.parse(args);
-      const approval = await ctx.approve({
-        permission: "execute",
-        toolName: TOOL_NAME,
-        description: `Studio RPC: ${applyJson.method}`,
-        details: { method: applyJson.method, params: parsed },
-      });
+      const approval = parsed.dryRun
+        ? "once"
+        : await ctx.approve({
+            permission: "execute",
+            toolName: TOOL_NAME,
+            description: `Studio RPC: ${applyJson.method}`,
+            details: { method: applyJson.method, params: parsed },
+          });
       if (approval === "reject") {
         return { output: "[Rejected by user]", metadata: { error: true, method: applyJson.method } };
       }
       ctx.signal.throwIfAborted();
-      const release = await writeLock.acquire();
+      const release = parsed.dryRun ? undefined : await writeLock.acquire();
       let temporaryDir: string | undefined;
       try {
         ctx.signal.throwIfAborted();
@@ -57,7 +61,20 @@ export function createActionSequencerApplyJsonTool(callRpc: typeof call, writeLo
           }
           throw error;
         }
-        const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+        if (isRecord(result) && Array.isArray(result.timeline) && Array.isArray(result.issues)) {
+          result = await enrichClipDurations(
+            result as { timeline: Record<string, unknown>[]; issues: Record<string, unknown>[] },
+          );
+        }
+        if (parsed.dryRun && cwd && isRecord(result)) {
+          result = await enrichScriptReferences(result, parsed.instanceGuid, cwd, callRpc, json);
+        }
+        const output =
+          typeof result === "string"
+            ? result
+            : isRecord(result)
+              ? formatSequenceResult(result)
+              : JSON.stringify(result, null, 2);
         return {
           output,
           render: buildActionSequencerApplyJsonRender(parsed, output),
@@ -67,7 +84,7 @@ export function createActionSequencerApplyJsonTool(callRpc: typeof call, writeLo
         try {
           if (temporaryDir) rmSync(temporaryDir, { recursive: true, force: true });
         } finally {
-          release();
+          release?.();
         }
       }
     },

@@ -6,6 +6,7 @@ import {
   animationSchema,
   attachPreviewImage,
   dropBlank,
+  formatCheckResult,
   formatWriteResult,
   groundSchema,
   isBlank,
@@ -22,7 +23,24 @@ export const timeoutMs = ANIMATION_TIMEOUT_MS;
 export const description =
   "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
   "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
-  "without saving or rendering (joint positions, penetrations, IK solves), use studiorpc_animation_check.\n" +
+  "without saving or rendering (joint positions, penetrations, IK solves), set dryRun: true.\n" +
+  "Per frame (frames: up to 24; default: up to 12 of the keyed frames and pin edges; ask for the few frames you are " +
+  "working on): joints = hips (LowerTorso), head, elbows (LowerArm), hands, knees (LowerLeg) and feet; " +
+  "lowestPointCm = the lowest skin point of each hand, foot, LowerTorso and thigh (where the sole, toe or heel, the " +
+  "fist and the seat really are, not the bone); penetrations = up to 3 deepest places where a hand, forearm, shin " +
+  "or foot sinks into the head, torso or a thigh, with depthCm, deepestPointCm and pushOutCm (the shortest move " +
+  "that gets that point out); directions = unit vectors of each hand (fingers: wrist toward fist; palm: the side " +
+  "that faces the thigh when standing) and foot (toes: heel toward toes; sole: out of the sole, [0, 0, -1] when " +
+  "flat). Positions are component space in cm: x = the character's left, y = forward, z = up, " +
+  "floor at z = 0. For the whole clip: floor and clearance, as in the write preview.\n" +
+  "pins work as in this tool. A pin of up to 5 frames also reports keys: the solved rotations of " +
+  "the limb's three bones. A pin over one frame, frames: [f, f], with a position is an IK solve: it returns the UpperArm/LowerArm/Hand " +
+  "(or UpperLeg/LowerLeg/Foot) rotations that put the hand or foot there, bending the elbow or knee only the way it hinges, " +
+  "which you can copy into your own keys; add a pole to choose where the elbow or knee goes. A pin with a path " +
+  "of up to 5 frames solves several targets at once. reachMarginCm says how much further the limb could stretch; negative " +
+  "means the target is that far out of reach (outOfReachFrames counts those frames).\n" +
+  "ground works as in this tool; result.ground lists which body part touches the floor on which " +
+  "frames, the contact order of a roll or fall.\n" +
   "Workflow: write without assetPath to create a clip under /Temp/AnimationAssets/<name> (a suffix is added if " +
   "the name is taken; use the returned assetPath and animation.name). Look at the image, preview.floor, " +
   "preview.clearance and preview.poseSamples, edit the JSON, then write again with assetPath and the revision " +
@@ -91,6 +109,16 @@ export const description =
 
 export const params = z
   .object({
+    dryRun: z
+      .boolean()
+      .optional()
+      .describe("Evaluate poses without saving or rendering. assetPath/revision are checked even in dryRun."),
+    frames: z
+      .array(z.number().int().min(0))
+      .min(1)
+      .max(24)
+      .optional()
+      .describe("With dryRun only: up to 24 pose frames; default up to 12 keyed frames and pin edges."),
     animation: animationSchema.describe("The whole clip in the version-1 JSON format above."),
     assetPath: z.string().optional().describe("Clip to replace. Omit to create a new clip."),
     revision: z
@@ -109,16 +137,26 @@ export const params = z
         "Frame ranges where the body's lowest point stays on the floor; baked into LowerTorso keys. Omit for none.",
       ),
   })
-  .strict();
+  .strict()
+  .refine((args) => args.frames === undefined || args.dryRun === true, {
+    message: "frames requires dryRun: true",
+    path: ["frames"],
+  });
 
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const out = normalizePreview(dropBlank(args, ["assetPath", "revision"]));
+  const out =
+    args.dryRun === true
+      ? dropBlank(args, ["assetPath", "revision"])
+      : normalizePreview(dropBlank(args, ["assetPath", "revision"]));
+  if (args.dryRun === true) delete out.preview;
+  if (Array.isArray(out.frames) && out.frames.length === 0) delete out.frames;
   if (Array.isArray(out.pins) && out.pins.length === 0) delete out.pins;
   if (Array.isArray(out.ground) && out.ground.length === 0) delete out.ground;
   return out;
 }
 
 export async function recover(error: unknown, args: Record<string, unknown>): Promise<unknown> {
+  if (args.dryRun === true) return withErrorData(error);
   return withErrorData(
     error,
     args.assetPath === undefined || isBlank(args.assetPath)
@@ -130,9 +168,20 @@ export async function recover(error: unknown, args: Record<string, unknown>): Pr
 }
 
 export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
+  let parsed: unknown = result;
+  if (typeof result === "string") {
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return undefined;
+    }
+  }
+  if (parsed && typeof parsed === "object" && "dryRun" in parsed && parsed.dryRun === true) return undefined;
   return attachPreviewImage(result);
 }
 
 export function postProcess(result: unknown): unknown {
+  if (result && typeof result === "object" && "dryRun" in result && result.dryRun === true)
+    return formatCheckResult(result);
   return formatWriteResult(result);
 }

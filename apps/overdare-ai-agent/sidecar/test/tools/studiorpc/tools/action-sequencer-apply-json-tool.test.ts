@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
 import { type call, StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { normalizeActionSequenceJson } from "../../../../src/tools/studiorpc/tools/action-sequence-json";
+import { createActionSequencerApplyJsonTool } from "../../../../src/tools/studiorpc/tools/action-sequencer-apply-json-tool";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -49,14 +50,14 @@ async function setup(
   const path = join(dir, "sequence.json");
   writeFileSync(path, content);
   const tools = await createStudioRpcToolProvider({ callRpc }).createTools({ cwd: dir, host: { approve } });
-  const tool = tools.find((candidate) => candidate.name === "studiorpc_action_sequencer_service_apply_json")!;
+  const tool = tools.find((candidate) => candidate.name === "studiorpc_action_sequence_write")!;
   const controller = new AbortController();
   return {
     path,
     controller,
-    run: () =>
+    run: (dryRun = false) =>
       tool.execute(
-        { instanceGuid: "sequence-guid", jsonFilePath: path },
+        { instanceGuid: "sequence-guid", jsonFilePath: path, ...(dryRun ? { dryRun: true } : {}) },
         {
           toolCallId: "test",
           signal: controller.signal,
@@ -67,11 +68,74 @@ async function setup(
 }
 
 describe("ActionSequence apply JSON", () => {
+  test("dryRun bypasses approval and the write lock while retaining normalization and cleanup", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "action-sequence-dry-run-"));
+    dirs.push(dir);
+    const path = join(dir, "sequence.json");
+    const content = JSON.stringify(sequence());
+    writeFileSync(path, content);
+    let staged = "";
+    const tool = createActionSequencerApplyJsonTool(
+      async (method, args) => {
+        expect(method).toBe("action_sequence.write");
+        expect(args?.dryRun).toBe(true);
+        staged = args?.jsonFilePath as string;
+        expect(JSON.parse(readFileSync(staged, "utf8")).Tracks[0].bScaleInheritance).toBe(true);
+        return { success: true, dryRun: true, issues: [{ kind: "test", severity: "warning" }], timeline: [] };
+      },
+      {
+        async acquire() {
+          throw new Error("dryRun must not acquire the write lock");
+        },
+      },
+    );
+    const result = await tool.execute(
+      { instanceGuid: "guid", jsonFilePath: path, dryRun: true },
+      {
+        toolCallId: "test",
+        signal: new AbortController().signal,
+        abort() {},
+        async approve() {
+          throw new Error("dryRun must not request approval");
+        },
+      },
+    );
+    expect(JSON.parse(result.output).issues[0].kind).toBe("test");
+    expect(readFileSync(path, "utf8")).toBe(content);
+    expect(existsSync(dirname(staged))).toBe(false);
+  });
+
+  test("the provider exposes only write and skips snapshot capture for dryRun", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "action-sequence-provider-"));
+    dirs.push(dir);
+    const path = join(dir, "sequence.json");
+    writeFileSync(path, JSON.stringify(sequence()));
+    const turnState = {};
+    const tools = await createStudioRpcToolProvider({
+      callRpc: async () => ({ success: true, dryRun: true, issues: [] }),
+    }).createTools({
+      cwd: dir,
+      turnState,
+      host: {
+        async approve() {
+          throw new Error("dryRun must be read-only");
+        },
+      },
+    });
+    expect(tools.some((tool) => tool.name === "studiorpc_action_sequencer_service_apply_json")).toBe(false);
+    const tool = tools.find((tool) => tool.name === "studiorpc_action_sequence_write")!;
+    const result = await tool.execute(
+      { instanceGuid: "guid", jsonFilePath: path, dryRun: true },
+      { toolCallId: "test", signal: new AbortController().signal, abort() {} },
+    );
+    expect(result.output).not.toContain("snapshot");
+    expect(turnState).toEqual({});
+  });
   test("fills missing Studio fields in a temporary file and preserves the source and track data", async () => {
     const original = JSON.stringify(sequence());
     let stagedPath = "";
     const harness = await setup(original, async (method, args, options) => {
-      expect(method).toBe("action_sequencer_service.apply_json");
+      expect(method).toBe("action_sequence.write");
       expect(args?.instanceGuid).toBe("sequence-guid");
       expect(options?.signal).toBe(harness.controller.signal);
       stagedPath = args?.jsonFilePath as string;

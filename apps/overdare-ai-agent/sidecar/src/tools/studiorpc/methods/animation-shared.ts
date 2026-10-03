@@ -224,7 +224,7 @@ export function formatWriteResult(result: unknown): unknown {
 }
 
 /**
- * animation.check answers with a pose per frame (every joint, the lowest skin points, penetrations). Pretty-printed
+ * animation.write dryRun answers with a pose per frame (every joint, the lowest skin points, penetrations). Pretty-printed
  * that is one number per line; here each frame is one line (0.1 cm), after the clip-wide floor, clearance and pins.
  */
 export function formatCheckResult(result: unknown): unknown {
