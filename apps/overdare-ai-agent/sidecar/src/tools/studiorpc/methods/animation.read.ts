@@ -35,10 +35,10 @@ export const description =
   'copy /Temp/AnimationAssets/Asset_<id> (openedFrom "copy", keys baked per frame where the motion needs them). ' +
   "Edit it with studiorpc_animation_write and the returned assetPath; the id keeps pointing at the old version " +
   "until you publish again and put the new id where the old one was used.\n" +
-  "No image unless you pass `preview` with assetPath or assetId: true = default frames (0, N/4, N/2, 3N/4, N), both views " +
-  'and a MOTION column; or { frames: [up to 12 integer frames], views: ["front", "side"], motion: false } to ' +
+  "No image unless you pass `preview` with assetPath or assetId: true = default frames (0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames), both views " +
+  'and a MOTION column; or { frames: [up to 22 integer frames], views: ["front", "side"], motion: false } to ' +
   "look closely at specific frames. Leave optional fields out when you do not use them (blank strings and " +
-  "preview false count as not given). The PNG comes back as an image: rows = views (front first, then side), " +
+  "preview false count as not given). The PNG comes back as an image: blocks = up to six frames in order, each with front/side rows; " +
   "columns = frames in order (each labeled), then MOTION: the clip onion-skinned (earlier = fainter) with the " +
   "paths of right hand (red), left hand (blue), right foot (orange), left foot (cyan), head (yellow). " +
   "preview.floor checks the skinned mesh against the floor (z = 0) on every frame: belowFloor ranges (sinking), " +

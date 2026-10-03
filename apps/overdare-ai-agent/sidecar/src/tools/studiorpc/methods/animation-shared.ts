@@ -49,9 +49,11 @@ const previewOptions = z
   .object({
     frames: z
       .array(z.number().int().min(0))
-      .max(12)
+      .max(22)
       .optional()
-      .describe("Frames to render, one column each, in this order. Default 0, N/4, N/2, 3N/4, N."),
+      .describe(
+        "Frames to render in order, up to six per block. Default 0%, 20%, 40%, 60%, 80%, 100%, rounded to distinct integer frames.",
+      ),
     views: z
       .array(z.enum(["front", "side"]))
       .max(2)

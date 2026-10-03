@@ -83,7 +83,7 @@ describe("animation params", () => {
     expect(
       animationWrite.params.safeParse({
         animation: CONTRACT_ANIMATION,
-        preview: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+        preview: { frames: Array.from({ length: 23 }, (_, i) => i) },
       }).success,
     ).toBe(false);
     expect(
@@ -104,7 +104,7 @@ describe("animation params", () => {
         { bone: "RightHand", frames: [0, 10] },
         { bone: "LeftFoot", frames: [5, 20], position: [10, 0, 0], flat: true },
       ],
-      preview: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], motion: false },
+      preview: { frames: Array.from({ length: 22 }, (_, i) => i), motion: false },
     };
     expect(animationWrite.params.safeParse(pinned).success).toBe(true);
     expect(
