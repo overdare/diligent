@@ -6,6 +6,7 @@
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
     { "name": "character-animation", "entry": "character-animation" },
+    { "name": "custom-character", "entry": "custom-character" },
     { "name": "geometry-recipe", "entry": "geometry-recipe" },
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
