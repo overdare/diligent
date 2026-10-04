@@ -43,9 +43,10 @@ HumanoidRootPart displacement and target arrival on client and authority with
 studiorpc_game_observe; changing poses alone do not prove movement. Do not repeatedly
 assign HumanoidRootPart Position/CFrame as a movement loop.
 
-Check heading as well as displacement. The existing character mesh has a -90-degree
-Unreal Z rotation and expects mesh-space +Y forward. Author in that basis or align
-an imported rig through its existing root Bone.CFrame; the correction depends on the
-authored forward axis. Save and reopen to prove root alignment persists. Inspect
+Check heading as well as displacement. The v1 authoring travel/contact verification
+uses mesh-space +X forward and Unreal +Z up; keep authored geometry, rig and motion
+in that basis. The existing gameplay character mesh has a -90-degree Unreal Z
+rotation and expects mesh-space +Y forward. Align the imported +X rig through its
+existing root Bone.CFrame. Save and reopen to prove root alignment persists. Inspect
 component/world bone transforms, rather than parent-local animation poses, for this.
 Remote world publishing and a deployed client require their own evidence.
