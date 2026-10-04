@@ -14,23 +14,25 @@ coordinate spaces: authoring uses Unreal Z-up centimetres; Lua uses Y-up centime
 Use `authored_v1` for both rig and motion and hash the exact UTF-8 source bytes.
 
 Call `studiorpc_proceduralcharacter_build` with `commit=false`. Inspect actual rendered
-images from `studiorpc_proceduralcharacter_observe`, weights and measured motion.
+images from `studiorpc_proceduralcharacter_inspect` with `mode=observation`, weights and measured motion.
 Check silhouette, joint deformation, contact, loop continuity and the requested action.
 A saved draft is not a quality verdict. Revise using a new request ID as needed.
 Run the public runner's `verify-source` and `verify-cooked` commands in fresh processes,
 then commit the exact source, geometry, rig and animation revisions that were reviewed.
 Preserve existing characters by creating a separate target unless replacement was requested.
 
-Open an ordinary map, stop PIE and call `studiorpc_proceduralcharacter_install`.
-It saves map-local `/User` dependencies and the ID table. Add the `runtimeLuaModuleSource`
-returned by the API as a ModuleScript. A server Script should call `Character.create`
-with the returned `meshId` and `skeletonId`, then `Character.play` with `animationId`.
-This uses the normal custom Skeleton + MeshPart + Humanoid/Animator runtime.
+Open an ordinary map and stop PIE. Export the exact reviewed revisions with
+`studiorpc_proceduralcharacter_export`. Pass the returned FBX to the existing
+`studiorpc_asset_manager_import`. It normally places the imported model under Workspace.
+Inspect that hierarchy first; use `studiorpc_asset_drawer_import` with the real numeric
+`ovdrassetid://` MODEL ID only if it is absent. Avoid placing a duplicate. Inspect the
+existing Model, MeshPart, Skeleton, Humanoid, Animator and Animation instances.
+Do not use local ID tables as the final asset or create another runtime system.
 
-Save and play. Read `studiorpc_proceduralcharacter_runtime` on both client and authority.
-Compare samples: the actual generated mesh and skeleton must be present, animation time
-must advance and bone poses must change. Verify pause/speed/stop/restart when relevant.
-Reopen the saved map and repeat. Inspect a screenshot as well as runtime measurements.
-`proceduralcharacter.showcase` is a native diagnostic preview and is not this Lua proof.
-Remote publishing and a deployed client require their own evidence; local IDs are scoped
-to the installed map and do not imply an uploaded marketplace asset.
+Add a server Script that finds the saved Workspace model and uses the existing
+Animator.LoadAnimation, Animation.AnimationId and AnimationTrack.Play APIs.
+Save and play. Read `studiorpc_proceduralcharacter_inspect` with `mode=runtime` on client and authority.
+The imported custom mesh/skeleton must be present, time must advance and bone poses
+must change. Verify pause/speed/stop/restart when relevant. Reopen the saved map and
+repeat. Inspect a screenshot as well as runtime measurements.
+Remote world publishing and a deployed client require their own evidence.

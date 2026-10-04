@@ -2,7 +2,10 @@
 import { z } from "zod";
 
 const buildId = z.string().regex(/^[A-Fa-f0-9]{32}$/);
-const hash = z.string().regex(/^[A-Fa-f0-9]{40}$/);
+const hash = z
+  .string()
+  .regex(/^[A-Fa-f0-9]{40}$/)
+  .transform((value) => value.toUpperCase());
 const revisions = z
   .object({ sourceRevision: hash, geometryHash: hash, rigRevision: hash, animationRevision: hash })
   .strict();
@@ -11,7 +14,7 @@ export const api = {
   method: "proceduralcharacter.api",
   readOnly: true,
   description:
-    "Read the live non-ODA custom character contract, rig/weight/motion schemas and Lua runtime module. Use for arbitrary creatures, animals or custom skeletal characters. The agent authors anatomy and motion; Studio imports, measures, renders and saves it. Read proceduralmodel.api for geometry functions. ODA costume templates and animation.read/write are separate workflows.",
+    "Read the live non-ODA custom character contract, rig/weight/motion schemas and existing Lua instance contract. Use for arbitrary creatures, animals or custom skeletal characters. The agent authors anatomy and motion; Studio imports, measures, renders and saves it. Read proceduralmodel.api for geometry functions. ODA costume templates and animation.read/write are separate workflows.",
   params: z.object({}).strict(),
 };
 export const build = {
@@ -33,7 +36,7 @@ export const build = {
           recipeRevision: hash,
         })
         .strict(),
-      target: z.object({ kind: z.literal("new_custom_character"), name: z.string().min(1).max(128) }).strict(),
+      target: z.object({ kind: z.literal("new_custom_character"), name: z.string().min(1).max(64) }).strict(),
       rigProfile: z.literal("authored_v1"),
       motion: z
         .object({ preset: z.literal("authored_v1"), speedCmPerSec: z.number().finite().positive().max(1000) })
@@ -48,62 +51,43 @@ export const build = {
       "Commit requires the four reviewed revisions",
     ),
 };
-export const read = {
-  method: "proceduralcharacter.read",
-  readOnly: true,
-  description:
-    "Read a saved non-ODA build manifest, revisions, asset IDs and diagnostics. A timed-out build may have completed; read its known buildId before retrying. preview_ready is a draft.",
-  params: z.object({ buildId }).strict(),
-};
-export const observe = {
-  method: "proceduralcharacter.observe",
-  timeoutMs: 900_000,
-  description:
-    "Render and measure the exact reviewed non-ODA draft: anatomy, isolated bone deformation, bends, contact sheet, side view or world travel. Inspect the returned actual image files and metrics; generated source or a success flag alone is not animation quality evidence.",
-  params: z
-    .object({
-      buildId,
-      scenario: z.enum([
-        "rest_views",
-        "single_bone_pose",
-        "knee_bend_45",
-        "knee_bend_90",
-        "walk_contact_sheet",
-        "walk_side",
-        "world_travel",
-      ]),
-      expectedRevision: revisions,
-    })
-    .strict(),
-};
-export const install = {
-  method: "proceduralcharacter.install",
+export const exportAsset = {
+  method: "proceduralcharacter.export",
   timeoutMs: 120_000,
   description:
-    "Install a saved custom character into the current ordinary map. Exports portable /User packages and an ID table with cook dependencies, preserves other map assets, rejects collisions and saves the level. Then add the Lua module returned by proceduralcharacter.api and create a custom MeshPart + SkeletonId + Humanoid/Animator; AnimationId drives Animator:LoadAnimation and track:Play. Stop PIE first. No native preview actor or ODA avatar is created.",
-  params: z.object({ buildId }).strict(),
+    "Export the committed, reviewed mesh, skeleton, skin weights and animation keys as FBX using Studio's existing exporter. Then use asset_manager.import to publish and place existing Lua instances under Workspace with real ovdrassetid:// references; inspect Workspace before using asset_drawer.import again. No alternate runtime, local ID table or native preview actor is installed. Stop PIE first.",
+  params: z.object({ buildId, expectedRevision: revisions }).strict(),
 };
-export const runtime = {
-  method: "proceduralcharacter.runtime",
+export const inspect = {
+  method: "proceduralcharacter.inspect",
   readOnly: true,
-  description:
-    "Inspect a named live non-ODA Lua Model on the client or authority: actual mesh/skeleton, animation instance, material paths, bone poses and AnimationTrack source, time and play state. Use two samples to verify actual bone movement and track progress, and Stop/AdjustSpeed behavior. Requires PIE; ambiguous names fail. Native showcase playback is separate.",
-  params: z.object({ modelName: z.string().min(1), world: z.enum(["client", "authority"]).optional() }).strict(),
-};
-export const showcase = {
-  method: "proceduralcharacter.showcase",
-  timeoutMs: 120_000,
-  description:
-    "Create a separate native diagnostic viewing map for a custom character, optionally with another build. This preview does not prove normal Lua runtime playback. For a game, install into an ordinary map and verify proceduralcharacter.runtime. Opening changes the Studio session; reconnect afterward.",
-  params: z
-    .object({ buildId, compareBuildId: buildId.optional(), open: z.boolean().optional(), play: z.boolean().optional() })
-    .strict(),
-};
-
-export const cook = {
-  method: "proceduralcharacter.cook",
   timeoutMs: 900_000,
   description:
-    "Locally cook the saved ordinary map and its /User dependency closure, including Lua scripts and installed non-ODA assets, to Windows packages. Stop PIE and save first. Requires Studio launched with r.ShaderCompiler.JobCacheDDC=0. Returns the package manifest and cooked map file; uploaded=false and runtimeVerified=false. This performs no remote publishing and is not runtime playback proof. Reopen the cooked output in a fresh test process and verify actual Lua Animator playback separately.",
-  params: z.object({}).strict(),
+    "Inspect a non-ODA character: mode=build reads a saved manifest; mode=observation renders and measures the exact reviewed revisions; mode=runtime inspects a named live Workspace Model on client or authority. Inspect actual images and compare runtime samples for changing bone poses and advancing track time. Runtime requires PIE. This is the single character inspection tool.",
+  params: z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("build"), buildId }).strict(),
+    z
+      .object({
+        mode: z.literal("observation"),
+        buildId,
+        scenario: z.enum([
+          "rest_views",
+          "single_bone_pose",
+          "knee_bend_45",
+          "knee_bend_90",
+          "walk_contact_sheet",
+          "walk_side",
+          "world_travel",
+        ]),
+        expectedRevision: revisions,
+      })
+      .strict(),
+    z
+      .object({
+        mode: z.literal("runtime"),
+        modelName: z.string().min(1),
+        world: z.enum(["client", "authority"]).optional(),
+      })
+      .strict(),
+  ]),
 };
