@@ -8,7 +8,7 @@ import * as character from "../../../../src/tools/studiorpc/methods/proceduralch
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
-  test("routes the installed public tool to the non-ODA RPC and saves only after success", async () => {
+  test("exports the reviewed authored data without installing an alternate runtime in the map", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "nonoda-tools-"));
     const calls: string[] = [];
     let fail = false;
@@ -17,33 +17,76 @@ describe("non-ODA character authoring", () => {
         cwd,
         callRpc: async (method) => {
           calls.push(method);
-          if (fail && method === character.install.method) throw new Error("Asset ID collision");
+          if (fail && method === character.exportAsset.method) throw new Error("Revision conflict");
           return { success: true };
         },
       });
-      const install = tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_install")!;
-      expect(install).toBeDefined();
-      const context = { toolCallId: "install", signal: new AbortController().signal, abort: () => {} };
-      await install.execute({ buildId: "C01720384F323DA56E74F6B61AF0A57A" }, context);
-      expect(calls).toEqual([character.install.method, "level.save.file"]);
+      const exportTool = tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_export")!;
+      expect(exportTool).toBeDefined();
+      const context = { toolCallId: "export", signal: new AbortController().signal, abort: () => {} };
+      const args = {
+        buildId: "C01720384F323DA56E74F6B61AF0A57A",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+      };
+      await exportTool.execute(args, context);
+      expect(calls).toEqual([character.exportAsset.method]);
       fail = true;
       calls.length = 0;
-      await expect(install.execute({ buildId: "C01720384F323DA56E74F6B61AF0A57A" }, context)).rejects.toThrow(
-        "Asset ID collision",
-      );
-      expect(calls).toEqual([character.install.method]);
+      await expect(exportTool.execute(args, context)).rejects.toThrow("Revision conflict");
+      expect(calls).toEqual([character.exportAsset.method]);
+      expect(tools.find((tool) => tool.name === "studiorpc_asset_manager_import")).toBeDefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_asset_drawer_import")).toBeDefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_install")).toBeUndefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_cook")).toBeUndefined();
+      expect(tools.filter((tool) => tool.name.startsWith("studiorpc_proceduralcharacter_"))).toHaveLength(4);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
-  test("registers authoring, installation and actual Lua runtime inspection together", () => {
+  test("registers authoring, export and actual Lua runtime inspection together", () => {
     for (const tool of Object.values(character)) {
       if (typeof tool !== "object" || !("method" in tool)) continue;
       expect(methodModules.find((entry) => entry.method === tool.method)).toBe(tool);
     }
-    expect(mutatingMethods.has(character.install.method)).toBe(true);
-    expect(savingMethods.has(character.install.method)).toBe(true);
+    expect(mutatingMethods.has(character.exportAsset.method)).toBe(false);
+    expect(savingMethods.has(character.exportAsset.method)).toBe(false);
     expect(mutatingMethods.has(character.build.method)).toBe(false);
+  });
+  test("routes all inspection modes through one read-only tool without saving the map", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { inspected: true };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_inspect")!;
+    const context = { toolCallId: "inspect", signal: new AbortController().signal, abort: () => {} };
+    const requests = [
+      { mode: "build", buildId: "A".repeat(32) },
+      { mode: "runtime", modelName: "Creature", world: "authority" },
+      {
+        mode: "observation",
+        buildId: "A".repeat(32),
+        scenario: "rest_views",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+      },
+    ];
+    for (const request of requests) await tool.execute(request, context);
+    expect(calls).toEqual(requests.map((params) => ({ method: "proceduralcharacter.inspect", params })));
+    expect(mutatingMethods.has(character.inspect.method)).toBe(false);
+    expect(savingMethods.has(character.inspect.method)).toBe(false);
   });
   test("accepts authored geometry, arbitrary rig and motion and rejects ODA body profiles", () => {
     const request = {
@@ -60,6 +103,16 @@ describe("non-ODA character authoring", () => {
       commit: false,
     };
     expect(character.build.params.parse(request)).toEqual(request);
+    expect(
+      character.build.params.safeParse({ ...request, target: { ...request.target, name: "A".repeat(64) } }).success,
+    ).toBe(true);
+    expect(
+      character.build.params.safeParse({ ...request, target: { ...request.target, name: "A".repeat(65) } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.parse({ ...request, source: { ...request.source, recipeRevision: "a".repeat(40) } }).source
+        .recipeRevision,
+    ).toBe("A".repeat(40));
     expect(character.build.params.safeParse({ ...request, bodyProfile: "oda.default.v1" }).success).toBe(false);
     expect(character.build.params.safeParse({ ...request, commit: true }).success).toBe(false);
     expect(
@@ -73,14 +126,31 @@ describe("non-ODA character authoring", () => {
       rigRevision: "C".repeat(40),
       animationRevision: "D".repeat(40),
     };
-    const request = { buildId: "C01720384F323DA56E74F6B61AF0A57A", scenario: "walk_contact_sheet", expectedRevision };
-    expect(character.observe.params.parse(request)).toEqual(request);
+    const request = {
+      mode: "observation",
+      buildId: "C01720384F323DA56E74F6B61AF0A57A",
+      scenario: "walk_contact_sheet",
+      expectedRevision,
+    };
+    expect(character.inspect.params.parse(request)).toEqual(request);
     expect(
-      character.observe.params.safeParse({
+      character.inspect.params.safeParse({
         ...request,
         expectedRevision: { ...expectedRevision, animationRevision: "stale" },
       }).success,
     ).toBe(false);
-    expect(character.runtime.params.safeParse({ modelName: "Creature", world: "editor" }).success).toBe(false);
+    expect(character.inspect.params.parse({ mode: "build", buildId: request.buildId })).toEqual({
+      mode: "build",
+      buildId: request.buildId,
+    });
+    expect(character.inspect.params.parse({ mode: "runtime", modelName: "Creature", world: "client" })).toEqual({
+      mode: "runtime",
+      modelName: "Creature",
+      world: "client",
+    });
+    expect(
+      character.inspect.params.safeParse({ mode: "runtime", modelName: "Creature", world: "editor" }).success,
+    ).toBe(false);
+    expect(character.inspect.params.safeParse({ mode: "runtime", buildId: request.buildId }).success).toBe(false);
   });
 });

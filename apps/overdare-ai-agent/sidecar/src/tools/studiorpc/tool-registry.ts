@@ -23,12 +23,8 @@ import * as levelSaveFile from "./methods/level.save.file";
 import {
   api as characterApi,
   build as characterBuild,
-  cook as characterCook,
-  install as characterInstall,
-  observe as characterObserve,
-  read as characterRead,
-  runtime as characterRuntime,
-  showcase as characterShowcase,
+  exportAsset as characterExport,
+  inspect as characterInspect,
 } from "./methods/proceduralcharacter";
 import * as proceduralModelApi from "./methods/proceduralmodel.api";
 import * as proceduralModelRun from "./methods/proceduralmodel.run";
@@ -86,12 +82,8 @@ type RenderBuilder = (ctx: {
 export const methodModules: MethodModule[] = [
   characterApi,
   characterBuild,
-  characterRead,
-  characterObserve,
-  characterInstall,
-  characterRuntime,
-  characterShowcase,
-  characterCook,
+  characterInspect,
+  characterExport,
   actionSequenceRead,
   proceduralModelApi,
   proceduralModelValidate,
@@ -122,14 +114,13 @@ export const methodModules: MethodModule[] = [
 // also uploads a copy), not the level, so a level rollback snapshot would not cover them and a level.save.file
 // afterwards would save unrelated edits.
 export const mutatingMethods = new Set([
-  characterInstall.method,
   proceduralModelSet.method,
   assetDrawerImport.method,
   assetManagerImport.method,
   gameSettingsUpdate.method,
   rigBuilderInsert.method,
 ]);
-export const savingMethods = new Set([characterInstall.method, assetDrawerImport.method, assetManagerImport.method, gameSettingsUpdate.method]);
+export const savingMethods = new Set([assetDrawerImport.method, assetManagerImport.method, gameSettingsUpdate.method]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
