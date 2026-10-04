@@ -21,7 +21,7 @@ export const build = {
   method: "proceduralcharacter.build",
   timeoutMs: 900_000,
   description:
-    "Build agent-authored geometry, rig weights and animation from a Python recipe using authored_v1. Read proceduralcharacter.api first. commit=false creates a saved draft with real observation images and Windows cooked assets; it is not completion. Inspect images, run the returned fresh-process verification commands, then commit the exact four reviewed revisions. This does not install into the map or publish remotely. Preserve the original requestId and inputs for commit; a changed recipe needs a new requestId.",
+    "Build agent-authored geometry, rig weights and animation from a Python recipe using authored_v1. Read proceduralcharacter.api first. commit=false creates saved authoring source with real observation images; it is not completion. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Final assets still require existing FBX import/upload and saved-map Lua playback verification. This does not install into the map or publish remotely. Preserve the original requestId and inputs for commit; a changed recipe needs a new requestId.",
   params: z
     .object({
       requestId: z.string().min(1).max(128),

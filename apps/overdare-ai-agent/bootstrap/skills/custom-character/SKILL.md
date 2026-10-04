@@ -17,8 +17,10 @@ Call `studiorpc_proceduralcharacter_build` with `commit=false`. Inspect actual r
 images from `studiorpc_proceduralcharacter_inspect` with `mode=observation`, weights and measured motion.
 Check silhouette, joint deformation, contact, loop continuity and the requested action.
 A saved draft is not a quality verdict. Revise using a new request ID as needed.
-Run the public runner's `verify-source` and `verify-cooked` commands in fresh processes,
+Run the public runner's `verify-source` command in a fresh process,
 then commit the exact source, geometry, rig and animation revisions that were reviewed.
+This verifies authoring source only. Final assets use the existing FBX import/upload
+pipeline and require the saved-map Lua runtime checks below; do not add a private cooker.
 Preserve existing characters by creating a separate target unless replacement was requested.
 
 Open an ordinary map and stop PIE. Export the exact reviewed revisions with
