@@ -33,6 +33,19 @@ Add a server Script that finds the saved Workspace model and uses the existing
 Animator.LoadAnimation, Animation.AnimationId and AnimationTrack.Play APIs.
 Save and play. Read `studiorpc_proceduralcharacter_inspect` with `mode=runtime` on client and authority.
 The imported custom mesh/skeleton must be present, time must advance and bone poses
-must change. Verify pause/speed/stop/restart when relevant. Reopen the saved map and
+must change. Parent-local poses show animation keys; component/world poses include
+existing Bone customization and are the evidence for rendered root alignment. Verify pause/speed/stop/restart when relevant. Reopen the saved map and
 repeat. Inspect a screenshot as well as runtime measurements.
+For a moving NPC, drive the existing Humanoid from a server Script with MoveTo and
+MoveToFinished. Wait for its RootPart binding, set WalkSpeed to the authored motion
+speed, and start/stop the existing AnimationTrack with movement and arrival. Observe
+HumanoidRootPart displacement and target arrival on client and authority with
+studiorpc_game_observe; changing poses alone do not prove movement. Do not repeatedly
+assign HumanoidRootPart Position/CFrame as a movement loop.
+
+Check heading as well as displacement. The existing character mesh has a -90-degree
+Unreal Z rotation and expects mesh-space +Y forward. Author in that basis or align
+an imported rig through its existing root Bone.CFrame; the correction depends on the
+authored forward axis. Save and reopen to prove root alignment persists. Inspect
+component/world bone transforms, rather than parent-local animation poses, for this.
 Remote world publishing and a deployed client require their own evidence.
