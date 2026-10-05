@@ -8,6 +8,45 @@ import * as character from "../../../../src/tools/studiorpc/methods/proceduralch
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("forwards native publication on the existing export tool and retains issued IDs", async () => {
+    const request = {
+      mode: "publish",
+      buildId: "A".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const issued = {
+      uploaded: true,
+      assets: [
+        { role: "skeleton", assetId: "ovdrassetid://123" },
+        { role: "mesh", assetId: "ovdrassetid://124" },
+      ],
+    };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return issued;
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_export")!;
+    const result = await tool.execute(request, {
+      toolCallId: "native-publish",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: character.exportAsset.method, params: request }]);
+    expect(JSON.stringify(result)).toContain("ovdrassetid://123");
+    expect(JSON.stringify(result)).toContain("ovdrassetid://124");
+    expect(character.exportAsset.params.safeParse({ ...request, mode: "native_parts" }).success).toBe(false);
+    expect(character.exportAsset.params.safeParse({ ...request, expectedRevision: undefined }).success).toBe(false);
+    expect(savingMethods.has(character.exportAsset.method)).toBe(false);
+  });
   test("keeps external interchange on the existing FBX export contract", () => {
     const request = {
       buildId: "A".repeat(32),
