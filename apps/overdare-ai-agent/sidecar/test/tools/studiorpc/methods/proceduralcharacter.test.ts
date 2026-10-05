@@ -8,6 +8,78 @@ import * as character from "../../../../src/tools/studiorpc/methods/proceduralch
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("adds motion to an inspected original rig without accepting replacement rig or recipe controls", async () => {
+    const request = {
+      requestId: "original-rig-new-clip",
+      source: { kind: "existing_rig", guid: "A".repeat(32), rigRevision: "B".repeat(40) },
+      target: { kind: "animation_only", name: "NewClip" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    await tools
+      .find((tool) => tool.name === "studiorpc_proceduralcharacter_build")!
+      .execute(request, { toolCallId: "preserved-rig", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(character.build.params.safeParse({ ...request, rig: {} }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...request, overrides: { size: 2 } }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, source: { ...request.source, rigRevision: "stale" } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, target: { kind: "new_custom_character", name: "Replacement" } })
+        .success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({
+        ...request,
+        source: { kind: "static_model", guid: "A".repeat(32), geometryRevision: "B".repeat(40) },
+      }).success,
+    ).toBe(false);
+  });
+  test("requires the reviewed publication and hierarchy for explicit apply on the existing build tool", async () => {
+    const request = {
+      mode: "apply",
+      buildId: "A".repeat(32),
+      publicationId: "F".repeat(32),
+      expectedRevision: {
+        sourceRevision: "B".repeat(40),
+        geometryHash: "C".repeat(40),
+        rigRevision: "D".repeat(40),
+        animationRevision: "E".repeat(40),
+      },
+      expectedSourceGraphRevision: "F".repeat(40),
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    for (const field of ["publicationId", "expectedRevision", "expectedSourceGraphRevision"] as const) {
+      const missing: Record<string, unknown> = { ...request };
+      delete missing[field];
+      expect(character.build.params.safeParse(missing).success).toBe(false);
+    }
+    expect(character.build.params.safeParse({ ...request, targetName: "Unreviewed" }).success).toBe(false);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { applied: true, modelGuid: "1".repeat(32) };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    await tool.execute(request, { toolCallId: "native-apply", signal: new AbortController().signal, abort: () => {} });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+  });
   test("forwards native publication on the existing export tool and retains issued IDs", async () => {
     const request = {
       mode: "publish",
@@ -81,6 +153,15 @@ describe("non-ODA character authoring", () => {
     const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
     await tool.execute(request, { toolCallId: "static-build", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    const baked = { ...request, source: { ...request.source, kind: "procedural_model" } };
+    await tool.execute(baked, {
+      toolCallId: "baked-model-build",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls[1]).toEqual({ method: character.build.method, params: baked });
+    expect(character.build.params.safeParse({ ...baked, rig: undefined }).success).toBe(false);
+    expect(character.build.params.safeParse({ ...baked, overrides: { size: 2 } }).success).toBe(false);
     expect(character.build.params.safeParse({ ...request, rig: undefined }).success).toBe(false);
     expect(
       character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
