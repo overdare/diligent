@@ -89,10 +89,10 @@ export const build = {
 };
 export const exportAsset = {
   method: "proceduralcharacter.export",
-  timeoutMs: 120_000,
+  timeoutMs: 900_000,
   description:
-    "Export committed reviewed assets through Studio's existing FBX exporter. External interchange may combine meshes sharing one Skeleton. Then use asset_manager.import with the returned file to upload/place ordinary Workspace Lua instances with real ovdrassetid:// references. Inspect Workspace before another placement. Stop PIE first.",
-  params: z.object({ buildId, expectedRevision: revisions }).strict(),
+    "Export a committed reviewed character. mode=publish uploads separate native mesh parts and animation through the existing asset publisher, with their common Skeleton first, and returns real ovdrassetid:// references. Inspect the build's nativePublication for partial issued IDs if upload fails. Publication does not place a model in Workspace. Default mode=fbx uses the existing FBX exporter for external interchange, which may combine meshes sharing one Skeleton; use the returned file with asset_manager.import. Stop PIE first.",
+  params: z.object({ buildId, expectedRevision: revisions, mode: z.enum(["fbx", "publish"]).optional() }).strict(),
 };
 export const inspect = {
   method: "proceduralcharacter.inspect",
