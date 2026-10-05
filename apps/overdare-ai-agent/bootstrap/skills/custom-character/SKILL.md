@@ -13,19 +13,42 @@ parts, `rig.json` and `motion.json` using the live contract. Respect the declare
 coordinate spaces: authoring uses Unreal Z-up centimetres; Lua uses Y-up centimetres.
 Use `authored_v1` for both rig and motion and hash the exact UTF-8 source bytes.
 
+An existing ProceduralModel can supply the recipe: use
+`source: {kind: "procedural_model", guid: "MODEL_GUID"}` in the same build tool.
+Studio captures its Source, Size and declared typed attributes on the first request.
+The recipe still needs explicit rig weights and motion; a geometry-only recipe is
+not automatically rigged. Record `OVDR_PARAMS["attributes"]` in `rig.json.parameters`
+and `OVDR_PARAMS["size"]` in `rig.json.size` to preserve the exact serialized types
+and recipe-axis dimensions. Numeric overrides are merged over the captured attributes.
+Retries and commit reuse the saved snapshot without reading or changing the model.
+Use a new request ID to capture changed source, dimensions or attributes.
+
+For a normally imported static Model, inspect it with `mode=source` first. Use the
+returned `source: {kind: "static_model", guid, geometryRevision}` in the same build
+tool, supply the authored rig as `rig` and authored motion as `motion.document`.
+Use part GUIDs as rig region keys and the inspection's final vertex IDs for explicit
+weights; positions use the common Model frame in Unreal Z-up centimetres. Built
+sources use exact rendered LOD0, including importer-generated normals. Static
+geometry executes no recipe and accepts no recipe overrides. A changed inspected
+revision is rejected before binding. The saved Bundle preserves the geometry's
+vertex layout, part provenance and generated material references. Inspect the
+live API for schema details and input limits. ODA FBX animation import is unchanged.
+
 Call `studiorpc_proceduralcharacter_build` with `commit=false`. Inspect actual rendered
 images from `studiorpc_proceduralcharacter_inspect` with `mode=observation`, weights and measured motion.
 Check silhouette, joint deformation, contact, loop continuity and the requested action.
 A saved draft is not a quality verdict. Revise using a new request ID as needed.
 Run the public runner's `verify-source` command in a fresh process,
 then commit the exact source, geometry, rig and animation revisions that were reviewed.
-This verifies authoring source only. Final assets use the existing FBX import/upload
+This verifies authoring source only. Final assets use the existing normal import/upload
 pipeline and require the saved-map Lua runtime checks below; do not add a private cooker.
 Preserve existing characters by creating a separate target unless replacement was requested.
 
 Open an ordinary map and stop PIE. Export the exact reviewed revisions with
-`studiorpc_proceduralcharacter_export`. Pass the returned FBX to the existing
-`studiorpc_asset_manager_import`. It normally places the imported model under Workspace.
+`studiorpc_proceduralcharacter_export`. It uses the existing FBX exporter; external
+interchange may combine meshes sharing one Skeleton. Internal part assets remain
+in memory and do not require an intermediate import file. Pass the returned FBX
+to the existing `studiorpc_asset_manager_import`. It normally places the imported model under Workspace.
 Inspect that hierarchy first; use `studiorpc_asset_drawer_import` with the real numeric
 `ovdrassetid://` MODEL ID only if it is absent. Avoid placing a duplicate. Inspect the
 existing Model, MeshPart, Skeleton, Humanoid, Animator and Animation instances.

@@ -74,6 +74,13 @@ The ProceduralModel owns the generation Source and renders it live; asset ids ar
 issued at publish, not on each pass. An Editor return is authored by your code, not
 an automatic report of the later bake.
 
+For non-ODA rigging and animation, read `studiorpc_proceduralcharacter_api` and the
+`custom-character` skill. The existing `proceduralcharacter.build` accepts this
+ProceduralModel's GUID and freezes its Source, Size and typed attributes for a
+separate character draft. Its recipe must explicitly emit the requested rig,
+weights and motion; the bridge does not infer them. It leaves the source model
+unchanged and retains the normal FBX import/upload and Lua playback workflow.
+
 ## Judge on the numbers before the picture
 
 Use observed part data or native diagnostics when available. The Editor tool does

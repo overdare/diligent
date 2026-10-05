@@ -21,31 +21,67 @@ export const build = {
   method: "proceduralcharacter.build",
   timeoutMs: 900_000,
   description:
-    "Build agent-authored geometry, rig weights and animation from a Python recipe using authored_v1. Read proceduralcharacter.api first. commit=false creates saved authoring source with real observation images; it is not completion. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Final assets still require existing FBX import/upload and saved-map Lua playback verification. This does not install into the map or publish remotely. Preserve the original requestId and inputs for commit; a changed recipe needs a new requestId.",
+    "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. Procedural inputs author rig.json and motion.json in the recipe. static_model requires the inspected geometryRevision plus direct rig and motion.document objects from the live API schema; stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. Read proceduralcharacter.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Final assets require existing FBX import/upload and saved-map Lua playback verification. This does not change the source model or install into the map.",
   params: z
     .object({
       requestId: z.string().min(1).max(128),
-      source: z
-        .object({
-          kind: z.literal("procedural_recipe"),
-          recipeId: z.string().min(1),
-          recipeSource: z
-            .string()
-            .min(1)
-            .refine((source) => Buffer.byteLength(source, "utf8") <= 256 * 1024, "Recipe exceeds 256 KiB"),
-          recipeRevision: hash,
-        })
-        .strict(),
+      source: z.discriminatedUnion("kind", [
+        z
+          .object({
+            kind: z.literal("procedural_recipe"),
+            recipeId: z.string().min(1),
+            recipeSource: z
+              .string()
+              .min(1)
+              .refine((source) => Buffer.byteLength(source, "utf8") <= 256 * 1024, "Recipe exceeds 256 KiB"),
+            recipeRevision: hash,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("procedural_model"),
+            guid: z.string().regex(/^(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})$/),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("static_model"),
+            guid: z.string().regex(/^(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})$/),
+            geometryRevision: hash,
+          })
+          .strict(),
+      ]),
       target: z.object({ kind: z.literal("new_custom_character"), name: z.string().min(1).max(64) }).strict(),
       rigProfile: z.literal("authored_v1"),
+      rig: z.record(z.string(), z.unknown()).optional(),
       motion: z
-        .object({ preset: z.literal("authored_v1"), speedCmPerSec: z.number().finite().positive().max(1000) })
+        .object({
+          preset: z.literal("authored_v1"),
+          speedCmPerSec: z.number().finite().positive().max(1000),
+          document: z.record(z.string(), z.unknown()).optional(),
+        })
         .strict(),
       overrides: z.record(z.string(), z.number().finite()).optional(),
       commit: z.boolean(),
       expectedRevision: revisions.optional(),
     })
     .strict()
+    .superRefine((request, context) => {
+      if (request.source.kind === "static_model") {
+        if (!request.rig || !request.motion.document) {
+          context.addIssue({ code: "custom", message: "static_model requires rig and motion.document" });
+        }
+        if (request.overrides && Object.keys(request.overrides).length) {
+          context.addIssue({ code: "custom", message: "Recipe overrides do not apply to static geometry" });
+        }
+        const input = { source: request.source, rig: request.rig, motion: request.motion };
+        if (Buffer.byteLength(JSON.stringify(input), "utf8") > 2 * 1024 * 1024) {
+          context.addIssue({ code: "custom", message: "Static authoring documents exceed 2 MiB" });
+        }
+      } else if (request.rig || request.motion.document) {
+        context.addIssue({ code: "custom", message: "Procedural sources author rig and motion in their recipe" });
+      }
+    })
     .refine(
       (request) => !request.commit || request.expectedRevision !== undefined,
       "Commit requires the four reviewed revisions",
@@ -55,7 +91,7 @@ export const exportAsset = {
   method: "proceduralcharacter.export",
   timeoutMs: 120_000,
   description:
-    "Export the committed, reviewed mesh, skeleton, skin weights and animation keys as FBX using Studio's existing exporter. Then use asset_manager.import to publish and place existing Lua instances under Workspace with real ovdrassetid:// references; inspect Workspace before using asset_drawer.import again. No alternate runtime, local ID table or native preview actor is installed. Stop PIE first.",
+    "Export committed reviewed assets through Studio's existing FBX exporter. External interchange may combine meshes sharing one Skeleton. Then use asset_manager.import with the returned file to upload/place ordinary Workspace Lua instances with real ovdrassetid:// references. Inspect Workspace before another placement. Stop PIE first.",
   params: z.object({ buildId, expectedRevision: revisions }).strict(),
 };
 export const inspect = {
@@ -63,8 +99,17 @@ export const inspect = {
   readOnly: true,
   timeoutMs: 900_000,
   description:
-    "Inspect a non-ODA character: mode=build reads a saved manifest; mode=observation renders and measures the exact reviewed revisions; mode=runtime inspects a named live Workspace Model on client or authority. Inspect actual images and compare runtime samples for changing bone poses and advancing track time. Runtime requires PIE. This is the single character inspection tool.",
+    "Inspect a non-ODA character: mode=source reads an imported static Model in the editing map, returning part identities, local placements, material slots, common-space bounds and optional paged final vertex IDs/positions for authored weights. Stop PIE before source inspection. mode=build reads a saved manifest; mode=observation renders and measures the exact reviewed revisions; mode=runtime inspects a named live Workspace Model on client or authority. Inspect actual images and compare runtime samples for changing bone poses and advancing track time. Runtime requires PIE. This is the single character inspection tool.",
   params: z.discriminatedUnion("mode", [
+    z
+      .object({
+        mode: z.literal("source"),
+        guid: z.string().regex(/^(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})$/),
+        region: buildId.optional(),
+        vertexOffset: z.number().int().nonnegative().optional(),
+        vertexCount: z.number().int().positive().max(1024).optional(),
+      })
+      .strict(),
     z.object({ mode: z.literal("build"), buildId }).strict(),
     z
       .object({
