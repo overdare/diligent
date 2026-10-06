@@ -91,7 +91,7 @@ OVERDARE largely follows Roblox's engine model and Luau API, so Roblox knowledge
 - Asset paths use `ovdrassetid://[number]`.
 
 # Transforms in a Hierarchy
-- Child Parts follow later changes to their parent Part's position, rotation, and scale, even when Anchored; no Weld is needed, and resizing a parent also scales its children's Size.
+- Child Parts can follow parent transforms without a Weld. Verify one representative subtree in the current Editor build before a bulk move or resize: read the parent and child world transforms and sizes before and after. A successful parent-property write alone does not establish descendant propagation.
 - Position, Orientation, and CFrame stay world space for reads and writes, as in Roblox, in gameplay scripts and Editor Luau. Convert parent-relative offsets to world space before assigning them.
 - New MeshParts default to `Anchored = true`. Set `Anchored = false` only for parts that need physics; unanchoring a part just to make it follow its parent instead lets it fall.
 
@@ -105,6 +105,7 @@ Cylinders are oriented along the Y axis (Roblox uses X), with Size `(Diameter, H
 
 # Characters
 - Humanoids use a single capsule collision by default, so part-based hit detection (e.g. a headshot via Touched on Head) does not work until you enable the HitboxType option.
+- Before tuning knockback, record obstacle clearance, collision profiles, ownership, and the character's current physics state. Change one mechanism at a time and measure displacement and velocity at impact, stop, state recovery, and a later checkpoint. A bounded initial displacement does not establish safe recovery; stop and restore the baseline if recovery reintroduces velocity.
 - Do not move a character by repeatedly writing HumanoidRootPart `Position`/`CFrame` (via `Heartbeat`, `while`, etc.); it fights Unreal's CharacterMovementComponent and causes jitter or teleporting. Drive movement through the character's movement system.
 - Do not use HumanoidRootPart.Anchored to freeze a character; the property is accepted but is not a reliable way to stop it.
 

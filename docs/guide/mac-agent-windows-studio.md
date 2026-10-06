@@ -89,26 +89,29 @@ If specifying env every time is tedious, write it once in the Mac home:
 
 ---
 
-## Option 2 — symlink bundle skills, then run (skills included, macOS)
+## Option 2 — copy bundle skills and agents, then run (macOS)
 
-Option 1 works, but in dev the bundle skills (`actionsequence`, `geometry-recipe`, `gui-builder`, etc.) are not installed automatically. On first run the exe's `init.rs` copies bundle skills into `~/.overdare/skills`, but running the dev source directly skips that step.
+Option 1 works, but in dev the bundle skills (`actionsequence`, `geometry-recipe`, `gui-builder`, etc.) and agents are not installed automatically. The exe copies them into `~/.overdare/skills` and `~/.overdare/agents`; running the dev source directly skips that step.
 
-Skill discovery order is (1) project `<cwd>/.overdare/skills` -> (2) global `~/.overdare/skills` -> (3) config `skills.paths[]` (`packages/runtime/src/skills/discovery.ts:47-55`). On macOS, **symlink the bundle skills into the global location (2)**. (Being symlinks, edits to the repo skills take effect immediately.)
+Skill discovery order is (1) project `<cwd>/.overdare/skills` -> (2) global `~/.overdare/skills` -> (3) config `skills.paths[]` (`packages/runtime/src/skills/discovery.ts:47-55`). Copy the bundle entries into the global locations so they remain available if the source checkout moves or is removed.
 
-### 0) Symlink bundle skills/agents (one time)
+### 0) Copy bundle skills and agents (one time)
 
 ```bash
 # run from the repo root
 mkdir -p ~/.overdare/skills ~/.overdare/agents
 
-ln -sfn "$PWD/apps/overdare-ai-agent/bootstrap/skills/"* ~/.overdare/skills/
-ln -sfn "$PWD/apps/overdare-ai-agent/bootstrap/agents/"* ~/.overdare/agents/
+cp -R apps/overdare-ai-agent/bootstrap/skills/. ~/.overdare/skills/
+cp -R apps/overdare-ai-agent/bootstrap/agents/. ~/.overdare/agents/
 ```
+
+> These manual copy commands are for fresh global entry names. If an entry may already be a symlink from an earlier launcher run, use the launcher to migrate it safely; copying through an existing symlink would write into its checkout target.
 
 Verify:
 
 ```bash
-ls -l ~/.overdare/skills/    # OK if actionsequence, geometry-recipe, gui-builder ... appear as symlinks
+ls ~/.overdare/skills/       # bundle entries such as actionsequence, geometry-recipe, gui-builder
+ls ~/.overdare/agents/       # bundle agents
 ```
 
 ### 1) Run sidecar + frontend
@@ -125,13 +128,13 @@ bun run --cwd apps/overdare-ai-agent/sidecar web:dev
 
 Browser: **http://localhost:5174**
 
-> To undo the symlinks: `rm ~/.overdare/skills/*` removes **only the symlinks** (the original repo files stay). To clear the whole directory: `find ~/.overdare/skills -maxdepth 1 -type l -delete`.
+> To remove a copied bundle entry, delete that entry from `~/.overdare/skills` or `~/.overdare/agents`. Keep unrelated entries in those global directories.
 
 ---
 
 ## All in one script (recommended)
 
-There is a launcher that performs all the steps from Options 1 & 2 (symlink bundle skills -> ensure permission config -> free 7433/5174 -> run sidecar + Vite together -> tear down both on Ctrl+C) in one go.
+There is a launcher that performs all the steps from Options 1 & 2 (copy bundle skills and agents -> ensure permission config -> free 7433/5174 -> run sidecar + Vite together -> tear down both on Ctrl+C) in one go.
 
 By default, put the Studio connection info in `.env.local` once (bun auto-loads it, so both the sidecar and the script read these values):
 
@@ -176,11 +179,11 @@ make dev-cross
 
 When set, the sidecar `--cwd` becomes this path so edit tools modify the live world directly. **If unset, cwd=repo so only browse works and editing is not possible.**
 
-> NOTE: **The symlink (skills) and the mount (world file) are separate things.** Easy to confuse, so to be clear:
+> NOTE: **The bundle copies and the mount (world file) are separate things.** Easy to confuse, so to be clear:
 > - **Mount** = access the Windows Studio **project folder** from the Mac to read/write the live `.ovdrjm` **world file**. `--cwd` is this path.
-> - **Symlink** (Option 2 / the script) = link the bundle **skills** (actionsequence, geometry-recipe, gui-builder, etc.) into the Mac global `~/.overdare/skills`. Unrelated to cwd (discovery path 2).
+> - **Bundle copies** (Option 2 / the script) = install bundle **skills** (actionsequence, geometry-recipe, gui-builder, etc.) into the Mac global `~/.overdare/skills`. Unrelated to cwd (discovery path 2).
 >
-> The mounted project folder does **not** contain the bundle skills — the exe installs skills into **HOME `~/.overdare/skills`**, not the project (`init.rs` -> `global_storage_dir`). So even when you "mount and edit the world", **skills still come from the symlinked Mac global**. You need both.
+> The mounted project folder does **not** contain the bundle skills — the exe installs skills into **HOME `~/.overdare/skills`**, not the project (`init.rs` -> `global_storage_dir`). So even when you "mount and edit the world", **skills still come from the Mac global copy**. You need both.
 
 #### SMB share + mount + write permission (required for editing)
 
@@ -209,11 +212,11 @@ Editing means **writing** to the mounted `.ovdrjm`. If the mount is read-only it
 >
 > If this is a managed (IT-policy) PC and you cannot get share write access, this approach (editing from the Mac agent) is not possible -> switch to the "run the agent on Windows" alternative below.
 
-> `--cwd` decides **both** the world-file location and the `.overdare` (sessions/knowledge/config) store location. If you pass a mount path, runtime data like sessions accumulates in that folder (= the Windows share, which may be slow over SMB). Only the bundle skills are unaffected, since they load from the global `~/.overdare/skills` (Mac) symlink.
+> `--cwd` decides **both** the world-file location and the `.overdare` (sessions/knowledge/config) store location. If you pass a mount path, runtime data like sessions accumulates in that folder (= the Windows share, which may be slow over SMB). Bundle skills are unaffected, since they load from their copies in the global `~/.overdare/skills` directory on the Mac.
 >
 > Caveat: over SMB, editing can be unstable due to file locking, latency, and line-ending/encoding differences. If it doesn't work, consider **running the agent on Windows and connecting from the Mac with just a browser (`http://<windows-ip>:5174`)** — the file is always local so editing is stable, though code HMR only runs on the machine where the source lives.
 
-- The bundle skill/agent symlinks are created **only if missing**, so it is safe to rerun (idempotent).
+- The launcher copies bundle skills and agents into global storage. Repeated launches replace the complete copy for each currently bundled entry, removing stale files inside it while preserving unrelated and no-longer-bundled global entries.
 - The permission config (`yolo`) is created in the global `~/.overdare/config.jsonc` **only if missing** (left as-is if it already exists). It lives in the global location because it is loaded regardless of cwd (even a read-only mount) and never attempts to write to the mount.
 - Browser: **http://localhost:5174**, quit with a single **Ctrl+C** (backend and frontend go down together).
 
@@ -245,9 +248,9 @@ and an enabled Studio connection. It does not affect image generation or normal 
 
 - **Runtime**: `bun run` executes the TypeScript natively. No exe compile, no release download.
 - **Frontend**: in dev Vite serves from source (`bun run --cwd apps/overdare-ai-agent/sidecar web:dev`), so no dist build.
-- **Bundle skills**: not a build — just "put them on the discovery path" (the Option 2 symlink).
+- **Bundle skills**: not a build — just "put them on the discovery path" (the Option 2 copy).
 
-In dev, **`bun run` (runtime) + a one-time symlink (bootstrap)** replaces what the exe did.
+In dev, **`bun run` (runtime) + a bundle copy (bootstrap)** replaces what the exe did.
 
 ---
 
@@ -278,7 +281,7 @@ RPC endpoint: ws://localhost:7433/rpc
 | --- | --- |
 | UI loads but RPC won't connect | Backend (7433) is not up. The Vite proxy target is fixed at 7433 — set the backend port to 7433 |
 | `studiorpc_*` tools not visible | Started the sidecar with `STUDIO_DISABLED=1`. Restart without it to enable Studio tools |
-| Bundle skills (actionsequence, etc.) not visible | Option 2 symlink not done. Check the symlinks under `~/.overdare/skills` |
+| Bundle skills (actionsequence, etc.) not visible | Bundle entries are missing from `~/.overdare/skills`. Run the launcher or follow Option 2 to copy them |
 | Studio connection timeout | `STUDIO_HOST`/`STUDIO_PORT` wrong, or Windows Studio not listening on that port / firewall blocked |
 | `ping` OK but the port stalls in `SYN_SENT` | Studio is bound to `127.0.0.1` only (recent builds). Relay it with [portproxy](#when-studio-listens-only-on-localhost--portproxy). If SMB (445) to the same host still works, it is the binding, not the firewall |
 | Worked before, suddenly times out | A Studio build update narrowed the bind to `127.0.0.1`, or one of the two IPs pinned in the portproxy / firewall rule changed |

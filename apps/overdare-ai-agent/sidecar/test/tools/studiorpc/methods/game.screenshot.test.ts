@@ -143,6 +143,16 @@ describe("game.screenshot plumbing", () => {
     expect(await attachImages("not a result at all")).toBeUndefined();
   });
 
+  test("an inaccessible screenshot explicitly reports unavailable image delivery", async () => {
+    const result = await postProcess(
+      { success: true, path: join(tmpdir(), "missing-studio-shot.png") },
+      {},
+      async () => ({}),
+    );
+    expect(result).toMatchObject({ success: true, imageDelivery: { status: "unavailable" } });
+    expect((result as { imageDelivery: { note: string } }).imageDelivery.note).toContain("agent host");
+  });
+
   test("a name that is not there is answered under the parameter that asked", async () => {
     const calls: string[] = [];
     const callRpc = async (method: string) => {

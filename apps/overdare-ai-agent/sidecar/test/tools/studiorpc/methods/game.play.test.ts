@@ -5,12 +5,30 @@ import { normalizeArgs, preCall } from "../../../../src/tools/studiorpc/methods/
 describe("game.play restart", () => {
   test("stops the running session before starting one", async () => {
     const calls: string[] = [];
+    let reads = 0;
     await preCall({ restart: true, numberOfPlayer: 2 }, async (method) => {
       calls.push(method);
-      return {};
+      return method === "game.stop" ? { success: true } : { running: ++reads === 1 };
     });
 
-    expect(calls).toEqual(["game.stop"]);
+    expect(calls).toEqual(["game.pie.status", "game.stop", "game.pie.status"]);
+  });
+
+  test("does not send stop to an already stopped session", async () => {
+    const calls: string[] = [];
+    await preCall({ restart: true }, async (method) => {
+      calls.push(method);
+      return { running: false };
+    });
+    expect(calls).toEqual(["game.pie.status"]);
+  });
+
+  test("does not start after a rejected stop", async () => {
+    await expect(
+      preCall({ restart: true }, async (method) =>
+        method === "game.pie.status" ? { running: true } : { success: false },
+      ),
+    ).rejects.toThrow("stop completion is unconfirmed");
   });
 
   test("leaves a running session alone when it is not asked to restart", async () => {

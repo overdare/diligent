@@ -4,7 +4,7 @@
 #
 # Performs the steps from docs/guide/mac-agent-windows-studio.md in one go:
 #   0. Decide the sidecar cwd (world mount path present -> editing possible)
-#   1. Symlink bundle skills/agents into the global ~/.overdare (only if missing)
+#   1. Copy bundle skills/agents into the global ~/.overdare
 #   2. Ensure a yolo permission config in global ~/.overdare/config.jsonc (only if missing)
 #   3. Free leftover processes on 7433/5174
 #   4. Run the sidecar backend (7433) + Vite frontend (5174) together
@@ -115,24 +115,94 @@ else
   echo "  To edit, pass a mount path as the 3rd argument or via STUDIO_PROJECT_DIR."
 fi
 
-# --- 1. Symlink bundle skills/agents (idempotent) ---------------------------
-link_bundle() {
+# --- 1. Install durable copies of bundle skills/agents ----------------------
+install_bundle() {
   local kind="$1" # skills | agents
   local src="${BOOTSTRAP}/${kind}"
   local dst="${GLOBAL_DIR}/${kind}"
   [ -d "$src" ] || return 0
-  mkdir -p "$dst"
-  local linked=0
-  for entry in "$src"/*; do
-    [ -e "$entry" ] || continue
-    ln -sfn "$entry" "$dst/$(basename "$entry")"
-    linked=$((linked + 1))
+
+  mkdir -p "$GLOBAL_DIR" "$dst"
+  local stage
+  stage="$(mktemp -d "${GLOBAL_DIR}/.dev-cross-studio-${kind}.stage.XXXXXX")" || {
+    echo "x Could not create staging directory for ${kind}" >&2
+    return 1
+  }
+  mkdir -p "${stage}/new" "${stage}/backup"
+
+  local copied=0
+  local entry name
+  for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name="$(basename "$entry")"
+    if ! cp -R -L "$entry" "${stage}/new/${name}"; then
+      echo "x Could not stage ${kind} entry: ${name}; keeping existing global entry" >&2
+      rm -rf "$stage"
+      return 1
+    fi
+    copied=$((copied + 1))
   done
-  echo "  + ${kind}: ${linked} symlink(s) -> ${dst}"
+
+  # All current bundle entries are staged before replacing any global entries. This
+  # leaves unrelated global names alone and lets each same-name directory be swapped
+  # as a complete copy, removing files retired from that bundle entry.
+  local -a replaced_names=()
+  local idx rollback_name rollback_failed install_failed
+  install_failed=0
+  for entry in "${stage}/new"/* "${stage}/new"/.[!.]* "${stage}/new"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name="$(basename "$entry")"
+    if [ -e "${dst}/${name}" ] || [ -L "${dst}/${name}" ]; then
+      if ! mv "${dst}/${name}" "${stage}/backup/${name}"; then
+        echo "x Could not prepare existing ${kind} entry for replacement: ${name}" >&2
+        install_failed=1
+        break
+      fi
+    fi
+
+    replaced_names+=("$name")
+    if ! mv "$entry" "${dst}/${name}"; then
+      echo "x Could not install staged ${kind} entry: ${name}" >&2
+      install_failed=1
+      break
+    fi
+  done
+
+  if [ "$install_failed" -ne 0 ]; then
+    # Roll back every entry moved during this install, including any earlier entry
+    # whose replacement succeeded, so backups are never discarded after a later mv
+    # failure. A failed restore leaves the staging directory as a recoverable backup.
+    rollback_failed=0
+    for ((idx = ${#replaced_names[@]} - 1; idx >= 0; idx--)); do
+      rollback_name="${replaced_names[$idx]}"
+      if [ -e "${dst}/${rollback_name}" ] || [ -L "${dst}/${rollback_name}" ]; then
+        if ! rm -rf "${dst}/${rollback_name}"; then
+          echo "x Could not remove partially installed ${kind} entry: ${rollback_name}" >&2
+          rollback_failed=1
+          continue
+        fi
+      fi
+      if [ -e "${stage}/backup/${rollback_name}" ] || [ -L "${stage}/backup/${rollback_name}" ]; then
+        if ! mv "${stage}/backup/${rollback_name}" "${dst}/${rollback_name}"; then
+          echo "x Could not restore previous ${kind} entry: ${rollback_name}" >&2
+          rollback_failed=1
+        fi
+      fi
+    done
+    if [ "$rollback_failed" -ne 0 ]; then
+      echo "! Previous ${kind} entries remain recoverable in: ${stage}" >&2
+      return 1
+    fi
+    rm -rf "$stage"
+    return 1
+  fi
+
+  rm -rf "$stage"
+  echo "  + ${kind}: ${copied} bundled copy/copies -> ${dst}"
 }
-echo "> Symlinking bundle skills/agents"
-link_bundle skills
-link_bundle agents
+echo "> Copying bundle skills/agents to global storage"
+install_bundle skills
+install_bundle agents
 
 # --- 2. Ensure yolo permission config (global, only if missing) -------------
 # Place it in global ~/.overdare/config.jsonc. Why:
