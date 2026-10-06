@@ -21,7 +21,7 @@ export const build = {
   method: "proceduralcharacter.build",
   timeoutMs: 900_000,
   description:
-    "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. For an already baked ProceduralModel, inspect(mode=source) then pass its geometryRevision and direct rig and motion.document, just like static_model. Source capture reads current baked parts without rebaking or changing the model. Procedural sources without geometryRevision author rig.json and motion.json in the recipe; stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. For an already rigged Workspace Model, inspect(mode=source) then use existing_rig with its rigRevision, target.kind=animation_only and motion.document, omitting rig and overrides. The original numeric Skeleton, meshes, bind poses, weights, materials and props are preserved; apply adds only a new Animation under the original model. Retained editable CPU LOD0 and an existing Humanoid/Skeleton are required. For inspected geometry, rig.boneAttachments maps prop part GUIDs to declared bones. Each part is either skinned through rig.regions or kept as an existing static MeshPart under that Bone; at least one skin part is required. Prop subtrees cannot contain other captured MeshParts. Read proceduralcharacter.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Use export mode=publish for normal numeric native assets. Explicit mode=apply takes buildId, publicationId, expectedRevision and expectedSourceGraphRevision, and clones a frozen inspected Model or baked ProceduralModel hierarchy into Workspace with existing Lua character classes. Missing numeric assets download through the ordinary Studio importer before rechecking the document and revisions. It rejects changed sources, incomplete uploads and name conflicts; an already applied publication is returned as APPLY_ALREADY_EXISTS for inspection, never replaced. Stop PIE first. Apply requires an inspected model draft with explicit part identities; recipe-only drafts support build/publication. Verify saved-map Lua playback separately.",
+    "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. For an already baked ProceduralModel, inspect(mode=source) then pass its geometryRevision and direct rig and motion.document, just like static_model. Source capture reads current baked parts without rebaking or changing the model. All new geometry inputs take separate structured rig and motion.document data; geometry recipes do not write rig or animation files. Without geometryRevision, a ProceduralModel freezes its geometry Source and parameters for a private capture without baking the Workspace model; rig regions use generated part names. With geometryRevision, regions use inspected part GUIDs. Stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. For an already rigged Workspace Model, inspect(mode=source) then use existing_rig with its rigRevision, target.kind=animation_only and motion.document, omitting rig and overrides. The original numeric Skeleton, meshes, bind poses, weights, materials and props are preserved; apply adds only a new Animation under the original model. Retained editable CPU LOD0 and an existing Humanoid/Skeleton are required. For inspected geometry, rig.boneAttachments maps prop part GUIDs to declared bones. Each part is either skinned through rig.regions or kept as an existing static MeshPart under that Bone; at least one skin part is required. Prop subtrees cannot contain other captured MeshParts. Read proceduralcharacter.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Use export mode=publish for normal numeric native assets. Explicit mode=apply takes buildId, publicationId, expectedRevision and expectedSourceGraphRevision, and clones a frozen inspected Model or baked ProceduralModel hierarchy into Workspace with existing Lua character classes. Missing numeric assets download through the ordinary Studio importer before rechecking the document and revisions. It rejects changed sources, incomplete uploads and name conflicts; an already applied publication is returned as APPLY_ALREADY_EXISTS for inspection, never replaced. Stop PIE first. Apply requires an inspected model draft with explicit part identities; recipe-only drafts support build/publication. Verify saved-map Lua playback separately.",
   params: z.union([
     z
       .object({
@@ -110,22 +110,32 @@ export const build = {
           }
           return;
         }
-        if (
+        const captured =
           request.source.kind === "static_model" ||
-          (request.source.kind === "procedural_model" && request.source.geometryRevision)
+          (request.source.kind === "procedural_model" && request.source.geometryRevision);
+        // Only Studio knows whether a requestId is already bound to historical
+        // recipe outputs. It rejects document-free new requests before capture.
+        if (
+          captured
+            ? !request.rig || !request.motion.document
+            : Boolean(request.rig) !== Boolean(request.motion.document)
         ) {
-          if (!request.rig || !request.motion.document) {
-            context.addIssue({ code: "custom", message: "Inspected model geometry requires rig and motion.document" });
-          }
-          if (request.overrides && Object.keys(request.overrides).length) {
-            context.addIssue({ code: "custom", message: "Recipe overrides do not apply to static geometry" });
-          }
-          const input = { source: request.source, rig: request.rig, motion: request.motion };
-          if (Buffer.byteLength(JSON.stringify(input), "utf8") > 2 * 1024 * 1024) {
-            context.addIssue({ code: "custom", message: "Static authoring documents exceed 2 MiB" });
-          }
-        } else if (request.rig || request.motion.document) {
-          context.addIssue({ code: "custom", message: "Procedural sources author rig and motion in their recipe" });
+          context.addIssue({
+            code: "custom",
+            message: "Geometry inputs require structured rig and motion.document together",
+          });
+        }
+        if (captured && request.overrides && Object.keys(request.overrides).length) {
+          context.addIssue({ code: "custom", message: "Recipe overrides do not apply to captured geometry" });
+        }
+        if (
+          Buffer.byteLength(
+            JSON.stringify({ source: request.source, rig: request.rig, motion: request.motion }),
+            "utf8",
+          ) >
+          2 * 1024 * 1024
+        ) {
+          context.addIssue({ code: "custom", message: "Authoring documents exceed 2 MiB" });
         }
       })
       .refine(

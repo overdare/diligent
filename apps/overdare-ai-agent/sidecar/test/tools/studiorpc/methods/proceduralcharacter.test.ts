@@ -8,6 +8,66 @@ import * as character from "../../../../src/tools/studiorpc/methods/proceduralch
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("lets Studio resolve historical recipe bindings without rewriting their frozen inputs", async () => {
+    const request = {
+      requestId: "previously-bound-recipe-request",
+      source: { kind: "procedural_model", guid: "A".repeat(32) },
+      target: { kind: "new_custom_character", name: "HistoricalCharacter" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 20 },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        throw new Error("AUTHORING_DOCUMENTS_REQUIRED: no historical request binding");
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    await expect(
+      tool.execute(request, { toolCallId: "historical-recipe", signal: new AbortController().signal, abort: () => {} }),
+    ).rejects.toThrow("AUTHORING_DOCUMENTS_REQUIRED");
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+  });
+  test("keeps procedural geometry executable while forwarding rig and clip as independent data", async () => {
+    const request = {
+      requestId: "geometry-with-structured-authoring",
+      source: {
+        kind: "procedural_recipe",
+        recipeId: "geometry-only",
+        recipeSource: "def on_generate(model, size, attributes):\n    pass\n",
+        recipeRevision: "A".repeat(40),
+      },
+      target: { kind: "new_custom_character", name: "StructuredCharacter" },
+      rigProfile: "authored_v1",
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    expect(character.build.params.parse(request)).toEqual(request);
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    await tool.execute(request, {
+      toolCallId: "structured-recipe",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(character.build.params.safeParse({ ...request, rig: undefined }).success).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { preset: "authored_v1", speedCmPerSec: 20 } }).success,
+    ).toBe(false);
+  });
   test("adds motion to an inspected original rig without accepting replacement rig or recipe controls", async () => {
     const request = {
       requestId: "original-rig-new-clip",
@@ -174,7 +234,7 @@ describe("non-ODA character authoring", () => {
     expect(
       character.build.params.safeParse({ ...request, source: { kind: "procedural_model", guid: "B".repeat(32) } })
         .success,
-    ).toBe(false);
+    ).toBe(true);
     expect(savingMethods.has(character.build.method)).toBe(false);
   });
   test("build forwards a procedural model GUID and preserves native ownership of its frozen inputs", async () => {
@@ -183,7 +243,8 @@ describe("non-ODA character authoring", () => {
       source: { kind: "procedural_model", guid: "ABCDEF0123456789ABCDEF0123456789" },
       target: { kind: "new_custom_character", name: "ModelSourceCharacter" },
       rigProfile: "authored_v1",
-      motion: { preset: "authored_v1", speedCmPerSec: 20 },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       overrides: { jointWidth: 4 },
       commit: false,
     };
@@ -308,7 +369,8 @@ describe("non-ODA character authoring", () => {
       },
       target: { kind: "new_custom_character", name: "Creature" },
       rigProfile: "authored_v1",
-      motion: { preset: "authored_v1", speedCmPerSec: 20 },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       commit: false,
     };
     expect(character.build.params.parse(request)).toEqual(request);
