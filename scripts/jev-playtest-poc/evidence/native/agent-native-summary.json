@@ -1,0 +1,38 @@
+{
+  "harnessName": "corewatch-native",
+  "sourceHash": "7caee2375e3a508aee217384bc659c6068f4a29182f2c5f145fde3d5d4331055",
+  "outcome": "success",
+  "reason": "VICTORY: boss HP 0, player HP 125",
+  "terminal": {
+    "outcome": "success",
+    "reason": "VICTORY: boss HP 0, player HP 125"
+  },
+  "stats": {
+    "elapsedMs": 53627.107334,
+    "observations": 445,
+    "observationErrors": 0,
+    "modelCalls": 24,
+    "decisions": 50,
+    "dispatchedActions": 49,
+    "invalidatedChoices": 1,
+    "gameEventsEmitted": 30,
+    "duplicateGameEvents": 3900,
+    "statusChecks": 46,
+    "traceEvents": 746,
+    "traceEventsDropped": 0,
+    "logCallbackErrors": 0,
+    "maxObserveLatencyMs": 155.79954199999338,
+    "maxObservationAgeMs": 54.082708000030834,
+    "lastRevision": 452,
+    "lastGameTimeSeconds": 199545.7748401
+  },
+  "cleanup": {
+    "ownedSession": true,
+    "statusChecked": true,
+    "stopAttempted": true,
+    "stopped": true,
+    "reason": "stopped the same PIE session started by this playtest",
+    "sessionId": "e8e15376-4b79-1bb5-1023-cfb5eafa5ed5"
+  },
+  "tracePath": "/Users/jjss/Documents/Workspace/diligent/.overdare/playtests/1790881663717-a4259d3f/trace.jsonl"
+}
