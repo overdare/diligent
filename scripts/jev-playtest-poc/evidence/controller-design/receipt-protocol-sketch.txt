@@ -1,0 +1,338 @@
+Historical conditional sketch; NOT the selected implementation plan.
+The current direction is incremental improvement of working harnesses.
+See docs/plan/playtest-controller-events.md. No API below is implemented.
+
+# Minimal decision delivery for dynamically generated playtest controllers
+
+Status: implementation design, not an available Studio API. Current code supports
+observation/input-only harnesses and decision-evidence reporting. This proposal
+adds the missing model-choice-to-controller path without introducing a workflow
+engine, graph DSL, general event bus or live Lua execution service.
+
+## 1. Design decision and scope
+
+Add one narrow Studio RPC that places a choice in the selected driver's single
+mailbox. The existing Luau heartbeat consumes it and publishes acceptance in the
+existing observation frame. Reuse game.observe for acknowledgement and
+game.input.inject for physical execution. The runner never treats delivery as
+acceptance or acceptance as gameplay success.
+
+Keep the controller as ordinary generated Luau: a small memory table, a few
+capability functions, explicit guards, and adjustable policy values. Diligent
+writes and maintains that code from the current UGC project. Laya chooses at real
+branch points; aiming, walking and holding a chosen prompt remain bounded input
+execution. A game does not need to expose its own state-machine library.
+
+The MVP preserves existing owned-PIE startup/cleanup, cancellation, observation,
+coverage and the 15-second progress watchdog. It does not add hot reload, durable
+resume, multiple concurrent controllers, a scheduler, automatic retries, or a
+longer episode limit. Continuous sessions for full-game clear remain separate
+work: repeatedly restarting the current 180-second episodes loses live progress.
+
+## 2. One small extension, existing paths everywhere else
+
+```mermaid
+sequenceDiagram
+    participant D as Generated Luau controller
+    participant R as Diligent runner
+    participant M as Laya
+    participant S as Studio
+    D->>R: game.observe: state + decision options
+    R->>M: Compact facts and meaningful alternatives
+    M-->>R: optionId
+    R->>S: game.playtest.select (proposed)
+    S-->>R: queued (not accepted)
+    S->>D: Managed mailbox, drained on heartbeat
+    D->>D: Check current guard, commit controller target
+    D-->>R: game.observe: receipt + next physical action
+    R->>S: Existing game.input.inject
+    S-->>D: Actual game feedback
+    D->>D: Update phase/progress, retain or reconsider target
+```
+
+The mailbox avoids needing a new native-to-Lua callback registry or the general
+PIE execute_luau service proposed in [P085](feature/P085-pie-client-server-execute-luau.md).
+P085 is also unimplemented and is not a dependency. This design uses a running
+managed script's existing heartbeat and StringValue data instead of compiling
+caller-provided code in a live VM.
+
+## 3. Controller authoring shape
+
+| Function | Responsibility |
+| --- | --- |
+| start() | Initialize dependencies once and subscribe to actual game feedback. |
+| observe() | Reduce new feedback, expose compact state, then a decision or the next bounded input step. |
+| onDecision(choice) | Recheck current eligibility and commit controller memory; return accepted/rejected. New in this proposal. |
+
+Use one selected controller lifecycle. Helper modules may provide bindings,
+geometry and capabilities; they must not need a second enabled driver to start.
+Do not build a generic capability registry when ordinary functions such as
+approach(target), interact(prompt) and returnTo(container) are sufficient.
+
+A typical memory table contains only phase, target, progress sequence and small
+visit/failure history. A PolicyConfig holds actual tunable values: candidate
+breadth, revisit preference, return preference and bounded recovery timing. Game
+capacity, prompt hold duration and win rules are observed constraints, not policy
+knobs. Distance/risk scores help describe alternatives; they must not silently
+choose the only strategy before the model sees it.
+
+An apartment example:
+
+| Phase | Choices or execution | Next state evidence |
+| --- | --- | --- |
+| Choose objective | Room A, room B, or deliver carried items if all are feasible | Accepted choice sets target and Approach/Return. |
+| Approach target | Current route's next physical step | Room entry/arrival, vanished target or a real obstruction. |
+| Interact | Aim and hold the actual eligible prompt | Correlated pickup/open/deposit feedback. |
+| Recover | A bounded local correction, or a new decision if alternatives matter | Verified movement/availability or timeout. |
+
+The accepted target survives many observations and input steps. Completion,
+changed danger, lost target or recovery timeout returns to an appropriate decision
+point. A physics tick or a slightly different distance does not force a new
+strategic choice.
+
+## 4. Frame v2: decision or execution
+
+Retain common fields (harnessId, ready, revision, gameTimeSeconds, state, progress,
+coverage, events, terminal/error). Add protocolVersion=2, an opaque controllerId
+unique to this driver instance, optional decision/lastDecision, and optional
+activeProposalId linking execution to its accepted model intent.
+
+```json
+{
+  "protocolVersion": 2,
+  "harnessId": "apartment",
+  "controllerId": "controller-instance-7",
+  "ready": true,
+  "revision": 42,
+  "gameTimeSeconds": 100,
+  "state": {"phase": "choose", "carried": 2, "capacity": 5},
+  "progress": {"sequence": 6},
+  "decision": {
+    "id": 12,
+    "expiresAtGameTime": 103,
+    "options": [
+      {"id": "visit-a", "description": "Nearby visited room; one visible item"},
+      {"id": "visit-b", "description": "Unvisited room; longer route, contents unknown"},
+      {"id": "deliver", "description": "Deliver the two carried items now"}
+    ]
+  },
+  "actions": []
+}
+```
+
+Rules are deliberately small:
+
+- A decision has 2..16 unique options, within the chosen model's actual limits.
+  Only IDs/descriptions go on the wire; targets and executor parameters stay in
+  the adapter's saved proposal. The caller cannot supply new target coordinates.
+- With a pending decision, actions is empty. Otherwise v2 exposes zero or one
+  execution action in the existing balanced-input format. Another meaningful
+  tactical branch becomes another decision, rather than two competing policies.
+- A genuinely forced transition runs locally through the controller's guarded
+  reducer, with no model call, mailbox command or synthetic receipt. It may expose
+  its next execution action directly. Zero legal alternatives means bounded
+  waiting/recovery, not a fabricated second option.
+- Proposal IDs are increasing positive safe integers within a controller
+  instance, not frame revisions. A closed ID is never reused. Its option identity,
+  parameter binding and meaning are stable until accepted, invalidated or expired.
+  Change the ID when those change, not on every published frame. Expiry and current
+  guards prevent old state from authorizing an action indefinitely.
+- terminal/error closes the proposal and exposes no executable actions.
+- onDecision commits activeProposalId together with the target. Keep it while
+  executing that intent, then clear it when completed, abandoned, or superseded
+  by a new decision. Unrelated forced actions have no activeProposalId. The driver
+  rejects action attribution to a proposal it has not accepted.
+
+The driver owns controllerId, protocol metadata, mailbox and receipt. The adapter
+owns proposal IDs, current guards and its parameter bindings. The first Studio
+implementation spike must verify a supported fresh-ID facility for the driver;
+do not substitute a repeatable name or a coarse clock timestamp. UUID generation
+is an implementation detail, not another public service.
+
+## 5. One proposed RPC: game.playtest.select
+
+This is internal runner-to-Studio plumbing, not an additional model-facing tool.
+The public operation remains studiorpc_game_playtest.
+
+```json
+{
+  "pieSessionId": "current-owned-pie",
+  "clientId": "target-client",
+  "harnessName": "apartment",
+  "controllerId": "controller-instance-7",
+  "proposalId": 12,
+  "optionId": "visit-b"
+}
+```
+
+On the game thread, the handler resolves the same targeted client world used by
+input tools and checks PIE identity, the unique managed frame/mailbox pair,
+controllerId, ready state and published proposal/option identity. It writes only
+that controller's fixed mailbox StringValue. No arbitrary object path, property,
+source, event name or gameplay payload is accepted.
+
+The mailbox name is derived with the same validated harness-name convention as
+the existing frame name. A wrong class, missing/ambiguous pair, stopped client or
+replaced controller fails without writing. A pending different command returns
+busy; an identical queued command is not written twice. A compact queued reply
+only confirms delivery to that mailbox.
+
+The exact method name and capability spelling must be registered with Studio
+before shipping. Stable rejection reasons are sufficient initially: unsupported,
+wrong_session, wrong_controller, not_ready, stale_proposal, invalid_option and
+busy. Allocate numeric RPC codes with Studio rather than guessing them in this
+repository.
+
+## 6. Consume once, acknowledge through observation
+
+The common driver drains the single mailbox before its next publish. It discards
+commands for another controllerId, checks proposal identity/expiry again and calls
+onDecision with proposalId and optionId. The adapter first consumes pending real
+feedback, resolves the saved local option and rechecks game-specific guards
+against current facts. The callback is short and non-yielding, changes only
+controller memory, and does not perform gameplay input or mutate game rules.
+
+Prefer computing a new small memory table and assigning it after validation. If
+callback execution throws, fault the controller and stop; arbitrary Luau side
+effects are not transactional and must not be retried as if nothing happened.
+
+Publish a receipt immediately after handling the command (without waiting for the
+usual publication interval):
+
+```json
+{
+  "lastDecision": {
+    "proposalId": 12,
+    "optionId": "visit-b",
+    "status": "accepted"
+  },
+  "activeProposalId": 12,
+  "state": {"phase": "approach", "target": "room-b"}
+}
+```
+
+Rejected receipts include a short reason and never enable an action from that
+choice. Opening a new decision closes the prior active intent; do not overwrite
+an accepted receipt with an unrelated old command while its intent executes.
+The receipt inherits controller/PIE identity from its frame and the
+runner's owned-session checks. Keep only the latest receipt. Repeated delivery of
+that same proposal/option returns the same result without another callback;
+conflicting or older consumed proposals are rejected as stale. An increasing
+last-handled proposal counter prevents reuse without retaining all history. No durable journal
+or unlimited deduplication store is needed for one sequential episode.
+
+A world change may invalidate the target even after acceptance. The runner always
+uses the next fresh frame's current action; it never executes a precomputed batch
+from before acknowledgement.
+
+## 7. Runner control and failure handling
+
+1. Observe and validate the current frame, as today.
+2. For a decision: choose a real option with Laya,
+   revalidate proposal/controller/session, then deliver its ID.
+3. Await a matching accepted/rejected receipt through normal continuous observe.
+   Dispatch no physical input while receipt status is unknown.
+4. On acceptance, use current execution actions with existing fresh-frame and
+   input validation. Keep observing actual effects throughout execution.
+5. On a stale/rejected proposal, read the current state. Do not replay that choice
+   or silently replace it with the nearest option.
+
+Use one bounded receipt deadline, initially 2 seconds including delivery, clipped
+to the remaining episode budget. This is a proposed starting value, to be measured
+with Windows Studio. If the delivery reply is lost, an already observed matching
+receipt can still resolve it. Without such evidence by the deadline, end with an
+execution error and owned cleanup. Do not add an automatic retry loop to the MVP.
+
+Caller cancellation, user input takeover, stuck and session replacement keep their
+existing meanings. Only the owned PIE may be stopped. Accepting choices, flipping
+controller phases and executing movement do not by themselves reset meaningful
+progress; the adapter advances progress for observed route/objective milestones.
+For a long approach, count a calibrated new waypoint reached for the retained
+target, or a material improvement beyond its previous best remaining distance.
+Deduplicate milestones per objective; recalculating a path, walking in circles or
+revisiting a waypoint must not reset progress. Curved routes should use waypoint
+evidence rather than assuming straight-line distance must decrease every step.
+A declared normal wait remains bounded. No watchdog is disabled to make a route
+appear successful.
+
+Observation still overlaps model calls/input. The extra mailbox/receipt delay is
+paid at decision boundaries, not on every key press. Log model time, delivery,
+receipt-observation delay and physical execution separately. A short input batch
+limits response delay, but this MVP does not promise atomic cancellation of an
+already-running physical batch when Lua changes its mind. Support input-boundary
+interrupts first and measure whether the game's reaction window permits them.
+
+## 8. Dynamic generation and adjustable behavior
+
+Diligent's generated artifact should identify bindings, actual decision points,
+parameterized executors, transition/effect checks, PolicyConfig and dependencies.
+These can live in one clear module. File count and a formal graph representation
+are not acceptance criteria.
+
+Repair the smallest responsible piece: a binding for an incorrect prompt, an
+executor for failed motion, a guard for a missing legal option, context/preferences
+for a poor choice, or a reducer for an incorrect transition. Save/read back and
+validate changes between runs. Preserve dependency versions and failed traces.
+Do not bundle live code replacement or self-modifying policy into the first
+receipt implementation.
+
+## 9. Compatibility, delivery order and tests
+
+Use one managed driver implementation with an explicit adapter protocol version:
+old adapters default to v1; new adapters declare v2 and implement onDecision. A
+startup ready=false frame may use v1 as today; the runner locks the protocol when
+ready becomes true. A running controller cannot change protocol/controllerId.
+
+Studio advertises decision-mailbox support on game.pie.status, including before
+Play where feasible. The runner must require support before using a v2 ready
+frame. If absent, return an explicit unsupported error and clean up any owned
+session; never downgrade a v2 controller to scripted singleton behavior. The
+existing v1 path remains available without semantic intent commitment.
+
+Implement in three slices:
+
+| Slice | Owner and files | Acceptance |
+| --- | --- | --- |
+| A: mailbox proof | Studio MCP/PIESessionRegistry plus managed driver in harness.ts | Queue one choice into the correct client; observe one callback/receipt; reject stale/duplicate/wrong targets. |
+| B: runner integration | frame.ts v1/v2 union, runtime.ts decision/receipt branch, model.ts option input, decision-evidence.ts | One model choice persists as a target over several physical steps, then real feedback opens the next decision. |
+| C: generated-controller trial | Authoring skill and one game-specific module | Diligent exposes real alternatives, respects configured preferences and obtains server-confirmed progress in Studio. |
+
+The engine repository location in P085 is historical guidance, not verified current
+source access. Locate the actual Studio checkout and existing typed StringValue
+write/PIE world-resolution APIs before implementing slice A. Do not claim that
+adding sidecar schemas alone makes this capability work.
+
+Tests required for these slices:
+
+- Offered but unselected options never commit; accepted options retain their
+  target across observation revisions and multiple execution steps.
+- Wrong session/client/controller, stale/expired proposals and invalid option IDs
+  never mutate controller state or inject input.
+- A restarted driver discards the previous instance's still-queued command.
+- A duplicate latest receipt invokes the reducer once; a conflicting duplicate
+  fails. A lost RPC reply with a matching observed receipt does not re-run input.
+- Missing acknowledgement, callback error and user takeover stop without retrying
+  ambiguous mutations or stopping a replacement session.
+- Game feedback is consumed once; input completion or a receipt cannot produce
+  a fake pickup, progress milestone or terminal.
+- Test provisional v1 ready=false -> v2 ready=true, then reject a protocol change.
+  Reject a decision combined with executable actions, or terminal/error combined
+  with executable actions. Reuse numeric-key Luau array normalization for options.
+- v1 remains functional; unsupported v2 fails clearly. Forced local transitions
+  do not require the RPC and remain visibly distinct from model decisions.
+
+Extend the existing decisionId evidence chain with proposal/controller identity
+and accepted/rejected receipt events. Each input attempt keeps a unique execution
+sequence and the frame's activeProposalId, if present. The current tracker matches
+a selected action ID directly to an input action ID; v2 must instead join the
+accepted option to its later, differently named execution steps. Count each model
+decision once for modelDispatches when its first linked step dispatches, and once
+for modelEffectsConfirmed when a linked step's effect is confirmed. Unparented
+automatic batches count separately. A confirmed substep does not prove the whole
+intent finished; target completion remains game-feedback/transition evidence.
+Test a model-selected room followed by several singleton movement steps so it is
+neither reported as automatic-only nor counted as multiple model decisions.
+Keep game outcome, model participation and
+controller correctness separate. Measure on the real Studio target before
+claiming latency or long-term play reliability. The first acceptance goal is a
+useful branching collection/delivery loop, not a claim to clear the entire game.
