@@ -81,6 +81,7 @@ Match evidence to the claim: the validation report for syntax and types, `./Play
 - A play session writes its Lua output to `./Play.log`; read it after `studiorpc_game_stop`. Print explicit success lines at key checkpoints (e.g. `print("[OK] spawned enemy at", pos)`) so a working run is visible, and remove these temporary prints when done.
 - An empty or missing `./Play.log` proves neither success nor failure, and the log cannot show whether the result is what the user wanted.
 - Drive required input (clicks, skills, movement) yourself with the play-test input tools. Ask the user to play-test only for judgments or interactions your tools cannot make; if no one is available, report what remains unverified.
+- For autonomous gameplay or editable playtest harness work, use the `autonomous-playtest` skill and Studio harness tools. Preserve working behavior and generate meaningful decision alternatives from the current code and user's goal; add state/transition structure only where useful. Verify actual model participation, gameplay effects and requested coverage separately; a scripted singleton-only run does not establish model-mediated play.
 </gameplay-scripts>
 
 <roblox-compatibility>

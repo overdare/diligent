@@ -201,6 +201,43 @@ describe("OVERDARE MCP server", () => {
     expect(skill.metadata?.error).not.toBe(true);
   });
 
+  test("MCP clients can discover the native playtest tools and read the UGC authoring contract", async () => {
+    const client = await connectClient(await makeBootstrapDir());
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.find((tool) => tool.name === "studiorpc_game_playtest")?.inputSchema).toMatchObject({
+        type: "object",
+        required: ["harnessName", "goal"],
+      });
+      const result = await client.callTool({
+        name: "studiorpc_game_playtest_harness",
+        arguments: { operation: "describe" },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(JSON.stringify(result.content)).toContain("expectations");
+      expect(JSON.stringify(result.content)).toContain("observe()");
+      expect(JSON.stringify(result.content)).toContain("sourceHash");
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("the bundled autonomous playtest skill is discoverable with a usable reference directory", async () => {
+    const bootstrapDir = join(import.meta.dir, "../../bootstrap");
+    const registries = await buildRegistries({ cwd: process.cwd(), bootstrapDir });
+    const load = registries.tools.get("load_skill")!;
+    expect(load.description).toContain("autonomous-playtest");
+    const result = await load.execute(
+      { name: "autonomous-playtest" },
+      { toolCallId: "playtest-skill", signal: new AbortController().signal, abort() {} },
+    );
+    expect(result.metadata?.error).not.toBe(true);
+    const base = join(bootstrapDir, "skills/autonomous-playtest");
+    expect(result.output).toContain(base);
+    expect((await readFile(join(base, "references/authoring.md"), "utf8")).length).toBeGreaterThan(0);
+    expect((await readFile(join(base, "references/diagnosis.md"), "utf8")).length).toBeGreaterThan(0);
+  });
+
   test("MCP dispatch preserves native reference, file validation and create-bake contracts", async () => {
     const client = await connectClient(await makeBootstrapDir());
     const directory = await mkdtemp(join(tmpdir(), "native-rpc-mcp-"));

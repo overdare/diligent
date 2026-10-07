@@ -4,6 +4,7 @@
     { "name": "actionsequence", "entry": "actionsequence" },
     { "name": "agent-guide", "entry": "agent-guide" },
     { "name": "asset-pack-import", "entry": "asset-pack-import" },
+    { "name": "autonomous-playtest", "entry": "autonomous-playtest" },
     { "name": "geometry-recipe", "entry": "geometry-recipe" },
     { "name": "gui-builder", "entry": "gui-builder" },
     { "name": "image-asset-generation", "entry": "image-asset-generation" },
