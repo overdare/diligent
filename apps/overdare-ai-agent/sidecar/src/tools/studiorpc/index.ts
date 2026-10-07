@@ -28,6 +28,7 @@ import { createInstanceClient } from "./tools/instance-rpc/client";
 import { checkResult } from "./tools/instance-rpc/result";
 import { createPerformanceTools } from "./tools/performance-tools";
 import { createPieInputTools } from "./tools/pie-input";
+import { createPlaytestTools } from "./tools/playtest";
 import { createRollbackTool } from "./tools/rollback-tool";
 import { createScriptAddTool } from "./tools/script-add-tool";
 import { createScriptDeleteTool } from "./tools/script-delete-tool";
@@ -464,6 +465,9 @@ export async function createStudioRpcTools(ctx: {
     // write lock and no rollback snapshot.
     ...createPieInputTools(callRpc),
     ...createPerformanceTools(ctx.cwd, callRpc),
+    ...createPlaytestTools({ callRpc, cwd: ctx.cwd, writeLock, beforeMutation: ensureSnapshot }).map((tool) =>
+      wrapTool(tool, ctx.host),
+    ),
   ];
 
   for (const mod of methodModules) {
