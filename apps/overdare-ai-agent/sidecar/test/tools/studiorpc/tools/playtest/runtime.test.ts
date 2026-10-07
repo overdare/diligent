@@ -482,6 +482,17 @@ describe("runPlaytest", () => {
     });
     expect(f.calls.find((call) => call.method === "game.play")?.params).toEqual({ numberOfPlayer: 1 });
     expect(observationsAtInputEnd).toBeGreaterThan(observationsAtInputStart);
+    // The public trace must preserve the decision -> physical effect -> cleanup lifecycle.
+    const lifecycle = ["model_choice", "action_dispatch", "input_reply", "action_result", "terminal", "cleanup"];
+    const positions = lifecycle.map((type) => events.findIndex((event) => event.type === type));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    const decisionId = events.find((event) => event.type === "model_choice")!.decisionId;
+    expect(typeof decisionId).toBe("number");
+    for (const type of ["action_dispatch", "input_reply", "action_result"]) {
+      expect(events.find((event) => event.type === type)?.decisionId).toBe(decisionId);
+    }
+    expect(result.cleanup.stopped).toBe(true);
     expect(events.filter((event) => event.type === "game_event" && event.id === "phase-exposed-4")).toHaveLength(1);
     expect(events.some((event) => event.type === "action_result" && event.expectations?.[0]?.passed === true)).toBe(
       true,
