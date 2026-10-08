@@ -50,7 +50,7 @@
     }
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/*.d.ts", "!research"]
+    "includes": ["**", "!**/node_modules", "!**/dist", "!**/*.d.ts", "!research", "!scripts/jev-playtest-poc/evidence"]
   },
   "overrides": [
     {

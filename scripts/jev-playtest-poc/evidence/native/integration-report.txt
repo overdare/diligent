@@ -1,0 +1,185 @@
+Native Diligent / OVERDARE playtest integration
+=============================================
+Date: 2026-10-02 KST
+
+Result
+------
+The requested path was exercised against the real Windows Studio, through a
+Mac dev-cross Diligent agent: read the installed game-specific harness, modify
+its Luau source, save and validate it, start a new game, select useful actions
+with native Laya, observe actual effects, and stop the same game session.
+
+The last episode reached the accepted server VICTORY state with boss HP 0 and
+player HP 125. A separate Studio readback confirmed PIE running=false and the
+maintained source hash. No business game scripts, health, damage, or win rules
+were changed by the native maintenance tools. The source diff changes only
+movement expectations and position rounding in the harness.
+
+Architecture implemented
+------------------------
+1. Diligent is the author/maintainer. It can inspect project Lua and GUI, write a
+   game-specific adapter, install/read/update its Studio source, validate it,
+   run an episode, inspect the trace, and revise the adapter between episodes.
+2. The adapter persists as editable Studio code in
+   ReplicatedStorage.DiligentPlaytestHarnesses.<name>. It owns accepted facts,
+   useful candidate calculations, balanced input batches, actual game feedback,
+   effect expectations, and truthful terminal rules. A common LocalScript driver
+   publishes bounded JSON frames. These assets remain saved for later runs.
+3. The native TypeScript runner owns the repeated observation/choice/input loop,
+   freshness and validity checks, cancellation, local traces, and session cleanup.
+   It contains no Hollow Warden names, combat geometry, controls, or terminal rules.
+4. Laya chooses among the adapter's currently useful candidates. Singleton choices
+   are deterministic. Laya does not inspect arbitrary Lua or generate game code
+   on every frame; Diligent prepares/maintains that code outside the timed episode.
+
+Tools are registered on the existing Studio provider. Web and TUI consume the
+existing tool protocol; MCP exposes the same tools and final results. No new
+client-specific autoplay implementation or Python production dependency was added.
+
+Measured episodes
+-----------------
+                                       Direct native       Diligent maintained
+Outcome                                VICTORY             VICTORY
+Episode incl. startup/cleanup          69.41 s             53.63 s
+Final boss / player HP                 0 / 65              0 / 125
+Observed frames                        298                 445
+Laya decisions                         32                  24
+Dispatched actions                     65                  49
+Stale choices rejected                 0                   1
+Actual successful shot feedback         30                  30
+Median observe RPC                     121.49 ms           109.97 ms
+Median observation cadence              225.63 ms           112.89 ms
+Median Laya decision latency            142.74 ms           135.94 ms
+Observation errors                      0                   0
+Verified owned-session stop             yes                 yes
+
+The second episode is not a controlled model-quality or win-rate comparison.
+Both the observer cadence and adapter effect checks changed; state trajectories
+also differed. Do not attribute its better HP or duration solely to Laya.
+
+Maintenance proof
+-----------------
+Harness: corewatch-native
+Module GUID: D9E04A30444A88E8564CAA8F71B59585
+Driver GUID: 86AEADEB49C52A7BC993CE8C34F27659
+Original SHA-256:
+  be27d02c61caf2eeb83895b0e8ee7e91f0741876474ce444228a603459850a4c
+Maintained SHA-256:
+  7caee2375e3a508aee217384bc659c6068f4a29182f2c5f145fde3d5d4331055
+
+Diligent changed each movement candidate to retain its dominant horizontal axis
+and changed the observed x/z values to whole units. The recorded roll_back
+effect now checks z: 1100 -> 1406; roll_forward checks z: 1503 -> 1197. This is a
+real state change, unlike the original roll_back check, where x drifted only
+from -312.183502 to -312.181244 yet passed a generic change expectation.
+Both scripts validated with 0 errors. Post-edit readback, run summary, and final
+Studio readback all agree on the maintained source hash. The improved fixture
+is included in the sidecar tests; both original and maintained sources are saved
+beside this report for review.
+
+The maintenance test supplied a specific diagnosed issue. It proves actual code
+maintenance and execution by Diligent, not autonomous discovery of every issue.
+
+Lessons from failures and delays
+-------------------------------
+- Rich state should come from accepted server snapshots/feedback and actual
+  geometry/GUI visibility. Hidden authored HUD defaults are not authoritative.
+  The driver heartbeat proves adapter liveness; a game-specific adapter must
+  also account for the freshness of its own snapshot source.
+- Studio RPC latency is not primarily TCP connection setup in the measured local
+  probes. Windows localhost narrow observe waited about 112 ms with sub-ms
+  connection setup; persistent connections and foregrounding did not remove it.
+  A 50 ms idle gap reduced the next read wait to about 62 ms. A Studio polling or
+  scheduling cadence is a plausible explanation, not a proved C++ root cause.
+- The native observer initially added an unnecessary 100 ms after every RPC.
+  Changing it to a minimum start-to-start interval removed that extra wait.
+  Observation continues while the model or input runs; there is no serial
+  observe -> model -> input -> observe blind interval.
+- A chooser result must be checked against the latest candidate frame immediately
+  before input. One fire_core choice was discarded after phase/validity changed
+  in the maintained run. Candidate geometry is an estimate; subsequent state and
+  server feedback establish the effect.
+- Completed input is not proof of success. Effects retain observed before/after
+  values. No effect, runtime error, input cancellation, timeout, and game defeat
+  are separate outcomes. Cleanup uses an independent signal and does not stop a
+  replacement or pre-existing session.
+- Luau JSONEncode exposes arrays as numeric-key objects in this Studio build.
+  Only protocol array fields are normalized, in numeric order. Arbitrary state
+  objects remain objects. Exactly 16 actions are supported; an off-by-one check
+  was found and repaired.
+- Source installation must preserve exact bytes. Long-bracket literals dropped
+  an initial newline in a real Editor probe. Quoted literals now preserve LF,
+  CRLF, quotes, backslashes, delimiter-like text, and Unicode; five read-only
+  Editor roundtrips passed. Updates also compare the previous Source inside the
+  Editor transaction, not only before it. A successful edit is never replayed
+  merely because save or validation subsequently fails.
+- The user's mounted /Volumes/overdare-newgame was unavailable. Dev-cross ran
+  with repository cwd and live RPC editing/saving. The general map rollback
+  baseline could not be captured without the mounted map; this test preserved
+  harness source versions explicitly. It does not prove full-map rollback.
+- The stored default coding model chatgpt/gpt-5.6-luna was not recognized by the
+  current Diligent catalog. The test selected advertised gpt-6-luna/max for its
+  thread without changing the global configuration. The first invalid describe
+  call included an extra name; Diligent corrected it and continued.
+- The maintenance/gameplay turn exceeded the client's aggregate five-minute
+  limit during final log-analysis/report thinking. The game had already won and
+  stopped. That attempt remains recorded as turn_timeout, pass=false. A report-only
+  continuation in the SAME thread completed in about 24 s. Its acceptance scope
+  explicitly includes prior persisted tool results. It did not replay the edit
+  or game. Separate preparation/report deadlines from timed gameplay deadlines.
+
+Verification
+------------
+22 native playtest tests, 16 MCP tests, and 85 existing input/provider/cancellation
+tests passed. Sidecar TypeScript and Biome passed. Offline tests establish runtime
+invariants and transport behavior, not real model quality; the Studio episodes
+and Diligent thread supply the live evidence.
+
+Evidence files in this directory:
+- direct-native-summary.json / direct-native-trace.jsonl
+- agent-native-summary.json / agent-native-trace.jsonl
+- metrics.json
+- dev-cross-maintenance-luna.summary.json (original turn_timeout)
+- dev-cross-report-continuation.summary.json (thread_with_prior_results, pass=true)
+- final-studio-readback.json
+- original-adapter.luau / maintained-adapter.luau
+- source-codec-check.json
+- maintenance-prompt.txt / report-prompt.txt
+
+Live setup and reproduction
+---------------------------
+Studio: 10.40.32.110:13378; Windows local RPC target: 127.0.0.1:13377.
+Native Ollaya 0.8.0 with laya:en ran on the Mac at 127.0.0.1:11436 for the native
+tool tests. The user's existing 11435 service was ordinary Ollama and was left
+untouched. Earlier Python evidence tested Windows-local Ollaya. This native
+integration does not yet prove a Windows-local in-Studio chooser.
+
+The current dev-cross server runs at http://localhost:5174. Its verified thread is
+/20261001190447274001-80e794. The tested Studio adapter remains installed and saved.
+To restart this tested setup while the task-local Ollaya service is running:
+  DILIGENT_LAYA_URL=http://127.0.0.1:11436/api/decide scripts/dev-cross-studio.sh 10.40.32.110 13378 /Users/jjss/Documents/Workspace/diligent
+Restore the real project mount as the third argument when available. Do not
+reinstall a harness that already exists; read it and update with its current hash.
+The model server was extracted under /private/tmp and is not an installed startup
+service; future hosts must start their own native Ollaya endpoint before running.
+Mac lock prevented a final RDP screenshot; RPC/game-state checks succeeded.
+
+What is and is not established
+-----------------------------
+The game-specific-code maintenance loop is feasible and implemented, and the
+requested real Diligent start/play/stop path is verified. XState or a reactive
+state library can be used inside a game's adapter but is not a prerequisite.
+They do not themselves discover useful actions or trustworthy game outcomes.
+
+Automatic first-time adaptation to arbitrary UGC, automatic discovery of all
+observation bindings, guaranteed improvement across code revisions, matched-seed
+quality evaluation, a raw Unreal/Lua console-log stream, and remote Jev account
+authentication/latency/billing were not established. This implementation reads
+the adapter's real game feedback live, not the full raw Studio console.
+
+For reliable autonomous improvement across many UGC projects, the next acceptance
+layer should retain source revisions with their episode hashes, define meaningful
+per-game goals/coverage metrics, compare repeated runs under matched conditions,
+and restore a known version after regression. The existing source-hash update and
+trace contracts provide the execution boundary for that work. One successful
+adapter or one improved run cannot serve as a universal quality guarantee.

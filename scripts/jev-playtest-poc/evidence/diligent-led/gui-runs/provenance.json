@@ -1,0 +1,107 @@
+{
+  "consolidatedOn": "2026-10-07",
+  "sourceRoot": "/Volumes/overdare-newgame/.overdare/playtests",
+  "scope": "Copied summaries and coverage are byte-identical; trace excerpts retain selected original records. Full traces remain at the recorded source paths. No episode was run during consolidation.",
+  "runs": [
+    {
+      "runId": "1791273276529-5779f447",
+      "files": {
+        "summary.json": {
+          "sha256": "1134901cbe67de5294ec95d8f350324093691672d47dbc2c764de57cd4c623d6",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791273276529-5779f447/summary.json"
+        },
+        "coverage.json": {
+          "sha256": "bfede65910db2816b192e85d9c9c8d84717a2e30698612c7d21f76e0f032c0b6",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791273276529-5779f447/coverage.json"
+        }
+      },
+      "traceExcerpt": {
+        "original": "/Volumes/overdare-newgame/.overdare/playtests/1791273276529-5779f447/trace.jsonl",
+        "originalSha256": "9fe2f58b5a52923674717e4d946ea8c056fb263c2d0e4fd49367b6ab8906d9fb",
+        "records": 44,
+        "note": "Selection for review, not a replacement for the full trace."
+      },
+      "sourceHash": "c113c0c6bcd33e49a771889b52d0c075ec97392697cf88cc6aac4b5a2a63f7a6"
+    },
+    {
+      "runId": "1791274047689-b16fcc9c",
+      "files": {
+        "summary.json": {
+          "sha256": "e119a6b6e9defd62754f6694e9e8cd1373ffe02e3e95dae9f12a7c2d8c22d28c",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274047689-b16fcc9c/summary.json"
+        },
+        "coverage.json": {
+          "sha256": "0819dbbf6a0e42bad624aef6c7fe778f6501b4eecedf105df81edaa886d7af92",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274047689-b16fcc9c/coverage.json"
+        }
+      },
+      "traceExcerpt": {
+        "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274047689-b16fcc9c/trace.jsonl",
+        "originalSha256": "8d264715d07f7df42514c82e8374be6e5d4066b274376f8990f19273d6731f53",
+        "records": 19,
+        "note": "Selection for review, not a replacement for the full trace."
+      },
+      "sourceHash": "deda5e2d7941e2515fc23ab5ffcb3a788cfadd38514f6a941b118db4981c4048"
+    },
+    {
+      "runId": "1791274477792-7a11d78d",
+      "files": {
+        "summary.json": {
+          "sha256": "40f5ba4c4cc27456971ee56921f3ad45b3c98c4d377f35a36316851fd214a125",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274477792-7a11d78d/summary.json"
+        },
+        "coverage.json": {
+          "sha256": "454151dc3a7cdfa7332bf3011a343cffdd848e7ef04d9db7874c50e680e98524",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274477792-7a11d78d/coverage.json"
+        }
+      },
+      "traceExcerpt": {
+        "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274477792-7a11d78d/trace.jsonl",
+        "originalSha256": "3a598f1a8d46c015f864d3f9451eeb3d87dbb4d86f1205a4ee5147c8204fb02d",
+        "records": 24,
+        "note": "Selection for review, not a replacement for the full trace."
+      },
+      "sourceHash": "3ee7f128d3e98ced69716e8b452d0510b51a05cc4ed57f0a51fe8dc7fd8abdad"
+    },
+    {
+      "runId": "1791274706494-36e24c36",
+      "files": {
+        "summary.json": {
+          "sha256": "9000d62ec4eafd10224ee964e38847010061b6524bcd761afa6ec2a61f2dc62b",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274706494-36e24c36/summary.json"
+        },
+        "coverage.json": {
+          "sha256": "73d1b71d056ef0f3d2edf27fd3b44b658e6deb5e95144b8188a0eeaaa0c855b7",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274706494-36e24c36/coverage.json"
+        }
+      },
+      "traceExcerpt": {
+        "original": "/Volumes/overdare-newgame/.overdare/playtests/1791274706494-36e24c36/trace.jsonl",
+        "originalSha256": "b401c848cc23f1ff36c1dbff1e4316381e5791051dbc986867cc070b84dd35c6",
+        "records": 22,
+        "note": "Selection for review, not a replacement for the full trace."
+      },
+      "sourceHash": "3ee7f128d3e98ced69716e8b452d0510b51a05cc4ed57f0a51fe8dc7fd8abdad"
+    },
+    {
+      "runId": "1791275979904-57c6ff16",
+      "files": {
+        "summary.json": {
+          "sha256": "f2286d189e14d85be0e95dfda7114a561c4cb067fc77076ace592fd185e08cc7",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791275979904-57c6ff16/summary.json"
+        },
+        "coverage.json": {
+          "sha256": "06d6e8f4d30968ea405c700a5a2e6eabeeec7aa56814f288336d68edbc917784",
+          "original": "/Volumes/overdare-newgame/.overdare/playtests/1791275979904-57c6ff16/coverage.json"
+        }
+      },
+      "traceExcerpt": {
+        "original": "/Volumes/overdare-newgame/.overdare/playtests/1791275979904-57c6ff16/trace.jsonl",
+        "originalSha256": "5959a0790576ac4d189537653a80576c13da41e203fffa0735efb4824635f259",
+        "records": 28,
+        "note": "Selection for review, not a replacement for the full trace."
+      },
+      "sourceHash": "c817fd2895d213f72f776f4e5db57475a12c39f7405be5451b159b41c6c4f530"
+    }
+  ]
+}

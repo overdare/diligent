@@ -17,10 +17,164 @@ walk the character — instead of asking the user to do it by hand and report ba
 | `studiorpc_game_character_move_status` | Outcome of a `move_to` request |
 | `studiorpc_game_ui_browse` | List the UI on screen with the rectangle each element occupies |
 | `studiorpc_viewport_camera_read` | Where the camera on screen is, how much it covers, and what it is aimed at |
+| `studiorpc_game_playtest_harness` | Describe, read, install, or update persistent game-specific Luau harness code |
+| `studiorpc_game_playtest` | Start, play with Laya, record observed effects, and stop the session it started |
 
 They live in `apps/overdare-ai-agent/sidecar/src/tools/studiorpc/tools/pie-input/` and `…/methods/`, and are
 registered by the Studio RPC provider, so they reach the product agent, the TUI, the MCP router, and
 `overdare-ai-agent:tools` through the same registry as every other Studio tool.
+
+## Editable UGC playtest harnesses
+
+Diligent prepares a harness from the current project's Lua, GUI, accepted server snapshots, and feedback.
+The harness is code inside Studio: a ModuleScript at
+`ReplicatedStorage.DiligentPlaytestHarnesses.<name>` and a common LocalScript driver at
+`StarterPlayer.StarterPlayerScripts.DiligentPlaytestDriver_<name>`. Installation saves the project, reads
+the source back, and validates both scripts. These assets remain available for the next maintenance run.
+
+Use `game_playtest_harness` with `operation: "describe"` for the authoring contract. The adapter returns
+`observe()` and optional `start()`. It owns compact state, up to 16 useful candidate input batches, their
+validity/expiry, expected state changes, real game events, and terminal rules. `start()` can subscribe to
+accepted snapshots and feedback. `observe()` must not perform gameplay actions. Convert game objects to
+plain JSON facts; the common driver supplies revision, harness identity, and game time.
+
+During PIE, the driver publishes `workspace.DiligentPlaytestFrame_<name>`. The native TypeScript runner
+continuously reads it through `game.observe`, even while the decision provider runs or an input batch runs. Only
+multiple-candidate decisions call the configured provider; a single candidate runs directly. Before dispatch, the runner
+rechecks the latest frame, action identity, validity key, expiry, and PIE client. Effects are reported from
+subsequent state, and success requires an observed adapter terminal. A completed input RPC alone does not
+establish a gameplay result.
+
+The maintenance loop is:
+
+1. Inspect the current game's scripts and visible GUI; author/install an adapter.
+2. Run `game_playtest` with its `harnessName`, objective, and bounded duration (up to 180 seconds).
+3. Read the returned `tracePath` and `summaryPath`; compare observations, decisions, input replies, effects,
+   and game feedback.
+4. Read the installed source, improve it using `operation: "update"` and its `expectedSourceHash`, then
+   rerun. Source comparison also happens inside the editor transaction to detect intervening edits.
+
+Harness edits are refused during PIE. The runner refuses an existing PIE session, honors cancellation,
+and stops only the same session it started. Adapter errors, stale observations, invalid input, model
+errors, and session replacement are recorded as runtime failures rather than game defeats. Traces live
+under `<cwd>/.overdare/playtests/`. Web and TUI use the existing tool progress/result protocol; MCP exposes
+the same registered tools and final results, with the live trace available on disk.
+Game-specific candidate quality and truthful terminal rules remain the adapter author's responsibility.
+
+The authoring skill's `references/controller-design.md` separates game bindings,
+state/event reduction, parameterized action capabilities, model decision points
+and adjustable policy configuration where useful. These are responsibilities, not
+mandatory layers or a state-machine framework. Diligent preserves working behavior
+and improves one demonstrated problem at a time. Legality guards should remove impossible
+actions; preferences should expose useful alternatives for the model to choose.
+
+For exploratory player simulation, the adapter supplies observations, controls and
+verification rather than a predetermined solution route. Ordinary candidates can
+combine camera-relative movement, view changes and interaction with optional short
+approach/aim assists. Model responsibility depends on which decisions remain open,
+not on how often the model is called. Player-observable decision facts and
+privileged verification facts should be separated with `decisionState`; candidate
+descriptions must respect that same observation scope.
+
+Users can ask Diligent to adjust assistance and test conditions independently.
+The authoring skill directs it to keep supported settings in a small editable
+adapter configuration, update them with the source-hash-checked harness tool, and
+use existing goal/duration/watchdog arguments. Each advertised setting needs actual
+candidate/execution/assertion behavior; this is not a generic profile API or a
+settings panel, and existing adapters do not gain those settings automatically.
+Test-condition success and game completion remain distinct. Gameplay rules stay
+outside this configuration.
+
+For multi-step goals, each current action may carry `intent` with stable `id`,
+`description`, `validityKey` and nonempty `completeWhen` expectations. Every action
+in a nonempty frame must be intent-tagged or legacy; each intent supplies one
+current physical step. The runner chooses goal IDs, retains the selection-time
+state, and executes fresh matching steps until observed completion or invalidation.
+`intentDecisionIntervalMs` (default 2000, range 250..30000) allows the model to
+continue or switch at input boundaries when alternatives exist. Re-selecting the
+same goal does not reset its baseline, age or no-progress budget.
+
+Optional frame `decisionState` supplies a compact model view when full `state`
+contains per-target verification tables. The model receives that projection,
+the goal and candidate descriptions; effect and completion predicates still use
+full `state`. Keep all three model inputs concise to fit the installed model's
+context budget. Omitting the projection preserves legacy full-state requests.
+
+The runner also provides up to three recent completed inputs in
+`controller.recentActions`, with action ID, optional intent ID and a result:
+`effect_confirmed`, `effect_unconfirmed` or `not_checked`. Only checks on healthy
+post-input observations can confirm an effect. Unconfirmed checks do not prove
+that no effect occurred; they use the first newer frame. Automatic inputs are
+included, while offered/rejected choices and cancelled inputs are not. History
+resets with each episode, contains no raw verification values and is recorded as
+`controllerContext` on model-start trace events. This is short-term feedback for
+the chooser, not an adapter callback or a persistent exploration map.
+
+The adapter remains observation-driven and does not receive an onDecision callback.
+Runner-owned intent memory needs no new Studio RPC. Generate each goal's step
+independently from facts, without changing a global chosen target while enumerating
+options. Trace `intentId` identifies the policy goal; `executionId` identifies each
+physical batch, whose action ID may change. `intent_completed` is based on observed
+completion predicates, not model selection or input completion. The game's terminal
+remains a separate result. Empty goals or changed context invalidate commitment.
+
+Choose the goal boundary to match the test. For target-level interaction, an
+adapter can retain one `inspect:<target>` intent through approach, focus, input and
+authoritative confirmation; successful camera alignment alone does not complete
+that goal. Keep target/lifecycle validity stable across mechanical phases and
+preserve verification values after the target leaves the candidate subset.
+The skill's [interaction-state reference](../../apps/overdare-ai-agent/bootstrap/skills/autonomous-playtest/references/interaction-state.md)
+covers native GUI/recipient correlation, shared-key effects, pending/blocked states
+and compact memory. These are adapter authoring patterns, not additional RPCs or
+a callback from Laya to Lua.
+
+Results include `decisionEvidence`, separate from game outcome and coverage:
+`not_exercised`, `selected_not_dispatched`, `dispatched_unverified`, or
+`effects_observed`. Counts distinguish model requests, returned choices, matching
+dispatches, confirmed effects and automatic dispatches. A shared `decisionId`
+correlates those stages in the trace even when observation revisions advance or
+action IDs repeat. The model-start record includes candidate descriptions as well
+as IDs. Evidence is aggregated before trace truncation; it verifies participation
+and declared effects, not strategy quality or a game win.
+
+For agent-led preparation and maintenance, load the bundled `autonomous-playtest` skill. It derives the
+test inventory from the current project's code and the user's objective rather than copying a sample
+game's bindings or exercising every unrelated feature. `operation: "list"` discovers actual installed
+names. A read of an absent name returns `found:false` with the author/install next step; RPC failures
+remain failures and are not interpreted as absence. Updating an adapter also refreshes its managed
+common driver. The driver publishes a valid `ready:false` frame while loading, and the runner waits
+within its startup bound rather than classifying unavailable startup character data as another session.
+
+Optional coverage declares stable targets `{id, kind: action|state|event, description, source?}` in
+`coverage.targets`, witnessed state/event ids in `coverage.observed`, and action target ids in
+`actions[].coverageKey`. The returned `coveragePath` points to a separate report. Candidate availability,
+model/singleton selection, input dispatch, completed input, and confirmed effects are separate stages.
+Action targets require a nonempty passing effect assertion after completed input; state/event targets
+require adapter-reported observations. No inventory is reported as `not_declared`, never 100% coverage.
+The percentage covers only the declared test targets, not automatic whole-code branch coverage, and
+does not change the episode's success/failure outcome.
+
+For the default Laya provider, native Ollaya must already be installed. Set `DILIGENT_LAYA_URL` to its `/api/decide`
+endpoint and optionally `DILIGENT_LAYA_MODEL` (default `laya:en`), or pass `decisionUrl`/`model` per run.
+The model is warmed before PIE starts. The decision endpoint is local to the sidecar's host, which may be
+a Mac connected by dev-cross to Windows Studio; it need not be hosted inside Studio. An ordinary Ollama
+service does not implement this native decision API. The old Python raid PoC is not a production dependency.
+
+`decisionProvider: "openai-decisions"` selects the public OpenAI Decisions adapter;
+`observationMode: "structured+image"` adds actual PNG observations at model-decision
+boundaries. Credentials are server-side and no ChatGPT OAuth fallback is automatic.
+See [decision providers and visual input](playtest-decision-providers.md) for the
+implemented settings, image mapping, freshness checks and validation limits.
+
+For measured results, failed cases and source-specific acceptance limits, see the
+[PoC review](../review/autonomous-playtest-poc.md). It distinguishes historical
+victories from the final Horror grouped-inspection implementation, which was
+saved but not exercised through completion. Documentation updates do not alter
+installed game adapters or constitute a new live test.
+
+The fixture `sidecar/test/fixtures/playtest/hollow-warden-adapter.luau` demonstrates one game's bindings
+and controls. It is a starting example, not a universal adapter. Diligent must derive each UGC game's
+bindings, candidate calculations, and outcomes from that project and verify them through actual runs.
 
 ## Aiming without measuring a picture
 
@@ -105,6 +259,31 @@ but is deliberately **not** exposed as a tool: it only cancels a sequence owned 
 a fresh per-call connection never owns one. `studiorpc_game_stop` is the escape hatch.
 
 ## Waiting
+
+### Autonomous playtest progress watchdog
+
+`studiorpc_game_playtest` defaults to `stuckTimeoutMs: 15000`, independently of the
+overall episode limit. It returns `outcome: "stuck"` when no meaningful progress is
+confirmed, cancels pending model/input work and stops only its owned PIE session.
+The summary and trace retain the inactivity interval, progress source, last action
+and observed state. This is a test-control outcome, not a game defeat. The tool
+accepts a different timeout up to 180000 ms, or an explicit 0 to disable it.
+
+Game adapters report a monotonic `progress.sequence` for meaningful observed
+milestones or useful effects. Frame revisions, clocks, repeated inputs and position
+jitter must not advance it. A normal pause can include
+`progress.waiting = {reason, timeoutMs}`. The first such declaration per sequence
+pauses inactivity for a fixed duration on the runner's local clock. Repeating,
+changing or re-adding it cannot renew that allowance; removal resumes the remaining
+budget early. The overall episode limit still applies throughout the pause.
+
+Older adapters without this telemetry use completed non-wait input with changed,
+fully passing effect expectations as a fallback. This does not infer mission
+progress or legitimate long waits: maintain the adapter and refresh its managed
+driver through `game_playtest_harness update` when those distinctions are needed.
+Once adapter telemetry appears, it remains authoritative for that episode.
+
+### Input batch waits
 
 `game.input.inject` answers only once the batch has played out, so the tool raises the RPC timeout by the
 batch's own wait time. `studiorpc_game_character_move_to` polls `game.character.moveStatus` until the move

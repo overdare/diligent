@@ -1,0 +1,557 @@
+{
+  "controlledLocalReplyDelayMs": 1100,
+  "passiveOnly": true,
+  "result": {
+    "outcome": "timeout",
+    "reason": "maxDurationMs elapsed while awaiting the effect of observe",
+    "stats": {
+      "elapsedMs": 3986.0492080000004,
+      "observations": 13,
+      "observationErrors": 0,
+      "modelCalls": 0,
+      "decisions": 1,
+      "dispatchedActions": 1,
+      "invalidatedChoices": 0,
+      "gameEventsEmitted": 3,
+      "duplicateGameEvents": 32,
+      "statusChecks": 4,
+      "traceEvents": 26,
+      "traceEventsDropped": 0,
+      "logCallbackErrors": 0,
+      "maxObserveLatencyMs": 175.3513750000002,
+      "maxObservationAgeMs": 3.2637079999999514,
+      "lastRevision": 16,
+      "lastGameTimeSeconds": 9757.7982467
+    },
+    "cleanup": {
+      "ownedSession": true,
+      "statusChecked": true,
+      "stopAttempted": true,
+      "stopped": true,
+      "reason": "stopped the same PIE session started by this playtest",
+      "sessionId": "4e03f188-4623-b43d-dcc7-3fa07b689326"
+    }
+  },
+  "events": [
+    {
+      "type": "session_status",
+      "atMs": 185.817,
+      "running": false,
+      "startup": true
+    },
+    {
+      "type": "pie_start_requested",
+      "atMs": 345.422458,
+      "numberOfPlayer": 1
+    },
+    {
+      "type": "session_status",
+      "atMs": 1282.287916,
+      "running": true,
+      "cleanup": false
+    },
+    {
+      "type": "session_status",
+      "atMs": 2320.632,
+      "running": true,
+      "cleanup": false
+    },
+    {
+      "type": "observation",
+      "atMs": 2409.34675,
+      "sequence": 1,
+      "revision": 4,
+      "gameTimeSeconds": 9756.3800214,
+      "observeLatencyMs": 84.4169579999998,
+      "cadenceMs": "undefined",
+      "pollDelayMs": 12.536208999999872,
+      "state": {
+        "dj": 0,
+        "e": {},
+        "fresh": false,
+        "losses": 0,
+        "phase": "Unobserved",
+        "round": 0,
+        "sec": -1,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "game_event",
+      "atMs": 2409.399166,
+      "id": "bound",
+      "level": "info",
+      "message": "Accepted server transport and authored tile geometry bound",
+      "data": {
+        "tiles": 546
+      }
+    },
+    {
+      "type": "singleton_choice",
+      "atMs": 2409.485125,
+      "actionId": "observe",
+      "sequence": 1
+    },
+    {
+      "type": "action_dispatch",
+      "atMs": 2409.629458,
+      "actionId": "observe",
+      "description": "Observe real landing or next server round",
+      "sequence": 1,
+      "revision": 4,
+      "observationToDispatchMs": 3.3452080000001843,
+      "eventCount": 1,
+      "events": [
+        {
+          "type": "wait",
+          "durationMs": 120
+        }
+      ]
+    },
+    {
+      "type": "observation",
+      "atMs": 2488.978166,
+      "sequence": 2,
+      "revision": 5,
+      "gameTimeSeconds": 9756.4988075,
+      "observeLatencyMs": 66.1488330000002,
+      "cadenceMs": 81.69087500000023,
+      "pollDelayMs": 32.86200000000008,
+      "state": {
+        "dj": 0,
+        "e": {},
+        "fresh": false,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Unobserved",
+        "round": 0,
+        "sec": -1,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 2657.07275,
+      "sequence": 3,
+      "revision": 6,
+      "gameTimeSeconds": 9756.6669787,
+      "observeLatencyMs": 134.72345799999994,
+      "cadenceMs": 168.01083299999982,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "game_event",
+      "atMs": 2657.0865,
+      "id": "server_1",
+      "level": "info",
+      "message": "Accepted server round/phase",
+      "data": {
+        "alive": 1,
+        "finalWinner": "",
+        "phase": "Loading",
+        "round": 1,
+        "roundWinner": ""
+      }
+    },
+    {
+      "type": "game_event",
+      "atMs": 2657.092541,
+      "id": "server_2",
+      "level": "info",
+      "message": "Accepted server round/phase",
+      "data": {
+        "alive": 1,
+        "finalWinner": "",
+        "phase": "Countdown",
+        "round": 1,
+        "roundWinner": ""
+      }
+    },
+    {
+      "type": "observation",
+      "atMs": 2773.492125,
+      "sequence": 4,
+      "revision": 7,
+      "gameTimeSeconds": 9756.775914,
+      "observeLatencyMs": 113.90066699999988,
+      "cadenceMs": 116.18654199999992,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 2882.873375,
+      "sequence": 5,
+      "revision": 8,
+      "gameTimeSeconds": 9756.8889645,
+      "observeLatencyMs": 105.4178750000001,
+      "cadenceMs": 107.91279200000008,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 2991.538833,
+      "sequence": 6,
+      "revision": 9,
+      "gameTimeSeconds": 9757.0011335,
+      "observeLatencyMs": 104.39729100000022,
+      "cadenceMs": 108.39441600000009,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3106.856041,
+      "sequence": 7,
+      "revision": 10,
+      "gameTimeSeconds": 9757.114506799999,
+      "observeLatencyMs": 112.08908299999985,
+      "cadenceMs": 116.38741699999991,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3284.568583,
+      "sequence": 8,
+      "revision": 11,
+      "gameTimeSeconds": 9757.2295663,
+      "observeLatencyMs": 175.3513750000002,
+      "cadenceMs": 178.5502080000001,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3331.802666,
+      "sequence": 9,
+      "revision": 12,
+      "gameTimeSeconds": 9757.3417242,
+      "observeLatencyMs": 44.82066699999996,
+      "cadenceMs": 47.15129200000001,
+      "pollDelayMs": 53.9619160000002,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3450.871541,
+      "sequence": 10,
+      "revision": 13,
+      "gameTimeSeconds": 9757.4546176,
+      "observeLatencyMs": 63.73408300000028,
+      "cadenceMs": 118.53670800000009,
+      "pollDelayMs": 34.53054199999997,
+      "state": {
+        "alive": false,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3563.476791,
+      "sequence": 11,
+      "revision": 14,
+      "gameTimeSeconds": 9757.567639699999,
+      "observeLatencyMs": 74.82620899999984,
+      "cadenceMs": 112.13683399999991,
+      "pollDelayMs": 22.97008300000016,
+      "state": {
+        "alive": true,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 5,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3685.476083,
+      "sequence": 12,
+      "revision": 15,
+      "gameTimeSeconds": 9757.683041299999,
+      "observeLatencyMs": 95.29183299999977,
+      "cadenceMs": 121.53829099999984,
+      "pollDelayMs": 2.0519580000000133,
+      "state": {
+        "alive": true,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 4,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "observation",
+      "atMs": 3809.153791,
+      "sequence": 13,
+      "revision": 16,
+      "gameTimeSeconds": 9757.7982467,
+      "observeLatencyMs": 120.25445799999989,
+      "cadenceMs": 124.17250000000013,
+      "pollDelayMs": 0,
+      "state": {
+        "alive": true,
+        "dj": 0,
+        "e": {},
+        "fresh": true,
+        "ground": false,
+        "losses": 0,
+        "p": {
+          "1": 0,
+          "2": 2008,
+          "3": 0
+        },
+        "phase": "Countdown",
+        "round": 1,
+        "sec": 4,
+        "vy": 0,
+        "wins": 0
+      },
+      "actionIds": [
+        "observe"
+      ],
+      "terminal": "undefined"
+    },
+    {
+      "type": "input_reply",
+      "atMs": 3859.3545,
+      "actionId": "observe",
+      "status": "completed",
+      "reply": {
+        "status": "completed"
+      }
+    },
+    {
+      "type": "action_result",
+      "atMs": 3859.440458,
+      "actionId": "observe",
+      "observed": false,
+      "reason": "maxDurationMs elapsed while awaiting the effect of observe"
+    },
+    {
+      "type": "session_status",
+      "atMs": 3896.117166,
+      "running": true,
+      "cleanup": true
+    },
+    {
+      "type": "cleanup",
+      "atMs": 4008.576416,
+      "ownedSession": true,
+      "stopAttempted": true,
+      "stopped": true,
+      "reason": "stopped the same PIE session started by this playtest"
+    }
+  ]
+}
