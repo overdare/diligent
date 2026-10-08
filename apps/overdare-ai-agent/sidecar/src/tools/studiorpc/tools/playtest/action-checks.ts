@@ -1,5 +1,11 @@
 // @summary Checks action freshness and compares observed effects without executing gameplay.
-import { type PlaytestAction, type PlaytestExpectation, type PlaytestFrame, safeTraceValue } from "./frame";
+import {
+  type PlaytestAction,
+  type PlaytestExpectation,
+  type PlaytestFrame,
+  type PlaytestIntent,
+  safeTraceValue,
+} from "./frame";
 import { isRecord } from "./observation";
 
 function getPath(root: Record<string, unknown>, path: string): { present: boolean; value: unknown } {
@@ -76,6 +82,23 @@ export function evaluateExpectations(
   });
 }
 
+// Descriptions and physical steps may change without changing a goal's guard.
+export function sameIntentGuard(prior: PlaytestIntent | undefined, current: PlaytestIntent | undefined): boolean {
+  if (!prior || !current) return false;
+  return prior.validityKey === current.validityKey && jsonEqual(prior.completeWhen, current.completeWhen);
+}
+
+function sameActionGuard(prior: PlaytestAction, current: PlaytestAction): boolean {
+  const sameActionKind = Boolean(prior.intent) === Boolean(current.intent);
+  return sameActionKind && prior.validityKey === current.validityKey;
+}
+
+export function actionEffectStatus(healthy: boolean, checks: Array<Record<string, unknown>>) {
+  if (!healthy || checks.length === 0) return "not_checked";
+  if (checks.every((check) => check.passed)) return "effect_confirmed";
+  return "effect_unconfirmed";
+}
+
 export function actionForChoice(frame: PlaytestFrame, id: string, intentMode: boolean) {
   return frame.actions.find((action) => (intentMode ? action.intent?.id === id : action.id === id));
 }
@@ -89,18 +112,9 @@ export function actionStillValid(
   const prior = actionForChoice(before, actionId, intentMode);
   const current = actionForChoice(latest, actionId, intentMode);
   if (!prior || !current) return false;
-  if (Boolean(prior.intent) !== Boolean(current.intent)) return false;
-  if (intentMode) {
-    if (
-      !prior.intent ||
-      !current.intent ||
-      prior.intent.validityKey !== current.intent.validityKey ||
-      !jsonEqual(prior.intent.completeWhen, current.intent.completeWhen)
-    )
-      return false;
-  } else if (prior.validityKey !== current.validityKey) return false;
   if (current.expiresAtGameTime !== undefined && latest.gameTimeSeconds >= current.expiresAtGameTime) return false;
-  return true;
+  if (intentMode) return sameIntentGuard(prior.intent, current.intent);
+  return sameActionGuard(prior, current);
 }
 
 export function actionCoverageKey(action: PlaytestAction | undefined): string | undefined {

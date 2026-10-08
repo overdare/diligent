@@ -84,6 +84,13 @@ export function createDecisionEvidenceTracker(): {
   let modelEffectsConfirmed = 0;
   let automaticDispatches = 0;
 
+  const decisionStatus = (): DecisionEvidenceStatus => {
+    if (modelChoices === 0) return "not_exercised";
+    if (modelDispatches === 0) return "selected_not_dispatched";
+    if (modelEffectsConfirmed === 0) return "dispatched_unverified";
+    return "effects_observed";
+  };
+
   const getDecision = (decisionId: number): DecisionRecord => {
     let decision = decisions.get(decisionId);
     if (!decision) {
@@ -185,16 +192,8 @@ export function createDecisionEvidenceTracker(): {
     },
 
     summary() {
-      const status: DecisionEvidenceStatus =
-        modelChoices === 0
-          ? "not_exercised"
-          : modelDispatches === 0
-            ? "selected_not_dispatched"
-            : modelEffectsConfirmed === 0
-              ? "dispatched_unverified"
-              : "effects_observed";
       return {
-        status,
+        status: decisionStatus(),
         modelRequests,
         modelChoices,
         modelDispatches,

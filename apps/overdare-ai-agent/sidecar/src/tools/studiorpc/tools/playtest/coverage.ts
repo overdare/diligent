@@ -12,13 +12,29 @@ interface TargetProgress extends PlaytestCoverageTarget {
   effectsFailed: number;
 }
 
+function targetCoverageStatus(progress: TargetProgress) {
+  const confirmations = progress.kind === "action" ? progress.effectsConfirmed : progress.observedSamples;
+  if (confirmations > 0) return "covered";
+  if (progress.completed > 0) return "completed_unverified";
+  if (progress.dispatched > 0) return "dispatched";
+  if (progress.selected > 0) return "selected";
+  if (progress.offeredFrames > 0) return "offered";
+  return "uncovered";
+}
+
+function inventoryCoverageStatus(total: number, covered: number) {
+  if (total === 0) return "not_declared";
+  if (covered === total) return "complete";
+  return "partial";
+}
+
 export function createCoverageTracker() {
   const targets = new Map<string, TargetProgress>();
-  function target(id: string, kind?: PlaytestCoverageTarget["kind"]) {
-    const t = targets.get(id);
-    if (!t) throw new Error(`Undeclared coverage target ${id}`);
-    if (kind && t.kind !== kind) throw new Error(`Coverage target ${id} requires kind ${kind}`);
-    return t;
+  function requireTarget(id: string, kind?: PlaytestCoverageTarget["kind"]) {
+    const progress = targets.get(id);
+    if (!progress) throw new Error(`Undeclared coverage target ${id}`);
+    if (kind && progress.kind !== kind) throw new Error(`Coverage target ${id} requires kind ${kind}`);
+    return progress;
   }
   return {
     observe(frame: PlaytestFrame) {
@@ -45,22 +61,22 @@ export function createCoverageTracker() {
         }
       }
       for (const id of new Set(frame.coverage?.observed ?? [])) {
-        const t = target(id);
-        if (t.kind === "action")
+        const progress = requireTarget(id);
+        if (progress.kind === "action")
           throw new Error(`Action coverage ${id} requires confirmed input effect, not an observation hit`);
-        t.observedSamples++;
+        progress.observedSamples++;
       }
       for (const id of new Set(frame.actions.map((a) => a.coverageKey).filter((id): id is string => !!id))) {
-        target(id, "action").offeredFrames++;
+        requireTarget(id, "action").offeredFrames++;
       }
     },
     event(event: PlaytestEvent) {
       if (typeof event.coverageKey !== "string") return;
-      const t = target(event.coverageKey, "action");
+      const progress = requireTarget(event.coverageKey, "action");
       if (event.type === "model_choice" || event.type === "singleton_choice" || event.type === "intent_step")
-        t.selected++;
-      if (event.type === "action_dispatch") t.dispatched++;
-      if (event.type === "input_reply" && event.status === "completed") t.completed++;
+        progress.selected++;
+      if (event.type === "action_dispatch") progress.dispatched++;
+      if (event.type === "input_reply" && event.status === "completed") progress.completed++;
       if (
         event.type === "action_result" &&
         event.observed === true &&
@@ -69,30 +85,20 @@ export function createCoverageTracker() {
         event.expectations.length > 0
       ) {
         const checks = event.expectations as Array<{ passed?: boolean }>;
-        if (checks.every((check) => check.passed === true)) t.effectsConfirmed++;
-        else t.effectsFailed++;
+        if (checks.every((check) => check.passed === true)) progress.effectsConfirmed++;
+        else progress.effectsFailed++;
       }
     },
     summary() {
-      const rows = [...targets.values()].map((t) => {
-        const covered = t.kind === "action" ? t.effectsConfirmed > 0 : t.observedSamples > 0;
-        const status = covered
-          ? "covered"
-          : t.completed > 0
-            ? "completed_unverified"
-            : t.dispatched > 0
-              ? "dispatched"
-              : t.selected > 0
-                ? "selected"
-                : t.offeredFrames > 0
-                  ? "offered"
-                  : "uncovered";
-        return { ...t, status, covered };
+      const rows = [...targets.values()].map((progress) => {
+        const status = targetCoverageStatus(progress);
+        const covered = status === "covered";
+        return { ...progress, status, covered };
       });
-      const coveredTargets = rows.filter((t) => t.covered).length;
+      const coveredTargets = rows.filter((progress) => progress.covered).length;
       return {
         scope: "declared_test_targets",
-        status: rows.length === 0 ? "not_declared" : coveredTargets === rows.length ? "complete" : "partial",
+        status: inventoryCoverageStatus(rows.length, coveredTargets),
         totalTargets: rows.length,
         coveredTargets,
         ...(rows.length ? { percentage: Math.round((1000 * coveredTargets) / rows.length) / 10 } : {}),
