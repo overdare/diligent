@@ -42,8 +42,11 @@ test("availability, choice, input completion and confirmed effect remain separat
       ],
     }),
   );
+  expect(c.summary().targets[0].status).toBe("offered");
   c.event({ type: "model_choice", atMs: 1, coverageKey: "jump" });
+  expect(c.summary().targets[0].status).toBe("selected");
   c.event({ type: "action_dispatch", atMs: 2, coverageKey: "jump" });
+  expect(c.summary().targets[0].status).toBe("dispatched");
   c.event({ type: "input_reply", atMs: 3, coverageKey: "jump", status: "completed" });
   expect(c.summary()).toMatchObject({ coveredTargets: 0, status: "partial" });
   expect(c.summary().targets[0]).toMatchObject({
@@ -62,6 +65,7 @@ test("availability, choice, input completion and confirmed effect remain separat
     expectations: [{ passed: false }],
   });
   expect(c.summary().coveredTargets).toBe(0);
+  expect(c.summary().targets[0].status).toBe("completed_unverified");
   c.event({
     type: "action_result",
     atMs: 5,
@@ -82,7 +86,9 @@ test("availability, choice, input completion and confirmed effect remain separat
     }),
   );
   expect(c.summary()).toMatchObject({ status: "complete", coveredTargets: 2, totalTargets: 2, percentage: 100 });
-  expect(c.summary().targets[0]).toMatchObject({ effectsConfirmed: 1, effectsFailed: 1 });
+  expect(c.summary().targets[0]).toMatchObject({ status: "covered", effectsConfirmed: 1, effectsFailed: 1 });
+  c.event({ type: "model_choice", atMs: 6, coverageKey: "jump" });
+  expect(c.summary().targets[0].status).toBe("covered");
 });
 
 test("an action without an effect assertion is not credited by input alone", () => {

@@ -1,7 +1,14 @@
 // @summary Runs one observation-led game playtest against a game-owned Luau adapter frame.
 import { StudioRpcError } from "../../rpc";
 import { expandWithOrigin, inputEventsSchema, MAX_EVENT_COUNT, totalWaitMs, validateBatch } from "../pie-input/events";
-import { actionCoverageKey, actionForChoice, actionStillValid, evaluateExpectations, jsonEqual } from "./action-checks";
+import {
+  actionCoverageKey,
+  actionEffectStatus,
+  actionForChoice,
+  actionStillValid,
+  evaluateExpectations,
+  sameIntentGuard,
+} from "./action-checks";
 import { createDecisionEvidenceTracker } from "./decision-evidence";
 import {
   type PlaytestAction,
@@ -288,6 +295,16 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
     }
   };
 
+  const currentDecisionContext = (): PlaytestDecisionContext | undefined => {
+    if (!activeIntent && recentActions.length === 0) return undefined;
+    const context: PlaytestDecisionContext = {};
+    if (activeIntent) {
+      context.activeIntent = { id: activeIntent.definition.id, elapsedMs: clock.now() - activeIntent.startedAtMs };
+    }
+    if (recentActions.length > 0) context.recentActions = structuredClone(recentActions);
+    return context;
+  };
+
   // Selection owns model waiting and freshness checks; it never sends physical input.
   const selectAction = async (
     before: FrameSnapshot,
@@ -297,11 +314,12 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
     runDeadline: number,
   ): Promise<ActionSelection> => {
     const retained = activeIntent && (actions.length === 1 || clock.now() - lastPolicyAt < intentDecisionIntervalMs);
+    const decisionSource = actions.length === 1 ? "automatic" : "model";
     const decisionTrace = retained
       ? activeIntent!.trace
       : {
           decisionId: ++stats.decisions,
-          decisionSource: actions.length === 1 ? "automatic" : "model",
+          decisionSource,
         };
     let choice: PlaytestChoice;
     let choiceVisual: PlaytestVisual | undefined;
@@ -320,20 +338,7 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
         sequence: before.sequence,
       });
     } else {
-      const controllerContext: PlaytestDecisionContext | undefined =
-        activeIntent || recentActions.length > 0
-          ? {
-              ...(activeIntent
-                ? {
-                    activeIntent: {
-                      id: activeIntent.definition.id,
-                      elapsedMs: clock.now() - activeIntent.startedAtMs,
-                    },
-                  }
-                : {}),
-              ...(recentActions.length > 0 ? { recentActions: structuredClone(recentActions) } : {}),
-            }
-          : undefined;
+      const controllerContext = currentDecisionContext();
       const markModelStart = () => {
         stats.modelCalls += 1;
         emit("model_start", {
@@ -652,22 +657,16 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
       return false;
     }
     const expectations = evaluateExpectations(beforeInput.frame.state, resultFrame.frame.state, action.expectations);
+    const effectStatus = actionEffectStatus(!observer.snapshotHealthError(resultFrame), expectations);
     recentActions.push({
       actionId: action.id,
       ...(action.intent ? { intentId: action.intent.id } : {}),
-      result:
-        observer.snapshotHealthError(resultFrame) || expectations.length === 0
-          ? "not_checked"
-          : expectations.every((check) => check.passed)
-            ? "effect_confirmed"
-            : "effect_unconfirmed",
+      result: effectStatus,
     });
     if (recentActions.length > 3) recentActions.shift();
     if (
-      !observer.snapshotHealthError(resultFrame) &&
+      effectStatus === "effect_confirmed" &&
       expanded.sent.some((event) => event.type !== "wait") &&
-      expectations.length > 0 &&
-      expectations.every((check) => check.passed) &&
       expectations.some((check) => JSON.stringify(check.before) !== JSON.stringify(check.after))
     ) {
       watchdog?.confirmEffect(clock.now());
@@ -774,11 +773,7 @@ function createPlaytestEpisode(options: RunPlaytestOptions) {
       );
       if (activeIntent) {
         const available = actions.find((action) => action.intent?.id === activeIntent!.definition.id)?.intent;
-        if (
-          !available ||
-          available.validityKey !== activeIntent.definition.validityKey ||
-          !jsonEqual(available.completeWhen, activeIntent.definition.completeWhen)
-        ) {
+        if (!sameIntentGuard(available, activeIntent.definition)) {
           emit("intent_invalidated", {
             ...activeIntent.trace,
             intentId: activeIntent.definition.id,
