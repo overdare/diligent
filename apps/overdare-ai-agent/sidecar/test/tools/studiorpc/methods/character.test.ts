@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStudioRpcTools } from "../../../../src/tools/studiorpc";
-import * as character from "../../../../src/tools/studiorpc/methods/proceduralcharacter";
+import * as character from "../../../../src/tools/studiorpc/methods/character";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
@@ -26,7 +26,7 @@ describe("non-ODA character authoring", () => {
         throw new Error("AUTHORING_DOCUMENTS_REQUIRED: no historical request binding");
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
     await expect(
       tool.execute(request, { toolCallId: "historical-recipe", signal: new AbortController().signal, abort: () => {} }),
     ).rejects.toThrow("AUTHORING_DOCUMENTS_REQUIRED");
@@ -56,7 +56,7 @@ describe("non-ODA character authoring", () => {
         return { state: "preview_ready" };
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
     await tool.execute(request, {
       toolCallId: "structured-recipe",
       signal: new AbortController().signal,
@@ -86,7 +86,7 @@ describe("non-ODA character authoring", () => {
       },
     });
     await tools
-      .find((tool) => tool.name === "studiorpc_proceduralcharacter_build")!
+      .find((tool) => tool.name === "studiorpc_character_build")!
       .execute(request, { toolCallId: "preserved-rig", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
     expect(character.build.params.safeParse({ ...request, rig: {} }).success).toBe(false);
@@ -136,7 +136,7 @@ describe("non-ODA character authoring", () => {
         return { applied: true, modelGuid: "1".repeat(32) };
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
     await tool.execute(request, { toolCallId: "native-apply", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
   });
@@ -166,7 +166,7 @@ describe("non-ODA character authoring", () => {
         return issued;
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_export")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_export")!;
     const result = await tool.execute(request, {
       toolCallId: "native-publish",
       signal: new AbortController().signal,
@@ -210,7 +210,7 @@ describe("non-ODA character authoring", () => {
         return { state: "preview_ready" };
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
     await tool.execute(request, { toolCallId: "static-build", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
     const baked = { ...request, source: { ...request.source, kind: "procedural_model" } };
@@ -257,7 +257,7 @@ describe("non-ODA character authoring", () => {
         return { buildId: "A".repeat(32), state: "preview_ready" };
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_build")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
     await tool.execute(request, { toolCallId: "model-build", signal: new AbortController().signal, abort: () => {} });
     expect(calls).toEqual([{ method: character.build.method, params: request }]);
     expect(
@@ -282,7 +282,7 @@ describe("non-ODA character authoring", () => {
           return { success: true };
         },
       });
-      const exportTool = tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_export")!;
+      const exportTool = tools.find((tool) => tool.name === "studiorpc_character_export")!;
       expect(exportTool).toBeDefined();
       const context = { toolCallId: "export", signal: new AbortController().signal, abort: () => {} };
       const args = {
@@ -302,9 +302,10 @@ describe("non-ODA character authoring", () => {
       expect(calls).toEqual([character.exportAsset.method]);
       expect(tools.find((tool) => tool.name === "studiorpc_asset_manager_import")).toBeDefined();
       expect(tools.find((tool) => tool.name === "studiorpc_asset_drawer_import")).toBeDefined();
-      expect(tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_install")).toBeUndefined();
-      expect(tools.find((tool) => tool.name === "studiorpc_proceduralcharacter_cook")).toBeUndefined();
-      expect(tools.filter((tool) => tool.name.startsWith("studiorpc_proceduralcharacter_"))).toHaveLength(4);
+      expect(tools.find((tool) => tool.name === "studiorpc_character_install")).toBeUndefined();
+      expect(tools.find((tool) => tool.name === "studiorpc_character_cook")).toBeUndefined();
+      expect(tools.filter((tool) => tool.name.startsWith("studiorpc_character_"))).toHaveLength(4);
+      expect(tools.some((tool) => tool.name.startsWith("studiorpc_proceduralcharacter_"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -327,7 +328,7 @@ describe("non-ODA character authoring", () => {
         return { inspected: true };
       },
     });
-    const tool = tools.find((entry) => entry.name === "studiorpc_proceduralcharacter_inspect")!;
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
     const context = { toolCallId: "inspect", signal: new AbortController().signal, abort: () => {} };
     const requests = [
       { mode: "build", buildId: "A".repeat(32) },
@@ -347,7 +348,7 @@ describe("non-ODA character authoring", () => {
       },
     ];
     for (const request of requests) await tool.execute(request, context);
-    expect(calls).toEqual(requests.map((params) => ({ method: "proceduralcharacter.inspect", params })));
+    expect(calls).toEqual(requests.map((params) => ({ method: "character.inspect", params })));
     expect(mutatingMethods.has(character.inspect.method)).toBe(false);
     expect(savingMethods.has(character.inspect.method)).toBe(false);
     expect(character.inspect.params.safeParse({ mode: "source", guid: "unknown" }).success).toBe(false);
@@ -387,6 +388,12 @@ describe("non-ODA character authoring", () => {
     expect(character.build.params.safeParse({ ...request, commit: true }).success).toBe(false);
     expect(
       character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: 0 } }).success,
+    ).toBe(true);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: -1 } }).success,
+    ).toBe(false);
+    expect(
+      character.build.params.safeParse({ ...request, motion: { ...request.motion, speedCmPerSec: 1001 } }).success,
     ).toBe(false);
   });
   test("requires exact reviewed revisions for observations and commit", () => {

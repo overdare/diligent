@@ -11,17 +11,17 @@ const revisions = z
   .strict();
 
 export const api = {
-  method: "proceduralcharacter.api",
+  method: "character.api",
   readOnly: true,
   description:
     "Read the live non-ODA custom character contract, rig/weight/motion schemas and existing Lua instance contract. Use for arbitrary creatures, animals or custom skeletal characters. The agent authors anatomy and motion; Studio imports, measures, renders and saves it. Read proceduralmodel.api for geometry functions. ODA costume templates and animation.read/write are separate workflows.",
   params: z.object({}).strict(),
 };
 export const build = {
-  method: "proceduralcharacter.build",
+  method: "character.build",
   timeoutMs: 900_000,
   description:
-    "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. For an already baked ProceduralModel, inspect(mode=source) then pass its geometryRevision and direct rig and motion.document, just like static_model. Source capture reads current baked parts without rebaking or changing the model. All new geometry inputs take separate structured rig and motion.document data; geometry recipes do not write rig or animation files. Without geometryRevision, a ProceduralModel freezes its geometry Source and parameters for a private capture without baking the Workspace model; rig regions use generated part names. With geometryRevision, regions use inspected part GUIDs. Stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. For an already rigged Workspace Model, inspect(mode=source) then use existing_rig with its rigRevision, target.kind=animation_only and motion.document, omitting rig and overrides. The original numeric Skeleton, meshes, bind poses, weights, materials and props are preserved; apply adds only a new Animation under the original model. Retained editable CPU LOD0 and an existing Humanoid/Skeleton are required. For inspected geometry, rig.boneAttachments maps prop part GUIDs to declared bones. Each part is either skinned through rig.regions or kept as an existing static MeshPart under that Bone; at least one skin part is required. Prop subtrees cannot contain other captured MeshParts. Read proceduralcharacter.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Use export mode=publish for normal numeric native assets. Explicit mode=apply takes buildId, publicationId, expectedRevision and expectedSourceGraphRevision, and clones a frozen inspected Model or baked ProceduralModel hierarchy into Workspace with existing Lua character classes. Missing numeric assets download through the ordinary Studio importer before rechecking the document and revisions. It rejects changed sources, incomplete uploads and name conflicts; an already applied publication is returned as APPLY_ALREADY_EXISTS for inspection, never replaced. Stop PIE first. Apply requires an inspected model draft with explicit part identities; recipe-only drafts support build/publication. Verify saved-map Lua playback separately.",
+    "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. For an already baked ProceduralModel, inspect(mode=source) then pass its geometryRevision and direct rig and motion.document, just like static_model. Source capture reads current baked parts without rebaking or changing the model. All new geometry inputs take separate structured rig and motion.document data; geometry recipes do not write rig or animation files. Without geometryRevision, a ProceduralModel freezes its geometry Source and parameters for a private capture without baking the Workspace model; rig regions use generated part names. With geometryRevision, regions use inspected part GUIDs. Stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. For an already rigged Workspace Model, inspect(mode=source) then use existing_rig with its rigRevision, target.kind=animation_only and motion.document, omitting rig and overrides. The original numeric Skeleton, meshes, bind poses, weights, materials and props are preserved; apply adds only a new Animation under the original model. Retained editable CPU LOD0 and an existing Humanoid/Skeleton are required. For inspected geometry, rig.boneAttachments maps prop part GUIDs to declared bones. Each part is either skinned through rig.regions or kept as an existing static MeshPart under that Bone; at least one skin part is required. Prop subtrees cannot contain other captured MeshParts. Read character.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Use export mode=publish for normal numeric native assets. Explicit mode=apply takes buildId, publicationId, expectedRevision and expectedSourceGraphRevision, and clones a frozen inspected Model or baked ProceduralModel hierarchy into Workspace with existing Lua character classes. Missing numeric assets download through the ordinary Studio importer before rechecking the document and revisions. It rejects changed sources, incomplete uploads and name conflicts; an already applied publication is returned as APPLY_ALREADY_EXISTS for inspection, never replaced. Stop PIE first. Apply requires an inspected model draft with explicit part identities; recipe-only drafts support build/publication. Verify saved-map Lua playback separately.",
   params: z.union([
     z
       .object({
@@ -77,7 +77,7 @@ export const build = {
         motion: z
           .object({
             preset: z.literal("authored_v1"),
-            speedCmPerSec: z.number().finite().positive().max(1000),
+            speedCmPerSec: z.number().finite().nonnegative().max(1000),
             document: z.record(z.string(), z.unknown()).optional(),
           })
           .strict(),
@@ -145,14 +145,14 @@ export const build = {
   ]),
 };
 export const exportAsset = {
-  method: "proceduralcharacter.export",
+  method: "character.export",
   timeoutMs: 900_000,
   description:
     "Export a committed reviewed character. mode=publish uploads separate native mesh parts and animation through the existing asset publisher, with their common Skeleton first, and returns real ovdrassetid:// references. Inspect the build's nativePublication for partial issued IDs if upload fails. Existing-rig publication uploads only a new clip referencing the original numeric Skeleton. Publication does not place a model in Workspace. Default mode=fbx uses the existing FBX exporter for external interchange, which may combine meshes sharing one Skeleton; use the returned file with asset_manager.import. Stop PIE first.",
   params: z.object({ buildId, expectedRevision: revisions, mode: z.enum(["fbx", "publish"]).optional() }).strict(),
 };
 export const inspect = {
-  method: "proceduralcharacter.inspect",
+  method: "character.inspect",
   readOnly: true,
   timeoutMs: 900_000,
   description:
