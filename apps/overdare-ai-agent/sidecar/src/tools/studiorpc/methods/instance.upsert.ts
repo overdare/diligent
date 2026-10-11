@@ -46,14 +46,14 @@ export const params = z
 export const method = "instance.upsert";
 
 export const description =
-  "Upsert instances in batch. The bundled input schema supplies the compatibility class/property reference, validation, defaults, and JSON conversions. Use its class and property hints when planning Editor Luau; JSON schemas do not define Luau methods. Live schema search is supplementary and does not replace this tool's validation. " +
+  "Upsert instances in batch. Use it for simple, fixed changes to a few instances; use studiorpc_execute_luau for anything that needs procedural logic. The bundled input schema supplies validation, defaults, and JSON conversions for this tool only; it may not match the running Studio, so do not use it to plan Editor Luau. " +
   "Do not mix adds and updates in a single call — use one call for all adds, another for all updates. " +
   "Start with a small number of items first, then increase up to 100 if needed. " +
   "For StringValue, NumberValue, BoolValue, and IntValue, supply Value as a plain string, number, boolean, or integer; the tool converts it to Studio tagged JSON automatically. Empty strings, zero, and false are valid values. " +
   "Each item is inferred by its fields: add uses parentGuid/class/name/properties, update uses guid with optional name and properties. " +
   "To create nested hierarchies, add the parent first so its GUID is returned, then add children using that GUID as parentGuid in subsequent items. " +
   "Services (Workspace, Lighting, Atmosphere, Players, StarterPlayer, MaterialService, etc.) are singletons — they cannot be added, only updated by guid. " +
-  "To reparent an existing instance (change its hierarchy), use instance.move instead of delete + re-add. ";
+  "To reparent an existing instance (change its hierarchy), use studiorpc_instance_move instead of delete + re-add. ";
 
 export type InstanceUpsertAddArgs = z.infer<typeof addParams>;
 export type InstanceUpsertUpdateArgs = z.infer<typeof updateParams>;

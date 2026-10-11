@@ -258,40 +258,22 @@ export function buildAssetDrawerImportRender(args: Record<string, unknown>, outp
   };
 }
 
-export function buildAssetManagerImageImportRender(
-  result: unknown,
-  args: Record<string, unknown>,
-  output: string,
-): ToolRenderPayload {
-  return assetManagerImportRender(result, args, output, true);
-}
-
 export function buildAssetManagerImportRender(
   result: unknown,
   args: Record<string, unknown>,
   output: string,
 ): ToolRenderPayload {
-  return assetManagerImportRender(result, args, output, false);
-}
-
-function assetManagerImportRender(
-  result: unknown,
-  args: Record<string, unknown>,
-  output: string,
-  imageOnly: boolean,
-): ToolRenderPayload {
   const file = readString(args.file) ?? "";
   const asset = isRecord(result) && isRecord(result.asset) ? result.asset : undefined;
   const returnedAssetId = asset ? readString(asset.assetid) : undefined;
   const returnedFile = asset ? readString(asset.file) : undefined;
-  const fallback = imageOnly ? "Image imported." : "Asset imported.";
   return {
-    inputSummary: clip(file || (imageOnly ? "image file" : "asset file")),
-    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : fallback),
+    inputSummary: clip(file || "asset file"),
+    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Asset imported."),
     blocks: [
       {
         type: "key_value",
-        title: imageOnly ? "Asset manager image import" : "Asset manager import",
+        title: "Asset manager import",
         items: [
           { key: "file", value: returnedFile ?? file },
           { key: "assetName", value: readString(args.assetName) ?? "" },
@@ -300,8 +282,8 @@ function assetManagerImportRender(
       },
       {
         type: "summary",
-        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : fallback),
-        tone: "success",
+        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Asset imported."),
+        tone: isRecord(result) && (result.success === false || result.saved === false) ? "error" : "success",
       },
     ],
   };

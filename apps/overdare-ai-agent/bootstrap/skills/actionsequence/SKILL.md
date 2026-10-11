@@ -1,6 +1,6 @@
 ---
 name: actionsequence
-description: "Handles Action Sequence asset creation/editing, track layout (Animation/Sound/Collision/Trigger/Event), combo setup, CancelWindow configuration, animation catalog lookup, ActionSequence JSON editing and apply_json diagnostics, and preset usage. Use this skill for any request involving action sequence assets or track timing. For code module work like SkillDB/CharDB/WeaponDB edits, server logic, or UI changes, inspect the project's architecture and gameplay modules instead."
+description: "Handles Action Sequence asset creation/editing, track layout (Animation/Sound/Collision/Trigger/Event), animation catalog lookup, ActionSequence JSON editing and apply_json diagnostics, and preset usage. Use this skill for any request involving action sequence assets or track timing."
 ---
 
 ## 1. Overview
@@ -9,9 +9,7 @@ description: "Handles Action Sequence asset creation/editing, track layout (Anim
 
 ### Lifecycle
 
-`ActionRunner:Play(sequencerId)` → asset is cloned under the character's Humanoid → ServerRuntime/ClientRuntime execute → clone is destroyed on sequence end (all child event connections auto-disconnect).
-
-Objects cloned to external locations (ground zones, etc.) must be managed via `PersistentEffectManager`.
+`ActionRunner:Play(sequencerId)` → asset is cloned under the character's Humanoid → ServerRuntime/ClientRuntime execute → clone is destroyed on sequence end (all child event connections auto-disconnect). ServerRuntime/ClientRuntime callbacks receive the executing character as `self`.
 
 ## 2. Track Types
 
@@ -21,78 +19,19 @@ Objects cloned to external locations (ground zones, etc.) must be managed via `P
 CollisionTrack detects hit targets via area overlap; callbacks fire individually per target (not as an array).
 TriggerTrack operates as "apply → restore" pairs. On sequence replacement, the previous sequence's End fires before the new sequence's Start.
 
+Track and event names are chosen by the author; the engine gives no name built-in meaning such as movement lock, combo, or cancel. It only fires events under those names, and game code implements the rules:
+- CollisionTrack reports detection only; game code decides who takes how much damage and prevents repeat hits.
+- `ActionRunner.Ended` / `Stopped` report that a sequence finished or was stopped; returning to idle, unlocking movement, and choosing the next combo step are game code.
+- A script's event names must match the track names in the asset exactly.
+
 See `references/guide.md` for API usage and code examples.
 
-## 3. Track Naming Convention
-
-Names auto-recognized by `SequencerController.Bind(script)`. Present = bound, absent = skipped.
-
-### TriggerTrack
-| Name | Role | Required |
-|---|---|---|
-| `Sequence` | Sequence lifetime. Start=movement lock, End=unlock+FSM Idle | Required |
-| `KeyInput` | Combo input accept window. Start=ready, End=clear | Combo only |
-| `CancelWindow` | Combo instant transition + general cancel. Place at sequence tail | Optional |
-
-### CollisionTrack
-| Name Pattern | Role |
-|---|---|
-| `HitTrigger` / `HitTrigger{N}` | Area detection hit (customizable via SkillDB `HitTriggers` field) |
-
-### EventTrack (Markers)
-| Name | Role |
-|---|---|
-| `ActiveTrigger` / `ActiveTrigger{1~10}` | Custom action callback (SkillDB `ActiveHandler` or `options.OnActiveTrigger`) |
-
-## 4. CancelWindow
-
-Placed at the tail of a sequence to handle **combo instant transition + general cancel** with a single track.
-
-```
-Animation: [████████████████████████████████████████]
-Sequence:  [████████████████████████████████████████]
-CancelW:                                    [██████]
-```
-
-- Same-slot combo buffer exists → immediately advance to next combo step
-- Not a combo → cancelable ON → other slot input can cancel current sequence
-- Range ends → cancelable OFF
-
-To enable combo, also add a `KeyInput` TriggerTrack.
-
-## 5. Combo System
-
-**Mode A — Wait for sequence end (default):** `Sequence` End → if buffered, next combo step.
-**Mode B — CancelWindow instant transition:** `CancelWindow` Started → if buffered, replace sequence immediately.
-
-Combos apply to ANY slot defined as a **table** in WeaponDB (not just Attack).
-
-## 6. ServerRuntime / ClientRuntime
-
-**Standard:** `SequencerController.Bind(script)` / `ClientBridge.Bind(script)` (1 line). Auto-resolves sequence name → WeaponDB/SkillDB and binds Movement, Hit, Combo, CancelWindow, Hold, SequenceEnd, ActiveTrigger, etc.
-
-**Freeform:** Write code directly without Bind. Callback `self` = executing character.
-
-## 7. Sequence Naming Rules
+## 3. Sequence Naming Rules
 
 - **No duplicates** within the project
 - Multiple characters can share the same sequence
-- Sequence name = SkillDB key = WeaponDB slot value
 
-## 8. Asset Authoring Quick Reference
-
-| Goal | Required Tracks | Notes |
-|---|---|---|
-| Basic attack | Sequence + Animation + HitTrigger | CollisionTrack for hit detection |
-| Combo attack | Above + KeyInput | Defined as table in WeaponDB |
-| Smooth combo | Above + CancelWindow | Place at tail |
-| Hold skill (guard) | Sequence + Animation | SkillDB InputType=Hold |
-| Dash | Sequence + Animation | SkillDB ClientDash config |
-| Multi-hit | Sequence + Animation + HitTrigger1~N | Multiple CollisionTracks |
-| Custom action | Above + ActiveTrigger EventTrack | SkillDB ActiveHandler or callback |
-| Recovery cancel | Add CancelWindow TriggerTrack | Via editor |
-
-## 9. Reference Resources (`references/`)
+## 4. Reference Resources (`references/`)
 
 ### Asset Authoring Guide — `references/guide.md`
 

@@ -118,8 +118,8 @@ describe("ChatGPT HTTP transport", () => {
     expect((body.input as Array<Record<string, unknown>>)[0]).toMatchObject({ type: "additional_tools" });
   });
 
-  test("sends GPT-6 Sol and Luna through ChatGPT Responses Lite", async () => {
-    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+  test("sends GPT-6.1 Sol and Luna through ChatGPT Responses Lite", async () => {
+    for (const modelId of ["gpt-6.1-sol", "gpt-6-luna"]) {
       const model = resolveModel({ provider: "chatgpt", modelId });
       const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -137,6 +137,11 @@ describe("ChatGPT HTTP transport", () => {
       expect(request.headers.get("x-openai-internal-codex-responses-lite")).toBe("true");
       expect(request.body.model).toBe(model.modelId);
       expect(request.body.parallel_tool_calls).toBe(false);
+      expect(request.body.reasoning).toMatchObject({ effort: "medium", context: "all_turns" });
+      expect((request.body.input as Array<Record<string, unknown>>)[0]).toMatchObject({
+        type: "additional_tools",
+        role: "developer",
+      });
     }
   });
 

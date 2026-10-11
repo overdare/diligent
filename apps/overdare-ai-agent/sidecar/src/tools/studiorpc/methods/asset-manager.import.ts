@@ -1,27 +1,42 @@
-// @summary Declares unified Studio asset import for image and 3D model files.
+// @summary Imports image, model, and audio files through Studio's unified asset manager RPC.
 import { posix, win32 } from "node:path";
 import { z } from "zod";
 
 export const method = "asset_manager.import";
-export const timeoutMs = 120_000;
-
+export const timeoutMs = 300_000;
 export const description =
-  "Import an external 3D model or image file into the OVERDARE asset manager and return its asset ID. " +
-  "Studio reads the absolute file path on its own computer. Models: fbx, obj, glb, gltf. " +
-  "Images: png, jpg, jpeg, tga, bmp, exr. Optionally set assetName for a 3D model; " +
-  "otherwise Studio uses the file name.";
+  "Import an external image, model, or audio file into the asset manager. Studio selects the importer " +
+  "from the file format and returns asset.assetid. Supported formats are png/jpg/jpeg/tga/bmp/exr, " +
+  "fbx/obj/glb/gltf, and wav/mp3/ogg. The absolute file path must be accessible to the Studio process. " +
+  "assetName optionally names an imported model. This tool saves the level after successful import. " +
+  "Do not automatically retry after timeout or cancellation: inspect the asset manager first.";
+const extensions = new Set([
+  "fbx",
+  "obj",
+  "glb",
+  "gltf",
+  "png",
+  "jpg",
+  "jpeg",
+  "tga",
+  "bmp",
+  "exr",
+  "wav",
+  "mp3",
+  "ogg",
+]);
 
-const extensions = new Set(["fbx", "obj", "glb", "gltf", "png", "jpg", "jpeg", "tga", "bmp", "exr"]);
-
-export const params = z.object({
-  file: z
-    .string()
-    .min(1)
-    .refine(
-      (file) => posix.isAbsolute(file) || win32.isAbsolute(file),
-      "Use an absolute file path accessible to Studio",
-    )
-    .refine((file) => extensions.has(posix.extname(file).slice(1).toLowerCase()), "Unsupported asset file extension")
-    .describe("Absolute file path accessible to Studio. Supports fbx, obj, glb, gltf, png, jpg, jpeg, tga, bmp, exr."),
-  assetName: z.string().optional().describe("Optional 3D model name. Studio uses the file name when omitted."),
-});
+export const params = z
+  .object({
+    file: z
+      .string()
+      .min(1)
+      .refine(
+        (file) => posix.isAbsolute(file) || win32.isAbsolute(file),
+        "Use an absolute file path accessible to Studio",
+      )
+      .refine((file) => extensions.has(posix.extname(file).slice(1).toLowerCase()), "Unsupported asset file extension")
+      .describe("Absolute file path accessible on Studio's computer."),
+    assetName: z.string().min(1).optional().describe("Optional name for a model; ignored for images and audio."),
+  })
+  .strict();

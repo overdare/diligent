@@ -121,23 +121,14 @@ describe("createStudioRpcToolProvider", () => {
     expect(toolNames).toContain("get_collision_channels");
     expect(toolNames).toContain("create_collision_profile");
     expect(toolNames).toContain("edit_collision_profile");
-    expect(toolNames).toContain("hub_world_lookup");
     expect(toolNames).toContain("hub_world_categories_list");
     expect(toolNames).toContain("studiorpc_level_save_file");
     expect(toolNames).toContain("studiorpc_game_play");
 
     const saveTool = tools.find((tool) => tool.name === "studiorpc_level_save_file")!;
-    const hubLookupTool = tools.find((tool) => tool.name === "hub_world_lookup")!;
-    const scriptEditTool = tools.find((tool) => tool.name === "studiorpc_script_edit")!;
 
     expect(() => saveTool.parameters.parse({})).not.toThrow();
     expect(() => tools.find((tool) => tool.name === "get_collision_profiles")!.parameters.parse({})).not.toThrow();
-    expect(() => hubLookupTool.parameters.parse({ worldId: 123 })).not.toThrow();
-    expect(scriptEditTool.description).toContain(
-      "If an edit fails, call script_read to check the current source before retrying",
-    );
-    expect(scriptEditTool.description).toContain("call studiorpc_script_edit once per edited region");
-    expect(scriptEditTool.description).toContain("apply them sequentially or choose non-overlapping");
   });
 
   test("accepts maxDepth 0 as unlimited for level browsing", async () => {
@@ -252,9 +243,6 @@ describe("createStudioRpcToolProvider", () => {
     const calls: Array<{ method: string; params?: Record<string, unknown>; timeoutMs?: number }> = [];
     const tools = await loadStudioTools("/tmp/project", calls);
     const publishTool = tools.get("studiorpc_level_publish")!;
-
-    expect(publishTool.description).toContain("click confirmation buttons");
-    expect(publishTool.description).toContain("skipCreatorHubLaunch");
 
     const defaultResult = await publishTool.execute({ worldName: "My World" }, toolContext());
     await publishTool.execute({ skipCreatorHubLaunch: false }, toolContext());

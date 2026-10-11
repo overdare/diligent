@@ -40,12 +40,6 @@ describe("live Editor tools", () => {
     expect(approvals).toBe(0);
     expect(calls).toEqual(["instance.schema.search"]);
   });
-  test("Editor description exposes its entry point and automatic save contract", () => {
-    expect(luau.description).toContain("workspace");
-    expect(luau.description).toContain("game:GetService");
-    expect(luau.description).toContain("automatically saves");
-    expect(luau.description).toContain("not an asynchronous generation report");
-  });
   test("schema filters enforce the Studio contract", () => {
     for (const input of [
       {},

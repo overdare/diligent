@@ -10,7 +10,7 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 - For Korean, non-Latin, or mixed-language text, prefer NotoSans until actual glyph coverage is available or the result can be checked visually. The catalog lists files and faces, but does not prove script coverage.
 - Select a Weight and Style explicitly listed for the family. Studio can substitute a nearby face, but authored UI should not depend on that substitution. If a requested face is not listed, verify it against an updated catalog or Studio rather than inventing an ID or weight.
 - Assign the complete `FontFace` value. Do not mutate `label.FontFace.Weight` or another nested member in isolation.
-- `FontFace` is the supported text font property. The Roblox legacy form `Font = Enum.Font.*` is not available here.
+- `FontFace` is the supported text font property.
 
 ## Family catalog
 
@@ -58,9 +58,9 @@ Choose a supported face for native GUI text. Source: the supplied internal Studi
 | Gothic fantasy | GrenzeGotisch |
 | Comic or deliberately chaotic | OverWacky |
 
-## Editor Luau assignment (when available)
+## Editor Luau assignment
 
-Prefer the instance-upsert form below for ordinary static GUI edits. If the host exposes an Editor Luau execution tool, these assignment forms are also supported. Replace the sample hierarchy with the verified target.
+Replace the sample hierarchy with the verified target.
 
 Use a family asset ID when the catalog provides one. The Editor VM uses `game.StarterGui` or another direct hierarchy path; it does not support `game:GetService`. This restriction applies to the Editor VM, not normal runtime LocalScripts.
 

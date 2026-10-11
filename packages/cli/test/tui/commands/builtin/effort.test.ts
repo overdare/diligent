@@ -51,7 +51,7 @@ describe("effortCommand", () => {
   it("accepts xhigh for GPT-5.6", async () => {
     const setEffort = mock(async () => {});
     const onEffortChanged = mock(() => {});
-    const ctx = makeContext("gpt-6-sol", { setEffort, onEffortChanged });
+    const ctx = makeContext("gpt-6.1-sol", { setEffort, onEffortChanged });
 
     await effortCommand.handler("xhigh", ctx);
 
@@ -59,10 +59,10 @@ describe("effortCommand", () => {
     expect(onEffortChanged).toHaveBeenCalledWith("xhigh", "xhigh");
   });
 
-  it("accepts xhigh for GPT-6 Sol", async () => {
+  it("accepts xhigh for GPT-6.1 Sol", async () => {
     const setEffort = mock(async () => {});
     const displayError = mock(() => {});
-    const ctx = makeContext("gpt-6-sol", { setEffort, displayError });
+    const ctx = makeContext("gpt-6.1-sol", { setEffort, displayError });
 
     await effortCommand.handler("xhigh", ctx);
 
@@ -70,10 +70,10 @@ describe("effortCommand", () => {
     expect(displayError).not.toHaveBeenCalled();
   });
 
-  it("accepts max for GPT-6 Sol", async () => {
+  it("accepts max for GPT-6.1 Sol", async () => {
     const setEffort = mock(async () => {});
     const displayError = mock(() => {});
-    const ctx = makeContext("gpt-6-sol", { setEffort, displayError });
+    const ctx = makeContext("gpt-6.1-sol", { setEffort, displayError });
 
     await effortCommand.handler("max", ctx);
 
@@ -96,7 +96,7 @@ describe("effortCommand", () => {
     for (const value of ["none", "minimal"]) {
       const setEffort = mock(async () => {});
       const displayError = mock(() => {});
-      const ctx = makeContext("gpt-6-sol", { setEffort, displayError });
+      const ctx = makeContext("gpt-6.1-sol", { setEffort, displayError });
 
       await effortCommand.handler(value, ctx);
 

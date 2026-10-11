@@ -207,6 +207,10 @@ export async function dispatchClientRequest(
   connectionId: string,
   request: DiligentClientRequest,
 ): Promise<unknown> {
+  // Revoke before any async settings write; indirect reloads share the same boundary.
+  if (["tools/set", "skills/set", "experiments/set", "subagents/set", "config/reload"].includes(request.method)) {
+    for (const runtime of ctx.threadHandlersCtx.threads.values()) runtime.goalCreation = undefined;
+  }
   switch (request.method) {
     case DILIGENT_CLIENT_REQUEST_METHODS.INITIALIZE: {
       if (request.params.protocolVersion !== 1) {
@@ -224,6 +228,7 @@ export async function dispatchClientRequest(
           supportsFollowUp: true,
           supportsApprovals: true,
           supportsUserInput: true,
+          goals: true,
         },
         ...extra,
       };
@@ -246,6 +251,25 @@ export async function dispatchClientRequest(
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_READ:
       return handleThreadRead(ctx.threadHandlersCtx, request.params.threadId);
+
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET:
+    case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET: {
+      const runtime = await ctx.resolveThreadRuntime(request.params.threadId);
+      const goal = await ctx.threadHandlersCtx.ensureGoal?.(runtime);
+      if (!goal) throw new Error("Goal mode is unavailable");
+      if (runtime.isChildSession) throw new Error("Goals belong to root threads, not child sessions");
+      if (request.method === DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET) {
+        runtime.goalCreation = undefined;
+        const config = ctx.threadHandlersCtx.getGoalsConfig?.();
+        await goal.change(request.params, {
+          idle: !runtime.isRunning && !runtime.turnWork,
+          enabled: config?.enabled !== false,
+          mode: runtime.mode,
+          defaultMaxTurns: config?.defaultMaxTurns,
+        });
+      }
+      return goal.snapshot();
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.THREAD_COMPACT_START:
       return handleThreadCompactStart(ctx.threadHandlersCtx, request.params.threadId);
@@ -358,6 +382,11 @@ export async function dispatchClientRequest(
     case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_SET: {
       const connectionThreadId = ctx.getConnection(connectionId)?.currentThreadId ?? undefined;
       const targetThreadId = request.params.threadId ?? connectionThreadId;
+      if (request.params.model) {
+        for (const runtime of ctx.threadHandlersCtx.threads.values()) {
+          if (!targetThreadId || runtime.id === targetThreadId) runtime.goalCreation = undefined;
+        }
+      }
       const result = await handleConfigSet(ctx.modelConfig, ctx.currentModel, request.params.model, targetThreadId);
       if (targetThreadId && result.model) {
         const runtime = await ctx.resolveThreadRuntime(targetThreadId);
@@ -383,8 +412,15 @@ export async function dispatchClientRequest(
       return result;
     }
 
-    case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD:
-      return handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+    case DILIGENT_CLIENT_REQUEST_METHODS.CONFIG_RELOAD: {
+      const result = await handleConfigReload(ctx.reloadConfig, ctx.threadHandlersCtx.threads);
+      if (ctx.threadHandlersCtx.getGoalsConfig?.()?.enabled === false) {
+        await Promise.all(
+          [...ctx.threadHandlersCtx.threads.values()].map((runtime) => runtime.goal?.pause("disabled")),
+        );
+      }
+      return result;
+    }
 
     case DILIGENT_CLIENT_REQUEST_METHODS.AUTH_LIST: {
       const pm = ctx.providerManager;

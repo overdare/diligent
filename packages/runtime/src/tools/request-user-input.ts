@@ -39,9 +39,13 @@ export function createRequestUserInputTool(host?: RuntimeToolHost): Tool<typeof 
       "Ask the user 1–3 questions in the user's language and wait for their answers. Use allow_multiple for checkbox-style multi-select. Clients always provide a custom free-form input row in addition to listed options.",
     parameters: ParamsSchema,
     async execute(args, ctx) {
-      const response = await requestToolUserInput(host, {
-        questions: args.questions,
-      } satisfies UserInputRequest);
+      const response = await requestToolUserInput(
+        host,
+        {
+          questions: args.questions,
+        } satisfies UserInputRequest,
+        { signal: ctx.signal },
+      );
       if (!response) {
         return { output: "User input not available in this context." };
       }

@@ -219,11 +219,10 @@ Editing means **writing** to the mounted `.ovdrjm`. If the mount is read-only it
 
 The script itself is `scripts/dev-cross-studio.sh`. To understand how it works, see the manual steps above.
 
-## Image import during cross-machine development
+## Asset import during cross-machine development
 
-Studio reads imported files on the Windows host. Configure both shared-directory roots so the
-dev sidecar can translate an agent-local path for `studiorpc_asset_manager_image_import` or the unified
-`studiorpc_asset_manager_import` tool, which also supports 3D models:
+Studio reads imported assets on the Windows host. Configure both shared-directory roots so the
+dev sidecar can translate an agent-local path for `studiorpc_asset_manager_import`:
 
 ```sh
 STUDIO_LOCAL_FILE_ROOT=/Volumes/StudioProject

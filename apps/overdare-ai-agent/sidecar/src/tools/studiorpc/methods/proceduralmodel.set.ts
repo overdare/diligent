@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { CallRpc } from "../tools/pie-input/target";
 
 export const method = "proceduralmodel.set";
+// Bound the agent's wait; Studio may continue the native run after the socket closes.
+export const timeoutMs = 30_000;
 
 export const description =
   "Author and bake a ProceduralModel from a Python geometry recipe: write its recipe, Size and parameters, " +
@@ -18,8 +20,7 @@ export const description =
   "numbers the Transform panel shows; changing it re-runs the recipe at the new footprint. `attributes` sets " +
   "the recipe's declared parameters by name. `rebuild: true` bakes now; the reply then carries the whole run — " +
   "`parts` (with triangles, boundsCm, tint, tier), `modelBoundsCm`, `warnings`, `stdout`, and on failure " +
-  "`error` — so judge on the numbers first, then photograph the model with game.screenshot(instanceId=<guid>) " +
-  "to see it. A recipe that breaks the contract is refused before a line of it runs, with the expected shape in " +
+  "`error`. A recipe that breaks the contract is refused before a line of it runs, with the expected shape in " +
   "the message.";
 
 const attributeValue = z.union([
@@ -80,6 +81,7 @@ export const params = z
       .boolean()
       .optional()
       .describe("Bake now and return the run report. Set true after changing source, size, or attributes."),
+    bake: z.boolean().optional().describe("Request an explicit native bake and wait for its run report."),
   })
   .strict();
 
@@ -181,6 +183,7 @@ export function normalizeArgs(args: Args): Args {
   if (args.attributes !== undefined) out.attributes = args.attributes;
   if (args.autoRebuild !== undefined) out.autoRebuild = args.autoRebuild;
   if (args.rebuild !== undefined) out.rebuild = args.rebuild;
+  if (args.bake !== undefined) out.bake = args.bake;
   return out;
 }
 

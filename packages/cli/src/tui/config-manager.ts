@@ -23,6 +23,7 @@ export interface ConfigManagerDeps {
   updateStatusBar: (updates: Record<string, unknown>) => void;
   displayError: (msg: string) => void;
   requestRender: () => void;
+  getGoalsSupported?: () => boolean;
 }
 
 export interface ConfigManager {
@@ -73,7 +74,7 @@ export function createConfigManager(deps: ConfigManagerDeps): ConfigManager {
 
         // Rebuild command registry with new skills
         const registry = new CommandRegistry();
-        registerBuiltinCommands(registry, newConfig.skills ?? []);
+        registerBuiltinCommands(registry, newConfig.skills ?? [], { goals: deps.getGoalsSupported?.() === true });
         deps.setCommandRegistry(registry);
 
         deps.updateStatusBar({ model: formatModelRef(newConfig.model), contextWindow: newConfig.model.contextWindow });

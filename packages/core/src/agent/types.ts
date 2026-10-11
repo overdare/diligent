@@ -12,11 +12,13 @@ import type { AgentLoopHook } from "./loop-hooks";
 
 export type { MessageDelta, SerializableError } from "@diligent/protocol";
 
+export type AgentStopReason = "completed" | "interrupted" | "failed";
+
 // Core events emitted by the reusable agent engine — D086: itemId on grouped subtypes, SerializableError
 export type CoreAgentEvent =
   // Lifecycle (2)
   | { type: "agent_start" }
-  | { type: "agent_end"; messages: Message[] }
+  | { type: "agent_end"; messages: Message[]; stopReason?: AgentStopReason }
   // Turn (2)
   | { type: "turn_start"; turnId: string }
   | { type: "turn_end"; turnId: string; message: AssistantMessage; toolResults: ToolResultMessage[] }

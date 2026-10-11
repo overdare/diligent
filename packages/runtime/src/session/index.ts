@@ -27,5 +27,7 @@ export type {
   SessionInfoEntry,
   SessionManagerConfig,
   SessionMessageEntry,
+  SessionRunOptions,
+  SessionRunOutcome,
 } from "./types";
 export { generateEntryId, generateSessionId, isSafeSessionId, SESSION_VERSION } from "./types";

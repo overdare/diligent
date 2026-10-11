@@ -9,9 +9,11 @@ import type {
   PendingSteer,
   SkillInfo,
   ThinkingEffort,
+  ThreadGoalResponse,
   ThreadReadResponse,
 } from "@diligent/protocol";
 import { DILIGENT_CLIENT_REQUEST_METHODS } from "@diligent/protocol";
+import { parseGoalCommand } from "@diligent/runtime/client";
 import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback, useRef } from "react";
 import { toWebImageUrl } from "../../shared/image-routes";
 import { type AgentContextItem, prependContextToMessage } from "./agent-native-bridge";
@@ -32,6 +34,21 @@ import { createUuidV4 } from "./uuid";
 
 const IMAGE_UPLOAD_INDICATOR_DELAY_MS = 200;
 const logger = createLogger({ scope: "web.client.actions" });
+
+export async function executeGoalCommand({
+  rpc,
+  threadId,
+  args,
+}: {
+  rpc: WebRpcClient;
+  threadId: string;
+  args?: string;
+}): Promise<ThreadGoalResponse> {
+  const current = await rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_GET, { threadId });
+  const change = parseGoalCommand(args, current.goal);
+  if (change === null) return current;
+  return rpc.request(DILIGENT_CLIENT_REQUEST_METHODS.THREAD_GOAL_SET, { threadId, ...change });
+}
 
 export function clearComposerInputAfterSend({
   activeThreadId,
@@ -229,6 +246,7 @@ export function useAppActions({
   supportsVision,
   effort,
   slashCommands,
+  goalsSupported,
   currentModel,
   availableModels,
   currentModelRef,
@@ -264,6 +282,7 @@ export function useAppActions({
   supportsVision: boolean;
   effort: ThinkingEffort;
   slashCommands: SlashCommand[];
+  goalsSupported: boolean;
   currentModel: ModelRef | undefined;
   availableModels: ModelInfo[];
   currentModelRef: RefObject<ModelRef | undefined>;
@@ -621,6 +640,33 @@ export function useAppActions({
           void setEffort(normalized as ThinkingEffort);
           return;
         }
+        case "goal": {
+          if (!goalsSupported) {
+            dispatch({ type: "show_info_toast", payload: "Goals are not supported by this app server." });
+            return;
+          }
+          if (!rpc || !activeThreadId) {
+            dispatch({ type: "show_info_toast", payload: "Open a thread before using /goal." });
+            return;
+          }
+          void executeGoalCommand({ rpc, threadId: activeThreadId, args: arg })
+            .then((snapshot) => {
+              dispatch({ type: "set_goal_snapshot", payload: { threadId: activeThreadId, ...snapshot } });
+              dispatch({
+                type: "show_info_toast",
+                payload: snapshot.goal
+                  ? `Goal ${snapshot.goal.status}: ${snapshot.goal.objective}`
+                  : "No goal is set for this thread.",
+              });
+            })
+            .catch((cause) => {
+              dispatch({
+                type: "show_info_toast",
+                payload: cause instanceof Error ? cause.message : String(cause),
+              });
+            });
+          return;
+        }
         case "mcp": {
           if (!rpc) {
             dispatch({ type: "show_info_toast", payload: "Not connected to the app server." });
@@ -731,6 +777,7 @@ export function useAppActions({
       setEffortState,
       currentModel,
       setEffort,
+      goalsSupported,
     ],
   );
 
@@ -738,7 +785,7 @@ export function useAppActions({
     const parsedCommand = parseSlashCommand(activeInput);
     if (parsedCommand) {
       const command = slashCommands.find((item) => item.name === parsedCommand.name);
-      if (command) {
+      if (command || parsedCommand.name === "goal") {
         handleSlashCommand(parsedCommand.name, parsedCommand.args);
         return;
       }
@@ -751,7 +798,7 @@ export function useAppActions({
     const rpc = rpcRef.current;
     const snapshot = stateRef.current;
     const threadId = snapshot.activeThreadId;
-    if (!rpc || !threadId || snapshot.threadStatus !== "busy") return;
+    if (!rpc || !threadId || (snapshot.threadStatus !== "busy" && snapshot.goal?.status !== "active")) return;
     const turnId = snapshot.activeTurnId;
     if (interruptRequestRef.current?.threadId === threadId && interruptRequestRef.current.turnId === turnId) return;
     const request = { threadId, turnId };
@@ -824,6 +871,10 @@ export function useAppActions({
     [availableModels, changeModel, state.activeThreadId],
   );
 
+  const handleGoalPause = useCallback(() => handleSlashCommand("goal", "pause"), [handleSlashCommand]);
+  const handleGoalResume = useCallback(() => handleSlashCommand("goal", "resume"), [handleSlashCommand]);
+  const handleGoalClear = useCallback(() => handleSlashCommand("goal", "clear"), [handleSlashCommand]);
+
   const handleAddImagesToDock = useCallback(
     (files: FileList | File[]) => {
       void handleAddImages(files);
@@ -842,5 +893,8 @@ export function useAppActions({
     handleAddImagesToDock,
     handleRemovePendingImage,
     handleSlashCommand,
+    handleGoalPause,
+    handleGoalResume,
+    handleGoalClear,
   };
 }

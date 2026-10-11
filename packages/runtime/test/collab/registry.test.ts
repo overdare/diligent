@@ -78,6 +78,77 @@ function makeInspectingSessionManagerFactory(observer: (agent: RuntimeAgent) => 
 }
 
 describe("AgentRegistry", () => {
+  it("retains captured goal usage ownership after the parent's run scope changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "goal-child-usage-"));
+    try {
+      const samples: unknown[] = [];
+      const live = new Set<string>();
+      let scope: import("../../src/goals/controller").GoalWorkScope | undefined = {
+        identity: { goalId: "goal", epoch: 1, outerRunId: "outer" },
+        signal: new AbortController().signal,
+        startedAt: 0,
+        recordUsage: (sample) => {
+          samples.push(sample);
+        },
+        childStarted: (id) => {
+          live.add(id);
+        },
+        childFinished: (id) => {
+          live.delete(id);
+        },
+      };
+      const registry = new AgentRegistry(
+        makeCollabDeps({
+          cwd: root,
+          paths: await ensureDiligentDir(root),
+          streamFn: makeStreamFn([makeAssistant("child")]),
+          getGoalScope: () => scope,
+        }),
+      );
+      const originalScope = scope;
+      const child = registry.spawn({ prompt: "Inspect", description: "Inspection" });
+      expect(live.has(child.threadId)).toBe(true);
+      scope = undefined;
+      await registry.wait([child.threadId], 1000);
+      expect(samples).toHaveLength(1);
+      expect(samples[0]).toMatchObject({ sessionId: child.threadId, inputTokens: 10, outputTokens: 5 });
+      expect(live.size).toBe(0);
+      scope = originalScope;
+      const resumed = registry.spawn({
+        prompt: "Inspect again",
+        description: "Resumed inspection",
+        resumeId: child.threadId,
+      });
+      await registry.wait([resumed.threadId], 1000);
+      expect(samples).toHaveLength(2);
+      const executions = samples as Array<{ executionId?: string }>;
+      expect(executions[0].executionId).toBeDefined();
+      expect(executions[1].executionId).not.toBe(executions[0].executionId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("never inherits root goal closures even when nesting and allow-lists request them", () => {
+    const definition = resolveAvailableAgentDefinitions(getBuiltinAgentDefinitions(), [])[0]!;
+    const result = resolveChildToolAccess(
+      [
+        makeTool("create_goal"),
+        makeTool("get_goal"),
+        makeTool("update_goal"),
+        makeTool("read"),
+        makeTool("spawn_agent"),
+      ],
+      {
+        allowNestedAgents: true,
+        allowedTools: ["create_goal", "get_goal", "update_goal", "read", "spawn_agent"],
+      },
+      { ...definition, readonly: false },
+    );
+    expect(result.childTools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(result.allowedChildToolNames.has("create_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("get_goal")).toBe(false);
+    expect(result.allowedChildToolNames.has("update_goal")).toBe(false);
+  });
   it("uses lifecycle-only Stop semantics for child agents", async () => {
     const root = await mkdtemp(join(tmpdir(), "diligent-child-stop-lifecycle-"));
     try {
@@ -564,7 +635,7 @@ describe("AgentRegistry", () => {
     });
     const registry = new AgentRegistry(
       makeCollabDeps({
-        model: { provider: "openai", modelId: "gpt-6-sol" },
+        model: { provider: "openai", modelId: "gpt-6.1-sol" },
         parentTools: [makeTool("read"), makeTool("edit"), makeTool("spawn_agent")],
         onCollabEvent: (event) => events.push(event),
         sessionManagerFactory: (config) =>
@@ -1229,7 +1300,7 @@ describe("AgentRegistry", () => {
     const observedModels: string[] = [];
     const observedEfforts: string[] = [];
     const initialModel = { provider: "anthropic", modelId: "claude-opus-5-5" } as const;
-    const latestModel = { provider: "openai", modelId: "gpt-6-sol" } as const;
+    const latestModel = { provider: "openai", modelId: "gpt-6.1-sol" } as const;
     const latestEffort = "high" as const;
     const registry = new AgentRegistry(
       makeCollabDeps({

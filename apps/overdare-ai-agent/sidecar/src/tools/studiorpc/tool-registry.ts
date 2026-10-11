@@ -7,12 +7,13 @@ import * as animationPublish from "./methods/animation.publish";
 import * as animationRead from "./methods/animation.read";
 import * as animationWrite from "./methods/animation.write";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
-import * as assetManagerImageImport from "./methods/asset-manager.image.import";
 import * as assetManagerImport from "./methods/asset-manager.import";
 import * as gameCharacterRead from "./methods/game.character.read";
 import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
 import * as gameScreenshot from "./methods/game.screenshot";
+import * as gameSettingsRead from "./methods/game.settings.read";
+import * as gameSettingsUpdate from "./methods/game.settings.update";
 import * as gameStop from "./methods/game.stop";
 import * as hubTokenRead from "./methods/hub.token.read";
 import * as instanceSchemaSearch from "./methods/instance.schema.search";
@@ -26,6 +27,7 @@ import {
   inspect as characterInspect,
 } from "./methods/proceduralcharacter";
 import * as proceduralModelApi from "./methods/proceduralmodel.api";
+import * as proceduralModelRun from "./methods/proceduralmodel.run";
 import * as proceduralModelSet from "./methods/proceduralmodel.set";
 import * as proceduralModelValidate from "./methods/proceduralmodel.validate";
 import * as rigBuilderInsert from "./methods/rig_builder.insert";
@@ -37,7 +39,6 @@ import * as viewportCameraRead from "./methods/viewport.camera.read";
 import * as viewportCameraSet from "./methods/viewport.camera.set";
 import {
   buildAssetDrawerImportRender,
-  buildAssetManagerImageImportRender,
   buildAssetManagerImportRender,
   buildGamePlayRender,
   buildGameScreenshotRender,
@@ -60,6 +61,7 @@ type MethodModule = {
   description: string;
   params: z.ZodType;
   readOnly?: boolean;
+  serialize?: boolean;
   timeoutMs?: number;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
@@ -82,12 +84,15 @@ export const methodModules: MethodModule[] = [
   characterInspect,
   characterExport,
   actionSequenceRead,
+  animationRead,
+  animationWrite,
+  animationPublish,
   proceduralModelApi,
   proceduralModelValidate,
   proceduralModelSet,
+  proceduralModelRun,
   instanceSchemaSearch,
   assetDrawerImport,
-  assetManagerImageImport,
   assetManagerImport,
   levelBrowse,
   levelSaveFile,
@@ -98,33 +103,23 @@ export const methodModules: MethodModule[] = [
   gameScreenshot,
   gameCharacterRead,
   gameObserve,
+  gameSettingsRead,
+  gameSettingsUpdate,
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
-  animationRead,
-  animationWrite,
-  animationPublish,
 ];
-// animation.write and animation.publish are in neither set on purpose: they save the clip's own .uasset (publish
-// also uploads a copy), not the level, so a level rollback snapshot would not cover them and a level.save.file
-// afterwards would save unrelated edits.
 export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,
-  assetManagerImageImport.method,
   assetManagerImport.method,
+  gameSettingsUpdate.method,
   rigBuilderInsert.method,
 ]);
-export const savingMethods = new Set([
-  assetDrawerImport.method,
-  assetManagerImageImport.method,
-  assetManagerImport.method,
-]);
+export const savingMethods = new Set([assetDrawerImport.method, assetManagerImport.method, gameSettingsUpdate.method]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
-  studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
-    buildAssetManagerImageImportRender(result, normalizedArgs, output),
   studiorpc_asset_manager_import: ({ normalizedArgs, output, result }) =>
     buildAssetManagerImportRender(result, normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),

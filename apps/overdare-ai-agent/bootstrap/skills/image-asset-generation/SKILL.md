@@ -10,7 +10,7 @@ Use this skill when the requested deliverable is artwork itself. For building or
 ## Generate the requested assets
 
 - For matching isolated assets that can share cell proportions, pass a structured `grid: { rows, columns, items }` to `generate_image`. Put common style and exclusions in `prompt`, and describe each item in row-major order. Prompt wording such as "4 by 3 grid" does not replace the `grid` argument. The tool returns one original sheet plus lossless PNG crops for occupied cells.
-- Pass `background: "transparent"` when cutout assets need alpha. Choose `gpt-image-2.5-flare` for new artwork or batches and `gpt-image-2.5-sunburst` for a targeted edit that must preserve an existing image; honor a model named by the user. Attach an actual file through `referenceImages` when editing or using an image as a style reference.
+- Pass `background: "transparent"` when cutout assets need alpha. Attach an actual file through `referenceImages` when editing or using an image as a style reference.
 - Keep the requested output format in view: the top-level `file` is the sheet, while `grid.cells[].file` contains individual assets. Deliver the requested form rather than treating the preview as the only artifact.
 
 ## Verify before deciding to regenerate

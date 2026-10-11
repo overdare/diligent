@@ -10,7 +10,7 @@ Track the guide, asset generation/import, GUI binding, and verification separate
 
 For screen-space gameplay HUDs, read the mobile-layout guidance in [studio-ui.md](studio-ui.md) first. Map actions to touch inputs, reserve active system-control space, and decide whether to retain or replace jump. Select typography from [fonts.md](fonts.md) only when choosing new faces.
 
-Use the actual scene and user art direction for the game's mood. Open and attach the bundled [default mobile controls reference](default-mobile-controls.png) when generating a mobile HUD guide, alongside relevant scene/style images. Resolve its absolute path from the skill base directory: `references/default-mobile-controls.png`. It supplies control-placement context when gameplay captures omit CoreGui; do not copy its character or scenery. Retained system controls are layout context, not assets to regenerate or import.
+Use the actual scene and user art direction for the game's mood. When generating a mobile HUD guide, pass the bundled [default mobile controls reference](default-mobile-controls.png) in `referenceImages`, alongside relevant scene/style images. Resolve its absolute path from the skill base directory: `references/default-mobile-controls.png`. It supplies control-placement context when gameplay captures omit CoreGui; do not copy its character or scenery. Retained system controls are layout context, not assets to regenerate or import.
 
 Check that every reference is readable on the agent host before calling `generate_image`. In Mac-to-Windows dev, a Studio screenshot's `C:/...` path is not a Mac path: use the configured shared roots to locate and verify its local counterpart. Do not prepend the working directory to a foreign-host path or discard a required reference to bypass an error. Accept up to five PNG, JPEG, or WebP references per call.
 
@@ -34,15 +34,6 @@ Generate the missing artwork identified by the chosen design. When it calls for 
 - Attach the guide's actual `file` and, when useful, a finished anchor asset in each related `referenceImages` call. Repeating its description is not attachment. Keep references stable instead of chaining variant after variant.
 - Request one isolated production asset per call, or use `grid` for a batch of matching isolated assets. Identify what changes and what stays, material, proportions, padding, alpha regions, and exclusions such as no labels. Borrow style without inheriting the guide's background, system controls, or neighboring panels.
 - Once shared references exist, issue independent asset calls together. Keep Studio mutations in the single editing session. Match results by role rather than completion order and preserve successful outputs.
-
-### Choose the image model
-
-Choose and pass `model` based on the work. Honor a model the user names; otherwise make the selection without asking the user to choose an implementation detail. Both models generate and edit images using text and `referenceImages`:
-
-- `gpt-image-2.5-flare` emphasizes speed and high-quality everyday generation. Prefer it for new icons, illustrations, mockups, and matching asset batches when fast iteration matters.
-- `gpt-image-2.5-sunburst` emphasizes editing precision. Prefer it for targeted edits, background repairs, and revisions that need to preserve existing composition, geometry, or fine details.
-
-Having a style reference does not by itself require Sunburst; distinguish generating new artwork from preserving an existing image during an edit. Both use the selected ChatGPT OAuth provider. Model selection does not switch accounts or providers.
 
 ### Batch matching assets with a grid
 
@@ -83,7 +74,7 @@ Visible artwork in a requested blank cell makes the sheet's layout incorrect eve
 
 ## Import, bind, and verify
 
-Import each reusable asset once using `studiorpc_asset_manager_image_import` with its returned absolute `file`; retain `asset.assetid`. For grid results, use each selected `grid.cells[].file`; the top-level `file` is the whole sheet. Follow [studio-ui.md](studio-ui.md) for hierarchy and image sizing.
+Import each reusable asset once using `studiorpc_asset_manager_import` with its returned absolute `file`; retain `asset.assetid`. For grid results, use each selected `grid.cells[].file`; the top-level `file` is the whole sheet. Follow [studio-ui.md](studio-ui.md) for hierarchy and image sizing.
 
 `ImageButton` and `ImageLabel` are native GUI instances. Bind the generated shell/backplate/glyph IDs to their `Image` properties; keep text, live values, and input behavior separate. For `ProgressBar`, bind track/fill artwork to `TrackImage`/`FillImage` and update `Value` independently; see [gui-types.md](gui-types.md). A native hit target can contain image and text children. Do not flatten the entire guide behind invisible buttons or replace all artwork with plain Frames merely because the GUI must remain editable.
 

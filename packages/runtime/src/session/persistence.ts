@@ -432,6 +432,9 @@ export async function deleteSession(sessionsDir: string, sessionId: string): Pro
   const path = join(sessionsDir, `${sessionId}.jsonl`);
   const exists = await Bun.file(path).exists();
   if (!exists) return false;
+  await unlink(join(sessionsDir, "goals", `${sessionId}.jsonl`)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
   await unlink(path);
   return true;
 }
