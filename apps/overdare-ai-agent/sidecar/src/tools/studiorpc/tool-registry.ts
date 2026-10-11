@@ -8,6 +8,12 @@ import * as animationRead from "./methods/animation.read";
 import * as animationWrite from "./methods/animation.write";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
 import * as assetManagerImport from "./methods/asset-manager.import";
+import {
+  api as characterApi,
+  build as characterBuild,
+  exportAsset as characterExport,
+  inspect as characterInspect,
+} from "./methods/character";
 import * as gameCharacterRead from "./methods/game.character.read";
 import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
@@ -20,12 +26,6 @@ import * as instanceSchemaSearch from "./methods/instance.schema.search";
 import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
-import {
-  api as characterApi,
-  build as characterBuild,
-  exportAsset as characterExport,
-  inspect as characterInspect,
-} from "./methods/proceduralcharacter";
 import * as proceduralModelApi from "./methods/proceduralmodel.api";
 import * as proceduralModelRun from "./methods/proceduralmodel.run";
 import * as proceduralModelSet from "./methods/proceduralmodel.set";
