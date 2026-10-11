@@ -8,6 +8,43 @@ import * as character from "../../../../src/tools/studiorpc/methods/character";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("rejects separate skinned regions while forwarding one skin with static bone props", async () => {
+    const request = {
+      requestId: "single-skin-with-props",
+      source: { kind: "static_model", guid: "A".repeat(32), geometryRevision: "B".repeat(40) },
+      target: { kind: "new_custom_character", name: "CreatureWithProps" },
+      rigProfile: "authored_v1",
+      rig: {
+        space: "mesh_component_ue_z_up_cm",
+        bones: [],
+        regions: { body: { allowedBones: ["root"], bindMode: "rigid", bone: "root" } },
+        boneAttachments: { hat: "root", bag: "root" },
+      },
+      motion: { preset: "authored_v1", speedCmPerSec: 0, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { state: "preview_ready" };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_build")!;
+    const context = { toolCallId: "single-skin", signal: new AbortController().signal, abort: () => {} };
+    await tool.execute(character.build.params.parse(request), context);
+    expect(calls).toEqual([{ method: character.build.method, params: request }]);
+    expect(() =>
+      character.build.params.parse({
+        ...request,
+        rig: { ...request.rig, regions: { ...request.rig.regions, secondBody: request.rig.regions.body } },
+      }),
+    ).toThrow("exactly one skinned region");
+    for (const regions of [{}, [], null]) {
+      expect(character.build.params.safeParse({ ...request, rig: { ...request.rig, regions } }).success).toBe(false);
+    }
+  });
   test("lets Studio resolve historical recipe bindings without rewriting their frozen inputs", async () => {
     const request = {
       requestId: "previously-bound-recipe-request",
@@ -43,7 +80,7 @@ describe("non-ODA character authoring", () => {
       },
       target: { kind: "new_custom_character", name: "StructuredCharacter" },
       rigProfile: "authored_v1",
-      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
       motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       commit: false,
     };
@@ -198,7 +235,7 @@ describe("non-ODA character authoring", () => {
       source: { kind: "static_model", guid: "B".repeat(32), geometryRevision: "A".repeat(40) },
       target: { kind: "new_custom_character", name: "ImportedPanel" },
       rigProfile: "authored_v1",
-      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
       motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       commit: false,
     };
@@ -243,7 +280,7 @@ describe("non-ODA character authoring", () => {
       source: { kind: "procedural_model", guid: "ABCDEF0123456789ABCDEF0123456789" },
       target: { kind: "new_custom_character", name: "ModelSourceCharacter" },
       rigProfile: "authored_v1",
-      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
       motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       overrides: { jointWidth: 4 },
       commit: false,
@@ -370,7 +407,7 @@ describe("non-ODA character authoring", () => {
       },
       target: { kind: "new_custom_character", name: "Creature" },
       rigProfile: "authored_v1",
-      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: {} },
+      rig: { space: "mesh_component_ue_z_up_cm", bones: [], regions: { body: {} } },
       motion: { preset: "authored_v1", speedCmPerSec: 20, document: { fps: 30, poses: [] } },
       commit: false,
     };
