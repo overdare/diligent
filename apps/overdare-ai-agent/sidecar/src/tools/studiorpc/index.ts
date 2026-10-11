@@ -31,6 +31,7 @@ import { captureSnapshot, nextRequestIndex, pruneSnapshots, snapshotsDir } from 
 import { createSnapshotContextTool } from "./tools/snapshot-context-tool";
 import { createSnapshotListTool } from "./tools/snapshot-list-tool";
 import { consumeStudioChanges, createStudioChangesTool, type StudioChangesCapture } from "./tools/studio-changes-tool";
+import { checkResult } from "./tools/v2/result";
 import type { Tool, ToolResult } from "./types";
 import { createWriteLock } from "./write-lock";
 
@@ -349,7 +350,7 @@ export async function createStudioRpcTools(ctx: {
           }
         }
 
-        const isMutating = mutatingMethods.has(method);
+        const isMutating = mutatingMethods.has(method) || mod.serialize === true;
         const release = isMutating ? await writeLock.acquire() : undefined;
         try {
           try {
@@ -368,8 +369,21 @@ export async function createStudioRpcTools(ctx: {
               result = await mod.postProcess(result, args as Record<string, unknown>, toolCallRpc);
             }
             // Persist editor-state changes to file immediately on success.
-            if (savingMethods.has(method)) {
-              await toolCallRpc("level.save.file", {});
+            let failed = isRecord(result) && result.success === false;
+            if (!failed && savingMethods.has(method)) {
+              try {
+                checkResult("level.save.file", await toolCallRpc("level.save.file", {}));
+              } catch (error) {
+                failed = true;
+                const reason = error instanceof Error ? error.message : String(error);
+                result = {
+                  ...(isRecord(result) ? result : { result }),
+                  saved: false,
+                  saveError:
+                    `${rpcMethod} already succeeded, but level.save.file failed: ${reason}. ` +
+                    "Do not repeat the operation; inspect Studio and save the level.",
+                };
+              }
             }
             const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
             const renderBuilder = renderBuilders[toolName];
@@ -382,7 +396,7 @@ export async function createStudioRpcTools(ctx: {
               output: warning ? `${warning}\n${output}` : output,
               render,
               outputImages,
-              metadata: { method: rpcMethod, result },
+              metadata: { method: rpcMethod, result, ...(failed ? { error: true } : {}) },
             };
           } catch (error) {
             // Same rationale as withSnapshot's catch: a warning generated but
