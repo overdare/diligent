@@ -22,13 +22,20 @@ mock.module("../src/tools/studiorpc/rpc.ts", () => ({
   applyLevelChanges: async () => ({ ok: true }),
   call: (method: string, params?: Record<string, unknown>) => {
     if (
-      ["proceduralmodel.api", "proceduralmodel.validate", "proceduralmodel.set", "instance.create"].includes(method)
+      [
+        "proceduralmodel.api",
+        "proceduralmodel.validate",
+        "proceduralmodel.set",
+        "proceduralmodel.run",
+        "instance.create",
+      ].includes(method)
     ) {
       nativeCalls.push({ method, params: structuredClone(params) });
       if (method === "proceduralmodel.api")
         return { success: true, template: "template", lookup: {}, presets: ["Plank"] };
       if (method === "proceduralmodel.validate") return { ok: true, findings: [] };
       if (method === "instance.create") return { ActorGuids: ["RPC-MODEL"] };
+      if (method === "proceduralmodel.run") return { success: true, action: "draft", id: params?.id };
       return { success: true, run: { success: true, parts: [{ name: "body" }] } };
     }
     if (method === "level.browse") return levelBrowseMock();
@@ -156,6 +163,14 @@ describe("OVERDARE MCP server", () => {
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("studiorpc_level_browse");
     expect(names).toContain("studiorpc_rig_builder_insert");
+    expect(names).toContain("studiorpc_asset_manager_import");
+    expect(names).toContain("studiorpc_game_settings_read");
+    expect(names).toContain("studiorpc_game_settings_update");
+    expect(names).not.toContain("studiorpc_asset_manager_image_import");
+    expect(names).not.toContain("studiorpc_asset_manager_model_import");
+    expect(names).not.toContain("studiorpc_game_ui_browse");
+    expect(names).not.toContain("studiorpc_game_ui_rawScreenRoots");
+    expect(names).not.toContain("studiorpc_instance_vfx_recipe_add");
     // Luau validation runs inside the script-writing tools, so it is not a tool of its own.
     expect(names).not.toContain("studiorpc_lua_validate");
     expect(names).toContain("overdaresearch");
@@ -186,8 +201,13 @@ describe("OVERDARE MCP server", () => {
     expect(registries.tools.has("studiorpc_execute_luau")).toBe(true);
     expect(registries.tools.has("studiorpc_instance_schema_search")).toBe(true);
     expect(registries.tools.has("studiorpc_procedural_run")).toBe(false);
-    expect([...registries.tools.keys()].filter((name) => name.startsWith("studiorpc_proceduralmodel_")).sort()).toEqual(
-      ["studiorpc_proceduralmodel_api", "studiorpc_proceduralmodel_set", "studiorpc_proceduralmodel_validate"],
+    expect([...registries.tools.keys()]).toEqual(
+      expect.arrayContaining([
+        "studiorpc_proceduralmodel_api",
+        "studiorpc_proceduralmodel_run",
+        "studiorpc_proceduralmodel_set",
+        "studiorpc_proceduralmodel_validate",
+      ]),
     );
     expect(registries.tools.get("load_skill")?.description).toContain("geometry-recipe");
     const skill = await registries.tools.get("load_skill")!.execute(
@@ -244,6 +264,25 @@ describe("OVERDARE MCP server", () => {
         created: true,
         run: { success: true, parts: [{ name: "body" }] },
       });
+    } finally {
+      await client.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("MCP advertises an object schema for drafts and forwards inline source and parameters", async () => {
+    const directory = await makeBootstrapDir();
+    const client = await connectClient(directory);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.find((tool) => tool.name === "studiorpc_proceduralmodel_run")?.inputSchema.type).toBe("object");
+      nativeCalls.length = 0;
+      const args = { id: "draft-test", code: "print('draft')", parameters: { radius: 3 }, action: "draft" };
+      const result = await client.callTool({ name: "studiorpc_proceduralmodel_run", arguments: args });
+      expect(result.isError).not.toBe(true);
+      expect(nativeCalls).toEqual([{ method: "proceduralmodel.run", params: args }]);
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(JSON.parse(content[0].text)).toMatchObject({ action: "draft", id: "draft-test" });
     } finally {
       await client.close();
       await rm(directory, { recursive: true, force: true });

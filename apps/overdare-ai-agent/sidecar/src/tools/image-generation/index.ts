@@ -39,7 +39,7 @@ const IMAGE_TOOL_DESCRIPTION =
   "Returns the exact absolute output file path and a preview. requestedModel records the request, while model is included only if the server reports it. " +
   "Transparent requests include actual pixel inspection. Repair opaque output using its preserved file; " +
   "regenerate empty output from the guide or last non-empty source within the same retry budget. " +
-  "To use it in Studio, pass the file to studiorpc_asset_manager_image_import and bind asset.assetid to ImageLabel or ImageButton. " +
+  "To use it in Studio, pass the file to studiorpc_asset_manager_import and bind asset.assetid to ImageLabel or ImageButton. " +
   IMAGE_FAILURE_GUIDANCE;
 
 const parameters = z

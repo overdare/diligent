@@ -126,7 +126,7 @@ describe("game.observe arguments", () => {
   test("false section toggles are treated exactly like omitted sections", () => {
     const args = { character: true, ui: false, instances: ["Gate"] };
     expect(() => params.parse(args)).not.toThrow();
-    expect(() => params.parse({ character: false, ui: false, instances: false })).not.toThrow();
+    expect(() => params.parse({ character: false, ui: false, instances: false })).toThrow("Request at least one");
     expect(normalizeArgs(args)).toEqual({ character: true, instances: ["Gate"] });
     expect(normalizeArgs({ character: false, ui: false, instances: false })).toEqual({});
   });

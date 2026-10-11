@@ -45,8 +45,9 @@ export const params = z
         "Which play-test client's character to read. Omit — as almost every call should — and it reads the " +
           "main play test, the one studiorpc_game_pie_status marks targeted: true. Pass one only in a session " +
           "started with more than one player, where input and move_to can drive the others by id and this is " +
-          "the only read that can follow them there. Needs pieSessionId alongside it; without both, the main " +
-          "client is read. A client that is not injectable is refused rather than silently answered about " +
+          "a read that can follow them there, alongside studiorpc_game_observe. Needs pieSessionId alongside it; " +
+          "omit both to read the main client. Supplying only one is rejected. A client that is not injectable " +
+          "is refused rather than silently answered about " +
           "somebody else.",
       ),
   })

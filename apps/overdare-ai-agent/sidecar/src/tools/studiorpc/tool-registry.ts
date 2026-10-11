@@ -3,11 +3,13 @@
 import type { ImageBlock } from "@diligent/protocol";
 import type { z } from "zod";
 import * as assetDrawerImport from "./methods/asset-drawer.import";
-import * as assetManagerImageImport from "./methods/asset-manager.image.import";
+import * as assetManagerImport from "./methods/asset-manager.import";
 import * as gameCharacterRead from "./methods/game.character.read";
 import * as gameObserve from "./methods/game.observe";
 import * as gamePlay from "./methods/game.play";
 import * as gameScreenshot from "./methods/game.screenshot";
+import * as gameSettingsRead from "./methods/game.settings.read";
+import * as gameSettingsUpdate from "./methods/game.settings.update";
 import * as gameStop from "./methods/game.stop";
 import * as hubTokenRead from "./methods/hub.token.read";
 import * as instanceSchemaSearch from "./methods/instance.schema.search";
@@ -15,6 +17,7 @@ import * as levelBrowse from "./methods/level.browse";
 import * as levelPublish from "./methods/level.publish";
 import * as levelSaveFile from "./methods/level.save.file";
 import * as proceduralModelApi from "./methods/proceduralmodel.api";
+import * as proceduralModelRun from "./methods/proceduralmodel.run";
 import * as proceduralModelSet from "./methods/proceduralmodel.set";
 import * as proceduralModelValidate from "./methods/proceduralmodel.validate";
 import * as rigBuilderInsert from "./methods/rig_builder.insert";
@@ -26,7 +29,7 @@ import * as viewportCameraRead from "./methods/viewport.camera.read";
 import * as viewportCameraSet from "./methods/viewport.camera.set";
 import {
   buildAssetDrawerImportRender,
-  buildAssetManagerImageImportRender,
+  buildAssetManagerImportRender,
   buildGamePlayRender,
   buildGameScreenshotRender,
   buildGameStopRender,
@@ -48,6 +51,7 @@ type MethodModule = {
   description: string;
   params: z.ZodType;
   readOnly?: boolean;
+  serialize?: boolean;
   timeoutMs?: number;
   resolveMethod?: (args: Record<string, unknown>) => string;
   normalizeArgs?: (args: Record<string, unknown>) => Record<string, unknown>;
@@ -68,9 +72,10 @@ export const methodModules: MethodModule[] = [
   proceduralModelApi,
   proceduralModelValidate,
   proceduralModelSet,
+  proceduralModelRun,
   instanceSchemaSearch,
   assetDrawerImport,
-  assetManagerImageImport,
+  assetManagerImport,
   levelBrowse,
   levelSaveFile,
   levelPublish,
@@ -80,6 +85,8 @@ export const methodModules: MethodModule[] = [
   gameScreenshot,
   gameCharacterRead,
   gameObserve,
+  gameSettingsRead,
+  gameSettingsUpdate,
   viewportCameraRead,
   viewportCameraSet,
   hubTokenRead,
@@ -87,15 +94,16 @@ export const methodModules: MethodModule[] = [
 export const mutatingMethods = new Set([
   proceduralModelSet.method,
   assetDrawerImport.method,
-  assetManagerImageImport.method,
+  assetManagerImport.method,
+  gameSettingsUpdate.method,
   rigBuilderInsert.method,
 ]);
-export const savingMethods = new Set([assetDrawerImport.method, assetManagerImageImport.method]);
+export const savingMethods = new Set([assetDrawerImport.method, assetManagerImport.method, gameSettingsUpdate.method]);
 
 export const renderBuilders: Record<string, RenderBuilder> = {
   studiorpc_asset_drawer_import: ({ normalizedArgs, output }) => buildAssetDrawerImportRender(normalizedArgs, output),
-  studiorpc_asset_manager_image_import: ({ normalizedArgs, output, result }) =>
-    buildAssetManagerImageImportRender(result, normalizedArgs, output),
+  studiorpc_asset_manager_import: ({ normalizedArgs, output, result }) =>
+    buildAssetManagerImportRender(result, normalizedArgs, output),
   studiorpc_level_browse: ({ args, result }) => buildLevelBrowseRender(result, args),
   studiorpc_level_save_file: ({ output }) => buildLevelSaveFileRender(output),
   studiorpc_instance_read: ({ normalizedArgs, output }) => buildInstanceReadRender(normalizedArgs, output),
