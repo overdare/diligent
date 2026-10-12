@@ -13,7 +13,7 @@ import type { DiligentPaths } from "../infrastructure";
 import type { SkillMetadata } from "../skills";
 import { createApplyPatchTool } from "./apply-patch";
 import { createBashTool } from "./bash";
-import type { BundledToolProvider } from "./bundled-provider";
+import type { BundledToolProvider, TextGenerationFn } from "./bundled-provider";
 import type { RuntimeToolHost } from "./capabilities";
 import type { PluginLoadError, PluginStateEntry, ToolStateEntry } from "./catalog";
 import { buildToolCatalog } from "./catalog";
@@ -60,6 +60,8 @@ export interface BuildDefaultToolsOptions {
   disabledToolNames?: ReadonlySet<string>;
   provider?: ProviderName;
   generateImage?: ImageGenerationFn;
+  generateText?: TextGenerationFn;
+  sessionId?: string;
   /** Whether plugin assembly includes globally discovered packages (default `global`). */
   pluginDiscovery?: PluginDiscoveryMode;
   /** External MCP servers whose tools are exposed to the agent (P069). */
@@ -177,6 +179,8 @@ export async function buildDefaultTools(options: BuildDefaultToolsOptions): Prom
           bundledProviders: providers,
           modelProvider: provider,
           generateImage: options.generateImage,
+          generateText: options.generateText,
+          sessionId: options.sessionId,
           disabledToolNames,
           pluginDiscovery,
         });

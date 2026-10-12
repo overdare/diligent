@@ -171,6 +171,7 @@ async function applyUserPromptHooks(
   content: UserMessage["content"],
   userMessage: UserMessage,
   turnId: string,
+  userMessageId: string,
 ): Promise<HookOutcome> {
   const shellHandlers = ctx.hooks?.UserPromptSubmit ?? [];
   const { onUserPromptSubmit: pluginHandlers } = await ctx.getPluginHooks(runtime.cwd);
@@ -187,6 +188,7 @@ async function applyUserPromptHooks(
     hook_event_name: "UserPromptSubmit",
     permission_mode: runtime.mode,
     user_id: runtime.currentTurnUserId,
+    user_message_id: userMessageId,
     prompt: typeof content === "string" ? content : params.message,
   };
 
@@ -321,14 +323,14 @@ export async function handleTurnStart(
           content: params.message,
         }
       : prepareTurnMessage(ctx, params, runtime);
+    const userItemId = generateEntryId();
     const hookOutcome = internal
       ? { blocked: false as const, userMessage }
-      : await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId);
+      : await applyUserPromptHooks(ctx, params, runtime, content, userMessage, turnId, userItemId);
     if (hookOutcome.blocked || !isCurrent()) return { accepted: true };
     if (!internal) runtime.goalCreation = creation;
 
     const finalUserMessage = hookOutcome.userMessage;
-    const userItemId = generateEntryId();
     if (!internal)
       await ctx.emit({
         method: DILIGENT_SERVER_NOTIFICATION_METHODS.AGENT_EVENT,
