@@ -35,6 +35,26 @@ function toolContext() {
 }
 
 describe("animation params", () => {
+  test("read attaches the actual editor screenshot alongside the frame sheet", async () => {
+    const frame = join(dir, "editor-frame.png");
+    const editor = join(dir, "editor-window.png");
+    writeFileSync(frame, "frame-image");
+    writeFileSync(editor, "actual-editor-image");
+    const result = {
+      preview: { status: "completed", imagePath: frame },
+      editor: { screenshotStatus: "completed", screenshotPath: editor },
+    };
+    const images = await animationRead.attachImages(JSON.stringify(result));
+    expect(images).toHaveLength(2);
+    expect(images?.[1]?.source).toEqual({
+      type: "base64",
+      media_type: "image/png",
+      data: Buffer.from("actual-editor-image").toString("base64"),
+    });
+    expect(
+      await animationRead.attachImages({ editor: { screenshotStatus: "failed", screenshotPath: editor } }),
+    ).toBeUndefined();
+  });
   test("read can open its selected clip in the existing AnimationEditor", () => {
     const args = { assetPath: ASSET, openEditor: true, preview: false };
     expect(animationRead.params.parse(args)).toEqual(args);
