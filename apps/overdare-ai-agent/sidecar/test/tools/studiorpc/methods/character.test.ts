@@ -320,7 +320,7 @@ describe("non-ODA character authoring", () => {
       },
     });
     const tool = tools.find((entry) => entry.name === "studiorpc_character_export")!;
-    const result = await tool.execute(request, {
+    const result = await tool.execute(tool.parameters.parse(request), {
       toolCallId: "native-publish",
       signal: new AbortController().signal,
       abort: () => {},
@@ -471,6 +471,44 @@ describe("non-ODA character authoring", () => {
     expect(mutatingMethods.has(character.exportAsset.method)).toBe(false);
     expect(savingMethods.has(character.exportAsset.method)).toBe(false);
     expect(mutatingMethods.has(character.build.method)).toBe(false);
+  });
+  test("forwards live skin contact samples through runtime inspection and rejects ambiguous contact selection", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async (method, params) => {
+        calls.push({ method, params });
+        return { skin: { status: "measured", contacts: { sole: { vertexIds: [7], pointsWorldCm: [[1, 2, 0]] } } } };
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+    const request = {
+      mode: "runtime",
+      modelName: "Creature",
+      world: "client",
+      skin: { contacts: ["sole"], groundHeightCm: 0 },
+    };
+    expect(character.inspect.params.safeParse(request).success).toBe(true);
+    const result = await tool.execute(request, {
+      toolCallId: "runtime-skin",
+      signal: new AbortController().signal,
+      abort: () => {},
+    });
+    expect(calls).toEqual([{ method: "character.inspect", params: request }]);
+    expect(JSON.parse(result.output).skin.contacts.sole.pointsWorldCm).toEqual([[1, 2, 0]]);
+    for (const skin of [
+      { contacts: [] },
+      { contacts: ["sole", "sole"] },
+      { contacts: ["sole", "SOLE"] },
+      { contacts: [""] },
+      { contacts: ["sole"], groundHeightCm: Infinity },
+      { contacts: ["sole"], advanceWorld: true },
+    ]) {
+      expect(character.inspect.params.safeParse({ ...request, skin }).success).toBe(false);
+    }
+    expect(
+      character.inspect.params.safeParse({ mode: "source", guid: "B".repeat(32), skin: request.skin }).success,
+    ).toBe(false);
   });
   test("routes all inspection modes through one read-only tool without saving the map", async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
