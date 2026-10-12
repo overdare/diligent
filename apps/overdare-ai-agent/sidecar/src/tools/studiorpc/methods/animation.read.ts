@@ -22,6 +22,8 @@ export const description =
   "Pass modelGuid to select a Workspace Model's existing single skeletal MeshPart. Omit it for the default ODA rig; with assetPath, the clip's own original rig is inferred. " +
   "The same read/write/preview/publish tools work on general rigs. Bone names are the original names, including names containing IK, Camera or Item; the naming filter below applies only to ODA. " +
   "General-rig captures use the original materials and +X/+Y component views. ODA anatomical clearance checks may be unavailable; an unavailable check does not prove a clean pose.\n" +
+  "With a clip, openEditor:true also opens the existing Studio AnimationEditor and reports its actual preview clip, mesh and bone count. A different already-open clip is preserved and returns an error; close it first. " +
+  "The selected editor refreshes when the same clip is changed through animation.write. Omit openEditor for a data-only read.\n" +
   "Without assetPath (start here): returns `rig`, `template`, `limits` and `animations` (asset paths of the " +
   "clips that already exist). `rig.bones[]` lists the bones you can animate: name, parent, refLocal.translation " +
   "and refComponent (translation, and axisX/axisY/axisZ = the bone's own axes in component space); " +
@@ -68,6 +70,12 @@ export const params = z
       .string()
       .optional()
       .describe("Instead of assetPath: an animation id, ovdrassetid://N, to open for editing."),
+    openEditor: z
+      .boolean()
+      .optional()
+      .describe(
+        "With assetPath or assetId, open the selected clip in Studio's existing AnimationEditor. Does not close another clip.",
+      ),
     preview: previewSchema
       .optional()
       .describe(
