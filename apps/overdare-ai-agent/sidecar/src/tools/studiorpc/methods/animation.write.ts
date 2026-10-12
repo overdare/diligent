@@ -21,6 +21,10 @@ export const method = "animation.write";
 export const timeoutMs = ANIMATION_TIMEOUT_MS;
 
 export const description =
+  "For a general rig, first read with modelGuid (a Workspace Model containing one skeletal MeshPart), then create with that same modelGuid. " +
+  "An existing assetPath infers the clip's original Skeleton and preview skin; edits preserve bone hierarchy, bind pose and weights. " +
+  "General-rig dryRun reports original bone names and skin heights. The ODA anatomical directions, pins, ground and clearance solver described below are ODA-only; use original bone keys for general rigs. " +
+  "Downloaded general clips with animated scale, events, additive poses, root-motion extraction or other unsupported data are rejected rather than silently simplified.\n" +
   "Create or replace a character animation clip from JSON, save it as a local .uasset, and return a preview " +
   "contact sheet. Get bone names and axes first from studiorpc_animation_read with no assetPath. To try poses " +
   "without saving or rendering (joint positions, penetrations, IK solves), set dryRun: true.\n" +
@@ -109,6 +113,12 @@ export const description =
 
 export const params = z
   .object({
+    modelGuid: z
+      .string()
+      .optional()
+      .describe(
+        "Existing Workspace Model's single-skin rig for creation. Existing assetPath infers its original rig; a conflicting selector is rejected.",
+      ),
     dryRun: z
       .boolean()
       .optional()
@@ -146,8 +156,8 @@ export const params = z
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out =
     args.dryRun === true
-      ? dropBlank(args, ["assetPath", "revision"])
-      : normalizePreview(dropBlank(args, ["assetPath", "revision"]));
+      ? dropBlank(args, ["assetPath", "revision", "modelGuid"])
+      : normalizePreview(dropBlank(args, ["assetPath", "revision", "modelGuid"]));
   if (args.dryRun === true) delete out.preview;
   if (Array.isArray(out.frames) && out.frames.length === 0) delete out.frames;
   if (Array.isArray(out.pins) && out.pins.length === 0) delete out.pins;

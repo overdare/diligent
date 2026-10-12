@@ -1,9 +1,17 @@
 ---
 name: character-animation
-description: Author or change an ODA character animation clip (emote, attack, dance, reaction) with studiorpc_animation_write, and give it an ovdrassetid with studiorpc_animation_publish when it will be used in a game. Not for choosing an existing catalog animation.
+description: Author or change a character animation clip on ODA or a Model's existing single-skin rig with studiorpc_animation_write, and obtain its ovdrassetid with studiorpc_animation_publish. Not for choosing an existing catalog animation.
 ---
 
 # Character Animation
+
+## Select the original rig first
+
+For a general character, call `studiorpc_animation_read` with its Workspace `modelGuid`. This selects the Model's existing single skeletal MeshPart and returns its original bone names, bind transforms and component axes. Create a clip with the same `modelGuid`; later reads and writes can infer the rig from `assetPath`. Read an existing animation with `assetId` and this selector to obtain an editable copy while preserving the source. Upload with the same `studiorpc_animation_publish` tool; general clips retain their original Skeleton.
+
+When `rig.family` is `general`, use its actual bone axes and keys. The measured ODA anatomy, angles, pins and ground solver below do not apply. General `dryRun` reports original bone positions and per-bone skin heights; preview uses the original materials and component +X/+Y views. Clearance and anatomical directions can be unavailable. Inspect the captures and native character skin measurements; unavailable or unmeasured evidence is not a quality pass. Source clips with animated scale, additive poses, events or root-motion extraction are rejected rather than losing those features in a copy. Existing hierarchy, bind pose and weights are preserved; this editing path does not perform rigging.
+
+The sections below describe the default ODA rig.
 
 Make a clip that a person watching it would recognise as the requested motion, with weight and timing that feel alive. The tool descriptions define the JSON, pins and preview; this skill covers what they cannot: how the ODA rig moves and what ODA's own animations look like in numbers.
 

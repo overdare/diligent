@@ -218,6 +218,30 @@ describe("animation tools over the generic Studio RPC path", () => {
     return tools.find((tool) => tool.name === name)!;
   }
 
+  test("select an existing Model rig through read and write without adding tools", async () => {
+    const modelGuid = "C658A7934AF02FED0C38ED8533F6505E";
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const callRpc = async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      return { status: "completed" };
+    };
+    const read = await toolFor("studiorpc_animation_read", callRpc);
+    const write = await toolFor("studiorpc_animation_write", callRpc);
+    const readArgs = { modelGuid, assetId: "ovdrassetid://123", preview: false };
+    await read.execute(read.parameters.parse(readArgs), toolContext());
+    const writeArgs = { modelGuid, animation: CONTRACT_ANIMATION, dryRun: true, frames: [0, 15] };
+    await write.execute(write.parameters.parse(writeArgs), toolContext());
+    expect(calls).toEqual([
+      { method: "animation.read", params: readArgs },
+      { method: "animation.write", params: writeArgs },
+    ]);
+    expect(animationRead.normalizeArgs({ modelGuid: " \u200b" })).toEqual({});
+    expect(animationWrite.normalizeArgs({ animation: CONTRACT_ANIMATION, modelGuid: " " })).toEqual({
+      animation: CONTRACT_ANIMATION,
+    });
+    expect(animationRead.params.safeParse({ modelGuid: 123 }).success).toBe(false);
+  });
+
   test("are registered under the studiorpc_ names and attach the image", async () => {
     const png = join(dir, "sheet.png");
     writeFileSync(png, "png-bytes");
@@ -376,6 +400,26 @@ describe("animation.publish params", () => {
 });
 
 describe("animation result text", () => {
+  test("keeps general-rig bind scale visible to the agent", () => {
+    const result = {
+      rig: {
+        family: "general",
+        bones: [
+          {
+            name: "ItemTail",
+            parent: "Root",
+            editable: true,
+            refLocal: { translation: [1, 2, 3], scale: [2, 1, 0.5] },
+            refComponent: {},
+          },
+        ],
+      },
+    };
+    const read = JSON.parse(animationRead.postProcess(result) as string);
+    expect(read.rig.family).toBe("general");
+    expect(read.rig.bones[0].name).toBe("ItemTail");
+    expect(read.rig.bones[0].refLocal.scale).toEqual([2, 1, 0.5]);
+  });
   test("keeps a pinned write small: counts instead of the baked keys, short fields first, still valid JSON", async () => {
     const bones = Array.from({ length: 14 }, (_, i) => `Bone${i}`);
     const poseSamples = Array.from({ length: 12 }, (_, frame) => ({
