@@ -28,7 +28,7 @@ inject summaries; they can query explicitly without advancing their main's marke
 New edits during a request are available through explicit queries or the next
 request's automatic summary.
 
-Studio RPC requests carry the actual executing session ID in optional top-level
+Studio RPC requests carry the actual executing session ID in top-level
 `meta.sessionId`, including child IDs. The runtime resolves the root group from
 persisted ancestry, not the last main prompt. Explicit `Origin.Kind: "mcp"`
 records from the querying session, its main, or known descendants are excluded.
@@ -36,6 +36,10 @@ Other groups' edits remain visible. Unknown, mixed, legacy, and unregistered
 authors remain visible rather than being guessed. Studio must already emit
 origin metadata; this change does not modify Studio's logging schema.
 External MCP calls without runtime identity do not inherit a main's identity.
+Standalone MCP and background calls use a stable `sidecar-...` process identity;
+it identifies the sidecar, not an external client's individual agent transcript.
+Runtime execution identity takes precedence over tool arguments through nested
+helpers, awaits, and write-lock waits.
 
 ## Automatic context budget
 
@@ -43,23 +47,37 @@ One budget covers every section, attribution, counts, warnings, and detail
 instructions. The renderer targets 6,000 UTF-8 bytes with an 8,000-byte ceiling.
 These approximate 1,500 and 2,000 tokens, not tokenizer guarantees.
 
-- At most 20 objects receive details across sections.
-- Each object shows at most four properties and three list items per property.
-- Names, property names, and displayed values are limited to 80 characters.
-- Script source events, removals, parent moves, and identity/reference changes
-  take priority over bulk additions and ordinary properties.
-- Repeated scalar edits collapse to first-before and final-after. Fully reverted
-  scalar and parent edits disappear, but script edit events remain visible.
-- Created-then-removed objects are counted by type. All section counts remain
-  complete even when details are omitted.
+- At most 20 object/session entries receive details across all sections.
+- Each object shows at most four changed properties. Each list property shows
+  at most three changed items across additions, removals, and modifications.
+- Names, property names, displayed values, and session headings are limited to 80 characters.
+- Changes are grouped under `Session: <ID>`, followed by change-kind sections
+  such as Added, Modified, and Removed. Missing IDs, legacy records, and ambiguous
+  non-MCP origins are collected under `Session: unknown`.
+- Aggregation is scoped to both session and object. A create in one session and
+  a delete in another remain separate, as do opposite property edits by different
+  sessions. Each session's counts include all its collected changes.
+- At most three session groups are displayed, ranked by their most critical
+  change. Omitted groups are counted and remain available through temporary RAM details.
+  `Total changes` and `Totals` cover every session, including omitted groups. Web
+  uses the complete total for its badge; TUI receives the same summary text.
+- Script source edits, deletions, parent moves, and identity/reference edits take
+  precedence over bulk additions and ordinary property changes.
+- Repeated scalar edits collapse to the first value and final value. Reverted
+  scalar and parent edits disappear from the summary. Equality is checked on
+  complete values before display truncation; script edit events remain visible.
+- Objects created and subsequently removed are counted by type rather than
+  individually listed. All section counts remain complete even when object
+  details are omitted, preserving the Web notice's count contract.
 - Output stops at object boundaries and reports omission counts.
 
 For a deleted subject, `Changes: [{ "Property": "Descendants", "Removed": [...] }]`
 marks every referenced descendant as deleted, even when it is absent from
 `ActorGuids` or `Objects`. Studio supplies a recursively flattened list of
 `ObjectRef` values (`ActorGuid`, `Name`, `InstanceType`). Each GUID is counted
-once, including overlapping selected roots. A descendant created in the same
-query range becomes "Added then removed"; otherwise it is "Removed". A later
+once per attributed session, including overlapping selected roots. A descendant
+created in the same session and query range becomes "Added then removed";
+otherwise it is "Removed". A later
 creation restores its added state. Automatic summaries and explicit details
 use the same aggregation and transaction authorship filtering.
 

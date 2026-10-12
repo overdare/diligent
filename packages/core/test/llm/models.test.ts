@@ -14,22 +14,22 @@ import {
 import { getDefaultModelRef } from "../../src/llm/provider-model-policy";
 
 describe("provider-scoped model catalog", () => {
-  it("offers GPT-6 Sol and Luna in the ChatGPT OAuth model list", () => {
-    for (const modelId of ["gpt-6-sol", "gpt-6-luna"]) {
+  it("offers GPT-6.1 Sol and Luna in the ChatGPT OAuth model list", () => {
+    for (const modelId of ["gpt-6.1-sol", "gpt-6-luna"]) {
       expect(listModels("chatgpt").some((model) => model.modelId === modelId)).toBe(true);
       expect(getModelInfoList().some((model) => model.provider === "chatgpt" && model.modelId === modelId)).toBe(true);
       expect(resolveModel({ provider: "chatgpt", modelId }).modelId).toBe(modelId);
     }
   });
 
-  it("registers GPT-6 Sol and Luna for the OpenAI API", () => {
-    expect(resolveModel({ provider: "openai", modelId: "gpt-6-sol" })).toMatchObject({
-      display: "GPT-6 Sol",
+  it("registers GPT-6.1 Sol and Luna for the OpenAI API", () => {
+    expect(resolveModel({ provider: "openai", modelId: "gpt-6.1-sol" })).toMatchObject({
+      display: "GPT-6.1 Sol",
       contextWindow: 500_000,
       maxOutputTokens: 128_000,
       inputCostPer1M: 2,
       outputCostPer1M: 10,
-      cacheReadCostPer1M: 0.2,
+      cacheReadCostPer1M: 0.1,
       cacheWriteCostPer1M: 2.5,
       supportsThinking: true,
       supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
@@ -69,15 +69,15 @@ describe("provider-scoped model catalog", () => {
   });
 
   it("selects current replacement defaults", () => {
-    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-6-sol" });
-    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-6-sol" });
+    expect(getDefaultModelRef("openai")).toEqual({ provider: "openai", modelId: "gpt-6.1-sol" });
+    expect(getDefaultModelRef("chatgpt")).toEqual({ provider: "chatgpt", modelId: "gpt-6.1-sol" });
     expect(getDefaultModelRef("anthropic")).toEqual({ provider: "anthropic", modelId: "claude-opus-5-5" });
   });
 
   it("rejects retired model IDs and version aliases in selection and protocol lists", () => {
     const retired = [
       ...(["openai", "chatgpt"] as const).flatMap((provider) =>
-        ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({ provider, modelId })),
+        ["gpt-6-sol", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6"].map((modelId) => ({ provider, modelId })),
       ),
       ...["claude-opus-5", "claude-opus-4-8", "claude-fable-5", "opus-5", "opus-4-8", "fable-5"].map((modelId) => ({
         provider: "anthropic" as const,

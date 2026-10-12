@@ -36,7 +36,7 @@ test("descendant references absent from Objects produce deduplicated removal row
   expect(summarizeEditLog(records).output).toContain("Removed (2)");
   const details = studioChangeDetails(records, { guid: "part", changeType: "removed" });
   expect(details.total).toBe(1);
-  expect(details.output).toBe('- Part "part" (part)');
+  expect(details.output).toBe('Session: unknown\n- Part "part" (part)');
 });
 
 test("a descendant recreated after cascade deletion remains added", () => {
@@ -67,4 +67,16 @@ test("multiple selected roots remove overlapping descendant references once", ()
   const records = parse([record]);
   expect(summarizeEditLog(records).output).toContain("Removed (4)");
   expect(studioChangeDetails(records).total).toBe(4);
+});
+
+test("cascade deletion preserves another session's creation of the same descendant", () => {
+  const records = parse([
+    { ...create("part"), Origin: { Kind: "mcp", SessionId: "creator" } },
+    { ...deletion([ref("part")]), Origin: { Kind: "mcp", SessionId: "remover" } },
+  ]);
+  const details = studioChangeDetails(records, { guid: "part" });
+  expect(details.total).toBe(2);
+  expect(details.output).toContain('Session: creator\n+ Part "part" (part)');
+  expect(details.output).toContain('Session: remover\n- Part "part" (part)');
+  expect(studioChangeDetails(records, { guid: "part", changeType: "addedThenRemoved" }).total).toBe(0);
 });

@@ -21,10 +21,12 @@ export const COUNT_SECTIONS = [
 
 /** Total change count parsed from the diff section headers, e.g. "3 changes". */
 function countLabel(summary: string): string {
-  let total = 0;
-  for (const section of COUNT_SECTIONS) {
-    const match = summary.match(new RegExp(`^${section} \\((\\d+)\\):`, "m"));
-    if (match) total += Number(match[1]);
+  const completeCount = summary.match(/^Total changes: (\d+)$/m);
+  let total = completeCount ? Number(completeCount[1]) : 0;
+  if (!completeCount) {
+    for (const section of COUNT_SECTIONS) {
+      for (const match of summary.matchAll(new RegExp(`^${section} \\((\\d+)\\):`, "gm"))) total += Number(match[1]);
+    }
   }
   if (total === 0) return "";
   return total === 1 ? "1 change" : `${total} changes`;

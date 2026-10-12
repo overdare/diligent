@@ -18,8 +18,9 @@ import { RuntimeAgent } from "../agent/runtime-agent";
 import { createLocalImageLoader, toolOutputStore } from "../infrastructure";
 import { SessionManager } from "../session/manager";
 import { isSafeSessionId } from "../session/types";
+import { forkToolForChild } from "../tools/child-fork";
 import { buildDefaultTools } from "../tools/defaults";
-import { COLLAB_TOOL_NAMES } from "../tools/tool-metadata";
+import { COLLAB_TOOL_NAMES, TOOL_CAPABILITIES } from "../tools/tool-metadata";
 import { NicknamePool } from "./nicknames";
 import type { AgentEntry, AgentStatus, CollabAgentEvent, CollabResumePolicy, CollabToolDeps } from "./types";
 import { isFinal } from "./types";
@@ -45,7 +46,7 @@ export { COLLAB_TOOL_NAMES };
  * Resolves which tools a child agent is allowed to use, given the parent tool set,
  * effective child policy and agent definition policy.
  *
- * Three concerns handled separately:
+ * Four concerns handled separately:
  * 1. Which non-collab tools survive (intersection of parent tools, agent definition, and restored legacy policy).
  * 2. Whether collab tools should be re-created for the child (signalled by nestedCollabEnabled).
  *    Collab tools are unconditionally excluded from childTools even when nestedCollabEnabled=true because
@@ -53,13 +54,16 @@ export { COLLAB_TOOL_NAMES };
  *    would give them stale references pointing to the parent's registry. buildDefaultTools re-creates them.
  * 3. The allowedChildToolNames set is also used as a post-buildDefaultTools filter (caller's responsibility)
  *    so that freshly-created collab tools survive only when nestedCollabEnabled=true.
+ * 4. Surviving inherited tools may opt into a child-boundary fork to freeze provider-owned request state.
  */
 export function resolveChildToolAccess(
   parentTools: Tool[],
   params: { allowNestedAgents?: boolean; allowedTools?: string[] },
   agentDefinition: ResolvedAgentDefinition,
 ): { childTools: Tool[]; nestedCollabEnabled: boolean; allowedChildToolNames: Set<string> } {
-  let allowedChildToolNames = new Set(parentTools.map((tool) => tool.name));
+  let allowedChildToolNames = new Set(
+    parentTools.filter((tool) => !TOOL_CAPABILITIES[tool.name]?.rootOnly).map((tool) => tool.name),
+  );
   const agentAllowedTools = agentDefinition.allowedTools?.length ? agentDefinition.allowedTools : undefined;
   const policyAllowedTools = params.allowedTools?.length ? params.allowedTools : undefined;
 
@@ -82,9 +86,9 @@ export function resolveChildToolAccess(
 
   // Collab tools are always excluded here — child agents receive fresh collab tools from buildDefaultTools
   // when nestedCollabEnabled=true (bound to the child's own registry, not the parent's).
-  const childTools = parentTools.filter(
-    (tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name),
-  );
+  const childTools = parentTools
+    .filter((tool) => !COLLAB_TOOL_NAMES.has(tool.name) && allowedChildToolNames.has(tool.name))
+    .map(forkToolForChild);
   const nestedCollabEnabled = [...allowedChildToolNames].some((toolName) => COLLAB_TOOL_NAMES.has(toolName));
 
   return { childTools, nestedCollabEnabled, allowedChildToolNames };
@@ -251,6 +255,9 @@ export class AgentRegistry {
     }
     const nickname = restoredEntry?.nickname ?? this.pool.reserve();
     const abortController = new AbortController();
+    const goalScope = this.deps.getGoalScope?.();
+    const goalExecutionId = crypto.randomUUID();
+    goalScope?.signal.throwIfAborted();
 
     const parentModel = resolveModel(this.deps.model);
     // Model selection is not the parent's to make. An agent uses its AGENT.md `model_class` when it declares
@@ -333,14 +340,26 @@ export class AgentRegistry {
         : undefined,
       agent: async (): Promise<RuntimeAgent> => {
         const childAsk = this.deps.ask
-          ? (request: import("../tools/user-input-types").UserInputRequest) =>
-              this.deps.ask!({
-                ...request,
-                source: { threadId: childManager.sessionId, nickname },
-              })
+          ? (
+              request: import("../tools/user-input-types").UserInputRequest,
+              options?: import("../tools/capabilities").RuntimeRequestOptions,
+            ) =>
+              this.deps.ask!(
+                {
+                  ...request,
+                  source: { threadId: childManager.sessionId, nickname },
+                },
+                { signal: options?.signal ?? abortController.signal },
+              )
           : undefined;
 
-        const childDeps = { ...this.deps, parentTools: childTools, ask: childAsk, depth: this.depth - 1 };
+        const childDeps = {
+          ...this.deps,
+          getGoalScope: () => goalScope,
+          parentTools: childTools,
+          ask: childAsk,
+          depth: this.depth - 1,
+        };
         const result = await buildDefaultTools({
           cwd: this.deps.cwd,
           paths: this.deps.paths,
@@ -362,6 +381,7 @@ export class AgentRegistry {
               model: childModel,
               tools: filteredTools,
               parentSessionId: this.deps.getParentSessionId?.(),
+              sessionId: childManager.sessionId,
               logger: logger.child({ scope: "runtime.collab.agent-loop-hooks" }),
             }),
           ) ?? [];
@@ -451,9 +471,11 @@ export class AgentRegistry {
       let output: string | null = null;
       let turnNumber = 0;
       let fatalError: string | null = null;
+      let coreTurnId = "";
 
       const unsub = childManager.subscribe((event) => {
         if (event.type === "turn_start") {
+          coreTurnId = event.turnId;
           turnNumber++;
           this.emit({
             type: "turn_start",
@@ -462,6 +484,8 @@ export class AgentRegistry {
             nickname,
             turnNumber,
           });
+        } else if (event.type === "usage") {
+          goalScope?.recordUsage({ sessionId: threadId, executionId: goalExecutionId, coreTurnId, ...event.usage });
         } else if (event.type === "message_start") {
           this.emit({ ...event, childThreadId: threadId, nickname });
         } else if (event.type === "message_discarded") {
@@ -512,7 +536,14 @@ export class AgentRegistry {
       return status;
     });
 
-    entry.promise = promise;
+    const cancelGoal = () => abortController.abort();
+    goalScope?.childStarted(threadId);
+    goalScope?.signal.addEventListener("abort", cancelGoal, { once: true });
+    if (goalScope?.signal.aborted) cancelGoal();
+    entry.promise = promise.finally(() => {
+      goalScope?.signal.removeEventListener("abort", cancelGoal);
+      goalScope?.childFinished(threadId);
+    });
     this.agents.set(threadId, entry);
 
     emitSpawnEnd("running");

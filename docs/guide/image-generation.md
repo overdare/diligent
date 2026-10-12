@@ -2,7 +2,7 @@
 
 OVERDARE exposes one `generate_image` tool for generating an image and saving it locally.
 Studio import remains a separate operation using the existing
-`studiorpc_asset_manager_image_import` tool. Generation does not require a Studio connection
+`studiorpc_asset_manager_import` tool. Generation does not require a Studio connection
 or new Studio RPC methods.
 
 ## Tool contract
@@ -45,7 +45,7 @@ providers still require explicit user approval. This is model-facing guidance; t
 not retry internally or block general-purpose file or shell tools.
 
 For Studio workflows, pass the returned `file` directly to
-`studiorpc_asset_manager_image_import`, then use its returned asset ID. Generation itself
+`studiorpc_asset_manager_import`, then use its returned asset ID. Generation itself
 does not import an asset or save a Studio level.
 
 When developing with a Mac agent and remote Windows Studio, configure the dev-only shared

@@ -10,12 +10,12 @@
 
 ### 2) Add Control Objects
 
-- Add objects to be controlled in the sequence (`Part`, `VFXPreset`, etc.) via MCPTool
+- Add objects to be controlled in the sequence (`Part`, `VFXPreset`, etc.) with the Studio editing tools
 - Organize with unique identifiers referenceable in JSON
 
 ### 3) Create Action Sequence Instance
 
-- Create a new Action Sequence instance via MCPTool
+- Create a new Action Sequence instance with the Studio editing tools
 - Configure timeline basics (FPS/seconds), prepare root track and sub-tracks
 
 ### 4) Generate JSON

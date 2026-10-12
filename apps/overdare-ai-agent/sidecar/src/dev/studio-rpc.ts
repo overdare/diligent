@@ -1,4 +1,4 @@
-// @summary Opt-in dev adapter for agent-mounted image files read by a remote Studio process.
+// @summary Opt-in dev adapter for agent-mounted asset files read by a remote Studio process.
 
 import { posix, win32 } from "node:path";
 import { call, StudioRpcError } from "../tools/studiorpc/rpc";
@@ -9,7 +9,7 @@ interface DevStudioRpcOptions {
   remoteFileRoot?: string;
 }
 
-const IMAGE_IMPORT = "asset_manager.image.import";
+const ASSET_IMPORT_METHODS = new Set(["asset_manager.import", "asset_manager.image.import"]);
 
 export function createDevStudioRpc(options: DevStudioRpcOptions, callRpc: typeof call = call): typeof call {
   if (!options.enabled) return callRpc;
@@ -28,19 +28,20 @@ export function createDevStudioRpc(options: DevStudioRpcOptions, callRpc: typeof
   }
 
   return async (method, params, rpcOptions) => {
-    if (method !== IMAGE_IMPORT || typeof params?.file !== "string") return callRpc(method, params, rpcOptions);
+    if (!ASSET_IMPORT_METHODS.has(method) || typeof params?.file !== "string")
+      return callRpc(method, params, rpcOptions);
     rpcOptions?.signal?.throwIfAborted();
-    const file = mapSharedImagePath(params.file, localRoot, remoteRoot);
+    const file = mapSharedAssetPath(params.file, localRoot, remoteRoot);
     try {
       return await callRpc(method, { ...params, file }, { ...rpcOptions, timeoutMs: rpcOptions?.timeoutMs ?? 120_000 });
     } catch (error) {
       rpcOptions?.signal?.throwIfAborted();
       if (!(error instanceof StudioRpcError) || error.code !== -32008) throw error;
       throw new StudioRpcError(
-        `${error.message}\n\nStudio-side image path: ${file}\n` +
+        `${error.message}\n\nStudio-side asset path: ${file}\n` +
           "Studio reads the file on its own computer. Verify that this shared path is accessible there. " +
-          "Invalid file does not prove an image-format problem. Keep the import step blocked and report the error. " +
-          "Do not substitute template icons or change image format without evidence and user approval.",
+          "Invalid file does not prove a file-format problem. Keep the import step blocked and report the error. " +
+          "Do not substitute another asset or change file format without evidence and user approval.",
         error.code,
         error.data,
       );
@@ -60,15 +61,15 @@ function pathWithinRoot(file: string, root: string, paths: typeof posix): string
   return relative;
 }
 
-function mapSharedImagePath(file: string, localRoot: string, remoteRoot: string): string {
+function mapSharedAssetPath(file: string, localRoot: string, remoteRoot: string): string {
   const local = pathStyle(localRoot);
   const remote = pathStyle(remoteRoot);
   const relative = pathWithinRoot(file, localRoot, local);
   if (relative !== undefined) return remote.join(remoteRoot, ...relative.split(local.sep));
   if (pathWithinRoot(file, remoteRoot, remote) !== undefined) return remote.normalize(file);
   throw new Error(
-    "Image file is outside the configured dev shared file roots. " +
+    "Asset file is outside the configured dev shared file roots. " +
       "Use a file inside STUDIO_LOCAL_FILE_ROOT or its mapped STUDIO_REMOTE_FILE_ROOT. " +
-      "Keep the import step blocked; do not substitute another asset or change image format.",
+      "Keep the import step blocked; do not substitute another asset or change file format.",
   );
 }

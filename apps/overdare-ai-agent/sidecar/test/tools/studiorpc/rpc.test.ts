@@ -6,6 +6,7 @@ import readline from "node:readline";
 import { runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../../src/tools/studiorpc";
 import { call } from "../../../src/tools/studiorpc/rpc";
+import { studioRpcSessionId } from "../../../src/tools/studiorpc/rpc-context";
 
 let server: Server | undefined;
 let accepted: Socket | undefined;
@@ -75,9 +76,10 @@ describe("Studio RPC cancellation", () => {
       ["other", "B"],
       ["child", "A1"],
       ["main", "A"],
-      ["unscoped", undefined],
+      ["unscoped", studioRpcSessionId()],
     ]);
-    expect(requests[3]).not.toHaveProperty("meta");
+    expect(requests[3].meta?.sessionId).not.toBe("A");
+    expect(requests[3].meta?.sessionId).not.toBe("B");
   });
 
   test("session metadata remains stable across separate TCP calls", async () => {

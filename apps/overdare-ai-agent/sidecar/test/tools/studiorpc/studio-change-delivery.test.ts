@@ -91,6 +91,32 @@ test("returned but unaccepted automatic injection remains unread for A and indep
   expect(existsSync(join(cwd, ".overdare", "logs", "studio-changes"))).toBe(false);
 });
 
+test("main runs without a new user prompt leave collected history for the next user request", async () => {
+  const cwd = project();
+  const provider = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
+  const collector = getStudioChangeCollector(cwd);
+  writeFileSync(join(cwd, "Edit.Log"), log("first"));
+  await provider.onUserPromptSubmit!(input(cwd));
+  const inject = () => {
+    const hook = provider.createAgentLoopHooks!({ cwd, agentKind: "main" } as never)[0];
+    hook.onPromptStart!({ messages: [] });
+    return hook.beforeTurn!({ messages: [], turnId: "one", compactedThisTurn: false });
+  };
+  await runWithSessionExecutionContext(scope(), () => {
+    const injection = inject()![0];
+    expect(injection.content).toContain("first");
+    acceptContextInjectionMetadata(injection.metadata);
+  });
+
+  writeFileSync(join(cwd, "Edit.Log"), log("later"));
+  await provider.onUserPromptSubmit!(input(cwd, "B"));
+  await runWithSessionExecutionContext(scope(), () => expect(inject()).toBeUndefined());
+  expect(collector.store.read(a).envelopes.map((entry) => entry.objects[0].guid)).toEqual(["later"]);
+
+  await provider.onUserPromptSubmit!(input(cwd));
+  await runWithSessionExecutionContext(scope(), () => expect(inject()![0].content).toContain("later"));
+});
+
 test("real RuntimeAgent accepts the main summary and emits the shared presentation", async () => {
   const cwd = project();
   writeFileSync(join(cwd, "Edit.Log"), log("external"));

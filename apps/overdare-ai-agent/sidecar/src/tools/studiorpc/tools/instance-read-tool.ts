@@ -73,8 +73,8 @@ async function executeInstanceRead(
   if (!parsed.guid) {
     throw new Error(
       "studiorpc_instance_read needs a guid — it reads one instance out of the saved level and has no " +
-        "listing mode. To see everything in the running game, call studiorpc_game_observe with no " +
-        "arguments; that is the live counterpart and the one with the listing.",
+        "listing mode. To list the running game's instances, call studiorpc_game_observe with " +
+        "{ instances: true }; that is the live counterpart and the one with the listing.",
     );
   }
   if (resolveApiVersion() === "v2") return await readInstanceViaRpc({ ...parsed, guid: parsed.guid });

@@ -26,12 +26,16 @@ export function createWriteTool(cwd: string, host?: RuntimeToolHost): Tool<typeo
       }
       const targetPath = resolve(cwd, file_path);
 
-      const approval = await requestToolApproval(host, {
-        permission: "write",
-        toolName: "write",
-        description: `Write to ${targetPath}`,
-        details: { file_path: targetPath },
-      });
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "write",
+          toolName: "write",
+          description: `Write to ${targetPath}`,
+          details: { file_path: targetPath },
+        },
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return {
@@ -99,12 +103,16 @@ Usage:
         return { output, render: createTextRenderPayload(undefined, output, true), metadata: { error: true } };
       }
 
-      const approval = await requestToolApproval(host, {
-        permission: "write",
-        toolName: "write",
-        description: `Write to ${file_path}`,
-        details: { file_path },
-      });
+      const approval = await requestToolApproval(
+        host,
+        {
+          permission: "write",
+          toolName: "write",
+          description: `Write to ${file_path}`,
+          details: { file_path },
+        },
+        { signal: ctx.signal },
+      );
       if (approval === "reject") {
         ctx.abort();
         return {

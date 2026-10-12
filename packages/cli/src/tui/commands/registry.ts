@@ -34,14 +34,18 @@ export class CommandRegistry {
 
   /** Autocomplete candidates for a partial name */
   complete(partial: string): string[] {
-    const all = [...this.commands.keys(), ...this.aliases.keys()];
+    const visibleNames = [...this.commands.entries()].filter(([, command]) => !command.hidden).map(([name]) => name);
+    const visibleAliases = [...this.aliases.entries()]
+      .filter(([, name]) => !this.commands.get(name)?.hidden)
+      .map(([alias]) => alias);
+    const all = [...visibleNames, ...visibleAliases];
     return all.filter((n) => n.startsWith(partial)).sort();
   }
 
   /** Autocomplete candidates with descriptions for inline popup (primary names only) */
   completeDetailed(partial: string): CompletionItem[] {
     return [...this.commands.keys()]
-      .filter((n) => n.startsWith(partial))
+      .filter((n) => n.startsWith(partial) && !this.commands.get(n)?.hidden)
       .sort()
       .map((name) => {
         const cmd = this.commands.get(name);

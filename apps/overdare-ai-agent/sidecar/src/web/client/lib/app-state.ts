@@ -7,8 +7,10 @@ import type {
   Mode,
   PendingSteer,
   SessionSummary,
+  ThreadGoalResponse,
   ThreadReadResponse,
 } from "@diligent/protocol";
+import { applyGoalSnapshot } from "@diligent/runtime/client";
 import type { AgentContextItem } from "./agent-native-bridge";
 import {
   hydrateFromThreadRead,
@@ -38,7 +40,8 @@ export type AppAction =
   | { type: "optimistic_thread"; payload: { threadId: string; message: string } }
   | { type: "show_info_toast"; payload: string }
   | { type: "clear_toast" }
-  | { type: "compaction_error" };
+  | { type: "compaction_error" }
+  | { type: "set_goal_snapshot"; payload: ThreadGoalResponse & { threadId: string } };
 
 export function appReducer(state: ThreadState, action: AppAction): ThreadState {
   const isDraftOptimisticThread = (thread: SessionSummary): boolean =>
@@ -53,7 +56,7 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
     return reduceServerNotification(state, action.payload.notification, action.payload.events);
   if (action.type === "hydrate") {
     const mode = action.payload.history.currentMode ?? action.payload.mode;
-    return hydrateFromThreadRead(
+    const hydrated = hydrateFromThreadRead(
       {
         ...state,
         activeThreadId: action.payload.threadId,
@@ -62,6 +65,12 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
       },
       action.payload.history,
     );
+    if (state.activeThreadId !== action.payload.threadId) return hydrated;
+    const snapshot = applyGoalSnapshot(
+      { goal: state.goal, sequence: state.goalSequence },
+      { goal: hydrated.goal, sequence: hydrated.goalSequence },
+    );
+    return { ...hydrated, goal: snapshot.goal, goalSequence: snapshot.sequence };
   }
   if (action.type === "reset_draft") {
     return {
@@ -169,5 +178,10 @@ export function appReducer(state: ThreadState, action: AppAction): ThreadState {
   }
   if (action.type === "clear_toast") return { ...state, toast: null };
   if (action.type === "compaction_error") return { ...state, isCompacting: false };
+  if (action.type === "set_goal_snapshot") {
+    if (action.payload.threadId !== state.activeThreadId) return state;
+    const next = applyGoalSnapshot({ goal: state.goal, sequence: state.goalSequence }, action.payload);
+    return { ...state, goal: next.goal, goalSequence: next.sequence };
+  }
   return state;
 }

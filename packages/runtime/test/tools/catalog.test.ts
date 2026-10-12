@@ -867,6 +867,29 @@ describe("loadBundledBatches", () => {
     expect(batches).toHaveLength(1);
     expect(received).toEqual({ cwd: "/tmp", host: undefined, modelProvider: "chatgpt", generateImage });
   });
+  it("passes session-scoped text generation to bundled providers", async () => {
+    const generateText = async () => "summary";
+    let received: unknown;
+    const provider: BundledToolProvider = {
+      id: "text-capability-test",
+      createTools: (context) => {
+        received = context;
+        return [];
+      },
+    };
+    await loadBundledBatches([provider], "/tmp", undefined, 0, {
+      modelProvider: "anthropic",
+      generateText,
+      sessionId: "session-123",
+    });
+    expect(received).toEqual({
+      cwd: "/tmp",
+      host: undefined,
+      modelProvider: "anthropic",
+      generateText,
+      sessionId: "session-123",
+    });
+  });
   it("returns a batch for each provider that succeeds", async () => {
     const provider: BundledToolProvider = {
       id: "test-bundled",

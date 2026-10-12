@@ -23,9 +23,7 @@ export const description =
   "reports and moves. Read it before sending W: key movement is camera-relative, so after any look the " +
   "same key walks a different direction in the world, and one run walked its character back down the route " +
   "it had just climbed. facing.yaw is the same number as studiorpc_viewport_camera_read's Orientation.Y " +
-  "and as the yawDegrees a look event takes: 0 faces -Z, +90 faces -X, and positive turns left. Those " +
-  "used to be two conventions, one the negation of the other, and the sign is a trap this loop has " +
-  "already paid for once — there is nothing left to convert. " +
+  "and as the yawDegrees a look event takes: 0 faces -Z, +90 faces -X, and positive turns left. " +
   "gameTimeSeconds is the world's own clock, which is the clock a timed round runs on. Its value on its " +
   "own means nothing; the difference between two reads is how much game time your calls and your reasoning " +
   "just cost, which is the only way to tell a round that expired from one that was never started. This is " +
@@ -47,8 +45,9 @@ export const params = z
         "Which play-test client's character to read. Omit — as almost every call should — and it reads the " +
           "main play test, the one studiorpc_game_pie_status marks targeted: true. Pass one only in a session " +
           "started with more than one player, where input and move_to can drive the others by id and this is " +
-          "the only read that can follow them there. Needs pieSessionId alongside it; without both, the main " +
-          "client is read. A client that is not injectable is refused rather than silently answered about " +
+          "a read that can follow them there, alongside studiorpc_game_observe. Needs pieSessionId alongside it; " +
+          "omit both to read the main client. Supplying only one is rejected. A client that is not injectable " +
+          "is refused rather than silently answered about " +
           "somebody else.",
       ),
   })

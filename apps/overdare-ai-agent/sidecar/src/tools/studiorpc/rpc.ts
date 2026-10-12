@@ -1,8 +1,8 @@
 import net from "node:net";
 import readline from "node:readline";
 import { createLogger } from "@diligent/logging";
-import { getSessionExecutionContext } from "@diligent/runtime";
 import { resolveStudioHost, resolveStudioPort } from "./config";
+import { studioRpcCallOptions } from "./rpc-context";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const logger = createLogger({ scope: "sidecar/studiorpc", context: { component: "rpc" } });
@@ -60,12 +60,11 @@ export async function call(
   params?: Record<string, unknown>,
   options: StudioRpcCallOptions = {},
 ): Promise<unknown> {
+  options = studioRpcCallOptions(options);
   const host = resolveStudioHost();
   const port = resolveStudioPort();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   options.signal?.throwIfAborted();
-  // Direct v1/v2 callers also need attribution; an active run is authoritative.
-  const sessionId = getSessionExecutionContext()?.sessionId ?? options.sessionId;
 
   return new Promise((resolve, reject) => {
     const id = nextId++;
@@ -73,7 +72,7 @@ export async function call(
       jsonrpc: "2.0",
       id,
       method,
-      ...(sessionId && { meta: { sessionId } }),
+      meta: { sessionId: options.sessionId },
       ...(params !== undefined && Object.keys(params).length > 0 && { params }),
     };
     let settled = false;

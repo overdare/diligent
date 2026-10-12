@@ -1,11 +1,11 @@
 // @summary Tests for DiligentAppServer JSON-RPC request handling and event notifications
 
-import { describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { describe, expect, it, mock, setDefaultTimeout, spyOn } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventStream } from "@diligent/core/event-stream";
-import { resolveModel } from "@diligent/core/model-registry";
+import { getModelInfoList, resolveModel } from "@diligent/core/model-registry";
 import { type Model, ProviderError, ProviderManager, type StreamFunction } from "@diligent/core/provider-contract";
 import type {
   DiligentServerNotification,
@@ -37,8 +37,122 @@ import { handleImageUpload } from "@diligent/runtime/app-server/config-handlers"
 import { ensureDiligentDir } from "@diligent/runtime/infrastructure";
 import { SessionWriter } from "@diligent/runtime/session";
 import { z } from "zod";
+import type { ThreadRuntime } from "../../src/app-server/thread-handlers";
 
 const TEST_ANTHROPIC_MODEL_ID = "claude-sonnet-5";
+
+it("keeps scheduled goal work alive while no client request is pending", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-scheduler-liveness-"));
+  const server = new DiligentAppServer({
+    ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+    getGoalsConfig: () => ({ enabled: true }),
+  });
+  const connection = connectTestPeer(server);
+  try {
+    const { threadId } = readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1,
+        method: "thread/start",
+        params: { cwd },
+      }),
+    ) as { threadId: string };
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 2,
+        method: "thread/goal/set",
+        params: { threadId, action: "set", objective: "Finish autonomously" },
+      }),
+    );
+    const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+    expect(runtime.goalTimer?.hasRef()).toBe(true);
+    await runtime.goal?.pause("user");
+    expect(runtime.goalTimer).toBeUndefined();
+  } finally {
+    connection.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("host shutdown cancels an ordinary root run before waiting for its cleanup", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-host-shutdown-"));
+  const server = new DiligentAppServer(createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }));
+  const connection = connectTestPeer(server);
+  let release!: () => void;
+  let stopping: Promise<void> | undefined;
+  try {
+    const { threadId } = readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1,
+        method: "thread/start",
+        params: { cwd },
+      }),
+    ) as { threadId: string };
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, { id: 2, method: "thread/goal/get", params: { threadId } }),
+    );
+    const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+    const controller = new AbortController();
+    runtime.abortController = controller;
+    runtime.turnWork = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stopping = server.shutdown();
+    // Let the already-resolved pause of an empty goal finish, without settling the run.
+    await Promise.resolve();
+    expect(controller.signal.aborted).toBe(true);
+  } finally {
+    release?.();
+    await stopping;
+    connection.disconnect();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+it("goal continuation stops when final session write cleanup fails", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "goal-write-failure-"));
+  const server = new DiligentAppServer({
+    ...createAppServerConfig({ cwd, runtimeConfig: makeFactoryRuntimeConfig() }),
+    getGoalsConfig: () => ({ enabled: true }),
+  });
+  const connection = connectTestPeer(server);
+  let waitForWrites: ReturnType<typeof spyOn> | undefined;
+  try {
+    const { threadId } = readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 1,
+        method: "thread/start",
+        params: { cwd },
+      }),
+    ) as { threadId: string };
+    const runtime = (server as unknown as { threads: Map<string, ThreadRuntime> }).threads.get(threadId)!;
+    waitForWrites = spyOn(runtime.manager, "waitForWrites").mockRejectedValueOnce(new Error("Session write failed"));
+    const idle = new Promise<void>((resolve) => {
+      connection.setNotificationListener((notification) => {
+        if (notification.method === "thread/status/changed" && notification.params.status === "idle") resolve();
+      });
+    });
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 2,
+        method: "thread/goal/set",
+        params: { threadId, action: "set", objective: "Verify persistence" },
+      }),
+    );
+    await idle;
+    await runtime.turnWork;
+    expect(runtime.goal?.read().goal).toMatchObject({
+      status: "blocked",
+      turnsUsed: 1,
+      reason: "Session write failed",
+    });
+  } finally {
+    waitForWrites?.mockRestore();
+    connection.disconnect();
+    await server.shutdown();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 function readResult(response: JSONRPCResponse): unknown {
   if ("error" in response) {
@@ -871,6 +985,68 @@ describe("DiligentAppServer", () => {
     ).toEqual({ provider: "openai", modelId: "gpt-5.6-terra" });
   });
 
+  it("refreshes selected-model bundled capabilities after a same-provider model change", async () => {
+    const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-model-tools-"));
+    const assembledModels: string[] = [];
+    const runtimeConfig = makeFactoryRuntimeConfig();
+    const nextModel = getModelInfoList().find(
+      (model) => model.provider === runtimeConfig.model.provider && model.modelId !== runtimeConfig.model.modelId,
+    );
+    expect(nextModel).toBeDefined();
+    const provider: BundledToolProvider = {
+      id: "selected-model-capability",
+      createTools: ({ generateText }) => {
+        expect(generateText).toBeDefined();
+        assembledModels.push("assembled");
+        return [];
+      },
+    };
+    const server = new DiligentAppServer(
+      createAppServerConfig({ cwd: projectRoot, runtimeConfig, bundledToolProviders: [provider] }),
+    );
+    const connection = connectTestPeer(server);
+    let completed!: () => void;
+    let completion = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    connection.setNotificationListener((notification) => {
+      if (notification.method === DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED) completed();
+    });
+    const started = await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 650,
+      method: "thread/start",
+      params: { cwd: projectRoot },
+    });
+    const threadId = (readResult(started) as { threadId: string }).threadId;
+
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 651,
+      method: "turn/start",
+      params: { threadId, message: "first" },
+    });
+    await completion;
+    expect(assembledModels).toHaveLength(1);
+
+    readResult(
+      await server.handleRequest(TEST_CONNECTION_ID, {
+        id: 652,
+        method: "config/set",
+        params: { threadId, model: { provider: nextModel!.provider, modelId: nextModel!.modelId } },
+      }),
+    );
+    completion = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    await server.handleRequest(TEST_CONNECTION_ID, {
+      id: 653,
+      method: "turn/start",
+      params: { threadId, message: "second" },
+    });
+    await completion;
+
+    expect(assembledModels).toHaveLength(2);
+  });
+
   it("config/reload re-discovers skills and forces the next turn to rebuild its agent", async () => {
     const originalHome = process.env.HOME;
     const fakeHome = await mkdtemp(join(tmpdir(), "diligent-app-server-reload-home-"));
@@ -1159,7 +1335,7 @@ describe("DiligentAppServer", () => {
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6.1-sol" } }),
       }),
     );
 
@@ -1186,12 +1362,12 @@ describe("DiligentAppServer", () => {
     expect((readResult(read) as { currentEffort: string }).currentEffort).toBe("xhigh");
   });
 
-  it("accepts xhigh and max effort for GPT-6 Sol", async () => {
+  it("accepts xhigh and max effort for GPT-6.1 Sol", async () => {
     const projectRoot = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "diligent-app-server-"));
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6.1-sol" } }),
       }),
     );
 
@@ -1249,7 +1425,7 @@ describe("DiligentAppServer", () => {
     const server = new DiligentAppServer(
       createAppServerConfig({
         cwd: projectRoot,
-        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6-sol" } }),
+        runtimeConfig: makeFactoryRuntimeConfig({ model: { provider: "openai", modelId: "gpt-6.1-sol" } }),
       }),
     );
 
@@ -1268,7 +1444,7 @@ describe("DiligentAppServer", () => {
     await server.handleRequest(TEST_CONNECTION_ID, {
       id: 1542,
       method: "config/set",
-      params: { threadId, model: { provider: "openai", modelId: "gpt-6-sol" } },
+      params: { threadId, model: { provider: "openai", modelId: "gpt-6.1-sol" } },
     });
 
     const read = await server.handleRequest(TEST_CONNECTION_ID, {

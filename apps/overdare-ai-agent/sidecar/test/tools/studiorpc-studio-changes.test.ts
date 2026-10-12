@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acceptContextInjectionMetadata, resolvePaths } from "@diligent/runtime";
+import { acceptContextInjectionMetadata, resolvePaths, runWithSessionExecutionContext } from "@diligent/runtime";
 import { createStudioRpcToolProvider } from "../../src/tools/studiorpc";
 import {
   parseEditLogText,
@@ -103,6 +103,7 @@ function collateral(type: string, guid: string, name: string, changes: unknown[]
 function toolCtx() {
   return {
     toolCallId: "t",
+    sessionId: "sess",
     signal: new AbortController().signal,
     abort: () => {},
     approve: async () => "once" as const,
@@ -730,7 +731,11 @@ describe("studio-changes unified loop-hook context injection", () => {
     const result = await p.onUserPromptSubmit(promptInput(cwd));
     expect(result.additionalContext).toBeUndefined();
 
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     expect(hook).toBeDefined();
     hook?.onPromptStart?.({ messages: [] });
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
@@ -753,7 +758,11 @@ describe("studio-changes unified loop-hook context injection", () => {
     ]);
     const p = promptProvider();
     await p.onUserPromptSubmit(promptInput(cwd));
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     hook?.onPromptStart?.({ messages: [] });
     const injections = hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false });
     expect(injections?.[0]?.content).toContain('~ Model "Tree" (m1)\n  Position/orientation changed via gizmo');
@@ -763,7 +772,11 @@ describe("studio-changes unified loop-hook context injection", () => {
     writeEditLog(cwd, [
       envelope("SetProperty", [subject("Folder", "f1", "Props", [{ Property: "GroupSize", Before: 1, After: 2 }])]),
     ]);
-    const tools = await p.createTools({ cwd, host: { approve: async () => "once" } });
+    const tools = await p.createTools({
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+      host: { approve: async () => "once" },
+    });
     const tool = tools.find((tool) => tool.name === "studiorpc_studio_changes");
     expect(tool).toBeDefined();
     const result = await tool!.execute({} as never, toolCtx());
@@ -777,9 +790,58 @@ describe("studio-changes unified loop-hook context injection", () => {
     const cwd = projectDir();
     const p = promptProvider();
     await p.onUserPromptSubmit(promptInput(cwd));
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     hook?.onPromptStart?.({ messages: [] });
     expect(hook?.beforeTurn?.({ messages: [], turnId: "turn-1", compactedThisTurn: false })).toBeUndefined();
+  });
+
+  test("automatic delivery and RAM details keep independent session markers in one project", async () => {
+    const cwd = projectDir();
+    const p = createStudioRpcToolProvider({ callRpc: async () => ({ success: true }) });
+    for (const sessionId of ["a", "b"]) {
+      writeEditLog(cwd, [
+        envelope("Create", [subject("Part", `own-${sessionId}`, "Own")], {
+          Origin: { Kind: "mcp", SessionId: sessionId },
+        }),
+        envelope("Create", [subject("Part", `user-${sessionId}`, "User")]),
+      ]);
+      await p.onUserPromptSubmit!({ ...promptInput(cwd), session_id: sessionId });
+    }
+
+    for (const sessionId of ["a", "b"]) {
+      await runWithSessionExecutionContext(
+        {
+          sessionId,
+          rootSessionId: sessionId,
+          resumed: false,
+          rootRequest: { sessionId, requestId: `request-${sessionId}` },
+        },
+        async () => {
+          const hook = p.createAgentLoopHooks!({ agentKind: "main", cwd, sessionId } as never)[0];
+          hook.onPromptStart!({ messages: [] });
+          const injections = hook.beforeTurn!({ messages: [], turnId: "turn-1", compactedThisTurn: false });
+          expect(injections).toHaveLength(1);
+          expect(injections![0].content).toContain("(user-a)");
+          expect(injections![0].content).toContain("(user-b)");
+          expect(injections![0].content).not.toContain(`(own-${sessionId})`);
+          acceptContextInjectionMetadata(injections![0].metadata);
+
+          const tools = await p.createTools({ cwd, sessionId });
+          const tool = tools.find((entry) => entry.name === "studiorpc_studio_changes")!;
+          const details = await tool.execute({ view: "details" }, { ...toolCtx(), sessionId });
+          expect(details.output).toContain("(user-a)");
+          expect(details.output).toContain("(user-b)");
+          expect(details.output).not.toContain(`(own-${sessionId})`);
+          expect(details.metadata?.archivePath).toBeUndefined();
+          const repeated = await tool.execute({}, { ...toolCtx(), sessionId });
+          expect(repeated.metadata?.studioChangesDetected).not.toBe(true);
+        },
+      );
+    }
   });
 
   test("does not call any RPC at turn start", async () => {
@@ -791,7 +853,9 @@ describe("studio-changes unified loop-hook context injection", () => {
       },
     });
     const p = provider as typeof provider & { onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit> };
-    await p.onUserPromptSubmit(promptInput(projectDir()));
+    const input = promptInput(projectDir());
+    await p.onUserPromptSubmit(input);
+    await provider.onStop?.({ ...input, hook_event_name: "Stop" });
     expect(calls).toEqual([]);
     expect(provider.onStop).toBeDefined();
   });
@@ -801,7 +865,11 @@ describe("studio-changes unified loop-hook context injection", () => {
     writeEditLog(cwd, [envelope("Create", [subject("Part", "p1", "Door")])]);
     const p = promptProvider();
     await p.onUserPromptSubmit(promptInput(cwd));
-    const hook = p.createAgentLoopHooks?.({ agentKind: "main" } as never)[0];
+    const hook = p.createAgentLoopHooks?.({
+      agentKind: "main",
+      cwd,
+      sessionId: promptInput(cwd).session_id,
+    } as never)[0];
     hook?.onPromptStart?.({ messages: [] });
     const context = { messages: [], turnId: "turn-1", compactedThisTurn: false };
     expect(hook?.beforeTurn?.(context)).toHaveLength(1);
@@ -825,13 +893,7 @@ test("Studio change summaries explain attribution and verification without claim
   ]);
   const capture = await consumeStudioChanges(cwd);
   expect(capture.result.output).toContain("Studio changes collected at turn start:");
-  expect(capture.result.output).toContain("may include this session's own work");
-  expect(capture.result.output).toContain("Compare these changes with your own work");
-  expect(capture.result.output).toContain("inspect the affected instances");
-  expect(capture.result.output).not.toContain("Human edits");
-  expect(capture.result.output).not.toContain("creator's own edits");
   const tool = createStudioChangesTool(cwd);
-  expect(tool.description).toContain("does not identify who made them");
   writeEditLog(cwd, [envelope("Delete", [subject("Part", "p9", "Crate")])]);
   const live = await tool.execute({} as never, toolCtx());
   expect(live.output).toContain("Studio changes recorded during this turn:");

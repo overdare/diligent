@@ -212,6 +212,38 @@ describe("turn-execution", () => {
     expect(liveAssistantId).toBe(persistedAssistantId);
   });
 
+  test("UserPromptSubmit receives the id later persisted for the user message", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "diligent-e2e-user-message-id-"));
+    let hookUserMessageId: unknown;
+    const server = createTestServer({
+      cwd: tmpDir,
+      bundledToolProviders: [
+        {
+          id: "capture-user-message-id",
+          createTools: () => [],
+          onUserPromptSubmit: async (input) => {
+            hookUserMessageId = input.user_message_id;
+            return { blocked: false };
+          },
+        },
+      ],
+    });
+    client = createProtocolClient(server);
+    const threadId = await client.initAndStartThread(tmpDir);
+
+    const started = (await client.request("turn/start", { threadId, message: "capture my id" })) as {
+      userMessageId?: string;
+    };
+    await client.waitForNotification(DILIGENT_SERVER_NOTIFICATION_METHODS.TURN_COMPLETED);
+    const thread = (await client.request("thread/read", { threadId })) as {
+      items: Array<{ type: string; itemId: string }>;
+    };
+    const persistedUserId = thread.items.find((item) => item.type === "userMessage")?.itemId;
+
+    expect(hookUserMessageId).toBe(started.userMessageId);
+    expect(hookUserMessageId).toBe(persistedUserId);
+  });
+
   test("multi-turn accumulates context", async () => {
     await setup({ streamFunction: createSimpleStream("response") });
     const threadId = await client.initAndStartThread(tmpDir);

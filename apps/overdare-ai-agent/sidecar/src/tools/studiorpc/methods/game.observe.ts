@@ -10,7 +10,7 @@ export const description =
   'section. `outcome` is "ok" or "partial"; partial replies name `failedSections`, and each section keeps ' +
   "its own status or error. Narrowed sections report `fieldsNotAnswered` when no returned element supplied " +
   "a requested field. Reading character and instances together adds each Part's surface " +
-  "`distanceFromCharacter`. UI and character describe the targeted main client; instances read the shared " +
+  "`distanceFromCharacter`. UI and character describe the selected client (the main client by default); instances read the shared " +
   "client or authority world. Use a screenshot for rendered pixels.";
 const uiSection = z
   .object({
@@ -74,6 +74,12 @@ const instancesSection = z.union([namedInstances, searchedInstances]);
 
 export const params = z
   .object({
+    pieSessionId: z.string().min(1).optional().describe("Explicit PIE session; supply together with clientId."),
+    clientId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Client to observe; supply together with pieSessionId. Omit both for the main client."),
     character: z
       .boolean()
       .optional()
@@ -99,7 +105,19 @@ export const params = z
       ),
     fields: z.array(z.string().min(1)).optional().describe("Per-instance fields to keep for any instances shape."),
   })
-  .strict();
+  .strict()
+  .refine((args) => (args.pieSessionId === undefined) === (args.clientId === undefined), {
+    message: "pieSessionId and clientId must be supplied together.",
+  })
+  .refine(
+    (args) =>
+      args.character === true ||
+      (args.ui !== undefined && args.ui !== false) ||
+      (args.instances !== undefined && args.instances !== false),
+    {
+      message: "Request at least one observation section: character, ui, or instances.",
+    },
+  );
 const ENGINE_PLUMBING = new Set([
   "ObjectKey",
   "Archivable",

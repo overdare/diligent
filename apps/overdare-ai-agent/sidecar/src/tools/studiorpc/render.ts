@@ -258,7 +258,7 @@ export function buildAssetDrawerImportRender(args: Record<string, unknown>, outp
   };
 }
 
-export function buildAssetManagerImageImportRender(
+export function buildAssetManagerImportRender(
   result: unknown,
   args: Record<string, unknown>,
   output: string,
@@ -268,12 +268,12 @@ export function buildAssetManagerImageImportRender(
   const returnedAssetId = asset ? readString(asset.assetid) : undefined;
   const returnedFile = asset ? readString(asset.file) : undefined;
   return {
-    inputSummary: clip(file || "image file"),
-    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
+    inputSummary: clip(file || "asset file"),
+    outputSummary: summarizeText(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Asset imported."),
     blocks: [
       {
         type: "key_value",
-        title: "Asset manager image import",
+        title: "Asset manager import",
         items: [
           { key: "file", value: returnedFile ?? file },
           { key: "assetid", value: returnedAssetId ?? "" },
@@ -281,8 +281,8 @@ export function buildAssetManagerImageImportRender(
       },
       {
         type: "summary",
-        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Image imported."),
-        tone: "success",
+        text: firstLine(output, returnedAssetId ? `Imported as ${returnedAssetId}` : "Asset imported."),
+        tone: isRecord(result) && (result.success === false || result.saved === false) ? "error" : "success",
       },
     ],
   };
