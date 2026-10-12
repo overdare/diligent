@@ -35,6 +35,12 @@ function toolContext() {
 }
 
 describe("animation params", () => {
+  test("read can open its selected clip in the existing AnimationEditor", () => {
+    const args = { assetPath: ASSET, openEditor: true, preview: false };
+    expect(animationRead.params.parse(args)).toEqual(args);
+    expect(animationRead.normalizeArgs(args)).toEqual(args);
+    expect(animationRead.params.safeParse({ assetPath: ASSET, openEditor: "true" }).success).toBe(false);
+  });
   test("accept the contract examples unchanged", () => {
     const create = { animation: CONTRACT_ANIMATION };
     expect(animationWrite.params.parse(create)).toEqual(create);
@@ -227,7 +233,7 @@ describe("animation tools over the generic Studio RPC path", () => {
     };
     const read = await toolFor("studiorpc_animation_read", callRpc);
     const write = await toolFor("studiorpc_animation_write", callRpc);
-    const readArgs = { modelGuid, assetId: "ovdrassetid://123", preview: false };
+    const readArgs = { modelGuid, assetId: "ovdrassetid://123", openEditor: true, preview: false };
     await read.execute(read.parameters.parse(readArgs), toolContext());
     const writeArgs = { modelGuid, animation: CONTRACT_ANIMATION, dryRun: true, frames: [0, 15] };
     await write.execute(write.parameters.parse(writeArgs), toolContext());
