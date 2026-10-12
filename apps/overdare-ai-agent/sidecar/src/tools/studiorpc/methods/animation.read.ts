@@ -1,6 +1,8 @@
 // @summary Declares the Studio RPC method that reads the character rig or an animation clip as JSON.
+import { readFile } from "node:fs/promises";
 import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
+import { isRecord } from "../camera-response";
 import {
   ANIMATION_TIMEOUT_MS,
   attachPreviewImage,
@@ -24,6 +26,7 @@ export const description =
   "General-rig captures use the original materials and +X/+Y component views. ODA anatomical clearance checks may be unavailable; an unavailable check does not prove a clean pose.\n" +
   "With a clip, openEditor:true also opens the existing Studio AnimationEditor and reports its actual preview clip, mesh and bone count. A different already-open clip is preserved and returns an error; close it first. " +
   "The selected editor refreshes when the same clip is changed through animation.write. Omit openEditor for a data-only read.\n" +
+  "With openEditor:true and a requested preview, the images also include a screenshot of the actual AnimationEditor window. Its capture status and path are in editor; a frame sheet alone does not prove the editor UI.\n" +
   "Without assetPath (start here): returns `rig`, `template`, `limits` and `animations` (asset paths of the " +
   "clips that already exist). `rig.bones[]` lists the bones you can animate: name, parent, refLocal.translation " +
   "and refComponent (translation, and axisX/axisY/axisZ = the bone's own axes in component space); " +
@@ -93,7 +96,27 @@ export async function recover(error: unknown): Promise<unknown> {
 }
 
 export async function attachImages(result: unknown): Promise<ImageBlock[] | undefined> {
-  return attachPreviewImage(result);
+  const images = (await attachPreviewImage(result)) ?? [];
+  if (typeof result === "string") {
+    try {
+      result = JSON.parse(result);
+    } catch {
+      return images.length ? images : undefined;
+    }
+  }
+  const editor = isRecord(result) && isRecord(result.editor) ? result.editor : undefined;
+  if (editor?.screenshotStatus === "completed" && typeof editor.screenshotPath === "string") {
+    try {
+      const bytes = await readFile(editor.screenshotPath);
+      images.push({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: bytes.toString("base64") },
+      });
+    } catch {
+      // Preserve any frame sheet even when the separately reported UI image cannot be read.
+    }
+  }
+  return images.length ? images : undefined;
 }
 
 export function postProcess(result: unknown): unknown {
