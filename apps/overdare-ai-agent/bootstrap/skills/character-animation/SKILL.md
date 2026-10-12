@@ -11,6 +11,8 @@ For a general character, call `studiorpc_animation_read` with its Workspace `mod
 
 When `rig.family` is `general`, use its actual bone axes and keys. The measured ODA anatomy, angles, pins and ground solver below do not apply. General `dryRun` reports original bone positions and per-bone skin heights; preview uses the original materials and component +X/+Y views. Clearance and anatomical directions can be unavailable. Inspect the captures and native character skin measurements; unavailable or unmeasured evidence is not a quality pass. Source clips with animated scale, additive poses, events or root-motion extraction are rejected rather than losing those features in a copy. Existing hierarchy, bind pose and weights are preserved; this editing path does not perform rigging.
 
+For authored general locomotion, declare the actual `speedCmPerSec`, optional component-space horizontal unit `forwardDirection` (default +X), and each contact bone's `contactIntervalsSeconds` in `motion.document`. Use `character.inspect` observations to measure the same sole vertices while the actor travels. A zero-speed draft or empty contact map cannot establish low sliding. Read native build diagnostics, revise failed poses or weights, and inspect RGB plus bone captures before committing the reviewed draft.
+
 The sections below describe the default ODA rig.
 
 Make a clip that a person watching it would recognise as the requested motion, with weight and timing that feel alive. The tool descriptions define the JSON, pins and preview; this skill covers what they cannot: how the ODA rig moves and what ODA's own animations look like in numbers.

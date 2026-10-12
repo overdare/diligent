@@ -3,6 +3,7 @@
 import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
 import { isRecord } from "../camera-response";
+import { StudioRpcError } from "../rpc";
 import { attachPreviewImage, withErrorData } from "./animation-shared";
 
 const buildId = z.string().regex(/^[A-Fa-f0-9]{32}$/);
@@ -24,6 +25,7 @@ export const api = {
 export const build = {
   method: "character.build",
   timeoutMs: 900_000,
+  recover: async (error: unknown) => withBuildErrorData(error),
   description:
     "Build agent-authored geometry, rig weights and animation from an inline recipe, an existing ProceduralModel GUID, or an inspected static Model using authored_v1. For an already baked ProceduralModel, inspect(mode=source) then pass its geometryRevision and direct rig and motion.document, just like static_model. Source capture reads current baked parts without rebaking or changing the model. All new geometry inputs take separate structured rig and motion.document data; geometry recipes do not write rig or animation files. Without geometryRevision, a ProceduralModel freezes its geometry Source and parameters for a private capture without baking the Workspace model; rig regions use generated part names. With geometryRevision, regions use inspected part GUIDs. Stale geometry is rejected before applying weights. Studio freezes source inputs for each requestId; retries and commit reuse the saved draft even if the source changes or is removed. Use a new requestId to capture new inputs. For an already rigged Workspace Model with exactly one skeletal MeshPart directly under its Model, inspect(mode=source) then use existing_rig with its rigRevision, target.kind=animation_only and motion.document, omitting rig and overrides. The original numeric Skeleton, skeletal mesh, bind poses, weights, materials and props are preserved; apply adds only a new Animation under the original model. Retained editable CPU LOD0 and an existing Humanoid/Skeleton are required. For inspected geometry, rig.boneAttachments maps prop part GUIDs to declared bones. rig.regions must contain exactly one skinned region, producing one skeletal mesh and one direct Model MeshPart. Additional parts stay as existing static MeshParts under their declared Bones. Separate skinned regions are rejected; combine them into one mesh before import. Prop subtrees cannot contain other captured MeshParts. Read character.api first. commit=false creates a saved draft with real observation images. Inspect images, verify-source in a fresh process with character_poc.py, then commit the exact four reviewed revisions. Use export mode=publish for normal numeric native assets. Explicit mode=apply takes buildId, publicationId, expectedRevision and expectedSourceGraphRevision, and clones a frozen inspected Model or baked ProceduralModel into Workspace with existing Lua character classes. The single skinned MeshPart uses the existing non-ODA direct-child path and normal RigBuilder frame and Size behavior; its original static-part frame is not preserved. Missing numeric assets download through the ordinary Studio importer before rechecking the document and revisions. It rejects changed sources, incomplete uploads and name conflicts; an already applied publication is returned as APPLY_ALREADY_EXISTS for inspection, never replaced. Stop PIE first. Apply requires an inspected model draft with explicit part identities; recipe-only drafts support build/publication. Verify saved-map Lua playback separately.",
   params: z.union([
@@ -227,6 +229,17 @@ export const inspect = {
       .strict(),
   ]),
 };
+
+/** Frozen source graphs can exceed 200 KiB; keep diagnostics readable and retain the full error data. */
+function withBuildErrorData(error: unknown): never {
+  if (!(error instanceof StudioRpcError) || !isRecord(error.data)) return withErrorData(error);
+  const { staticInput: _staticInput, recipeInput: _recipeInput, ...visible } = error.data;
+  throw new StudioRpcError(
+    `${error.message}\n\nError data:\n${JSON.stringify(visible, null, 2)}`,
+    error.code,
+    error.data,
+  );
+}
 
 function normalizeInspectArgs(args: Record<string, unknown>): Record<string, unknown> {
   const { images: _images, ...nativeArgs } = args;

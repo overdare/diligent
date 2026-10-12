@@ -9,6 +9,40 @@ import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("keeps the measured contact failure and saved draft identity when a build fails", async () => {
+    const data = {
+      buildId: "A".repeat(32),
+      state: "failed",
+      stage: "observations",
+      diagnostics: [{ code: "FOOT_SLIDE", bone: "paw", frame: 17, message: "slide=12 cm" }],
+      staticInput: { sourceGraphJson: "frozen source graph".repeat(15000) },
+    };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw new StudioRpcError("Character operation failed; inspect diagnostics.", -32602, data);
+      },
+    });
+    const request = {
+      requestId: "failed-contact-observation",
+      source: { kind: "existing_rig", guid: "B".repeat(32), rigRevision: "C".repeat(40) },
+      target: { kind: "animation_only", name: "Walk" },
+      rigProfile: "authored_v1",
+      motion: { preset: "authored_v1", speedCmPerSec: 25, document: { fps: 30, poses: [] } },
+      commit: false,
+    };
+    const error = await tools
+      .find((entry) => entry.name === "studiorpc_character_build")!
+      .execute(request, { toolCallId: "failed-build", signal: new AbortController().signal, abort: () => {} })
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(StudioRpcError);
+    expect((error as Error).message).toContain("FOOT_SLIDE");
+    expect((error as Error).message).toContain("slide=12 cm");
+    expect((error as Error).message).toContain(data.buildId);
+    expect((error as Error).message).not.toContain("frozen source graph");
+    expect((error as Error).message.length).toBeLessThan(2000);
+    expect((error as StudioRpcError).data).toEqual(data);
+  });
   test("keeps revision and skin diagnostics visible when native remeasurement fails", async () => {
     const data = { state: "failed", diagnostics: [{ code: "REVISION_MISMATCH", message: "Actual keys changed" }] };
     const tools = await createStudioRpcTools({
