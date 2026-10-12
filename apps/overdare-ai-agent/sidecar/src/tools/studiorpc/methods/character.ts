@@ -1,5 +1,9 @@
 // @summary Exposes agent-authored non-ODA geometry, rigs and clips through ordinary Studio tools.
+
+import type { ImageBlock } from "@diligent/protocol";
 import { z } from "zod";
+import { isRecord } from "../camera-response";
+import { attachPreviewImage, withErrorData } from "./animation-shared";
 
 const buildId = z.string().regex(/^[A-Fa-f0-9]{32}$/);
 const hash = z
@@ -166,7 +170,10 @@ export const inspect = {
   readOnly: true,
   timeoutMs: 900_000,
   description:
-    "Inspect a non-ODA character: mode=source reads an imported static Model or a current baked ProceduralModel in the editing map, returning part identities, local placements, material slots, common-space bounds and optional paged final vertex IDs/positions for authored weights. For an already rigged Model with exactly one skeletal MeshPart directly under its Model, it returns existing_rig, rigRevision, original skeletonId and native bind poses, preserving original weights internally. Stop PIE before source inspection. mode=build reads a saved manifest; mode=observation renders and measures the exact reviewed revisions; mode=runtime inspects a named live Workspace Model on client or authority. Inspect actual images and compare runtime samples for changing bone poses and advancing track time. Runtime requires PIE. This is the single character inspection tool.",
+    "Inspect a non-ODA character: mode=source reads an imported static Model or a current baked ProceduralModel in the editing map, returning part identities, local placements, material slots, common-space bounds and optional paged final vertex IDs/positions for authored weights. For an already rigged Model with exactly one skeletal MeshPart directly under its Model, it returns existing_rig, rigRevision, original skeletonId and native bind poses, preserving original weights internally. Stop PIE before source inspection. mode=build reads a saved manifest; mode=observation reads rendered evidence at the exact reviewed revisions and attaches its RGB sheet by default. images selects rgb/bones/regions/weights, or false for measurements alone. Inspect the actual skin: contactValidation distinguishes measured stance from missing contact evidence, null slide is unmeasured, skinValidation reports penetration and surface stretch/collapse, and motionQuality requires visual review. passed alone proves neither natural deformation nor valid foot contact. mode=runtime inspects a named live Workspace Model on client or authority. Compare runtime samples for changing bone poses and advancing track time. Runtime requires PIE. This is the single character inspection tool.",
+  normalizeArgs: normalizeInspectArgs,
+  attachImages: attachInspectionImages,
+  recover: async (error: unknown) => withErrorData(error),
   params: z.discriminatedUnion("mode", [
     z
       .object({
@@ -192,6 +199,23 @@ export const inspect = {
           "world_travel",
         ]),
         expectedRevision: revisions,
+        refresh: z
+          .boolean()
+          .optional()
+          .describe(
+            "world_travel only: stop PIE first, then remeasure and recapture the reviewed native draft in a disposable game world. Does not change Workspace or animation keys. Omit to read saved evidence.",
+          ),
+        images: z
+          .union([
+            z.literal(false),
+            z
+              .array(z.enum(["rgb", "bones", "regions", "weights"]))
+              .min(1)
+              .max(4)
+              .refine((values) => new Set(values).size === values.length, "Select each image once"),
+          ])
+          .optional()
+          .describe("Observation image attachments in order; default [rgb]. false returns measurements only."),
       })
       .strict(),
     z
@@ -203,3 +227,25 @@ export const inspect = {
       .strict(),
   ]),
 };
+
+function normalizeInspectArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const { images: _images, ...nativeArgs } = args;
+  return nativeArgs;
+}
+
+async function attachInspectionImages(
+  result: unknown,
+  args: Record<string, unknown>,
+): Promise<ImageBlock[] | undefined> {
+  if (args.mode !== "observation" || args.images === false || !isRecord(result) || result.captureStatus !== "completed")
+    return undefined;
+  const selected = Array.isArray(args.images) ? args.images : ["rgb"];
+  const images: ImageBlock[] = [];
+  for (const kind of selected) {
+    const imagePath = result[`${kind}Path`];
+    if (typeof imagePath !== "string") continue;
+    const attached = await attachPreviewImage({ preview: { status: "completed", imagePath } });
+    if (attached) images.push(...attached);
+  }
+  return images.length ? images : undefined;
+}

@@ -1,13 +1,95 @@
 // @summary Verifies generic custom character tools are discoverable and cannot accept ODA costume requests.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStudioRpcTools } from "../../../../src/tools/studiorpc";
 import * as character from "../../../../src/tools/studiorpc/methods/character";
+import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { methodModules, mutatingMethods, savingMethods } from "../../../../src/tools/studiorpc/tool-registry";
 
 describe("non-ODA character authoring", () => {
+  test("keeps revision and skin diagnostics visible when native remeasurement fails", async () => {
+    const data = { state: "failed", diagnostics: [{ code: "REVISION_MISMATCH", message: "Actual keys changed" }] };
+    const tools = await createStudioRpcTools({
+      cwd: tmpdir(),
+      callRpc: async () => {
+        throw new StudioRpcError("Character operation failed; inspect diagnostics.", -32602, data);
+      },
+    });
+    const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+    const error = await tool
+      .execute(
+        { mode: "build", buildId: "A".repeat(32) },
+        { toolCallId: "inspect-error", signal: new AbortController().signal, abort: () => {} },
+      )
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(StudioRpcError);
+    expect((error as Error).message).toContain("REVISION_MISMATCH");
+    expect((error as Error).message).toContain("Actual keys changed");
+  });
+  test("returns selected observation images with unchanged measured and unmeasured quality evidence", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "character-observation-"));
+    try {
+      const rgbPath = join(directory, "rgb.png"),
+        weightsPath = join(directory, "weights.png");
+      writeFileSync(rgbPath, "rgb-bytes");
+      writeFileSync(weightsPath, "weights-bytes");
+      const native = {
+        captureStatus: "completed",
+        rgbPath,
+        weightsPath,
+        contactValidation: { status: "unmeasured", reason: "No contact intervals" },
+        maximumStanceSlideCm: null,
+        motionQuality: { status: "incomplete", visualReviewRequired: true },
+        skinValidation: { maximumEdgeRatio: 3.2 },
+      };
+      const calls: Array<{ method: string; params: unknown }> = [];
+      const tools = await createStudioRpcTools({
+        cwd: directory,
+        callRpc: async (method, params) => {
+          calls.push({ method, params });
+          return native;
+        },
+      });
+      const tool = tools.find((entry) => entry.name === "studiorpc_character_inspect")!;
+      const request = {
+        mode: "observation",
+        buildId: "A".repeat(32),
+        scenario: "walk_contact_sheet",
+        expectedRevision: {
+          sourceRevision: "A".repeat(40),
+          geometryHash: "B".repeat(40),
+          rigRevision: "C".repeat(40),
+          animationRevision: "D".repeat(40),
+        },
+        images: ["weights", "rgb"],
+      };
+      const context = { toolCallId: "observation-images", signal: new AbortController().signal, abort: () => {} };
+      const out = await tool.execute(tool.parameters.parse(request), context);
+      const { images: _images, ...rpcRequest } = request;
+      expect(calls).toEqual([{ method: "character.inspect", params: rpcRequest }]);
+      expect(JSON.parse(out.output)).toEqual(native);
+      expect(out.outputImages?.map((image) => image.source)).toEqual([
+        { type: "base64", media_type: "image/png", data: Buffer.from("weights-bytes").toString("base64") },
+        { type: "base64", media_type: "image/png", data: Buffer.from("rgb-bytes").toString("base64") },
+      ]);
+      const defaultOut = await tool.execute(tool.parameters.parse(rpcRequest), context);
+      expect(defaultOut.outputImages).toHaveLength(1);
+      const noImages = await tool.execute(tool.parameters.parse({ ...request, images: false }), context);
+      expect(noImages.outputImages).toBeUndefined();
+      const refreshed = { ...rpcRequest, scenario: "world_travel", refresh: true };
+      await tool.execute(tool.parameters.parse(refreshed), context);
+      expect(calls.at(-1)).toEqual({ method: "character.inspect", params: refreshed });
+      expect(character.inspect.params.safeParse({ ...request, images: ["rgb", "rgb"] }).success).toBe(false);
+      expect(
+        character.inspect.params.safeParse({ mode: "runtime", modelName: "Creature", images: ["rgb"] }).success,
+      ).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   test("rejects separate skinned regions while forwarding one skin with static bone props", async () => {
     const request = {
       requestId: "single-skin-with-props",
