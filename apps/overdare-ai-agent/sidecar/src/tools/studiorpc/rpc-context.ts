@@ -2,6 +2,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { getSessionExecutionContext } from "@diligent/runtime";
 import type { StudioRpcCallOptions } from "./rpc";
 
 const context = new AsyncLocalStorage<Pick<StudioRpcCallOptions, "sessionId" | "signal">>();
@@ -10,7 +11,7 @@ const context = new AsyncLocalStorage<Pick<StudioRpcCallOptions, "sessionId" | "
 const processSessionId = `sidecar-${randomUUID()}`;
 
 export function studioRpcSessionId(): string {
-  return context.getStore()?.sessionId || processSessionId;
+  return getSessionExecutionContext()?.sessionId || context.getStore()?.sessionId || processSessionId;
 }
 
 export function withStudioRpcContext<T>(
@@ -24,7 +25,7 @@ export function studioRpcCallOptions(options: StudioRpcCallOptions = {}): Studio
   const current = context.getStore();
   return {
     ...options,
-    sessionId: current?.sessionId || options.sessionId || processSessionId,
+    sessionId: getSessionExecutionContext()?.sessionId || current?.sessionId || options.sessionId || processSessionId,
     signal: options.signal ?? current?.signal,
   };
 }

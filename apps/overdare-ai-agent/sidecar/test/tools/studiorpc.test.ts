@@ -205,6 +205,12 @@ describe("createStudioRpcToolProvider", () => {
       hook_event_name: "UserPromptSubmit",
       prompt: "hello",
     });
+    await provider.onStop?.({
+      session_id: "session-1",
+      transcript_path: "",
+      cwd: "/tmp/project",
+      hook_event_name: "Stop",
+    });
 
     await provider.onStop?.({
       session_id: "session-1",

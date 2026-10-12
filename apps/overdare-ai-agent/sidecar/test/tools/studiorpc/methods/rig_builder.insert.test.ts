@@ -8,6 +8,7 @@ import type { Tool } from "@diligent/core/tool-contract";
 import { createStudioRpcToolProvider } from "../../../../src/tools/studiorpc";
 import { StudioRpcError } from "../../../../src/tools/studiorpc/rpc";
 import { snapshotsDir } from "../../../../src/tools/studiorpc/tools/snapshot";
+import { bindStudioTestSession } from "../../../helpers/studio-session";
 
 interface RpcCall {
   method: string;
@@ -173,12 +174,14 @@ describe("studiorpc_rig_builder_insert", () => {
     writeFileSync(join(cwd, "world.ovdrjm"), '{"Root":{"InstanceType":"Workspace"}}');
     const snapshotPath = join(snapshotsDir(cwd), "rig-session_0.ovdrjm");
     const snapshotSeenAtInsert: boolean[] = [];
-    const provider = createStudioRpcToolProvider({
-      callRpc: async (method) => {
-        if (method === "rig_builder.insert") snapshotSeenAtInsert.push(existsSync(snapshotPath));
-        return method === "rig_builder.insert" ? { success: true, instanceGuid: ROOT_MODEL_GUID } : { success: true };
-      },
-    });
+    const provider = bindStudioTestSession(
+      createStudioRpcToolProvider({
+        callRpc: async (method) => {
+          if (method === "rig_builder.insert") snapshotSeenAtInsert.push(existsSync(snapshotPath));
+          return method === "rig_builder.insert" ? { success: true, instanceGuid: ROOT_MODEL_GUID } : { success: true };
+        },
+      }),
+    );
     const providerWithHook = provider as typeof provider & {
       onUserPromptSubmit: NonNullable<typeof provider.onUserPromptSubmit>;
     };
