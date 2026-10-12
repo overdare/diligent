@@ -8,6 +8,7 @@ export const method = "animation.publish";
 export const timeoutMs = 180_000;
 
 export const description =
+  "General-rig clips keep their original Skeleton when uploaded; no ODA Skeleton substitution is performed. " +
   "Upload a saved animation clip to OVERDARE, like the AnimationEditor's Get Asset Id button, and return its " +
   "asset id. Use the returned assetId (ovdrassetid://N) wherever an animation id is needed: an Action Sequence " +
   "AnimationTrack's OvdrAssetId, an Animation instance's AnimationId in scripts.\n" +

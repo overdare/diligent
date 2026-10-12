@@ -18,7 +18,10 @@ export const readOnly = true;
 export const timeoutMs = ANIMATION_TIMEOUT_MS;
 
 export const description =
-  "Read the character rig, or an animation clip as editable JSON. Nothing is created or changed.\n" +
+  "Read an existing character rig, or an animation clip as editable JSON. Downloaded clips are opened as editable copies; the original rig and animation are preserved.\n" +
+  "Pass modelGuid to select a Workspace Model's existing single skeletal MeshPart. Omit it for the default ODA rig; with assetPath, the clip's own original rig is inferred. " +
+  "The same read/write/preview/publish tools work on general rigs. Bone names are the original names, including names containing IK, Camera or Item; the naming filter below applies only to ODA. " +
+  "General-rig captures use the original materials and +X/+Y component views. ODA anatomical clearance checks may be unavailable; an unavailable check does not prove a clean pose.\n" +
   "Without assetPath (start here): returns `rig`, `template`, `limits` and `animations` (asset paths of the " +
   "clips that already exist). `rig.bones[]` lists the bones you can animate: name, parent, refLocal.translation " +
   "and refComponent (translation, and axisX/axisY/axisZ = the bone's own axes in component space); " +
@@ -51,6 +54,12 @@ export const description =
 
 export const params = z
   .object({
+    modelGuid: z
+      .string()
+      .optional()
+      .describe(
+        "Existing Workspace Model with one skeletal MeshPart. Select its original rig for creation or assetId import; assetPath can infer the rig.",
+      ),
     assetPath: z
       .string()
       .optional()
@@ -68,7 +77,7 @@ export const params = z
   .strict();
 
 export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return normalizePreview(dropBlank(args, ["assetPath", "assetId"]));
+  return normalizePreview(dropBlank(args, ["assetPath", "assetId", "modelGuid"]));
 }
 
 export async function recover(error: unknown): Promise<unknown> {

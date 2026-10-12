@@ -269,7 +269,7 @@ function compactBone(bone: Record<string, unknown>): Record<string, unknown> {
   return {
     name: bone.name,
     parent: bone.parent,
-    refLocal: { translation: local.translation },
+    refLocal: { translation: local.translation, ...(Array.isArray(local.scale) ? { scale: local.scale } : {}) },
     refComponent: {
       translation: component.translation,
       axisX: component.axisX,
